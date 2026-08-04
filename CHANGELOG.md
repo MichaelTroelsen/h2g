@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.12 — 2026-08-04
+
+- Add GoatTracker loader validation tests (sngspli2)
+
 ## 0.5.11 — 2026-08-04
 
 - SURVEY.md: add player-variant name and real emitted subtune count per file
