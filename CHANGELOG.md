@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.5 — 2026-08-04
+
+- README cites SURVEY.md for conversion rates instead of hardcoding them
+
 ## 0.5.4 — 2026-08-04
 
 - Move version/usage docs from CLAUDE.md into a new README.md

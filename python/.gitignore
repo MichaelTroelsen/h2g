@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Scratch survey reports from --max-rows comparison runs. The committed report
+# is ../SURVEY.md and is the only place conversion rates are quoted.
+survey-*.md

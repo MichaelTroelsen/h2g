@@ -40,9 +40,21 @@ that change and slices at **94**.
 
 94 remains the default because it is what the byte-exact `Commando.sng` fixture
 encodes — that fixture is the project's only fidelity anchor, so **the default
-must not change**. Pass `--max-rows 128` for fewer, longer patterns and shorter
-orderlists; on the Hubbard corpus that converts 65/95 instead of 63/95
-(gaining `Delta`, `Dragons_Lair_Part_II`) with no file or subtune lost.
+must not change**.
+
+Pass `--max-rows 128` for fewer, longer patterns and therefore shorter
+orderlists, which brings some tunes back under Goattracker's capacity limits. It
+changes pattern granularity only — no subtune is dropped and no file that
+converts at 94 fails at 128.
+
+For the current measured effect, generate both reports and compare their
+headline counts (see [Corpus survey](#corpus-survey) below):
+
+```sh
+cd python
+python survey.py <sid_dir> -o ../SURVEY.md                       # default, 94 rows
+python survey.py <sid_dir> -o survey-128.md --max-rows 128       # scratch, not committed
+```
 
 ## Versioning
 
@@ -89,9 +101,16 @@ cd python
 python survey.py <sid_dir> -o ../SURVEY.md [--max-rows N] [--sng-dir DIR]
 ```
 
-[`SURVEY.md`](SURVEY.md) holds the current results against a 95-file Rob Hubbard
-corpus. "Converted" there means the converter produced a `.sng` without erroring
-— it does **not** mean the output is musically correct.
+[`SURVEY.md`](SURVEY.md) is the committed report for the Rob Hubbard corpus and
+the single place conversion rates are quoted — it carries the pass/fail count,
+the failure breakdown by stage, the detected player-variant spread and per-file
+detail, all regenerated from the code. Deliberately **do not** restate those
+figures here or in `CLAUDE.md`: they move whenever detection or capacity handling
+changes, and a second copy goes stale silently.
+
+"Converted" there means the converter produced a `.sng` without erroring — it
+does **not** mean the output is musically correct. Only `Commando.sid` is
+verified byte-exact.
 
 ## Repository layout
 
