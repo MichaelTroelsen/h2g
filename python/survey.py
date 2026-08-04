@@ -24,6 +24,7 @@ from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           convert_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
+from h2g.sidid import Database, find_database
 from h2g.tracks import convert_tracks
 
 VERSION_NAMES = {
@@ -47,6 +48,7 @@ class Result:
     instruments: int = 0
     version: int = 0xFF
     source_format: str = ""   # the input's own header version, e.g. "PSID v2"
+    sidid: str = ""           # SIDId player identification, independent of detect()
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
@@ -56,7 +58,8 @@ def survey_one(path: Path, sng_dir: Path | None,
                max_rows: int = GT_DEFAULT_ROWS,
                terminate_patterns: bool = False,
                fmt: str = DEFAULT_FORMAT,
-               dedup: bool = False) -> Result:
+               dedup: bool = False,
+               sidid_db: Database | None = None) -> Result:
     r = Result(path=path)
 
     try:
@@ -70,6 +73,9 @@ def survey_one(path: Path, sng_dir: Path | None,
 
     r.name, r.author, r.released = sid.name, sid.author, sid.released
     r.source_format = sid.source_format
+    if sidid_db is not None:
+        names = sidid_db.identify(sid.data)
+        r.sidid = ", ".join(names) if names else "(none)"
     r.subtunes, r.load_addr = sid.subtunes, sid.load_addr
 
     try:
@@ -247,9 +253,9 @@ def build_report(results: list[Result], sid_dir: Path,
     # --- successes ---------------------------------------------------------
     lines.append(f"## Converted ({len(ok)})")
     lines.append("")
-    lines.append("| File | Title | Source | Player | Ver | Subtunes | Instr | "
+    lines.append("| File | Title | Source | SIDId | Player | Ver | Subtunes | Instr | "
                  "Patterns | .sng bytes | Flag |")
-    lines.append("|---|---|---|---|---:|---|---:|---:|---:|---|")
+    lines.append("|---|---|---|---|---|---:|---|---:|---:|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
         flag = (f"{r.instruments - MAX_INSTRUMENTS} instr dropped"
                 if r.instruments > MAX_INSTRUMENTS else "")
@@ -258,7 +264,7 @@ def build_report(results: list[Result], sid_dir: Path,
             subs += f" (hdr {r.subtunes})"
         lines.append(
             f"| `{r.path.name}` | {_md_escape(r.name)} | "
-            f"{r.source_format or '-'} | "
+            f"{r.source_format or '-'} | {_md_escape(r.sidid)} | "
             f"{VERSION_NAMES.get(r.version, 'unknown')} | {r.version} | {subs} | "
             f"{r.instruments} | {r.patterns} | {r.out_size} | {flag} |"
         )
@@ -277,8 +283,8 @@ def build_report(results: list[Result], sid_dir: Path,
     # --- failures ----------------------------------------------------------
     lines.append(f"## Not converted ({len(bad)})")
     lines.append("")
-    lines.append("| File | Title | Source | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |")
-    lines.append("|---|---|---|---|---|---:|:-:|:-:|:-:|---|")
+    lines.append("| File | Title | Source | SIDId | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |")
+    lines.append("|---|---|---|---|---|---|---:|:-:|:-:|:-:|---|")
     tick = {True: "y", False: "-"}
     for r in sorted(bad, key=lambda x: (x.stage, x.path.name.lower())):
         f = r.found
@@ -287,6 +293,7 @@ def build_report(results: list[Result], sid_dir: Path,
         player = VERSION_NAMES.get(r.version, "-") if f.get("version") else "-"
         lines.append(
             f"| `{r.path.name}` | {_md_escape(r.name)} | {r.source_format or '-'} | "
+            f"{_md_escape(r.sidid)} | "
             f"{r.stage} | {player} | "
             f"{r.subtunes} | {cols[0]} | {cols[1]} | {cols[2]} | {_md_escape(r.error)} |"
         )
@@ -311,6 +318,8 @@ def main(argv=None) -> int:
     parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
     parser.add_argument("-o", "--output", default="SURVEY.md", help="report path")
     parser.add_argument("--sng-dir", help="also write converted .sng files here")
+    parser.add_argument("--sidid-cfg", metavar="PATH",
+                        help="SIDId signature database (sidid.cfg). Defaults to $H2G_SIDID_CFG then a known location; the column is left empty if absent")
     parser.add_argument("--format", choices=FORMATS, default=DEFAULT_FORMAT,
                         help="output .sng format (default: %(default)s)")
     parser.add_argument("--dedup-patterns", action="store_true",
@@ -333,13 +342,18 @@ def main(argv=None) -> int:
         return 1
 
     sng_dir = Path(args.sng_dir) if args.sng_dir else None
+    sidid_db = find_database(args.sidid_cfg)
+    if sidid_db is None:
+        print("note: sidid.cfg not found; SIDId column will be empty "
+              "(set H2G_SIDID_CFG or pass --sidid-cfg)", file=sys.stderr)
     results = []
     for path in paths:
         try:
             results.append(survey_one(path, sng_dir, args.max_rows,
                                       args.terminate_patterns,
                                       fmt=args.format,
-                                      dedup=args.dedup_patterns))
+                                      dedup=args.dedup_patterns,
+                                      sidid_db=sidid_db))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))
             results.append(r)
