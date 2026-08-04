@@ -46,6 +46,7 @@ class Result:
     patterns: int = 0
     instruments: int = 0
     version: int = 0xFF
+    source_format: str = ""   # the input's own header version, e.g. "PSID v2"
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
@@ -67,6 +68,7 @@ def survey_one(path: Path, sng_dir: Path | None,
         return r
 
     r.name, r.author, r.released = sid.name, sid.author, sid.released
+    r.source_format = sid.source_format
     r.subtunes, r.load_addr = sid.subtunes, sid.load_addr
 
     try:
@@ -145,13 +147,14 @@ def build_report(results: list[Result], sid_dir: Path,
     note = " (original VB6 behaviour)" if max_rows == GT_DEFAULT_ROWS else \
            f" (raised from {GT_DEFAULT_ROWS}; Goattracker's limit is {GT_MAX_ROWS})"
     lines.append(f"- Pattern slicing: **{max_rows} rows**{note}")
-    fmt_note = (" (original VB6 behaviour; note Goattracker's legacy GTS2 importer "
-                "overruns its pattern array on the portamento commands this "
+    fmt_note = (" (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 "
+                "importer overruns its pattern array on the portamento commands this "
                 "converter emits — prefer `--format gts5` for files you will open "
                 "in Goattracker)"
                 if fmt == FORMAT_GTS2 else
-                " (modern 4-table format; avoids the GTS2 importer overrun)")
-    lines.append(f"- Output format: **{fmt.upper()}**{fmt_note}")
+                " (modern 4-table format; avoids the GTS2 importer overrun, and is "
+                "what Goattracker itself writes)")
+    lines.append(f"- Output format: **{fmt.upper()}** (of {'/'.join(f.upper() for f in FORMATS)}){fmt_note}")
     pct = (100.0 * len(ok) / len(results)) if results else 0.0
     lines.append(f"- Converted: **{len(ok)}** ({pct:.0f}%) — Failed: **{len(bad)}**")
     lines.append("")
@@ -243,9 +246,9 @@ def build_report(results: list[Result], sid_dir: Path,
     # --- successes ---------------------------------------------------------
     lines.append(f"## Converted ({len(ok)})")
     lines.append("")
-    lines.append("| File | Title | Player | Ver | Subtunes | Instr | Patterns | "
-                 ".sng bytes | Flag |")
-    lines.append("|---|---|---|---:|---|---:|---:|---:|---|")
+    lines.append("| File | Title | Source | Player | Ver | Subtunes | Instr | "
+                 "Patterns | .sng bytes | Flag |")
+    lines.append("|---|---|---|---|---:|---|---:|---:|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
         flag = (f"{r.instruments - MAX_INSTRUMENTS} instr dropped"
                 if r.instruments > MAX_INSTRUMENTS else "")
@@ -254,11 +257,15 @@ def build_report(results: list[Result], sid_dir: Path,
             subs += f" (hdr {r.subtunes})"
         lines.append(
             f"| `{r.path.name}` | {_md_escape(r.name)} | "
+            f"{r.source_format or '-'} | "
             f"{VERSION_NAMES.get(r.version, 'unknown')} | {r.version} | {subs} | "
             f"{r.instruments} | {r.patterns} | {r.out_size} | {flag} |"
         )
     lines.append("")
-    lines.append("`Player`/`Ver` are the detected Hubbard player-engine variant and its "
+    lines.append("`Source` is the input file's own header version — the original "
+                 "player-file format, distinct from both the Hubbard engine variant "
+                 "and the Goattracker output format. "
+                 "`Player`/`Ver` are the detected Hubbard player-engine variant and its "
                  "track-read version number. `Subtunes` is how many actually reach the "
                  "`.sng`; where that differs from the PSID header's claim the header "
                  "value follows in brackets, and the gap is subtunes whose orderlist "
@@ -269,8 +276,8 @@ def build_report(results: list[Result], sid_dir: Path,
     # --- failures ----------------------------------------------------------
     lines.append(f"## Not converted ({len(bad)})")
     lines.append("")
-    lines.append("| File | Title | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |")
-    lines.append("|---|---|---|---|---:|:-:|:-:|:-:|---|")
+    lines.append("| File | Title | Source | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |")
+    lines.append("|---|---|---|---|---|---:|:-:|:-:|:-:|---|")
     tick = {True: "y", False: "-"}
     for r in sorted(bad, key=lambda x: (x.stage, x.path.name.lower())):
         f = r.found
@@ -278,11 +285,14 @@ def build_report(results: list[Result], sid_dir: Path,
                 tick[f.get("patterns", False)])
         player = VERSION_NAMES.get(r.version, "-") if f.get("version") else "-"
         lines.append(
-            f"| `{r.path.name}` | {_md_escape(r.name)} | {r.stage} | {player} | "
+            f"| `{r.path.name}` | {_md_escape(r.name)} | {r.source_format or '-'} | "
+            f"{r.stage} | {player} | "
             f"{r.subtunes} | {cols[0]} | {cols[1]} | {cols[2]} | {_md_escape(r.error)} |"
         )
     lines.append("")
-    lines.append("`Player` is the detected player variant, or `-` when the "
+    lines.append("`Source` is the input file's own header version; `-` means the "
+                 "header was rejected before it could be read. "
+                 "`Player` is the detected player variant, or `-` when the "
                  "player-version pass found nothing. `Sub (hdr)` is the PSID header's "
                  "subtune claim — these files produce no `.sng`, so there is no emitted "
                  "count to compare it against.")

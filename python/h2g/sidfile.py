@@ -28,6 +28,18 @@ class SidFile:
     load_addr: int
     subtunes: int
     speed: int = 0  # PSID `speed`, 32-bit BE at 0x12: one bit per subtune
+    magic: str = "PSID"     # "PSID" or "RSID", header 0x00-0x03
+    version: int = 0        # header `version`, 16-bit BE at 0x04
+
+    @property
+    def source_format(self) -> str:
+        """The input file's own format version, e.g. "PSID v2".
+
+        This is the *source* player-file version, distinct from the Hubbard
+        player-engine variant that detect() fingerprints and from the
+        Goattracker output format.
+        """
+        return f"{self.magic} v{self.version}"
 
     def to_offset(self, addr: int) -> int:
         """C64 address -> byte offset into `data` (SIDRHinstrStart-style formula)."""
@@ -74,6 +86,11 @@ def load_sid(path: str) -> SidFile:
     # field is read straight from the header -- nothing in the VB6 original
     # depended on it, so reading it changes no existing behaviour.
     speed = int.from_bytes(data[0x12:0x16], "big")
+    # Magic and header version. Read for reporting only -- the original tool
+    # ignores both (it hardcodes a v2NG layout, see HLEN), and this port keeps
+    # that behaviour, so nothing downstream branches on these.
+    magic = data[0:4].decode("latin-1")
+    version = int.from_bytes(data[0x04:0x06], "big")
 
     return SidFile(
         path=path,
@@ -84,4 +101,6 @@ def load_sid(path: str) -> SidFile:
         load_addr=load_addr,
         subtunes=subtunes,
         speed=speed,
+        magic=magic,
+        version=version,
     )
