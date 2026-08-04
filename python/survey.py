@@ -18,8 +18,8 @@ from pathlib import Path
 
 from h2g import __version__
 from h2g.detect import detect
-from h2g.goatwriter import (DEFAULT_FORMAT, FORMATS, MAX_INSTRUMENTS,
-                            build_sng)
+from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
+                            MAX_INSTRUMENTS, build_sng)
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           convert_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
@@ -130,7 +130,8 @@ def _md_escape(text: str) -> str:
 
 
 def build_report(results: list[Result], sid_dir: Path,
-                 max_rows: int = GT_DEFAULT_ROWS) -> str:
+                 max_rows: int = GT_DEFAULT_ROWS,
+                 fmt: str = DEFAULT_FORMAT) -> str:
     ok = [r for r in results if r.ok]
     bad = [r for r in results if not r.ok]
 
@@ -143,6 +144,13 @@ def build_report(results: list[Result], sid_dir: Path,
     note = " (original VB6 behaviour)" if max_rows == GT_DEFAULT_ROWS else \
            f" (raised from {GT_DEFAULT_ROWS}; Goattracker's limit is {GT_MAX_ROWS})"
     lines.append(f"- Pattern slicing: **{max_rows} rows**{note}")
+    fmt_note = (" (original VB6 behaviour; note Goattracker's legacy GTS2 importer "
+                "overruns its pattern array on the portamento commands this "
+                "converter emits — prefer `--format gts5` for files you will open "
+                "in Goattracker)"
+                if fmt == FORMAT_GTS2 else
+                " (modern 4-table format; avoids the GTS2 importer overrun)")
+    lines.append(f"- Output format: **{fmt.upper()}**{fmt_note}")
     pct = (100.0 * len(ok) / len(results)) if results else 0.0
     lines.append(f"- Converted: **{len(ok)}** ({pct:.0f}%) — Failed: **{len(bad)}**")
     lines.append("")
@@ -154,8 +162,9 @@ def build_report(results: list[Result], sid_dir: Path,
                  "subtunes), so its row here is not comparable to that fixture.")
     lines.append("")
     rows_arg = "" if max_rows == GT_DEFAULT_ROWS else f" --max-rows {max_rows}"
+    fmt_arg = "" if fmt == DEFAULT_FORMAT else f" --format {fmt}"
     lines.append(f"Regenerate with: `python survey.py \"{sid_dir}\" "
-                 f"-o SURVEY.md{rows_arg}`")
+                 f"-o SURVEY.md{rows_arg}{fmt_arg}`")
     lines.append("")
 
     # --- failure breakdown -------------------------------------------------
@@ -313,7 +322,8 @@ def main(argv=None) -> int:
             results.append(r)
 
     Path(args.output).write_text(
-        build_report(results, sid_dir, args.max_rows), encoding="utf-8")
+        build_report(results, sid_dir, args.max_rows, args.format),
+        encoding="utf-8")
     ok = sum(1 for r in results if r.ok)
     print(f"{ok}/{len(results)} converted -> {args.output}")
     return 0
