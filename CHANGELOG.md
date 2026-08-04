@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.3 — 2026-08-04
+
+- Add --max-rows pattern slicing (94 default, 128 = Goattracker's real MAX_PATTROWS); 65/95 at 128
+
 ## 0.5.2 — 2026-08-04
 
 - Bounds-guard the instrument-table walk (`detect.py`) and the pattern-table

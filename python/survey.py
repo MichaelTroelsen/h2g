@@ -19,7 +19,8 @@ from pathlib import Path
 from h2g import __version__
 from h2g.detect import detect
 from h2g.goatwriter import MAX_INSTRUMENTS, build_sng
-from h2g.patterns import ConversionAbort, convert_patterns, reindex_tracks
+from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
+                          convert_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
 from h2g.tracks import convert_tracks
 
@@ -47,7 +48,8 @@ class Result:
     error: str = ""
 
 
-def survey_one(path: Path, sng_dir: Path | None) -> Result:
+def survey_one(path: Path, sng_dir: Path | None,
+               max_rows: int = GT_DEFAULT_ROWS) -> Result:
     r = Result(path=path)
 
     try:
@@ -90,7 +92,8 @@ def survey_one(path: Path, sng_dir: Path | None) -> Result:
         return r
 
     try:
-        new_patterns, track_index = convert_patterns(sid, det, log=lambda m: None)
+        new_patterns, track_index = convert_patterns(
+            sid, det, log=lambda m: None, max_rows=max_rows)
         tracks = reindex_tracks(tracks, track_index)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
@@ -116,7 +119,8 @@ def _md_escape(text: str) -> str:
     return text.replace("|", "\\|").strip() or "-"
 
 
-def build_report(results: list[Result], sid_dir: Path) -> str:
+def build_report(results: list[Result], sid_dir: Path,
+                 max_rows: int = GT_DEFAULT_ROWS) -> str:
     ok = [r for r in results if r.ok]
     bad = [r for r in results if not r.ok]
 
@@ -126,6 +130,9 @@ def build_report(results: list[Result], sid_dir: Path) -> str:
     lines.append(f"- Converter: `h2g` **{__version__}**")
     lines.append(f"- Corpus: `{sid_dir}`")
     lines.append(f"- Files tested: **{len(results)}**")
+    note = " (original VB6 behaviour)" if max_rows == GT_DEFAULT_ROWS else \
+           f" (raised from {GT_DEFAULT_ROWS}; Goattracker's limit is {GT_MAX_ROWS})"
+    lines.append(f"- Pattern slicing: **{max_rows} rows**{note}")
     pct = (100.0 * len(ok) / len(results)) if results else 0.0
     lines.append(f"- Converted: **{len(ok)}** ({pct:.0f}%) — Failed: **{len(bad)}**")
     lines.append("")
@@ -136,7 +143,9 @@ def build_report(results: list[Result], sid_dir: Path) -> str:
                  "*different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 "
                  "subtunes), so its row here is not comparable to that fixture.")
     lines.append("")
-    lines.append(f"Regenerate with: `python survey.py \"{sid_dir}\" -o SURVEY.md`")
+    rows_arg = "" if max_rows == GT_DEFAULT_ROWS else f" --max-rows {max_rows}"
+    lines.append(f"Regenerate with: `python survey.py \"{sid_dir}\" "
+                 f"-o SURVEY.md{rows_arg}`")
     lines.append("")
 
     # --- failure breakdown -------------------------------------------------
@@ -246,6 +255,9 @@ def main(argv=None) -> int:
     parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
     parser.add_argument("-o", "--output", default="SURVEY.md", help="report path")
     parser.add_argument("--sng-dir", help="also write converted .sng files here")
+    parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
+                        metavar="N",
+                        help="pattern-slicing length, 1..{GT_MAX_ROWS} (default: %(default)s)")
     args = parser.parse_args(argv)
 
     sid_dir = Path(args.sid_dir)
@@ -262,12 +274,13 @@ def main(argv=None) -> int:
     results = []
     for path in paths:
         try:
-            results.append(survey_one(path, sng_dir))
+            results.append(survey_one(path, sng_dir, args.max_rows))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))
             results.append(r)
 
-    Path(args.output).write_text(build_report(results, sid_dir), encoding="utf-8")
+    Path(args.output).write_text(
+        build_report(results, sid_dir, args.max_rows), encoding="utf-8")
     ok = sum(1 for r in results if r.ok)
     print(f"{ok}/{len(results)} converted -> {args.output}")
     return 0

@@ -39,6 +39,14 @@ test dependency).
 - Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`), or
   `python -m h2g "../Commando.sid" -o out.sng`. From the repo root, `.\convert.ps1
   <input.sid> [-OutputFile out.sng] [-Quiet]` wraps the same thing.
+- **Pattern slicing (`--max-rows`).** Goattracker patterns are capped at
+  `MAX_PATTROWS`, which was raised to 128 in GoatTracker v2.32 (verified in
+  `src/gcommon.h` and `readme.txt`). The 2005 VB6 tool predates that and slices at
+  94, which is still the default here because it is what the byte-exact
+  `Commando.sng` fixture encodes — **do not change the default**, it is the only
+  fidelity anchor. Pass `--max-rows 128` for fewer, longer patterns and shorter
+  orderlists; on the Hubbard corpus that converts 65/95 instead of 63/95
+  (`Delta`, `Dragons_Lair_Part_II`) with nothing lost.
 - **Versioning — bump on every commit.** The single source of truth is `__version__`
   in `python/h2g/__init__.py` (exposed as `h2g --version`); there is no `.version`
   file, deliberately, so nothing can drift out of sync. Before each commit run

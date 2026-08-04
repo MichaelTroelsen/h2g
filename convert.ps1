@@ -24,7 +24,13 @@ param(
     [Parameter(Position = 1)]
     [string]$OutputFile,
 
-    [switch]$Quiet
+    [switch]$Quiet,
+
+    # Pattern-slicing length, 1..128. Default 94 matches the original VB6 tool;
+    # 128 is Goattracker's real MAX_PATTROWS since v2.32 and fits some tunes
+    # that otherwise exceed its capacity.
+    [ValidateRange(1, 128)]
+    [int]$MaxRows
 )
 
 $ErrorActionPreference = "Stop"
@@ -51,6 +57,7 @@ if ($OutputFile) {
 $pyArgs = @($resolvedSid)
 if ($resolvedOutput) { $pyArgs += @("-o", $resolvedOutput) }
 if ($Quiet) { $pyArgs += "-q" }
+if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $MaxRows) }
 
 Push-Location $pythonDir
 try {

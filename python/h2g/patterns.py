@@ -18,7 +18,14 @@ from typing import List, Optional
 from .detect import Detection
 from .sidfile import HLEN, SidFile
 
-GT_MAX_PATTERN_LEN = 94 * 4  # 376: Goattracker's max pattern length in bytes
+# Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
+# Goattracker of its day; v2.32 raised MAX_PATTROWS to 128 (confirmed in
+# goattracker2 src/gcommon.h and readme.txt). 94 stays the default because it is
+# what the byte-exact Commando fixture encodes -- see convert(max_rows=...).
+GT_DEFAULT_ROWS = 94
+GT_MAX_ROWS = 128  # == MAX_PATTROWS in gcommon.h
+
+GT_MAX_PATTERN_LEN = GT_DEFAULT_ROWS * 4  # 376 bytes
 GT_NO_NOTE = 0xBD
 MAX_PATTERNS = 0xD0
 MAX_TRACK_LEN = 0xFF
@@ -111,24 +118,36 @@ def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
     return events
 
 
-def _slice_pattern(events: List[int]) -> List[List[int]]:
-    """Chunk a flat event stream into <=GT_MAX_PATTERN_LEN pieces.
+def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN) -> List[List[int]]:
+    """Chunk a flat event stream into <=max_len pieces.
 
     A trailing (possibly empty) slice is always emitted, matching the VB
-    original: when len(events) is an exact multiple of GT_MAX_PATTERN_LEN,
-    an extra zero-length pattern is produced and referenced by the track.
+    original: when len(events) is an exact multiple of max_len, an extra
+    zero-length pattern is produced and referenced by the track.
+
+    Non-final slices carry no ENDPATT row -- they are exactly max_len bytes of
+    data. Goattracker recovers the length by scanning for ENDPATT
+    (countpatternlengths in gsong.c), relying on clearpattern() having
+    pre-filled rows defaultpatternlength..128 with it. That holds while
+    max_rows exceeds the loader's default pattern length (64 out of the box).
+    At max_rows == 128 the sentinel always lands on row 128, which
+    clearpattern() fills unconditionally.
     """
     slices = []
     pos = 0
     n = len(events)
-    while n - pos >= GT_MAX_PATTERN_LEN:
-        slices.append(events[pos:pos + GT_MAX_PATTERN_LEN])
-        pos += GT_MAX_PATTERN_LEN
+    while n - pos >= max_len:
+        slices.append(events[pos:pos + max_len])
+        pos += max_len
     slices.append(events[pos:n])
     return slices
 
 
-def convert_patterns(sid: SidFile, det: Detection, log):
+def convert_patterns(sid: SidFile, det: Detection, log,
+                     max_rows: int = GT_DEFAULT_ROWS):
+    if not 1 <= max_rows <= GT_MAX_ROWS:
+        raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
+    max_len = max_rows * 4
     data = sid.data
 
     raw_patterns: List[List[int]] = []
@@ -155,7 +174,7 @@ def convert_patterns(sid: SidFile, det: Detection, log):
 
     for i, events in enumerate(raw_patterns):
         start = len(new_patterns)
-        slices = _slice_pattern(events)
+        slices = _slice_pattern(events, max_len)
         for k, s in enumerate(slices):
             new_patterns.append(s)
             if k < len(slices) - 1:

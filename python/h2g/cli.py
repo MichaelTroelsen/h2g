@@ -6,7 +6,7 @@ import sys
 
 from . import __version__
 from .convert import UnsupportedSidError, convert
-from .patterns import ConversionAbort
+from .patterns import GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort
 from .sidfile import SidFormatError
 
 
@@ -24,12 +24,20 @@ def main(argv=None) -> int:
     parser.add_argument("sid_file", help="input .sid file")
     parser.add_argument("-o", "--output", help="output .sng file (default: <input>.sng)")
     parser.add_argument("-q", "--quiet", action="store_true", help="suppress progress log")
+    parser.add_argument(
+        "--max-rows", type=int, default=GT_DEFAULT_ROWS, metavar="N",
+        help=f"pattern-slicing length, 1..{GT_MAX_ROWS} (default: {GT_DEFAULT_ROWS}, "
+             f"matching the original tool; {GT_MAX_ROWS} is Goattracker's real limit "
+             "since v2.32 and fits some tunes that otherwise exceed its capacity)")
     args = parser.parse_args(argv)
+
+    if not 1 <= args.max_rows <= GT_MAX_ROWS:
+        parser.error(f"--max-rows must be between 1 and {GT_MAX_ROWS}")
 
     log = (lambda msg: None) if args.quiet else (lambda msg: print(msg, file=sys.stderr))
 
     try:
-        sng = convert(args.sid_file, log=log)
+        sng = convert(args.sid_file, log=log, max_rows=args.max_rows)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
