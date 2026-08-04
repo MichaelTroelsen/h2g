@@ -70,6 +70,14 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         j = det.instr_start + 2
         instr_used = 0
         while True:
+            # Guard the read itself. The loop below only bounds-checks `j` after
+            # advancing, so an out-of-range instr_start crashed on the very first
+            # iteration; a negative one would have silently indexed from the end
+            # of the file. Both are start-address problems, so this only fires on
+            # the first pass -- the post-advance check still governs the count.
+            if j < 0 or j >= len(data):
+                log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
+                break
             if data[j] not in WAVEFORMS:
                 break
             j += 8

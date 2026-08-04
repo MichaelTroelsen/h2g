@@ -136,7 +136,11 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]]) -> bytes:
     out = bytearray()
     out += _build_header(sid)
-    out.append(sid.subtunes & 0xFF)
+    # Derived from the tracks actually emitted, not sid.subtunes: convert_tracks
+    # trims subtunes the track table cannot back, and the count byte must agree
+    # with the number of tracks that follow or the file is unreadable. Identical
+    # to sid.subtunes whenever nothing was trimmed.
+    out.append((len(tracks) // 3) & 0xFF)
 
     for track in tracks:
         out.append((len(track) - 1) & 0xFF)
