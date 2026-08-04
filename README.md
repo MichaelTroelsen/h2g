@@ -1,0 +1,112 @@
+# H2G — Hubbard 2 Goattracker
+
+Converts Commodore 64 `.sid` files containing music by **Rob Hubbard** into
+Bitops **Goattracker** (`.sng`, v2.34+) format.
+
+Originally a VB6 desktop tool by Stilianos "Stello" Doussis (Aug 2005), released
+as free/open source. This repository keeps that original as reference and adds a
+from-scratch Python CLI port, which is where development happens.
+
+It is a **static signature ripper**: it never emulates the 6502. It scans the raw
+SID bytes for known player-engine opcode fingerprints, reads the data-table
+addresses straight out of the matched instructions' operands, and re-encodes the
+instrument/pattern/orderlist data into Goattracker's binary song format. That
+means it only works on tunes whose player matches one of 16 hard-coded game
+fingerprints — see [`H2G-CONVERSION-METHOD.md`](H2G-CONVERSION-METHOD.md) for the
+full method write-up.
+
+## Usage
+
+From `python/`:
+
+```sh
+python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N]
+python -m h2g --version
+```
+
+Or from the repository root (PowerShell wrapper — resolves paths, then delegates):
+
+```powershell
+.\convert.ps1 <input.sid> [-OutputFile out.sng] [-Quiet] [-MaxRows N]
+```
+
+Plain-stdlib Python 3; no third-party runtime dependencies (`pytest` is dev-only).
+
+### `--max-rows` (pattern slicing)
+
+Goattracker caps patterns at `MAX_PATTROWS`, raised to **128** in GoatTracker
+v2.32 (verified in its `src/gcommon.h` and `readme.txt`). The 2005 tool predates
+that change and slices at **94**.
+
+94 remains the default because it is what the byte-exact `Commando.sng` fixture
+encodes — that fixture is the project's only fidelity anchor, so **the default
+must not change**. Pass `--max-rows 128` for fewer, longer patterns and shorter
+orderlists; on the Hubbard corpus that converts 65/95 instead of 63/95
+(gaining `Delta`, `Dragons_Lair_Part_II`) with no file or subtune lost.
+
+## Versioning
+
+**Bump the version on every commit**, not just on releases.
+
+The single source of truth is `__version__` in `python/h2g/__init__.py`, exposed
+as `h2g --version`. There is deliberately **no** `.version` file, so nothing can
+drift out of sync.
+
+Before each commit:
+
+```sh
+python python/bump_version.py "short description"     # bumps the patch
+python python/bump_version.py --minor "description"   # feature release
+```
+
+That rewrites `__version__` and prepends a [`CHANGELOG.md`](CHANGELOG.md) entry.
+Never hand-edit the version in more than one place. If a document embeds the
+version string (`SURVEY.md` records the converter version in its header),
+regenerate it after bumping so the committed docs match the committed version.
+
+## Testing
+
+```sh
+cd python && python -m pytest tests/ -q
+```
+
+The suite runs the real CLI as a subprocess. `test_commando.py` asserts
+`Commando.sid` converts byte-for-byte identically to `Commando.sng` (produced by
+the original `h2g.v1.2.exe`). `test_max_rows.py` parses the emitted `.sng` the
+way Goattracker's own loader walks it, checking pattern rows, pattern count and
+orderlist lengths against the format's limits.
+
+Treat any output-changing edit as a regression unless it is an intentional
+feature — in which case extend the fixtures rather than deleting the assertion.
+
+## Corpus survey
+
+`python/survey.py` runs the converter over a directory of `.sid` files and writes
+a Markdown report recording *why* each file fails, not just that it did:
+
+```sh
+cd python
+python survey.py <sid_dir> -o ../SURVEY.md [--max-rows N] [--sng-dir DIR]
+```
+
+[`SURVEY.md`](SURVEY.md) holds the current results against a 95-file Rob Hubbard
+corpus. "Converted" there means the converter produced a `.sng` without erroring
+— it does **not** mean the output is musically correct.
+
+## Repository layout
+
+| Path | |
+|---|---|
+| `python/h2g/` | the Python port — active development target |
+| `python/tests/` | regression tests |
+| `python/survey.py`, `python/bump_version.py` | tooling |
+| `VB6 Sourcecode/h2g.frm` | the original VB6 tool; still the ground truth for behaviour |
+| `arkiv/` | archived VB6 build and sample `.sid` files |
+| `Commando.sid` / `Commando.sng` | byte-exact regression fixture pair |
+| `H2G-CONVERSION-METHOD.md` | detailed explanation of how the conversion works |
+| `CHANGELOG.md`, `SURVEY.md` | version history, corpus results |
+
+## Licence
+
+The original tool was released as free/open source — "can be modified and
+republished ... used freely by others without notice".

@@ -15,6 +15,10 @@ byte-patterns ("fingerprints") specific to each Rob Hubbard player-engine varian
 matches to locate the tune's instrument table, pattern table, and track table in memory,
 then re-encodes that data into Goattracker's native binary song format.
 
+User-facing docs live in `README.md` (usage, versioning, testing, survey) and
+`H2G-CONVERSION-METHOD.md` (how the ripping method works). This file covers only
+what an agent working in the repo needs that those don't say.
+
 Repository layout:
 - `python/h2g/` — **active development target**: a from-scratch Python CLI port of the
   VB6 tool (see "Python port" below). This is what new features should be built on.
@@ -39,24 +43,15 @@ test dependency).
 - Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`), or
   `python -m h2g "../Commando.sid" -o out.sng`. From the repo root, `.\convert.ps1
   <input.sid> [-OutputFile out.sng] [-Quiet]` wraps the same thing.
-- **Pattern slicing (`--max-rows`).** Goattracker patterns are capped at
-  `MAX_PATTROWS`, which was raised to 128 in GoatTracker v2.32 (verified in
-  `src/gcommon.h` and `readme.txt`). The 2005 VB6 tool predates that and slices at
-  94, which is still the default here because it is what the byte-exact
-  `Commando.sng` fixture encodes — **do not change the default**, it is the only
-  fidelity anchor. Pass `--max-rows 128` for fewer, longer patterns and shorter
-  orderlists; on the Hubbard corpus that converts 65/95 instead of 63/95
-  (`Delta`, `Dragons_Lair_Part_II`) with nothing lost.
-- **Versioning — bump on every commit.** The single source of truth is `__version__`
-  in `python/h2g/__init__.py` (exposed as `h2g --version`); there is no `.version`
-  file, deliberately, so nothing can drift out of sync. Before each commit run
-  `python python/bump_version.py "short description"` (add `--minor` for a feature
-  release), which bumps the patch and prepends a `CHANGELOG.md` entry. Do not
-  hand-edit the version in two places.
-- Test: `python -m pytest tests/ -q` (from `python/`). The one test currently in place
-  converts `Commando.sid` and asserts the output is byte-identical to `Commando.sng`;
-  treat any output-changing edit as a regression unless it's an intentional new feature
-  (in which case update/extend the reference fixtures, don't just delete the assertion).
+- **Versioning — bump on every commit** (not just releases): run
+  `python python/bump_version.py "short description"` before staging, and
+  regenerate any doc embedding the version. See README.md § Versioning.
+- **`--max-rows` defaults to 94 — do not change the default.** It is what the
+  byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
+  fidelity anchor. See README.md § `--max-rows`.
+- Test: `python -m pytest tests/ -q` (from `python/`). Treat any output-changing edit
+  as a regression unless it's an intentional new feature (in which case update/extend
+  the reference fixtures, don't just delete the assertion).
 - Module layout mirrors the VB6 pipeline 1:1, each stage in its own file:
   - `sidfile.py` — PSID/RSID header parsing (`load_sid`).
   - `search.py` — wildcard opcode-pattern search (`search_file`, port of `SSearchfile`).
