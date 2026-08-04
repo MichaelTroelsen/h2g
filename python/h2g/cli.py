@@ -4,6 +4,7 @@ import argparse
 import os
 import sys
 
+from . import __version__
 from .convert import UnsupportedSidError, convert
 from .patterns import ConversionAbort
 from .sidfile import SidFormatError
@@ -19,6 +20,7 @@ def main(argv=None) -> int:
         prog="h2g",
         description="Convert a Rob Hubbard .SID file to Goattracker (.sng) format.",
     )
+    parser.add_argument("--version", action="version", version=f"h2g {__version__}")
     parser.add_argument("sid_file", help="input .sid file")
     parser.add_argument("-o", "--output", help="output .sng file (default: <input>.sng)")
     parser.add_argument("-q", "--quiet", action="store_true", help="suppress progress log")

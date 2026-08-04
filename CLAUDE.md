@@ -37,7 +37,14 @@ Plain-stdlib Python 3 CLI, no third-party runtime dependencies (`pytest` is a de
 test dependency).
 
 - Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`), or
-  `python -m h2g "../Commando.sid" -o out.sng`.
+  `python -m h2g "../Commando.sid" -o out.sng`. From the repo root, `.\convert.ps1
+  <input.sid> [-OutputFile out.sng] [-Quiet]` wraps the same thing.
+- **Versioning — bump on every commit.** The single source of truth is `__version__`
+  in `python/h2g/__init__.py` (exposed as `h2g --version`); there is no `.version`
+  file, deliberately, so nothing can drift out of sync. Before each commit run
+  `python python/bump_version.py "short description"` (add `--minor` for a feature
+  release), which bumps the patch and prepends a `CHANGELOG.md` entry. Do not
+  hand-edit the version in two places.
 - Test: `python -m pytest tests/ -q` (from `python/`). The one test currently in place
   converts `Commando.sid` and asserts the output is byte-identical to `Commando.sng`;
   treat any output-changing edit as a regression unless it's an intentional new feature
