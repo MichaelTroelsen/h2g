@@ -48,6 +48,36 @@ def _addr16(data: bytes, lo_pos: int, hi_pos: int) -> int:
     return data[hi_pos] * 256 + data[lo_pos]
 
 
+def _base_ok(label: str, offset: int, data_len: int, log: Logger) -> bool:
+    """True if a table base offset lands inside the data section.
+
+    Signature matching gives no guarantee that the address it extracts is
+    meaningful: a fingerprint can match a byte sequence that is not really the
+    player's table-read instruction, and the operand then points anywhere. The
+    per-read guards downstream stop that from crashing, but on their own they
+    turn a wholly bogus detection into a structurally valid, musically empty
+    .sng -- a silent failure that reads as success. Rejecting the base here
+    makes it a loud one.
+    """
+    if 0 <= offset < data_len:
+        return True
+    log(f"*** {label} ADDRESS OUT OF RANGE (offset {offset}, file {data_len} bytes) ***")
+    return False
+
+
+def _span_warn(label: str, offset: int, count: int, data_len: int, log: Logger) -> None:
+    """Warn when a table's *extent* runs past EOF, without rejecting it.
+
+    Unlike a bad base this is recoverable -- the entry count is inferred, not
+    read, so an over-long table usually means the count is wrong rather than
+    the address. Callers bounds-check each entry, so the usable prefix still
+    converts; this only surfaces that some entries were unreachable.
+    """
+    if count > 0 and offset >= 0 and offset + count > data_len:
+        log(f"*** {label} TABLE EXTENDS PAST EOF "
+            f"({offset}+{count} > {data_len}), ENTRIES WILL BE SKIPPED ***")
+
+
 def detect(sid: SidFile, log: Logger) -> Detection:
     data = sid.data
     det = Detection()
@@ -67,6 +97,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         addr = _addr16(data, i + 1, i + 2)
         det.instr_start = sid.to_offset(addr)
         log(f"Found Instruments at....: ${addr:X}")
+        if not _base_ok("INSTRUMENTS", det.instr_start, len(data), log):
+            # instr_used stays 0, not -1: goatwriter always emits the "Clear
+            # Voice" record, so -1 would write a count byte of 0 that disagrees
+            # with the record that follows it.
+            det.instr_start, det.instr_used = -1, 0
         j = det.instr_start + 2
         instr_used = 0
         while True:
@@ -87,6 +122,8 @@ def detect(sid: SidFile, log: Logger) -> Detection:
             instr_used += 1
         det.instr_used = instr_used
         log(f"Instruments used........: ${instr_used:X}")
+        if det.instr_start >= 0:
+            _span_warn("INSTRUMENT", det.instr_start, instr_used * 8, len(data), log)
 
     # --- Tracks / subsongs ----------------------------------------------
     det.track_voices = 3
@@ -113,6 +150,9 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         addr = _addr16(data, i + so + 5, i + so + 6)
         log(f"Found Tracks HI at......: ${addr:X}")
         det.track_hi = sid.to_offset(addr)
+        if not (_base_ok("TRACKS LO", det.track_lo, len(data), log)
+                and _base_ok("TRACKS HI", det.track_hi, len(data), log)):
+            det.track_lo = det.track_hi = -1
 
     # --- Track selector ---------------------------------------------------
     det.track_selector = False
@@ -130,8 +170,14 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         det.track_selector = True
         addr = _addr16(data, i + so, i + so + 1)
         log(f"Found Music selector....: ${addr:X}")
-        det.track_lo = sid.to_offset(addr)
-        det.track_hi = det.track_lo + det.track_voices
+        selector = sid.to_offset(addr)
+        # The selector overwrites whatever the subsong pass found, so validate
+        # before clobbering it -- a bogus selector must not discard a good pair.
+        if _base_ok("MUSIC SELECTOR", selector, len(data), log):
+            det.track_lo = selector
+            det.track_hi = selector + det.track_voices
+        else:
+            det.track_selector = False
 
     # --- Pattern table ---------------------------------------------------
     so = 11
@@ -164,6 +210,20 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         det.pattern_hi = sid.to_offset(addr)
         det.pattern_used = (det.pattern_hi - det.pattern_lo) - 1
         log(f"Pattern used............: ${det.pattern_used:X}")
+        if not (_base_ok("PATTERN LO", det.pattern_lo, len(data), log)
+                and _base_ok("PATTERN HI", det.pattern_hi, len(data), log)):
+            det.pattern_lo = det.pattern_hi = -1
+            det.pattern_used = -1
+        elif det.pattern_used < 0:
+            # The count is the gap between the LO and HI tables, so HI landing
+            # below LO means the pair is not a real table pair at all.
+            log(f"*** PATTERN COUNT NEGATIVE ({det.pattern_used}), "
+                "HI TABLE PRECEDES LO -- NOT A VALID TABLE PAIR ***")
+            det.pattern_lo = det.pattern_hi = -1
+            det.pattern_used = -1
+        else:
+            _span_warn("PATTERN LO", det.pattern_lo, det.pattern_used, len(data), log)
+            _span_warn("PATTERN HI", det.pattern_hi, det.pattern_used, len(data), log)
 
     # --- Player (track-read) version ---------------------------------------
     det.read_track_version = 0xFF
