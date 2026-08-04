@@ -217,6 +217,20 @@ The table "ends" where the bytes stop looking like waveforms.
 > over-read by one instrument. A tune using a legitimate waveform value not in
 > this 20-entry set (e.g. `$31`, tri+pulse+gate) truncates early.
 
+**A large count is not evidence of over-reading** — a trap worth naming,
+because it looks like one. Several corpus tunes report 56–59 instruments where
+the music plays a dozen, which reads as a runaway terminator. It isn't: those
+records are real. Bangkok Knights and Thundercats share **29 byte-identical
+8-byte records**, and entries such as `00 81 81 05 63 fd 00 00` recur unchanged
+across Bangkok Knights, Thundercats and Knucklebusters — a shared Hubbard
+instrument bank appended to the player, of which any one tune uses a subset.
+Only 2 of 58 records are all-zero.
+
+The real constraint is downstream: each instrument costs 5 wavetable entries
+against a 255-entry table with a one-byte length, so **at most 51 instruments
+are representable at all** regardless of how many the table holds. That, not
+`MAX_INSTR` (64), is why the writer clamps.
+
 ### 4.2 Pattern count — table-adjacency arithmetic
 
 ```python
@@ -368,20 +382,34 @@ A lossy but musically-invisible substitution.
 Goattracker rows:
 
 ```python
-if wait >= 1:
-    events += [g_note, g_instrument, cmd1, cmd2]     # the real row
-    if cmd1 == 3: cmd1 = 0                           # portamento fires once...
-    for _ in range(wait):
-        events += [GT_NO_NOTE, 0x00, cmd1, cmd2]     # ...bends repeat
+events += [g_note, g_instrument, cmd1, cmd2]     # the real row
+if cmd1 == 3: cmd1 = 0                           # portamento fires once...
+for _ in range(wait):
+    events += [GT_NO_NOTE, 0x00, cmd1, cmd2]     # ...bends repeat
 ```
 
 Two things worth noticing:
 
-- **`wait == 0` emits nothing at all.** An event with a zero wait field
-  contributes zero rows — its note is silently dropped. Whether that's correct
-  or a latent bug depends on whether Hubbard's player treats wait as
-  "additional frames" (0 = illegal) or "total frames" (0 = skip). Not resolved
-  here.
+- **A `wait` of 0 is a legitimate one-frame event**, not a no-op. Both the VB6
+  original (`h2g.frm:984`) and the first version of this port guarded the whole
+  block with `If nWait >= 1`, which silently dropped the note of every zero-wait
+  event — 2562 of them across 43 corpus files, and Chimera's pattern `$6` (96
+  consecutive one-frame events) converted to nothing at all.
+
+  Settled by disassembling Commando's player rather than by reasoning about the
+  format. The wait field is loaded into a per-voice counter (`$54F2,X`) and
+  sequenced by:
+
+  ```
+  $5078  DEC $54F2,X    ; decrement the wait counter
+  $507B  BMI $5086      ; only when it goes NEGATIVE, fetch the next event
+  $507D  JMP $5174      ; otherwise keep sustaining
+  ```
+
+  `DEC`+`BMI` requires the counter to pass *below* zero, so a stored wait `W`
+  occupies **W+1 frames** and `wait == 0` means one frame. The inner
+  `If nWait >= 1` at `h2g.frm:996`, which gates only the *hold* rows, is the
+  guard that actually belongs; the outer one was the mistake.
 - **Command `$3` is cleared after the first row, but `$1`/`$2` are not.** So a
   tone portamento fires once, while a pitch bend repeats on every held row —
   giving a continuous slide. That asymmetry looks deliberate.
@@ -513,13 +541,19 @@ choice, not a translation — and it is where converted output stops being
 
 ## 8. Impedance mismatch: slicing and re-indexing
 
-Goattracker imposes limits Hubbard's format does not:
+Goattracker imposes limits Hubbard's format does not (values from
+`goattracker2 src/gcommon.h`):
 
-| Limit | Value |
-|---|---|
-| Max rows per pattern | 94 (`= 376 bytes`) |
-| Max patterns | `0xD0` = 208 |
-| Max orderlist length | `0xFF` = 255 bytes |
+| Limit | Goattracker | What H2G uses |
+|---|---|---|
+| Rows per pattern (`MAX_PATTROWS`) | **128** | 94 by default — see below |
+| Patterns (`MAX_PATT`) | 208 (`0xD0`) | 208 |
+| Orderlist length (`MAX_SONGLEN`) | **254** | aborts at 255, so 254 max |
+
+**94 is not a Goattracker limit** — it is what the 2005 tool chose, and
+GoatTracker v2.32 raised `MAX_PATTROWS` to 128. The default stays at 94 only
+because the byte-exact fixture encodes it; `--max-rows 128` produces fewer,
+longer patterns and therefore shorter orderlists.
 
 Hubbard patterns are unbounded, so long ones must be **split** — and every
 orderlist reference to a split pattern must then be **expanded into a run of
@@ -546,6 +580,9 @@ sequence, and the reference-rewriting pass is a separate pass.**
 `reindex_tracks` must not re-index bytes that aren't pattern numbers. Since
 patterns can't exceed `$D0`, anything `>= 0xD0` is a command:
 
+The original — both the VB6 (`h2g.frm`) and the first version of this port —
+used a **sticky** flag:
+
 ```python
 for b in track:
     if b >= 0xD0 or end_marker:
@@ -555,29 +592,44 @@ for b in track:
         new_track.extend(track_index[b] if b < len(track_index) else [])
 ```
 
+### Why that latch was wrong — and what replaced it
+
 The latch is correct for its intended case: after `$FF` (restart) the *next*
 byte is a restart position, not a pattern number, and must pass through
-untouched.
+untouched. But it conflates two different questions.
 
-### ...but the latch is a real bug for transposing players
+Goattracker's orderlist has three byte classes, and only one of them takes an
+operand: `$00-$CF` pattern number, `$D0-$FE` command (repeat / transpose, **no**
+operand), `$FF` restart (operand follows). Mega Apocalypse-family transpose
+commands (`read_track_version` 5–7) emit `$E0..$FF` — all `>= $D0`. So the first
+transpose in a track latched the flag permanently and every pattern number after
+it passed through *un-re-indexed*, pointing at the wrong patterns.
 
-I confirmed this is present in the VB original too
-(`If (ActTrack >= &HD0) Or PEndMarker = True Then PEndMarker = True`), so the
-Python port is faithful — but it is still a bug:
+It reached further than the transposing players alone: **17 corpus files** carry
+mid-track command bytes that were being mis-indexed, including several at
+`read_track_version` 0. `Commando.sid` is not among them, which is why the
+byte-exact regression test never caught it.
 
-Mega Apocalypse-family transpose commands (`read_track_version` 5–7) emit bytes
-in `$E0..$FF` — all `>= $D0`. So **the first transpose command in a track
-latches `end_marker` permanently**, and every pattern number after it passes
-through *un-re-indexed*. In a tune with both transposes and split patterns, the
-orderlist after the first transpose points at the wrong patterns.
+The fix replaces the sticky flag with a single-byte lookahead — only `$FF`
+consumes an operand:
 
-`Commando.sid` is `read_track_version 0`, which has no transposes, so the
-byte-exact regression test does not exercise this path at all.
+```python
+for b in track:
+    if expect_operand:                  # restart position -- copy verbatim
+        new_track.append(b)
+        expect_operand = False
+    elif b == GT_ORDER_RESTART:         # $FF -- the only byte taking an operand
+        new_track.append(b)
+        expect_operand = True
+    elif b >= MAX_PATTERNS:             # $D0-$FE command; does NOT stop re-indexing
+        new_track.append(b)
+    else:
+        new_track.extend(track_index[b] if b < len(track_index) else [])
+```
 
-> **If you port this method, fix it:** the latch should be set only by the
-> restart marker `$FF`, and cleared (or better, scoped) rather than sticky.
-> A `$D0`-based "is this a command" test and a "does this command take an
-> operand" test are two different questions and should not share one flag.
+> **The transferable lesson:** "is this byte a command?" and "does this command
+> take an operand?" are two different questions. One boolean answering both is
+> the bug.
 
 ---
 
@@ -603,6 +655,38 @@ Header is exactly `0x64` = 100 bytes. Instrument 1 is always the hardcoded
 empty "Clear Voice" slot; real instruments start at 2. Instrument count is
 clamped to 50.
 
+### Write the modern format, not the one the tool was built for
+
+`GTS2` is the 3-table format the 2005 tool emitted. GoatTracker still loads it —
+but through a **legacy import path that overruns its own pattern array**
+(`src/gsong.c`, GoatTracker 2.77):
+
+```c
+length = fread8(handle) * 4;        // length is now BYTES (rows * 4)
+fread(pattern[c], length, 1, handle);
+
+for (d = 0; d < length; d++)        // but d indexes ROWS
+    switch (pattern[c][d*4+2]) { case CMD_PORTAUP: ... }
+```
+
+For a 94-row pattern `length` is 376, so the loop runs to `d = 375` and touches
+`pattern[c][1503]` — in a row declared `MAX_PATTROWS*4+4` = **516 bytes**. It
+*writes* wherever it finds command `$1`/`$2`/`$3`/`$4`/`$0E`, which are exactly
+the portamento commands this converter emits. The modern **GTS3/4/5** loader
+has no such conversion loop.
+
+The observable consequence: a GTS2 file loads fine, then **crashes GoatTracker
+when you press play**. The same tune written as GTS5 plays.
+
+The format delta is tiny — different magic, plus an empty fourth (speed) table.
+Instrument bytes 5 and 6 swap meaning between the two, but this converter emits
+`0x00` for both, so nothing needs converting. One extra byte in the file.
+
+> **Lesson worth more than the bug:** the target format had *two* loaders, and
+> the one matching the era of the source tool was the broken one. Writing what
+> the old tool wrote is not automatically the safe choice. Check whether your
+> target still exercises that path.
+
 Note the two-parallel-arrays layout used by both the wave and pulse tables
 (`length, left[], right[]`) — that's Goattracker's native table shape, and it's
 why `_write_wavetable` writes all left-column bytes for every instrument before
@@ -614,25 +698,32 @@ writing any right-column bytes.
 
 Worth reading as a checklist of "what a static ripper gets wrong":
 
-1. **Silent wrong-address corruption.** Non-v2NG header or non-zero
-   `loadAddress` → every table address off by a constant → structured garbage,
-   no error. *(No validation exists.)*
-2. **The transpose latch** (§8) → wrong orderlist for versions 5–7 with split
-   patterns. No error.
-3. **Instrument-count over/under-read** (§4.1) → phantom or missing
-   instruments. No error.
-4. **Pattern-count arithmetic** (§4.2) → wrong if the LO/HI arrays aren't
+Still open:
+
+1. **Pattern-count arithmetic** (§4.2) → wrong if the LO/HI arrays aren't
    contiguous. No error.
-5. **`wait == 0` events dropped** (§5) → silently missing notes.
-6. **Undetected player version** (§6) → crash (VB) or clean exception (Python).
+2. **Instrument-count under-read** (§4.1) → a tune using a waveform value
+   outside the 20-entry set truncates its instrument table early. No error.
+   (Over-read is *not* the common case — see the note in §4.1.)
+3. **Undetected player version** (§6) → crash (VB) or clean exception (Python).
    *This one is loud, which is why it's least dangerous.*
-7. **No signature match at all** → clean `"NO HUBBARD PLAYER DETECTED"`. Also
+4. **No signature match at all** → clean `"NO HUBBARD PLAYER DETECTED"`. Also
    loud, also fine.
+
+Closed since this document was first written — each was exactly the predicted
+shape, "wrong output, no diagnostic":
+
+| Was | Now |
+|---|---|
+| Silent wrong-address corruption; no validation existed | `detect.py` range-checks every extracted table address and logs `*** … ADDRESS OUT OF RANGE ***` (`test_address_validation.py`) |
+| The transpose latch (§8) | Replaced by a single-byte operand lookahead; 17 corpus files were affected |
+| `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
 
 The pattern is stark: **the failure modes that produce no diagnostic are the
 dangerous ones, and they all stem from unvalidated inference.** Every one of
-items 1–5 could be caught by a cheap assertion (address-in-range, count
-plausibility, contiguity check) that the original tool simply doesn't make.
+them was caught by a cheap assertion the original tool simply doesn't make —
+and none was caught by the byte-exact fixture, because a fixture only tests the
+one file it encodes.
 
 Also note the quirk preserved deliberately in `_slice_pattern`: a pattern whose
 event stream is an *exact* multiple of 376 bytes produces one extra zero-length
@@ -662,10 +753,25 @@ avoiding.
 4. **Surface unknown bytes in the output.** The `NN:xx-yy-zz` instrument name is
    the best idea in this codebase. Undecoded bytes rendered into a
    human-visible field turn every conversion into an experiment.
-5. **Keep a byte-exact regression fixture.** The `Commando.sid` →
-   `Commando.sng` pair caught a genuine wavetable bug during the Python port
-   that reading the source twice had not. Structural output formats deserve
-   byte-level tests, not "it plays OK" tests.
+5. **Keep a byte-exact regression fixture — and know what it cannot tell you.**
+   The `Commando.sid` → `Commando.sng` pair caught a genuine wavetable bug
+   during the Python port that reading the source twice had not.
+
+   But it is one file, and it only proves you still match the *old tool* — not
+   that the output is correct. Every bug in the "closed" table of §10 passed the
+   fixture. So did a file that **crashed GoatTracker the moment you pressed
+   play** (§9), and so did a tune that played at the wrong speed. Three
+   independent checks were needed, in increasing order of what they can catch:
+
+   | Check | Catches |
+   |---|---|
+   | Byte-exact fixture | regressions against the reference implementation |
+   | Load through the target's own loader | structurally invalid output |
+   | **Actually play it** | everything else — crashes on play, wrong tempo |
+
+   The third is the one this project deferred longest and learned most from.
+   For a converter, "it plays OK" is not a weaker test than a byte diff; it is
+   a *different* test, and it is the only one that validates the whole chain.
 
 **Avoid:**
 
@@ -713,5 +819,7 @@ Key ranges: `loadfile()` 193–481, `GoatSave()` 482–772,
 `GoatConvertPattern()` 818–1097, `GoatConvertTracks()` 1100–1231.
 
 Run: `python -m h2g <input.sid> [-o out.sng]` from `python/`, or
-`.\convert.ps1 <input.sid>` from the repo root.
+`.\convert.ps1 <input.sid>` from the repo root; `.\play.ps1 <input.sid>`
+converts and opens the result in GoatTracker. See `README.md` for the options,
+and `python -m h2g --help` for the authoritative list.
 Test: `python -m pytest tests/ -q` from `python/`.

@@ -185,11 +185,23 @@ regenerate it after bumping so the committed docs match the committed version.
 cd python && python -m pytest tests/ -q
 ```
 
-The suite runs the real CLI as a subprocess. `test_commando.py` asserts
-`Commando.sid` converts byte-for-byte identically to `Commando.sng` (produced by
-the original `h2g.v1.2.exe`). `test_max_rows.py` parses the emitted `.sng` the
-way Goattracker's own loader walks it, checking pattern rows, pattern count and
-orderlist lengths against the format's limits.
+The suite runs the real CLI as a subprocess, in three layers of increasing
+strength:
+
+- **Byte-exact** — `test_commando.py` asserts `Commando.sid` converts
+  byte-for-byte identically to `Commando.sng` (produced by the original
+  `h2g.v1.2.exe`).
+- **Structural** — `test_max_rows.py` and `test_format.py` parse the emitted
+  `.sng` the way Goattracker's own loader walks it, checking pattern rows,
+  pattern count and orderlist lengths against the format's limits.
+- **Against Goattracker itself** — `test_goattracker_loads.py` feeds the output
+  through GoatTracker's real `loadsong()` via `sngspli2`, and skips when that
+  tool is absent (`H2G_SNGSPLI2` overrides its location).
+
+Note what none of them prove: that a song *plays* correctly. A file can be
+byte-exact and structurally valid and still crash Goattracker on play (see
+[`--format`](#--format-gts2--gts5)) or run at the wrong tempo. Use
+[`play.ps1`](#playing-a-song--playps1) for that.
 
 Treat any output-changing edit as a regression unless it is an intentional
 feature — in which case extend the fixtures rather than deleting the assertion.
@@ -201,8 +213,12 @@ a Markdown report recording *why* each file fails, not just that it did:
 
 ```sh
 cd python
-python survey.py <sid_dir> -o ../SURVEY.md [--max-rows N] [--sng-dir DIR]
+python survey.py <sid_dir> -o ../SURVEY.md      # see --help for all options
 ```
+
+It accepts the same output-shaping flags as the converter, so a report can be
+generated for any combination of settings; the report header records which ones
+were used and echoes the exact command that reproduces it.
 
 [`SURVEY.md`](SURVEY.md) is the committed report for the Rob Hubbard corpus and
 the single place conversion rates are quoted — it carries the pass/fail count,
@@ -222,6 +238,8 @@ verified byte-exact.
 | `python/h2g/` | the Python port — active development target |
 | `python/tests/` | regression tests |
 | `python/survey.py`, `python/bump_version.py` | tooling |
+| `convert.ps1`, `play.ps1` | PowerShell wrappers: convert, and convert + open in GoatTracker |
+| `build/` | converted output (gitignored); never written next to an input |
 | `VB6 Sourcecode/h2g.frm` | the original VB6 tool; still the ground truth for behaviour |
 | `arkiv/` | archived VB6 build and sample `.sid` files |
 | `Commando.sid` / `Commando.sng` | byte-exact regression fixture pair |

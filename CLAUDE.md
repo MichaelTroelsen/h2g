@@ -40,9 +40,16 @@ that would be maintained by hand-editing `h2g.frm` in the VB6 IDE if ever needed
 Plain-stdlib Python 3 CLI, no third-party runtime dependencies (`pytest` is a dev-only
 test dependency).
 
-- Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`), or
-  `python -m h2g "../Commando.sid" -o out.sng`. From the repo root, `.\convert.ps1
-  <input.sid> [-OutputFile out.sng] [-Quiet]` wraps the same thing.
+- Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`). From the
+  repo root, `.\convert.ps1` wraps the same thing and `.\play.ps1` also opens the
+  result in GoatTracker. Output-shaping flags are documented in README.md;
+  `python -m h2g --help` is the authoritative list — don't restate it here, it
+  drifts.
+- **Opening output in GoatTracker requires `--format gts5`.** GoatTracker's legacy
+  GTS2 importer overruns its pattern array on the portamento commands this
+  converter emits, so a GTS2 file loads and then crashes on play. `gts2` stays the
+  default because the byte-exact fixture encodes it; `play.ps1` defaults to gts5.
+  See README.md § `--format`.
 - **Versioning — bump on every commit** (not just releases): run
   `python python/bump_version.py "short description"` before staging, and
   regenerate any doc embedding the version. See README.md § Versioning.
