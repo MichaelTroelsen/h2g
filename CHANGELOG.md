@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.8 — 2026-08-04
+
+- Derive instrument clamp from Goattracker's wavetable limit; report dropped instruments and dangling references
+
 ## 0.5.7 — 2026-08-04
 
 - Validate extracted table addresses; reject out-of-range detections instead of emitting empty .sng

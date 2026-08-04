@@ -13,7 +13,44 @@ from .sidfile import SidFile
 
 HEADER_LEN = 0x64
 FIELD_LEN = 0x20
+
+# Goattracker limits, from goattracker2 src/gcommon.h.
+GT_MAX_INSTR = 64      # MAX_INSTR
+GT_MAX_TABLELEN = 255  # MAX_TABLELEN -- ltable/rtable are this many bytes each
+
+# Wave/pulse table entries emitted per instrument.
+WAVE_ENTRIES_PER_INSTR = 5
+PULSE_ENTRIES_PER_INSTR = 2
+
+# The binding constraint is NOT MAX_INSTR. Each instrument costs 5 wavetable
+# entries, and the wavetable's stored length is a single byte bounded by
+# MAX_TABLELEN, so at most 255//5 == 51 instruments can be represented at all.
+# Raising the clamp to GT_MAX_INSTR (64) would need 320 entries: the length byte
+# would wrap and Goattracker would read a truncated table over the following
+# section. Keep this at or below MAX_REPRESENTABLE_INSTRUMENTS.
+MAX_REPRESENTABLE_INSTRUMENTS = GT_MAX_TABLELEN // WAVE_ENTRIES_PER_INSTR  # 51
+
+# 50 is what the original VB6 tool used, and what the byte-exact Commando
+# fixture encodes. It is one below the representable maximum; leave it alone
+# unless you are deliberately changing output.
 MAX_INSTRUMENTS = 50
+
+assert MAX_INSTRUMENTS <= MAX_REPRESENTABLE_INSTRUMENTS
+
+
+def _table_length_byte(entries: int, what: str) -> int:
+    """Length byte for a wave/pulse table, refusing to silently wrap.
+
+    The original masked with & 0xFF, which turns an over-long table into a
+    plausible-looking short one -- Goattracker then reads the remainder as
+    whatever section follows. Fail loudly instead.
+    """
+    if not 0 <= entries <= GT_MAX_TABLELEN:
+        raise ValueError(
+            f"{what} table needs {entries} entries, exceeding Goattracker's "
+            f"MAX_TABLELEN ({GT_MAX_TABLELEN})"
+        )
+    return entries
 
 
 def _padded_name_bytes(name: str, width: int = 16) -> bytes:
@@ -35,11 +72,18 @@ def _build_header(sid: SidFile) -> bytearray:
     return header
 
 
-def _write_instruments(out: bytearray, sid: SidFile, det: Detection) -> int:
-    instr_used = det.instr_used + 1
-    if instr_used >= MAX_INSTRUMENTS:
-        instr_used = MAX_INSTRUMENTS
-    out.append(instr_used & 0xFF)
+def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
+                       log=None) -> int:
+    available = det.instr_used + 1
+    instr_used = min(available, MAX_INSTRUMENTS)
+    if log and available > instr_used:
+        # Not an over-read: Hubbard players carry a shared instrument bank
+        # (drum/noise entries recur byte-identically across games), so tables of
+        # 56-58 real records are normal even when a tune plays a dozen. The
+        # wavetable simply cannot address more than MAX_REPRESENTABLE_INSTRUMENTS.
+        log(f"*** INSTRUMENT TABLE HAS {available} ENTRIES, ONLY {instr_used} FIT "
+            f"(GOATTRACKER WAVETABLE LIMIT) -- {available - instr_used} DROPPED ***")
+    out.append(instr_used)
 
     # Instrument 1: always the empty "Clear Voice" slot.
     out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
@@ -72,7 +116,7 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection, instr_used: i
     n = max(instr_used - 1, 0)
 
     # LEFT side
-    out.append((instr_used * 5) & 0xFF)
+    out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
     out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
     for i in range(n):
         base = det.instr_start + i * 8
@@ -118,7 +162,7 @@ def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: 
     data = sid.data
     n = max(instr_used - 1, 0)
 
-    out.append((instr_used * 2) & 0xFF)
+    out.append(_table_length_byte(instr_used * PULSE_ENTRIES_PER_INSTR, "pulse"))
     out += bytes([0x80, 0xFF])
     for i in range(n):
         base = det.instr_start + i * 8
@@ -132,8 +176,18 @@ def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: 
         out.append(0x00)
 
 
+def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
+    """Largest instrument number any pattern row selects (column 1 of 4)."""
+    highest = 0
+    for pattern in patterns:
+        for k in range(1, len(pattern), 4):
+            if pattern[k] > highest:
+                highest = pattern[k]
+    return highest
+
+
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
-              patterns: List[List[int]]) -> bytes:
+              patterns: List[List[int]], log=None) -> bytes:
     out = bytearray()
     out += _build_header(sid)
     # Derived from the tracks actually emitted, not sid.subtunes: convert_tracks
@@ -146,9 +200,18 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
-    instr_used = _write_instruments(out, sid, det)
+    instr_used = _write_instruments(out, sid, det, log)
     _write_wavetable(out, sid, det, instr_used)
     _write_pulsetable(out, sid, det, instr_used)
+
+    if log:
+        # Instruments are written as 1..instr_used, so anything above that is a
+        # reference to a slot the file does not contain. Goattracker will play
+        # those rows with an undefined instrument.
+        highest = _highest_instrument_referenced(patterns)
+        if highest > instr_used:
+            log(f"*** PATTERNS REFERENCE INSTRUMENT ${highest:X} BUT ONLY "
+                f"${instr_used:X} WERE WRITTEN -- {highest - instr_used} DANGLING ***")
 
     out += bytes([0x02, 0x11, 0xFF, 0x22, 0x01])  # empty filter table
 
