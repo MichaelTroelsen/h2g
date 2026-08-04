@@ -36,7 +36,8 @@ class Result:
     name: str = ""
     author: str = ""
     released: str = ""
-    subtunes: int = 0
+    subtunes: int = 0          # what the PSID header claims
+    subtunes_emitted: int = 0  # how many actually reach the .sng after trimming
     load_addr: int = 0
     ok: bool = False
     out_size: int = 0
@@ -91,6 +92,11 @@ def survey_one(path: Path, sng_dir: Path | None,
     except Exception as exc:  # noqa: BLE001
         r.stage, r.error = "tracks", f"{type(exc).__name__}: {exc}"
         return r
+
+    # convert_tracks drops the trailing run of unusable subtunes, so this is
+    # frequently smaller than the PSID header's claim -- that is the count the
+    # .sng actually carries, and the one worth reporting.
+    r.subtunes_emitted = len(tracks) // 3
 
     try:
         new_patterns, track_index = convert_patterns(
@@ -219,34 +225,52 @@ def build_report(results: list[Result], sid_dir: Path,
     # --- successes ---------------------------------------------------------
     lines.append(f"## Converted ({len(ok)})")
     lines.append("")
-    lines.append("| File | Title | Subtunes | Instr | Patterns | Ver | .sng bytes | Flag |")
-    lines.append("|---|---|---:|---:|---:|---:|---:|---|")
+    lines.append("| File | Title | Player | Ver | Subtunes | Instr | Patterns | "
+                 ".sng bytes | Flag |")
+    lines.append("|---|---|---|---:|---|---:|---:|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
         flag = "instr over-read" if r.instruments > MAX_INSTRUMENTS else ""
+        subs = str(r.subtunes_emitted)
+        if r.subtunes_emitted != r.subtunes:
+            subs += f" (hdr {r.subtunes})"
         lines.append(
-            f"| `{r.path.name}` | {_md_escape(r.name)} | {r.subtunes} | "
-            f"{r.instruments} | {r.patterns} | {r.version} | {r.out_size} | {flag} |"
+            f"| `{r.path.name}` | {_md_escape(r.name)} | "
+            f"{VERSION_NAMES.get(r.version, 'unknown')} | {r.version} | {subs} | "
+            f"{r.instruments} | {r.patterns} | {r.out_size} | {flag} |"
         )
+    lines.append("")
+    lines.append("`Player`/`Ver` are the detected Hubbard player-engine variant and its "
+                 "track-read version number. `Subtunes` is how many actually reach the "
+                 "`.sng`; where that differs from the PSID header's claim the header "
+                 "value follows in brackets, and the gap is subtunes whose orderlist "
+                 "pointers resolve outside the file (the track table has no length "
+                 "field, so the header routinely over-claims).")
     lines.append("")
 
     # --- failures ----------------------------------------------------------
     lines.append(f"## Not converted ({len(bad)})")
     lines.append("")
-    lines.append("| File | Title | Stage | Instr? | Trk? | Pat? | Ver? | Reason |")
-    lines.append("|---|---|---|:-:|:-:|:-:|:-:|---|")
+    lines.append("| File | Title | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |")
+    lines.append("|---|---|---|---|---:|:-:|:-:|:-:|---|")
     tick = {True: "y", False: "-"}
     for r in sorted(bad, key=lambda x: (x.stage, x.path.name.lower())):
         f = r.found
         cols = (tick[f.get("instr", False)], tick[f.get("tracks", False)],
-                tick[f.get("patterns", False)], tick[f.get("version", False)])
+                tick[f.get("patterns", False)])
+        player = VERSION_NAMES.get(r.version, "-") if f.get("version") else "-"
         lines.append(
-            f"| `{r.path.name}` | {_md_escape(r.name)} | {r.stage} | "
-            f"{cols[0]} | {cols[1]} | {cols[2]} | {cols[3]} | {_md_escape(r.error)} |"
+            f"| `{r.path.name}` | {_md_escape(r.name)} | {r.stage} | {player} | "
+            f"{r.subtunes} | {cols[0]} | {cols[1]} | {cols[2]} | {_md_escape(r.error)} |"
         )
     lines.append("")
-    lines.append("Columns `Instr?`/`Trk?`/`Pat?`/`Ver?` show which of the four "
-                 "detection passes found their target. A file with tables found but "
-                 "`Ver?` missing has a recognisable data layout and an unrecognised "
+    lines.append("`Player` is the detected player variant, or `-` when the "
+                 "player-version pass found nothing. `Sub (hdr)` is the PSID header's "
+                 "subtune claim — these files produce no `.sng`, so there is no emitted "
+                 "count to compare it against.")
+    lines.append("")
+    lines.append("Columns `Instr?`/`Trk?`/`Pat?` show which of the three table-locating "
+                 "detection passes found their target. A file with tables found but no "
+                 "`Player` has a recognisable data layout and an unrecognised "
                  "player loop.")
     lines.append("")
     return "\n".join(lines)
