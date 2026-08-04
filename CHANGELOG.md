@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.19 — 2026-08-04
+
+- Add GOATTRACKER.md: five verified upstream issues with suggested fixes
+
 ## 0.5.18 — 2026-08-04
 
 - Doc audit: correct resolved-bug claims, document GTS5, de-duplicate CLI flag lists
