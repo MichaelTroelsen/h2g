@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.9 — 2026-08-04
+
+- Fix wait==0 events being dropped: an event lasts wait+1 frames, always >=1 row
+
 ## 0.5.8 — 2026-08-04
 
 - Derive instrument clamp from Goattracker's wavetable limit; report dropped instruments and dangling references

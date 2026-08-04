@@ -106,12 +106,26 @@ def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
             resc_instr = g_instrument
             g_instrument = 1
 
-        if wait >= 1:
-            events += [g_note, g_instrument, cmd1, cmd2]
-            if cmd1 == 3:
-                cmd1 = 0
-            for _ in range(wait):
-                events += [GT_NO_NOTE, 0x00, cmd1, cmd2]
+        # An event lasts wait+1 frames, so it always emits at least its own row.
+        # The player holds a fetched event until a per-voice counter loaded with
+        # `wait` underflows -- Commando's is $54F2,X, sequenced by
+        #     $5078  DEC $54F2,X
+        #     $507B  BMI  fetch-next-event
+        # DEC/BMI means the counter must pass below zero, so wait==0 is a
+        # legitimate one-frame event, not a no-op.
+        #
+        # The VB6 original wrapped this whole block in `If nWait >= 1` (h2g.frm
+        # :984) and so dropped every one-frame event, shortening the pattern and
+        # drifting the voice against the other two for the rest of it. The inner
+        # `If nWait >= 1` guarding only the hold-rows (h2g.frm:996) is the one
+        # that belongs; the outer was the mistake. Corpus-wide the guard
+        # discarded 2562 events across 43 files -- Chimera's pattern $6 is 96
+        # consecutive one-frame events and came out completely empty.
+        events += [g_note, g_instrument, cmd1, cmd2]
+        if cmd1 == 3:
+            cmd1 = 0
+        for _ in range(wait):
+            events += [GT_NO_NOTE, 0x00, cmd1, cmd2]
 
         if resc_instr != -1:
             g_instrument = resc_instr
