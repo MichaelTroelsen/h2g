@@ -36,6 +36,10 @@ param(
     # own saver does. Off by default because it changes the output bytes.
     [switch]$TerminatePatterns,
 
+    # Share one pattern between byte-identical slices. Removes 10-20% of
+    # patterns on typical Hubbard tunes; does not shorten orderlists.
+    [switch]$DedupPatterns,
+
     # Output .sng format. gts5 is the modern 4-table format and avoids a
     # buffer overrun in Goattracker's legacy gts2 importer.
     [ValidateSet('gts2','gts5')]
@@ -80,6 +84,7 @@ if ($resolvedOutput) { $pyArgs += @("-o", $resolvedOutput) }
 if ($Quiet) { $pyArgs += "-q" }
 if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $MaxRows) }
 if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
+if ($DedupPatterns)     { $pyArgs += "--dedup-patterns" }
 if ($Format) { $pyArgs += @("--format", $Format) }
 if ($Tempo)  { $pyArgs += @("--tempo", $Tempo) }
 

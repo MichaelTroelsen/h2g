@@ -176,7 +176,20 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
 
 def convert_patterns(sid: SidFile, det: Detection, log,
                      max_rows: int = GT_DEFAULT_ROWS,
-                     terminate_patterns: bool = False):
+                     terminate_patterns: bool = False,
+                     dedup: bool = False):
+    """Decode, slice and (optionally) de-duplicate every pattern.
+
+    dedup makes identical slices share one Goattracker pattern. Hubbard tunes
+    repeat heavily -- 12-21% of slices are byte-identical duplicates across the
+    corpus -- so this is the difference between fitting under MAX_PATTERNS and
+    aborting for several tunes. It is opt-in because it changes the output
+    bytes, and the byte-exact Commando fixture encodes the original tool's
+    un-deduplicated output.
+
+    Note it cannot help the *orderlist* limit: sharing a pattern renumbers a
+    track's entries without removing any, so track length is unchanged.
+    """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
     max_len = max_rows * 4
@@ -203,17 +216,35 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     new_patterns: List[List[int]] = []
     track_index: List[List[int]] = []
+    seen: dict = {}          # pattern bytes -> index in new_patterns
+    reused = 0
 
     for i, events in enumerate(raw_patterns):
-        start = len(new_patterns)
         slices = _slice_pattern(events, max_len, terminate_patterns)
+        indices: List[int] = []
         for k, s in enumerate(slices):
-            new_patterns.append(s)
+            key = bytes(s) if dedup else None
+            if key is not None and key in seen:
+                idx = seen[key]
+                reused += 1
+            else:
+                idx = len(new_patterns)
+                new_patterns.append(s)
+                if key is not None:
+                    seen[key] = idx
+            indices.append(idx)
             if k < len(slices) - 1:
-                log(f"Extending Pattern: ${i:X} (${len(new_patterns):X})")
+                # idx+1 equals len(new_patterns) when nothing is shared, so the
+                # log is unchanged from the original in the non-dedup path.
+                log(f"Extending Pattern: ${i:X} (${idx + 1:X})")
             if len(new_patterns) >= MAX_PATTERNS:
                 raise ConversionAbort("TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER")
-        track_index.append(list(range(start, len(new_patterns))))
+        track_index.append(indices)
+
+    if dedup and reused:
+        total = len(new_patterns) + reused
+        log(f"De-duplicated {reused} of {total} patterns "
+            f"({100 * reused // total}%), {len(new_patterns)} remain")
 
     return new_patterns, track_index
 

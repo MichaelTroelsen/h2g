@@ -50,6 +50,9 @@ def main(argv=None) -> int:
              "default of 6 calls/row -- 6x too slow, since this converter "
              "emits one row per player tick. With a tempo written, play at "
              "Goattracker speed multiplier 2 for correct timing")
+    parser.add_argument(
+        "--dedup-patterns", action="store_true",
+        help="share one pattern between byte-identical slices. Hubbard tunes repeat heavily, so this typically removes 10-20%% of patterns and brings some tunes under Goattracker's 208-pattern limit. Off by default because it changes the output bytes. Does not shorten orderlists")
     args = parser.parse_args(argv)
 
     tempo = args.tempo
@@ -70,7 +73,8 @@ def main(argv=None) -> int:
     try:
         sng = convert(args.sid_file, log=log, max_rows=args.max_rows,
                       terminate_patterns=args.terminate_patterns,
-                      fmt=args.format, tempo=tempo)
+                      fmt=args.format, tempo=tempo,
+                      dedup=args.dedup_patterns)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

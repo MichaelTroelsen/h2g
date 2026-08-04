@@ -58,6 +58,8 @@ param(
 
     [switch]$TerminatePatterns,
 
+    [switch]$DedupPatterns,
+
     # Startup tempo, calls per pattern row, or 'auto' (default).
     # 'none' omits it and leaves Goattracker's 6 calls/row.
     [string]$Tempo = 'auto',
@@ -91,6 +93,7 @@ if ($ext -eq ".sid") {
     $cArgs = @{ SidFile = $songPath; OutputFile = $sngOut; Format = $Format; Quiet = $true }
     if ($PSBoundParameters.ContainsKey("MaxRows")) { $cArgs.MaxRows = $MaxRows }
     if ($TerminatePatterns)                        { $cArgs.TerminatePatterns = $true }
+    if ($DedupPatterns)                            { $cArgs.DedupPatterns = $true }
     if ($Tempo -and $Tempo -ne 'none')             { $cArgs.Tempo = $Tempo }
 
     & $convert @cArgs

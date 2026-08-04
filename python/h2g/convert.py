@@ -22,6 +22,7 @@ def convert(sid_path: str, log: Logger = print,
             max_rows: int = GT_DEFAULT_ROWS,
             terminate_patterns: bool = False,
             fmt: str = DEFAULT_FORMAT,
+            dedup: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -56,7 +57,7 @@ def convert(sid_path: str, log: Logger = print,
 
     tracks = convert_tracks(sid, det, log)
     new_patterns, track_index = convert_patterns(
-        sid, det, log, max_rows, terminate_patterns)
+        sid, det, log, max_rows, terminate_patterns, dedup)
     tracks = reindex_tracks(tracks, track_index)
 
     resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo

@@ -55,7 +55,8 @@ class Result:
 def survey_one(path: Path, sng_dir: Path | None,
                max_rows: int = GT_DEFAULT_ROWS,
                terminate_patterns: bool = False,
-               fmt: str = DEFAULT_FORMAT) -> Result:
+               fmt: str = DEFAULT_FORMAT,
+               dedup: bool = False) -> Result:
     r = Result(path=path)
 
     try:
@@ -106,7 +107,7 @@ def survey_one(path: Path, sng_dir: Path | None,
     try:
         new_patterns, track_index = convert_patterns(
             sid, det, log=lambda m: None, max_rows=max_rows,
-            terminate_patterns=terminate_patterns)
+            terminate_patterns=terminate_patterns, dedup=dedup)
         tracks = reindex_tracks(tracks, track_index)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
@@ -312,6 +313,8 @@ def main(argv=None) -> int:
     parser.add_argument("--sng-dir", help="also write converted .sng files here")
     parser.add_argument("--format", choices=FORMATS, default=DEFAULT_FORMAT,
                         help="output .sng format (default: %(default)s)")
+    parser.add_argument("--dedup-patterns", action="store_true",
+                        help="share byte-identical pattern slices")
     parser.add_argument("--terminate-patterns", action="store_true",
                         help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
@@ -334,7 +337,9 @@ def main(argv=None) -> int:
     for path in paths:
         try:
             results.append(survey_one(path, sng_dir, args.max_rows,
-                                      args.terminate_patterns))
+                                      args.terminate_patterns,
+                                      fmt=args.format,
+                                      dedup=args.dedup_patterns))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))
             results.append(r)
