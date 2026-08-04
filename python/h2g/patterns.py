@@ -35,6 +35,9 @@ MAX_TRACK_LEN = 0xFF
 # operand, the restart position, which follows it.
 GT_ORDER_RESTART = 0xFF
 
+GT_END_PATTERN = 0xFF          # ENDPATT: note-column value marking a pattern's end
+GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
+
 ERROR_PATTERN = [0xBD, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]
 
 
@@ -118,20 +121,28 @@ def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
     return events
 
 
-def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN) -> List[List[int]]:
+def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
+                   terminate: bool = False) -> List[List[int]]:
     """Chunk a flat event stream into <=max_len pieces.
 
     A trailing (possibly empty) slice is always emitted, matching the VB
     original: when len(events) is an exact multiple of max_len, an extra
     zero-length pattern is produced and referenced by the track.
 
-    Non-final slices carry no ENDPATT row -- they are exactly max_len bytes of
-    data. Goattracker recovers the length by scanning for ENDPATT
-    (countpatternlengths in gsong.c), relying on clearpattern() having
-    pre-filled rows defaultpatternlength..128 with it. That holds while
-    max_rows exceeds the loader's default pattern length (64 out of the box).
-    At max_rows == 128 the sentinel always lands on row 128, which
-    clearpattern() fills unconditionally.
+    Only the *final* slice inherits the stream's ENDPATT row; non-final slices
+    are max_len bytes of pure data. Goattracker does not trust the stored
+    length -- countpatternlengths() (gsong.c) rescans for ENDPATT -- so an
+    unterminated pattern's length is whatever clearpattern() left behind, which
+    is ENDPATT only from row `defaultpatternlength` (64 by default) onward.
+    Slicing at 94 therefore works by luck: 94 > 64. Raise the loader's default
+    pattern length above the slice length and every sliced pattern silently
+    grows trailing rows.
+
+    `terminate=True` appends an explicit ENDPATT row to any slice lacking one,
+    which is what Goattracker itself writes (savesong stores pattlen+1 rows,
+    gsong.c:116) and makes the output self-describing. It is opt-in because it
+    changes the bytes, and the byte-exact Commando fixture encodes the
+    original tool's unterminated output.
     """
     slices = []
     pos = 0
@@ -140,11 +151,18 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN) -> List
         slices.append(events[pos:pos + max_len])
         pos += max_len
     slices.append(events[pos:n])
+    if terminate:
+        # A row is 4 bytes; s[-4] is the last row's note column. ENDPATT only
+        # ever occurs as the stream's final row, so a non-final slice never
+        # already ends with one -- the check just avoids doubling it up.
+        slices = [s if (len(s) >= 4 and s[-4] == GT_END_PATTERN) else s + GT_END_ROW
+                  for s in slices]
     return slices
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,
-                     max_rows: int = GT_DEFAULT_ROWS):
+                     max_rows: int = GT_DEFAULT_ROWS,
+                     terminate_patterns: bool = False):
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
     max_len = max_rows * 4
@@ -174,7 +192,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     for i, events in enumerate(raw_patterns):
         start = len(new_patterns)
-        slices = _slice_pattern(events, max_len)
+        slices = _slice_pattern(events, max_len, terminate_patterns)
         for k, s in enumerate(slices):
             new_patterns.append(s)
             if k < len(slices) - 1:

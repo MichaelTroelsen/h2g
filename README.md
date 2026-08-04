@@ -20,14 +20,14 @@ full method write-up.
 From `python/`:
 
 ```sh
-python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N]
+python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N] [--terminate-patterns]
 python -m h2g --version
 ```
 
 Or from the repository root (PowerShell wrapper — resolves paths, then delegates):
 
 ```powershell
-.\convert.ps1 <input.sid> [-OutputFile out.sng] [-Quiet] [-MaxRows N]
+.\convert.ps1 <input.sid> [-OutputFile out.sng] [-Quiet] [-MaxRows N] [-TerminatePatterns]
 ```
 
 Plain-stdlib Python 3; no third-party runtime dependencies (`pytest` is dev-only).
@@ -55,6 +55,26 @@ cd python
 python survey.py <sid_dir> -o ../SURVEY.md                       # default, 94 rows
 python survey.py <sid_dir> -o survey-128.md --max-rows 128       # scratch, not committed
 ```
+
+### `--terminate-patterns` (explicit pattern end markers)
+
+Goattracker does not trust a pattern's stored length. On load it rescans the
+note column for `ENDPATT` and recomputes the length (`countpatternlengths()` in
+`gsong.c`), and its own saver always writes `pattlen+1` rows — the data plus one
+`ENDPATT` row.
+
+H2G omits that terminator on every pattern slice but the last, so a sliced
+pattern's length is whatever the loader's pre-fill left behind. `clearpattern()`
+fills rows from `defaultpatternlength` (64 out of the box) onward with `ENDPATT`,
+so slicing at 94 happens to work — 94 > 64. Run Goattracker with a default
+pattern length above the slice length and every sliced pattern silently gains
+trailing empty rows.
+
+`--terminate-patterns` appends an explicit `ENDPATT` row to any slice lacking
+one, making the output self-describing and matching what Goattracker itself
+writes. It is opt-in because it changes the output bytes, and the byte-exact
+`Commando.sng` fixture encodes the original tool's unterminated output. It costs
+one row per slice and does not affect how many tunes convert.
 
 ## Versioning
 

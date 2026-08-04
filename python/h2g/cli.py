@@ -29,6 +29,12 @@ def main(argv=None) -> int:
         help=f"pattern-slicing length, 1..{GT_MAX_ROWS} (default: {GT_DEFAULT_ROWS}, "
              f"matching the original tool; {GT_MAX_ROWS} is Goattracker's real limit "
              "since v2.32 and fits some tunes that otherwise exceed its capacity)")
+    parser.add_argument(
+        "--terminate-patterns", action="store_true",
+        help="append an explicit ENDPATT row to every pattern slice, as "
+             "Goattracker's own saver does. Off by default because it changes "
+             "the output bytes; without it, sliced patterns rely on the "
+             "loader pre-filling rows with ENDPATT")
     args = parser.parse_args(argv)
 
     if not 1 <= args.max_rows <= GT_MAX_ROWS:
@@ -37,7 +43,8 @@ def main(argv=None) -> int:
     log = (lambda msg: None) if args.quiet else (lambda msg: print(msg, file=sys.stderr))
 
     try:
-        sng = convert(args.sid_file, log=log, max_rows=args.max_rows)
+        sng = convert(args.sid_file, log=log, max_rows=args.max_rows,
+                      terminate_patterns=args.terminate_patterns)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

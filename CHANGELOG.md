@@ -4,6 +4,14 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.7 — 2026-08-04
+
+- Validate extracted table addresses; reject out-of-range detections instead of emitting empty .sng
+
+## 0.5.6 — 2026-08-04
+
+- Add --terminate-patterns: explicit ENDPATT row per pattern slice
+
 ## 0.5.5 — 2026-08-04
 
 - README cites SURVEY.md for conversion rates instead of hardcoding them

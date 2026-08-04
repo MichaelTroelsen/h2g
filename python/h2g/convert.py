@@ -18,7 +18,8 @@ class UnsupportedSidError(Exception):
 
 
 def convert(sid_path: str, log: Logger = print,
-            max_rows: int = GT_DEFAULT_ROWS) -> bytes:
+            max_rows: int = GT_DEFAULT_ROWS,
+            terminate_patterns: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -26,6 +27,11 @@ def convert(sid_path: str, log: Logger = print,
     128 is Goattracker's real MAX_PATTROWS since v2.32 and produces fewer,
     longer patterns -- which shortens orderlists and converts some tunes that
     otherwise exceed Goattracker's limits.
+
+    terminate_patterns appends an explicit ENDPATT row to every pattern
+    slice that lacks one, matching what Goattracker's own saver writes.
+    Off by default: it changes the bytes, and the Commando fixture encodes
+    the original tool's unterminated output.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -46,7 +52,8 @@ def convert(sid_path: str, log: Logger = print,
     log("----------------------------------------------------CONVERTING---")
 
     tracks = convert_tracks(sid, det, log)
-    new_patterns, track_index = convert_patterns(sid, det, log, max_rows)
+    new_patterns, track_index = convert_patterns(
+        sid, det, log, max_rows, terminate_patterns)
     tracks = reindex_tracks(tracks, track_index)
 
     return build_sng(sid, det, tracks, new_patterns)

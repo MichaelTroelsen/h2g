@@ -49,7 +49,8 @@ class Result:
 
 
 def survey_one(path: Path, sng_dir: Path | None,
-               max_rows: int = GT_DEFAULT_ROWS) -> Result:
+               max_rows: int = GT_DEFAULT_ROWS,
+               terminate_patterns: bool = False) -> Result:
     r = Result(path=path)
 
     try:
@@ -93,7 +94,8 @@ def survey_one(path: Path, sng_dir: Path | None,
 
     try:
         new_patterns, track_index = convert_patterns(
-            sid, det, log=lambda m: None, max_rows=max_rows)
+            sid, det, log=lambda m: None, max_rows=max_rows,
+            terminate_patterns=terminate_patterns)
         tracks = reindex_tracks(tracks, track_index)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
@@ -255,6 +257,8 @@ def main(argv=None) -> int:
     parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
     parser.add_argument("-o", "--output", default="SURVEY.md", help="report path")
     parser.add_argument("--sng-dir", help="also write converted .sng files here")
+    parser.add_argument("--terminate-patterns", action="store_true",
+                        help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
                         metavar="N",
                         help="pattern-slicing length, 1..{GT_MAX_ROWS} (default: %(default)s)")
@@ -274,7 +278,8 @@ def main(argv=None) -> int:
     results = []
     for path in paths:
         try:
-            results.append(survey_one(path, sng_dir, args.max_rows))
+            results.append(survey_one(path, sng_dir, args.max_rows,
+                                      args.terminate_patterns))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))
             results.append(r)

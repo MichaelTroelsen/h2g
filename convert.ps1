@@ -30,7 +30,11 @@ param(
     # 128 is Goattracker's real MAX_PATTROWS since v2.32 and fits some tunes
     # that otherwise exceed its capacity.
     [ValidateRange(1, 128)]
-    [int]$MaxRows
+    [int]$MaxRows,
+
+    # Append an explicit ENDPATT row to every pattern slice, as Goattracker's
+    # own saver does. Off by default because it changes the output bytes.
+    [switch]$TerminatePatterns
 )
 
 $ErrorActionPreference = "Stop"
@@ -58,6 +62,7 @@ $pyArgs = @($resolvedSid)
 if ($resolvedOutput) { $pyArgs += @("-o", $resolvedOutput) }
 if ($Quiet) { $pyArgs += "-q" }
 if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $MaxRows) }
+if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
 
 Push-Location $pythonDir
 try {
