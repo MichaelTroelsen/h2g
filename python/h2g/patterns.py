@@ -23,6 +23,11 @@ GT_NO_NOTE = 0xBD
 MAX_PATTERNS = 0xD0
 MAX_TRACK_LEN = 0xFF
 
+# Goattracker orderlist byte ranges: $00-$CF pattern number, $D0-$FE command
+# (repeat / transpose, no operand), $FF restart -- the only one that takes an
+# operand, the restart position, which follows it.
+GT_ORDER_RESTART = 0xFF
+
 ERROR_PATTERN = [0xBD, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]
 
 
@@ -128,7 +133,16 @@ def convert_patterns(sid: SidFile, det: Detection, log):
 
     raw_patterns: List[List[int]] = []
     for i in range(det.pattern_used + 1):
-        addr = data[det.pattern_hi + i] * 256 + data[det.pattern_lo + i]
+        # pattern_used is inferred from the gap between the LO and HI tables, so
+        # a misdetected table pair can claim more entries than the file holds.
+        # Bounds-check the table index itself, not just the address it yields.
+        lo_i, hi_i = det.pattern_lo + i, det.pattern_hi + i
+        if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
+            log(f"*** PATTERN ${i:X} TABLE INDEX OUT OF RANGE, CAN'T CONVERT ***")
+            raw_patterns.append(list(ERROR_PATTERN))
+            continue
+
+        addr = data[hi_i] * 256 + data[lo_i]
         addr = addr - sid.load_addr + HLEN - 1
         events = _build_raw_pattern(data, addr)
         if events is None:
@@ -157,10 +171,22 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]]) -> Lis
     new_tracks: List[List[int]] = []
     for track in tracks:
         new_track: List[int] = []
-        end_marker = False
+        expect_operand = False
         for b in track:
-            if b >= 0xD0 or end_marker:
-                end_marker = True
+            if expect_operand:
+                # Restart position following $FF: an ordinary small number that
+                # must NOT be re-indexed as a pattern reference.
+                new_track.append(b)
+                expect_operand = False
+            elif b == GT_ORDER_RESTART:
+                new_track.append(b)
+                expect_operand = True
+            elif b >= MAX_PATTERNS:
+                # Repeat/transpose command. Passes through, but -- unlike the
+                # original's sticky end-marker flag -- does NOT stop re-indexing
+                # the rest of the track. Mega Apocalypse-family transposes emit
+                # $E0-$FF, so the old latch silently left every pattern number
+                # after the first transpose pointing at pre-split indices.
                 new_track.append(b)
             else:
                 new_track.extend(track_index[b] if b < len(track_index) else [])

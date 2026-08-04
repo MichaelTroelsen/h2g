@@ -4,6 +4,19 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.2 — 2026-08-04
+
+- Bounds-guard the instrument-table walk (`detect.py`) and the pattern-table
+  index (`patterns.py`). Both read before checking, crashing with `IndexError`
+  on `I_Ball.sid`; a negative offset would have silently indexed from the end
+  of the file.
+- Re-index orderlists correctly after a command byte. The old sticky
+  `end_marker` latched on any byte `>= $D0`, so the first Mega Apocalypse-family
+  transpose (`$E0-$FF`) left every following pattern number pointing at
+  pre-split indices. Only `$FF` (restart) now consumes an operand; repeat and
+  transpose commands pass through without stopping re-indexing. Affects 17
+  corpus files. Inherited from the VB6 original, which has the same latch.
+
 ## 0.5.1 — 2026-08-04
 
 - Corpus survey harness (survey.py) + SURVEY.md: 60/95 Hubbard SIDs convert
