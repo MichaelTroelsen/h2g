@@ -50,9 +50,30 @@ class Result:
     version: int = 0xFF
     source_format: str = ""   # the input's own header version, e.g. "PSID v2"
     sidid: str = ""           # SIDId player identification, independent of detect()
+    dangling: int = 0         # distinct orderlist refs to patterns that don't exist
+    dangling_sub0: int = 0    # ...of those, how many are in subtune 0
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
+
+
+def _dangling(tracks: list, pattern_used: int) -> tuple[int, int]:
+    """Orderlist references to pattern numbers the pattern table does not hold.
+
+    Returns (distinct dangling refs anywhere, distinct dangling refs in subtune
+    0). The split matters because it separates two different faults: subtune 0
+    is always real, so a dangling ref there means the *decode* is wrong, while
+    dangling refs only in later subtunes mean the PSID header over-claimed its
+    subtune count and a bogus pointer is being read as an orderlist.
+
+    reindex_tracks drops these references silently, so nothing downstream
+    reveals them. The walk itself is delegated to referenced_patterns, keeping
+    the orderlist grammar ($D0-$FE commands, the restart position after $FF)
+    defined in exactly one place.
+    """
+    everywhere = {p for p in referenced_patterns(tracks) if p > pattern_used}
+    first = {p for p in referenced_patterns(tracks[:3]) if p > pattern_used}
+    return len(everywhere), len(first)
 
 
 def survey_one(path: Path, sng_dir: Path | None,
@@ -111,6 +132,7 @@ def survey_one(path: Path, sng_dir: Path | None,
     # frequently smaller than the PSID header's claim -- that is the count the
     # .sng actually carries, and the one worth reporting.
     r.subtunes_emitted = len(tracks) // 3
+    r.dangling, r.dangling_sub0 = _dangling(tracks, det.pattern_used)
 
     try:
         new_patterns, track_index = convert_patterns(
@@ -245,6 +267,33 @@ def build_report(results: list[Result], sid_dir: Path,
                      f"{GT_MAX_TABLELEN // WAVE_ENTRIES_PER_INSTR} are representable. "
                      "Patterns referencing a dropped slot play with an undefined "
                      "instrument — see the flag in the table below.")
+    dangling = [r for r in ok if r.dangling]
+    decode_fault = [r for r in dangling if r.dangling_sub0]
+    phantom = [r for r in dangling if not r.dangling_sub0]
+    if dangling:
+        v2 = ", ".join(f"`{r.path.name}`" for r in sorted(decode_fault, key=lambda x: x.path.name)
+                       if r.version == 2)
+        lines.append(f"- **{len(dangling)} converted files contain orderlist entries that "
+                     "point at patterns the file does not have.** `reindex_tracks` drops "
+                     "those references silently, so the tune plays with material missing "
+                     "rather than failing. There are two distinct causes, separated by "
+                     "whether subtune 0 — always a real subtune — is affected.")
+        if decode_fault:
+            lines.append(f"  - **{len(decode_fault)} are a decode fault** (dangling refs in "
+                         "subtune 0). Most are version-2 players, where a byte with the "
+                         "high bit set is a per-voice **transpose command**, not a pattern "
+                         "number: the player branches `BPL` past the $FF/$FE checks, then "
+                         "`AND #$7F` / `STA transpose,X`, and the stored value is read back "
+                         "as `CLC` / `ADC transpose,X` on the note before the "
+                         "frequency-table lookup. The track reader groups version 2 with "
+                         "versions 0/1/3, which have no such branch, so it emits those "
+                         f"command bytes as pattern numbers $80-$FD. Affected: {v2}.")
+        if phantom:
+            lines.append(f"  - **{len(phantom)} are phantom subtunes** (subtune 0 clean, "
+                         "later subtunes dangling). The track table has no length field "
+                         "and the PSID header routinely over-claims, so a pointer that "
+                         "happens to land inside the file is read as an orderlist. Only "
+                         "pointers resolving *outside* the file are currently rejected.")
     crashes = [r for r in bad if "IndexError" in r.error or r.stage == "crash"]
     if crashes:
         names = ", ".join(f"`{r.path.name}`" for r in crashes)
@@ -257,19 +306,22 @@ def build_report(results: list[Result], sid_dir: Path,
     lines.append(f"## Converted ({len(ok)})")
     lines.append("")
     lines.append("| File | Title | Source | SIDId | Player | Ver | Subtunes | Instr | "
-                 "Patterns | .sng bytes | Flag |")
-    lines.append("|---|---|---|---|---|---:|---|---:|---:|---:|---|")
+                 "Patterns | Dangling | .sng bytes | Flag |")
+    lines.append("|---|---|---|---|---|---:|---|---:|---:|---|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
         flag = (f"{r.instruments - MAX_INSTRUMENTS} instr dropped"
                 if r.instruments > MAX_INSTRUMENTS else "")
         subs = str(r.subtunes_emitted)
         if r.subtunes_emitted != r.subtunes:
             subs += f" (hdr {r.subtunes})"
+        dang = "-" if not r.dangling else (
+            f"**{r.dangling}** (sub0 {r.dangling_sub0})" if r.dangling_sub0
+            else str(r.dangling))
         lines.append(
             f"| `{r.path.name}` | {_md_escape(r.name)} | "
             f"{r.source_format or '-'} | {_md_escape(r.sidid)} | "
             f"{VERSION_NAMES.get(r.version, 'unknown')} | {r.version} | {subs} | "
-            f"{r.instruments} | {r.patterns} | {r.out_size} | {flag} |"
+            f"{r.instruments} | {r.patterns} | {dang} | {r.out_size} | {flag} |"
         )
     lines.append("")
     lines.append("`Source` is the input file's own header version — the original "
@@ -280,7 +332,12 @@ def build_report(results: list[Result], sid_dir: Path,
                  "`.sng`; where that differs from the PSID header's claim the header "
                  "value follows in brackets, and the gap is subtunes whose orderlist "
                  "pointers resolve outside the file (the track table has no length "
-                 "field, so the header routinely over-claims).")
+                 "field, so the header routinely over-claims). "
+                 "`Dangling` counts distinct orderlist entries naming a pattern the file "
+                 "does not have; those references are dropped, so the affected voice "
+                 "plays with material missing. **Bold** marks a count that includes "
+                 "subtune 0 — a decode fault rather than a phantom subtune (see "
+                 "Findings).")
     lines.append("")
 
     # --- failures ----------------------------------------------------------

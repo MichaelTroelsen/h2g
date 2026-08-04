@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.24 — 2026-08-04
+
+- survey: report dangling pattern references
+
 ## 0.5.23 — 2026-08-04
 
 - add --prune-patterns: drop patterns no track references
