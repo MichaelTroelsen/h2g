@@ -19,7 +19,8 @@ from pathlib import Path
 from h2g import __version__
 from h2g.detect import detect
 from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
-                            MAX_INSTRUMENTS, build_sng)
+                            GT_MAX_TABLELEN, MAX_INSTRUMENTS,
+                            WAVE_ENTRIES_PER_INSTR, build_sng)
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           convert_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
@@ -219,12 +220,18 @@ def build_report(results: list[Result], sid_dir: Path,
                      "splitting the orderlist across subtunes would convert them.")
     if suspect:
         names = ", ".join(f"`{r.path.name}`" for r in sorted(suspect, key=lambda x: x.path.name))
-        lines.append(f"- **{len(suspect)} conversions report more than "
-                     f"{MAX_INSTRUMENTS} instruments** ({names}), which the writer then "
-                     "clamps. Hubbard tunes do not plausibly use that many, so the "
-                     "waveform-sniffing table-end heuristic is over-reading past the "
-                     "real instrument table. Output is written but the instrument set "
-                     "should be treated as unreliable — see the flag in the table below.")
+        dropped = sum(r.instruments - MAX_INSTRUMENTS for r in suspect)
+        lines.append(f"- **{len(suspect)} tunes carry more than {MAX_INSTRUMENTS} "
+                     f"instruments and lose the excess** ({names}) — {dropped} real "
+                     "instruments dropped in total. These tables are genuine, not a "
+                     "detection artefact: the records are mostly distinct, and a set of "
+                     "them recurs byte-identically across these files, i.e. a shared "
+                     "Hubbard instrument bank appended to the player. The limit is "
+                     "Goattracker's: each instrument costs 5 wavetable entries against a "
+                     "255-entry table addressed by a single length byte, so at most "
+                     f"{GT_MAX_TABLELEN // WAVE_ENTRIES_PER_INSTR} are representable. "
+                     "Patterns referencing a dropped slot play with an undefined "
+                     "instrument — see the flag in the table below.")
     crashes = [r for r in bad if "IndexError" in r.error or r.stage == "crash"]
     if crashes:
         names = ", ".join(f"`{r.path.name}`" for r in crashes)
@@ -240,7 +247,8 @@ def build_report(results: list[Result], sid_dir: Path,
                  ".sng bytes | Flag |")
     lines.append("|---|---|---|---:|---|---:|---:|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
-        flag = "instr over-read" if r.instruments > MAX_INSTRUMENTS else ""
+        flag = (f"{r.instruments - MAX_INSTRUMENTS} instr dropped"
+                if r.instruments > MAX_INSTRUMENTS else "")
         subs = str(r.subtunes_emitted)
         if r.subtunes_emitted != r.subtunes:
             subs += f" (hdr {r.subtunes})"

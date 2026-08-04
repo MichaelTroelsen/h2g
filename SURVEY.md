@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.14**
+- Converter: `h2g` **0.5.16**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -36,7 +36,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 - **62/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
 - **11 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
-- **6 conversions report more than 50 instruments** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`), which the writer then clamps. Hubbard tunes do not plausibly use that many, so the waveform-sniffing table-end heuristic is over-reading past the real instrument table. Output is written but the instrument set should be treated as unreliable — see the flag in the table below.
+- **6 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 53 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 
 ## Converted (62)
 
@@ -47,7 +47,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Action_Biker.sid` | Action Biker | Warhawk | 0 | 3 | 13 | 73 | 18323 |  |
 | `Arcade_Classics.sid` | Arcade Classics | IK+ | 7 | 1 | 24 | 110 | 33357 |  |
 | `Auf_Wiedersehen_Monty.sid` | Auf Wiedersehen Monty | Auf Wiedersehen Monty | 2 | 13 | 17 | 169 | 42861 |  |
-| `Bangkok_Knights.sid` | Bangkok Knights | IK+ | 7 | 1 | 59 | 52 | 14845 | instr over-read |
+| `Bangkok_Knights.sid` | Bangkok Knights | IK+ | 7 | 1 | 59 | 52 | 14845 | 9 instr dropped |
 | `Battle_of_Britain.sid` | Battle of Britain | Battle of Britain | 5 | 1 | 20 | 110 | 36024 |  |
 | `BMX_Kidz.sid` | BMX Kidz | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 23 | 93 | 30998 |  |
 | `Bump_Set_Spike.sid` | Bump Set Spike | Warhawk | 0 | 2 | 26 | 78 | 19770 |  |
@@ -76,7 +76,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Mega_Apocalypse.sid` | Mega Apocalypse | Mega Apocalypse | 6 | 11 | 43 | 60 | 18127 |  |
 | `Mozart.sid` | Mozart | Warhawk | 0 | 1 | 20 | 118 | 36219 |  |
 | `Nemesis_the_Warlock.sid` | Nemesis the Warlock | IK+ | 7 | 15 | 33 | 74 | 17564 |  |
-| `Nineteen.sid` | Nineteen | IK+ | 7 | 1 | 59 | 46 | 12596 | instr over-read |
+| `Nineteen.sid` | Nineteen | IK+ | 7 | 1 | 59 | 46 | 12596 | 9 instr dropped |
 | `Ninja.sid` | Ninja | Last V8 | 1 | 1 | 14 | 26 | 6076 |  |
 | `One_Man_and_his_Droid.sid` | One Man and his Droid | Battle of Britain | 5 | 13 (hdr 14) | 16 | 74 | 21839 |  |
 | `Pandora.sid` | Pandora | IK+ | 7 | 1 | 33 | 67 | 19072 |  |
@@ -87,7 +87,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Ricochet.sid` | Ricochet | IK+ | 7 | 1 | 33 | 138 | 46266 |  |
 | `Saboteur_II.sid` | Saboteur II | Auf Wiedersehen Monty | 2 | 1 | 17 | 54 | 13804 |  |
 | `Samantha_Fox_Strip_Poker.sid` | Samantha Fox Strip Poker | Samantha Fox | 3 | 14 | 25 | 83 | 15330 |  |
-| `Sanxion.sid` | Sanxion | Warhawk | 0 | 1 (hdr 2) | 60 | 69 | 22773 | instr over-read |
+| `Sanxion.sid` | Sanxion | Warhawk | 0 | 1 (hdr 2) | 60 | 69 | 22773 | 10 instr dropped |
 | `Shockway_Rider.sid` | Shockway Rider | IK+ | 7 | 1 | 27 | 76 | 20929 |  |
 | `Sigma_Seven.sid` | Sigma Seven | Warhawk | 0 | 1 | 17 | 25 | 6798 |  |
 | `Skate_or_Die_intro.sid` | Skate or Die (intro) | IK+ | 7 | 1 | 17 | 53 | 14015 |  |
@@ -97,13 +97,13 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Thanatos.sid` | Thanatos | Warhawk | 0 | 1 | 20 | 25 | 8744 |  |
 | `Thing_on_a_Spring.sid` | Thing on a Spring | Battle of Britain | 5 | 13 (hdr 17) | 16 | 66 | 19570 |  |
 | `Thrust.sid` | Thrust | Warhawk | 0 | 1 | 29 | 63 | 17613 |  |
-| `Thundercats.sid` | Thundercats | IK+ | 7 | 11 (hdr 16) | 59 | 41 | 12784 | instr over-read |
+| `Thundercats.sid` | Thundercats | IK+ | 7 | 11 (hdr 16) | 59 | 41 | 12784 | 9 instr dropped |
 | `Trans-Atlantic_Balloon_Challenge.sid` | Trans-Atlantic Balloon Challenge | Auf Wiedersehen Monty | 2 | 1 | 20 | 56 | 13537 |  |
-| `W_A_R_Preview.sid` | W.A.R. Preview | Warhawk | 0 | 1 | 57 | 68 | 20702 | instr over-read |
+| `W_A_R_Preview.sid` | W.A.R. Preview | Warhawk | 0 | 1 | 57 | 68 | 20702 | 7 instr dropped |
 | `Warhawk.sid` | Warhawk | Warhawk | 0 | 18 | 29 | 70 | 17666 |  |
 | `Wiz.sid` | Wiz | Auf Wiedersehen Monty | 2 | 3 | 41 | 75 | 17003 |  |
 | `Zoids.sid` | Zoids | Warhawk | 0 | 3 | 16 | 59 | 19129 |  |
-| `Zoolook.sid` | Zoolook | Warhawk | 0 | 1 | 59 | 37 | 11549 | instr over-read |
+| `Zoolook.sid` | Zoolook | Warhawk | 0 | 1 | 59 | 37 | 11549 | 9 instr dropped |
 
 `Player`/`Ver` are the detected Hubbard player-engine variant and its track-read version number. `Subtunes` is how many actually reach the `.sng`; where that differs from the PSID header's claim the header value follows in brackets, and the gap is subtunes whose orderlist pointers resolve outside the file (the track table has no length field, so the header routinely over-claims).
 
