@@ -13,7 +13,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Set
 
 from .detect import Detection
 from .sidfile import HLEN, SidFile
@@ -174,11 +174,43 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
     return slices
 
 
+def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
+    """Raw Hubbard pattern numbers that some track actually plays.
+
+    Walks the orderlists exactly as reindex_tracks does: $FF (LOOPSONG) is
+    followed by a restart *position*, which is a small number but not a pattern
+    reference, and $D0-$FE are repeat/transpose commands with no operand.
+
+    det.pattern_used is inferred from the gap between the pattern LO and HI
+    tables, so it counts every entry the table has room for -- not every entry
+    the song plays. Several tunes carry large unplayed remainders (Dragon's
+    Lair II references 71 of the 202 patterns it emits).
+    """
+    used: Set[int] = set()
+    for track in tracks:
+        expect_operand = False
+        for b in track:
+            if expect_operand:
+                expect_operand = False
+            elif b == GT_ORDER_RESTART:
+                expect_operand = True
+            elif b < MAX_PATTERNS:
+                used.add(b)
+    return used
+
+
 def convert_patterns(sid: SidFile, det: Detection, log,
                      max_rows: int = GT_DEFAULT_ROWS,
                      terminate_patterns: bool = False,
-                     dedup: bool = False):
+                     dedup: bool = False,
+                     used: Optional[Set[int]] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
+
+    `used` (from referenced_patterns) restricts output to the patterns some
+    track plays. Unlike dedup this can rescue tunes that abort on
+    MAX_PATTERNS, because the skipped patterns are never decoded or counted in
+    the first place -- and unlike the orderlist optimisations it cannot change
+    playback, since a pattern no orderlist names can never be reached.
 
     dedup makes identical slices share one Goattracker pattern. Hubbard tunes
     repeat heavily -- 12-21% of slices are byte-identical duplicates across the
@@ -195,8 +227,14 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     max_len = max_rows * 4
     data = sid.data
 
-    raw_patterns: List[List[int]] = []
+    raw_patterns: List[Optional[List[int]]] = []
     for i in range(det.pattern_used + 1):
+        if used is not None and i not in used:
+            # Not decoded at all: an unreferenced entry is often out-of-range
+            # table padding, whose address diagnostics would be noise.
+            raw_patterns.append(None)
+            continue
+
         # pattern_used is inferred from the gap between the LO and HI tables, so
         # a misdetected table pair can claim more entries than the file holds.
         # Bounds-check the table index itself, not just the address it yields.
@@ -220,6 +258,11 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     reused = 0
 
     for i, events in enumerate(raw_patterns):
+        if events is None:
+            # No track names this pattern, so its (empty) index list is never
+            # consulted by reindex_tracks.
+            track_index.append([])
+            continue
         slices = _slice_pattern(events, max_len, terminate_patterns)
         indices: List[int] = []
         for k, s in enumerate(slices):
@@ -240,6 +283,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             if len(new_patterns) >= MAX_PATTERNS:
                 raise ConversionAbort("TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER")
         track_index.append(indices)
+
+    if used is not None:
+        pruned = sum(1 for p in raw_patterns if p is None)
+        if pruned:
+            log(f"Pruned {pruned} of {len(raw_patterns)} patterns "
+                f"({100 * pruned // len(raw_patterns)}%) that no track plays")
 
     if dedup and reused:
         total = len(new_patterns) + reused

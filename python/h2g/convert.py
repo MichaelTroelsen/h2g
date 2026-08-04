@@ -7,7 +7,7 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
                          tempo_for)
 from .patterns import (GT_DEFAULT_ROWS, ConversionAbort, convert_patterns,
-                       reindex_tracks)
+                       referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import convert_tracks
 
@@ -23,6 +23,7 @@ def convert(sid_path: str, log: Logger = print,
             terminate_patterns: bool = False,
             fmt: str = DEFAULT_FORMAT,
             dedup: bool = False,
+            prune: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -31,6 +32,11 @@ def convert(sid_path: str, log: Logger = print,
     128 is Goattracker's real MAX_PATTROWS since v2.32 and produces fewer,
     longer patterns -- which shortens orderlists and converts some tunes that
     otherwise exceed Goattracker's limits.
+
+    prune drops every pattern no track's orderlist references. It cannot
+    change playback -- an unnamed pattern is unreachable -- but it does
+    renumber the ones that remain, so it is opt-in like the other
+    output-changing options.
 
     terminate_patterns appends an explicit ENDPATT row to every pattern
     slice that lacks one, matching what Goattracker's own saver writes.
@@ -57,7 +63,8 @@ def convert(sid_path: str, log: Logger = print,
 
     tracks = convert_tracks(sid, det, log)
     new_patterns, track_index = convert_patterns(
-        sid, det, log, max_rows, terminate_patterns, dedup)
+        sid, det, log, max_rows, terminate_patterns, dedup,
+        used=referenced_patterns(tracks) if prune else None)
     tracks = reindex_tracks(tracks, track_index)
 
     resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo

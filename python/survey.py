@@ -22,7 +22,8 @@ from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
                             GT_MAX_TABLELEN, MAX_INSTRUMENTS,
                             WAVE_ENTRIES_PER_INSTR, build_sng)
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
-                          convert_patterns, reindex_tracks)
+                          convert_patterns, referenced_patterns,
+                          reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
 from h2g.sidid import Database, find_database
 from h2g.tracks import convert_tracks
@@ -59,6 +60,7 @@ def survey_one(path: Path, sng_dir: Path | None,
                terminate_patterns: bool = False,
                fmt: str = DEFAULT_FORMAT,
                dedup: bool = False,
+               prune: bool = False,
                sidid_db: Database | None = None) -> Result:
     r = Result(path=path)
 
@@ -113,7 +115,8 @@ def survey_one(path: Path, sng_dir: Path | None,
     try:
         new_patterns, track_index = convert_patterns(
             sid, det, log=lambda m: None, max_rows=max_rows,
-            terminate_patterns=terminate_patterns, dedup=dedup)
+            terminate_patterns=terminate_patterns, dedup=dedup,
+            used=referenced_patterns(tracks) if prune else None)
         tracks = reindex_tracks(tracks, track_index)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
@@ -324,6 +327,8 @@ def main(argv=None) -> int:
                         help="output .sng format (default: %(default)s)")
     parser.add_argument("--dedup-patterns", action="store_true",
                         help="share byte-identical pattern slices")
+    parser.add_argument("--prune-patterns", action="store_true",
+                        help="drop patterns that no track's orderlist references")
     parser.add_argument("--terminate-patterns", action="store_true",
                         help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
@@ -353,6 +358,7 @@ def main(argv=None) -> int:
                                       args.terminate_patterns,
                                       fmt=args.format,
                                       dedup=args.dedup_patterns,
+                                      prune=args.prune_patterns,
                                       sidid_db=sidid_db))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))

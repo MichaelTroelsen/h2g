@@ -21,6 +21,8 @@ From `python/`:
 
 ```sh
 python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N] [--terminate-patterns]
+                          [--format {gts2,gts5}] [--tempo N|auto]
+                          [--dedup-patterns] [--prune-patterns]
 python -m h2g --version
 ```
 
@@ -158,6 +160,39 @@ subtune is CIA-timed rather than VBI-driven — never at what rate. It therefore
 cannot yield a multispeed factor, and 90 of the 95 corpus files have it set to
 zero. It is parsed and reported (`SidFile.speed`, `is_cia_timed()`), but the
 tempo is one tick per row either way.
+
+### `--prune-patterns` and `--dedup-patterns` (size)
+
+The pattern table's size is inferred from the gap between the SID's pattern
+LO and HI address tables, so it counts every entry the table has room for —
+not every entry the song plays. `--prune-patterns` drops the ones no track's
+orderlist references. Across the 95-file corpus it removes **11%** of total
+output, and individual tunes far more:
+
+| File | plain | pruned | |
+|---|---:|---:|---:|
+| `BMX_Kidz` | 30998 | 4059 | −86% |
+| `Kings_of_the_Beach_ingame` | 35733 | 9434 | −73% |
+| `Ricochet` | 46266 | 12668 | −72% |
+| `Skate_or_Die_intro` | 14015 | 4850 | −65% |
+
+It is also a **diagnostic**. `ACE_II.sid` drops from 15596 bytes to 626: its
+three orderlists are 2 bytes each and reference *no* valid pattern, so the 38
+patterns it emitted were all unreachable. That conversion was already empty —
+pruning only stops it looking like 15 KB of music.
+
+Alone among the output-shaping options it **cannot change playback** — a
+pattern no orderlist names is unreachable — but it renumbers the survivors, so
+it stays off by default like the rest. Because the skipped patterns are never
+decoded, it also counts against Goattracker's 208-pattern limit: it converts
+`Dragons_Lair_Part_II`, which otherwise aborts.
+
+`--dedup-patterns` is the complementary saving: byte-identical slices share one
+Goattracker pattern. It shrinks 43 of 62 convertible files by up to 37%. It
+cannot shorten orderlists (sharing renumbers entries, it never removes them),
+so unlike pruning it rescues capacity failures only via the pattern limit.
+
+Both compose with each other and with `--max-rows` / `--format`.
 
 ## Versioning
 

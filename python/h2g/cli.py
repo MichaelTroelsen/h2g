@@ -53,6 +53,15 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--dedup-patterns", action="store_true",
         help="share one pattern between byte-identical slices. Hubbard tunes repeat heavily, so this typically removes 10-20%% of patterns and brings some tunes under Goattracker's 208-pattern limit. Off by default because it changes the output bytes. Does not shorten orderlists")
+    parser.add_argument(
+        "--prune-patterns", action="store_true",
+        help="drop patterns that no track's orderlist references. The pattern "
+             "table is sized from the gap between the SID's LO/HI address "
+             "tables, so it routinely holds entries the song never plays "
+             "(Dragon's Lair II: 131 of 202). Unlike the other options this "
+             "cannot change playback -- an unreferenced pattern is "
+             "unreachable -- but it renumbers the rest, so it is off by "
+             "default. Can bring a tune under the 208-pattern limit")
     args = parser.parse_args(argv)
 
     tempo = args.tempo
@@ -74,7 +83,8 @@ def main(argv=None) -> int:
         sng = convert(args.sid_file, log=log, max_rows=args.max_rows,
                       terminate_patterns=args.terminate_patterns,
                       fmt=args.format, tempo=tempo,
-                      dedup=args.dedup_patterns)
+                      dedup=args.dedup_patterns,
+                      prune=args.prune_patterns)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
