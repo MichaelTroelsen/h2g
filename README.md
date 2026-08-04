@@ -32,6 +32,31 @@ Or from the repository root (PowerShell wrapper — resolves paths, then delegat
 
 Plain-stdlib Python 3; no third-party runtime dependencies (`pytest` is dev-only).
 
+### Playing a song — `play.ps1`
+
+Converts (if given a `.sid`) and opens the result in GoatTracker:
+
+```powershell
+.\play.ps1 Commando.sid                                  # convert + launch
+.\play.ps1 arkiv\Crazy_Comets.sid -MaxRows 128           # pass converter options through
+.\play.ps1 build\Commando.sng                            # already converted
+.\play.ps1 Commando.sid -NoLaunch                        # convert + stage only
+```
+
+The song is loaded at startup but does **not** auto-play — press **F1** in the
+window to play from the beginning (F2 from the current position).
+
+Defaults to `-Format gts5`, since the whole point of opening a file here is that
+GoatTracker's legacy GTS2 importer is buggy (see [`--format`](#--format-gts2--gts5)).
+Pass `-Format gts2` if you specifically want the original tool's output.
+
+Converted files go to `build/` (gitignored) — never next to the input, because
+`Commando.sng` at the repo root is the regression fixture.
+
+GoatTracker is located via `-GoatTracker <path>`, else `$env:H2G_GOATTRACKER`,
+else a default install path. An explicit override that doesn't resolve is a hard
+error rather than a silent fallback.
+
 ### `--max-rows` (pattern slicing)
 
 Goattracker caps patterns at `MAX_PATTROWS`, raised to **128** in GoatTracker

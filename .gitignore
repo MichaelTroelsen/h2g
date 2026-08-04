@@ -1,0 +1,3 @@
+# Converted songs staged by play.ps1. Deliberately not written next to the
+# input: Commando.sng at the repo root is the byte-exact regression fixture.
+build/

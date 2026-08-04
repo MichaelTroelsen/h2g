@@ -60,7 +60,14 @@ if ($OutputFile) {
     if ($outDir -and -not (Test-Path $outDir)) {
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
     }
-    $resolvedOutput = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputFile))
+    # Join-Path against the CWD would duplicate the root for an already-absolute
+    # path ("C:\repo" + "C:\out\x.sng" -> "C:\repo\C:\out\x.sng"), so only
+    # resolve relative paths against it.
+    $resolvedOutput = if ([System.IO.Path]::IsPathRooted($OutputFile)) {
+        [System.IO.Path]::GetFullPath($OutputFile)
+    } else {
+        [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $OutputFile))
+    }
 }
 
 $pyArgs = @($resolvedSid)
