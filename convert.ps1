@@ -39,7 +39,12 @@ param(
     # Output .sng format. gts5 is the modern 4-table format and avoids a
     # buffer overrun in Goattracker's legacy gts2 importer.
     [ValidateSet('gts2','gts5')]
-    [string]$Format
+    [string]$Format,
+
+    # Startup tempo in play-routine calls per pattern row, or 'auto'.
+    # Without one, Goattracker uses 6 calls/row -- 6x too slow, since
+    # the converter emits one row per player tick.
+    [string]$Tempo
 )
 
 $ErrorActionPreference = "Stop"
@@ -76,6 +81,7 @@ if ($Quiet) { $pyArgs += "-q" }
 if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $MaxRows) }
 if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
 if ($Format) { $pyArgs += @("--format", $Format) }
+if ($Tempo)  { $pyArgs += @("--tempo", $Tempo) }
 
 Push-Location $pythonDir
 try {

@@ -58,6 +58,10 @@ param(
 
     [switch]$TerminatePatterns,
 
+    # Startup tempo, calls per pattern row, or 'auto' (default).
+    # 'none' omits it and leaves Goattracker's 6 calls/row.
+    [string]$Tempo = 'auto',
+
     [string]$GoatTracker,
 
     [switch]$NoLaunch
@@ -87,6 +91,7 @@ if ($ext -eq ".sid") {
     $cArgs = @{ SidFile = $songPath; OutputFile = $sngOut; Format = $Format; Quiet = $true }
     if ($PSBoundParameters.ContainsKey("MaxRows")) { $cArgs.MaxRows = $MaxRows }
     if ($TerminatePatterns)                        { $cArgs.TerminatePatterns = $true }
+    if ($Tempo -and $Tempo -ne 'none')             { $cArgs.Tempo = $Tempo }
 
     & $convert @cArgs
     if ($LASTEXITCODE -ne 0) {
@@ -172,4 +177,7 @@ if ($proc.HasExited) {
 }
 
 Write-Host "running (PID $($proc.Id)) -- F1 plays from the beginning, F2 from current position."
+if ($Tempo -and $Tempo -ne 'none') {
+    Write-Host "tempo written: press SHIFT+F6 once to set speed multiplier 2 for correct timing."
+}
 exit 0

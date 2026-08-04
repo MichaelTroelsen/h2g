@@ -6,7 +6,7 @@ import sys
 
 from . import __version__
 from .convert import UnsupportedSidError, convert
-from .goatwriter import DEFAULT_FORMAT, FORMATS
+from .goatwriter import DEFAULT_FORMAT, FORMATS, GT_MIN_TEMPO
 from .patterns import GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort
 from .sidfile import SidFormatError
 
@@ -42,7 +42,25 @@ def main(argv=None) -> int:
              "original tool wrote; gts5 is the modern 4-table format and avoids "
              "a buffer overrun in Goattracker's legacy gts2 importer, so prefer "
              "it for files you will actually open in Goattracker")
+    parser.add_argument(
+        "--tempo", metavar="N|auto", default=None,
+        help="write a startup tempo (calls per pattern row) into the last "
+             "instrument. 'auto' derives it from the PSID speed field. "
+             "Omitted by default, which leaves Goattracker's startup "
+             "default of 6 calls/row -- 6x too slow, since this converter "
+             "emits one row per player tick. With a tempo written, play at "
+             "Goattracker speed multiplier 2 for correct timing")
     args = parser.parse_args(argv)
+
+    tempo = args.tempo
+    if tempo is not None and tempo != "auto":
+        try:
+            tempo = int(tempo)
+        except ValueError:
+            parser.error("--tempo must be an integer or 'auto'")
+        if not GT_MIN_TEMPO <= tempo <= 255:
+            parser.error(f"--tempo must be {GT_MIN_TEMPO}..255 or 'auto' "
+                         "(Goattracker reads 0 and 1 as funktempo)")
 
     if not 1 <= args.max_rows <= GT_MAX_ROWS:
         parser.error(f"--max-rows must be between 1 and {GT_MAX_ROWS}")
@@ -52,7 +70,7 @@ def main(argv=None) -> int:
     try:
         sng = convert(args.sid_file, log=log, max_rows=args.max_rows,
                       terminate_patterns=args.terminate_patterns,
-                      fmt=args.format)
+                      fmt=args.format, tempo=tempo)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

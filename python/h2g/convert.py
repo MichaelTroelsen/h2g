@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Callable, List
 
 from .detect import Detection, detect
-from .goatwriter import DEFAULT_FORMAT, FORMATS, build_sng
+from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
+                         tempo_for)
 from .patterns import (GT_DEFAULT_ROWS, ConversionAbort, convert_patterns,
                        reindex_tracks)
 from .sidfile import SidFile, load_sid
@@ -20,7 +21,8 @@ class UnsupportedSidError(Exception):
 def convert(sid_path: str, log: Logger = print,
             max_rows: int = GT_DEFAULT_ROWS,
             terminate_patterns: bool = False,
-            fmt: str = DEFAULT_FORMAT) -> bytes:
+            fmt: str = DEFAULT_FORMAT,
+            tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -57,4 +59,12 @@ def convert(sid_path: str, log: Logger = print,
         sid, det, log, max_rows, terminate_patterns)
     tracks = reindex_tracks(tracks, track_index)
 
-    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt)
+    resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo
+    if resolved_tempo is not None:
+        cia = sid.is_cia_timed(0)
+        log(f"Tempo...................: {resolved_tempo} calls/row "
+            f"(PSID speed ${sid.speed:08X}, "
+            f"{'CIA timer' if cia else '50Hz VBI'}) "
+            f"-- needs Goattracker speed multiplier 2")
+    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
+                     tempo=resolved_tempo)

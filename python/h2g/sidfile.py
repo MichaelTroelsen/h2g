@@ -27,10 +27,25 @@ class SidFile:
     released: str
     load_addr: int
     subtunes: int
+    speed: int = 0  # PSID `speed`, 32-bit BE at 0x12: one bit per subtune
 
     def to_offset(self, addr: int) -> int:
         """C64 address -> byte offset into `data` (SIDRHinstrStart-style formula)."""
         return addr - self.load_addr + HLEN - 1
+
+    def is_cia_timed(self, subtune: int = 0) -> bool:
+        """True if this subtune is driven by a CIA timer rather than the VBI.
+
+        Per the PSID spec the `speed` field is a bitmap, one bit per subtune,
+        bit N covering subtune N (subtunes past 31 reuse bit 31). 0 means the
+        play routine is called once per vertical blank (50Hz PAL); 1 means a
+        CIA timer drives it, at a rate the header does not record.
+
+        Note this does NOT give a multispeed factor -- a CIA tune may tick at
+        any rate. It only says "not plain 50Hz", which is why it cannot by
+        itself determine a Goattracker tempo. See goatwriter.tempo_for().
+        """
+        return bool(self.speed & (1 << min(subtune, 31)))
 
 
 def _read_padded_string(data: bytes, offset: int, length: int) -> str:
@@ -54,6 +69,11 @@ def load_sid(path: str) -> SidFile:
     released = _read_padded_string(data, 0x56, 0x20)
     load_addr = data[0x7D] * 256 + data[0x7C]
     subtunes = data[0x0F]
+    # PSID `speed` at 0x12-0x15, big-endian. Unlike load_addr/dataOffset (which
+    # the original tool ignores and this port deliberately keeps ignoring), this
+    # field is read straight from the header -- nothing in the VB6 original
+    # depended on it, so reading it changes no existing behaviour.
+    speed = int.from_bytes(data[0x12:0x16], "big")
 
     return SidFile(
         path=path,
@@ -63,4 +83,5 @@ def load_sid(path: str) -> SidFile:
         released=released,
         load_addr=load_addr,
         subtunes=subtunes,
+        speed=speed,
     )

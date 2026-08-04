@@ -122,6 +122,43 @@ fixture encodes. **Use `--format gts5` for anything you intend to open in
 GoatTracker.** The two outputs differ only by the magic bytes and one extra
 byte: an empty fourth (speed) table, which GTS2 has no slot for.
 
+### `--tempo` (playback speed)
+
+This converter emits **one pattern row per Hubbard player tick**, so a row must
+last one tick. Goattracker makes a row last `tempo+1` play-routine calls and
+defaults to **6**, so an untempo'd conversion plays 6× too slow.
+
+Raising Goattracker's speed multiplier alone does not fix it: the default tempo
+is computed as `6*multiplier-1` (`gplay.c:212`), which cancels out exactly. The
+only lever stored *in the file* is the last instrument's Attack/Decay
+(`gplay.c:221`), and that one does **not** scale:
+
+```c
+if ((instr[MAX_INSTR-1].ad >= 2) && (!(instr[MAX_INSTR-1].ptr[WTBL])))
+    cptr->tempo = instr[MAX_INSTR-1].ad - 1;
+```
+
+So `instr[63].ad = A` means A calls per row, i.e. `A/multiplier` frames per row.
+Goattracker treats `A < 2` as funktempo, so the fastest expressible row is 2
+calls — **one frame per row therefore requires speed multiplier 2**. That is
+exactly the "2×" a converted tune needs.
+
+```sh
+python -m h2g song.sid --tempo auto     # derive from the PSID speed field
+python -m h2g song.sid --tempo 6        # explicit calls-per-row
+```
+
+Writing a tempo pads the instrument list out to 63 entries (the padding is
+inert — no table pointers, ~1.2 KB), so it is **off by default** to keep the
+byte-exact `Commando.sng` fixture intact. `play.ps1` passes `-Tempo auto`
+by default, since that path exists to actually play the file.
+
+**On the PSID speed field:** it is a per-subtune bitmap saying only *whether* a
+subtune is CIA-timed rather than VBI-driven — never at what rate. It therefore
+cannot yield a multispeed factor, and 90 of the 95 corpus files have it set to
+zero. It is parsed and reported (`SidFile.speed`, `is_cia_timed()`), but the
+tempo is one tick per row either way.
+
 ## Versioning
 
 **Bump the version on every commit**, not just on releases.

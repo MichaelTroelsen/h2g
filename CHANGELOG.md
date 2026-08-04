@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.17 — 2026-08-04
+
+- Read the PSID speed field; add --tempo to write a startup tempo into instrument 63
+
 ## 0.5.16 — 2026-08-04
 
 - Housekeeping: correct the instrument over-read claim, drop stale whats-next.md
