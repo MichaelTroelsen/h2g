@@ -76,6 +76,27 @@ writes. It is opt-in because it changes the output bytes, and the byte-exact
 `Commando.sng` fixture encodes the original tool's unterminated output. It costs
 one row per slice and does not affect how many tunes convert.
 
+### `--format` (gts2 / gts5)
+
+GoatTracker 2.77 loads both, but its **legacy GTS2 import path contains a
+buffer overrun** that the modern path does not. In `src/gsong.c:306`:
+
+```c
+length = fread8(handle) * 4;        // length is now BYTES (rows * 4)
+for (d = 0; d < length; d++)        // but d indexes ROWS
+    switch (pattern[c][d*4+2]) { case CMD_PORTAUP: ... }
+```
+
+For a 94-row pattern it walks to `pattern[c][1503]` in a row of
+`MAX_PATTROWS*4+4` = 516 bytes, writing into following patterns wherever it
+finds command `$1`/`$2`/`$3`/`$4`/`$0E` — exactly the portamento commands this
+converter emits. The GTS3/4/5 loader has no such conversion loop.
+
+`gts2` stays the default because it is what the byte-exact `Commando.sng`
+fixture encodes. **Use `--format gts5` for anything you intend to open in
+GoatTracker.** The two outputs differ only by the magic bytes and one extra
+byte: an empty fourth (speed) table, which GTS2 has no slot for.
+
 ## Versioning
 
 **Bump the version on every commit**, not just on releases.

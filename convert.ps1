@@ -34,7 +34,12 @@ param(
 
     # Append an explicit ENDPATT row to every pattern slice, as Goattracker's
     # own saver does. Off by default because it changes the output bytes.
-    [switch]$TerminatePatterns
+    [switch]$TerminatePatterns,
+
+    # Output .sng format. gts5 is the modern 4-table format and avoids a
+    # buffer overrun in Goattracker's legacy gts2 importer.
+    [ValidateSet('gts2','gts5')]
+    [string]$Format
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,6 +68,7 @@ if ($resolvedOutput) { $pyArgs += @("-o", $resolvedOutput) }
 if ($Quiet) { $pyArgs += "-q" }
 if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $MaxRows) }
 if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
+if ($Format) { $pyArgs += @("--format", $Format) }
 
 Push-Location $pythonDir
 try {

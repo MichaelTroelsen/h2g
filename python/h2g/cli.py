@@ -6,6 +6,7 @@ import sys
 
 from . import __version__
 from .convert import UnsupportedSidError, convert
+from .goatwriter import DEFAULT_FORMAT, FORMATS
 from .patterns import GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort
 from .sidfile import SidFormatError
 
@@ -35,6 +36,12 @@ def main(argv=None) -> int:
              "Goattracker's own saver does. Off by default because it changes "
              "the output bytes; without it, sliced patterns rely on the "
              "loader pre-filling rows with ENDPATT")
+    parser.add_argument(
+        "--format", choices=FORMATS, default=DEFAULT_FORMAT,
+        help="output .sng format (default: %(default)s). gts2 is what the "
+             "original tool wrote; gts5 is the modern 4-table format and avoids "
+             "a buffer overrun in Goattracker's legacy gts2 importer, so prefer "
+             "it for files you will actually open in Goattracker")
     args = parser.parse_args(argv)
 
     if not 1 <= args.max_rows <= GT_MAX_ROWS:
@@ -44,7 +51,8 @@ def main(argv=None) -> int:
 
     try:
         sng = convert(args.sid_file, log=log, max_rows=args.max_rows,
-                      terminate_patterns=args.terminate_patterns)
+                      terminate_patterns=args.terminate_patterns,
+                      fmt=args.format)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

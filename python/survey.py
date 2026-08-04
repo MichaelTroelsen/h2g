@@ -18,7 +18,8 @@ from pathlib import Path
 
 from h2g import __version__
 from h2g.detect import detect
-from h2g.goatwriter import MAX_INSTRUMENTS, build_sng
+from h2g.goatwriter import (DEFAULT_FORMAT, FORMATS, MAX_INSTRUMENTS,
+                            build_sng)
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           convert_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
@@ -51,7 +52,8 @@ class Result:
 
 def survey_one(path: Path, sng_dir: Path | None,
                max_rows: int = GT_DEFAULT_ROWS,
-               terminate_patterns: bool = False) -> Result:
+               terminate_patterns: bool = False,
+               fmt: str = DEFAULT_FORMAT) -> Result:
     r = Result(path=path)
 
     try:
@@ -111,7 +113,7 @@ def survey_one(path: Path, sng_dir: Path | None,
         return r
 
     try:
-        sng = build_sng(sid, det, tracks, new_patterns)
+        sng = build_sng(sid, det, tracks, new_patterns, fmt=fmt)
     except Exception as exc:  # noqa: BLE001
         r.stage, r.error = "write", f"{type(exc).__name__}: {exc}"
         return r
@@ -281,6 +283,8 @@ def main(argv=None) -> int:
     parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
     parser.add_argument("-o", "--output", default="SURVEY.md", help="report path")
     parser.add_argument("--sng-dir", help="also write converted .sng files here")
+    parser.add_argument("--format", choices=FORMATS, default=DEFAULT_FORMAT,
+                        help="output .sng format (default: %(default)s)")
     parser.add_argument("--terminate-patterns", action="store_true",
                         help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.13 — 2026-08-04
+
+- Add --format gts5: modern 4-table output avoiding GoatTracker's legacy GTS2 importer overrun
+
 ## 0.5.12 — 2026-08-04
 
 - Add GoatTracker loader validation tests (sngspli2)

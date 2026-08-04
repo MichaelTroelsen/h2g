@@ -14,6 +14,31 @@ from .sidfile import SidFile
 HEADER_LEN = 0x64
 FIELD_LEN = 0x20
 
+# Output format. Both are accepted by GoatTracker 2.77 (src/gsong.c:189,249).
+#
+# GTS2 is the 3-table format the original VB6 tool wrote, and what the
+# byte-exact Commando fixture encodes -- hence the default.
+#
+# GTS5 is the modern 4-table format. Prefer it for anything you intend to open
+# in GoatTracker: the GTS2 *import* path contains a buffer overrun that GTS5
+# avoids entirely. gsong.c:306 runs
+#     for (d = 0; d < length; d++)  switch (pattern[c][d*4+2]) ...
+# where `length` is already rows*4 *bytes*, but `d` indexes rows -- so it walks
+# 4x too far, up to pattern[c][1503] in a row of MAX_PATTROWS*4+4 == 516 bytes,
+# writing into following patterns wherever it finds command $1/$2/$3/$4/$0E.
+# Those are exactly the portamento commands this converter emits. The GTS3/4/5
+# loader has no such conversion loop.
+FORMAT_GTS2 = "gts2"
+FORMAT_GTS5 = "gts5"
+FORMATS = (FORMAT_GTS2, FORMAT_GTS5)
+DEFAULT_FORMAT = FORMAT_GTS2
+
+# MAX_TABLES in gcommon.h is 4 (WTBL, PTBL, FTBL, STBL). The GTS2 loader reads
+# MAX_TABLES-1 and derives the speed table by converting instrument bytes;
+# GTS3+ stores all four.
+GT_TABLES_GTS2 = 3
+GT_TABLES_GTS5 = 4
+
 # Goattracker limits, from goattracker2 src/gcommon.h.
 GT_MAX_INSTR = 64      # MAX_INSTR
 GT_MAX_TABLELEN = 255  # MAX_TABLELEN -- ltable/rtable are this many bytes each
@@ -63,9 +88,9 @@ def _field_bytes(text: str) -> bytes:
     return raw.ljust(FIELD_LEN, b"\x00")
 
 
-def _build_header(sid: SidFile) -> bytearray:
+def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
     header = bytearray(HEADER_LEN)
-    header[0:4] = b"GTS2"
+    header[0:4] = b"GTS2" if fmt == FORMAT_GTS2 else b"GTS5"
     header[0x04:0x04 + FIELD_LEN] = _field_bytes(sid.name)
     header[0x24:0x24 + FIELD_LEN] = _field_bytes(sid.author)
     header[0x44:0x44 + FIELD_LEN] = _field_bytes(sid.released)
@@ -187,9 +212,12 @@ def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
 
 
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
-              patterns: List[List[int]], log=None) -> bytes:
+              patterns: List[List[int]], log=None,
+              fmt: str = DEFAULT_FORMAT) -> bytes:
+    if fmt not in FORMATS:
+        raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     out = bytearray()
-    out += _build_header(sid)
+    out += _build_header(sid, fmt)
     # Derived from the tracks actually emitted, not sid.subtunes: convert_tracks
     # trims subtunes the track table cannot back, and the count byte must agree
     # with the number of tracks that follow or the file is unreadable. Identical
@@ -214,6 +242,12 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                 f"${instr_used:X} WERE WRITTEN -- {highest - instr_used} DANGLING ***")
 
     out += bytes([0x02, 0x11, 0xFF, 0x22, 0x01])  # empty filter table
+    if fmt == FORMAT_GTS5:
+        # Fourth table (STBL). GTS2 has no stored speed table -- the loader
+        # derives one from each instrument's byte 6 -- so this exists only in
+        # GTS3+. Every instrument this writer emits carries ptr[STBL] == 0
+        # ("none"), so an empty table is the correct counterpart.
+        out.append(0x00)
 
     out.append(len(patterns) & 0xFF)
     for pattern in patterns:

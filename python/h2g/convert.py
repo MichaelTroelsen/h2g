@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Callable, List
 
 from .detect import Detection, detect
-from .goatwriter import build_sng
+from .goatwriter import DEFAULT_FORMAT, FORMATS, build_sng
 from .patterns import (GT_DEFAULT_ROWS, ConversionAbort, convert_patterns,
                        reindex_tracks)
 from .sidfile import SidFile, load_sid
@@ -19,7 +19,8 @@ class UnsupportedSidError(Exception):
 
 def convert(sid_path: str, log: Logger = print,
             max_rows: int = GT_DEFAULT_ROWS,
-            terminate_patterns: bool = False) -> bytes:
+            terminate_patterns: bool = False,
+            fmt: str = DEFAULT_FORMAT) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -56,4 +57,4 @@ def convert(sid_path: str, log: Logger = print,
         sid, det, log, max_rows, terminate_patterns)
     tracks = reindex_tracks(tracks, track_index)
 
-    return build_sng(sid, det, tracks, new_patterns)
+    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt)
