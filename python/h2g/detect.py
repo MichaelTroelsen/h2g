@@ -329,6 +329,20 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if i == -1:
         i = find("4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 95")  # Mega Apocalypse
         so = 5
+    if i == -1:
+        # Delta (Mix-E-Load loader). Mega Apocalypse's shape exactly, except
+        # that it clears its per-voice state with STA abs,X rather than
+        # STA zp,X -- `9D` where that one has `95`. $C0CA:
+        #     C0CA  4C 9D C0  JMP $C09D     ; back to the orderlist read
+        #     C0CD  A8        TAY
+        #     C0CE  B9 6E C7  LDA $C76E,Y   ; pattern lo
+        #     C0D3  B9 96 C7  LDA $C796,Y   ; pattern hi
+        #     C0D8  A9 00     LDA #$00
+        #     C0DA  9D 68 C5  STA $C568,X
+        # Last in the chain, so it can only speak for a file every other
+        # signature has already declined.
+        i = find("4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 9D")  # Delta loader
+        so = 5
     if i == -2:
         pass                       # digi engine: already located above
     elif i <= -1:

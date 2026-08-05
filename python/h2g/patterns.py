@@ -18,7 +18,7 @@ from typing import List, Optional, Set
 
 from .detect import Detection
 from .goatwriter import CMD_SETTEMPO
-from .sidfile import HLEN, SidFile
+from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
 # Goattracker of its day; v2.32 raised MAX_PATTROWS to 128 (confirmed in
@@ -416,8 +416,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             raw_patterns.append(list(ERROR_PATTERN))
             continue
 
-        addr = data[hi_i] * 256 + data[lo_i]
-        addr = addr - sid.load_addr + HLEN - 1
+        addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
         events = (_build_raw_pattern_digi(data, addr)
                   if det.pattern_dialect == "digi"
                   else _build_raw_pattern(data, addr))

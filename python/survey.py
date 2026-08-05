@@ -364,7 +364,7 @@ def build_report(results: list[Result], sid_dir: Path,
     lines.append("## Findings")
     lines.append("")
     lines.append(f"- **{len(ok)}/{len(results)} produced output.** The ceiling is "
-                 "structural: detection only recognises 16 hard-coded game "
+                 "structural: detection only recognises 17 hard-coded game "
                  "fingerprints, so anything outside that set is unconvertible by "
                  "construction.")
     if out_of_scope:

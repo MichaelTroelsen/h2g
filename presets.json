@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.42 presets.py",
+  "generator": "h2g 0.5.44 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -161,6 +161,15 @@
       "subtunes": 13,
       "rows": 35838
     },
+    "Delta_Mix-E-Load_loader.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": false,
+      "bytes": 7228,
+      "subtunes": 10,
+      "rows": 17309
+    },
     "Dragons_Lair_Part_II.sid": {
       "max_rows": 128,
       "pack": true,
@@ -259,6 +268,15 @@
       "bytes": 21120,
       "subtunes": 1,
       "rows": 10942
+    },
+    "I_Ball.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": false,
+      "dedup": true,
+      "bytes": 12697,
+      "subtunes": 1,
+      "rows": 15077
     },
     "IK_plus.sid": {
       "max_rows": 94,

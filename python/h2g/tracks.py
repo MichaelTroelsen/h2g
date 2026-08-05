@@ -10,7 +10,7 @@ from typing import List
 
 from .detect import Detection
 from .patterns import DEFAULT_TRACK, command_floor, pattern_references
-from .sidfile import HLEN, SidFile
+from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
 # LOOPSONG $FF. gplay.c:977 accepts $E0..$FE (`>= TRANSDOWN && < LOOPSONG`) and
@@ -164,7 +164,7 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
     lo_i, hi_i = det.track_lo + so, det.track_hi + so
     if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
         return None
-    addr = data[hi_i] * 256 + data[lo_i] - sid.load_addr + HLEN - 1
+    addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
     if addr <= 1 or addr >= len(data):
         return None
     return addr

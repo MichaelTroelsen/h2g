@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.44 — 2026-08-05
+
+- convert the Delta loader and I, Ball: a pattern signature and a self-relocating file
+
 ## 0.5.43 — 2026-08-05
 
 - assess SIDM2's fidelity tester for use here

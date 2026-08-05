@@ -81,7 +81,11 @@ test dependency).
   as a regression unless it's an intentional new feature (in which case update/extend
   the reference fixtures, don't just delete the assertion).
 - Module layout mirrors the VB6 pipeline 1:1, each stage in its own file:
-  - `sidfile.py` — PSID/RSID header parsing (`load_sid`).
+  - `sidfile.py` — PSID/RSID header parsing (`load_sid`), plus
+    `find_relocation`, which reads the page-copy loop of a file that moves
+    part of itself at init (I, Ball) so `to_offset` can resolve the
+    addresses its player names. Consulted only when the plain formula
+    lands outside the file, so it cannot change a file that already works.
   - `search.py` — wildcard opcode-pattern search (`search_file`, port of `SSearchfile`).
   - `detect.py` — player-engine signature chains (`detect`, port of the
     `FindInstruments`/`FindSubSongs`/`FindTrackSelector`/`FindPattern`/
@@ -132,7 +136,7 @@ triggered by `loadfile()` (from `Command1_Click`, drag-and-drop, or Browse):
      are commented with the game they came from: IK+, Warhawk, Mega Apocalypse,
      Ricochet, Last V8, Delta, Battle of Britain, Samantha Fox, SaboteurII, ACE2,
      Chimera, Rasputin, Human Race, Hollywood or Bust, Harvey Smith Show Jumper, Auf
-     Wiedersehen Monty). Every player variant needs its own hard-coded byte pattern
+     Wiedersehen Monty, Delta Mix-E-Load loader). Every player variant needs its own hard-coded byte pattern
      here — adding support for a new game means adding a new signature + offset (`so`)
      to one of these chains.
    - If instrument/track/pattern locations were all found, calls the conversion

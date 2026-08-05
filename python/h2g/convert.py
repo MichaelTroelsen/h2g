@@ -96,6 +96,10 @@ def convert(sid_path: str, log: Logger = print,
     log(f"SID Released: '{sid.released}'")
     log(f"SID Loadaddr: ${sid.load_addr:X}")
     log(f"SID Subtunes: ${sid.subtunes:X}")
+    if sid.relocation is not None:
+        r = sid.relocation
+        log(f"SID Relocates: ${r.src:X}-${r.src + r.length - 1:X} "
+            f"-> ${r.dst:X} at init")
 
     log("-----------------------------------------------------SEARCHING---")
     det = detect(sid, log)

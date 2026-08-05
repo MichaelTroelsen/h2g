@@ -11,7 +11,7 @@ It is a **static signature ripper**: it never emulates the 6502. It scans the ra
 SID bytes for known player-engine opcode fingerprints, reads the data-table
 addresses straight out of the matched instructions' operands, and re-encodes the
 instrument/pattern/orderlist data into Goattracker's binary song format. That
-means it only works on tunes whose player matches one of 16 hard-coded game
+means it only works on tunes whose player matches one of 17 hard-coded game
 fingerprints — see [`H2G-CONVERSION-METHOD.md`](H2G-CONVERSION-METHOD.md) for the
 full method write-up.
 

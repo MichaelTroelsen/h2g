@@ -130,6 +130,24 @@ B9 lo hi      LDA patternHI,Y
 85 ??         STA zp
 ```
 
+Two dialects can share that whole shape and differ only in the instruction
+*after* it. The Mega Apocalypse and Delta (Mix-E-Load loader) pattern
+fingerprints are identical for sixteen bytes and then diverge in one:
+
+```
+A9 00         LDA #$00
+95 ??         STA zp,X       <- Mega Apocalypse
+9D ?? ??      STA abs,X      <- Delta loader
+```
+
+That byte was the whole difference between converting and
+`*** CAN'T FIND PATTERN ***`. Widening it to a wildcard would be the wrong
+fix: the tail is part of what identifies the *dialect*, and a chain that
+matches a rough shape rather than a specific player is exactly how a
+fingerprint starts naming code that is not the player at all (§10). Add the
+variant as its own entry at the **end** of the chain instead, where it can
+only speak for a file every earlier signature has already declined.
+
 ---
 
 ## 3. Address-space translation (C64 address → file offset)
@@ -173,6 +191,37 @@ this deliberately (fidelity was the goal) and documents it, rather than
 and *validate* that your extracted table addresses land inside the data
 section. A cheap sanity check (`load_addr <= addr < load_addr + len(data)`)
 would have turned a class of silent-corruption bugs into clean errors.
+
+### When the file moves itself
+
+The formula assumes a single mapping between C64 addresses and file offsets.
+That breaks on a file which relocates part of itself before the player runs.
+I, Ball loads at `$9000`, but its init copies `$9000-$9FFF` up to `$E000` and
+the tune lives *there*, so every address its player names is an `$Exxx` one --
+past the end of a file that stops at `$C2CF`. Detection located all four
+tables and then rejected all four as out of range.
+
+The copy is a plain page loop, and the pointers it walks are set up
+immediately before it, so the block and its destination can be read out of the
+init code the same way everything else here is -- as an oracle:
+
+```
+C20C  A9 00     LDA #$00
+C20E  85 FD     STA $FD        ; destination lo
+C210  85 FB     STA $FB        ; source lo -- shares the same LDA
+C212  A9 90     LDA #$90       ; source page
+C216  A9 E0     LDA #$E0       ; destination page
+C21A  A2 10     LDX #$10       ; 16 pages
+C21E  B1 FB     LDA ($FB),Y
+C220  91 FD     STA ($FD),Y
+```
+
+`sidfile.find_relocation` matches that loop and reads back the three numbers.
+What keeps it safe is that `to_offset` consults the result **only for an
+address that does not resolve inside the file at all**. A misread copy loop
+can therefore fail to rescue a file, but it can never move an address in a
+file that already works -- which is also why reading just the page numbers,
+and assuming the copy is page-aligned, is good enough.
 
 ---
 
@@ -832,6 +881,7 @@ shape, "wrong output, no diagnostic":
 | Was | Now |
 |---|---|
 | Silent wrong-address corruption; no validation existed | `detect.py` range-checks every extracted table address and logs `*** … ADDRESS OUT OF RANGE ***` (`test_address_validation.py`) |
+| A file that copies itself elsewhere at init named addresses the load address could not resolve, so every one of its tables read as out of range | `sidfile.find_relocation` reads the copy loop out of the init code; `to_offset` falls back to it only for an address that resolves nowhere, so no working file can be moved by a misread (`test_relocation.py`) |
 | The transpose latch (§8) | Replaced by a single-byte operand lookahead; 17 corpus files were affected |
 | `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
 | Version 2 grouped with 0/1/3, so its transpose commands were read as pattern numbers (§6) | Decoded as transposes; 6 corpus files played untransposed before, one of them with a wrong pattern spliced in |
