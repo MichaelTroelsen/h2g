@@ -191,6 +191,13 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     # cannot be decided from its pointers alone -- see the playability test
     # below. Diagnostics are therefore withheld until the emit loop, so a
     # subtune that gets dropped does not log about itself on the way out.
+    # The digi engine drives a fourth voice: the sample channel these tunes are
+    # named for. Goattracker has three, and a sampled channel is not something
+    # a tracker orderlist can carry anyway, so it is dropped -- but never
+    # silently, or the output looks like the whole tune.
+    if det.track_voices > 3:
+        log(f"*** VOICE {det.track_voices} IS THE SAMPLE (DIGI) CHANNEL, "
+            "NOT CONVERTED -- GOATTRACKER HAS 3 VOICES ***")
     n_voices = min(3, det.track_voices)
     built: List[List[List[int]]] = []   # per subtune, per voice
     addr_ok: List[List[bool]] = []

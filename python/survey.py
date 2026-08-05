@@ -53,6 +53,7 @@ class Result:
     sidid: str = ""           # SIDId player identification, independent of detect()
     dangling: int = 0         # distinct orderlist refs to patterns that don't exist
     dangling_sub0: int = 0    # ...of those, how many are in subtune 0
+    voices: int = 3           # voices the player drives; >3 means a sample channel
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
@@ -110,6 +111,7 @@ def survey_one(path: Path, sng_dir: Path | None,
         return r
 
     r.version = det.read_track_version
+    r.voices = det.track_voices
     r.instruments = det.instr_used + 1 if det.instr_used >= 0 else 0
     r.found = {
         "instr": det.instr_start > 0,
@@ -320,6 +322,16 @@ def build_report(results: list[Result], sid_dir: Path,
             f"them in. Excluding them, coverage is **{len(ok)}/{reach} = "
             f"{100 * len(ok) // reach}%** rather than "
             f"{len(ok)}/{len(results)} = {100 * len(ok) // len(results)}%.")
+    digi = [r for r in ok if r.voices > 3]
+    if digi:
+        names = ", ".join(f"`{r.path.name}`" for r in sorted(digi, key=lambda x: x.path.name))
+        lines.append(
+            f"- **{len(digi)} tunes drive a fourth, sampled voice that is not "
+            "converted.** Their player runs four channels; the extra one plays "
+            "digi samples, which is what the `(Rob_Hubbard_Digi)` SIDId "
+            "signature marks. Goattracker has three voices and no way to carry "
+            "sampled playback, so that channel is dropped — the three SID "
+            f"voices convert in full. Affected: {names}.")
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
@@ -388,8 +400,12 @@ def build_report(results: list[Result], sid_dir: Path,
                  "Patterns | Dangling | .sng bytes | Flag |")
     lines.append("|---|---|---|---|---|---:|---|---:|---:|---|---:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
-        flag = (f"{r.instruments - MAX_INSTRUMENTS} instr dropped"
-                if r.instruments > MAX_INSTRUMENTS else "")
+        flags = []
+        if r.instruments > MAX_INSTRUMENTS:
+            flags.append(f"{r.instruments - MAX_INSTRUMENTS} instr dropped")
+        if r.voices > 3:
+            flags.append("digi channel dropped")
+        flag = ", ".join(flags)
         subs = str(r.subtunes_emitted)
         if r.subtunes_emitted != r.subtunes:
             subs += f" (hdr {r.subtunes})"

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.33 — 2026-08-05
+
+- report the dropped digi sample channel in the log and survey
+
 ## 0.5.32 — 2026-08-05
 
 - recognise the interleaved-table digi engine, converting 8 more files

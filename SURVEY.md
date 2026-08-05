@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.32**
+- Converter: `h2g` **0.5.33**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -50,6 +50,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 - **69/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
 - **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **69/83 = 83%** rather than 69/95 = 72%.
+- **9 tunes drive a fourth, sampled voice that is not converted.** Their player runs four channels; the extra one plays digi samples, which is what the `(Rob_Hubbard_Digi)` SIDId signature marks. Goattracker has three voices and no way to carry sampled playback, so that channel is dropped — the three SID voices convert in full. Affected: `After_8.sid`, `Kings_of_the_Beach_intro.sid`, `Mr_Meaner.sid`, `Off_the_Cuff.sid`, `One_on_One_Jordan_vs_Bird.sid`, `Powerplay_Hockey_USA_vs_USSR.sid`, `Pygmies_Revenge.sid`, `Rikky.sid`, `Rock_Tells_the_Tale.sid`.
 - **9 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
 - **6 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 53 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **15 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
@@ -61,7 +62,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 |---|---|---|---|---|---:|---|---:|---:|---|---:|---|
 | `5_Title_Tunes.sid` | 5 Title Tunes | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 5) | 17 | 38 | - | 8932 |  |
 | `Action_Biker.sid` | Action Biker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 13 | 73 | - | 18323 |  |
-| `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 182 | - | 61666 |  |
+| `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 182 | - | 61666 | digi channel dropped |
 | `Arcade_Classics.sid` | Arcade Classics | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 24 | 110 | - | 33357 |  |
 | `Auf_Wiedersehen_Monty.sid` | Auf Wiedersehen Monty | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 13 | 17 | 169 | - | 42861 |  |
 | `Bangkok_Knights.sid` | Bangkok Knights | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 59 | 52 | - | 14848 | 9 instr dropped |
@@ -85,7 +86,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Hunter_Patrol.sid` | Hunter Patrol | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 33 | 78 | - | 21844 |  |
 | `IK_plus.sid` | IK+ | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 (hdr 3) | 31 | 51 | - | 13303 |  |
 | `Kings_of_the_Beach_ingame.sid` | Kings of the Beach (ingame) | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 7 | 11 | 106 | - | 35736 |  |
-| `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 |  |
+| `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 | digi channel dropped |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 |  |
 | `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 17) | 34 | 66 | 113 | 21248 |  |
 | `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 18) | 34 | 56 | 154 | 17385 |  |
@@ -93,22 +94,22 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 |  |
 | `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 43 | 60 | 85 | 18102 |  |
 | `Mozart.sid` | Mozart | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 20 | 118 | - | 36219 |  |
-| `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 |  |
+| `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 | digi channel dropped |
 | `Nemesis_the_Warlock.sid` | Nemesis the Warlock | PSID v2 | Rob_Hubbard | IK+ | 7 | 15 | 33 | 74 | 23 | 17575 |  |
 | `Nineteen.sid` | Nineteen | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 59 | 46 | - | 12596 | 9 instr dropped |
 | `Ninja.sid` | Ninja | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 14 | 26 | - | 6076 |  |
-| `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 106 | - | 37174 |  |
+| `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 106 | - | 37174 | digi channel dropped |
 | `One_Man_and_his_Droid.sid` | One Man and his Droid | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 13 (hdr 14) | 16 | 74 | 33 | 21835 |  |
-| `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 21 | 74 | - | 11357 |  |
+| `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 21 | 74 | - | 11357 | digi channel dropped |
 | `Pandora.sid` | Pandora | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 33 | 67 | - | 19072 |  |
 | `Phantoms_of_the_Asteroid.sid` | Phantoms of the Asteroid | PSID v2 | Rob_Hubbard | Last V8 | 1 | 4 | 0 | 96 | - | 26029 |  |
-| `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 13 | 67 | - | 15817 |  |
+| `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 13 | 67 | - | 15817 | digi channel dropped |
 | `Proteus.sid` | Proteus | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 18 | 46 | - | 12143 |  |
-| `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 |  |
+| `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 | digi channel dropped |
 | `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 17 (hdr 18) | 15 | 65 | 23 | 15994 |  |
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 33 | 138 | - | 46266 |  |
-| `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 |  |
-| `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 |  |
+| `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 | digi channel dropped |
+| `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 | digi channel dropped |
 | `Saboteur_II.sid` | Saboteur II | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 17 | 54 | - | 13888 |  |
 | `Samantha_Fox_Strip_Poker.sid` | Samantha Fox Strip Poker | PSID v2 | Rob_Hubbard | Samantha Fox | 3 | 14 | 25 | 83 | - | 15330 |  |
 | `Sanxion.sid` | Sanxion | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 2) | 60 | 69 | - | 22773 | 10 instr dropped |
