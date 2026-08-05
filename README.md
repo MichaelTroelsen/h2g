@@ -252,6 +252,39 @@ is `--pack-repeats`' job and it does that in two bytes however long the run
 is. Knucklebusters' middle voice is exactly that case — 261 bytes packing to
 56 — and merging its pairs first would have made them distinct and cost ~224.
 
+### Per-song presets — `presets.json`
+
+No single setting is right for the whole corpus: `--max-rows 128` fits tunes
+that 94 cannot, `--pack-repeats` rescues others from the orderlist limit, and
+`--prune-patterns` / `--dedup-patterns` only ever shrink. `python/presets.py`
+searches the combinations per song and records the winner:
+
+```sh
+cd python
+python presets.py <sid_dir> -o ../presets.json     # search
+python -m h2g song.sid --presets ../presets.json   # apply
+```
+
+```powershell
+.\convert.ps1 song.sid -Presets presets.json
+.\play.ps1    song.sid -Presets presets.json
+```
+
+"Best" is, in order: **most subtunes that actually play**, then **most rows
+actually played**, then **smallest file**. The second is measured by walking
+the orderlists rather than counting stored rows — counting storage would
+punish pruning for removing patterns nothing can reach, and dedup for making
+identical ones share. With playback as the measure both become free, and the
+size tie-break picks them up: 76 of 78 songs take dedup, 73 take packing.
+
+Options given on the command line always beat the stored preset. A song with
+no entry converts at the defaults. The file's `always` block carries what is
+right for every song rather than searched per song — `gts5` and `--tempo auto`
+— which is what lets a preset reproduce the exact bytes it records.
+
+[`presets.json`](presets.json) is the committed result for the Hubbard corpus:
+78 songs, every one reproducing its recorded size exactly.
+
 ## Versioning
 
 **Bump the version on every commit**, not just on releases.

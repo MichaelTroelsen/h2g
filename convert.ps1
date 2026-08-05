@@ -49,6 +49,11 @@ param(
     # rescue a tune from the 254-byte orderlist limit.
     [switch]$PackRepeats,
 
+    # JSON file of per-song options (see python/presets.py). The entry matching
+    # this .sid supplies the options that suit it; anything passed explicitly
+    # still wins.
+    [string]$Presets,
+
     # Output .sng format. gts5 is the modern 4-table format and avoids a
     # buffer overrun in Goattracker's legacy gts2 importer.
     [ValidateSet('gts2','gts5')]
@@ -96,6 +101,7 @@ if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
 if ($DedupPatterns)     { $pyArgs += "--dedup-patterns" }
 if ($PrunePatterns)     { $pyArgs += "--prune-patterns" }
 if ($PackRepeats)       { $pyArgs += "--pack-repeats" }
+if ($Presets)           { $pyArgs += @("--presets", (Resolve-Path -LiteralPath $Presets).Path) }
 if ($Format) { $pyArgs += @("--format", $Format) }
 if ($Tempo)  { $pyArgs += @("--tempo", $Tempo) }
 

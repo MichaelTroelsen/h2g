@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.36 — 2026-08-05
+
+- add per-song option presets: presets.py and --presets
+
 ## 0.5.35 — 2026-08-05
 
 - compact over-long orderlists by merging patterns

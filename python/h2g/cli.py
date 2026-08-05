@@ -70,7 +70,49 @@ def main(argv=None) -> int:
              "that shortens an orderlist rather than the pattern data, so it "
              "is the only one that can bring a tune under the 254-byte "
              "orderlist limit. Off by default: it changes the output bytes")
+    parser.add_argument(
+        "--presets", metavar="FILE",
+        help="JSON file of per-song options (see presets.py). The entry "
+             "matching this .sid's filename supplies --max-rows, "
+             "--pack-repeats, --prune-patterns and --dedup-patterns; options "
+             "given explicitly on the command line still win. A song with no "
+             "entry converts at the defaults")
     args = parser.parse_args(argv)
+
+    if args.presets:
+        import json
+        try:
+            doc = json.loads(open(args.presets, encoding="utf-8").read())
+        except OSError as exc:
+            parser.error(f"--presets: {exc}")
+        except ValueError as exc:
+            parser.error(f"--presets is not valid JSON: {exc}")
+        # `always` carries the settings that are right for every song rather
+        # than searched per song -- gts5 because Goattracker's legacy GTS2
+        # importer overruns on the commands this converter emits, and a tempo
+        # because an untempo'd file plays at the wrong speed. Applying them is
+        # what makes a preset reproduce the size it records.
+        always = doc.get("always", {})
+        given = set(argv if argv is not None else sys.argv[1:])
+        if "--format" not in given and always.get("format") in FORMATS:
+            args.format = always["format"]
+        if "--tempo" not in given and always.get("tempo") is not None:
+            args.tempo = always["tempo"]
+        entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
+        if entry:
+            # Only fill in what the user did not ask for, so an explicit flag
+            # always beats the stored preset.
+            if "--max-rows" not in given:
+                args.max_rows = entry.get("max_rows", args.max_rows)
+            for flag, key in (("--pack-repeats", "pack"),
+                              ("--prune-patterns", "prune"),
+                              ("--dedup-patterns", "dedup")):
+                if flag not in given:
+                    setattr(args, flag[2:].replace("-", "_"), bool(entry.get(key)))
+            if not args.quiet:
+                print(f"presets: {args.presets} -> max-rows {args.max_rows}, "
+                      f"pack={args.pack_repeats}, prune={args.prune_patterns}, "
+                      f"dedup={args.dedup_patterns}", file=sys.stderr)
 
     tempo = args.tempo
     if tempo is not None and tempo != "auto":
