@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from h2g import __version__
+from h2g.convert import UnsupportedSidError, check_detection_sound
 from h2g.detect import detect
 from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
                             GT_MAX_TABLELEN, MAX_INSTRUMENTS,
@@ -133,6 +134,14 @@ def survey_one(path: Path, sng_dir: Path | None,
     # .sng actually carries, and the one worth reporting.
     r.subtunes_emitted = len(tracks) // 3
     r.dangling, r.dangling_sub0 = _dangling(tracks, det.pattern_used)
+
+    # Same soundness gate the converter applies, so the report agrees with what
+    # `python -m h2g` actually does rather than counting a refusal as a pass.
+    try:
+        check_detection_sound(tracks, det.pattern_used, log=lambda m: None)
+    except UnsupportedSidError as exc:
+        r.stage, r.error = "tracks", str(exc)
+        return r
 
     try:
         new_patterns, track_index = convert_patterns(
@@ -295,7 +304,10 @@ def build_report(results: list[Result], sid_dir: Path,
                          "later subtunes dangling). The track table has no length field "
                          "and the PSID header routinely over-claims, so a pointer that "
                          "happens to land inside the file is read as an orderlist. Only "
-                         "pointers resolving *outside* the file are currently rejected.")
+                         "pointers resolving *outside* the file, and subtunes that play "
+                         "no existing pattern at all, are rejected -- a threshold on the "
+                         "rest would also discard real subtunes, which run as low as one "
+                         "bad reference in a hundred good ones.")
     crashes = [r for r in bad if "IndexError" in r.error or r.stage == "crash"]
     if crashes:
         names = ", ".join(f"`{r.path.name}`" for r in crashes)

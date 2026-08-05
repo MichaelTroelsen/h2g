@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import List
 
 from .detect import Detection
+from .patterns import pattern_references
 from .sidfile import HLEN, SidFile
 
 DEFAULT_TRACK = [0x00, 0xFF, 0x00]
@@ -165,31 +166,61 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     # invalid map is interleaved (Commando is "...XXXXXXX........X"), so valid
     # subtunes routinely follow a gap and stopping early would discard real
     # music. Interior gaps keep their placeholder tracks, exactly as before.
+    # Every subtune is built before any is trimmed, because whether one is real
+    # cannot be decided from its pointers alone -- see the playability test
+    # below. Diagnostics are therefore withheld until the emit loop, so a
+    # subtune that gets dropped does not log about itself on the way out.
     n_voices = min(3, det.track_voices)
-    valid = [all(_voice_addr(sid, det, i, v) is not None for v in range(n_voices))
-             for i in range(sid.subtunes)]
-    keep = max((i + 1 for i, ok in enumerate(valid) if ok), default=0)
+    built: List[List[List[int]]] = []   # per subtune, per voice
+    addr_ok: List[List[bool]] = []
+    for i in range(sid.subtunes):
+        voices: List[List[int]] = []
+        flags: List[bool] = []
+        for voice in range(3):
+            addr = None if voice >= det.track_voices else _voice_addr(sid, det, i, voice)
+            flags.append(addr is not None)
+            voices.append(list(DEFAULT_TRACK) if addr is None else
+                          _build_track(data, addr, det.read_track_version, None,
+                                       det.transpose_operand))
+        built.append(voices)
+        addr_ok.append(flags)
+
+    usable = [all(flags[:n_voices]) for flags in addr_ok]
+
+    # A subtune whose pointers resolve can still be nonsense: a pointer landing
+    # anywhere inside the file passes the range check and is then read as an
+    # orderlist. Reject the ones that name no existing pattern in any voice --
+    # they can play nothing, whatever else they contain.
+    #
+    # Deliberately conservative. Half the corpus's dirty subtunes are 30-60%
+    # dangling, but a real tail sits at 1-16 bad references out of 100-340 good
+    # ones (Gremlins subtune 11 is 1/100), and those are real music with a byte
+    # this converter still mis-decodes. Any threshold that catches the garbage
+    # would discard them too.
+    playable = [
+        ok and any(r <= det.pattern_used for r in pattern_references(voices))
+        for ok, voices in zip(usable, built)
+    ]
+    for i, (ok, play) in enumerate(zip(usable, playable)):
+        if ok and not play:
+            log(f"*** SUBTUNE ${i:X} PLAYS NO EXISTING PATTERN, DROPPED ***")
+            built[i] = [list(DEFAULT_TRACK) for _ in range(3)]
+
+    keep = max((i + 1 for i, ok in enumerate(playable) if ok), default=0)
     if keep < sid.subtunes:
         log(f"Header claims ${sid.subtunes:X} subtune(s); last usable is "
             f"${keep - 1:X}, dropping {sid.subtunes - keep} phantom")
 
     for i in range(keep):
         for voice in range(3):
-            if voice >= det.track_voices:
-                tracks.append(list(DEFAULT_TRACK))
-                continue
-            addr = _voice_addr(sid, det, i, voice)
-            if addr is None:
+            if voice < det.track_voices and not addr_ok[i][voice]:
                 log(f"*** SUBTUNE ${i:X} (VOICE {voice:X}) ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
-                tracks.append(list(DEFAULT_TRACK))
-                continue
-            tracks.append(_build_track(data, addr, det.read_track_version, log,
-                                       det.transpose_operand))
+            tracks.append(built[i][voice])
 
-    if not tracks:
-        # Keep the .sng structurally valid: a file with zero subtunes is not
-        # loadable. One placeholder subtune preserves the previous behaviour for
-        # this degenerate case.
-        tracks = [list(DEFAULT_TRACK) for _ in range(3)]
+    # No fabricated placeholder subtune when nothing survived. Returning one
+    # kept the .sng structurally valid, but it also referenced pattern 0, which
+    # made a file with no playable subtune look sound to every check downstream
+    # -- ACE 2 reported 15599 bytes of nothing. An empty list is the honest
+    # answer; convert() turns it into a refusal.
 
     return tracks

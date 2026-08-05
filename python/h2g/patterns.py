@@ -174,19 +174,18 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
     return slices
 
 
-def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
-    """Raw Hubbard pattern numbers that some track actually plays.
+def pattern_references(tracks: List[List[int]]) -> List[int]:
+    """Every pattern number the orderlists name, in order, with repeats.
 
     Walks the orderlists exactly as reindex_tracks does: $FF (LOOPSONG) is
     followed by a restart *position*, which is a small number but not a pattern
     reference, and $D0-$FE are repeat/transpose commands with no operand.
 
-    det.pattern_used is inferred from the gap between the pattern LO and HI
-    tables, so it counts every entry the table has room for -- not every entry
-    the song plays. Several tunes carry large unplayed remainders (Dragon's
-    Lair II references 71 of the 202 patterns it emits).
+    Occurrences rather than distinct values, because callers weighing how much
+    of a track is nonsense need to count how often a bad reference is played,
+    not how many different ones exist.
     """
-    used: Set[int] = set()
+    refs: List[int] = []
     for track in tracks:
         expect_operand = False
         for b in track:
@@ -195,8 +194,19 @@ def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
             elif b == GT_ORDER_RESTART:
                 expect_operand = True
             elif b < MAX_PATTERNS:
-                used.add(b)
-    return used
+                refs.append(b)
+    return refs
+
+
+def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
+    """Distinct raw Hubbard pattern numbers that some track actually plays.
+
+    det.pattern_used is inferred from the gap between the pattern LO and HI
+    tables, so it counts every entry the table has room for -- not every entry
+    the song plays. Several tunes carry large unplayed remainders (Dragon's
+    Lair II references 71 of the 202 patterns it emits).
+    """
+    return set(pattern_references(tracks))
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,

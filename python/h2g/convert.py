@@ -7,7 +7,7 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
                          tempo_for)
 from .patterns import (GT_DEFAULT_ROWS, ConversionAbort, convert_patterns,
-                       referenced_patterns, reindex_tracks)
+                       pattern_references, referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import convert_tracks
 
@@ -16,6 +16,44 @@ Logger = Callable[[str], None]
 
 class UnsupportedSidError(Exception):
     pass
+
+
+# Share of orderlist entries that may name a pattern the file does not have
+# before the whole detection is judged unsound rather than merely lossy.
+#
+# Chosen from the corpus, not picked round: the two files whose signature match
+# is a false positive sit at 89% and 100% dangling, and the worst *legitimate*
+# file -- Mega Apocalypse, real music carrying many phantom subtunes -- sits at
+# 46%. Anything in between separates them; 2/3 leaves a 20-point margin on the
+# tunes that must keep converting and a 23-point margin on the ones that must
+# not.
+MAX_DANGLING_SHARE = 2 / 3
+
+
+def check_detection_sound(tracks, pattern_used: int, log: Logger) -> None:
+    """Reject a detection whose orderlists mostly name patterns that don't exist.
+
+    A signature can match code that is not the tune's player -- One on One's
+    match yields three "orderlist" pointers into nibble-packed sample data, and
+    ACE 2's first orderlist byte is already a restart command. Every downstream
+    guard then behaves correctly on garbage and produces a structurally valid,
+    musically empty .sng: a failure that reads as a success.
+
+    Individually bad references are normal and must not trip this (phantom
+    subtunes alone account for up to 46% of a real file's references). Only the
+    proportion across the whole file distinguishes the two.
+    """
+    if not tracks:
+        log("*** NO SUBTUNE PLAYS ANY EXISTING PATTERN ***")
+        raise UnsupportedSidError("NO PLAYABLE SUBTUNE, CAN'T CONVERT")
+
+    refs = pattern_references(tracks)
+    dangling = [r for r in refs if r > pattern_used]
+    if not refs or len(dangling) / len(refs) > MAX_DANGLING_SHARE:
+        share = f"{100 * len(dangling) // len(refs)}%" if refs else "no"
+        log(f"*** {share} OF ORDERLIST ENTRIES NAME PATTERNS THAT DO NOT EXIST ***")
+        raise UnsupportedSidError(
+            "ORDERLISTS DO NOT MATCH THE PATTERN TABLE, DETECTION IS UNSOUND")
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -62,6 +100,7 @@ def convert(sid_path: str, log: Logger = print,
     log("----------------------------------------------------CONVERTING---")
 
     tracks = convert_tracks(sid, det, log)
+    check_detection_sound(tracks, det.pattern_used, log)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=referenced_patterns(tracks) if prune else None)
