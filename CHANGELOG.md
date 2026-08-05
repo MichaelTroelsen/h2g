@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.37 — 2026-08-05
+
+- split an over-long subtune in phase instead of dropping it
+
 ## 0.5.36 — 2026-08-05
 
 - add per-song option presets: presets.py and --presets

@@ -13,6 +13,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 """
 from __future__ import annotations
 
+from math import gcd
 from typing import List, Optional, Set
 
 from .detect import Detection
@@ -615,11 +616,164 @@ def compact_orderlist(track: List[int], patterns: List[List[int]],
     return best
 
 
+# --- Splitting an over-long subtune ----------------------------------------
+#
+# A subtune whose orderlist will not fit can be cut into consecutive subtunes,
+# each of which does. The cut is not free: Goattracker starts *every* voice at
+# orderlist position 0 when a subtune begins, while the C64 player lets each
+# voice loop its own orderlist independently. So at the seam the short voices
+# jump back to the top of their figure, and unless the cut lands on a whole
+# number of their loops, everything after it plays with the accompaniment
+# offset against the melody -- a subtune that sounds wrong, which is the thing
+# dropping was chosen to avoid.
+#
+# Hence the alignment constraint. Monty on the Run's subtune 11 is the case
+# that motivates it: a 27657-row voice against two 194-row voices carrying 56
+# notes each. Seven of its orderlist boundaries fall on exact multiples of 194
+# and four of those fit, the largest at 251 entries -- 20176 rows, exactly 104
+# loops, packing to 247 bytes. A greedy "largest prefix that fits" rule takes
+# 254 bytes instead and lands mid-figure.
+#
+# Where the short voices are silent the constraint vanishes: silence has no
+# phase, so any cut is exact. That is Gremlins' subtune 23.
+MAX_SUBTUNE_PARTS = 16          # runaway guard; real splits need two or three
+
+
+def _unpack_repeats(track: List[int]) -> List[int]:
+    """Inverse of pack_repeats: one entry per pattern played."""
+    out: List[int] = []
+    i = 0
+    while i < len(track):
+        b = track[i]
+        if b == GT_ORDER_RESTART:
+            out += track[i:i + 2]
+            i += 2
+        elif GT_REPEAT <= b < GT_TRANSPOSE_DOWN and i + 1 < len(track):
+            out += [track[i + 1]] * (b - GT_REPEAT + 1)
+            i += 2
+        else:
+            out.append(b)
+            i += 1
+    return out
+
+
+def _body_and_tail(track: List[int]):
+    """Split a track into its orderlist entries and its restart pair."""
+    if len(track) >= 2 and track[-2] == GT_ORDER_RESTART:
+        return track[:-2], track[-2:]
+    return list(track), [GT_ORDER_RESTART, 0x00]
+
+
+def _voice_rows(body: List[int], patterns: List[List[int]]) -> int:
+    return sum(len(patterns[b]) // 4
+               for b in body if b < MAX_PATTERNS and b < len(patterns))
+
+
+def _voice_sounds(body: List[int], patterns: List[List[int]]) -> bool:
+    """True if any row of any pattern this voice plays carries a note."""
+    for b in body:
+        if b >= MAX_PATTERNS or b >= len(patterns):
+            continue
+        p = patterns[b]
+        if any(0x60 <= p[k] <= 0xBC for k in range(0, len(p), 4)):
+            return True
+    return False
+
+
+def _cut_points(body: List[int], patterns: List[List[int]]):
+    """(index, rows before it, transpose in effect) for every entry boundary."""
+    points = []
+    rows = 0
+    trans = None
+    for i, b in enumerate(body):
+        if GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+            trans = b
+            continue
+        points.append((i, rows, trans))
+        if b < MAX_PATTERNS and b < len(patterns):
+            rows += len(patterns[b]) // 4
+    return points
+
+
+def split_subtune(group: List[List[int]], patterns: List[List[int]],
+                  pack: bool) -> Optional[List[List[List[int]]]]:
+    """Cut one over-long subtune into consecutive subtunes, or return None.
+
+    Returns a list of 3-voice groups to play in order. None means no cut both
+    fits and keeps the other voices in phase, in which case the caller drops
+    the subtune rather than emitting one that plays wrongly.
+    """
+    if len(group) != 3:
+        return None
+    bodies, tails = [], []
+    for t in group:
+        b, tail = _body_and_tail(_unpack_repeats(t))
+        bodies.append(b)
+        tails.append(tail)
+
+    over = [v for v in range(3) if len(group[v]) >= MAX_TRACK_LEN]
+    if len(over) != 1:
+        # Two long voices would each need their own cut, and the two cuts would
+        # have to coincide. Knucklebusters is the corpus case: 21349, 15939 and
+        # 19501 rows, looping independently, with no boundary common to all.
+        return None
+    long_v = over[0]
+
+    # The other voices loop; a cut must land on a whole number of those loops
+    # or they restart out of phase. Silent voices impose nothing.
+    period = 1
+    for v in range(3):
+        if v == long_v or not _voice_sounds(bodies[v], patterns):
+            continue
+        loop = _voice_rows(bodies[v], patterns)
+        if loop:
+            period = period * loop // gcd(period, loop)
+
+    def fits(entries, tail):
+        out = pack_repeats(entries + tail) if pack else entries + tail
+        return len(out) < MAX_TRACK_LEN
+
+    parts: List[List[List[int]]] = []
+    body = bodies[long_v]
+    while True:
+        if fits(body, tails[long_v]):
+            parts.append((body, tails[long_v]))
+            break
+        if len(parts) + 1 >= MAX_SUBTUNE_PARTS:
+            return None
+        best = None
+        for i, rows, trans in _cut_points(body, patterns):
+            if i == 0 or rows % period:
+                continue
+            if fits(body[:i], [GT_ORDER_RESTART, 0x00]):
+                best = (i, trans)
+        if best is None:
+            return None
+        i, trans = best
+        parts.append((body[:i], [GT_ORDER_RESTART, 0x00]))
+        # Goattracker resets a voice's transpose to 0 at the start of a
+        # subtune (gplay.c:222), so whatever was in effect at the cut has to
+        # be restated or the remainder plays at the wrong pitch.
+        body = ([trans] if trans is not None else []) + body[i:]
+
+    out: List[List[List[int]]] = []
+    for entries, tail in parts:
+        voices = []
+        for v in range(3):
+            raw = (entries + tail) if v == long_v else (bodies[v] + tails[v])
+            voices.append(pack_repeats(raw) if pack else raw)
+        if any(len(t) >= MAX_TRACK_LEN for t in voices):
+            return None
+        out.append(voices)
+    return out
+
+
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
                    floor: int = GT_COMMAND_FLOOR,
                    log=None,
                    dropped: Optional[List[int]] = None,
+                   split: Optional[List[int]] = None,
                    patterns: Optional[List[List[int]]] = None,
                    max_rows: int = GT_DEFAULT_ROWS) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
@@ -638,7 +792,12 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     short while its neighbours play on makes that voice loop early and drift
     against them for the rest of the subtune -- a subtune that sounds wrong,
     which is worse than one that is plainly absent. Indices of dropped subtunes
-    are appended to `dropped` for callers that report them.
+    are appended to `dropped`, and of split ones to `split`, for callers that
+    report them.
+
+    Before dropping, a cut into consecutive subtunes is attempted -- see
+    split_subtune, which refuses any cut that would restart the other voices
+    out of phase.
 
     If nothing survives, the caller's own emptiness check refuses the file:
     a .sng of nothing but placeholders is exactly the fake success v0.5.26
@@ -684,17 +843,34 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
 
     # Voices come in threes; one over-long voice takes its subtune with it,
     # because a subtune missing a voice does not play the tune either.
+    out: List[List[int]] = []
     for first in range(0, len(new_tracks), 3):
         group = new_tracks[first:first + 3]
         longest = max((len(t) for t in group), default=0)
         if longest < MAX_TRACK_LEN:
+            out += group
             continue
         subtune = first // 3
+
+        # Prefer cutting the subtune into consecutive parts over losing it, but
+        # only where the cut keeps the other voices in phase -- see
+        # split_subtune. Falls back to dropping when no such cut exists.
+        parts = (split_subtune(group, patterns, pack)
+                 if patterns is not None and len(group) == 3 else None)
+        if parts:
+            if log:
+                log(f"Subtune ${subtune:X} orderlist is {longest} bytes; split "
+                    f"into {len(parts)} consecutive subtunes")
+            if split is not None:
+                split.append(subtune)
+            for voices in parts:
+                out += voices
+            continue
+
         if log:
             log(f"*** SUBTUNE ${subtune:X} ORDERLIST IS {longest} BYTES, OVER "
                 f"GOATTRACKER'S {MAX_TRACK_LEN - 1}-BYTE LIMIT -- DROPPED ***")
         if dropped is not None:
             dropped.append(subtune)
-        for k in range(first, min(first + 3, len(new_tracks))):
-            new_tracks[k] = list(DEFAULT_TRACK)
-    return new_tracks
+        out += [list(DEFAULT_TRACK) for _ in range(3)]
+    return out
