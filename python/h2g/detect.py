@@ -37,9 +37,24 @@ class Detection:
     pattern_lo: int = -1
     pattern_used: int = -1
     read_track_version: int = 0xFF
+    # Upper bound on subtunes taken from the data rather than the PSID header,
+    # or 0 when nothing bounds it. The digi engine's orderlist table is capped
+    # by the pattern table that follows it.
+    subtunes_available: int = 0
     # Version 2 only: the transpose value lives in the byte *after* the command
     # byte rather than in the command byte's own low 7 bits. See detect().
     transpose_operand: bool = False
+    # Distance in bytes between consecutive entries of a pointer table. 1 for
+    # the separate LO-table/HI-table layout every classic Hubbard player uses;
+    # 2 for the "digi" engine, which interleaves lo,hi,lo,hi and doubles the
+    # index with ASL before TAY. When it is 2, pattern_hi == pattern_lo + 1.
+    table_stride: int = 1
+    # Bytes per instrument record: 8 in the classic players, 16 in the digi
+    # engine. The fields this converter reads (waveform +2, attack/decay +3,
+    # sustain/release +4) sit at the same offsets in both.
+    instr_stride: int = 8
+    # Which pattern-byte grammar the tune uses -- see patterns.py.
+    pattern_dialect: str = "classic"
 
     @property
     def can_convert(self) -> bool:
@@ -81,12 +96,114 @@ def _span_warn(label: str, offset: int, count: int, data_len: int, log: Logger) 
             f"({offset}+{count} > {data_len}), ENTRIES WILL BE SKIPPED ***")
 
 
+# --- The "digi" engine -----------------------------------------------------
+#
+# A later Hubbard engine, shared by nine corpus files, that none of the classic
+# signatures can read. Two things defeat them:
+#
+#  1. Its pointer tables are *interleaved* -- one table holds lo,hi,lo,hi and
+#     the player doubles the index (`ASL` / `TAY` / `LDA table,Y` /
+#     `LDA table+1,Y`). The classic "entry count = HI - LO - 1" then yields
+#     zero patterns, because HI is one byte past LO rather than a table away.
+#
+#  2. The table the orderlist-read instruction names is a *runtime* one, all
+#     zeroes on disk, filled in at init. The authored pointers sit 8 bytes
+#     further on (4 voices x 2 bytes of runtime pointer), and the pattern table
+#     10 past those.
+#
+# Off the Cuff, $10AD:
+#     10AD  BD 2F 18  LDA $182F,X      ; runtime pointer, zero-filled on disk
+#     10B7  BC 42 16  LDY $1642,X
+#     10BA  B1 F8     LDA ($F8),Y      ; orderlist byte
+#     10E5  0A A8     ASL / TAY        ; pattern number * 2
+#     10E7  B9 41 18  LDA $1841,Y      ; pattern lo  ) interleaved,
+#     10EC  B9 42 18  LDA $1842,Y      ; pattern hi  ) one byte apart
+#
+# The two signatures are read independently -- one names $182F, the other
+# $1841 -- and `$182F + 18 == $1841` in every file of this family. That
+# relation is the discriminator: six further files match both code shapes but
+# fail it, and SIDId identifies every one of those as Jason_Page/RobTracker,
+# a related engine whose tables sit elsewhere.
+DIGI_TRACKS = "BD ?? ?? 85 ?? BD ?? ?? 85 ?? BC ?? ?? B1"
+DIGI_PATTERN = "9D ?? ?? 4C ?? ?? 0A A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? BC"
+DIGI_RUNTIME_TABLE_LEN = 8   # 4 voices x 2 bytes, zero on disk
+DIGI_TRACK_TO_PATTERN = 10   # authored orderlist pointers -> pattern pointers
+DIGI_VOICES = 4              # the fourth carries the sample channel
+
+
+def _digi_entry_ok(sid: SidFile, k: int) -> bool:
+    """True if an interleaved table entry at file offset k resolves in-file."""
+    data = sid.data
+    if k < 0 or k + 1 >= len(data):
+        return False
+    off = sid.to_offset(data[k + 1] * 256 + data[k])
+    return 1 < off < len(data)
+
+
+def _detect_digi(sid: SidFile, det: Detection, log: Logger) -> bool:
+    """Recognise the interleaved-table engine, or leave `det` untouched."""
+    data = sid.data
+    it, ip = search_file(data, DIGI_TRACKS), search_file(data, DIGI_PATTERN)
+    if it <= -1 or ip <= -1:
+        return False
+    runtime = _addr16(data, it + 1, it + 2)
+    pattern = _addr16(data, ip + 9, ip + 10)
+    tracks = runtime + DIGI_RUNTIME_TABLE_LEN
+    if pattern != tracks + DIGI_TRACK_TO_PATTERN:
+        return False
+
+    lo = sid.to_offset(tracks)
+    plo = sid.to_offset(pattern)
+    if not (_base_ok("DIGI TRACKS", lo, len(data), log)
+            and _base_ok("DIGI PATTERN", plo, len(data), log)):
+        return False
+
+    # Matching the code shape and the table offset is not proof the tables are
+    # really interleaved here: Powerplay Hockey matches both signatures and the
+    # +18 relation, yet its orderlist table is the classic lo,lo,lo,hi,hi,hi
+    # layout, and reading it two-byte-interleaved yields $DEDA -- 43352 bytes
+    # into an 11598-byte file. Require subtune 0's pointers to resolve before
+    # believing the layout; otherwise leave the file to the classic chains.
+    if not all(_digi_entry_ok(sid, lo + v * 2) for v in range(DIGI_VOICES)):
+        return False
+
+    log(f"Found Tracks LO at......: ${tracks:X} (interleaved)")
+    log(f"Found Pattern LO at.....: ${pattern:X} (interleaved)")
+    det.table_stride = 2
+    det.instr_stride = 16
+    det.pattern_dialect = "digi"
+    det.track_voices = DIGI_VOICES
+    det.track_lo, det.track_hi = lo, lo + 1
+    det.pattern_lo, det.pattern_hi = plo, plo + 1
+    # The orderlist table runs from `tracks` to `pattern`, so its extent says
+    # how many subtunes there really are -- one, in every file of this family.
+    # Powerplay Hockey's header claims ten; reading them walks straight into
+    # the pattern table and returns 4119 references to 45 patterns.
+    det.subtunes_available = max(
+        1, DIGI_TRACK_TO_PATTERN // (2 * DIGI_VOICES))
+    # Interleaved tables carry no count -- there is no second table whose
+    # distance reveals it -- so take every entry that still resolves inside the
+    # file. The table is followed by pattern data, which reads as wild
+    # addresses, so this stops at the real end.
+    used = 0
+    while _digi_entry_ok(sid, plo + used * 2):
+        used += 1
+    det.pattern_used = used - 1
+    log(f"Pattern used............: ${det.pattern_used:X}")
+    return det.pattern_used >= 0
+
+
 def detect(sid: SidFile, log: Logger) -> Detection:
     data = sid.data
     det = Detection()
 
     def find(pattern: str) -> int:
         return search_file(data, pattern)
+
+    # Probed before anything else: it sets the instrument record size the
+    # instrument pass below depends on, and its tables are read from their own
+    # signatures rather than the classic chains.
+    digi = _detect_digi(sid, det, log)
 
     # --- Instruments ---------------------------------------------------
     i = find("BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4")       # Chimera
@@ -118,7 +235,7 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                 break
             if data[j] not in WAVEFORMS:
                 break
-            j += 8
+            j += det.instr_stride
             if j >= len(data):
                 log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
                 break
@@ -126,24 +243,30 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         det.instr_used = instr_used
         log(f"Instruments used........: ${instr_used:X}")
         if det.instr_start >= 0:
-            _span_warn("INSTRUMENT", det.instr_start, instr_used * 8, len(data), log)
+            _span_warn("INSTRUMENT", det.instr_start,
+                       instr_used * det.instr_stride, len(data), log)
 
     # --- Tracks / subsongs ----------------------------------------------
-    det.track_voices = 3
-    so = 3
-    i = find("D0 ?? BD ?? ?? 85 ?? BD ?? ?? 85 ?? DE ?? ?? 30 ?? 4C")           # IK+ / Warhawk
-    if i <= -1:
+    if digi:
+        i = -2      # tables already known; skip the classic chain and its log
+    else:
+        det.track_voices = 3
+        so = 3
+        i = find("D0 ?? BD ?? ?? 85 ?? BD ?? ?? 85 ?? DE ?? ?? 30 ?? 4C")       # IK+ / Warhawk
+    if i == -1:
         i = find("D0 ?? BD ?? ?? 85 ?? BD ?? ?? 85 ?? D6 ?? 30 ?? 4C")         # Mega Apocalypse
-    if i <= -1:
+    if i == -1:
         i = find("D0 ?? BD ?? ?? 85 ?? BD ?? ?? 85 ?? E0 ?? D0 ?? CE")         # Ricochet
-    if i <= -1:
+    if i == -1:
         i = find("8E ?? ?? A8 BD ?? ?? 85 ?? BD ?? ?? 85 ?? BD ?? ?? F0")      # Hollywood or bust
         so = 5
-    if i <= -1:
+    if i == -1:
         i = find("8D ?? ?? A8 BD ?? ?? 85 ?? BD ?? ?? 85 ?? DE ?? ?? 30")      # Harvey Smith Show Jumper
         so = 5
     i2 = i
-    if i <= -1:
+    if i == -2:
+        pass                       # digi engine: already located above
+    elif i <= -1:
         log("*** CAN'T FIND TRACKS/SUBSONGS ***")
     else:
         addr = _addr16(data, i + so, i + so + 1)
@@ -160,8 +283,13 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     # --- Track selector ---------------------------------------------------
     det.track_selector = False
     so = 6
-    i = find("18 6D ?? ?? AA BD ?? ?? 99 ?? ?? E8 C8 C0 06")  # Rasputin
-    if i <= -1:
+    # Not consulted for the digi engine: its orderlist table was located from
+    # its own signature and is interleaved, whereas a selector match rewrites
+    # track_lo/track_hi assuming the classic separate-table layout. Powerplay
+    # Hockey matches a selector signature and had its perfectly good digi
+    # tables ($4BA4/$4BC3/$4BE2) replaced by one that resolves nowhere.
+    i = -1 if digi else find("18 6D ?? ?? AA BD ?? ?? 99 ?? ?? E8 C8 C0 06")  # Rasputin
+    if i <= -1 and not digi:
         i = find("8A 0A 0A AA BD ?? ?? 99 ?? ?? E8 C8 C0 04")  # Human Race
         if i >= 1:
             so = 5
@@ -184,23 +312,26 @@ def detect(sid: SidFile, log: Logger) -> Detection:
 
     # --- Pattern table ---------------------------------------------------
     so = 11
-    i = find("9D ?? ?? 4C ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 9D")  # LastV8
-    if i <= -1:
+    i = -2 if digi else find(
+        "9D ?? ?? 4C ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 9D")       # LastV8
+    if i == -1:
         i = find("9D ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 9D")  # Delta
         so = 8
-    if i <= -1:
+    if i == -1:
         i = find("4C ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? BC ?? ?? A9")  # Battle of Britain
         so = 8
-    if i <= -1:
+    if i == -1:
         i = find("4C ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 95")  # Samantha Fox
         so = 8
-    if i <= -1:
+    if i == -1:
         i = find("20 ?? ?? 4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 9D")  # SaboteurII
         so = 8
-    if i <= -1:
+    if i == -1:
         i = find("4C ?? ?? A8 B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? A9 ?? 95")  # Mega Apocalypse
         so = 5
-    if i <= -1:
+    if i == -2:
+        pass                       # digi engine: already located above
+    elif i <= -1:
         log("*** CAN'T FIND PATTERN ***")
     else:
         i2 = i

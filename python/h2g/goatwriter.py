@@ -164,13 +164,16 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
     out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
     out += _padded_name_bytes("Clear Voice")
 
+    # The digi engine's records are 16 bytes rather than 8. The fields read
+    # here -- pulse +0/+1, waveform +2, attack/decay +3, sustain/release +4 --
+    # sit at the same offsets in both layouts, so only the stride differs.
     wtable_start = 6
     ptable_start = 3
     data = sid.data
     n = max(instr_used - 1, 0)  # number of real (non-empty) instruments
 
     for i in range(n):
-        base = det.instr_start + i * 8
+        base = det.instr_start + i * det.instr_stride
         ad = data[base + 3]
         sr = data[base + 4]
         if sr >= 0xF0:
@@ -204,7 +207,7 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection, instr_used: i
     out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
     out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
     for i in range(n):
-        base = det.instr_start + i * 8
+        base = det.instr_start + i * det.instr_stride
         arp_style = data[base + 7]
         arp_set_keybit = 0 if (arp_style & 1) == 1 else 1
         wave = data[base + 2]
@@ -224,7 +227,7 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection, instr_used: i
     # RIGHT side
     out += bytes([0x00, 0x00, 0x00, 0x00, 0x00])
     for i in range(n):
-        base = det.instr_start + i * 8
+        base = det.instr_start + i * det.instr_stride
         arp_style = data[base + 7]
         arp_note = (arp_style & 0xF0) >> 4
         if arp_note == 0:
@@ -250,13 +253,13 @@ def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: 
     out.append(_table_length_byte(instr_used * PULSE_ENTRIES_PER_INSTR, "pulse"))
     out += bytes([0x80, 0xFF])
     for i in range(n):
-        base = det.instr_start + i * 8
+        base = det.instr_start + i * det.instr_stride
         out.append((data[base + 1] | 0x80) & 0xFF)
         out.append(0xFF)
 
     out += bytes([0x00, 0x00])
     for i in range(n):
-        base = det.instr_start + i * 8
+        base = det.instr_start + i * det.instr_stride
         out.append(data[base])
         out.append(0x00)
 

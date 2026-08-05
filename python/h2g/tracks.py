@@ -156,7 +156,13 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
     16-bit address it holds resolves outside the file.
     """
     data = sid.data
-    so = voice + i * (det.track_voices * 2)
+    # Classic players keep a LO table and a HI table, each with one byte per
+    # (subtune, voice); the digi engine interleaves them, so consecutive
+    # entries are two bytes apart and the HI byte is the LO byte's neighbour.
+    if det.table_stride == 2:
+        so = (voice + i * det.track_voices) * 2
+    else:
+        so = voice + i * (det.track_voices * 2)
     lo_i, hi_i = det.track_lo + so, det.track_hi + so
     if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
         return None
@@ -188,7 +194,13 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     n_voices = min(3, det.track_voices)
     built: List[List[List[int]]] = []   # per subtune, per voice
     addr_ok: List[List[bool]] = []
-    for i in range(sid.subtunes):
+    subtunes = sid.subtunes
+    if det.subtunes_available:
+        subtunes = min(subtunes, det.subtunes_available)
+        if subtunes < sid.subtunes:
+            log(f"Header claims ${sid.subtunes:X} subtune(s); the track table holds "
+                f"${subtunes:X}")
+    for i in range(subtunes):
         voices: List[List[int]] = []
         flags: List[bool] = []
         for voice in range(3):
@@ -223,9 +235,9 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
             built[i] = [list(DEFAULT_TRACK) for _ in range(3)]
 
     keep = max((i + 1 for i, ok in enumerate(playable) if ok), default=0)
-    if keep < sid.subtunes:
-        log(f"Header claims ${sid.subtunes:X} subtune(s); last usable is "
-            f"${keep - 1:X}, dropping {sid.subtunes - keep} phantom")
+    if keep < subtunes:
+        log(f"Header claims ${subtunes:X} subtune(s); last usable is "
+            f"${keep - 1:X}, dropping {subtunes - keep} phantom")
 
     for i in range(keep):
         for voice in range(3):

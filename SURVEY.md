@@ -1,11 +1,11 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.31**
+- Converter: `h2g` **0.5.32**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
 - Output format: **GTS2** (of GTS2/GTS5) (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 importer overruns its pattern array on the portamento commands this converter emits — prefer `--format gts5` for files you will open in Goattracker)
-- Converted: **61** of 83 in reach (73%) — Failed: **22** — Out of scope: **12** (not a Hubbard player)
+- Converted: **69** of 83 in reach (83%) — Failed: **14** — Out of scope: **12** (not a Hubbard player)
 
 > "Converted" means the converter produced a `.sng` without erroring. It does **not** mean the output is musically correct. Only the repo's own `Commando.sid` is verified byte-exact against the original VB6 tool; note that the corpus copy of `Commando.sid` is a *different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 subtunes), so its row here is not comparable to that fixture.
 
@@ -15,9 +15,9 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 | Stage | Files | Meaning |
 |---|---:|---|
-| detect | 9 | no known player fingerprint matched |
 | patterns | 9 | pattern decode/slicing hit a Goattracker limit |
-| tracks | 4 | orderlist decode failed (usually unknown track-read version) |
+| tracks | 3 | orderlist decode failed (usually unknown track-read version) |
+| detect | 2 | no known player fingerprint matched |
 
 ## Detected player variant (successful conversions)
 
@@ -25,18 +25,18 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 |---:|---|---:|
 | 0 | Warhawk | 25 |
 | 1 | Last V8 | 8 |
-| 2 | Auf Wiedersehen Monty | 7 |
+| 2 | Auf Wiedersehen Monty | 14 |
 | 3 | Samantha Fox | 1 |
 | 5 | Battle of Britain | 7 |
 | 6 | Mega Apocalypse | 1 |
-| 7 | IK+ | 12 |
+| 7 | IK+ | 13 |
 
 ## SIDId player identification
 
 | SIDId signature | Converted | Not converted | Total | Rate |
 |---|---:|---:|---:|---:|
-| `Rob_Hubbard` | 51 | 15 | 66 | 77% |
-| `Rob_Hubbard, (Rob_Hubbard_Digi)` | 4 | 7 | 11 | 36% |
+| `Rob_Hubbard` | 52 | 14 | 66 | 78% |
+| `Rob_Hubbard, (Rob_Hubbard_Digi)` | 11 | 0 | 11 | 100% |
 | `Jason_Page/RobTracker` * | 0 | 6 | 6 | 0% |
 | `SidTracker64` * | 0 | 5 | 5 | 0% |
 | `Rob_Hubbard, Voicemaster_Covox` | 4 | 0 | 4 | 100% |
@@ -48,19 +48,20 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 ## Findings
 
-- **61/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
-- **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **61/83 = 73%** rather than 61/95 = 64%.
+- **69/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
+- **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **69/83 = 83%** rather than 69/95 = 72%.
 - **9 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
 - **6 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 53 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **15 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
   - **15 are phantom subtunes** (subtune 0 clean, later subtunes dangling). The track table has no length field and the PSID header routinely over-claims, so a pointer that happens to land inside the file is read as an orderlist. Only pointers resolving *outside* the file, and subtunes that play no existing pattern at all, are rejected -- a threshold on the rest would also discard real subtunes, which run as low as one bad reference in a hundred good ones.
 
-## Converted (61)
+## Converted (69)
 
 | File | Title | Source | SIDId | Player | Ver | Subtunes | Instr | Patterns | Dangling | .sng bytes | Flag |
 |---|---|---|---|---|---:|---|---:|---:|---|---:|---|
 | `5_Title_Tunes.sid` | 5 Title Tunes | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 5) | 17 | 38 | - | 8932 |  |
 | `Action_Biker.sid` | Action Biker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 13 | 73 | - | 18323 |  |
+| `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 182 | - | 61666 |  |
 | `Arcade_Classics.sid` | Arcade Classics | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 24 | 110 | - | 33357 |  |
 | `Auf_Wiedersehen_Monty.sid` | Auf Wiedersehen Monty | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 13 | 17 | 169 | - | 42861 |  |
 | `Bangkok_Knights.sid` | Bangkok Knights | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 59 | 52 | - | 14848 | 9 instr dropped |
@@ -84,6 +85,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Hunter_Patrol.sid` | Hunter Patrol | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 33 | 78 | - | 21844 |  |
 | `IK_plus.sid` | IK+ | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 (hdr 3) | 31 | 51 | - | 13303 |  |
 | `Kings_of_the_Beach_ingame.sid` | Kings of the Beach (ingame) | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 7 | 11 | 106 | - | 35736 |  |
+| `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 |  |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 |  |
 | `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 17) | 34 | 66 | 113 | 21248 |  |
 | `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 18) | 34 | 56 | 154 | 17385 |  |
@@ -91,16 +93,22 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 |  |
 | `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 43 | 60 | 85 | 18102 |  |
 | `Mozart.sid` | Mozart | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 20 | 118 | - | 36219 |  |
+| `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 |  |
 | `Nemesis_the_Warlock.sid` | Nemesis the Warlock | PSID v2 | Rob_Hubbard | IK+ | 7 | 15 | 33 | 74 | 23 | 17575 |  |
 | `Nineteen.sid` | Nineteen | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 59 | 46 | - | 12596 | 9 instr dropped |
 | `Ninja.sid` | Ninja | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 14 | 26 | - | 6076 |  |
+| `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 106 | - | 37174 |  |
 | `One_Man_and_his_Droid.sid` | One Man and his Droid | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 13 (hdr 14) | 16 | 74 | 33 | 21835 |  |
+| `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 21 | 74 | - | 11357 |  |
 | `Pandora.sid` | Pandora | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 33 | 67 | - | 19072 |  |
 | `Phantoms_of_the_Asteroid.sid` | Phantoms of the Asteroid | PSID v2 | Rob_Hubbard | Last V8 | 1 | 4 | 0 | 96 | - | 26029 |  |
-| `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 9 (hdr 10) | 25 | 57 | - | 16152 |  |
+| `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 13 | 67 | - | 15817 |  |
 | `Proteus.sid` | Proteus | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 18 | 46 | - | 12143 |  |
+| `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 |  |
 | `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 17 (hdr 18) | 15 | 65 | 23 | 15994 |  |
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 33 | 138 | - | 46266 |  |
+| `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 |  |
+| `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 |  |
 | `Saboteur_II.sid` | Saboteur II | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 17 | 54 | - | 13888 |  |
 | `Samantha_Fox_Strip_Poker.sid` | Samantha Fox Strip Poker | PSID v2 | Rob_Hubbard | Samantha Fox | 3 | 14 | 25 | 83 | - | 15330 |  |
 | `Sanxion.sid` | Sanxion | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 2) | 60 | 69 | - | 22773 | 10 instr dropped |
@@ -123,19 +131,12 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 `Source` is the input file's own header version — the original player-file format, distinct from both the Hubbard engine variant and the Goattracker output format. `Player`/`Ver` are the detected Hubbard player-engine variant and its track-read version number. `Subtunes` is how many actually reach the `.sng`; where that differs from the PSID header's claim the header value follows in brackets, and the gap is subtunes whose orderlist pointers resolve outside the file (the track table has no length field, so the header routinely over-claims). `Dangling` counts distinct orderlist entries naming a pattern the file does not have; those references are dropped, so the affected voice plays with material missing. **Bold** marks a count that includes subtune 0 — a decode fault rather than a phantom subtune (see Findings).
 
-## Not converted (22)
+## Not converted (14)
 
 | File | Title | Source | SIDId | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |
 |---|---|---|---|---|---|---:|:-:|:-:|:-:|---|
-| `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Delta_Mix-E-Load_loader.sid` | Delta Mix-E-Load (loader) | PSID v2 | Rob_Hubbard | detect | Warhawk | 16 | y | y | - | no player detected (missing: patterns) |
 | `I_Ball.sid` | I, Ball | RSID v2 | Rob_Hubbard | detect | IK+ | 4 | - | - | - | no player detected (missing: tracks, patterns) |
-| `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | IK+ | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | patterns | Warhawk | 1 | y | y | y | TRACKLIST TOO LONG, CAN'T EXPORT TO GOATTRACKER |
 | `Delta.sid` | Delta | PSID v2 | Rob_Hubbard | patterns | Warhawk | 13 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `Dragons_Lair_Part_II.sid` | Dragon's Lair Part II | PSID v2 | Rob_Hubbard | patterns | Warhawk | 10 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
@@ -148,7 +149,6 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `ACE_II.sid` | ACE II | PSID v2 | Rob_Hubbard | tracks | ACE 2 | 1 | y | y | y | NO PLAYABLE SUBTUNE, CAN'T CONVERT |
 | `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | tracks | - | 1 | y | y | y | ValueError: unsupported/undetected Hubbard player track-read version: $FF |
 | `Devils_Galop.sid` | Devils Galop | PSID v2 | Rob_Hubbard | tracks | Battle of Britain | 1 | y | y | y | NO PLAYABLE SUBTUNE, CAN'T CONVERT |
-| `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | tracks | Auf Wiedersehen Monty | 4 | y | y | y | ORDERLISTS DO NOT MATCH THE PATTERN TABLE, DETECTION IS UNSOUND |
 
 `Source` is the input file's own header version; `-` means the header was rejected before it could be read. `Player` is the detected player variant, or `-` when the player-version pass found nothing. `Sub (hdr)` is the PSID header's subtune claim — these files produce no `.sng`, so there is no emitted count to compare it against.
 

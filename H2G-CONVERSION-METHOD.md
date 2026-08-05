@@ -513,6 +513,62 @@ is forced to `0xFF`, truncating the track rather than overflowing.
 > `Select Case` (which likewise has an unreachable literal `4` in its second
 > case list, because `Case 4` appears earlier and VB takes the first match).
 
+### A second engine: interleaved tables and a different pattern grammar
+
+Nine corpus files use a later Hubbard engine that none of the classic
+signatures can read. It is worth studying because both of its differences are
+things a strategy-B ripper will meet again.
+
+**1. The pointer tables are interleaved.** Every classic player keeps a LO
+table and a HI table, which is what makes `count = HI - LO - 1` work at all.
+This one holds `lo,hi,lo,hi` and doubles the index:
+
+```
+10E5  0A A8     ASL / TAY          ; pattern number * 2
+10E7  B9 41 18  LDA $1841,Y        ; low
+10EC  B9 42 18  LDA $1842,Y        ; high -- one byte on, not a table away
+```
+
+Read with the classic formula that yields **zero** patterns. And because the
+two halves are no longer separated, nothing in the file records the entry
+count: it has to be recovered by walking entries until one stops resolving
+inside the file.
+
+**2. The table the code names is not the table the data is in.** The
+orderlist-read instruction points at a *runtime* table, all zeroes on disk and
+filled in at init. The authored pointers sit 8 bytes past it (4 voices x 2),
+and the pattern table 10 past those. Those offsets are identical in all nine
+files, and the pattern table found independently by the other signature lands
+exactly there — two reads confirming each other.
+
+That relation is also the **discriminator**. Six further files match both code
+shapes but fail it; SIDId identifies every one of them as
+`Jason_Page/RobTracker`, a related engine whose tables sit elsewhere. Matching
+the instruction shape is not enough — the layout has to agree too.
+
+The pattern grammar is new as well ($1104):
+
+```
+< $80         a note; $60 is a rest, everything else is a semitone offset
+bit 7+6 set   duration prefix, wait = b & $1F -- and it is *sticky*
+$80 n         set instrument
+$82 a b       effect (two operands)      $83 a b   effect (two operands)
+$81           end of pattern
+```
+
+with one twist: `$81` is never read at the fetch point. The note path peeks
+the *following* byte for it, so a decoder that only looks at fetched bytes
+runs past every pattern's end into the next `$FF` anywhere in the file. That
+is what made an early attempt decode 22 patterns of Off the Cuff into 112747
+rows.
+
+Instrument records are 16 bytes rather than 8, but the fields this converter
+reads — waveform `+2`, attack/decay `+3`, sustain/release `+4` — sit at the
+same offsets in both, so only the stride differs.
+
+The engine drives **four** voices; the fourth is the sample channel these
+files are named for, and Goattracker has no place for it.
+
 ### An undetected/`0xFF` version is a real hazard
 
 `Detection.can_convert` only checks that the track and pattern tables were

@@ -184,6 +184,104 @@ def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
     return events
 
 
+# --- The "digi" engine's pattern grammar -----------------------------------
+#
+# A different encoding from the classic players', read at Off the Cuff $1104:
+#
+#     1104  B1 FA     LDA (patt),Y
+#     1106  10 4E     BPL $1156        ; < $80 -> a note
+#     1109  29 40     AND #$40
+#     110B  F0 0D     BEQ $111A        ; bit 6 clear -> a command
+#     110E  9D 4E 16  STA $164E,X      ; bit 6 set -> duration prefix,
+#     1111  29 1F     AND #$1F         ;   wait = b & $1F, and it is *sticky*:
+#     1116  C8 4C..   INY / JMP $1104  ;   fetch the next byte for the note
+#     111B  C9 80     CMP #$80 -> one operand  (instrument, $165A,X)
+#     111F  C9 82     CMP #$82 -> two operands ($167B,X / $1678,X)
+#     1123  C9 83     CMP #$83 -> two operands ($1681,X / $1684,X)
+#
+# and the note path at $1156 reads the *following* byte to find the end:
+#
+#     1158  B1 FA     LDA (patt),Y     ; peek past the note
+#     115A  C9 81     CMP #$81
+#     115E  A0 00     LDY #$00         ; end of pattern: rewind
+#     1160  FE 42 16  INC $1642,X      ; ...and step the orderlist
+#     1168  C9 60     CMP #$60         ; $60 is a rest, not a note
+#     116D  7D A0 16  ADC $16A0,X      ; note + orderlist transpose
+#     1173  0A A8     ASL / TAY        ; ...into a 2-byte-per-note frequency table
+#
+# So $81 never appears at the fetch point -- it is only ever seen as the
+# lookahead after a note. A duration of W holds for W+1 frames, the same
+# DEC/BMI convention as the classic players ($10A2).
+DIGI_DURATION = 0xC0        # bit 7 and bit 6 set
+DIGI_END = 0x81
+DIGI_SET_INSTRUMENT = 0x80
+DIGI_TWO_OPERAND = (0x82, 0x83)
+DIGI_REST = 0x60
+DIGI_MAX_NOTE = 0x5C        # same ceiling the classic decoder clamps to
+
+
+def _build_raw_pattern_digi(data: bytes, addr: int) -> Optional[List[int]]:
+    """Flat event stream for one digi-engine pattern, or None if out of range.
+
+    Effects $82 and $83 are parsed for their length but not translated -- their
+    two operands land in per-voice slots this converter does not model. Notes,
+    instruments and timing are complete; dropping an effect leaves a note
+    playing plainly rather than corrupting the stream.
+    """
+    if addr <= 1 or addr >= len(data):
+        return None
+
+    events: List[int] = []
+    instrument = 0
+    wait = 0
+
+    while True:
+        if addr <= 1 or addr >= len(data):
+            return None
+        b = data[addr]
+
+        if b == DIGI_END:
+            events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            break
+        if b >= DIGI_DURATION:
+            wait = b & 0x1F
+            addr += 1
+            continue
+        if b == DIGI_SET_INSTRUMENT:
+            if addr + 1 >= len(data):
+                return None
+            # +2 for the same reason the classic decoder adds it: Goattracker
+            # instrument 1 is the empty "Clear Voice" slot, so the player's
+            # record 0 is written as instrument 2.
+            instrument = data[addr + 1] + 2
+            addr += 2
+            continue
+        if b in DIGI_TWO_OPERAND:
+            addr += 3
+            continue
+        if b >= 0x80:
+            # $84-$BF reach a `BNE` back to the fetch with no INY, i.e. the
+            # player would spin forever. Real data never contains one, so this
+            # means the pointer is not at a pattern.
+            return None
+
+        if b == DIGI_REST:
+            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+        else:
+            note = min(b, DIGI_MAX_NOTE) + 0x60
+            events += [note, instrument, 0x00, 0x00]
+        for _ in range(wait):
+            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+        addr += 1
+
+        # The terminator is only ever read as the byte after a note.
+        if addr < len(data) and data[addr] == DIGI_END:
+            events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            break
+
+    return events
+
+
 def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
                    terminate: bool = False) -> List[List[int]]:
     """Chunk a flat event stream into <=max_len pieces.
@@ -303,7 +401,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         # pattern_used is inferred from the gap between the LO and HI tables, so
         # a misdetected table pair can claim more entries than the file holds.
         # Bounds-check the table index itself, not just the address it yields.
-        lo_i, hi_i = det.pattern_lo + i, det.pattern_hi + i
+        step = i * det.table_stride
+        lo_i, hi_i = det.pattern_lo + step, det.pattern_hi + step
         if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
             log(f"*** PATTERN ${i:X} TABLE INDEX OUT OF RANGE, CAN'T CONVERT ***")
             raw_patterns.append(list(ERROR_PATTERN))
@@ -311,7 +410,9 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
         addr = data[hi_i] * 256 + data[lo_i]
         addr = addr - sid.load_addr + HLEN - 1
-        events = _build_raw_pattern(data, addr)
+        events = (_build_raw_pattern_digi(data, addr)
+                  if det.pattern_dialect == "digi"
+                  else _build_raw_pattern(data, addr))
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
