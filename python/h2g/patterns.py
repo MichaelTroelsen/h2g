@@ -69,9 +69,9 @@ def command_floor(version: int) -> int:
 
         0, 1, 3, 4   no command but $FF -- every other byte, up to $FD, is a
                      Hubbard pattern number
-        2            transposes emitted as $F0-$FE; pattern numbers are <= $7F
+        5            likewise, and it does not even test $FE
+        2, 6, 7, 8   transposes emitted as $F0-$FE; pattern numbers are <= $7F
                      because the player reads bit 7 as a command flag
-        5, 6, 7, 8   transposes emitted as $E0-$FF; pattern numbers <= $7F
 
     Reading a version-0 track with Goattracker's own $D0 boundary silently
     reinterprets pattern numbers $D0-$FD as repeat and transpose commands. That
@@ -82,10 +82,8 @@ def command_floor(version: int) -> int:
     Goattracker numbering, where $D0-$FF really are commands, and callers
     reading those should use GT_COMMAND_FLOOR.
     """
-    if version == 2:
+    if version in (2, 6, 7, 8):
         return GT_TRANSPOSE_UP
-    if version in (5, 6, 7, 8):
-        return GT_TRANSPOSE_DOWN
     return GT_ORDER_RESTART
 
 

@@ -31,18 +31,18 @@ INDEX = [[i] for i in range(0x100)]
 
 def test_versions_without_a_high_bit_check_have_no_command_range():
     # Verified against the fingerprints in detect.py: versions 0/1/3 compare
-    # against $FF and $FE only, and version 4's non-$FF path emits nothing.
-    for version in (0, 1, 3, 4):
+    # against $FF and $FE only, version 4's non-$FF path emits nothing, and
+    # version 5 tests $FF alone -- no BPL, and no AND #$7F anywhere in those
+    # players, so it has no command set to translate.
+    for version in (0, 1, 3, 4, 5):
         assert command_floor(version) == 0xFF
 
 
-def test_version_2_commands_start_at_transup():
-    assert command_floor(2) == 0xF0
-
-
-def test_mega_apocalypse_family_commands_start_at_transdown():
-    for version in (5, 6, 7, 8):
-        assert command_floor(version) == 0xE0
+def test_transpose_dialects_command_range_starts_at_transup():
+    # 2, 6, 7 all emit transposes as $F0-$FE (clamped below LOOPSONG). They
+    # share one player idiom: BPL / AND #$7F / STA transpose,X.
+    for version in (2, 6, 7, 8):
+        assert command_floor(version) == 0xF0
 
 
 def test_goattracker_floor_is_the_default():

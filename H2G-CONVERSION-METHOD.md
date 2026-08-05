@@ -433,18 +433,17 @@ Four behaviours, selected by `read_track_version`:
 version == 4:                 # ACE 2
     b1 >= 0x80  -> end
 
-version in (5, 6, 7, 8):      # Mega Apocalypse family
-    0x80..0x8F  -> transpose up:   emit (b1 - 0x80) + 0xF0     => 0xF0..0xFF
-    0xEF..0xFE  -> transpose down: emit 0xF0 - (b1 ^ 0xFF)     => 0xE0..0xEF
+version == 5:                 # Battle of Britain / Gremlins / Thing on a Spring
     0xFF        -> end
-    <= 0x7F     -> pattern number, emit as-is
+    everything else -> pattern number  (this player has no command set at all,
+                       and unlike 0/1/3 it does not test 0xFE either)
 
-version == 2:                 # Auf Wiedersehen Monty / Saboteur II / Wiz
+version in (2, 6, 7, 8):      # AWM / Saboteur II / Mega Apocalypse / IK+
     0xFF        -> end, restart 0x00
-    0xFE        -> end, restart 0xFD
+    0xFE        -> end, restart 0xFD          (version 2 only -- 6/7 don't test it)
     0x80..0xFD  -> transpose (absolute, per voice):
                      one-byte form:  semitones = b1 & 0x7F
-                     two-byte form:  semitones = the *following* byte
+                     two-byte form:  semitones = the *following* byte (AWM only)
                    emit 0xF0 + min(semitones, 14)
     <= 0x7F     -> pattern number, emit as-is
 
@@ -482,6 +481,25 @@ Two sub-variants share the version-2 fingerprint, told apart by the first
 instruction after the marker tests: `$29` (`AND #$7F`, value in the command
 byte) in 13 of the 14 corpus files, `$C8` (`INY`, value in the next byte) in
 Auf Wiedersehen Monty alone.
+
+**Versions 6 and 7 are the same idiom**, verified at Mega Apocalypse `$4B15` /
+`$4B7D` and IK+ `$E09B` / `$E11E` — `BPL` / `AND #$7F` / `STA transpose,X`,
+read back as `CLC` / `ADC transpose,X`. So one player dialect covers four
+games, and the original's separate "Mega Apocalypse family" branch was wrong
+about all of it in four distinct ways:
+
+| Original | Reality |
+|---|---|
+| `$80-$8F` → `$F0..$FF` | `$8F` is +15, and `$FF` is `LOOPSONG` — the track restarts instead of transposing. 3 in real subtunes, 22 more in Mega Apocalypse's later ones |
+| `$90-$EE` discarded | Transposes, lost outright. 16 in real subtunes across six files |
+| `$EF-$FE` → negative transpose | The player has no negative form; `AND #$7F` makes these +$6F..+$7E |
+| version 5 included | That player has no `BPL` and no `AND #$7F` anywhere — no command set at all |
+
+The version-5 error was the costly one. `Commodore_64_Music_Examples` is the
+only version-5 file with bytes ≥ `$80` in a real subtune, and its pattern table
+holds 145 entries while those bytes are `$80`–`$90` (128–144) — genuine pattern
+numbers, in range, that the transpose branch was destroying. Reading them
+correctly is what makes that file convert.
 
 Every track is terminated with a two-byte `[0xFF, restart_position]` pair —
 Goattracker's `RST` orderlist command. The stored length byte is therefore

@@ -67,35 +67,50 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 track += [0xFF, 0x00]
                 break
 
-        elif version in (5, 6, 7, 8):  # Mega Apocalypse
-            if 0x80 <= b1 <= 0x8F:
-                track.append((b1 - 0x80) + 0xF0)  # transpose +
-            if 0xEF <= b1 <= 0xFE:
-                track.append(0xF0 - (b1 ^ 0xFF))  # transpose -
+        elif version == 5:  # Battle of Britain / Gremlins / Thing on a Spring
+            # No command path at all. The fingerprint is its own proof:
+            #     LDY index,X / LDA (track),Y / CMP #$FF / BNE pattern_number
+            # -- no BPL, and no AND #$7F anywhere in these players' code. Every
+            # byte but $FF is a pattern number, and unlike versions 0/1/3 this
+            # one does not test $FE either.
+            #
+            # The VB6 original lumped version 5 in with Mega Apocalypse, so it
+            # read $80-$8F and $EF-$FE as transposes and discarded $90-$EE.
+            # Harmless in practice -- of the nine version-5 corpus files, only
+            # the Commodore 64 Music Examples compilation has any byte >= $80
+            # in a real subtune -- but it was decoding a command set the player
+            # does not have.
             if b1 == 0xFF:
                 track += [0xFF, 0x00]
                 break
-            if b1 <= 0x7F:
-                track.append(b1)
+            track.append(b1)
 
-        elif version == 2:  # Auf Wiedersehen Monty / Saboteur II / Wiz / ...
-            # This player checks the high bit before anything else:
-            #     LDA (track),Y / BPL pattern_number / CMP #$FF / CMP #$FE
-            # so $80-$FD are transpose commands, not pattern numbers. The VB6
-            # original grouped version 2 with 0/1/3, which have no such branch,
-            # and so emitted every command byte (and, in the two-byte form, its
-            # operand) as a pattern reference. The command bytes then dangled
-            # past the end of the pattern table and were silently dropped,
-            # while a two-byte form's operand landed on a real but wrong
-            # pattern.
+        elif version in (2, 6, 7, 8):  # AWM / Saboteur II / Mega Apocalypse / IK+
+            # These players check the high bit before anything else:
+            #     LDA (track),Y / BPL pattern_number / CMP #$FF [/ CMP #$FE]
+            # so $80-$FD are transpose commands, not pattern numbers, and the
+            # value is the low 7 bits (`AND #$7F` / `STA transpose,X`), read
+            # back as `CLC` / `ADC transpose,X` on the note before the
+            # frequency-table lookup. Verified in Saboteur II ($F097/$F125),
+            # Auf Wiedersehen Monty ($E49A/$E52C), Mega Apocalypse
+            # ($4B15/$4B7D) and IK+ ($E09B/$E11E) -- one idiom, four games.
+            #
+            # The VB6 original grouped version 2 with 0/1/3, which have no such
+            # branch, and gave 6/7 a mapping matching none of them: $80-$8F
+            # scaled to $F0-$FF (so a transpose of +15 became $FF, LOOPSONG --
+            # a spurious song loop where a transposed pattern belongs),
+            # $90-$EE discarded, and $EF-$FE read as *negative* transposes
+            # though the player has no negative form.
             if b1 == 0xFF:
                 track += [0xFF, 0x00]
                 break
-            if b1 == 0xFE:
+            if version == 2 and b1 == 0xFE:
+                # Only version 2 tests $FE; 6/7 fall through and treat it as a
+                # transpose like any other high byte.
                 track += [0xFF, 0xFD]  # illegal repeat position -> stop
                 break
             if b1 >= 0x80:
-                if transpose_operand:
+                if transpose_operand:   # version 2's two-byte sub-variant only
                     if addr + i2 >= len(data):
                         if log:
                             log("*** TRACK DATA RUNS PAST END OF FILE, TRUNCATED ***")

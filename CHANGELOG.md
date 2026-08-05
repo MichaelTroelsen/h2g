@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.29 — 2026-08-05
+
+- decode version 5/6/7 orderlist commands from the players' actual code
+
 ## 0.5.28 — 2026-08-05
 
 - reindex orderlists at the player dialect's command boundary, not Goattracker's
