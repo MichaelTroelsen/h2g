@@ -31,7 +31,7 @@ from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           referenced_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
 from h2g.sidid import Database, find_database
-from h2g.tracks import convert_tracks
+from h2g.tracks import convert_tracks, legalise_restarts
 
 VERSION_NAMES = {
     0: "Warhawk", 1: "Last V8", 2: "Auf Wiedersehen Monty", 3: "Samantha Fox",
@@ -132,6 +132,7 @@ def survey_one(path: Path, sng_dir: Path | None,
                dedup: bool = False,
                prune: bool = False,
                pack: bool = False,
+               legal_restart: bool = False,
                sidid_db: Database | None = None,
                gt2reloc: str | None = None,
                workdir: str | None = None) -> Result:
@@ -206,6 +207,8 @@ def survey_one(path: Path, sng_dir: Path | None,
                                 dropped=dropped, patterns=new_patterns,
                                 max_rows=max_rows)
         r.subtunes_dropped = len(dropped)
+        if legal_restart:
+            legalise_restarts(tracks)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
         return r
@@ -245,7 +248,8 @@ def _md_escape(text: str) -> str:
 
 def build_report(results: list[Result], sid_dir: Path,
                  max_rows: int = GT_DEFAULT_ROWS,
-                 fmt: str = DEFAULT_FORMAT) -> str:
+                 fmt: str = DEFAULT_FORMAT,
+                 legal_restart: bool = False) -> str:
     ok = [r for r in results if r.ok]
     # A file whose player SIDId names as someone else's editor is not a failure
     # of this tool -- no Hubbard fingerprint can match it and no new signature
@@ -272,6 +276,14 @@ def build_report(results: list[Result], sid_dir: Path,
                 " (modern 4-table format; avoids the GTS2 importer overrun, and is "
                 "what Goattracker itself writes)")
     lines.append(f"- Output format: **{fmt.upper()}** (of {'/'.join(f.upper() for f in FORMATS)}){fmt_note}")
+    lines.append(
+        "- Restart position: **legalised** (`--legal-restart`) — a tune ending "
+        "on Hubbard's `$FE` marker loops from the top instead of stopping, "
+        "which is what lets `gt2reloc` export it at all"
+        if legal_restart else
+        "- Restart position: **as the original tool wrote it** — a tune ending "
+        "on Hubbard's `$FE` marker stops, at the cost of being unexportable by "
+        "`gt2reloc` (`--legal-restart` trades the stop for a loop)")
     reach = len(results) - len(out_of_scope)
     pct = (100.0 * len(ok) / reach) if reach else 0.0
     scope_note = (f" — Out of scope: **{len(out_of_scope)}** (not a Hubbard player)"
@@ -288,8 +300,9 @@ def build_report(results: list[Result], sid_dir: Path,
     lines.append("")
     rows_arg = "" if max_rows == GT_DEFAULT_ROWS else f" --max-rows {max_rows}"
     fmt_arg = "" if fmt == DEFAULT_FORMAT else f" --format {fmt}"
+    restart_arg = " --legal-restart" if legal_restart else ""
     lines.append(f"Regenerate with: `python survey.py \"{sid_dir}\" "
-                 f"-o SURVEY.md{rows_arg}{fmt_arg}`")
+                 f"-o SURVEY.md{rows_arg}{fmt_arg}{restart_arg}`")
     lines.append("")
 
     # --- failure breakdown -------------------------------------------------
@@ -409,9 +422,15 @@ def build_report(results: list[Result], sid_dir: Path,
             "`.sid` can be `siddump`ed against the file it was converted from. "
             "A failure here is not a conversion failure — the `.sng` is fine in "
             "the editor — but it blocks that comparison. See "
-            "[`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md); the known cause is "
-            "the restart position this converter emits for a `$FE` track byte, "
-            "which `greloc.c:244` rejects as out of range.")
+            "[`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md)."
+            + (" These numbers are with `--legal-restart`; without it "
+               "`greloc.c:244` rejects every tune that ends on Hubbard's `$FE` "
+               "marker, because the stop it maps to is an out-of-range restart "
+               "position." if legal_restart else
+               " The known cause is the restart position this converter emits "
+               "for a `$FE` track byte, which `greloc.c:244` rejects as out of "
+               "range; `--legal-restart` trades that stop for a loop and clears "
+               "it."))
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
@@ -590,6 +609,10 @@ def main(argv=None) -> int:
                         help="drop patterns that no track's orderlist references")
     parser.add_argument("--pack-repeats", action="store_true",
                         help="collapse repeated patterns into REPEAT commands")
+    parser.add_argument("--legal-restart", action="store_true",
+                        help="rewrite the out-of-range restart position that "
+                             "stands in for Hubbard's 'tune ended' marker, "
+                             "which greloc.c:244 refuses to export")
     parser.add_argument("--gt2reloc", metavar="PATH", nargs="?", const="",
                         help="also pack every converted .sng back to .sid with "
                              "gt2reloc and report whether it succeeds. Defaults "
@@ -631,6 +654,7 @@ def main(argv=None) -> int:
                                       dedup=args.dedup_patterns,
                                       prune=args.prune_patterns,
                                       pack=args.pack_repeats,
+                                      legal_restart=args.legal_restart,
                                       sidid_db=sidid_db,
                                       gt2reloc=exe, workdir=workdir))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
@@ -640,7 +664,8 @@ def main(argv=None) -> int:
     if workdir:
         shutil.rmtree(workdir, ignore_errors=True)
     Path(args.output).write_text(
-        build_report(results, sid_dir, args.max_rows, args.format),
+        build_report(results, sid_dir, args.max_rows, args.format,
+                     args.legal_restart),
         encoding="utf-8")
     ok = sum(1 for r in results if r.ok)
     print(f"{ok}/{len(results)} converted -> {args.output}")

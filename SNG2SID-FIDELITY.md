@@ -47,7 +47,11 @@ the packed SID is deliberately not a byte-level image of the `.sng`.
 
 ---
 
-## 2. Blocker 1 — illegal restart position (blocks 26 of 67 outright)
+## 2. Blocker 1 — illegal restart position (**resolved**)
+
+> The measurements below are the original investigation at v0.5.36, when the
+> corpus stood at 67 convertible files. `--legal-restart` closes this; see the
+> fix note at the end of the section.
 
 Symptom: `gt2reloc` exits **0**, prints nothing, writes **no file**. This is the
 "gt2reloc silently writes nothing for our files" note from earlier work; it is
@@ -93,11 +97,28 @@ Sanxion:     original=FAIL   restart-patched=OK (3363 B)
 Across the corpus the patch takes relocation from 41/67 to **66/67**
 (`Phantoms_of_the_Asteroid` still fails; it has 0 patterns).
 
-**Recommended fix in the converter:** emit a legal restart position. `$FD` was
-chosen to mean "stop rather than loop", but Goattracker has no legal way to say
-that in an orderlist, and the cost of the trick is that the song cannot be
-packed at all. Emitting `0` loops instead — audible difference at the end of a
-subtune, versus not being exportable.
+**Fixed in the converter: `--legal-restart`.** `$FD` was chosen to
+mean "stop rather than loop", but Goattracker has no legal way to say that in
+an orderlist, and the cost of the trick is that the song cannot be packed at
+all. The option emits `0` instead — an audible difference at the end of a
+subtune, versus not being exportable. Measured with each song's presets it
+takes relocation from **50 of 78 to 78 of 78**. It is opt-in (it changes the
+bytes, and the byte-exact `Commando.sng` fixture carries three such tracks),
+but `presets.json`'s `always` block sets it, so the preset path gets it for
+free.
+
+The same option repairs a second case this section missed. A voice whose
+orderlist is only a marker (`[$FF, $00]`, `songlen == 0`) also has no legal
+restart position — but `greloc.c:201` does not *reject* those, it only
+validates and packs subtunes whose three channels all have nonzero length.
+`greloc.c:653` then writes the accepted subtunes consecutively, so one
+zero-length voice silently drops its subtune and renumbers every later one.
+That is the real explanation for the `Rasputin` outlier above, and it is worse
+than "presumably optimised away". Every one of its out-of-range tracks sits in
+a subtune that also has a zero-length voice, so `greloc` never checked those
+subtunes — it dropped them. Both of them, including subtune 0. The file
+"relocated" while discarding the music; with `--legal-restart` the placeholder
+orderlist gives every voice a nonzero length and both subtunes are packed.
 
 ---
 
@@ -130,16 +151,14 @@ for files you pack.
 ## 4. The working pipeline
 
 ```sh
-# 1. convert, WITHOUT --tempo
-python -m h2g <song>.sid -o song.sng --max-rows 128 --pack-repeats --format gts5
+# 1. convert, WITHOUT --tempo, with a restart position the packer accepts
+python -m h2g <song>.sid -o song.sng --max-rows 128 --pack-repeats \
+              --format gts5 --legal-restart
 
-# 2. legalise restart positions (until the converter does it)
-python fixrestart.py song.sng song_fixed.sng
+# 2. pack to SID  — this is F9
+gt2reloc song.sng converted.sid -S1
 
-# 3. pack to SID  — this is F9
-gt2reloc song_fixed.sng converted.sid -S1
-
-# 4. trace both and compare
+# 3. trace both and compare
 siddump original.sid  -a0 -c1 -t60 > a.txt
 siddump converted.sid -a0 -c1 -t60 > b.txt
 ```
@@ -181,8 +200,12 @@ line**.
 > the "press SHIFT+F6 for 2×" caveat.
 
 **Subtune mapping.** Both sides take `-aN`, but our subtune numbering shifts
-when phantom subtunes are trimmed or an over-long one is dropped. Map explicitly
-rather than assuming `N == N`.
+when phantom subtunes are trimmed or an over-long one is dropped — and shifts
+again inside `gt2reloc`, which packs only subtunes whose three voices all have
+nonzero length (`greloc.c:201`) and writes the survivors consecutively
+(`:653`). Map explicitly rather than assuming `N == N`. `--legal-restart`
+removes the second source by giving an empty voice a placeholder orderlist,
+but not the first.
 
 **Transpose and note spelling.** The original player may transpose in its
 orderlist where we bake it into `TRANSUP`; the *absolute* frequency column is

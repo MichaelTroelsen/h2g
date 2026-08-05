@@ -49,6 +49,12 @@ param(
     # rescue a tune from the 254-byte orderlist limit.
     [switch]$PackRepeats,
 
+    # Rewrite the out-of-range restart position that stands in for Hubbard's
+    # "tune ended" marker. Required for -Sid: greloc.c:244 refuses to export a
+    # song that carries one. The tune loops from the top instead of ending.
+    # Implied by a preset file whose `always.legal_restart` is true.
+    [switch]$LegalRestart,
+
     # JSON file of per-song options (see python/presets.py). The entry matching
     # this .sid supplies the options that suit it; anything passed explicitly
     # still wins.
@@ -108,6 +114,7 @@ if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
 if ($DedupPatterns)     { $pyArgs += "--dedup-patterns" }
 if ($PrunePatterns)     { $pyArgs += "--prune-patterns" }
 if ($PackRepeats)       { $pyArgs += "--pack-repeats" }
+if ($LegalRestart)      { $pyArgs += "--legal-restart" }
 if ($Presets)           { $pyArgs += @("--presets", (Resolve-Path -LiteralPath $Presets).Path) }
 if ($Format) { $pyArgs += @("--format", $Format) }
 if ($Tempo)  { $pyArgs += @("--tempo", $Tempo) }
@@ -161,7 +168,8 @@ if ($wantSid) {
     } else {
         Write-Error ("gt2reloc wrote no .sid. The usual cause is the restart position " +
                      "this converter emits for a $FE track byte, which greloc.c:244 " +
-                     "rejects -- see SNG2SID-FIDELITY.md.")
+                     "rejects -- pass -LegalRestart (or use -Presets, whose `always` " +
+                     "block sets it). See SNG2SID-FIDELITY.md.")
         exit 1
     }
 }

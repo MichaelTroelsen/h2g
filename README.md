@@ -23,6 +23,7 @@ From `python/`:
 python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N] [--terminate-patterns]
                           [--format {gts2,gts5}] [--tempo N|auto]
                           [--dedup-patterns] [--prune-patterns] [--pack-repeats]
+                          [--legal-restart]
 python -m h2g --version
 ```
 
@@ -252,6 +253,48 @@ is `--pack-repeats`' job and it does that in two bytes however long the run
 is. Knucklebusters' middle voice is exactly that case — 261 bytes packing to
 56 — and merging its pairs first would have made them distinct and cost ~224.
 
+### `--legal-restart` (packing back to `.sid`)
+
+Hubbard's `$FE` track byte means *this tune has ended*. Every dialect
+implements it the same way — it calls the player's jump-table entry +3, which
+is `LDA #$C0` / `STA flag` / `RTS`, and the `BIT flag` / `BMI` at the top of
+the play routine then stops fetching notes (Warhawk `$109F`, Last V8 `$809B`,
+Saboteur II `$F0A2`).
+
+Goattracker's orderlist has no "stop". The original VB6 tool worked around
+that by writing `$FF $FD` — a song-loop whose restart position is out of
+range, which makes `gplay.c:969` call `stopsong()`. That is exactly right in
+the editor and fatal outside it: `greloc.c:244` **refuses to export** a song
+whose restart position is `>= songlen`, and `gt2reloc` reports the refusal to
+a console that does not exist headless, so you get exit 0, no message and no
+file.
+
+`--legal-restart` rewrites that position to 0. Measured over the corpus with
+each song's presets:
+
+| | `.sid` written by `gt2reloc` |
+|---|---:|
+| without | 50 of 78 |
+| with `--legal-restart` | **78 of 78** |
+
+The cost is real: the tune loops from the top instead of ending, so a one-shot
+jingle becomes a round. That is why it is opt-in — but without it those 28
+tunes cannot be packed at all, which is what blocks the `.sng` → `.sid`
+fidelity comparison for them.
+
+Restart position 0 is the only value that can be chosen without knowing the
+finished orderlist, since slicing, packing, merging and splitting all change
+its length after the track data is built. The rewrite therefore runs last, on
+the completed orderlists.
+
+It also repairs a second, quieter case: a voice whose orderlist is nothing but
+a marker (`[$FF, $00]`, `songlen` 0) has no legal restart position either.
+`greloc.c:201` does not reject those — it **skips the whole subtune**, and
+`greloc.c:653` writes the accepted ones consecutively, so the subtune numbers
+in the packed `.sid` no longer match the `.sng` it came from. A `siddump`
+comparison then quietly measures the wrong tune. Such voices get the same
+placeholder orderlist every other unrepresentable subtune gets.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes
@@ -279,8 +322,10 @@ size tie-break picks them up: 76 of 78 songs take dedup, 73 take packing.
 
 Options given on the command line always beat the stored preset. A song with
 no entry converts at the defaults. The file's `always` block carries what is
-right for every song rather than searched per song — `gts5` and `--tempo auto`
-— which is what lets a preset reproduce the exact bytes it records.
+right for every song rather than searched per song — `gts5`, `--tempo auto`
+and `--legal-restart` — which is what lets a preset reproduce the exact bytes
+it records, and what makes the `gt2reloc` step at the end of the block
+succeed for all 78.
 
 [`presets.json`](presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.
@@ -327,7 +372,9 @@ strength:
 Note what none of them prove: that a song *plays* correctly. A file can be
 byte-exact and structurally valid and still crash Goattracker on play (see
 [`--format`](#--format-gts2--gts5)) or run at the wrong tempo. Use
-[`play.ps1`](#playing-a-song--playps1) for that.
+[`play.ps1`](#playing-a-song--playps1) to hear one, and
+[`fidelity.py`](#fidelity--does-it-play-like-the-original) to measure the
+corpus.
 
 Treat any output-changing edit as a regression unless it is an intentional
 feature — in which case extend the fixtures rather than deleting the assertion.
@@ -354,8 +401,48 @@ figures here or in `CLAUDE.md`: they move whenever detection or capacity handlin
 changes, and a second copy goes stale silently.
 
 "Converted" there means the converter produced a `.sng` without erroring — it
-does **not** mean the output is musically correct. Only `Commando.sid` is
-verified byte-exact.
+does **not** mean the output is musically correct. That question is
+[`FIDELITY.md`](FIDELITY.md)'s, below.
+
+## Fidelity — does it play like the original?
+
+`python/fidelity.py` answers the question every other check in this repo
+sidesteps. It converts a `.sid`, packs the `.sng` back to a `.sid` with
+`gt2reloc` (Goattracker's F9 packer), traces **both** files with `siddump`, and
+compares what the two players tell the SID chip to do:
+
+```sh
+cd python
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
+python fidelity.py --pair original.sid ours.sid        # two files you already have
+```
+
+It needs `siddump.exe` and `gt2reloc.exe` (`H2G_SIDDUMP` / `H2G_GT2RELOC`
+override the paths) and is otherwise stdlib-only. The whole 95-file corpus
+takes a few seconds.
+
+What it counts is **note attacks** — the notes `siddump` prints bare, which it
+does only after a gate rising edge (`siddump.c:376-380`). A note in parentheses
+is the same voice moving to another pitch *without* re-triggering, and
+`(+ 0034)` is a slide inside one note. That distinction is the whole point: a
+plain `grep` for note names over the dump counts all three alike, and mistakes
+one vibrato cycle for a re-struck note.
+
+| metric | |
+|---|---|
+| **melody** | similarity of the attack sequence with consecutive repeats collapsed — the right notes in the right order |
+| **seq** | the same, uncollapsed, so a note struck eight times where the original struck it once counts against it |
+| **retrig** | our attacks over the original's; 1.0 is right |
+| **pitch** | overlap of the distinct pitches played |
+
+[`FIDELITY.md`](FIDELITY.md) is the committed report, and the single place
+fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
+elsewhere. Regenerate it after any commit that changes conversion.
+
+Two further comparisons are wired up behind flags, both shelling out to
+[SIDM2](SIDM2-FIDELITY-TESTER.md)'s tools and inheriting their dependencies:
+`--audio` (onset-aligned audio, tolerates our tempo offset) and `--register`
+(frame-exact register comparison, only meaningful once tempo is reconciled).
 
 ## Repository layout
 
@@ -363,14 +450,15 @@ verified byte-exact.
 |---|---|
 | `python/h2g/` | the Python port — active development target |
 | `python/tests/` | regression tests |
-| `python/survey.py`, `python/bump_version.py` | tooling |
+| `python/survey.py`, `python/presets.py`, `python/bump_version.py` | tooling |
+| `python/fidelity.py` | measures a conversion against the .sid it came from |
 | `convert.ps1`, `play.ps1` | PowerShell wrappers: convert, and convert + open in GoatTracker |
 | `build/` | converted output (gitignored); never written next to an input |
 | `VB6 Sourcecode/h2g.frm` | the original VB6 tool; still the ground truth for behaviour |
 | `arkiv/` | archived VB6 build and sample `.sid` files |
 | `Commando.sid` / `Commando.sng` | byte-exact regression fixture pair |
 | `H2G-CONVERSION-METHOD.md` | detailed explanation of how the conversion works |
-| `CHANGELOG.md`, `SURVEY.md` | version history, corpus results |
+| `CHANGELOG.md`, `SURVEY.md`, `FIDELITY.md` | version history, corpus results, playback fidelity |
 
 ## Links
 

@@ -1,9 +1,10 @@
 {
-  "generator": "h2g 0.5.44 presets.py",
+  "generator": "h2g 0.5.45 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
     "tempo": "auto",
+    "legal_restart": true,
     "gt2reloc": true
   },
   "criteria": "most playable subtunes, then most rows, then smallest file",
@@ -175,9 +176,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21103,
+      "bytes": 21104,
       "subtunes": 10,
-      "rows": 28690
+      "rows": 28723
     },
     "Flash_Gordon.sid": {
       "max_rows": 128,
@@ -346,18 +347,18 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 20411,
-      "subtunes": 11,
-      "rows": 31081
+      "bytes": 20417,
+      "subtunes": 9,
+      "rows": 31279
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 16545,
-      "subtunes": 10,
-      "rows": 31096
+      "bytes": 16551,
+      "subtunes": 9,
+      "rows": 31294
     },
     "Lightforce.sid": {
       "max_rows": 94,
@@ -382,18 +383,18 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 16830,
+      "bytes": 16831,
       "subtunes": 8,
-      "rows": 55928
+      "rows": 55961
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 48040,
+      "bytes": 48041,
       "subtunes": 20,
-      "rows": 123831
+      "rows": 123925
     },
     "Mozart.sid": {
       "max_rows": 128,
@@ -454,9 +455,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 21018,
+      "bytes": 21020,
       "subtunes": 7,
-      "rows": 44180
+      "rows": 44246
     },
     "One_on_One_Jordan_vs_Bird.sid": {
       "max_rows": 128,
@@ -517,9 +518,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14085,
+      "bytes": 14087,
       "subtunes": 10,
-      "rows": 30782
+      "rows": 30848
     },
     "Ricochet.sid": {
       "max_rows": 128,

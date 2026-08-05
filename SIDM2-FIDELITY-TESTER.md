@@ -95,37 +95,56 @@ original: 68 note events
 ours:    498 note events
 ```
 
+> **Corrected below.** Those counts are real and still reproduce, but they do
+> not mean what this section first concluded. The `grep` counts every note
+> siddump prints, and siddump prints a note in three different situations. Once
+> they are told apart — which is what `python/fidelity.py` now does — the
+> **7× re-trigger disappears**: `Off_the_Cuff` strikes *fewer* notes than the
+> original, not more. See §4b.
+
 Every note in both is a **B** — the pitch content agrees, which is the good
-news, and the tune is a B-rooted arpeggio figure. But we re-trigger roughly
-seven times too often.
+news, and the tune is a B-rooted arpeggio figure.
 
-The likely cause is in our own encoding. `patterns.py` fills hold rows with
-`GT_NO_NOTE = 0xBD`, and `gcommon.h:50` says:
+## 4b. What the counts actually were
 
-```c
-#define FIRSTNOTE 0x60
-#define LASTNOTE  0xbc
-#define REST      0xbd      // <- what we write on every held row
-#define KEYOFF    0xbe
-```
+`siddump.c:409` prints a bare note (`B-4 9B`) only when `prevchn[c].note == -1`,
+which `:376-380` sets on a **keyoff→keyon transition**. A note in parentheses
+(`(B-6 A3)`) is the same voice moving to another pitch *without* re-triggering,
+and `(+ 0034)` is a frequency delta inside one note. Only the bare form is a
+struck note. Separating them, over the same 8 seconds:
 
-`0xBD` is **REST**, not "no note". If Goattracker gates off on each held row and
-re-attacks at the next note, a note held for eight rows becomes eight staccato
-notes — which matches the ratio observed.
+| | attacks | note changes without retrigger | slides |
+|---|---:|---:|---:|
+| original | 82 | 0 | 349 |
+| ours | 64 | 530 | 0 |
 
-This is inherited from the VB6 original rather than introduced by the port, and
-changing it would alter every file and break the byte-exact `Commando.sng`
-fixture, so it is recorded here rather than fixed. **It should be confirmed
-against `gplay.c`'s note-column handling before anyone acts on it** — the
-evidence here is a note count, not a reading of the player.
+So we do not re-strike held notes here — we play **0.78** attacks per original
+attack, and the melodic sequence agrees to 89%. What the raw count was picking
+up is a different defect: the original bends the pitch *within* a note
+(vibrato — siddump prints deltas, the note number never changes), where ours
+jumps far enough to land on other note numbers entirely, including an octave
+the original never plays. That is worth its own investigation, and it is not
+the one this section originally named.
 
-That a single 8-second run surfaced a candidate corpus-wide defect is the
-argument for wiring this up properly.
+The `0xBD`/REST hypothesis is therefore **unsupported by this evidence**. It may
+still be a real defect — `patterns.py` does fill hold rows with `0xBD`, and
+`gcommon.h:50` does define that as `REST` — but the note count was never
+evidence for it, and across the corpus the median retrigger ratio is **0.98**
+(`FIDELITY.md`), which is not the signature of a corpus-wide gate-off defect.
+Confirming or refuting it needs `gplay.c`'s note-column handling read directly.
+
+That a single 8-second run produced a confident wrong conclusion, and that
+separating the event types overturned it, is the argument for wiring this up
+properly rather than grepping.
 
 ## 5. Conclusion
 
 - SIDM2's fidelity tooling is **directly reusable** — no porting, no adaptation.
   The missing piece was a `.sid` to compare against, and `gt2reloc` supplies it.
+- Step 1 is now implemented as `python/fidelity.py`, which runs the whole
+  pipeline (convert → legalise restart → pack → trace both → compare) over a
+  file or a corpus and writes [`FIDELITY.md`](FIDELITY.md). Steps 2 and 3 are
+  wired to it behind `--audio` and `--register`.
 - Use **both** comparisons: audio (`audio-tightness`, onset-aligned) for how it
   sounds, register (`validate-accuracy`) for how exact it is.
 - **Do not lead with the frame-exact number** while the tempo mismatch stands;

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.45 — 2026-08-05
+
+- --legal-restart and the fidelity harness
+
 ## 0.5.44 — 2026-08-05
 
 - convert the Delta loader and I, Ball: a pattern signature and a self-relocating file

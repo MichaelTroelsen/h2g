@@ -9,7 +9,8 @@ from __future__ import annotations
 from typing import List
 
 from .detect import Detection
-from .patterns import DEFAULT_TRACK, command_floor, pattern_references
+from .patterns import (DEFAULT_TRACK, GT_ORDER_RESTART, command_floor,
+                       pattern_references)
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
@@ -104,8 +105,9 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 break
             if version == 2 and b1 == 0xFE:
                 # Only version 2 tests $FE; 6/7 fall through and treat it as a
-                # transpose like any other high byte.
-                track += [0xFF, 0xFD]  # illegal repeat position -> stop
+                # transpose like any other high byte. $FE is "tune ended", and
+                # Goattracker has no stop -- see legalise_restarts.
+                track += [0xFF, 0xFD]
                 break
             if b1 >= 0x80:
                 if transpose_operand:   # version 2's two-byte sub-variant only
@@ -131,7 +133,7 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
 
         elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox
             if b1 == 0xFE:
-                track += [0xFF, 0xFD]  # illegal repeat position -> stop
+                track += [0xFF, 0xFD]  # tune ended; see legalise_restarts
                 break
             if b1 == 0xFF:
                 track += [0xFF, 0x00]
@@ -257,3 +259,70 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     # answer; convert() turns it into a refusal.
 
     return tracks
+
+
+def legalise_restarts(tracks: List[List[int]], log=None) -> int:
+    """Replace restart positions Goattracker's exporter refuses, in place.
+
+    Hubbard's `$FE` track marker means *this tune has ended*. Every dialect
+    encodes it the same way: it calls the player's jump-table entry +3, which
+    is `LDA #$C0 / STA flag / RTS`, and the play routine's `BIT flag / BMI` at
+    the top then branches away and stops fetching notes. Verified in Warhawk
+    (`$109F` -> `JSR $1003` -> `JMP $1F30`), Last V8 (`$809B` -> `JMP $8013` ->
+    `JMP $8C71`) and Saboteur II (`$F0A2` -> `JSR $F00C` -> `JMP $F589`) --
+    three dialects, one idiom.
+
+    Goattracker's orderlist has no "stop", so the VB6 original wrote `$FF $FD`
+    (`'make repeat illegal, so goattracker stops`, h2g.frm:1206): a LOOPSONG
+    whose restart position is out of range, which makes gplay.c:969 call
+    stopsong(). That is right in the editor and wrong everywhere else --
+    greloc.c:244 refuses to export a song whose restart position is
+    `>= songlen`, so gt2reloc writes no .sid at all. It reports nothing when it
+    does so, because its error path prints to a console that does not exist
+    headless, so the failure looks like success with a missing file.
+
+    The same defect reaches tracks that never saw an `$FE`: an orderlist whose
+    first byte is already `$FF` becomes `[$FF, $00]`, and with `songlen == 0`
+    even position 0 is out of range. Those do not fail the export -- they are
+    excluded from it. greloc.c:201 only validates (and only packs) a subtune
+    whose three channels all have nonzero length, and greloc.c:653 writes the
+    accepted ones consecutively, so a zero-length voice drops its whole subtune
+    and renumbers every later one in the packed .sid. A siddump comparison then
+    lines subtune N of the .sid up against subtune N+1 of the original, which
+    is a silent way to measure the wrong tune.
+
+    Restart position 0 is the only value that is legal without knowing the
+    finished orderlist -- every other candidate depends on a length that
+    slicing, packing, merging and splitting all change after this data is
+    built. So the tune loops from the top instead of ending. That is a real
+    loss of the composer's intent, which is why this is opt-in and why it is
+    logged; it is also the difference between a packed .sid and no file.
+
+    Returns the number of tracks changed.
+    """
+    fixed = 0
+    for track in tracks:
+        # Walk to the LOOPSONG rather than scanning for the first small byte.
+        # In a reindexed orderlist nothing but LOOPSONG can be $FF -- pattern
+        # numbers are < $D0, repeats $D0-$DF, transposes clamped to $FE -- but
+        # the restart operand that *follows* it is an ordinary number, so the
+        # first $FF is the marker, exactly as gsong.c:1344 finds it.
+        songlen = next((i for i, b in enumerate(track) if b == GT_ORDER_RESTART),
+                       None)
+        if songlen is None or songlen + 1 >= len(track):
+            continue                       # no marker, or no operand to judge
+        if track[songlen + 1] < songlen:
+            continue                       # already legal
+        if songlen == 0:
+            # A track that is nothing but an end marker has no position to
+            # restart at. The placeholder is the shape every other
+            # unrepresentable subtune already gets, so convert()'s emptiness
+            # check can still refuse a file where none survive.
+            track[:] = list(DEFAULT_TRACK)
+        else:
+            track[songlen + 1] = 0
+        fixed += 1
+    if log and fixed:
+        log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's $FE "
+            "stop marker; restarted at 0 so the song can be relocated")
+    return fixed

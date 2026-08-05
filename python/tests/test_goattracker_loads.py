@@ -17,8 +17,9 @@ Build it with:
 Point the tests at it with H2G_SNGSPLI2=<path to sngspli2.exe>; they skip when
 it is absent, so the suite still runs on a machine without GoatTracker.
 
-NOT covered: whether the song *sounds* right. That needs gt2reloc (blocked, see
-the module docstring note below) plus a SID register trace.
+NOT covered: whether the song *sounds* right. That is `fidelity.py`'s job --
+it packs the .sng to a .sid with gt2reloc and compares SID register traces
+against the original (see FIDELITY.md).
 """
 import os
 import pathlib

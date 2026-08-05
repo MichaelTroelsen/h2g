@@ -71,6 +71,15 @@ def main(argv=None) -> int:
              "is the only one that can bring a tune under the 254-byte "
              "orderlist limit. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--legal-restart", action="store_true",
+        help="rewrite the out-of-range restart position that stands in for "
+             "Hubbard's 'tune ended' marker. Goattracker's player treats it as "
+             "a stop, but its exporter (greloc.c:244) refuses the song, so "
+             "gt2reloc silently writes no .sid -- and reports nothing when it "
+             "does. With this the tune loops from the top instead of ending, "
+             "which loses the composer's intent but is what makes a packed "
+             ".sid possible at all. Off by default: it changes the output bytes")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -98,6 +107,8 @@ def main(argv=None) -> int:
             args.format = always["format"]
         if "--tempo" not in given and always.get("tempo") is not None:
             args.tempo = always["tempo"]
+        if "--legal-restart" not in given and always.get("legal_restart"):
+            args.legal_restart = True
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
@@ -135,7 +146,8 @@ def main(argv=None) -> int:
                       fmt=args.format, tempo=tempo,
                       dedup=args.dedup_patterns,
                       prune=args.prune_patterns,
-                      pack=args.pack_repeats)
+                      pack=args.pack_repeats,
+                      legal_restart=args.legal_restart)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

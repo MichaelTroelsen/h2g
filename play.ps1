@@ -64,6 +64,11 @@ param(
 
     [switch]$PackRepeats,
 
+    # Trade Hubbard's "tune ended" stop for a loop, so gt2reloc can export the
+    # song. Irrelevant to playing the .sng in Goattracker itself, where the
+    # stop is honoured -- pass it only when you intend to pack back to .sid.
+    [switch]$LegalRestart,
+
     [string]$Presets,
 
     # Startup tempo, calls per pattern row, or 'auto' (default).
@@ -102,6 +107,7 @@ if ($ext -eq ".sid") {
     if ($DedupPatterns)                            { $cArgs.DedupPatterns = $true }
     if ($PrunePatterns)                            { $cArgs.PrunePatterns = $true }
     if ($PackRepeats)                              { $cArgs.PackRepeats = $true }
+    if ($LegalRestart)                             { $cArgs.LegalRestart = $true }
     if ($Presets)                                  { $cArgs.Presets = $Presets }
     if ($Tempo -and $Tempo -ne 'none')             { $cArgs.Tempo = $Tempo }
 

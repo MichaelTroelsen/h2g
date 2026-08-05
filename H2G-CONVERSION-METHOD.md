@@ -497,7 +497,8 @@ version in (2, 6, 7, 8):      # AWM / Saboteur II / Mega Apocalypse / IK+
     <= 0x7F     -> pattern number, emit as-is
 
 version in (0, 1, 3):         # Warhawk / Last V8 / Samantha Fox
-    0xFE        -> end, with restart position 0xFD (deliberately illegal = stop)
+    0xFE        -> end, with restart position 0xFD (deliberately illegal = stop;
+                       see "$FE means stop" below -- this is what blocks export)
     0xFF        -> end, with restart position 0x00 (loop to start)
     <= 0xFD     -> pattern number, emit as-is
 ```
@@ -556,6 +557,49 @@ Goattracker's `RST` orderlist command. The stored length byte is therefore
 
 There's also a hard safety valve: once a track reaches 254 bytes the next byte
 is forced to `0xFF`, truncating the track rather than overflowing.
+
+### `$FE` means *stop*, and Goattracker cannot say that
+
+The `0xFD` restart position above is not arbitrary. Hubbard's `$FE` marker
+means **this tune has ended**, and every dialect implements it the same way:
+it calls the player's jump-table entry +3, which is `LDA #$C0` / `STA flag` /
+`RTS`, and the `BIT flag` / `BMI` at the top of the play routine then branches
+away and stops fetching notes.
+
+```
+Warhawk      $109F  C9 FE / D0 17 / 20 03 10   ->  $1003 = JMP $1F30
+Last V8      $809B  C9 FE / D0 03 / 4C 13 80   ->  $8013 = JMP $8C71
+Saboteur II  $F0A2  C9 FE / F0 19 / 20 0C F0   ->  $F00C = JMP $F589
+
+$1F30 / $F589:  A9 C0  LDA #$C0 / 8D .. ..  STA flag / 60  RTS
+```
+
+Goattracker's orderlist has no stop, so the VB6 original wrote a song-loop
+whose restart position is out of range (`'make repeat illegal, so goattracker
+stops`, `h2g.frm:1206`). `gplay.c:969` reads the operand, finds it
+`>= songlen`, and calls `stopsong()` — exactly the intended behaviour.
+
+**It is also unexportable.** `greloc.c:244` rejects any song whose restart
+position is `>= songlen`, so `gt2reloc` — the packed-`.sid` exporter, and
+therefore the only route to a fidelity test against the original — refuses the
+file. It refuses *silently*: its error path writes to `fopen("CON")`, so
+headless you get exit 0, no message, and no output file. 28 of the corpus's 78
+convertible files were unpackable for this reason alone.
+
+`--legal-restart` rewrites the position to 0, trading the stop for a loop. The
+rewrite has to run **after** re-indexing, packing, merging and splitting,
+because all four change an orderlist's length and "is this position in range"
+is a question about the finished list — position 0 is the only answer available
+before that.
+
+A quieter instance of the same defect needs the same fix: a voice whose
+orderlist is nothing but a marker (`[$FF, $00]`, so `songlen == 0`) has no
+legal restart position at all. `greloc.c:201` does not reject those — it only
+validates and packs subtunes whose three channels all have nonzero length, and
+`greloc.c:653` writes the accepted ones consecutively. A single zero-length
+voice therefore drops its whole subtune *and renumbers every later one* in the
+packed `.sid`, so a `siddump` comparison lines subtune N of the export up
+against subtune N+1 of the original.
 
 > `version == 8` in the Python branch list is unreachable — `detect()` only ever
 > produces 0–7 or `0xFF`. Harmless dead condition, carried over from the VB
@@ -886,6 +930,7 @@ shape, "wrong output, no diagnostic":
 | `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
 | Version 2 grouped with 0/1/3, so its transpose commands were read as pattern numbers (§6) | Decoded as transposes; 6 corpus files played untransposed before, one of them with a wrong pattern spliced in |
 | `reindex_tracks` split commands from pattern numbers at Goattracker's `$D0`, whatever the dialect | Split at `command_floor(version)`. Versions 0/1/3 have no command but `$FF`, so a pattern number of `$D0`–`$FD` was being emitted verbatim as a repeat or transpose — losing the reference *and* inventing a command. 146 bytes across 7 files |
+| The out-of-range restart position standing in for Hubbard's `$FE` stop (§6) made `gt2reloc` refuse the file — with no message, because its error path writes to a console that does not exist headless. 28 of 78 files, and the failure looked like a successful run with a missing output | `--legal-restart` trades the stop for a loop; all 78 pack. The zero-length-voice variant was worse than a refusal: `greloc.c:201` skipped the subtune and `:653` renumbered the rest, so a `siddump` comparison silently measured the wrong tune |
 
 The pattern is stark: **the failure modes that produce no diagnostic are the
 dangerous ones, and they all stem from unvalidated inference.** Every one of

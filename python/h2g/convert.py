@@ -11,7 +11,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        apply_tempo, pattern_references, referenced_patterns,
                        reindex_tracks)
 from .sidfile import SidFile, load_sid
-from .tracks import convert_tracks
+from .tracks import convert_tracks, legalise_restarts
 
 Logger = Callable[[str], None]
 
@@ -66,6 +66,7 @@ def convert(sid_path: str, log: Logger = print,
             dedup: bool = False,
             prune: bool = False,
             pack: bool = False,
+            legal_restart: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -83,6 +84,12 @@ def convert(sid_path: str, log: Logger = print,
     pack collapses runs of one repeated pattern into Goattracker REPEAT
     commands. It is the only option that shortens an orderlist, and so the
     only one that can rescue a tune from the 254-byte orderlist limit.
+
+    legal_restart rewrites the out-of-range restart position that stands in
+    for Hubbard's "tune ended" marker, which Goattracker's exporter
+    (greloc.c:244) refuses outright -- so without it gt2reloc silently
+    produces no .sid for those tunes. The tune loops instead of ending; see
+    tracks.legalise_restarts.
 
     terminate_patterns appends an explicit ENDPATT row to every pattern
     slice that lacks one, matching what Goattracker's own saver writes.
@@ -121,6 +128,11 @@ def convert(sid_path: str, log: Logger = print,
         used=referenced_patterns(tracks, floor) if prune else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows)
+    if legal_restart:
+        # After reindexing, packing, merging and splitting: those all change an
+        # orderlist's length, and whether a restart position is in range is a
+        # question about the finished list.
+        legalise_restarts(tracks, log)
     # Every subtune dropped means the file carries no orderlist at all -- the
     # same refusal the empty-tracks case gets, for the same reason.
     if all(t == DEFAULT_TRACK for t in tracks):

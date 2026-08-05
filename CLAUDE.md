@@ -57,9 +57,14 @@ test dependency).
   `python/`:
 
   ```sh
-  python survey.py <sid_dir> -o ../SURVEY.md          # corpus report
-  python presets.py <sid_dir> -o ../presets.json      # per-song best options
+  python survey.py <sid_dir> -o ../SURVEY.md --legal-restart   # corpus report
+  python presets.py <sid_dir> -o ../presets.json               # per-song best options
   ```
+
+  `--legal-restart` is part of the survey command because the report carries a
+  `gt2reloc` column, and without it `greloc.c:244` refuses every tune that ends
+  on Hubbard's `$FE` marker — the column would measure the option's absence
+  rather than the converter. The report states which setting produced it.
 
   Both embed the version and both are derived from conversion behaviour, so a
   commit that changes either leaves them stating something that is no longer
@@ -68,12 +73,27 @@ test dependency).
   converts a song with the wrong options. Regenerate **after** the tree is
   coherent and the tests pass, never while another change is half-applied: a
   run taken mid-edit records a state that never existed.
+- **`FIDELITY.md` is generated too, but on demand rather than every commit.**
+  `python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md`
+  packs each conversion back to a `.sid` with gt2reloc and compares SID register
+  traces against the original. It is the only measure in the repo of whether a
+  conversion *sounds* right, so regenerate it after a commit that changes what
+  the converter emits — and never from a working tree with unrelated edits in
+  `h2g/`, for the same reason as the artefacts above.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and
   `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those
   files describe (an option's effect, a player dialect, a limit), the edit
   belongs in the same commit. Docs that drift are worse than absent ones: the
   method write-up is used as reference material by another project.
+- **Packing back to a `.sid` needs `--legal-restart`.** Hubbard's `$FE` track
+  byte means "tune ended", and the only way an orderlist can say that is an
+  out-of-range restart position — which `greloc.c:244` rejects, so `gt2reloc`
+  writes nothing and reports nothing (its error path goes to a console that
+  does not exist headless; **test for the output file, never the exit code**).
+  Off by default because it changes the bytes and the fixture carries three
+  such tracks; `presets.json`'s `always` block sets it. See README.md
+  § `--legal-restart`.
 - **`--max-rows` defaults to 94 — do not change the default.** It is what the
   byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
   fidelity anchor. See README.md § `--max-rows`.
