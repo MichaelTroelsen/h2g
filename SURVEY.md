@@ -1,11 +1,11 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.30**
+- Converter: `h2g` **0.5.31**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
 - Output format: **GTS2** (of GTS2/GTS5) (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 importer overruns its pattern array on the portamento commands this converter emits — prefer `--format gts5` for files you will open in Goattracker)
-- Converted: **61** (64%) — Failed: **34**
+- Converted: **61** of 83 in reach (73%) — Failed: **22** — Out of scope: **12** (not a Hubbard player)
 
 > "Converted" means the converter produced a `.sng` without erroring. It does **not** mean the output is musically correct. Only the repo's own `Commando.sid` is verified byte-exact against the original VB6 tool; note that the corpus copy of `Commando.sid` is a *different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 subtunes), so its row here is not comparable to that fixture.
 
@@ -15,7 +15,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 | Stage | Files | Meaning |
 |---|---:|---|
-| detect | 21 | no known player fingerprint matched |
+| detect | 9 | no known player fingerprint matched |
 | patterns | 9 | pattern decode/slicing hit a Goattracker limit |
 | tracks | 4 | orderlist decode failed (usually unknown track-read version) |
 
@@ -49,7 +49,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 ## Findings
 
 - **61/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
-- **12 of the failures are not Hubbard-player tunes at all.** SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Against the 83 files actually within reach, coverage is **61/83 = 73%**.
+- **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **61/83 = 73%** rather than 61/95 = 64%.
 - **9 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
 - **6 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 53 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **15 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
@@ -123,31 +123,19 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 `Source` is the input file's own header version — the original player-file format, distinct from both the Hubbard engine variant and the Goattracker output format. `Player`/`Ver` are the detected Hubbard player-engine variant and its track-read version number. `Subtunes` is how many actually reach the `.sng`; where that differs from the PSID header's claim the header value follows in brackets, and the gap is subtunes whose orderlist pointers resolve outside the file (the track table has no length field, so the header routinely over-claims). `Dangling` counts distinct orderlist entries naming a pattern the file does not have; those references are dropped, so the affected voice plays with material missing. **Bold** marks a count that includes subtune 0 — a decode fault rather than a phantom subtune (see Findings).
 
-## Not converted (34)
+## Not converted (22)
 
 | File | Title | Source | SIDId | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |
 |---|---|---|---|---|---|---:|:-:|:-:|:-:|---|
 | `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Casio_Extended.sid` | Casio (Extended) | PSID v2 | SidTracker64 | detect | - | 1 | - | - | - | no player detected (missing: tracks, patterns) |
 | `Delta_Mix-E-Load_loader.sid` | Delta Mix-E-Load (loader) | PSID v2 | Rob_Hubbard | detect | Warhawk | 16 | y | y | - | no player detected (missing: patterns) |
-| `Dont_Step_on_My_Wire.sid` | Don't Step on My Wire | PSID v2 | SidTracker64 | detect | - | 1 | - | - | - | no player detected (missing: tracks, patterns) |
-| `Era_of_Eidolon.sid` | Era of Eidolon | PSID v2 | SidTracker64 | detect | - | 1 | - | - | - | no player detected (missing: tracks, patterns) |
-| `Go_Go_Dash.sid` | Go Go Dash | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `I_Ball.sid` | I, Ball | RSID v2 | Rob_Hubbard | detect | IK+ | 4 | - | - | - | no player detected (missing: tracks, patterns) |
 | `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | IK+ | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Lakers_vs_Celtics.sid` | Lakers vs Celtics | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Lion_Heart.sid` | The Lion Heart | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Pacific_Coast.sid` | Pacific Coast | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Radio_ACE.sid` | Radio ACE | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
 | `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Robs_Life.sid` | Rob's Life | PSID v2 | SidTracker64 | detect | - | 3 | - | - | - | no player detected (missing: tracks, patterns) |
 | `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | detect | Auf Wiedersehen Monty | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Sun_Never_Shines.sid` | Sun Never Shines | PSID v2 | Jason_Page/RobTracker | detect | - | 1 | y | - | - | no player detected (missing: tracks, patterns) |
-| `Task_Force.sid` | Task Force | PSID v2 | SidTracker64 | detect | - | 1 | - | - | - | no player detected (missing: tracks, patterns) |
-| `Up_up_and_Away.sid` | Up, up & Away! | PSID v2 | Companion | detect | - | 5 | - | - | - | no player detected (missing: tracks, patterns) |
 | `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | patterns | Warhawk | 1 | y | y | y | TRACKLIST TOO LONG, CAN'T EXPORT TO GOATTRACKER |
 | `Delta.sid` | Delta | PSID v2 | Rob_Hubbard | patterns | Warhawk | 13 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `Dragons_Lair_Part_II.sid` | Dragon's Lair Part II | PSID v2 | Rob_Hubbard | patterns | Warhawk | 10 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
@@ -165,3 +153,24 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 `Source` is the input file's own header version; `-` means the header was rejected before it could be read. `Player` is the detected player variant, or `-` when the player-version pass found nothing. `Sub (hdr)` is the PSID header's subtune claim — these files produce no `.sng`, so there is no emitted count to compare it against.
 
 Columns `Instr?`/`Trk?`/`Pat?` show which of the three table-locating detection passes found their target. A file with tables found but no `Player` has a recognisable data layout and an unrecognised player loop.
+
+## Out of scope — not a Hubbard player (12)
+
+Rob Hubbard wrote the **music** in these files; someone else wrote the **player routine**. H2G rips Hubbard player engines by fingerprinting their code, so there is nothing here for it to recognise — these are not failures to fix, and no new signature would bring them in. They are listed apart from the failures for that reason, and excluded from the rate above.
+
+| File | Title | Source | SIDId | Sub (hdr) |
+|---|---|---|---|---:|
+| `Up_up_and_Away.sid` | Up, up & Away! | PSID v2 | Companion | 5 |
+| `Go_Go_Dash.sid` | Go Go Dash | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Lakers_vs_Celtics.sid` | Lakers vs Celtics | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Lion_Heart.sid` | The Lion Heart | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Pacific_Coast.sid` | Pacific Coast | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Radio_ACE.sid` | Radio ACE | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Sun_Never_Shines.sid` | Sun Never Shines | PSID v2 | Jason_Page/RobTracker | 1 |
+| `Casio_Extended.sid` | Casio (Extended) | PSID v2 | SidTracker64 | 1 |
+| `Dont_Step_on_My_Wire.sid` | Don't Step on My Wire | PSID v2 | SidTracker64 | 1 |
+| `Era_of_Eidolon.sid` | Era of Eidolon | PSID v2 | SidTracker64 | 1 |
+| `Robs_Life.sid` | Rob's Life | PSID v2 | SidTracker64 | 3 |
+| `Task_Force.sid` | Task Force | PSID v2 | SidTracker64 | 1 |
+
+Converting these would mean a different tool: a ripper for each of those editors, or the emulate-and-capture approach that needs no player knowledge at all.

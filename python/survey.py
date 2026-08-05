@@ -190,7 +190,13 @@ def build_report(results: list[Result], sid_dir: Path,
                  max_rows: int = GT_DEFAULT_ROWS,
                  fmt: str = DEFAULT_FORMAT) -> str:
     ok = [r for r in results if r.ok]
-    bad = [r for r in results if not r.ok]
+    # A file whose player SIDId names as someone else's editor is not a failure
+    # of this tool -- no Hubbard fingerprint can match it and no new signature
+    # would ever bring it in. Reported separately so the failure list stays a
+    # list of things that could be fixed.
+    out_of_scope = [r for r in results
+                    if not r.ok and r.sidid and not _is_hubbard_player(r.sidid)]
+    bad = [r for r in results if not r.ok and r not in out_of_scope]
 
     lines: list[str] = []
     lines.append("# H2G conversion survey — Rob Hubbard SID corpus")
@@ -209,8 +215,12 @@ def build_report(results: list[Result], sid_dir: Path,
                 " (modern 4-table format; avoids the GTS2 importer overrun, and is "
                 "what Goattracker itself writes)")
     lines.append(f"- Output format: **{fmt.upper()}** (of {'/'.join(f.upper() for f in FORMATS)}){fmt_note}")
-    pct = (100.0 * len(ok) / len(results)) if results else 0.0
-    lines.append(f"- Converted: **{len(ok)}** ({pct:.0f}%) — Failed: **{len(bad)}**")
+    reach = len(results) - len(out_of_scope)
+    pct = (100.0 * len(ok) / reach) if reach else 0.0
+    scope_note = (f" — Out of scope: **{len(out_of_scope)}** (not a Hubbard player)"
+                  if out_of_scope else "")
+    lines.append(f"- Converted: **{len(ok)}** of {reach} in reach ({pct:.0f}%) — "
+                 f"Failed: **{len(bad)}**{scope_note}")
     lines.append("")
     lines.append("> \"Converted\" means the converter produced a `.sng` without erroring. "
                  "It does **not** mean the output is musically correct. Only the "
@@ -300,17 +310,16 @@ def build_report(results: list[Result], sid_dir: Path,
                  "structural: detection only recognises 16 hard-coded game "
                  "fingerprints, so anything outside that set is unconvertible by "
                  "construction.")
-    out_of_scope = [r for r in bad if r.sidid and not _is_hubbard_player(r.sidid)]
     if out_of_scope:
-        reach = len(results) - len(out_of_scope)
         names = ", ".join(sorted({r.sidid for r in out_of_scope}))
         lines.append(
-            f"- **{len(out_of_scope)} of the failures are not Hubbard-player tunes "
-            f"at all.** SIDId identifies their player as {names} — Hubbard wrote "
-            "the music, someone else wrote the routine, so no Hubbard fingerprint "
-            "can match and no new signature would bring them in. Against the "
-            f"{reach} files actually within reach, coverage is "
-            f"**{len(ok)}/{reach} = {100 * len(ok) // reach}%**.")
+            f"- **{len(out_of_scope)} files are not Hubbard-player tunes at all** "
+            f"and are listed separately below. SIDId identifies their player as "
+            f"{names} — Hubbard wrote the music, someone else wrote the routine, "
+            "so no Hubbard fingerprint can match and no new signature would bring "
+            f"them in. Excluding them, coverage is **{len(ok)}/{reach} = "
+            f"{100 * len(ok) // reach}%** rather than "
+            f"{len(ok)}/{len(results)} = {100 * len(ok) // len(results)}%.")
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
@@ -440,6 +449,29 @@ def build_report(results: list[Result], sid_dir: Path,
                  "`Player` has a recognisable data layout and an unrecognised "
                  "player loop.")
     lines.append("")
+
+    # --- out of scope ------------------------------------------------------
+    if out_of_scope:
+        lines.append(f"## Out of scope — not a Hubbard player ({len(out_of_scope)})")
+        lines.append("")
+        lines.append("Rob Hubbard wrote the **music** in these files; someone else "
+                     "wrote the **player routine**. H2G rips Hubbard player engines "
+                     "by fingerprinting their code, so there is nothing here for it "
+                     "to recognise — these are not failures to fix, and no new "
+                     "signature would bring them in. They are listed apart from the "
+                     "failures for that reason, and excluded from the rate above.")
+        lines.append("")
+        lines.append("| File | Title | Source | SIDId | Sub (hdr) |")
+        lines.append("|---|---|---|---|---:|")
+        for r in sorted(out_of_scope, key=lambda x: (x.sidid, x.path.name.lower())):
+            lines.append(
+                f"| `{r.path.name}` | {_md_escape(r.name)} | {r.source_format or '-'} | "
+                f"{_md_escape(r.sidid)} | {r.subtunes} |")
+        lines.append("")
+        lines.append("Converting these would mean a different tool: a ripper for each "
+                     "of those editors, or the emulate-and-capture approach that "
+                     "needs no player knowledge at all.")
+        lines.append("")
     return "\n".join(lines)
 
 
