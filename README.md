@@ -372,6 +372,10 @@ verified byte-exact.
 | `H2G-CONVERSION-METHOD.md` | detailed explanation of how the conversion works |
 | `CHANGELOG.md`, `SURVEY.md` | version history, corpus results |
 
+## Links
+
+- [CSDb release #33670](https://csdb.dk/release/?id=33670)
+
 ## Licence
 
 The original tool was released as free/open source — "can be modified and
