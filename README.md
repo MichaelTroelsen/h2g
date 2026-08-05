@@ -374,7 +374,20 @@ verified byte-exact.
 
 ## Links
 
-- [CSDb release #33670](https://csdb.dk/release/?id=33670)
+- **[Hubbard2Goattracker V1.2 on CSDb](https://csdb.dk/release/?id=33670)** —
+  the original release this repository is built on, dated **5 May 2006** and
+  credited entirely to Stello Doussis (code, graphics, design, idea). Listed as
+  an "Other Platform C64 Tool"; the download is `h2g.v1.2.zip`, the same
+  version as the archived build in [`arkiv/`](arkiv/).
+
+  A 2006 comment on that page by *arch0N* is worth knowing about: it lists
+  tunes **not** written by Rob Hubbard that the converter nonetheless handles —
+  Thomas E. Petersen (Laxity) and Jeroen Kimmel (Red) among them. This tool
+  fingerprints *player engines*, not composers, so any tune built on a
+  recognised engine converts regardless of who wrote the music. The corpus here
+  is Hubbard-only, so that reach is untested — see
+  [`SURVEY.md`](SURVEY.md) § Out of scope for the inverse case, Hubbard tunes
+  whose player is somebody else's.
 
 ## Licence
 
