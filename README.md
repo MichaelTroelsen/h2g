@@ -224,6 +224,34 @@ through as commands, so this case is real and is handled — see
 `test_pack_repeats.py`, which reconstructs what every orderlist plays and
 asserts packing does not change it.
 
+### Fitting Goattracker's orderlist limit
+
+An orderlist may be 254 bytes. Three corpus subtunes exceed it — Gremlins 23,
+Knucklebusters 0, Monty on the Run 11 — and each used to abort its whole file,
+discarding every other subtune with it.
+
+Two mechanisms now keep them:
+
+- an over-long subtune is **dropped on its own**, so the rest of the tune
+  converts (it is dropped rather than truncated: cutting one voice short while
+  its neighbours play on makes it loop early and drift, which sounds wrong
+  rather than absent);
+- before that, the orderlist is **compacted by merging** consecutive patterns
+  whose rows fit one pattern, which trades a pattern-table slot for an
+  orderlist byte.
+
+With `--max-rows 128 --pack-repeats`, merging rescues all three: **no subtune
+is dropped anywhere in the corpus.** Knucklebusters' first voice comes down
+from 263 bytes to 211.
+
+Merging is attempted **only** for a track that would otherwise cost its
+subtune, so nothing that already fits is rewritten and `Commando.sng` cannot
+move. It is costed against the packed result rather than applied before it:
+identical neighbours are never merged, because a run of one repeated pattern
+is `--pack-repeats`' job and it does that in two bytes however long the run
+is. Knucklebusters' middle voice is exactly that case — 261 bytes packing to
+56 — and merging its pairs first would have made them distinct and cost ~224.
+
 ## Versioning
 
 **Bump the version on every commit**, not just on releases.

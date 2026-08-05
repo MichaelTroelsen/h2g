@@ -114,7 +114,8 @@ def convert(sid_path: str, log: Logger = print,
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=referenced_patterns(tracks, floor) if prune else None)
-    tracks = reindex_tracks(tracks, track_index, pack, floor, log)
+    tracks = reindex_tracks(tracks, track_index, pack, floor, log,
+                            patterns=new_patterns, max_rows=max_rows)
     # Every subtune dropped means the file carries no orderlist at all -- the
     # same refusal the empty-tracks case gets, for the same reason.
     if all(t == DEFAULT_TRACK for t in tracks):

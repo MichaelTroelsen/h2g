@@ -155,7 +155,8 @@ def survey_one(path: Path, sng_dir: Path | None,
             used=referenced_patterns(tracks, floor) if prune else None)
         dropped: list[int] = []
         tracks = reindex_tracks(tracks, track_index, pack, floor,
-                                dropped=dropped)
+                                dropped=dropped, patterns=new_patterns,
+                                max_rows=max_rows)
         r.subtunes_dropped = len(dropped)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)

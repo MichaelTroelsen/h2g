@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.35 — 2026-08-05
+
+- compact over-long orderlists by merging patterns
+
 ## 0.5.34 — 2026-08-05
 
 - drop an over-long subtune instead of aborting the whole file

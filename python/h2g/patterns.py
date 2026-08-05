@@ -529,11 +529,99 @@ def pack_repeats(track: List[int]) -> List[int]:
     return out
 
 
+def _merged_pattern(a: int, b: int, patterns: List[List[int]], max_rows: int,
+                    cache: dict) -> Optional[int]:
+    """Index of a pattern playing `a` then `b`, creating it if it will fit.
+
+    The first part's ENDPATT row is dropped: Goattracker does not trust a
+    pattern's stored length, it rescans the note column for ENDPATT
+    (countpatternlengths, gsong.c), so an interior one would cut the merged
+    pattern in half and the second part would never play.
+    """
+    key = (a, b)
+    if key in cache:
+        return cache[key]
+    if a >= len(patterns) or b >= len(patterns):
+        return None
+    head, tail = patterns[a], patterns[b]
+    if len(head) >= 4 and head[-4] == GT_END_PATTERN:
+        head = head[:-4]
+    if (len(head) + len(tail)) // 4 > max_rows:
+        return None
+    if len(patterns) >= MAX_PATTERNS:
+        return None            # no room left in Goattracker's pattern table
+    patterns.append(head + tail)
+    cache[key] = len(patterns) - 1
+    return cache[key]
+
+
+def _merge_pass(track: List[int], patterns: List[List[int]], max_rows: int,
+                cache: dict) -> List[int]:
+    """One left-to-right sweep merging adjacent, distinct pattern references."""
+    out: List[int] = []
+    i, n = 0, len(track)
+    while i < n:
+        b = track[i]
+        if b == GT_ORDER_RESTART:
+            out += track[i:i + 2]
+            i += 2
+            continue
+        if b >= MAX_PATTERNS:
+            out.append(b)       # repeat/transpose command
+            i += 1
+            continue
+        # Only a neighbouring pattern reference with nothing between them can
+        # merge -- a transpose in between applies to the second alone.
+        if i + 1 < n and track[i + 1] < MAX_PATTERNS and track[i + 1] != b:
+            merged = _merged_pattern(b, track[i + 1], patterns, max_rows, cache)
+            if merged is not None:
+                out.append(merged)
+                i += 2
+                continue
+        out.append(b)
+        i += 1
+    return out
+
+
+def compact_orderlist(track: List[int], patterns: List[List[int]],
+                      max_rows: int, pack: bool,
+                      cache: Optional[dict] = None) -> List[int]:
+    """Shorten one orderlist by merging patterns, or return it unchanged.
+
+    Slicing splits long patterns and nothing puts short ones back together, so
+    an orderlist can carry more entries than the music needs. Merging two
+    consecutive patterns into one costs a pattern-table slot and saves an
+    orderlist byte.
+
+    Identical neighbours are deliberately never merged: a run of one repeated
+    pattern is REPEAT packing's job, and it does it better. Knucklebusters'
+    middle voice packs 261 bytes down to 56 precisely because it is such a run;
+    merging those pairs first would make them distinct and cost ~224 bytes.
+    That is why the two are costed together here rather than applied in
+    sequence -- a merge is kept only if the *packed* result is shorter.
+    """
+    if cache is None:
+        cache = {}
+    best = pack_repeats(track) if pack else track
+    current = track
+    while len(best) >= MAX_TRACK_LEN:
+        merged = _merge_pass(current, patterns, max_rows, cache)
+        if merged == current:
+            break                       # nothing left to merge
+        candidate = pack_repeats(merged) if pack else merged
+        if len(candidate) >= len(best):
+            break                       # merging is not helping this track
+        best, current = candidate, merged
+    return best
+
+
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
                    floor: int = GT_COMMAND_FLOOR,
                    log=None,
-                   dropped: Optional[List[int]] = None) -> List[List[int]]:
+                   dropped: Optional[List[int]] = None,
+                   patterns: Optional[List[List[int]]] = None,
+                   max_rows: int = GT_DEFAULT_ROWS) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
     The length check runs at the end of each track so that `pack` -- which only
@@ -557,6 +645,7 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     removed.
     """
     new_tracks: List[List[int]] = []
+    merge_cache: dict = {}      # shared, so one merged pattern serves every voice
     for track in tracks:
         new_track: List[int] = []
         expect_operand = False
@@ -584,9 +673,14 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 new_track.append(b)
             else:
                 new_track.extend(track_index[b] if b < len(track_index) else [])
-        if pack:
-            new_track = pack_repeats(new_track)
-        new_tracks.append(new_track)
+        packed = pack_repeats(new_track) if pack else new_track
+        # Merging is attempted only for a track that would otherwise cost its
+        # subtune, so no track that already fits is rewritten and the fixture
+        # cannot move.
+        if len(packed) >= MAX_TRACK_LEN and patterns is not None:
+            packed = compact_orderlist(new_track, patterns, max_rows, pack,
+                                       merge_cache)
+        new_tracks.append(packed)
 
     # Voices come in threes; one over-long voice takes its subtune with it,
     # because a subtune missing a voice does not play the tune either.
