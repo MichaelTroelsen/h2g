@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.40 — 2026-08-05
+
+- document the .sng -> .sid packing route and its two blockers
+
 ## 0.5.39 — 2026-08-05
 
 - add CSDb release link to README
