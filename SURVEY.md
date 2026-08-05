@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.35**
+- Converter: `h2g` **0.5.38**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -51,7 +51,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 - **75/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
 - **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **75/83 = 90%** rather than 75/95 = 78%.
 - **9 tunes drive a fourth, sampled voice that is not converted.** Their player runs four channels; the extra one plays digi samples, which is what the `(Rob_Hubbard_Digi)` SIDId signature marks. Goattracker has three voices and no way to carry sampled playback, so that channel is dropped — the three SID voices convert in full. Affected: `After_8.sid`, `Kings_of_the_Beach_intro.sid`, `Mr_Meaner.sid`, `Off_the_Cuff.sid`, `One_on_One_Jordan_vs_Bird.sid`, `Powerplay_Hockey_USA_vs_USSR.sid`, `Pygmies_Revenge.sid`, `Rikky.sid`, `Rock_Tells_the_Tale.sid`.
-- **4 files lose a subtune to Goattracker's 254-byte orderlist limit.** The rest of the tune converts: one over-long subtune used to abort the whole file, discarding every good subtune with it. The subtune is dropped rather than truncated, because cutting one voice short while its neighbours play on makes it loop early and drift — a subtune that sounds wrong is worse than one plainly absent. Affected: `Chicken_Song.sid` (1), `Gremlins.sid` (1), `Knucklebusters.sid` (1), `Monty_on_the_Run.sid` (1).
+- **2 files lose a subtune to Goattracker's 254-byte orderlist limit.** The rest of the tune converts: one over-long subtune used to abort the whole file, discarding every good subtune with it. The subtune is dropped rather than truncated, because cutting one voice short while its neighbours play on makes it loop early and drift — a subtune that sounds wrong is worse than one plainly absent. Affected: `Chicken_Song.sid` (1), `Knucklebusters.sid` (1).
 - **3 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
 - **7 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Knucklebusters.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 62 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **18 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing. There are two distinct causes, separated by whether subtune 0 — always a real subtune — is affected.
@@ -84,7 +84,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Game_Killer.sid` | Game Killer | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 12 | 38 | - | 9400 |  |
 | `Geoff_Capes_Strongman_Challenge.sid` | Geoff Capes Strongman Challenge | PSID v2 | Rob_Hubbard | Warhawk | 0 | 21 (hdr 24) | 22 | 55 | 110 | 11223 |  |
 | `Gerry_the_Germ.sid` | Gerry the Germ | PSID v2 | Rob_Hubbard | Warhawk | 0 | 7 (hdr 23) | 28 | 171 | - | 42153 |  |
-| `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 26 | 33 | 208 | 41 | 55437 | 1 subtune(s) too long |
+| `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 26 | 33 | 208 | 41 | 55809 |  |
 | `Hollywood_or_Bust.sid` | Hollywood or Bust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 10) | 21 | 84 | - | 23105 |  |
 | `Human_Race.sid` | The Human Race | PSID v2 | Rob_Hubbard | Last V8 | 1 | 5 | 25 | 102 | - | 23230 |  |
 | `Hunter_Patrol.sid` | Hunter Patrol | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 33 | 78 | - | 21844 |  |
@@ -100,7 +100,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Lightforce.sid` | Lightforce | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 45 | 64 | - | 20663 |  |
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 |  |
 | `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 43 | 60 | 85 | 18102 |  |
-| `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 19 | 21 | 164 | 14 | 48301 | 1 subtune(s) too long |
+| `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 19 | 21 | 164 | 14 | 48660 |  |
 | `Mozart.sid` | Mozart | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 20 | 118 | - | 36219 |  |
 | `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 | digi channel dropped |
 | `Nemesis_the_Warlock.sid` | Nemesis the Warlock | PSID v2 | Rob_Hubbard | IK+ | 7 | 15 | 33 | 74 | 23 | 17575 |  |

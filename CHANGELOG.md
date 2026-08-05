@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.38 — 2026-08-05
+
+- record the regenerate-artefacts convention; refresh SURVEY.md and presets.json
+
 ## 0.5.37 — 2026-08-05
 
 - split an over-long subtune in phase instead of dropping it

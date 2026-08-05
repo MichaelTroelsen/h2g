@@ -53,6 +53,27 @@ test dependency).
 - **Versioning — bump on every commit** (not just releases): run
   `python python/bump_version.py "short description"` before staging, and
   regenerate any doc embedding the version. See README.md § Versioning.
+- **Regenerate the generated artefacts on every commit**, in this order, from
+  `python/`:
+
+  ```sh
+  python survey.py <sid_dir> -o ../SURVEY.md          # corpus report
+  python presets.py <sid_dir> -o ../presets.json      # per-song best options
+  ```
+
+  Both embed the version and both are derived from conversion behaviour, so a
+  commit that changes either leaves them stating something that is no longer
+  true. `presets.json` is the easier one to forget because it is not
+  human-facing — but it is what `--presets` applies, so a stale entry silently
+  converts a song with the wrong options. Regenerate **after** the tree is
+  coherent and the tests pass, never while another change is half-applied: a
+  run taken mid-edit records a state that never existed.
+- **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
+  `presets.json` are generated, but `README.md`, `CLAUDE.md` and
+  `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those
+  files describe (an option's effect, a player dialect, a limit), the edit
+  belongs in the same commit. Docs that drift are worse than absent ones: the
+  method write-up is used as reference material by another project.
 - **`--max-rows` defaults to 94 — do not change the default.** It is what the
   byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
   fidelity anchor. See README.md § `--max-rows`.
