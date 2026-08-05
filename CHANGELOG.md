@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.48 — 2026-08-05
+
+- convert ACE 2 and Chain Reaction
+
 ## 0.5.47 — 2026-08-05
 
 - mark fidelity rows gt2reloc could not export

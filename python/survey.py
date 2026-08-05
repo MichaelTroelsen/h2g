@@ -36,6 +36,7 @@ from h2g.tracks import convert_tracks, legalise_restarts
 VERSION_NAMES = {
     0: "Warhawk", 1: "Last V8", 2: "Auf Wiedersehen Monty", 3: "Samantha Fox",
     4: "ACE 2", 5: "Battle of Britain", 6: "Mega Apocalypse", 7: "IK+",
+    8: "digi engine", 9: "Chain Reaction",
 }
 
 

@@ -85,6 +85,8 @@ def command_floor(version: int) -> int:
         5            likewise, and it does not even test $FE
         2, 6, 7, 8   transposes emitted as $F0-$FE; pattern numbers are <= $7F
                      because the player reads bit 7 as a command flag
+        9            $FE is the only marker it has (loop to start), so $FD is
+                     still a pattern number
 
     Reading a version-0 track with Goattracker's own $D0 boundary silently
     reinterprets pattern numbers $D0-$FD as repeat and transpose commands. That
@@ -97,6 +99,8 @@ def command_floor(version: int) -> int:
     """
     if version in (2, 6, 7, 8):
         return GT_TRANSPOSE_UP
+    if version == 9:
+        return 0xFE
     return GT_ORDER_RESTART
 
 

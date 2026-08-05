@@ -62,9 +62,25 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
         i2 += 1
 
         if version == 4:  # ACE 2
+            # The player at $E0CF is a plain BPL split:
+            #     LDY $E550,X / LDA ($FC),Y / BPL pattern_number
+            #     ... LDA #$00 / STA the three indices / JMP $E0CF
+            # so < $80 is a pattern number and >= $80 ends the track and
+            # restarts it at 0. ACE 2's orderlists are 67/184/118 entries
+            # terminated $84/$86/$89, with a top pattern number of $25 against
+            # pattern_used $25 -- every byte accounted for.
+            #
+            # The append below was missing until v0.5.48, so every version-4
+            # orderlist came out empty and the file failed with NO PLAYABLE
+            # SUBTUNE. That is inherited, not introduced: h2g.frm:1152 `Case 4`
+            # is this same do-nothing branch, and the later `Case 0, 1, 2, 3, 4`
+            # at :1199 that would have appended is unreachable for 4 because
+            # VB's Select Case takes the first match. ACE 2 is the corpus's only
+            # version-4 file, so nothing else ever showed the fault.
             if b1 >= 0x80:
                 track += [0xFF, 0x00]
                 break
+            track.append(b1)
 
         elif version == 5:  # Battle of Britain / Gremlins / Thing on a Spring
             # No command path at all. The fingerprint is its own proof:
@@ -129,6 +145,24 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 else:
                     track.append(_transpose_byte(semitones))
             else:
+                track.append(b1)
+
+        elif version == 9:  # Chain Reaction
+            # A version-0 shape with one terminator instead of two. The player
+            # at $089A reads $FE and jumps straight to the zero-the-indices /
+            # JMP $089A restart:
+            #     LDY $0CFA,X / LDA ($FC),Y / CMP #$FE / BEQ $08AD
+            # The CMP #$FE at $08A3 on the fall-through path is dead code -- the
+            # first test already took every $FE -- so there is no stop marker at
+            # all, only loop-to-start. Version 0 expects `C9 FF F0 ?? C9 FE`;
+            # this file is `C9 FE F0 ?? C9 FE`, matched nothing, and fell
+            # through to version $FF. Its orderlists are 47/66/80 entries, all
+            # $FE-terminated, top pattern $19 against pattern_used 25, with no
+            # $FF and no command byte anywhere.
+            if b1 == 0xFE:
+                track += [0xFF, 0x00]
+                break
+            if b1 <= 0xFD:
                 track.append(b1)
 
         elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox

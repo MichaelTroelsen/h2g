@@ -1,12 +1,12 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.46**
+- Converter: `h2g` **0.5.48**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
 - Output format: **GTS2** (of GTS2/GTS5) (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 importer overruns its pattern array on the portamento commands this converter emits — prefer `--format gts5` for files you will open in Goattracker)
 - Restart position: **legalised** (`--legal-restart`) — a tune ending on Hubbard's `$FE` marker loops from the top instead of stopping, which is what lets `gt2reloc` export it at all
-- Converted: **77** of 83 in reach (93%) — Failed: **6** — Out of scope: **12** (not a Hubbard player)
+- Converted: **79** of 83 in reach (95%) — Failed: **4** — Out of scope: **12** (not a Hubbard player)
 
 > "Converted" means the converter produced a `.sng` without erroring. It does **not** mean the output is musically correct. Only the repo's own `Commando.sid` is verified byte-exact against the original VB6 tool; note that the corpus copy of `Commando.sid` is a *different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 subtunes), so its row here is not comparable to that fixture.
 
@@ -16,8 +16,8 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 | Stage | Files | Meaning |
 |---|---:|---|
-| tracks | 3 | orderlist decode failed (usually unknown track-read version) |
 | patterns | 3 | pattern decode/slicing hit a Goattracker limit |
+| tracks | 1 | orderlist decode failed (usually unknown track-read version) |
 
 ## Detected player variant (successful conversions)
 
@@ -27,15 +27,17 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | 1 | Last V8 | 8 |
 | 2 | Auf Wiedersehen Monty | 14 |
 | 3 | Samantha Fox | 1 |
+| 4 | ACE 2 | 1 |
 | 5 | Battle of Britain | 8 |
 | 6 | Mega Apocalypse | 1 |
 | 7 | IK+ | 14 |
+| 9 | Chain Reaction | 1 |
 
 ## SIDId player identification
 
 | SIDId signature | Converted | Not converted | Total | Rate |
 |---|---:|---:|---:|---:|
-| `Rob_Hubbard` | 60 | 6 | 66 | 90% |
+| `Rob_Hubbard` | 62 | 4 | 66 | 93% |
 | `Rob_Hubbard, (Rob_Hubbard_Digi)` | 11 | 0 | 11 | 100% |
 | `Jason_Page/RobTracker` * | 0 | 6 | 6 | 0% |
 | `SidTracker64` * | 0 | 5 | 5 | 0% |
@@ -48,22 +50,23 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 ## Findings
 
-- **77/95 produced output.** The ceiling is structural: detection only recognises 17 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
-- **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **77/83 = 92%** rather than 77/95 = 81%.
+- **79/95 produced output.** The ceiling is structural: detection only recognises 17 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
+- **12 files are not Hubbard-player tunes at all** and are listed separately below. SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Excluding them, coverage is **79/83 = 95%** rather than 79/95 = 83%.
 - **9 tunes drive a fourth, sampled voice that is not converted.** Their player runs four channels; the extra one plays digi samples, which is what the `(Rob_Hubbard_Digi)` SIDId signature marks. Goattracker has three voices and no way to carry sampled playback, so that channel is dropped — the three SID voices convert in full. Affected: `After_8.sid`, `Kings_of_the_Beach_intro.sid`, `Mr_Meaner.sid`, `Off_the_Cuff.sid`, `One_on_One_Jordan_vs_Bird.sid`, `Powerplay_Hockey_USA_vs_USSR.sid`, `Pygmies_Revenge.sid`, `Rikky.sid`, `Rock_Tells_the_Tale.sid`.
 - **2 files lose a subtune to Goattracker's 254-byte orderlist limit.** The rest of the tune converts: one over-long subtune used to abort the whole file, discarding every good subtune with it. The subtune is dropped rather than truncated, because cutting one voice short while its neighbours play on makes it loop early and drift — a subtune that sounds wrong is worse than one plainly absent. Affected: `Chicken_Song.sid` (1), `Knucklebusters.sid` (1).
-- **77 of 77 converted files pack back to a `.sid`** with `gt2reloc`, the standalone form of Goattracker's F9 packer. That is what makes a fidelity test possible: the packed `.sid` can be `siddump`ed against the file it was converted from. A failure here is not a conversion failure — the `.sng` is fine in the editor — but it blocks that comparison. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md). These numbers are with `--legal-restart`; without it `greloc.c:244` rejects every tune that ends on Hubbard's `$FE` marker, because the stop it maps to is an out-of-range restart position.
+- **79 of 79 converted files pack back to a `.sid`** with `gt2reloc`, the standalone form of Goattracker's F9 packer. That is what makes a fidelity test possible: the packed `.sid` can be `siddump`ed against the file it was converted from. A failure here is not a conversion failure — the `.sng` is fine in the editor — but it blocks that comparison. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md). These numbers are with `--legal-restart`; without it `greloc.c:244` rejects every tune that ends on Hubbard's `$FE` marker, because the stop it maps to is an out-of-range restart position.
 - **3 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
-- **8 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Delta_Mix-E-Load_loader.sid`, `Knucklebusters.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 71 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
+- **9 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Chain_Reaction.sid`, `Delta_Mix-E-Load_loader.sid`, `Knucklebusters.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 80 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **19 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing. There are two distinct causes, separated by whether subtune 0 — always a real subtune — is affected.
   - **1 are a decode fault** (dangling refs in subtune 0). Most are version-2 players, where a byte with the high bit set is a per-voice **transpose command**, not a pattern number: the player branches `BPL` past the $FF/$FE checks, then `AND #$7F` / `STA transpose,X`, and the stored value is read back as `CLC` / `ADC transpose,X` on the note before the frequency-table lookup. The track reader groups version 2 with versions 0/1/3, which have no such branch, so it emits those command bytes as pattern numbers $80-$FD. Affected: .
   - **18 are phantom subtunes** (subtune 0 clean, later subtunes dangling). The track table has no length field and the PSID header routinely over-claims, so a pointer that happens to land inside the file is read as an orderlist. Only pointers resolving *outside* the file, and subtunes that play no existing pattern at all, are rejected -- a threshold on the rest would also discard real subtunes, which run as low as one bad reference in a hundred good ones.
 
-## Converted (77)
+## Converted (79)
 
 | File | Title | Source | SIDId | Player | Ver | Subtunes | Instr | Patterns | Dangling | .sng bytes | gt2reloc | Flag |
 |---|---|---|---|---|---:|---|---:|---:|---|---:|:-:|---|
 | `5_Title_Tunes.sid` | 5 Title Tunes | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 5) | 17 | 38 | - | 8932 | y |  |
+| `ACE_II.sid` | ACE II | PSID v2 | Rob_Hubbard | ACE 2 | 4 | 1 | 13 | 58 | - | 16014 | y |  |
 | `Action_Biker.sid` | Action Biker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 13 | 73 | - | 18323 | y |  |
 | `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 182 | - | 61666 | y | digi channel dropped |
 | `Arcade_Classics.sid` | Arcade Classics | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 24 | 110 | - | 33357 | y |  |
@@ -72,6 +75,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Battle_of_Britain.sid` | Battle of Britain | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 20 | 110 | - | 36024 | y |  |
 | `BMX_Kidz.sid` | BMX Kidz | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi), Sidplayer | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 23 | 93 | - | 31009 | y |  |
 | `Bump_Set_Spike.sid` | Bump Set Spike | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 | 26 | 78 | - | 19770 | y |  |
+| `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | Chain Reaction | 9 | 1 | 59 | 37 | - | 11549 | y | 9 instr dropped |
 | `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 26 | 121 | - | 28953 | y | 1 subtune(s) too long |
 | `Chimera.sid` | Chimera | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 2 (hdr 4) | 9 | 65 | - | 13878 | y |  |
 | `Commando.sid` | Commando | PSID v2 | Rob_Hubbard | Warhawk | 0 | 18 (hdr 19) | 14 | 65 | 59 | 15781 | y |  |
@@ -143,15 +147,13 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 `Source` is the input file's own header version — the original player-file format, distinct from both the Hubbard engine variant and the Goattracker output format. `Player`/`Ver` are the detected Hubbard player-engine variant and its track-read version number. `Subtunes` is how many actually reach the `.sng`; where that differs from the PSID header's claim the header value follows in brackets, and the gap is subtunes whose orderlist pointers resolve outside the file (the track table has no length field, so the header routinely over-claims). `Dangling` counts distinct orderlist entries naming a pattern the file does not have; those references are dropped, so the affected voice plays with material missing. **Bold** marks a count that includes subtune 0 — a decode fault rather than a phantom subtune (see Findings).
 
-## Not converted (6)
+## Not converted (4)
 
 | File | Title | Source | SIDId | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |
 |---|---|---|---|---|---|---:|:-:|:-:|:-:|---|
 | `Delta.sid` | Delta | PSID v2 | Rob_Hubbard | patterns | Warhawk | 13 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `Dragons_Lair_Part_II.sid` | Dragon's Lair Part II | PSID v2 | Rob_Hubbard | patterns | Warhawk | 10 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `W_A_R.sid` | W.A.R. | PSID v2 | Rob_Hubbard | patterns | Warhawk | 9 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
-| `ACE_II.sid` | ACE II | PSID v2 | Rob_Hubbard | tracks | ACE 2 | 1 | y | y | y | NO PLAYABLE SUBTUNE, CAN'T CONVERT |
-| `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | tracks | - | 1 | y | y | y | ValueError: unsupported/undetected Hubbard player track-read version: $FF |
 | `Devils_Galop.sid` | Devils Galop | PSID v2 | Rob_Hubbard | tracks | Battle of Britain | 1 | y | y | y | NO PLAYABLE SUBTUNE, CAN'T CONVERT |
 
 `Source` is the input file's own header version; `-` means the header was rejected before it could be read. `Player` is the detected player variant, or `-` when the player-version pass found nothing. `Sub (hdr)` is the PSID header's subtune claim — these files produce no `.sng`, so there is no emitted count to compare it against.

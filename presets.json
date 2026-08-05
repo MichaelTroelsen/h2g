@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.46 presets.py",
+  "generator": "h2g 0.5.48 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -17,6 +17,15 @@
       "bytes": 8773,
       "subtunes": 1,
       "rows": 2346
+    },
+    "ACE_II.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": false,
+      "dedup": true,
+      "bytes": 15823,
+      "subtunes": 1,
+      "rows": 18928
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -89,6 +98,15 @@
       "bytes": 19397,
       "subtunes": 2,
       "rows": 18341
+    },
+    "Chain_Reaction.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": false,
+      "dedup": true,
+      "bytes": 11465,
+      "subtunes": 1,
+      "rows": 15169
     },
     "Chicken_Song.sid": {
       "max_rows": 128,

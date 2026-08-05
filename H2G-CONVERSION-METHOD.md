@@ -473,14 +473,19 @@ value` — which is why every event above appends exactly 4 bytes, and why the
 
 ---
 
-## 6. The orderlist / track format and its 8 dialects
+## 6. The orderlist / track format and its 9 dialects
 
 `tracks.py::_build_track` walks the raw orderlist byte stream and rewrites it.
-Four behaviours, selected by `read_track_version`:
+Five behaviours, selected by `read_track_version`:
 
 ```python
 version == 4:                 # ACE 2
-    b1 >= 0x80  -> end
+    b1 >= 0x80  -> end, restart 0x00
+    <= 0x7F     -> pattern number, emit as-is
+
+version == 9:                 # Chain Reaction
+    0xFE        -> end, restart 0x00   (the ONLY marker -- no stop form exists)
+    <= 0xFD     -> pattern number, emit as-is
 
 version == 5:                 # Battle of Britain / Gremlins / Thing on a Spring
     0xFF        -> end
@@ -502,6 +507,26 @@ version in (0, 1, 3):         # Warhawk / Last V8 / Samantha Fox
     0xFF        -> end, with restart position 0x00 (loop to start)
     <= 0xFD     -> pattern number, emit as-is
 ```
+
+**Version 4 emitted nothing at all until v0.5.48.** Its branch tested the end
+condition and then fell through without appending the pattern number, so every
+ACE 2 orderlist came out empty and the file failed as `NO PLAYABLE SUBTUNE`.
+The fault was inherited rather than introduced: `h2g.frm:1152` `Case 4` is the
+same empty branch, and the later `Case 0, 1, 2, 3, 4` at `:1199` that *would*
+have appended is unreachable for 4, because VB's `Select Case` takes the first
+match. ACE 2 is the corpus's only version-4 file, so nothing else ever showed
+the fault — which is the general hazard of a per-dialect `Select Case` verified
+against a corpus with one sample of some dialects.
+
+**Version 9 is a reminder that a dialect can differ by a single constant.** Its
+player at `$089A` is version 0's shape with `$FE` where version 0 expects
+`$FF`, and no second marker at all — the tune can only loop, never stop. It
+even carries a dead `CMP #$FE` on the fall-through path, which the first test
+has already made unreachable. Because version 0's signature is
+`C9 FF F0 ?? C9 FE` and this file is `C9 FE F0 ?? C9 FE`, nothing matched and
+it fell through to `version $FF`. Note what that means for `command_floor`:
+`$FE` is the only reserved byte, so `$FD` is still a pattern number here where
+in a version-2 dialect it would be a transpose.
 
 **Version 2 is a correction to the original**, which lumped it in with 0/1/3
 and emitted its command bytes as pattern references — they dangled past the end

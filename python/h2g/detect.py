@@ -415,6 +415,14 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         i = find("BC ?? ?? B1 ?? 10 ?? C9 FF F0 ?? 29 7F")
         if i >= 1:
             det.read_track_version = 7    # IK+
+    if i <= -1:
+        # Chain Reaction: version 0's shape with $FE where it expects $FF, and
+        # no second marker -- the tune can only loop, never stop. Last in the
+        # chain, so it speaks only for a file every earlier signature declined;
+        # it matches this file and no other in the corpus.
+        i = find("BC ?? ?? B1 ?? C9 FE F0 ?? C9 FE D0")
+        if i >= 1:
+            det.read_track_version = 9    # Chain Reaction
     log(f"Player Trackread version: {det.read_track_version:X}")
     if det.transpose_operand:
         log("Track transpose form....: two-byte (value follows the command)")
