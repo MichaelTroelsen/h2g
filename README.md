@@ -22,7 +22,7 @@ From `python/`:
 ```sh
 python -m h2g <input.sid> [-o output.sng] [-q] [--max-rows N] [--terminate-patterns]
                           [--format {gts2,gts5}] [--tempo N|auto]
-                          [--dedup-patterns] [--prune-patterns]
+                          [--dedup-patterns] [--prune-patterns] [--pack-repeats]
 python -m h2g --version
 ```
 
@@ -193,6 +193,36 @@ cannot shorten orderlists (sharing renumbers entries, it never removes them),
 so unlike pruning it rescues capacity failures only via the pattern limit.
 
 Both compose with each other and with `--max-rows` / `--format`.
+
+### `--pack-repeats` (coverage)
+
+Goattracker's orderlist can say "play the next pattern n+1 times" in two bytes
+(`$D0`–`$DF`, `gplay.c:983`), so a run of L identical consecutive patterns
+costs `ceil(L/16)*2` instead of L. Hubbard orderlists are full of such runs —
+a drum bar held under a melody — and pattern slicing multiplies them, since
+every slice of a repeated pattern repeats too.
+
+This is the **only** option that shortens an *orderlist* rather than the
+pattern data, and therefore the only one that can rescue a tune from
+Goattracker's 254-byte orderlist limit. Measured over the 95-file corpus:
+
+| Options | Converted |
+|---|---:|
+| defaults | 60 |
+| `--pack-repeats` | **63** |
+| `--max-rows 128 --prune-patterns --dedup-patterns` | 62 |
+| `--max-rows 128 --pack-repeats` | **67** |
+
+It saves little space on its own (0.5% overall — an orderlist is a small part
+of a `.sng`); its value is coverage.
+
+The one hazard is that a repeat command is *positional*: Goattracker parses an
+orderlist step as `[transpose][repeat][pattern]`, so a repeat emitted directly
+after another repeat would be read as that step's pattern number. Version
+0/1/3 orderlists can carry Hubbard pattern numbers in `$D0`–`$FD` that pass
+through as commands, so this case is real and is handled — see
+`test_pack_repeats.py`, which reconstructs what every orderlist plays and
+asserts packing does not change it.
 
 ## Versioning
 

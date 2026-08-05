@@ -62,6 +62,14 @@ def main(argv=None) -> int:
              "cannot change playback -- an unreferenced pattern is "
              "unreachable -- but it renumbers the rest, so it is off by "
              "default. Can bring a tune under the 208-pattern limit")
+    parser.add_argument(
+        "--pack-repeats", action="store_true",
+        help="collapse runs of one repeated pattern into Goattracker REPEAT "
+             "commands ($D0-$DF, 'play the next pattern n+1 times'). A run of "
+             "L costs ceil(L/16)*2 bytes instead of L. This is the only option "
+             "that shortens an orderlist rather than the pattern data, so it "
+             "is the only one that can bring a tune under the 254-byte "
+             "orderlist limit. Off by default: it changes the output bytes")
     args = parser.parse_args(argv)
 
     tempo = args.tempo
@@ -84,7 +92,8 @@ def main(argv=None) -> int:
                       terminate_patterns=args.terminate_patterns,
                       fmt=args.format, tempo=tempo,
                       dedup=args.dedup_patterns,
-                      prune=args.prune_patterns)
+                      prune=args.prune_patterns,
+                      pack=args.pack_repeats)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -83,6 +83,7 @@ def survey_one(path: Path, sng_dir: Path | None,
                fmt: str = DEFAULT_FORMAT,
                dedup: bool = False,
                prune: bool = False,
+               pack: bool = False,
                sidid_db: Database | None = None) -> Result:
     r = Result(path=path)
 
@@ -148,7 +149,7 @@ def survey_one(path: Path, sng_dir: Path | None,
             sid, det, log=lambda m: None, max_rows=max_rows,
             terminate_patterns=terminate_patterns, dedup=dedup,
             used=referenced_patterns(tracks) if prune else None)
-        tracks = reindex_tracks(tracks, track_index)
+        tracks = reindex_tracks(tracks, track_index, pack)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
         return r
@@ -400,6 +401,8 @@ def main(argv=None) -> int:
                         help="share byte-identical pattern slices")
     parser.add_argument("--prune-patterns", action="store_true",
                         help="drop patterns that no track's orderlist references")
+    parser.add_argument("--pack-repeats", action="store_true",
+                        help="collapse repeated patterns into REPEAT commands")
     parser.add_argument("--terminate-patterns", action="store_true",
                         help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
@@ -430,6 +433,7 @@ def main(argv=None) -> int:
                                       fmt=args.format,
                                       dedup=args.dedup_patterns,
                                       prune=args.prune_patterns,
+                                      pack=args.pack_repeats,
                                       sidid_db=sidid_db))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))

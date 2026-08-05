@@ -44,6 +44,11 @@ param(
     # an unreferenced pattern is unreachable -- but it renumbers the rest.
     [switch]$PrunePatterns,
 
+    # Collapse runs of one repeated pattern into Goattracker REPEAT commands.
+    # The only option that shortens an orderlist, so the only one that can
+    # rescue a tune from the 254-byte orderlist limit.
+    [switch]$PackRepeats,
+
     # Output .sng format. gts5 is the modern 4-table format and avoids a
     # buffer overrun in Goattracker's legacy gts2 importer.
     [ValidateSet('gts2','gts5')]
@@ -90,6 +95,7 @@ if ($PSBoundParameters.ContainsKey("MaxRows")) { $pyArgs += @("--max-rows", $Max
 if ($TerminatePatterns) { $pyArgs += "--terminate-patterns" }
 if ($DedupPatterns)     { $pyArgs += "--dedup-patterns" }
 if ($PrunePatterns)     { $pyArgs += "--prune-patterns" }
+if ($PackRepeats)       { $pyArgs += "--pack-repeats" }
 if ($Format) { $pyArgs += @("--format", $Format) }
 if ($Tempo)  { $pyArgs += @("--tempo", $Tempo) }
 

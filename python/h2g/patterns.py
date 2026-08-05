@@ -35,6 +35,19 @@ MAX_TRACK_LEN = 0xFF
 # operand, the restart position, which follows it.
 GT_ORDER_RESTART = 0xFF
 
+# Orderlist REPEAT, gcommon.h: $D0-$DF. gplay.c:983 loads `repeat = value -
+# REPEAT`, then reads the pattern *without advancing* while repeat counts down
+# (:988), so $D0+n plays the following pattern n+1 times. $D0 itself is a no-op
+# the packed-player exporter discards outright (greloc.c:680), and that same
+# code requires a pattern number to follow immediately (:683) -- both honoured
+# here.
+GT_REPEAT = 0xD0
+GT_TRANSPOSE_DOWN = 0xE0        # TRANSDOWN: first byte past the repeat range
+GT_MAX_REPEAT_RUN = 16          # $DF -> repeat 15 -> 16 plays
+# Below this a run costs the same packed as unpacked (2 bytes either way for a
+# run of 2), so leave it alone rather than emit a construct for nothing.
+GT_MIN_REPEAT_RUN = 3
+
 GT_END_PATTERN = 0xFF          # ENDPATT: note-column value marking a pattern's end
 GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
 
@@ -308,7 +321,75 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     return new_patterns, track_index
 
 
-def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]]) -> List[List[int]]:
+def pack_repeats(track: List[int]) -> List[int]:
+    """Collapse runs of one repeated pattern into REPEAT commands.
+
+    Hubbard orderlists hold long runs of a single pattern -- a drum bar held
+    under a melody, a sustained intro -- and pattern slicing multiplies them,
+    since every slice of a repeated pattern repeats too. Goattracker can say
+    "play the next pattern n+1 times" in two bytes, so a run of L costs
+    ceil(L/16)*2 instead of L. That is the only lever on the 254-byte orderlist
+    limit, which no other option touches: dedup renumbers entries without
+    removing any, and pruning removes patterns, not orderlist positions.
+
+    Runs shorter than GT_MIN_REPEAT_RUN are emitted literally -- packing them
+    saves nothing and a repeat of 0 is a construct the exporter drops anyway.
+    """
+    out: List[int] = []
+    i, n = 0, len(track)
+    while i < n:
+        b = track[i]
+        if b == GT_ORDER_RESTART:
+            # $FF and the restart position that follows it are copied as a
+            # unit: the operand is an ordinary small number and must never be
+            # mistaken for a pattern to repeat.
+            out += track[i:i + 2]
+            i += 2
+            continue
+        if b >= MAX_PATTERNS:
+            out.append(b)   # repeat/transpose command, no operand
+            i += 1
+            continue
+
+        run = 0
+        while i + run < n and track[i + run] == b:
+            run += 1
+        i += run
+
+        # Goattracker parses one orderlist step as [transpose][repeat][pattern]
+        # (gplay.c:977-988), so a repeat may follow a transpose but never
+        # another repeat -- the second would be read as the step's pattern
+        # number. If the stream already ends in a repeat-range byte, the first
+        # element of this run is that repeat's pattern and has to stay literal.
+        # Such bytes are not ours: version 0/1/3 orderlists can carry Hubbard
+        # pattern numbers in $D0-$FD, which reindex_tracks passes through
+        # untouched. greloc.c:683 makes the same check when exporting.
+        if out and GT_REPEAT <= out[-1] < GT_TRANSPOSE_DOWN:
+            out.append(b)
+            run -= 1
+
+        # Greedy is optimal here: every group costs 2 bytes whatever its
+        # length, so taking the largest possible group each time minimises the
+        # count, and a leftover below the threshold is cheaper written out
+        # (a run of 17 packs to $DF,P,P -- 3 bytes -- not two groups of 4).
+        while run >= GT_MIN_REPEAT_RUN:
+            take = min(run, GT_MAX_REPEAT_RUN)
+            out += [GT_REPEAT + take - 1, b]
+            run -= take
+        out += [b] * run
+    return out
+
+
+def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
+                   pack: bool = False) -> List[List[int]]:
+    """Rewrite each orderlist's pattern numbers to their post-slicing indices.
+
+    The length check moved to the end of each track so that `pack` -- which
+    only becomes possible once the final numbering is known -- gets to act
+    before a track is judged too long. Without packing the outcome is
+    unchanged: a track that would have tripped the limit mid-build trips it
+    here instead, with the same error.
+    """
     new_tracks: List[List[int]] = []
     for track in tracks:
         new_track: List[int] = []
@@ -331,7 +412,9 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]]) -> Lis
                 new_track.append(b)
             else:
                 new_track.extend(track_index[b] if b < len(track_index) else [])
-            if len(new_track) >= MAX_TRACK_LEN:
-                raise ConversionAbort("TRACKLIST TOO LONG, CAN'T EXPORT TO GOATTRACKER")
+        if pack:
+            new_track = pack_repeats(new_track)
+        if len(new_track) >= MAX_TRACK_LEN:
+            raise ConversionAbort("TRACKLIST TOO LONG, CAN'T EXPORT TO GOATTRACKER")
         new_tracks.append(new_track)
     return new_tracks

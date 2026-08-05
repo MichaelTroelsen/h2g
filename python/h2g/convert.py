@@ -62,6 +62,7 @@ def convert(sid_path: str, log: Logger = print,
             fmt: str = DEFAULT_FORMAT,
             dedup: bool = False,
             prune: bool = False,
+            pack: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -75,6 +76,10 @@ def convert(sid_path: str, log: Logger = print,
     change playback -- an unnamed pattern is unreachable -- but it does
     renumber the ones that remain, so it is opt-in like the other
     output-changing options.
+
+    pack collapses runs of one repeated pattern into Goattracker REPEAT
+    commands. It is the only option that shortens an orderlist, and so the
+    only one that can rescue a tune from the 254-byte orderlist limit.
 
     terminate_patterns appends an explicit ENDPATT row to every pattern
     slice that lacks one, matching what Goattracker's own saver writes.
@@ -104,7 +109,7 @@ def convert(sid_path: str, log: Logger = print,
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=referenced_patterns(tracks) if prune else None)
-    tracks = reindex_tracks(tracks, track_index)
+    tracks = reindex_tracks(tracks, track_index, pack)
 
     resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo
     if resolved_tempo is not None:
