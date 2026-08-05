@@ -592,14 +592,19 @@ because all four change an orderlist's length and "is this position in range"
 is a question about the finished list — position 0 is the only answer available
 before that.
 
-A quieter instance of the same defect needs the same fix: a voice whose
-orderlist is nothing but a marker (`[$FF, $00]`, so `songlen == 0`) has no
-legal restart position at all. `greloc.c:201` does not reject those — it only
-validates and packs subtunes whose three channels all have nonzero length, and
-`greloc.c:653` writes the accepted ones consecutively. A single zero-length
-voice therefore drops its whole subtune *and renumbers every later one* in the
-packed `.sid`, so a `siddump` comparison lines subtune N of the export up
-against subtune N+1 of the original.
+A quieter defect sits next to it, and `--legal-restart` does *not* fix it: a
+voice whose orderlist is nothing but a marker (`[$FF, $00]`, so `songlen == 0`)
+has no legal restart position either, but the option rewrites positions, not
+lengths. `greloc.c:201` does not reject such a subtune; it counts only the
+subtunes whose three channels all have nonzero length, and the writing loop at
+`greloc.c:653` then runs over the **original** indices `c < songs`. So nothing
+is renumbered — an invalid subtune keeps its slot and is written with
+`songsize 0` (`:701-706`), and every subtune whose index is at or past the
+count is never written at all. Seven corpus files lose subtunes this way;
+`Rasputin` loses its subtunes 15 and 16, carrying 309 and 621 sounding rows,
+with no error from any layer. `fidelity.py` reads this before packing so a
+comparison against an empty stub is reported rather than scored — see
+`SNG2SID-FIDELITY.md` §7.
 
 > `version == 8` in the Python branch list is unreachable — `detect()` only ever
 > produces 0–7 or `0xFF`. Harmless dead condition, carried over from the VB
@@ -942,7 +947,7 @@ shape, "wrong output, no diagnostic":
 | `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
 | Version 2 grouped with 0/1/3, so its transpose commands were read as pattern numbers (§6) | Decoded as transposes; 6 corpus files played untransposed before, one of them with a wrong pattern spliced in |
 | `reindex_tracks` split commands from pattern numbers at Goattracker's `$D0`, whatever the dialect | Split at `command_floor(version)`. Versions 0/1/3 have no command but `$FF`, so a pattern number of `$D0`–`$FD` was being emitted verbatim as a repeat or transpose — losing the reference *and* inventing a command. 146 bytes across 7 files |
-| The out-of-range restart position standing in for Hubbard's `$FE` stop (§6) made `gt2reloc` refuse the file — with no message, because its error path writes to a console that does not exist headless. 28 of 78 files, and the failure looked like a successful run with a missing output | `--legal-restart` trades the stop for a loop; all 78 pack. The zero-length-voice variant was worse than a refusal: `greloc.c:201` skipped the subtune and `:653` renumbered the rest, so a `siddump` comparison silently measured the wrong tune |
+| The out-of-range restart position standing in for Hubbard's `$FE` stop (§6) made `gt2reloc` refuse the file — with no message, because its error path writes to a console that does not exist headless. 28 of 78 files, and the failure looked like a successful run with a missing output | `--legal-restart` trades the stop for a loop; all 78 pack. The zero-length-voice variant is worse than a refusal and is still open: the subtune is exported as an entry that plays nothing, and the tail of the subtune list is truncated to match the count — silent data loss in 7 files, with no diagnostic from any layer |
 
 The pattern is stark: **the failure modes that produce no diagnostic are the
 dangerous ones, and they all stem from unvalidated inference.** Every one of

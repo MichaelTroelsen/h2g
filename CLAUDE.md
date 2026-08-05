@@ -76,10 +76,18 @@ test dependency).
 - **`FIDELITY.md` is generated too, but on demand rather than every commit.**
   `python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md`
   packs each conversion back to a `.sid` with gt2reloc and compares SID register
-  traces against the original. It is the only measure in the repo of whether a
-  conversion *sounds* right, so regenerate it after a commit that changes what
-  the converter emits — and never from a working tree with unrelated edits in
-  `h2g/`, for the same reason as the artefacts above.
+  traces against the original. It is the closest thing in the repo to a measure
+  of whether a conversion *sounds* right, so regenerate it after a commit that
+  changes what the converter emits — and never from a working tree with
+  unrelated edits in `h2g/`, for the same reason as the artefacts above.
+- **Do not treat `FIDELITY.md` as the last word on fidelity.** It compares note
+  *attacks*; it cannot see an envelope, filter, tempo or timbre. v0.5.46 fixed a
+  real defect that rewrote 66 rows of one file and moved the report by zero
+  percent. A flat report is not evidence a change did nothing — when a fix is
+  invisible to the metric, say so in the doc beside the fix.
+  `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
+  pairs for the only check that covers the rest; it needs `--json` from a
+  `fidelity.py` run and writes to gitignored `build/listen/`.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and
   `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those

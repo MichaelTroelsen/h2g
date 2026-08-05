@@ -107,18 +107,12 @@ bytes, and the byte-exact `Commando.sng` fixture carries three such tracks),
 but `presets.json`'s `always` block sets it, so the preset path gets it for
 free.
 
-The same option repairs a second case this section missed. A voice whose
-orderlist is only a marker (`[$FF, $00]`, `songlen == 0`) also has no legal
-restart position — but `greloc.c:201` does not *reject* those, it only
-validates and packs subtunes whose three channels all have nonzero length.
-`greloc.c:653` then writes the accepted subtunes consecutively, so one
-zero-length voice silently drops its subtune and renumbers every later one.
-That is the real explanation for the `Rasputin` outlier above, and it is worse
-than "presumably optimised away". Every one of its out-of-range tracks sits in
-a subtune that also has a zero-length voice, so `greloc` never checked those
-subtunes — it dropped them. Both of them, including subtune 0. The file
-"relocated" while discarding the music; with `--legal-restart` the placeholder
-orderlist gives every voice a nonzero length and both subtunes are packed.
+A voice whose orderlist is only a marker (`[$FF, $00]`, `songlen == 0`) also
+has no legal restart position — but `greloc.c:201` does not *reject* those, and
+`--legal-restart` does not repair them either: it rewrites restart positions,
+not lengths. That is a separate defect, and it is what the `Rasputin` outlier
+above really was rather than "presumably optimised away". It is written up in
+§7.
 
 ---
 
@@ -199,13 +193,13 @@ line**.
 > tempo. That would fix the editor and the packed player at once, and remove
 > the "press SHIFT+F6 for 2×" caveat.
 
-**Subtune mapping.** Both sides take `-aN`, but our subtune numbering shifts
-when phantom subtunes are trimmed or an over-long one is dropped — and shifts
-again inside `gt2reloc`, which packs only subtunes whose three voices all have
-nonzero length (`greloc.c:201`) and writes the survivors consecutively
-(`:653`). Map explicitly rather than assuming `N == N`. `--legal-restart`
-removes the second source by giving an empty voice a placeholder orderlist,
-but not the first.
+**Subtune mapping.** Both sides take `-aN`, and our subtune numbering shifts
+when phantom subtunes are trimmed or an over-long one is dropped, so map
+explicitly rather than assuming `N == N`. `gt2reloc` does **not** add a second
+shift: it counts the subtunes whose three voices all have nonzero length
+(`greloc.c:201`), but the writing loop at `:653` runs over the *original*
+indices, so an invalid subtune keeps its slot as an empty entry and the tail
+of the list is truncated instead. See §7.
 
 **Transpose and note spelling.** The original player may transpose in its
 orderlist where we bake it into `TRANSUP`; the *absolute* frequency column is
@@ -244,11 +238,53 @@ digi channel entirely on 9 files.
 
 ---
 
-## 7. Recommended converter changes
+## 7. The empty-voice subtune, and what it really costs
+
+A subtune with a zero-length voice is not rejected and not renumbered. Read the
+two loops together:
+
+- `greloc.c:200-255` counts `songs` — the subtunes whose three voices *all*
+  have nonzero length. `NUMSONGS` is that count (`:1131`, `:1644`).
+- `greloc.c:653` then writes with `for (c = 0; c < songs; c++)` over the
+  **original** indices, re-testing validity. An invalid `c` falls to the `else`
+  at `:701` and is written with `songsize 0`.
+
+So two different things happen, and only one of them is a numbering problem:
+
+| | effect |
+|---|---|
+| invalid subtune at index `c < songs` | keeps its index, exported as an entry that plays nothing |
+| any subtune at index `>= songs` | never written at all, valid or not |
+
+Nothing shifts down. Measured on `Rasputin` (17 subtunes, PSID reports 15):
+ours 0 and 1 each have an empty third voice and come back silent *in place*;
+ours 15 and 16, carrying 309 and 621 sounding rows between them, do not come
+back at all. Seven corpus files are affected — see the table in `FIDELITY.md`.
+
+Two consequences worth separating:
+
+1. **For measurement.** A comparison against a stub scores our converter
+   against silence. `fidelity.py` reads the lengths before packing
+   (`song_lengths` / `greloc_export`), marks such a row *not comparable*, and
+   leaves it out of the averages. Corpus-wide this affects exactly one file,
+   `Rasputin` — every other low-scoring file is converted wrong, not measured
+   wrong.
+2. **For the packed `.sid` itself.** The tail truncation is silent data loss
+   that no error path reports. A converter-side fix would be to give an empty
+   voice a real one-pattern orderlist so every subtune stays valid, which
+   costs nothing and would restore the lost tail as well.
+
+---
+
+## 8. Recommended converter changes
 
 1. **Emit a legal restart position** instead of `$FD`. Unblocks 26 files for
    packing; the only cost is that a subtune loops instead of stopping.
+   *(Done — `--legal-restart`.)*
 2. **Move tempo from instrument 63 to `CMD_SETTEMPO` in pattern data.** Fixes
    the silence, survives relocation, and removes the editor's 2× caveat.
-3. Consider a `--for-sid` preset that combines the two, so the packing path is
+   *(Done — v0.5.42.)*
+3. **Give an empty voice a placeholder orderlist** so `greloc` counts its
+   subtune, per §7. Not done.
+4. Consider a `--for-sid` preset that combines them, so the packing path is
    one flag rather than a remembered list of caveats.

@@ -444,6 +444,39 @@ Two further comparisons are wired up behind flags, both shelling out to
 `--audio` (onset-aligned audio, tolerates our tempo offset) and `--register`
 (frame-exact register comparison, only meaningful once tempo is reconciled).
 
+A row can also say **not comparable**. `gt2reloc` exports only the subtunes
+whose three voices all have nonzero length, and a subtune that fails that test
+keeps its index and comes back as an entry that plays nothing — so comparing
+against it measures our converter against silence. Those rows are marked and
+left out of the averages rather than scored as bad conversions; the report
+lists every affected file, including the subtunes that are silently dropped off
+the end of the list. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md) §7.
+
+### Listening
+
+`python/listen.py` stages the part no measurement covers:
+
+```sh
+cd python
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md \
+    --json ../build/fidelity.json
+python listen.py <sid_dir> --from-json ../build/fidelity.json -t 30
+```
+
+It picks one tune from each band of `FIDELITY.md` — the median of the band, not
+the extreme — renders the original and our packed conversion to WAV with the
+same emulator at the same settings, and writes `build/listen/LISTENING.md`
+saying what the measurement predicts for each. Needs `SID2WAV.EXE`
+(`--sid2wav`); output is gitignored, because it is for ears rather than for
+review.
+
+The reason it exists: `fidelity.py` compares note attacks and nothing else. It
+cannot hear an envelope, a filter, a tempo or a timbre, and it scored *zero*
+change for a correctness fix that rewrote 66 rows of one file (v0.5.46). Its
+number is a floor on how wrong a conversion is, never a ceiling. Each staged
+entry states what the numbers predict precisely so that a listen can contradict
+them — a contradiction is the useful outcome.
+
 ## Repository layout
 
 | Path | |
@@ -452,6 +485,7 @@ Two further comparisons are wired up behind flags, both shelling out to
 | `python/tests/` | regression tests |
 | `python/survey.py`, `python/presets.py`, `python/bump_version.py` | tooling |
 | `python/fidelity.py` | measures a conversion against the .sid it came from |
+| `python/listen.py` | stages WAV pairs and a guide for a listening pass |
 | `convert.ps1`, `play.ps1` | PowerShell wrappers: convert, and convert + open in GoatTracker |
 | `build/` | converted output (gitignored); never written next to an input |
 | `VB6 Sourcecode/h2g.frm` | the original VB6 tool; still the ground truth for behaviour |

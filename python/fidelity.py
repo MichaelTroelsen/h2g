@@ -177,6 +177,61 @@ def legalise_restarts(blob: bytes) -> tuple[bytes, int]:
     return bytes(buf), fixed
 
 
+def song_lengths(blob: bytes) -> list[tuple[int, int, int]]:
+    """greloc's `songlen` for each subtune's three voices, read from a .sng.
+
+    gsong.c:1338-1349 counts orderlist bytes up to the first byte >= LOOPSONG,
+    so a voice whose orderlist is only the marker `[$FF, restart]` has length
+    **0**. The .sng stores `len(track) - 1` (goatwriter.build_sng), i.e. the
+    orderlist including its `$FF` but not the restart operand, so greloc's
+    length is the stored byte minus one.
+    """
+    pos = 4 + 32 * 3
+    subtunes = blob[pos]
+    pos += 1
+    out: list[tuple[int, int, int]] = []
+    for _ in range(subtunes):
+        voices = []
+        for _ in range(3):
+            stored = blob[pos]
+            pos += 1
+            voices.append(stored - 1)
+            pos += stored + 1
+        out.append((voices[0], voices[1], voices[2]))
+    return out
+
+
+def greloc_export(lengths: list[tuple[int, int, int]]) -> dict:
+    """Which of our subtunes gt2reloc will export, and as what.
+
+    `greloc.c:200-255` counts `songs` = the subtunes whose three voices all
+    have nonzero length. The writing loop at `:653` then runs `c < songs` over
+    the **original** indices and re-tests validity, so the effect is *not* a
+    compaction and nothing is renumbered:
+
+      * a subtune with a zero-length voice keeps its index but is written with
+        `songsize 0` (`:701-706`) -- an entry that exists and plays nothing;
+      * every subtune whose index is >= `songs` is never written at all,
+        valid or not. `NUMSONGS` is `songs` (`:1131`, `:1644`).
+
+    Verified on Rasputin: 17 subtunes in, PSID reports 15 out; ours 0 and 1
+    (each with an empty third voice) come back silent in place, and ours 15
+    and 16 -- carrying 309 and 621 sounding rows -- do not come back at all.
+
+    This matters to every number in this report: a comparison against a stub
+    measures our converter against silence, and one against a shifted subtune
+    would measure two different pieces of music. Only the first can happen.
+    """
+    valid = [all(v) for v in lengths]
+    songs = sum(valid)
+    return {
+        "subtunes": len(lengths),
+        "exported": songs,
+        "stub": [i for i in range(min(songs, len(lengths))) if not valid[i]],
+        "lost": [i for i in range(songs, len(lengths)) if valid[i]],
+    }
+
+
 def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC) -> Path | None:
     """Run gt2reloc, the standalone form of Goattracker's F9 packer.
 
@@ -344,6 +399,18 @@ def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
     sng, patched = legalise_restarts(sng)
     row["restarts_patched"] = patched
 
+    # Read what gt2reloc will keep *before* running it, so a row can say
+    # whether its own number is trustworthy rather than leaving a stub to be
+    # scored as a failed conversion.
+    try:
+        exp = greloc_export(song_lengths(sng))
+    except IndexError:      # malformed .sng: let the pack attempt report it
+        exp = None
+    if exp and (exp["stub"] or exp["lost"]):
+        row["export"] = exp
+        if args.subtune in exp["stub"]:
+            row["traced_subtune_dropped"] = True
+
     packed = pack_sid(sng, workdir, args.gt2reloc)
     if packed is None:
         row["status"] = "not packed"
@@ -384,7 +451,12 @@ def _fmt_pct(x) -> str:
 
 
 def report(rows: list[dict], args) -> str:
-    measured = [r for r in rows if r["status"] in ("measured", "silent")]
+    # A row whose traced subtune came back as an empty stub is a measurement
+    # of gt2reloc, not of the converter. It stays in the table, marked, but
+    # averaging it in would put a known-meaningless number into the headline.
+    measured = [r for r in rows if r["status"] in ("measured", "silent")
+                and not r.get("traced_subtune_dropped")]
+    excluded = [r for r in rows if r.get("traced_subtune_dropped")]
     out = [
         f"# Fidelity report",
         "",
@@ -413,11 +485,14 @@ def report(rows: list[dict], args) -> str:
             out.append(f"| {r['file']} | - | - | - | - | - | - | {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
+        status = r["status"]
+        if r.get("traced_subtune_dropped"):
+            status += " -- **not comparable**"
         out.append(
             f"| {r['file']} | {r['orig_attacks']} | {r['our_attacks']} | "
             f"{'-' if rr is None else f'{rr:.2f}'} | {_fmt_pct(r['melody'])} | "
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
-            f"{r['status']} |")
+            f"{status} |")
 
     if measured:
         n = len(measured)
@@ -425,7 +500,10 @@ def report(rows: list[dict], args) -> str:
             "",
             "## Summary",
             "",
-            f"- measured: **{n}** of {len(rows)}",
+            f"- measured: **{n}** of {len(rows)}"
+            + (f" ({len(excluded)} further file(s) packed, but the traced "
+               "subtune came back as an empty stub -- see below -- so they are "
+               "in the table and out of these averages)" if excluded else ""),
             f"- mean melody similarity: **{_fmt_pct(sum(r['melody'] for r in measured) / n)}**",
             f"- mean sequence similarity: **{_fmt_pct(sum(r['sequence'] for r in measured) / n)}**",
             f"- mean pitch overlap: **{_fmt_pct(sum(r['pitch_jaccard'] for r in measured) / n)}**",
@@ -453,6 +531,36 @@ def report(rows: list[dict], args) -> str:
             names = ", ".join(sorted(r["file"].replace(".sid", "") for r in got))
             out.append(f"| {label} ({100 * max(lo, 0):.0f}-{100 * min(hi, 1):.0f}%) "
                        f"| {len(got)} | {names if len(got) <= 25 else ''} |")
+
+    dropped = [r for r in rows if r.get("export")]
+    if dropped:
+        out += [
+            "",
+            "## Subtunes `gt2reloc` does not export",
+            "",
+            "`greloc.c:200-255` counts only the subtunes whose three voices all "
+            "have nonzero length, and the writing loop at `:653` then runs over "
+            "the *original* indices `c < songs`. Nothing is renumbered. Two "
+            "things happen instead:",
+            "",
+            "* **stub** -- a subtune with an empty voice keeps its index and is "
+            "written with `songsize 0` (`:701-706`): it exists in the packed "
+            "`.sid` and plays nothing. Comparing against one measures our "
+            "converter against silence, so those rows are marked "
+            "*not comparable* above rather than scored.",
+            "* **lost** -- every subtune whose index is >= the exported count is "
+            "never written, valid or not. This is silent data loss in the "
+            "packed `.sid`; it does not affect the measurement of subtune 0, "
+            "but it does affect anyone playing the file.",
+            "",
+            "| File | ours | exported | stub | lost |",
+            "|---|---:|---:|---|---|",
+        ]
+        for r in sorted(dropped, key=lambda r: r["file"].lower()):
+            e = r["export"]
+            fmt = lambda xs: ", ".join(str(x) for x in xs) if xs else "-"  # noqa: E731
+            out.append(f"| {r['file']} | {e['subtunes']} | {e['exported']} | "
+                       f"{fmt(e['stub'])} | {fmt(e['lost'])} |")
 
     out += [
         "",

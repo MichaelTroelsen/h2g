@@ -155,6 +155,53 @@ def test_the_commando_fixture_needs_patching_to_pack():
     assert count == 3
 
 
+# --- what gt2reloc exports -------------------------------------------------
+
+def _sng(*subtunes):
+    """A .sng header carrying `subtunes`, each a triple of orderlist lengths.
+
+    build_sng stores `len(track) - 1` for a track that ends `[..., $FF,
+    restart]`, so a voice greloc sees as length n is stored as n+1.
+    """
+    blob = bytearray(4 + 32 * 3)
+    blob.append(len(subtunes))
+    for voices in subtunes:
+        for n in voices:
+            blob.append(n + 1)
+            blob += bytes(n) + bytes([0xFF, 0x00])
+    return bytes(blob)
+
+
+def test_song_lengths_reads_greloc_lengths_not_stored_bytes():
+    # A voice whose orderlist is only the [$FF, restart] marker is length 0 to
+    # greloc (gsong.c:1338-1349), though the .sng stores 1 for it.
+    assert fidelity.song_lengths(_sng((4, 0, 2))) == [(4, 0, 2)]
+
+
+def test_a_subtune_with_an_empty_voice_is_exported_as_a_stub_in_place():
+    """greloc.c:653 loops over the original indices, so nothing is renumbered:
+    the invalid subtune keeps its slot and is written with songsize 0."""
+    exp = fidelity.greloc_export([(1, 1, 0), (2, 2, 2), (3, 3, 3)])
+    assert exp["exported"] == 2          # only two subtunes are valid
+    assert exp["stub"] == [0]            # index 0 survives as an empty entry
+    assert exp["lost"] == [2]            # index 2 >= songs, never written
+
+
+def test_a_valid_subtune_past_the_exported_count_is_lost_entirely():
+    # Two invalid subtunes at the front cost the last two valid ones, which is
+    # what happens to Rasputin's subtunes 15 and 16.
+    exp = fidelity.greloc_export([(0, 1, 1), (1, 0, 1)] + [(2, 2, 2)] * 4)
+    assert exp["exported"] == 4
+    assert exp["stub"] == [0, 1]
+    assert exp["lost"] == [4, 5]
+
+
+def test_a_file_with_no_empty_voice_exports_every_subtune():
+    exp = fidelity.greloc_export([(1, 1, 1)] * 5)
+    assert exp["exported"] == 5
+    assert exp["stub"] == [] and exp["lost"] == []
+
+
 # --- live tools ------------------------------------------------------------
 # These need siddump and are the controls for the measurement itself: a file
 # against itself must score 1.0, two different tunes near 0.
