@@ -86,15 +86,31 @@ assert MAX_INSTRUMENTS <= MAX_REPRESENTABLE_INSTRUMENTS
 # so the fastest expressible row is 2 calls -- i.e. one frame per row requires
 # speed multiplier 2. That is exactly the "2x" needed to make a converted tune
 # play at the right speed.
-GT_TEMPO_INSTRUMENT = 63          # MAX_INSTR-1
-GT_MIN_TEMPO = 2                  # `ad >= 2`; 0 and 1 mean funktempo
+GT_TEMPO_INSTRUMENT = 63          # MAX_INSTR-1 -- the old route, see below
 GT_DEFAULT_TEMPO_CALLS = 6        # Goattracker's startup default
 
-# One tick per row, at the fastest rate the format can express.
-TEMPO_ONE_TICK_PER_ROW = 2
+# CMD_SETTEMPO (gcommon.h: 15). gplay.c:494 takes the low 7 bits, decrements
+# them when >= 3, and assigns the result to all three channels when the value
+# is under $80. gplay.c:325 then makes a row last `tempo + 1` play-routine
+# calls -- but only for `tempo >= 2`; 0 and 1 are *funktempo*, which alternates
+# two tick lengths out of funktable[] rather than holding a steady rate.
+#
+# So the fastest steady row the format can express is tempo 2, i.e. three
+# calls, reached by a command value of 2 or 3.
+CMD_SETTEMPO = 15
+GT_MIN_TEMPO = 2                  # below this is funktempo, not a rate
+TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
+
+# The superseded route: instrument 63's attack/decay (gplay.c:221). It was
+# wrong twice over. `ad = 2` yields tempo 1, which is funktempo -- the
+# alternating 9/6 tick pattern, not the steady 2 calls/row it was documented
+# as -- and reaching instrument 63 meant declaring 63 instruments, ~1.2 KB of
+# inert padding that gt2reloc strips when packing to .sid, leaving the packed
+# tune silent. A CMD_SETTEMPO in the pattern data survives relocation, shows up
+# in the editor, and costs nothing.
 
 
-def tempo_for(sid: SidFile, subtune: int = 0) -> int:
+def tempo_command_value(sid: SidFile, subtune: int = 0) -> int:
     """Calls-per-row to write for this SID, from its PSID speed field.
 
     The header records only *whether* a subtune is CIA-timed, never at what
@@ -102,7 +118,7 @@ def tempo_for(sid: SidFile, subtune: int = 0) -> int:
     player tick, so the answer is the same minimum in both cases; the speed bit
     is surfaced for logging and for callers that want to warn about multispeed.
     """
-    return TEMPO_ONE_TICK_PER_ROW
+    return TEMPO_FASTEST_STEADY
 
 
 def _table_length_byte(entries: int, what: str) -> int:
@@ -140,7 +156,7 @@ def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
 
 
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
-                       log=None, tempo: int | None = None) -> int:
+                       log=None) -> int:
     available = det.instr_used + 1
     instr_used = min(available, MAX_INSTRUMENTS)
     if log and available > instr_used:
@@ -151,14 +167,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         log(f"*** INSTRUMENT TABLE HAS {available} ENTRIES, ONLY {instr_used} FIT "
             f"(GOATTRACKER WAVETABLE LIMIT) -- {available - instr_used} DROPPED ***")
 
-    # The tempo override lives in instrument 63, and the loader reads
-    # instruments 1..count, so reaching it means declaring 63 of them. The
-    # padding entries are all-zero: pointers of 0 mean "no table", so they cost
-    # 25 bytes each and no wavetable space.
-    written = instr_used
-    if tempo is not None:
-        written = max(instr_used, GT_TEMPO_INSTRUMENT)
-    out.append(written)
+    out.append(instr_used)
 
     # Instrument 1: always the empty "Clear Voice" slot.
     out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
@@ -186,16 +195,6 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         name = f"{i + 2:02X}:{b5:02X}-{b6:02X}-{b7:02X}"
         out += _padded_name_bytes(name)
 
-    # Pad up to instrument 63 and put the tempo in its Attack/Decay byte. Its
-    # wavetable pointer must stay 0 or Goattracker ignores the override.
-    for slot in range(instr_used + 1, written + 1):
-        ad = tempo if slot == GT_TEMPO_INSTRUMENT else 0x00
-        out += bytes([ad, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
-        name = "Tempo" if slot == GT_TEMPO_INSTRUMENT else ""
-        out += _padded_name_bytes(name)
-
-    # Wave/pulse tables are sized from the *real* instruments only; the padding
-    # carries no table entries.
     return instr_used
 
 
@@ -276,13 +275,9 @@ def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
 
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
-              fmt: str = DEFAULT_FORMAT, tempo: int | None = None) -> bytes:
+              fmt: str = DEFAULT_FORMAT) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
-    if tempo is not None and not GT_MIN_TEMPO <= tempo <= 0xFF:
-        raise ValueError(
-            f"tempo must be {GT_MIN_TEMPO}..255 (Goattracker treats 0 and 1 as "
-            f"funktempo, gplay.c:221), got {tempo}")
     out = bytearray()
     out += _build_header(sid, fmt)
     # Derived from the tracks actually emitted, not sid.subtunes: convert_tracks
@@ -295,7 +290,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
-    instr_used = _write_instruments(out, sid, det, log, tempo)
+    instr_used = _write_instruments(out, sid, det, log)
     _write_wavetable(out, sid, det, instr_used)
     _write_pulsetable(out, sid, det, instr_used)
 

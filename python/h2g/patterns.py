@@ -17,6 +17,7 @@ from math import gcd
 from typing import List, Optional, Set
 
 from .detect import Detection
+from .goatwriter import CMD_SETTEMPO
 from .sidfile import HLEN, SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -766,6 +767,44 @@ def split_subtune(group: List[List[int]], patterns: List[List[int]],
             return None
         out.append(voices)
     return out
+
+
+def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
+                value: int, log=None) -> int:
+    """Write CMD_SETTEMPO into the first row each subtune plays.
+
+    Goattracker has no per-row duration, so a converted tune needs the song
+    tempo set once; gplay.c:494 applies a value under $80 to all three
+    channels at once, and the setting persists, so one row per subtune is
+    enough. It goes in *pattern data*, which is why it survives gt2reloc --
+    the instrument-63 route it replaces did not.
+
+    Written only into a row whose command column is free, so a portamento or
+    vibrato this converter emitted is never overwritten. A pattern shared by
+    several positions simply re-applies the same tempo, which is harmless.
+
+    Returns how many rows were written.
+    """
+    written = 0
+    for first in range(0, len(tracks), 3):
+        # The orderlist grammar, not a scan for a small byte: the value after
+        # $FF is a restart *position*, and taking it as a pattern number would
+        # aim the tempo at whatever pattern happens to share that index -- or
+        # at pattern 0 of a subtune that plays nothing.
+        played = pattern_references([tracks[first]], GT_COMMAND_FLOOR)
+        if not played or played[0] >= len(patterns):
+            continue
+        target = played[0]
+        pattern = patterns[target]
+        if len(pattern) < 4 or pattern[2] != 0:
+            continue
+        pattern[2], pattern[3] = CMD_SETTEMPO, value
+        written += 1
+    if log and written:
+        log(f"Tempo...................: CMD_SETTEMPO ${value:02X} in {written} "
+            f"pattern(s) -- {value if value < 3 else value - 1} tempo, "
+            f"{(value if value < 3 else value - 1) + 1} calls per row")
+    return written
 
 
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],

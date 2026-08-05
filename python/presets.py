@@ -165,7 +165,11 @@ def main(argv=None) -> int:
     doc = {
         "generator": f"h2g {__version__} presets.py",
         "corpus": str(sid_dir),
-        "always": {"format": FIXED["fmt"], "tempo": FIXED["tempo"]},
+        "always": {"format": FIXED["fmt"], "tempo": FIXED["tempo"],
+                   # The packing step of the conversion. Recorded here rather
+                   # than searched: it takes no per-song decision, it just
+                   # turns the .sng into something a SID player can play.
+                   "gt2reloc": True},
         "criteria": "most playable subtunes, then most rows, then smallest file",
         "songs": songs,
     }

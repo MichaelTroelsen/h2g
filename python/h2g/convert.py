@@ -4,11 +4,12 @@ from __future__ import annotations
 from typing import Callable, List
 
 from .detect import Detection, detect
-from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
-                         tempo_for)
+from .goatwriter import (DEFAULT_FORMAT, FORMATS, GT_MIN_TEMPO, build_sng,
+                         tempo_command_value)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, command_floor, convert_patterns,
-                       pattern_references, referenced_patterns, reindex_tracks)
+                       apply_tempo, pattern_references, referenced_patterns,
+                       reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import convert_tracks
 
@@ -122,12 +123,11 @@ def convert(sid_path: str, log: Logger = print,
         raise UnsupportedSidError(
             "EVERY SUBTUNE'S ORDERLIST EXCEEDS GOATTRACKER'S LIMIT, CAN'T CONVERT")
 
-    resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo
+    resolved_tempo = tempo_command_value(sid) if tempo == "auto" else tempo
     if resolved_tempo is not None:
-        cia = sid.is_cia_timed(0)
-        log(f"Tempo...................: {resolved_tempo} calls/row "
-            f"(PSID speed ${sid.speed:08X}, "
-            f"{'CIA timer' if cia else '50Hz VBI'}) "
-            f"-- needs Goattracker speed multiplier 2")
-    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
-                     tempo=resolved_tempo)
+        if not GT_MIN_TEMPO <= resolved_tempo <= 0x7F:
+            raise ValueError(
+                f"tempo must be {GT_MIN_TEMPO}..127 (Goattracker reads 0 and 1 "
+                f"as funktempo, gplay.c:325), got {resolved_tempo}")
+        apply_tempo(new_patterns, tracks, resolved_tempo, log)
+    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt)

@@ -11,6 +11,10 @@ just that it is. Nothing is written unless --sng-dir is given.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
+import subprocess
+import tempfile
 import sys
 import traceback
 from dataclasses import dataclass, field
@@ -55,6 +59,8 @@ class Result:
     dangling_sub0: int = 0    # ...of those, how many are in subtune 0
     voices: int = 3           # voices the player drives; >3 means a sample channel
     subtunes_dropped: int = 0  # subtunes whose orderlist exceeded the 254-byte limit
+    gt2reloc: str = ""         # "", "ok" or "fail": does the .sng pack back to .sid?
+    sid_bytes: int = 0         # size of the packed .sid, when it packs
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
@@ -79,6 +85,46 @@ def _dangling(tracks: list, pattern_used: int, floor: int) -> tuple[int, int]:
     return len(everywhere), len(first)
 
 
+# --- packing back to .sid --------------------------------------------------
+#
+# gt2reloc is the standalone form of Goattracker's F9 packer and writes .sid
+# straight from the output extension, so it turns a converted .sng back into
+# something a SID player can play -- the other half of a fidelity test against
+# the file we converted from. See SNG2SID-FIDELITY.md.
+GT2RELOC_ENV = "H2G_GT2RELOC"
+GT2RELOC_DEFAULT = r"C:\Users\mit\Downloads\GoatTracker_2.77\win32\gt2reloc.exe"
+
+
+def find_gt2reloc(explicit=None):
+    for candidate in (explicit, os.environ.get(GT2RELOC_ENV), GT2RELOC_DEFAULT):
+        if candidate and Path(candidate).is_file():
+            return str(Path(candidate).resolve())
+    return None
+
+
+def pack_to_sid(sng: bytes, exe: str, workdir: str):
+    """Pack .sng bytes to .sid. Returns ("ok"|"fail", size).
+
+    Never trust the exit code. gt2reloc reports fatal errors through
+    `fopen("CON")` and SDL screen routines that do nothing headless, so a
+    refusal is exit 0 with no output and no file -- indistinguishable from
+    success at the shell. The written file is the only reliable signal.
+
+    Arguments are passed as bare filenames with the working directory set,
+    because gt2reloc strcpy()s argv into a 60-byte buffer before reducing it
+    to a basename (gt2reloc.c:144, MAX_FILENAME in gfile.h).
+    """
+    src, dst = Path(workdir) / "s.sng", Path(workdir) / "s.sid"
+    dst.unlink(missing_ok=True)
+    src.write_bytes(sng)
+    try:
+        subprocess.run([exe, "s.sng", "s.sid"], cwd=workdir, timeout=60,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return "fail", 0
+    return ("ok", dst.stat().st_size) if dst.is_file() else ("fail", 0)
+
+
 def survey_one(path: Path, sng_dir: Path | None,
                max_rows: int = GT_DEFAULT_ROWS,
                terminate_patterns: bool = False,
@@ -86,7 +132,9 @@ def survey_one(path: Path, sng_dir: Path | None,
                dedup: bool = False,
                prune: bool = False,
                pack: bool = False,
-               sidid_db: Database | None = None) -> Result:
+               sidid_db: Database | None = None,
+               gt2reloc: str | None = None,
+               workdir: str | None = None) -> Result:
     r = Result(path=path)
 
     try:
@@ -172,6 +220,8 @@ def survey_one(path: Path, sng_dir: Path | None,
         return r
 
     r.ok, r.out_size, r.patterns = True, len(sng), len(new_patterns)
+    if gt2reloc and workdir:
+        r.gt2reloc, r.sid_bytes = pack_to_sid(sng, gt2reloc, workdir)
     if sng_dir:
         sng_dir.mkdir(parents=True, exist_ok=True)
         (sng_dir / (path.stem + ".sng")).write_bytes(sng)
@@ -349,6 +399,19 @@ def build_report(results: list[Result], sid_dir: Path,
             "because cutting one voice short while its neighbours play on "
             "makes it loop early and drift — a subtune that sounds wrong is "
             f"worse than one plainly absent. Affected: {names}.")
+    packed = [r for r in ok if r.gt2reloc]
+    if packed:
+        good = [r for r in packed if r.gt2reloc == "ok"]
+        lines.append(
+            f"- **{len(good)} of {len(packed)} converted files pack back to a "
+            "`.sid`** with `gt2reloc`, the standalone form of Goattracker's F9 "
+            "packer. That is what makes a fidelity test possible: the packed "
+            "`.sid` can be `siddump`ed against the file it was converted from. "
+            "A failure here is not a conversion failure — the `.sng` is fine in "
+            "the editor — but it blocks that comparison. See "
+            "[`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md); the known cause is "
+            "the restart position this converter emits for a `$FE` track byte, "
+            "which `greloc.c:244` rejects as out of range.")
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
@@ -414,8 +477,8 @@ def build_report(results: list[Result], sid_dir: Path,
     lines.append(f"## Converted ({len(ok)})")
     lines.append("")
     lines.append("| File | Title | Source | SIDId | Player | Ver | Subtunes | Instr | "
-                 "Patterns | Dangling | .sng bytes | Flag |")
-    lines.append("|---|---|---|---|---|---:|---|---:|---:|---|---:|---|")
+                 "Patterns | Dangling | .sng bytes | gt2reloc | Flag |")
+    lines.append("|---|---|---|---|---|---:|---|---:|---:|---|---:|:-:|---|")
     for r in sorted(ok, key=lambda x: x.path.name.lower()):
         flags = []
         if r.instruments > MAX_INSTRUMENTS:
@@ -428,6 +491,7 @@ def build_report(results: list[Result], sid_dir: Path,
         subs = str(r.subtunes_emitted)
         if r.subtunes_emitted != r.subtunes:
             subs += f" (hdr {r.subtunes})"
+        reloc = {"ok": "y", "fail": "**n**"}.get(r.gt2reloc, "-")
         dang = "-" if not r.dangling else (
             f"**{r.dangling}** (sub0 {r.dangling_sub0})" if r.dangling_sub0
             else str(r.dangling))
@@ -435,7 +499,8 @@ def build_report(results: list[Result], sid_dir: Path,
             f"| `{r.path.name}` | {_md_escape(r.name)} | "
             f"{r.source_format or '-'} | {_md_escape(r.sidid)} | "
             f"{VERSION_NAMES.get(r.version, 'unknown')} | {r.version} | {subs} | "
-            f"{r.instruments} | {r.patterns} | {dang} | {r.out_size} | {flag} |"
+            f"{r.instruments} | {r.patterns} | {dang} | {r.out_size} | "
+            f"{reloc} | {flag} |"
         )
     lines.append("")
     lines.append("`Source` is the input file's own header version — the original "
@@ -525,6 +590,10 @@ def main(argv=None) -> int:
                         help="drop patterns that no track's orderlist references")
     parser.add_argument("--pack-repeats", action="store_true",
                         help="collapse repeated patterns into REPEAT commands")
+    parser.add_argument("--gt2reloc", metavar="PATH", nargs="?", const="",
+                        help="also pack every converted .sng back to .sid with "
+                             "gt2reloc and report whether it succeeds. Defaults "
+                             f"to ${GT2RELOC_ENV} then a known install path")
     parser.add_argument("--terminate-patterns", action="store_true",
                         help="append an explicit ENDPATT row to each pattern slice")
     parser.add_argument("--max-rows", type=int, default=GT_DEFAULT_ROWS,
@@ -547,6 +616,12 @@ def main(argv=None) -> int:
     if sidid_db is None:
         print("note: sidid.cfg not found; SIDId column will be empty "
               "(set H2G_SIDID_CFG or pass --sidid-cfg)", file=sys.stderr)
+    exe = find_gt2reloc(args.gt2reloc or None) if args.gt2reloc is not None else None
+    if args.gt2reloc is not None and not exe:
+        print("note: gt2reloc not found; the column will be empty "
+              f"(set ${GT2RELOC_ENV} or pass --gt2reloc PATH)", file=sys.stderr)
+    workdir = tempfile.mkdtemp(prefix="h2g-reloc-") if exe else None
+
     results = []
     for path in paths:
         try:
@@ -556,11 +631,14 @@ def main(argv=None) -> int:
                                       dedup=args.dedup_patterns,
                                       prune=args.prune_patterns,
                                       pack=args.pack_repeats,
-                                      sidid_db=sidid_db))
+                                      sidid_db=sidid_db,
+                                      gt2reloc=exe, workdir=workdir))
         except Exception:  # noqa: BLE001 - a crash must not kill the sweep
             r = Result(path=path, stage="crash", error=traceback.format_exc(limit=1))
             results.append(r)
 
+    if workdir:
+        shutil.rmtree(workdir, ignore_errors=True)
     Path(args.output).write_text(
         build_report(results, sid_dir, args.max_rows, args.format),
         encoding="utf-8")

@@ -54,6 +54,13 @@ param(
     # still wins.
     [string]$Presets,
 
+    # Pack the converted .sng back to a .sid with gt2reloc, Goattracker's F9
+    # packer. Implied by a preset file whose `always.gt2reloc` is true.
+    [switch]$Sid,
+
+    # Path to gt2reloc.exe. Falls back to $env:H2G_GT2RELOC, then a default.
+    [string]$Gt2reloc,
+
     # Output .sng format. gts5 is the modern 4-table format and avoids a
     # buffer overrun in Goattracker's legacy gts2 importer.
     [ValidateSet('gts2','gts5')]
@@ -112,6 +119,51 @@ try {
 }
 finally {
     Pop-Location
+}
+
+if ($exitCode -ne 0) { exit $exitCode }
+
+# ---- pack to .sid ---------------------------------------------------------
+# gt2reloc is the standalone form of GoatTracker's F9 packer and writes .sid
+# straight from the output extension, so this turns a conversion into
+# something a SID player can play.
+$wantSid = $Sid
+if ($Presets -and -not $Sid) {
+    $doc = Get-Content -LiteralPath $Presets -Raw | ConvertFrom-Json
+    if ($doc.always.gt2reloc) { $wantSid = $true }
+}
+
+if ($wantSid) {
+    $exe = $Gt2reloc
+    if (-not $exe) { $exe = $env:H2G_GT2RELOC }
+    if (-not $exe) { $exe = "C:\Users\mit\Downloads\GoatTracker_2.77\win32\gt2reloc.exe" }
+    if (-not (Test-Path -LiteralPath $exe)) {
+        Write-Error "gt2reloc.exe not found at '$exe'. Set -Gt2reloc or `$env:H2G_GT2RELOC."
+        exit 1
+    }
+
+    $sngPath = if ($resolvedOutput) { $resolvedOutput } else {
+        [System.IO.Path]::ChangeExtension($resolvedSid, ".sng") }
+    $sidOut  = [System.IO.Path]::ChangeExtension($sngPath, ".sid")
+    if (Test-Path -LiteralPath $sidOut) { Remove-Item -LiteralPath $sidOut -Force }
+
+    # Bare filenames with the working directory set: gt2reloc strcpy()s argv
+    # into a 60-byte buffer before reducing it to a basename.
+    $dir = Split-Path -Parent $sngPath
+    Start-Process -FilePath $exe -WorkingDirectory $dir -Wait -NoNewWindow `
+                  -ArgumentList @((Split-Path -Leaf $sngPath), (Split-Path -Leaf $sidOut)) | Out-Null
+
+    # Never trust the exit code: gt2reloc reports fatal errors through
+    # fopen("CON") and SDL routines that do nothing headless, so a refusal is
+    # exit 0 with no output and no file. The written file is the only signal.
+    if (Test-Path -LiteralPath $sidOut) {
+        Write-Host "Packed $sidOut ($((Get-Item -LiteralPath $sidOut).Length) bytes)"
+    } else {
+        Write-Error ("gt2reloc wrote no .sid. The usual cause is the restart position " +
+                     "this converter emits for a $FE track byte, which greloc.c:244 " +
+                     "rejects -- see SNG2SID-FIDELITY.md.")
+        exit 1
+    }
 }
 
 exit $exitCode
