@@ -26,13 +26,13 @@ artefacts regenerated against each settled state.
 
 ## Headline result
 
-| | session start (v0.5.43) | now (v0.5.46) |
+| | session start (v0.5.43) | now (v0.5.48) |
 |---|---:|---:|
-| corpus at defaults | 75/95 | **77/95** |
-| coverage of files *in reach* | 75/83 = 90% | **77/83 = 93%** |
-| best per-song options | 78/95 | **80/95** |
-| packs back to `.sid` with gt2reloc | 50/78 | **77/77** |
-| tests | 177 | **218** (+2 skipped) |
+| corpus at defaults | 75/95 | **79/95** |
+| coverage of files *in reach* | 75/83 = 90% | **79/83 = 95%** |
+| best per-song options | 78/95 | **82/95** |
+| packs back to `.sid` with gt2reloc | 50/78 | **all converted files** |
+| tests | 177 | **230** (+2 skipped) |
 | **does it play the right music?** | unknown | **measured** |
 
 `Commando.sid` → `Commando.sng` remains **byte-exact (15193 B)**.
@@ -43,6 +43,9 @@ artefacts regenerated against each settled state.
 97971b6 v0.5.44  convert the Delta loader and I, Ball
 d1ae827 v0.5.45  legalise the restart position, and measure fidelity
 18b59f9 v0.5.46  the digi engine's rest is a key-off, not a hold
+3f11136          handoff: bring whats-next.md up to v0.5.46
+4bdbcfb v0.5.47  separate measured-wrong from converted-wrong, stage a listen
+7b5b797 v0.5.48  convert ACE 2 and Chain Reaction
 ```
 
 ## The big one: fidelity is now measured, not assumed
@@ -63,18 +66,23 @@ stage reads the tool's **jitter** block, not its raw-delta block — the raw one
 just re-reports our known tempo offset. Controls: a file against itself scores
 100%, two unrelated tunes 0%.
 
-**`FIDELITY.md`, 80 of 95 measured** — mean melody 66%, median retrigger 0.98:
+**`FIDELITY.md`, 81 of 95 measured** — mean melody 67%, median retrigger 0.98:
 
 | melody similarity | files |
 |---|---:|
 | plays the same music (95–100%) | 15 |
-| close (80–95%) | 24 |
+| close (80–95%) | 26 |
 | recognisable (50–80%) | 20 |
-| **plays something else (<50%)** | **21** |
+| **plays something else (<50%)** | **20** |
 
-This is the single most useful thing the session produced: 77 files convert and
-load, but only ~39 plausibly play the right music. That is a far sharper
+This is the single most useful thing the session produced: 79 files convert and
+load, but only ~41 plausibly play the right music. That is a far sharper
 statement of the gap than "only one file has ever been listened to."
+
+`fidelity.py` also excludes files it cannot honestly compare: `greloc.c` writes
+an invalid subtune as a zero-length stub, so if subtune 0 is the invalid one the
+`-a0` trace is of silence. One corpus file (`Rasputin`) is in that state; it is
+tabulated and kept out of the averages.
 
 ## Player-engine reverse engineering
 
@@ -136,18 +144,32 @@ one row per frame. Three things were unmodelled; one is fixed:
   tracks); `presets.json`'s `always` block sets it.
 - **`GT_KEYOFF`** (v0.5.46) — the digi rest fix above.
 - **`sidfile.find_relocation`** (v0.5.44) — files that copy themselves.
+- **version 4 append + version 9 dialect** (v0.5.48) — ACE 2 and Chain
+  Reaction; see above.
+- **`python/listen.py`** (v0.5.47) — stages a listening pass: one tune per
+  fidelity band, the **median** of the band rather than the extreme, rendered
+  to WAV both ways with the same emulator at the same settings, each with a
+  note saying what the numbers predict so a listen can contradict them.
 
-## A second gt2reloc defect found, unfixed
+## A second gt2reloc defect — mechanism corrected, still open
 
-`greloc.c:201` only validates and packs subtunes whose **three voices all have
-nonzero length**, and `:653` writes survivors consecutively. So a voice whose
-orderlist is just a marker (`[$FF,$00]`, songlen 0) **drops its whole subtune
-and renumbers every later one** in the packed `.sid`. That is the real
-explanation for the `Rasputin` outlier `SNG2SID-FIDELITY.md` had recorded as
-"presumably optimised away": both affected subtunes, subtune 0 included, were
-discarded, so it "relocated" while throwing the music away. **Directly relevant
-to every fidelity number** — a `siddump` comparison against a renumbered export
-silently measures the wrong tune.
+The first description of this (in three docs) was **wrong**: it is not a
+compaction and **nothing is renumbered**. `greloc.c:200-255` counts `songs` =
+subtunes whose three voices all have nonzero length; the writing loop at `:653`
+then runs `c < songs` over the **original** indices and re-tests validity. So:
+
+- an invalid subtune **keeps its slot**, written with `songsize 0`
+  (`:701-706`) — present in the packed `.sid`, plays nothing;
+- every subtune at or past the count is **never written**, valid or not.
+
+Verified on Rasputin: 17 subtunes in, PSID reports 15 out; ours 0 and 1 come
+back as silent stubs in place, and ours 15 and 16 — carrying 309 and 621
+sounding rows — do not come back at all.
+
+`fidelity.py` now detects the stub case and excludes those rows. **The tail
+truncation is still open**: silent data loss in the packed `.sid` that no layer
+reports. Cheap converter-side fix — give an empty voice a real one-pattern
+orderlist so every subtune stays valid.
 
 ## Documentation
 
@@ -181,32 +203,72 @@ legato. Correct semantics, no mechanical encoding:
 Needs a design decision — e.g. synthesising per-duration instrument variants —
 not a patch.
 
-## 2. Why 21 files play something else
+## 2. Why 20 files play something else
 
 The `<50%` bucket: `Delta` (2%), `Chicken_Song` (3%), `Dragons_Lair_Part_II`,
 `Flash_Gordon`, `IK_plus`, `Saboteur_II`, `Rasputin`, `Kings_of_the_Beach_intro`,
 `One_on_One_Jordan_vs_Bird`, `Rock_Tells_the_Tale` (retrig 6.62 — the real
 holder of the "7× re-triggers" figure), `BMX_Kidz` (silent), and others.
 
-**Ruled out:** subtune misalignment. The worst three match none of our subtunes
-0–5, and `--search-subtunes 4` moves the corpus mean only 66% → 69%.
+**Ruled out — subtune misalignment.** The worst three match none of our
+subtunes 0–5, and `--search-subtunes 4` moves the corpus mean only 66% → 69%.
 
-**Worth trying first:** check them against the empty-voice subtune-drop above —
-if `greloc.c` discarded subtune 0, the comparison was never valid to begin with.
-That is cheap and would partition the bucket into "converted wrong" and "measured
-wrong" before anyone starts disassembling.
+**Ruled out — measurement error (done, v0.5.47).** Exactly **one** of the 21
+(`Rasputin`) was measured wrong; `fidelity.py` now detects it and excludes it.
+**The other 20 are converted wrong.** So this section is now a real, unexplained
+converter defect list, not a mixed bag.
+
+**Ruled out — the slide gap (§3).** See below: no correlation with melody score.
 
 A known one: the Delta loader's restart handler **patches voice 0's orderlist
 byte** from `$C45A,X` (`$18` → `$1D`) on each loop, so the player plays `$18`
 once then loops `$1D`; we emit the on-disk `18 FF` and loop `$18` forever.
 
-## 3. The vibrato/slide gap — corpus-wide
+Nothing else has been ruled in. This is the project's biggest open question and
+it now needs per-file disassembly, starting with the extremes (`Delta` 2%,
+`Chicken_Song` 3%).
 
-The corrected measurement (attempted_approaches §1) showed the original bends
-pitch *within* a note where we jump far enough to land on other note numbers,
-including octaves the original never plays. On Off the Cuff: original 0 note
-changes without retrigger and 349 slides; ours 530 and 0. This is the shape of
-defect behind much of the 66% mean, and it is not the digi engine's alone.
+## 3. The vibrato/slide gap — corpus-wide, audible, invisible to the metric
+
+Corpus-wide, 80 files: the originals slide **22,674** times, our conversions
+**7**. 57 of 80 files have slides in the original and none in ours. Off the Cuff
+is 440 slides / 0 ties in the original against 0 / 664 in ours. We step pitch
+where Hubbard bends it, essentially everywhere.
+
+**It does not explain the melody scores** — an earlier version of this file
+claimed it did, and that was wrong:
+
+| | files | mean melody |
+|---|---:|---:|
+| ≥100 slides in the original | 47 | 67% |
+| 0 slides in the original | 21 | 66% |
+
+The `<50%` bucket averages 280 original slides, the `≥95%` bucket 269. `Wiz`
+measures 99% melody and 100% pitch overlap against an original that slides 2033
+times. Slides create no attacks, so the metric cannot see them — the same
+blindness the digi rest fix hit.
+
+**The mapping is mechanical, though.** Hubbard's vibrato is instrument record
+**+6** (Warhawk `$12BF`: low nibble rate, high nibble depth, `CMP #$0E / INC`
+flips direction — a triangle; depth is note-relative, `±$0058` at F#5 and
+`±$005D` at G-5), loaded per instrument at `$11E4`. H2G does not interpret that
+byte at all — it renders it into the instrument *name*. GoatTracker has the
+same construct per instrument: `gplay.c:352-353` makes `iptr->ptr[STBL]` the
+vibrato parameter with no per-row command, and `:777-802` is the same triangle,
+with `cmpvalue >= 0x80` making the depth note-relative. So: rate nibble → left
+byte with bit 7 set, depth nibble → right byte as a shift, `vibdelay` non-zero,
+one speedtable entry per distinct vibrato byte.
+
+Of 71 classic-stride corpus files, exactly one has slides while +5/+6 are both
+zero.
+
+**Sequencing note:** doing this buys audible fidelity on 57 files and *provably
+zero* movement in `FIDELITY.md`. It needs a slides column in the harness before
+anyone can see it landed, and a listening check to validate it. Do §6 first.
+
+Related, unproven: our 24,647 ties against 7 slides look like the fabricated
+wavetable's arpeggio standing in for pitch movement, which would make the arp
+byte +7 and the vibrato byte +6 two halves of one misreading.
 
 ## 4. Tempo: three calls per row is still the floor
 
@@ -216,17 +278,34 @@ gt2reloc can set it (`-S` was observed moving the wrong way, unexplained). This
 item was **never worked** — the fork that read "do 4" correctly took the
 coverage tail instead.
 
-## 5. Remaining coverage — 6 files
+## 5. Remaining coverage — 4 files, one of them genuine
+
+Three of the four (`Delta`, `Dragons_Lair_Part_II`, `W_A_R`) fail only at
+survey defaults with `TOO MANY NEW PATTERN CREATED` and convert fine under
+their presets. **`Devils_Galop` is the only file with no working options.**
+
+Its pattern fetch at `$138B` names `$1797,Y` / `$1798,Y` — one byte apart, so
+interleaved — and `$1790-$1798` is **all zeros on disk**. An init loop at
+`$18E7` copies 120 bytes into place at runtime (`LDA $183B,X / STA $1799,X`),
+the code's base 2 bytes below the destination — the same shape as the digi
+engine's `+8` runtime table and I, Ball's self-relocation. Neither existing
+mechanism catches it: `find_relocation` only consults a relocation for an
+address that resolves *nowhere*, and this one resolves — to zeros. Needs a
+table-copy reader plus a **"a table of zeros is not a table"** guard.
 
 `Chicken_Song` and `Knucklebusters` still drop a subtune at defaults;
 Knucklebusters has two long voices so no cut aligns (the P4 case).
 
-## 6. Listening pass — still never done
+## 6. Listening pass — staged, never performed
 
-`FIDELITY.md` replaces guessing with measurement, but **`Commando` remains the
-only file ever heard by a human**. The measurement can be wrong in ways only a
-listener catches. `build/` is stale — regenerate before listening. Variant 4
-(ACE 2) has no working sample in the corpus.
+`python/listen.py` renders the set; `build/listen/` (gitignored) currently
+holds **Flash_Gordon** (8%), **Star_Paws** (72%), **5_Title_Tunes** (87%) and
+**Wiz** (99%), verified as real audio at comparable levels (RMS 4079–8945,
+none silent). **Nobody has listened yet** — `Commando` remains the only file
+ever heard by a human, and the measurement can be wrong in ways only a listener
+catches. This now gates §3.
+
+Variant 4 (ACE 2) finally has a working sample as of v0.5.48.
 
 ## 7. Smaller items
 
@@ -385,39 +464,45 @@ Run SIDM2 tools with **cwd = SIDM2 root** (`tools/siddump.exe` is relative).
 
 ## Status: all work committed and pushed; tree clean
 
-- **HEAD `18b59f9` (v0.5.46)**, 3 commits this session, all pushed to
+- **HEAD `7b5b797` (v0.5.48)**, 6 commits this session, all pushed to
   `https://github.com/MichaelTroelsen/SIDDetector2.git` (private).
-- **218 tests pass, 2 skipped** (run from `python/`). `Commando.sng` byte-exact.
-- `SURVEY.md`, `presets.json` and `FIDELITY.md` are current as of v0.5.46.
-- Working tree clean except this untracked file.
+- **230 tests pass, 2 skipped** (run from `python/`). `Commando.sng` byte-exact.
+- `SURVEY.md`, `presets.json` and `FIDELITY.md` are current as of v0.5.48.
+- Working tree clean.
 
 ## Deliverables
 
 | Artifact | Status |
 |---|---|
 | `fidelity.py` + `FIDELITY.md` | complete; stages 2/3 wired behind flags |
-| `--legal-restart` | complete; 77/77 pack back to `.sid` |
+| `--legal-restart` | complete; every converted file packs back to `.sid` |
 | digi rest → key-off | complete |
-| Delta loader + I, Ball detection | complete |
+| Delta loader + I, Ball + ACE 2 + Chain Reaction | complete |
+| measured-wrong / converted-wrong partition | complete: 1 of 21 was measured wrong |
+| `listen.py` + staged WAVs | complete — **but nobody has listened** |
 | digi tie flag | **open — needs a design decision** |
-| empty-voice subtune drop in gt2reloc | **found, unfixed** |
+| vibrato / slide gap | **open — mapping known, unimplemented** |
+| gt2reloc tail truncation | **open — cheap converter-side fix known** |
+| `Devils_Galop` | **open — needs a table-copy reader** |
 | speed multiplier 3 | **never investigated** |
-| listening pass | **never done** |
 
 ## Open questions
 
-1. How to encode the digi tie flag — per-duration instrument variants, or
+1. **Why do 20 files play the wrong notes?** Ruled out: subtune misalignment,
+   measurement error, and the slide gap. Nothing is ruled in. This is the
+   project's biggest open question.
+2. How to encode the digi tie flag — per-duration instrument variants, or
    accept the legato?
-2. How many of the 21 `<50%` files are *measured* wrong rather than *converted*
-   wrong, because gt2reloc dropped subtune 0?
 3. Can speed multiplier 3 be set from the command line at all?
 4. What does any of it actually sound like?
 
 ## The gap, restated
 
-The old handoff said the project's largest epistemic gap was that only one file
-had ever been listened to. That is still true, but it is now bounded: 15 files
-measure as playing the same music, 21 as playing something else. The gap has
-moved from "we have no idea" to "we know which files are wrong and mostly not
-why."
+Two sessions ago the gap was "only one file has ever been listened to." One
+session ago it became "15 files measure right, 21 measure wrong." It is now
+sharper still: of those, exactly one was *measured* wrong, and the two obvious
+suspects — subtune misalignment and the missing pitch slides — have both been
+ruled out with data. What remains is 20 files that genuinely play the wrong
+notes for reasons nobody has identified, and a corpus that has still never been
+heard. The staged WAVs in `build/listen/` are the cheapest way to change that.
 </current_state>
