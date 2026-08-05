@@ -292,9 +292,13 @@ BC ?? ?? B1 ?? C9 FF F0 ?? C9 FE      -> version 0   (Warhawk)
 
 You can read the semantics straight out of the fingerprint: this player
 compares each orderlist byte against `$FF` **and** `$FE`, so both are markers
-in that dialect. Version 6/7 instead do `29 7F` (`AND #$7F`), i.e. bit 7 of an
-orderlist byte is a flag, not part of the pattern number — which is exactly why
-those versions decode transpose commands.
+in that dialect. Versions 2, 4, 6 and 7 instead begin with `10 rr` (`BPL`), so
+bit 7 of an orderlist byte is a flag rather than part of the pattern number —
+which is exactly why those versions carry commands.
+
+The corollary bit the original tool: it grouped version 2 with 0/1/3, which
+have **no** `BPL`, and so read version 2's command bytes as pattern numbers.
+See §6.
 
 **This is a genuinely nice pattern:** rather than guessing the data format from
 the data, fingerprint the *interpreter* and let it tell you which format the
@@ -423,7 +427,7 @@ value` — which is why every event above appends exactly 4 bytes, and why the
 ## 6. The orderlist / track format and its 8 dialects
 
 `tracks.py::_build_track` walks the raw orderlist byte stream and rewrites it.
-Three behaviours, selected by `read_track_version`:
+Four behaviours, selected by `read_track_version`:
 
 ```python
 version == 4:                 # ACE 2
@@ -435,11 +439,49 @@ version in (5, 6, 7, 8):      # Mega Apocalypse family
     0xFF        -> end
     <= 0x7F     -> pattern number, emit as-is
 
-version in (0, 1, 2, 3):      # Warhawk / IK+ / Last V8 / Samantha Fox
+version == 2:                 # Auf Wiedersehen Monty / Saboteur II / Wiz
+    0xFF        -> end, restart 0x00
+    0xFE        -> end, restart 0xFD
+    0x80..0xFD  -> transpose (absolute, per voice):
+                     one-byte form:  semitones = b1 & 0x7F
+                     two-byte form:  semitones = the *following* byte
+                   emit 0xF0 + min(semitones, 14)
+    <= 0x7F     -> pattern number, emit as-is
+
+version in (0, 1, 3):         # Warhawk / Last V8 / Samantha Fox
     0xFE        -> end, with restart position 0xFD (deliberately illegal = stop)
     0xFF        -> end, with restart position 0x00 (loop to start)
     <= 0xFD     -> pattern number, emit as-is
 ```
+
+**Version 2 is a correction to the original**, which lumped it in with 0/1/3
+and emitted its command bytes as pattern references — they dangled past the end
+of the pattern table and were dropped, so the affected voices played
+untransposed, and in the two-byte form the operand byte was played as a real
+but wrong pattern. Ground truth is Saboteur II at `$F097`:
+
+```
+F09C  10 27      BPL $F0C5      ; < $80 -> pattern number
+F09E  C9 FF/FE   ...            ; markers
+F0A6  29 7F      AND #$7F
+F0A8  9D B2 F5   STA $F5B2,X    ; per-voice transpose
+F0AB  FE 51 F5   INC $F551,X    ; one byte consumed
+F0AE  4C 97 F0   JMP $F097      ; ...and read the next byte
+```
+
+`$F5B2,X` is read in exactly one place, `$F125`: `AND #$7F` / `CLC` /
+`ADC $F5B2,X`, added to the note before the frequency-table lookup. Goattracker's
+`cptr->trans` is the same thing — assigned at `gplay.c:979`, added to the note at
+`:927` — so in-range values map exactly. The ceiling is **+14, not +15**: the
+transpose range is `$E0..$FE` because `$FF` is `LOOPSONG` (`gplay.c:977` gates on
+`< LOOPSONG`, and `gorder.c:70` rewrites a typed `$FF` back to `$FE`). Larger
+values are clamped rather than dropped, since dropping one would leave the voice
+at the *previous* transpose for the rest of the track.
+
+Two sub-variants share the version-2 fingerprint, told apart by the first
+instruction after the marker tests: `$29` (`AND #$7F`, value in the command
+byte) in 13 of the 14 corpus files, `$C8` (`INY`, value in the next byte) in
+Auf Wiedersehen Monty alone.
 
 Every track is terminated with a two-byte `[0xFF, restart_position]` pair —
 Goattracker's `RST` orderlist command. The stored length byte is therefore
@@ -718,6 +760,7 @@ shape, "wrong output, no diagnostic":
 | Silent wrong-address corruption; no validation existed | `detect.py` range-checks every extracted table address and logs `*** … ADDRESS OUT OF RANGE ***` (`test_address_validation.py`) |
 | The transpose latch (§8) | Replaced by a single-byte operand lookahead; 17 corpus files were affected |
 | `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
+| Version 2 grouped with 0/1/3, so its transpose commands were read as pattern numbers (§6) | Decoded as transposes; 6 corpus files played untransposed before, one of them with a wrong pattern spliced in |
 
 The pattern is stark: **the failure modes that produce no diagnostic are the
 dangerous ones, and they all stem from unvalidated inference.** Every one of

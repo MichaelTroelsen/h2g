@@ -276,8 +276,10 @@ def build_report(results: list[Result], sid_dir: Path,
         lines.append(f"- **{len(dangling)} converted files contain orderlist entries that "
                      "point at patterns the file does not have.** `reindex_tracks` drops "
                      "those references silently, so the tune plays with material missing "
-                     "rather than failing. There are two distinct causes, separated by "
-                     "whether subtune 0 — always a real subtune — is affected.")
+                     "rather than failing." + (
+                         " There are two distinct causes, separated by whether subtune 0 "
+                         "— always a real subtune — is affected."
+                         if decode_fault and phantom else ""))
         if decode_fault:
             lines.append(f"  - **{len(decode_fault)} are a decode fault** (dangling refs in "
                          "subtune 0). Most are version-2 players, where a byte with the "

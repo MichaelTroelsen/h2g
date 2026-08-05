@@ -37,6 +37,9 @@ class Detection:
     pattern_lo: int = -1
     pattern_used: int = -1
     read_track_version: int = 0xFF
+    # Version 2 only: the transpose value lives in the byte *after* the command
+    # byte rather than in the command byte's own low 7 bits. See detect().
+    transpose_operand: bool = False
 
     @property
     def can_convert(self) -> bool:
@@ -238,6 +241,15 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         i = find("BC ?? ?? B1 ?? 10 ?? C9 FF F0 ?? C9 FE F0")
         if i >= 1:
             det.read_track_version = 2    # Auf Wiedersehen Monty...
+            # The `10 rr` is BPL: bytes >= $80 are commands, not pattern
+            # numbers. Two sub-variants share this signature, told apart by the
+            # first instruction on that path -- the byte right after the match:
+            #   $29  AND #$7F   the command byte's own low 7 bits are the value
+            #   $C8  INY        the value is the *next* byte (2 bytes consumed)
+            # Corpus-wide, 13 of 14 version-2 players use the AND form; only
+            # Auf Wiedersehen Monty itself uses the INY form.
+            if i + 15 < len(data):
+                det.transpose_operand = data[i + 15] == 0xC8
     if i <= -1:
         i = find("B4 ?? B1 ?? C9 FF F0 ?? C9 FE D0")
         if i >= 1:
@@ -259,5 +271,7 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         if i >= 1:
             det.read_track_version = 7    # IK+
     log(f"Player Trackread version: {det.read_track_version:X}")
+    if det.transpose_operand:
+        log("Track transpose form....: two-byte (value follows the command)")
 
     return det

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.25 — 2026-08-05
+
+- decode version-2 orderlist transposes instead of reading them as pattern numbers
+
 ## 0.5.24 — 2026-08-04
 
 - survey: report dangling pattern references

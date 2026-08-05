@@ -13,8 +13,33 @@ from .sidfile import HLEN, SidFile
 
 DEFAULT_TRACK = [0x00, 0xFF, 0x00]
 
+# Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
+# LOOPSONG $FF. gplay.c:977 accepts $E0..$FE (`>= TRANSDOWN && < LOOPSONG`) and
+# assigns `trans = value - TRANSUP`, i.e. -16..+14, applied at gplay.c:927 as
+# `newnote + trans`. $FF is unavailable because it is the song-loop marker --
+# gorder.c:70 rewrites a typed $FF back to $FE for exactly that reason -- so the
+# largest transpose the format can express is **+14**, not +15.
+GT_TRANSUP = 0xF0
+GT_MAX_TRANSPOSE = 0x0E
 
-def _build_track(data: bytes, addr: int, version: int, log=None) -> List[int]:
+
+def _transpose_byte(semitones: int) -> int:
+    """Goattracker orderlist byte for a Hubbard transpose, clamped to +14.
+
+    Hubbard's version-2 players hold the transpose in a per-voice byte that is
+    added to the note before the frequency lookup (`AND #$7F` / `CLC` /
+    `ADC transpose,X`), and the orderlist command *assigns* it -- the same
+    absolute, per-voice semantics as Goattracker's `cptr->trans`, so values in
+    range map exactly. Values above the format's ceiling are clamped rather
+    than dropped: a clamped transpose is wrong by a known number of semitones,
+    whereas dropping one leaves the voice at the *previous* transpose for the
+    rest of the track.
+    """
+    return GT_TRANSUP + min(semitones, GT_MAX_TRANSPOSE)
+
+
+def _build_track(data: bytes, addr: int, version: int, log=None,
+                 transpose_operand: bool = False) -> List[int]:
     track: List[int] = []
     i2 = 0
     while True:
@@ -52,7 +77,45 @@ def _build_track(data: bytes, addr: int, version: int, log=None) -> List[int]:
             if b1 <= 0x7F:
                 track.append(b1)
 
-        elif version in (0, 1, 2, 3):  # Warhawk / IK+ / etc
+        elif version == 2:  # Auf Wiedersehen Monty / Saboteur II / Wiz / ...
+            # This player checks the high bit before anything else:
+            #     LDA (track),Y / BPL pattern_number / CMP #$FF / CMP #$FE
+            # so $80-$FD are transpose commands, not pattern numbers. The VB6
+            # original grouped version 2 with 0/1/3, which have no such branch,
+            # and so emitted every command byte (and, in the two-byte form, its
+            # operand) as a pattern reference. The command bytes then dangled
+            # past the end of the pattern table and were silently dropped,
+            # while a two-byte form's operand landed on a real but wrong
+            # pattern.
+            if b1 == 0xFF:
+                track += [0xFF, 0x00]
+                break
+            if b1 == 0xFE:
+                track += [0xFF, 0xFD]  # illegal repeat position -> stop
+                break
+            if b1 >= 0x80:
+                if transpose_operand:
+                    if addr + i2 >= len(data):
+                        if log:
+                            log("*** TRACK DATA RUNS PAST END OF FILE, TRUNCATED ***")
+                        track += [0xFF, 0x00]
+                        break
+                    semitones = data[addr + i2]
+                    i2 += 1
+                else:
+                    semitones = b1 & 0x7F
+                # Consecutive transposes are legal in the player (it loops back
+                # to read the next byte) but not in Goattracker, which tests
+                # for one transpose per orderlist step. Since both assign
+                # rather than accumulate, keeping only the last is equivalent.
+                if track and GT_TRANSUP <= track[-1] < 0xFF:
+                    track[-1] = _transpose_byte(semitones)
+                else:
+                    track.append(_transpose_byte(semitones))
+            else:
+                track.append(b1)
+
+        elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox
             if b1 == 0xFE:
                 track += [0xFF, 0xFD]  # illegal repeat position -> stop
                 break
@@ -120,7 +183,8 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
                 log(f"*** SUBTUNE ${i:X} (VOICE {voice:X}) ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
                 tracks.append(list(DEFAULT_TRACK))
                 continue
-            tracks.append(_build_track(data, addr, det.read_track_version, log))
+            tracks.append(_build_track(data, addr, det.read_track_version, log,
+                                       det.transpose_operand))
 
     if not tracks:
         # Keep the .sng structurally valid: a file with zero subtunes is not
