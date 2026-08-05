@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.29**
+- Converter: `h2g` **0.5.30**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -31,9 +31,25 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | 6 | Mega Apocalypse | 1 |
 | 7 | IK+ | 12 |
 
+## SIDId player identification
+
+| SIDId signature | Converted | Not converted | Total | Rate |
+|---|---:|---:|---:|---:|
+| `Rob_Hubbard` | 51 | 15 | 66 | 77% |
+| `Rob_Hubbard, (Rob_Hubbard_Digi)` | 4 | 7 | 11 | 36% |
+| `Jason_Page/RobTracker` * | 0 | 6 | 6 | 0% |
+| `SidTracker64` * | 0 | 5 | 5 | 0% |
+| `Rob_Hubbard, Voicemaster_Covox` | 4 | 0 | 4 | 100% |
+| `Companion` * | 0 | 1 | 1 | 0% |
+| `Companion, Rob_Hubbard` | 1 | 0 | 1 | 100% |
+| `Rob_Hubbard, (Rob_Hubbard_Digi), Sidplayer` | 1 | 0 | 1 | 100% |
+
+`*` marks a player routine that is **not** a Rob Hubbard engine. Those files are in the corpus because Hubbard wrote the music, not the player, so no Hubbard fingerprint can match them.
+
 ## Findings
 
 - **61/95 produced output.** The ceiling is structural: detection only recognises 16 hard-coded game fingerprints, so anything outside that set is unconvertible by construction.
+- **12 of the failures are not Hubbard-player tunes at all.** SIDId identifies their player as Companion, Jason_Page/RobTracker, SidTracker64 — Hubbard wrote the music, someone else wrote the routine, so no Hubbard fingerprint can match and no new signature would bring them in. Against the 83 files actually within reach, coverage is **61/83 = 73%**.
 - **9 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
 - **6 tunes carry more than 50 instruments and lose the excess** (`Bangkok_Knights.sid`, `Nineteen.sid`, `Sanxion.sid`, `Thundercats.sid`, `W_A_R_Preview.sid`, `Zoolook.sid`) — 53 real instruments dropped in total. These tables are genuine, not a detection artefact: the records are mostly distinct, and a set of them recurs byte-identically across these files, i.e. a shared Hubbard instrument bank appended to the player. The limit is Goattracker's: each instrument costs 5 wavetable entries against a 255-entry table addressed by a single length byte, so at most 51 are representable. Patterns referencing a dropped slot play with an undefined instrument — see the flag in the table below.
 - **15 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.30 — 2026-08-05
+
+- report SIDId identification split by converted/not converted
+
 ## 0.5.29 — 2026-08-05
 
 - decode version 5/6/7 orderlist commands from the players' actual code

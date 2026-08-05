@@ -171,6 +171,17 @@ def survey_one(path: Path, sng_dir: Path | None,
     return r
 
 
+def _is_hubbard_player(sidid: str) -> bool:
+    """True if SIDId named a Rob Hubbard player engine among its matches.
+
+    A file can match several signatures at once (`Rob_Hubbard,
+    (Rob_Hubbard_Digi), Sidplayer`); one Hubbard engine is enough, since that
+    is the thing this tool rips. `Companion` or `SidTracker64` alone means
+    someone else's editor and therefore a layout no signature here describes.
+    """
+    return "Rob_Hubbard" in sidid
+
+
 def _md_escape(text: str) -> str:
     return text.replace("|", "\\|").strip() or "-"
 
@@ -249,6 +260,38 @@ def build_report(results: list[Result], sid_dir: Path,
             lines.append(f"| {shown} | {label} | {count} |")
         lines.append("")
 
+    # --- SIDId identification ----------------------------------------------
+    # SIDId fingerprints the *player routine* from an independent signature
+    # database, so it answers a question detect() cannot: whether a file this
+    # tool failed on was ever within reach. H2G only knows Hubbard player
+    # engines, so a tune Hubbard merely *composed* -- shipped in someone
+    # else's editor -- is unconvertible by construction rather than by
+    # omission, and counting those against the tool overstates what is left
+    # to fix.
+    identified = [r for r in results if r.sidid]
+    if identified:
+        by_id: dict[str, list[int]] = {}
+        for r in identified:
+            row = by_id.setdefault(r.sidid, [0, 0])
+            row[0 if r.ok else 1] += 1
+        lines.append("## SIDId player identification")
+        lines.append("")
+        lines.append("| SIDId signature | Converted | Not converted | Total | Rate |")
+        lines.append("|---|---:|---:|---:|---:|")
+        for name, (good, missed) in sorted(
+                by_id.items(), key=lambda kv: (-(kv[1][0] + kv[1][1]), kv[0])):
+            total = good + missed
+            hub = "" if _is_hubbard_player(name) else " *"
+            lines.append(f"| `{name}`{hub} | {good} | {missed} | {total} | "
+                         f"{100 * good // total}% |")
+        lines.append("")
+        if any(not _is_hubbard_player(n) for n in by_id):
+            lines.append("`*` marks a player routine that is **not** a Rob Hubbard "
+                         "engine. Those files are in the corpus because Hubbard "
+                         "wrote the music, not the player, so no Hubbard "
+                         "fingerprint can match them.")
+            lines.append("")
+
     # --- computed findings -------------------------------------------------
     suspect = [r for r in ok if r.instruments > MAX_INSTRUMENTS]
     lines.append("## Findings")
@@ -257,6 +300,17 @@ def build_report(results: list[Result], sid_dir: Path,
                  "structural: detection only recognises 16 hard-coded game "
                  "fingerprints, so anything outside that set is unconvertible by "
                  "construction.")
+    out_of_scope = [r for r in bad if r.sidid and not _is_hubbard_player(r.sidid)]
+    if out_of_scope:
+        reach = len(results) - len(out_of_scope)
+        names = ", ".join(sorted({r.sidid for r in out_of_scope}))
+        lines.append(
+            f"- **{len(out_of_scope)} of the failures are not Hubbard-player tunes "
+            f"at all.** SIDId identifies their player as {names} — Hubbard wrote "
+            "the music, someone else wrote the routine, so no Hubbard fingerprint "
+            "can match and no new signature would bring them in. Against the "
+            f"{reach} files actually within reach, coverage is "
+            f"**{len(ok)}/{reach} = {100 * len(ok) // reach}%**.")
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
