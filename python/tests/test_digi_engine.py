@@ -25,7 +25,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from h2g.patterns import (DIGI_END, GT_END_PATTERN, GT_NO_NOTE,
+from h2g.patterns import (DIGI_END, GT_END_PATTERN, GT_KEYOFF, GT_NO_NOTE,
                           _build_raw_pattern_digi)
 
 PAD = [0x00, 0x00]          # _build_raw_pattern_digi rejects addr <= 1
@@ -48,9 +48,11 @@ def test_a_note_becomes_one_row_at_goattracker_pitch():
     assert _decode([0x17, DIGI_END]) == [0x77, 0x00, 0x00, 0x00] + END_ROW
 
 
-def test_rest_is_not_a_note():
-    # $60 is compared before the frequency lookup ($1168) and gates off.
-    assert _decode([0x60, DIGI_END]) == [GT_NO_NOTE, 0x00, 0x00, 0x00] + END_ROW
+def test_rest_gates_off():
+    # $60 is compared before the frequency lookup ($1168) and gates off: $1184
+    # decrements the gate mask $165D,X from $FF to $FE, which is what the
+    # end-of-note release path writes too. A hold row would sustain instead.
+    assert _decode([0x60, DIGI_END]) == [GT_KEYOFF, 0x00, 0x00, 0x00] + END_ROW
 
 
 def test_notes_are_clamped_to_the_frequency_table():

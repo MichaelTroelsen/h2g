@@ -28,7 +28,12 @@ GT_DEFAULT_ROWS = 94
 GT_MAX_ROWS = 128  # == MAX_PATTROWS in gcommon.h
 
 GT_MAX_PATTERN_LEN = GT_DEFAULT_ROWS * 4  # 376 bytes
+# gcommon.h calls $BD "REST", but in a pattern's note column it is a no-op:
+# gplay.c:908-941 tests KEYOFF ($BE), KEYON ($BF) and <= LASTNOTE ($BC), and
+# $BD matches none of them, so the row leaves the gate and the note untouched.
+# Silencing a voice is $BE, which clears cptr->gate.
 GT_NO_NOTE = 0xBD
+GT_KEYOFF = 0xBE
 MAX_PATTERNS = 0xD0
 MAX_TRACK_LEN = 0xFF
 
@@ -274,7 +279,12 @@ def _build_raw_pattern_digi(data: bytes, addr: int) -> Optional[List[int]]:
             return None
 
         if b == DIGI_REST:
-            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+            # The player's rest closes the gate: $1184 does DEC $165D,X, taking
+            # the mask just set to $FF at $10FF down to $FE -- the same value
+            # its end-of-note release path writes. $165D,X is ANDed into the
+            # $D404 write at $148D, so bit 0 (GATE) is cleared. A hold row
+            # ($BD) would sustain the previous note instead.
+            events += [GT_KEYOFF, 0x00, 0x00, 0x00]
         else:
             note = min(b, DIGI_MAX_NOTE) + 0x60
             events += [note, instrument, 0x00, 0x00]

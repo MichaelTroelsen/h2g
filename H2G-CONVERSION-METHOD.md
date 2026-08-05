@@ -655,6 +655,18 @@ runs past every pattern's end into the next `$FF` anywhere in the file. That
 is what made an early attempt decode 22 patterns of Off the Cuff into 112747
 rows.
 
+`$60` is a **key-off**, not a hold. `$1184` does `DEC $165D,X`, taking the
+gate mask just set to `$FF` at `$10FF` down to `$FE` — the same value the
+end-of-note release path writes — and `$165D,X` is ANDed into the `$D404`
+write at `$148D`, so bit 0 (GATE) is cleared. The converter emitted a hold
+row (`$BD`) for it until v0.5.46, which sustained the previous note through
+every rest. Off the Cuff alone gains 66 `$BE` rows from the correction.
+
+Note that `FIDELITY.md` cannot see this class of fix: it compares note
+*attacks*, and closing a gate adds none. The report did not move by a single
+percent on any of the nine digi files. The fix rests on the disassembly, not
+on the metric.
+
 Instrument records are 16 bytes rather than 8, but the fields this converter
 reads — waveform `+2`, attack/decay `+3`, sustain/release `+4` — sit at the
 same offsets in both, so only the stride differs.
