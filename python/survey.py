@@ -54,6 +54,7 @@ class Result:
     dangling: int = 0         # distinct orderlist refs to patterns that don't exist
     dangling_sub0: int = 0    # ...of those, how many are in subtune 0
     voices: int = 3           # voices the player drives; >3 means a sample channel
+    subtunes_dropped: int = 0  # subtunes whose orderlist exceeded the 254-byte limit
     found: dict = field(default_factory=dict)
     stage: str = ""
     error: str = ""
@@ -152,7 +153,10 @@ def survey_one(path: Path, sng_dir: Path | None,
             sid, det, log=lambda m: None, max_rows=max_rows,
             terminate_patterns=terminate_patterns, dedup=dedup,
             used=referenced_patterns(tracks, floor) if prune else None)
-        tracks = reindex_tracks(tracks, track_index, pack, floor)
+        dropped: list[int] = []
+        tracks = reindex_tracks(tracks, track_index, pack, floor,
+                                dropped=dropped)
+        r.subtunes_dropped = len(dropped)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
         return r
@@ -332,6 +336,18 @@ def build_report(results: list[Result], sid_dir: Path,
             "signature marks. Goattracker has three voices and no way to carry "
             "sampled playback, so that channel is dropped — the three SID "
             f"voices convert in full. Affected: {names}.")
+    over = [r for r in ok if r.subtunes_dropped]
+    if over:
+        names = ", ".join(f"`{r.path.name}` ({r.subtunes_dropped})"
+                          for r in sorted(over, key=lambda x: x.path.name))
+        lines.append(
+            f"- **{len(over)} files lose a subtune to Goattracker's 254-byte "
+            "orderlist limit.** The rest of the tune converts: one over-long "
+            "subtune used to abort the whole file, discarding every good "
+            "subtune with it. The subtune is dropped rather than truncated, "
+            "because cutting one voice short while its neighbours play on "
+            "makes it loop early and drift — a subtune that sounds wrong is "
+            f"worse than one plainly absent. Affected: {names}.")
     cap = [r for r in bad if r.stage == "patterns"]
     if cap:
         lines.append(f"- **{len(cap)} failures are capacity, not comprehension.** These "
@@ -405,6 +421,8 @@ def build_report(results: list[Result], sid_dir: Path,
             flags.append(f"{r.instruments - MAX_INSTRUMENTS} instr dropped")
         if r.voices > 3:
             flags.append("digi channel dropped")
+        if r.subtunes_dropped:
+            flags.append(f"{r.subtunes_dropped} subtune(s) too long")
         flag = ", ".join(flags)
         subs = str(r.subtunes_emitted)
         if r.subtunes_emitted != r.subtunes:

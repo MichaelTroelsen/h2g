@@ -49,6 +49,12 @@ GT_MAX_REPEAT_RUN = 16          # $DF -> repeat 15 -> 16 plays
 # run of 2), so leave it alone rather than emit a construct for nothing.
 GT_MIN_REPEAT_RUN = 3
 
+# A minimal, valid orderlist: play pattern 0, then restart at position 0. Used
+# for a subtune that cannot be represented -- an unusable pointer, or one whose
+# orderlist will not fit. tracks.py imports it so both reasons produce the same
+# shape, which is one Goattracker is known to load.
+DEFAULT_TRACK = [0x00, 0xFF, 0x00]
+
 GT_END_PATTERN = 0xFF          # ENDPATT: note-column value marking a pattern's end
 GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
 
@@ -525,14 +531,30 @@ def pack_repeats(track: List[int]) -> List[int]:
 
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
-                   floor: int = GT_COMMAND_FLOOR) -> List[List[int]]:
+                   floor: int = GT_COMMAND_FLOOR,
+                   log=None,
+                   dropped: Optional[List[int]] = None) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
-    The length check moved to the end of each track so that `pack` -- which
-    only becomes possible once the final numbering is known -- gets to act
-    before a track is judged too long. Without packing the outcome is
-    unchanged: a track that would have tripped the limit mid-build trips it
-    here instead, with the same error.
+    The length check runs at the end of each track so that `pack` -- which only
+    becomes possible once the final numbering is known -- gets to act before a
+    track is judged too long.
+
+    A track over Goattracker's 254-byte orderlist limit costs its *subtune*,
+    not the file. Aborting the whole conversion threw away everything else the
+    tune contained: across the corpus exactly one subtune is over-long in each
+    affected file, and that one abort discarded 25 good subtunes of Gremlins,
+    18 of Monty on the Run and 2 of Knucklebusters.
+
+    The subtune is replaced wholesale rather than truncated. Cutting one voice
+    short while its neighbours play on makes that voice loop early and drift
+    against them for the rest of the subtune -- a subtune that sounds wrong,
+    which is worse than one that is plainly absent. Indices of dropped subtunes
+    are appended to `dropped` for callers that report them.
+
+    If nothing survives, the caller's own emptiness check refuses the file:
+    a .sng of nothing but placeholders is exactly the fake success v0.5.26
+    removed.
     """
     new_tracks: List[List[int]] = []
     for track in tracks:
@@ -564,7 +586,21 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 new_track.extend(track_index[b] if b < len(track_index) else [])
         if pack:
             new_track = pack_repeats(new_track)
-        if len(new_track) >= MAX_TRACK_LEN:
-            raise ConversionAbort("TRACKLIST TOO LONG, CAN'T EXPORT TO GOATTRACKER")
         new_tracks.append(new_track)
+
+    # Voices come in threes; one over-long voice takes its subtune with it,
+    # because a subtune missing a voice does not play the tune either.
+    for first in range(0, len(new_tracks), 3):
+        group = new_tracks[first:first + 3]
+        longest = max((len(t) for t in group), default=0)
+        if longest < MAX_TRACK_LEN:
+            continue
+        subtune = first // 3
+        if log:
+            log(f"*** SUBTUNE ${subtune:X} ORDERLIST IS {longest} BYTES, OVER "
+                f"GOATTRACKER'S {MAX_TRACK_LEN - 1}-BYTE LIMIT -- DROPPED ***")
+        if dropped is not None:
+            dropped.append(subtune)
+        for k in range(first, min(first + 3, len(new_tracks))):
+            new_tracks[k] = list(DEFAULT_TRACK)
     return new_tracks

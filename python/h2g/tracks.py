@@ -9,10 +9,8 @@ from __future__ import annotations
 from typing import List
 
 from .detect import Detection
-from .patterns import command_floor, pattern_references
+from .patterns import DEFAULT_TRACK, command_floor, pattern_references
 from .sidfile import HLEN, SidFile
-
-DEFAULT_TRACK = [0x00, 0xFF, 0x00]
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
 # LOOPSONG $FF. gplay.c:977 accepts $E0..$FE (`>= TRANSDOWN && < LOOPSONG`) and

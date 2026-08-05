@@ -6,9 +6,9 @@ from typing import Callable, List
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
                          tempo_for)
-from .patterns import (GT_COMMAND_FLOOR, GT_DEFAULT_ROWS, ConversionAbort,
-                       command_floor, convert_patterns, pattern_references,
-                       referenced_patterns, reindex_tracks)
+from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
+                       ConversionAbort, command_floor, convert_patterns,
+                       pattern_references, referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import convert_tracks
 
@@ -114,7 +114,12 @@ def convert(sid_path: str, log: Logger = print,
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=referenced_patterns(tracks, floor) if prune else None)
-    tracks = reindex_tracks(tracks, track_index, pack, floor)
+    tracks = reindex_tracks(tracks, track_index, pack, floor, log)
+    # Every subtune dropped means the file carries no orderlist at all -- the
+    # same refusal the empty-tracks case gets, for the same reason.
+    if all(t == DEFAULT_TRACK for t in tracks):
+        raise UnsupportedSidError(
+            "EVERY SUBTUNE'S ORDERLIST EXCEEDS GOATTRACKER'S LIMIT, CAN'T CONVERT")
 
     resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo
     if resolved_tempo is not None:
