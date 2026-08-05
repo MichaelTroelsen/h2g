@@ -43,6 +43,7 @@ GT_ORDER_RESTART = 0xFF
 # here.
 GT_REPEAT = 0xD0
 GT_TRANSPOSE_DOWN = 0xE0        # TRANSDOWN: first byte past the repeat range
+GT_TRANSPOSE_UP = 0xF0          # TRANSUP
 GT_MAX_REPEAT_RUN = 16          # $DF -> repeat 15 -> 16 plays
 # Below this a run costs the same packed as unpacked (2 bytes either way for a
 # run of 2), so leave it alone rather than emit a construct for nothing.
@@ -50,6 +51,43 @@ GT_MIN_REPEAT_RUN = 3
 
 GT_END_PATTERN = 0xFF          # ENDPATT: note-column value marking a pattern's end
 GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
+
+# Lowest byte value that is a *command* rather than a pattern number, used to
+# read a track that convert_tracks has produced but reindex_tracks has not yet
+# renumbered. Such a track is still in Hubbard numbering, and which byte values
+# are commands depends on the player dialect -- so the Goattracker range
+# ($D0-$FF) is the wrong answer for most of them. See command_floor().
+GT_COMMAND_FLOOR = MAX_PATTERNS
+
+
+def command_floor(version: int) -> int:
+    """Lowest byte a version-`version` orderlist uses as a command.
+
+    _build_track leaves each dialect's pattern numbers as it found them and
+    translates only that dialect's own commands into Goattracker ones, so the
+    boundary moves with the version:
+
+        0, 1, 3, 4   no command but $FF -- every other byte, up to $FD, is a
+                     Hubbard pattern number
+        2            transposes emitted as $F0-$FE; pattern numbers are <= $7F
+                     because the player reads bit 7 as a command flag
+        5, 6, 7, 8   transposes emitted as $E0-$FF; pattern numbers <= $7F
+
+    Reading a version-0 track with Goattracker's own $D0 boundary silently
+    reinterprets pattern numbers $D0-$FD as repeat and transpose commands. That
+    is wrong twice over: the pattern reference is lost, and a command that was
+    never in the tune is inserted. 146 such bytes occur across 7 corpus files.
+
+    Post-reindex tracks are a different thing entirely -- they are in
+    Goattracker numbering, where $D0-$FF really are commands, and callers
+    reading those should use GT_COMMAND_FLOOR.
+    """
+    if version == 2:
+        return GT_TRANSPOSE_UP
+    if version in (5, 6, 7, 8):
+        return GT_TRANSPOSE_DOWN
+    return GT_ORDER_RESTART
+
 
 ERROR_PATTERN = [0xBD, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]
 
@@ -187,7 +225,8 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
     return slices
 
 
-def pattern_references(tracks: List[List[int]]) -> List[int]:
+def pattern_references(tracks: List[List[int]],
+                       floor: int = GT_COMMAND_FLOOR) -> List[int]:
     """Every pattern number the orderlists name, in order, with repeats.
 
     Walks the orderlists exactly as reindex_tracks does: $FF (LOOPSONG) is
@@ -197,6 +236,10 @@ def pattern_references(tracks: List[List[int]]) -> List[int]:
     Occurrences rather than distinct values, because callers weighing how much
     of a track is nonsense need to count how often a bad reference is played,
     not how many different ones exist.
+
+    `floor` is the lowest byte to treat as a command. It defaults to
+    Goattracker's own $D0, which is right for a track that has already been
+    reindexed; pass command_floor(version) for one that has not.
     """
     refs: List[int] = []
     for track in tracks:
@@ -206,12 +249,13 @@ def pattern_references(tracks: List[List[int]]) -> List[int]:
                 expect_operand = False
             elif b == GT_ORDER_RESTART:
                 expect_operand = True
-            elif b < MAX_PATTERNS:
+            elif b < floor:
                 refs.append(b)
     return refs
 
 
-def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
+def referenced_patterns(tracks: List[List[int]],
+                        floor: int = GT_COMMAND_FLOOR) -> Set[int]:
     """Distinct raw Hubbard pattern numbers that some track actually plays.
 
     det.pattern_used is inferred from the gap between the pattern LO and HI
@@ -219,7 +263,7 @@ def referenced_patterns(tracks: List[List[int]]) -> Set[int]:
     the song plays. Several tunes carry large unplayed remainders (Dragon's
     Lair II references 71 of the 202 patterns it emits).
     """
-    return set(pattern_references(tracks))
+    return set(pattern_references(tracks, floor))
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,
@@ -381,7 +425,8 @@ def pack_repeats(track: List[int]) -> List[int]:
 
 
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
-                   pack: bool = False) -> List[List[int]]:
+                   pack: bool = False,
+                   floor: int = GT_COMMAND_FLOOR) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
     The length check moved to the end of each track so that `pack` -- which
@@ -403,12 +448,18 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
             elif b == GT_ORDER_RESTART:
                 new_track.append(b)
                 expect_operand = True
-            elif b >= MAX_PATTERNS:
-                # Repeat/transpose command. Passes through, but -- unlike the
-                # original's sticky end-marker flag -- does NOT stop re-indexing
-                # the rest of the track. Mega Apocalypse-family transposes emit
-                # $E0-$FF, so the old latch silently left every pattern number
-                # after the first transpose pointing at pre-split indices.
+            elif b >= floor:
+                # Transpose command, already in Goattracker encoding. Passes
+                # through, but -- unlike the original's sticky end-marker flag
+                # -- does NOT stop re-indexing the rest of the track. Mega
+                # Apocalypse-family transposes emit $E0-$FF, so the old latch
+                # silently left every pattern number after the first transpose
+                # pointing at pre-split indices.
+                #
+                # `floor` moves with the player dialect. Using Goattracker's
+                # own $D0 here read a version-0 pattern number of $D0-$FD as a
+                # command and emitted it verbatim, losing the reference and
+                # inventing a repeat or transpose in its place.
                 new_track.append(b)
             else:
                 new_track.extend(track_index[b] if b < len(track_index) else [])

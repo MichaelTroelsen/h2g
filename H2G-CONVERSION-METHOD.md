@@ -761,6 +761,7 @@ shape, "wrong output, no diagnostic":
 | The transpose latch (§8) | Replaced by a single-byte operand lookahead; 17 corpus files were affected |
 | `wait == 0` events dropped (§5) | Emitted as one-frame events; 2562 restored across 43 files |
 | Version 2 grouped with 0/1/3, so its transpose commands were read as pattern numbers (§6) | Decoded as transposes; 6 corpus files played untransposed before, one of them with a wrong pattern spliced in |
+| `reindex_tracks` split commands from pattern numbers at Goattracker's `$D0`, whatever the dialect | Split at `command_floor(version)`. Versions 0/1/3 have no command but `$FF`, so a pattern number of `$D0`–`$FD` was being emitted verbatim as a repeat or transpose — losing the reference *and* inventing a command. 146 bytes across 7 files |
 
 The pattern is stark: **the failure modes that produce no diagnostic are the
 dangerous ones, and they all stem from unvalidated inference.** Every one of

@@ -6,8 +6,9 @@ from typing import Callable, List
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMATS, build_sng,
                          tempo_for)
-from .patterns import (GT_DEFAULT_ROWS, ConversionAbort, convert_patterns,
-                       pattern_references, referenced_patterns, reindex_tracks)
+from .patterns import (GT_COMMAND_FLOOR, GT_DEFAULT_ROWS, ConversionAbort,
+                       command_floor, convert_patterns, pattern_references,
+                       referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import convert_tracks
 
@@ -30,7 +31,8 @@ class UnsupportedSidError(Exception):
 MAX_DANGLING_SHARE = 2 / 3
 
 
-def check_detection_sound(tracks, pattern_used: int, log: Logger) -> None:
+def check_detection_sound(tracks, pattern_used: int, log: Logger,
+                          floor: int = GT_COMMAND_FLOOR) -> None:
     """Reject a detection whose orderlists mostly name patterns that don't exist.
 
     A signature can match code that is not the tune's player -- One on One's
@@ -47,7 +49,7 @@ def check_detection_sound(tracks, pattern_used: int, log: Logger) -> None:
         log("*** NO SUBTUNE PLAYS ANY EXISTING PATTERN ***")
         raise UnsupportedSidError("NO PLAYABLE SUBTUNE, CAN'T CONVERT")
 
-    refs = pattern_references(tracks)
+    refs = pattern_references(tracks, floor)
     dangling = [r for r in refs if r > pattern_used]
     if not refs or len(dangling) / len(refs) > MAX_DANGLING_SHARE:
         share = f"{100 * len(dangling) // len(refs)}%" if refs else "no"
@@ -105,11 +107,14 @@ def convert(sid_path: str, log: Logger = print,
     log("----------------------------------------------------CONVERTING---")
 
     tracks = convert_tracks(sid, det, log)
-    check_detection_sound(tracks, det.pattern_used, log)
+    # These three all read orderlists that are still in Hubbard numbering, so
+    # they need the dialect's command boundary rather than Goattracker's.
+    floor = command_floor(det.read_track_version)
+    check_detection_sound(tracks, det.pattern_used, log, floor)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
-        used=referenced_patterns(tracks) if prune else None)
-    tracks = reindex_tracks(tracks, track_index, pack)
+        used=referenced_patterns(tracks, floor) if prune else None)
+    tracks = reindex_tracks(tracks, track_index, pack, floor)
 
     resolved_tempo = tempo_for(sid) if tempo == "auto" else tempo
     if resolved_tempo is not None:

@@ -23,8 +23,8 @@ from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
                             GT_MAX_TABLELEN, MAX_INSTRUMENTS,
                             WAVE_ENTRIES_PER_INSTR, build_sng)
 from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
-                          convert_patterns, referenced_patterns,
-                          reindex_tracks)
+                          command_floor, convert_patterns,
+                          referenced_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
 from h2g.sidid import Database, find_database
 from h2g.tracks import convert_tracks
@@ -58,7 +58,7 @@ class Result:
     error: str = ""
 
 
-def _dangling(tracks: list, pattern_used: int) -> tuple[int, int]:
+def _dangling(tracks: list, pattern_used: int, floor: int) -> tuple[int, int]:
     """Orderlist references to pattern numbers the pattern table does not hold.
 
     Returns (distinct dangling refs anywhere, distinct dangling refs in subtune
@@ -72,8 +72,8 @@ def _dangling(tracks: list, pattern_used: int) -> tuple[int, int]:
     the orderlist grammar ($D0-$FE commands, the restart position after $FF)
     defined in exactly one place.
     """
-    everywhere = {p for p in referenced_patterns(tracks) if p > pattern_used}
-    first = {p for p in referenced_patterns(tracks[:3]) if p > pattern_used}
+    everywhere = {p for p in referenced_patterns(tracks, floor) if p > pattern_used}
+    first = {p for p in referenced_patterns(tracks[:3], floor) if p > pattern_used}
     return len(everywhere), len(first)
 
 
@@ -134,12 +134,13 @@ def survey_one(path: Path, sng_dir: Path | None,
     # frequently smaller than the PSID header's claim -- that is the count the
     # .sng actually carries, and the one worth reporting.
     r.subtunes_emitted = len(tracks) // 3
-    r.dangling, r.dangling_sub0 = _dangling(tracks, det.pattern_used)
+    floor = command_floor(det.read_track_version)
+    r.dangling, r.dangling_sub0 = _dangling(tracks, det.pattern_used, floor)
 
     # Same soundness gate the converter applies, so the report agrees with what
     # `python -m h2g` actually does rather than counting a refusal as a pass.
     try:
-        check_detection_sound(tracks, det.pattern_used, log=lambda m: None)
+        check_detection_sound(tracks, det.pattern_used, lambda m: None, floor)
     except UnsupportedSidError as exc:
         r.stage, r.error = "tracks", str(exc)
         return r
@@ -148,8 +149,8 @@ def survey_one(path: Path, sng_dir: Path | None,
         new_patterns, track_index = convert_patterns(
             sid, det, log=lambda m: None, max_rows=max_rows,
             terminate_patterns=terminate_patterns, dedup=dedup,
-            used=referenced_patterns(tracks) if prune else None)
-        tracks = reindex_tracks(tracks, track_index, pack)
+            used=referenced_patterns(tracks, floor) if prune else None)
+        tracks = reindex_tracks(tracks, track_index, pack, floor)
     except ConversionAbort as exc:
         r.stage, r.error = "patterns", str(exc)
         return r

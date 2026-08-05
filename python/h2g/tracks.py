@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import List
 
 from .detect import Detection
-from .patterns import pattern_references
+from .patterns import command_floor, pattern_references
 from .sidfile import HLEN, SidFile
 
 DEFAULT_TRACK = [0x00, 0xFF, 0x00]
@@ -197,8 +197,9 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     # ones (Gremlins subtune 11 is 1/100), and those are real music with a byte
     # this converter still mis-decodes. Any threshold that catches the garbage
     # would discard them too.
+    floor = command_floor(det.read_track_version)
     playable = [
-        ok and any(r <= det.pattern_used for r in pattern_references(voices))
+        ok and any(r <= det.pattern_used for r in pattern_references(voices, floor))
         for ok, voices in zip(usable, built)
     ]
     for i, (ok, play) in enumerate(zip(usable, playable)):
