@@ -74,6 +74,23 @@ def test_header_and_rule_rows_are_not_frames():
                for v in fidelity.parse_dump(DUMP)) == 4 + 2 + 3
 
 
+def test_waveform_writes_are_recorded_per_voice():
+    # The WF column is the 2 chars after the 9-char note field in all four
+    # note formats; '..' means "not written this frame" and is not an event.
+    v0, v1, v2 = fidelity.parse_dump(DUMP)
+    assert v0.wf_events == [(0, 0x15), (1, 0x80), (6, 0x41)]
+    assert v1.wf_events == [(0, 0x43)]
+    assert v2.wf_events == [(0, 0x41), (3, 0x41)]
+
+
+def test_wave_timeline_carries_the_register_forward():
+    # siddump prints a row only on change; between writes the chip keeps
+    # playing the latched value, and skipped frames (2, 4, 5) inherit it.
+    v0 = fidelity.parse_dump(DUMP)[0]
+    assert fidelity.wave_timeline(v0, 8) == \
+        [0x15, 0x80, 0x80, 0x80, 0x80, 0x80, 0x41, 0x41]
+
+
 def test_collapsed_merges_consecutive_repeats_only():
     v = fidelity.Voice(attacks=["B-4", "B-4", "B-4", "E-4", "B-4"])
     assert v.collapsed == ["B-4", "E-4", "B-4"]
@@ -130,6 +147,88 @@ def test_a_loud_voice_outweighs_a_sparse_one():
     melody_wrong = fidelity.compare(orig, _voices(["A-7"] * 20, ["G-3"], []))
     sparse_wrong = fidelity.compare(orig, _voices(["C-4"] * 20, ["A-7"], []))
     assert melody_wrong["melody"] < sparse_wrong["melody"]
+
+
+# --- waveform-class agreement ----------------------------------------------
+
+def _wf_voice(*events):
+    return fidelity.Voice(wf_events=list(events))
+
+
+def _wf_voices(*event_lists):
+    vs = [_wf_voice(*e) for e in event_lists]
+    return vs + [fidelity.Voice()] * (3 - len(vs))
+
+
+def test_a_trace_against_itself_has_full_wave_agreement():
+    a = _wf_voices([(0, 0x41), (5, 0x81)], [(0, 0x21)])
+    got = fidelity.wave_compare(a, _wf_voices([(0, 0x41), (5, 0x81)], [(0, 0x21)]),
+                                nframes=10)
+    assert got["wave"] == 1.0
+
+
+def test_the_gate_bit_is_not_a_timbre():
+    # $41 (gated pulse) and $40 (released pulse) are the same class: note
+    # length is the attack metrics' job, not this one's.
+    got = fidelity.wave_compare(_wf_voices([(0, 0x41)]),
+                                _wf_voices([(0, 0x40)]), nframes=4)
+    assert got["wave"] == 1.0
+
+
+def test_a_combined_waveform_is_its_own_class():
+    # $51 (tri+pulse) matches neither pure triangle nor pure pulse.
+    tri_pulse = _wf_voices([(0, 0x51)])
+    assert fidelity.wave_compare(tri_pulse, _wf_voices([(0, 0x41)]),
+                                 nframes=2)["wave"] == 0.0
+    assert fidelity.wave_compare(tri_pulse, _wf_voices([(0, 0x11)]),
+                                 nframes=2)["wave"] == 0.0
+    assert fidelity.wave_compare(tri_pulse, _wf_voices([(0, 0x51)]),
+                                 nframes=2)["wave"] == 1.0
+
+
+def test_an_invented_noise_tick_costs_agreement_and_is_counted():
+    """The Phase-0 signal: our fabricated wavetable opens a note on a frame
+    of noise where the original plays pulse throughout."""
+    orig = _wf_voices([(0, 0x41)])
+    ours = _wf_voices([(0, 0x81), (1, 0x41)])   # noise tick, then pulse
+    got = fidelity.wave_compare(orig, ours, nframes=4)
+    assert got["wave"] == 0.75                  # 1 of 4 frames disagrees
+    assert got["orig_noise_frames"] == 0
+    assert got["our_noise_frames"] == 1
+
+
+def test_frames_silent_on_both_sides_do_not_inflate_agreement():
+    # Both sides drop to class 0 at frame 2, so only frames 0-1 are counted:
+    # a long shared silence must not drown out a real timbre disagreement.
+    orig = _wf_voices([(0, 0x41), (2, 0x00)])
+    ours = _wf_voices([(0, 0x21), (2, 0x00)])
+    got = fidelity.wave_compare(orig, ours, nframes=6)
+    assert got["wave_frames"] == 2
+    assert got["wave"] == 0.0
+    # ... but one side selecting a waveform against silence is a disagreement.
+    half = fidelity.wave_compare(_wf_voices([(0, 0x41)]),
+                                 _wf_voices([(0, 0x41), (2, 0x00)]), nframes=4)
+    assert half["wave"] == 0.5
+
+
+def test_noise_frames_are_counted_over_all_frames_per_side():
+    # Carry-forward: noise latched at frame 1 persists to nframes.
+    got = fidelity.wave_compare(_wf_voices([(0, 0x41), (1, 0x81)]),
+                                _wf_voices([(0, 0x41)]), nframes=5)
+    assert got["orig_noise_frames"] == 4
+    assert got["our_noise_frames"] == 0
+
+
+def test_wave_is_none_when_no_frames_are_counted():
+    got = fidelity.wave_compare(_wf_voices(), _wf_voices(), nframes=5)
+    assert got["wave"] is None
+
+
+def test_wave_nframes_defaults_to_the_last_write_seen():
+    got = fidelity.wave_compare(_wf_voices([(0, 0x41)]),
+                                _wf_voices([(0, 0x41), (9, 0x21)]))
+    assert got["wave_frames"] == 10
+    assert got["wave"] == 0.9
 
 
 def test_legalise_restarts_only_touches_out_of_range_positions():
@@ -217,3 +316,9 @@ def test_a_file_compared_with_itself_is_a_perfect_match(tmp_path):
     assert sum(len(v.attacks) for v in trace) > 0
     got = fidelity.compare(trace, trace)
     assert got["melody"] == 1.0 and got["retrigger_ratio"] == 1.0
+    # ... and the same control for the wave metric: siddump plays
+    # seconds*50 frames, and a real trace has waveform writes to compare.
+    wave = fidelity.wave_compare(trace, trace, nframes=4 * 50)
+    assert wave["wave_frames"] > 0
+    assert wave["wave"] == 1.0
+    assert wave["orig_noise_frames"] == wave["our_noise_frames"]

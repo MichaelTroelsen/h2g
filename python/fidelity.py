@@ -44,6 +44,15 @@ Two numbers come out of that:
    consecutive duplicates collapsed, which removes exactly the re-trigger
    noise and leaves the question "are these the same notes in the same
    order". Reported alongside the uncollapsed ratio.
+
+Separately from note attacks, the **wave** metric compares the waveform
+register ($D404) frame by frame: siddump's WF column, carried forward across
+the frames it is not reprinted, reduced to its waveform-class nibble (see
+wave_compare). It exists to measure the fabricated wavetable -- goatwriter
+writes a noise-tick/arpeggio wavetable for every instrument whether or not
+the source player had those semantics, and no attack-based metric can see
+the difference between a pulse note and the same note opening on a frame of
+noise.
 """
 from __future__ import annotations
 
@@ -84,10 +93,17 @@ DEFAULT_SECONDS = 8
 # --------------------------------------------------------------------------
 # One voice cell, after splitting a row on '|', is a 4-hex frequency (or
 # '....') then a 9-character note field written by one of exactly four
-# sprintf formats in siddump.c:409-429.
+# sprintf formats in siddump.c:409-429, then the 2-hex waveform register
+# (or '..' when the register was not written this frame).
 _ATTACK = re.compile(r" ([A-G][-#]\d) ([0-9A-F]{2})  ")
 _TIE = re.compile(r"\(([A-G][-#]\d) ([0-9A-F]{2})\) ")
 _SLIDE = re.compile(r"\(([+-]) ([0-9A-F]{4})\) ")
+_WF = re.compile(r"[0-9A-F]{2}$")
+
+# $D404 waveform-register bits. The upper nibble selects the waveform(s);
+# the lower nibble is gate/sync/ring/test, none of which is a timbre.
+WF_GATE = 0x01
+WF_NOISE = 0x80
 
 
 @dataclass
@@ -96,6 +112,11 @@ class Voice:
     attack_frames: list[int] = field(default_factory=list)
     ties: int = 0
     slides: int = 0
+    # (frame, value) for every frame siddump shows the waveform register
+    # written. siddump prints a row only when something changed, so between
+    # events the register holds its last value -- wave_timeline() expands
+    # these into a per-frame view.
+    wf_events: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def collapsed(self) -> list[str]:
@@ -127,6 +148,10 @@ def parse_dump(text: str) -> list[Voice]:
             continue  # header/rule row
         for v, cell in enumerate(cells[2:5]):
             rest = cell[6:]  # past ' FREQ ' (or ' .... ')
+            # The waveform register is the 2 characters after the 9-char
+            # note field, in every one of the four note formats.
+            if _WF.match(rest[9:11]):
+                voices[v].wf_events.append((frame, int(rest[9:11], 16)))
             m = _ATTACK.match(rest)
             if m:
                 voices[v].attacks.append(m.group(1))
@@ -138,6 +163,24 @@ def parse_dump(text: str) -> list[Voice]:
             if _SLIDE.match(rest):
                 voices[v].slides += 1
     return voices
+
+
+def wave_timeline(voice: Voice, nframes: int) -> list[int]:
+    """The waveform register's value on every frame 0..nframes-1.
+
+    siddump prints the register only on the frame it is written; on every
+    other frame the chip keeps playing whatever was latched, so the value
+    carries forward. Before the first write (siddump always prints frame 0 in
+    full, so in practice never) the value is 0.
+    """
+    out: list[int] = []
+    cur, idx, ev = 0, 0, voice.wf_events
+    for f in range(nframes):
+        while idx < len(ev) and ev[idx][0] <= f:
+            cur = ev[idx][1]
+            idx += 1
+        out.append(cur)
+    return out
 
 
 def run_siddump(sid: Path, seconds: int, subtune: int,
@@ -312,6 +355,71 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     }
 
 
+def wave_compare(orig: list[Voice], ours: list[Voice],
+                 nframes: int | None = None) -> dict:
+    """Per-frame waveform-CLASS agreement, and noise-frame counts per side.
+
+    The class of a frame is the waveform-select nibble of $D404 -- `wf & $F0`
+    -- so triangle ($1x), sawtooth ($2x), pulse ($4x) and noise ($8x) are the
+    four pure classes, a combined waveform ($5x tri+pulse, ...) is its own
+    class distinct from either component, and $0x (no waveform selected) is
+    "silent". The gate bit and the other control bits (sync, ring, test) are
+    deliberately ignored: gating is what the attack metrics already measure,
+    and a gate-off voice keeps its waveform latched, so folding the gate in
+    would double-count every note length disagreement as a timbre one.
+
+    Frames where *both* sides are class 0 are left out of the denominator,
+    mirroring how compare() refuses to let a voice silent in both inflate the
+    score; a frame where one side selects a waveform and the other selects
+    none counts as a disagreement.
+
+    Noise frames are counted on bit 7 alone (any class containing noise),
+    over **all** frames per side, because the question they answer --
+    "did we invent drum ticks the player never had?" -- is one-sided.
+
+    `nframes` should be the full trace length (siddump plays seconds*50
+    frames regardless of the PSID speed field); when None it is derived from
+    the last waveform write seen on either side, which is exact for
+    synthetic fixtures and merely truncates a constant tail otherwise.
+    """
+    if nframes is None:
+        last = max((f for v in orig + ours for f, _ in v.wf_events), default=-1)
+        nframes = last + 1
+    agree = total = o_noise = u_noise = 0
+    per_voice = []
+    for a, b in zip(orig, ours):
+        ta, tb = wave_timeline(a, nframes), wave_timeline(b, nframes)
+        va = vt = vo_n = vu_n = 0
+        for x, y in zip(ta, tb):
+            if x & WF_NOISE:
+                vo_n += 1
+            if y & WF_NOISE:
+                vu_n += 1
+            cx, cy = x & 0xF0, y & 0xF0
+            if cx == 0 and cy == 0:
+                continue
+            vt += 1
+            if cx == cy:
+                va += 1
+        per_voice.append({
+            "wave": (va / vt) if vt else None,
+            "frames": vt,
+            "orig_noise_frames": vo_n,
+            "our_noise_frames": vu_n,
+        })
+        agree += va
+        total += vt
+        o_noise += vo_n
+        u_noise += vu_n
+    return {
+        "wave": (agree / total) if total else None,
+        "wave_frames": total,
+        "orig_noise_frames": o_noise,
+        "our_noise_frames": u_noise,
+        "wave_voices": per_voice,
+    }
+
+
 # --------------------------------------------------------------------------
 # optional SIDM2 stages
 # --------------------------------------------------------------------------
@@ -433,6 +541,7 @@ def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
     b = run_siddump(packed, args.seconds, args.subtune, args.siddump)
     row["status"] = "measured"
     row.update(compare(a, b))
+    best_dump = b
     if args.search_subtunes > 1:
         # Our subtune numbering does not have to line up with the original's:
         # a subtune whose orderlist exceeds Goattracker's limit costs itself,
@@ -443,10 +552,13 @@ def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
         for st in range(args.search_subtunes):
             if st == args.subtune:
                 continue
-            cand = compare(a, run_siddump(packed, args.seconds, st, args.siddump))
+            cand_dump = run_siddump(packed, args.seconds, st, args.siddump)
+            cand = compare(a, cand_dump)
             if cand["melody"] > best:
                 best, best_at, row = cand["melody"], st, {**row, **cand}
+                best_dump = cand_dump
         row["matched_subtune"] = best_at
+    row.update(wave_compare(a, best_dump, nframes=args.seconds * 50))
     if row["our_attacks"] == 0:
         row["status"] = "silent"
     if args.register:
@@ -491,24 +603,36 @@ def report(rows: list[dict], args) -> str:
         "original's. Every other column is blind to these: they happen "
         "*within* a note, so a change that only adds or removes pitch "
         "movement leaves melody, seq and retrig identical.",
+        "* **wave** -- per-frame agreement of the waveform *class* (the "
+        "waveform-select nibble of $D404: triangle/saw/pulse/noise, with a "
+        "combined waveform its own class and the gate/sync/ring/test bits "
+        "ignored), carried forward between register writes. Frames where "
+        "both sides select no waveform are not counted.",
+        "* **noise** -- frames on which the voice's waveform included noise "
+        "(bit 7), ours over the original's. A nonzero left of a zero right "
+        "is a drum tick the conversion invented.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | wave | noise | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent"):
             out.append(
-                f"| {r['file']} | - | - | - | - | - | - | - | {r['status']} |")
+                f"| {r['file']} | - | - | - | - | - | - | - | - | - | {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
         if r.get("traced_subtune_dropped"):
             status += " -- **not comparable**"
+        noise = f"{r.get('our_noise_frames', 0)}/{r.get('orig_noise_frames', 0)}"
+        if r.get("our_noise_frames") and not r.get("orig_noise_frames"):
+            noise += " !"
         out.append(
             f"| {r['file']} | {r['orig_attacks']} | {r['our_attacks']} | "
             f"{'-' if rr is None else f'{rr:.2f}'} | {_fmt_pct(r['melody'])} | "
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
+            f"{_fmt_pct(r.get('wave'))} | {noise} | "
             f"{status} |")
 
     if measured:
@@ -525,6 +649,19 @@ def report(rows: list[dict], args) -> str:
             f"- mean sequence similarity: **{_fmt_pct(sum(r['sequence'] for r in measured) / n)}**",
             f"- mean pitch overlap: **{_fmt_pct(sum(r['pitch_jaccard'] for r in measured) / n)}**",
         ]
+        waved = [r for r in measured if r.get("wave") is not None]
+        if waved:
+            o_noise = sum(r.get("orig_noise_frames", 0) for r in waved)
+            u_noise = sum(r.get("our_noise_frames", 0) for r in waved)
+            invented = [r for r in waved
+                        if r.get("our_noise_frames") and not r.get("orig_noise_frames")]
+            out += [
+                f"- mean wave agreement: **{_fmt_pct(sum(r['wave'] for r in waved) / len(waved))}**"
+                f" ({len(waved)} file(s))",
+                f"- noise frames, ours/original: **{u_noise}/{o_noise}**"
+                + (f"; **{len(invented)}** file(s) play noise where the "
+                   "original never does (marked `!` above)" if invented else ""),
+            ]
         ratios = [r["retrigger_ratio"] for r in measured if r["retrigger_ratio"]]
         if ratios:
             out.append(f"- median retrigger ratio: **{sorted(ratios)[len(ratios) // 2]:.2f}**")
@@ -579,6 +716,17 @@ def report(rows: list[dict], args) -> str:
             out.append(f"| {r['file']} | {e['subtunes']} | {e['exported']} | "
                        f"{fmt(e['stub'])} | {fmt(e['lost'])} |")
 
+    if getattr(args, "pair", None):
+        for r in rows:
+            if not r.get("wave_voices"):
+                continue
+            out += ["", "## Wave detail (per voice)", "",
+                    "| voice | wave | frames counted | noise ours/orig |",
+                    "|---|---:|---:|---:|"]
+            for i, v in enumerate(r["wave_voices"]):
+                out.append(f"| {i} | {_fmt_pct(v['wave'])} | {v['frames']} | "
+                           f"{v['our_noise_frames']}/{v['orig_noise_frames']} |")
+
     out += [
         "",
         "## What this does not say",
@@ -596,6 +744,15 @@ def report(rows: list[dict], args) -> str:
         "- Timing is not measured at all. Two files can agree on every note "
         "and play at different speeds; that is what `--audio` and `--register` "
         "are for.",
+        "- **wave** compares the waveform class only. It cannot see pitch, "
+        "so a noise class agreeing on both sides says nothing about which "
+        "notes are under it; pulse-width differences within the pulse class "
+        "are invisible (tracking siddump's Pul column would fix that -- "
+        "future work, not built); ADSR and volume are not compared; and "
+        "because it ignores the gate bit, a note held twice as long with the "
+        "right waveform still scores 100% here. A gated-off voice keeps its "
+        "last waveform latched, so silence between notes inherits the "
+        "previous note's class on both sides.",
     ]
     out.append("")
     return "\n".join(out)
@@ -649,8 +806,10 @@ def main(argv=None) -> int:
     if args.pair:
         a, b = (Path(x) for x in args.pair)
         row = {"file": f"{a.name} vs {b.name}", "status": "measured"}
-        row.update(compare(run_siddump(a, args.seconds, args.subtune, args.siddump),
-                           run_siddump(b, args.seconds, args.subtune, args.siddump)))
+        da = run_siddump(a, args.seconds, args.subtune, args.siddump)
+        db = run_siddump(b, args.seconds, args.subtune, args.siddump)
+        row.update(compare(da, db))
+        row.update(wave_compare(da, db, nframes=args.seconds * 50))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)
         if args.audio:
@@ -679,7 +838,7 @@ def main(argv=None) -> int:
             row = measure(sid, workdir, opts, args)
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
-                    f"{row['retrigger_ratio']:.2f}"
+                    f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
                     if row["status"] in ("measured", "silent")
                     and row["retrigger_ratio"] else row["status"])
             print(f"  {sid.name:44} {note}", file=sys.stderr)
