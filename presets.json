@@ -1,10 +1,12 @@
 {
-  "generator": "h2g 0.5.50 presets.py",
+  "generator": "h2g 0.5.53 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
     "tempo": "auto",
     "legal_restart": true,
+    "slides": true,
+    "effects": true,
     "gt2reloc": true
   },
   "criteria": "most playable subtunes, then most rows, then smallest file",
@@ -23,9 +25,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15831,
+      "bytes": 13236,
       "subtunes": 1,
-      "rows": 18928
+      "rows": 18009
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -50,18 +52,18 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 17524,
+      "bytes": 16859,
       "subtunes": 1,
-      "rows": 20189
+      "rows": 19816
     },
     "Auf_Wiedersehen_Monty.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 41070,
+      "bytes": 39606,
       "subtunes": 13,
-      "rows": 25154
+      "rows": 24151
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -112,10 +114,10 @@
       "max_rows": 128,
       "pack": true,
       "prune": false,
-      "dedup": true,
-      "bytes": 26622,
+      "dedup": false,
+      "bytes": 7005,
       "subtunes": 1,
-      "rows": 48797
+      "rows": 7830
     },
     "Chimera.sid": {
       "max_rows": 94,
@@ -173,12 +175,12 @@
     },
     "Delta.sid": {
       "max_rows": 94,
-      "pack": false,
-      "prune": false,
+      "pack": true,
+      "prune": true,
       "dedup": true,
-      "bytes": 58769,
+      "bytes": 46887,
       "subtunes": 13,
-      "rows": 35838
+      "rows": 36076
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -203,9 +205,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 37876,
+      "bytes": 45014,
       "subtunes": 9,
-      "rows": 31377
+      "rows": 31074
     },
     "Food_Feud.sid": {
       "max_rows": 128,
@@ -266,9 +268,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 22889,
+      "bytes": 13622,
       "subtunes": 3,
-      "rows": 14721
+      "rows": 7778
     },
     "Human_Race.sid": {
       "max_rows": 94,
@@ -302,25 +304,25 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12958,
+      "bytes": 11886,
       "subtunes": 1,
-      "rows": 24178
+      "rows": 23374
     },
     "International_Karate.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 21181,
+      "bytes": 18603,
       "subtunes": 1,
-      "rows": 32954
+      "rows": 30754
     },
     "Kentilla.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 31403,
+      "bytes": 31405,
       "subtunes": 1,
       "rows": 36388
     },
@@ -347,9 +349,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 63396,
+      "bytes": 43042,
       "subtunes": 3,
-      "rows": 75211
+      "rows": 66780
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -446,18 +448,18 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12480,
+      "bytes": 11170,
       "subtunes": 1,
-      "rows": 12013
+      "rows": 11455
     },
     "Ninja.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 5889,
+      "bytes": 5498,
       "subtunes": 1,
-      "rows": 5231
+      "rows": 4715
     },
     "Off_the_Cuff.sid": {
       "max_rows": 128,
@@ -487,13 +489,13 @@
       "rows": 5584
     },
     "Pandora.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18998,
+      "bytes": 11506,
       "subtunes": 1,
-      "rows": 9377
+      "rows": 5695
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -586,22 +588,22 @@
       "rows": 11439
     },
     "Sanxion.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 19345,
+      "bytes": 17638,
       "subtunes": 1,
-      "rows": 18041
+      "rows": 17654
     },
     "Shockway_Rider.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 20736,
+      "bytes": 17050,
       "subtunes": 1,
-      "rows": 21780
+      "rows": 19978
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -653,9 +655,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 8593,
+      "bytes": 7377,
       "subtunes": 1,
-      "rows": 2878
+      "rows": 2321
     },
     "Thing_on_a_Spring.sid": {
       "max_rows": 128,
@@ -671,7 +673,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16928,
+      "bytes": 16930,
       "subtunes": 1,
       "rows": 18397
     },
@@ -689,18 +691,18 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 12985,
+      "bytes": 13101,
       "subtunes": 1,
-      "rows": 12639
+      "rows": 12899
     },
     "W_A_R.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 58879,
+      "bytes": 56448,
       "subtunes": 8,
-      "rows": 46918
+      "rows": 45642
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -716,9 +718,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 17008,
+      "bytes": 16909,
       "subtunes": 12,
-      "rows": 32560
+      "rows": 32266
     },
     "Wiz.sid": {
       "max_rows": 128,
