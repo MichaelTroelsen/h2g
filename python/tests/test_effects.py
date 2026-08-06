@@ -23,7 +23,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from h2g.detect import Detection, _find_effect_routines
+from h2g.detect import (Detection, _effect_byte_address,
+                        _find_effect_routines)
 from h2g.goatwriter import (FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
                             SPEED_NOTE_RELATIVE, WAVECMD_PORTAUP,
                             _wavetable_entries)
@@ -140,10 +141,12 @@ def _detect_effects(name):
     return _find_effect_routines(sid, detect(sid, log=lambda m: None))
 
 
-def test_warhawk_has_both_routines():
+def test_warhawk_has_all_four_routines():
     if not CORPUS.is_dir():
         return
-    assert _detect_effects("Warhawk") == (True, True)
+    # Warhawk is the player the +7 bit-field reading was taken from, so it is
+    # the one file that must answer yes to every probe: rise, arp, drum, pulse.
+    assert _detect_effects("Warhawk") == (True, True, True, True)
 
 
 def test_the_players_that_read_plus_seven_differently_are_rejected():
@@ -152,5 +155,27 @@ def test_the_players_that_read_plus_seven_differently_are_rejected():
     # Mega Apocalypse tests the whole byte with LDA/BEQ; Chicken Song does have
     # an AND #$02 on it, but the block swaps in noise rather than raising the
     # note, so the rise probe's `AND #$03 / BNE / INC` tail rejects it.
-    assert _detect_effects("Mega_Apocalypse") == (False, False)
+    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False)
     assert _detect_effects("Chicken_Song")[0] is False
+
+
+def test_a_bit_can_be_tested_without_the_block_being_warhawks():
+    """The distinction the probes exist to draw.
+
+    Mega Apocalypse ANDs $01, $02 and $04 against its own effect byte and
+    matches none of the four blocks -- so "the player tests this bit" and
+    "the player means what Warhawk means by it" are different questions, and
+    only the second one licenses fabricating an effect.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import detect
+    from h2g.search import search_file
+    sid = load_sid(str(CORPUS / "Mega_Apocalypse.sid"))
+    det = detect(sid, log=lambda m: None)
+    addr, zp = _effect_byte_address(sid, det)
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    tested = [b for b in (0x01, 0x02, 0x04, 0x08)
+              if search_file(sid.data, f"{load} 29 {b:02X}") >= 1]
+    assert tested == [0x01, 0x02, 0x04]
+    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False)

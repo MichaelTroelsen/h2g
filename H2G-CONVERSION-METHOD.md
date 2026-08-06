@@ -1088,10 +1088,68 @@ arpeggio. **315 of the corpus's 660 arpeggio instrument records have a zero
 nibble**, including all six of Commando's, which is why turning this on moves
 the byte-exact fixture.
 
+### The census: which players actually implement which bit
+
+The table above samples five players. This is all 95, and it separates two
+questions that look like one:
+
+- does the player **test** this bit against its own `+7` address at all
+  (`LDA effect / AND #$xx`), and
+- does the **whole block** match Warhawk's, i.e. does this player *mean* by
+  that bit what Warhawk means?
+
+77 of 95 files resolve a `+7` load at all (the other 18 include all 9
+digi-engine files, whose 16-byte records the probe does not read).
+
+| Warhawk block | files with the block | records setting the bit, corpus-wide | …of those, in a file that has the block | files that test the bit **without** the block |
+|---|---:|---:|---:|---:|
+| `$01` drum (`$1366`) | 44 | 447 | 299 | 25 |
+| `$02` rise (`$13A2`) | 4 | 276 | 12 | 52 |
+| `$04` arpeggio (`$13CD`) | 13 | 634 | 167 | 62 |
+| `$08` pulse-lo (`$12A3`) | 21 | 294 | 59 | 34 |
+
+Read the last two columns together. **467 of the 634 instrument records that
+set the arpeggio bit are in a player with no arpeggio routine**, and the
+wavetable builder arpeggiates all 634. For the drum bit it is 148 of 447.
+Those are records where H2G invents an effect from a bit whose meaning it has
+not established — the same defect the `--effects` gate was added to prevent,
+still present in the *unconditional* part of the wavetable.
+
+`Nineteen` is the clean example. It tests `$01`, `$02`, `$04`, `$08`, `$10`
+and `$20` against its effect byte and matches **none** of the four blocks, yet
+7 of its records get a fabricated noise tick and 11 a fabricated arpeggio. It
+scores **melody 100%, wave 21%** — every note right, every timbre wrong,
+and invisible to any attack-based metric.
+
+30 further files resolve `+7` and neither test it nor read it whole, so for
+those the byte may be inert entirely.
+
+Two blocks are documented here for the first time:
+
+**Bit `$01` — a drum** (Warhawk `$1366`). Two guard loads follow the bit test
+(a per-voice counter at `$15B1,X` and the note's own duration), then the block
+decrements that counter into `$D401` — a downward pitch sweep, one step per
+frame — and on the exhausted branch writes `#$80` to `$D404`, swapping in
+noise. H2G's version is two wavetable entries: one noise tick, then back. It
+gestures at the noise and drops the sweep entirely, which is why the corpus
+under-produces noise (5710 frames against the original's 11641) *while*
+inventing it in 148 records elsewhere. Both errors at once, which is exactly
+why the aggregate reads as simple under-production.
+
+**Bit `$08` — a pulse-width variant** (Warhawk `$12A3`). It selects between
+two treatments of instrument byte `+6`: with the bit clear, the triangle sweep
+into `$D403` (pulse HI) described in §7 above; with it set, `ADC`-accumulate
+`+6` into the instrument's own `+0` byte and write that to `$D402` (pulse LO).
+Note the store at `$12B3` writes the running total **back into the instrument
+record**, so a static read of `+0` sees only its initial value — the same
+class of hazard as the tables Devils Galop's init patches (§4).
+
 **Lesson:** when the source format is *poorer* than the target format, you have
 to synthesize plausible target-side structure. That synthesis is a creative
 choice, not a translation — and it is where converted output stops being
-"the original" and starts being "an interpretation of the original".
+"the original" and starts being "an interpretation of the original". The
+census is the discipline that keeps the choice honest: *measure how often the
+structure you are about to synthesize is actually there.*
 
 ---
 

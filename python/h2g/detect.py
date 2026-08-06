@@ -64,6 +64,8 @@ class Detection:
     # a shared format across the player family -- see _find_effect_routines().
     effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
+    effect_drum: bool = False   # bit $01: pitch sweep down, then noise
+    effect_pulse_lo: bool = False  # bit $08: accumulate +6 into pulse width LO
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -632,10 +634,15 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.status_bit6:
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
 
-    det.effect_rise, det.effect_arp = _find_effect_routines(sid, det)
-    if det.effect_rise or det.effect_arp:
-        found = ", ".join(n for n, ok in (("rise", det.effect_rise),
-                                          ("arpeggio", det.effect_arp)) if ok)
+    (det.effect_rise, det.effect_arp,
+     det.effect_drum, det.effect_pulse_lo) = _find_effect_routines(sid, det)
+    if any((det.effect_rise, det.effect_arp, det.effect_drum,
+            det.effect_pulse_lo)):
+        found = ", ".join(n for n, ok in (("drum", det.effect_drum),
+                                          ("rise", det.effect_rise),
+                                          ("arpeggio", det.effect_arp),
+                                          ("pulse-lo", det.effect_pulse_lo))
+                          if ok)
         log(f"Instrument effect byte..: {found}")
 
     return det
@@ -755,10 +762,18 @@ def _effect_byte_address(sid: SidFile, det: Detection):
 
 
 def _find_effect_routines(sid: SidFile, det: Detection):
-    """(rise, arpeggio): whether the player really implements those +7 bits."""
+    """(rise, arp, drum, pulse_lo): which +7 bits the player really implements.
+
+    Each probe requires the block to name the *resolved* +7 address, so a
+    player that happens to `AND #$04` against something else does not count.
+    That distinction is the whole finding: corpus-wide the bits are tested far
+    more often than Warhawk's blocks appear -- bit $04 is tested against the
+    effect byte in 62 files and only 13 of them arpeggiate with it. See the
+    census table in H2G-CONVERSION-METHOD.md section 7.
+    """
     found = _effect_byte_address(sid, det)
     if not found:
-        return False, False
+        return False, False, False, False
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     any_load = "A5 ??" if zp else "AD ?? ??"
@@ -766,4 +781,21 @@ def _find_effect_routines(sid: SidFile, det: Detection):
         sid.data, f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? FE") >= 1
     arp = search_file(
         sid.data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D") >= 1
-    return rise, arp
+    # Warhawk $1366. Two guard loads follow the bit test -- a per-voice drum
+    # counter and the note's own duration -- before the block decrements the
+    # counter into $D401 (frequency high) and finally writes #$80 (noise) to
+    # $D404. The two BEQ guards are what make this shape specific: a bare
+    # `LDA effect / AND #$01 / BEQ` matches far more players than mean by it
+    # what Warhawk means.
+    drum = search_file(
+        sid.data, f"{load} 29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0") >= 1
+    # Warhawk $12A3. Selects a variant of the +6 pulse-width sweep: instead of
+    # the triangle into $D403 (pulse HI), it ADCs +6 into the instrument's own
+    # +0 byte and writes that to $D402 (pulse LO) -- and stores the running
+    # total back into the record, so a static read of +0 sees only its initial
+    # value.
+    pulse_lo = search_file(
+        sid.data,
+        f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
+        f"99 ?? ?? AC ?? ?? 99 02 D4") >= 1
+    return rise, arp, drum, pulse_lo
