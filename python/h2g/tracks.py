@@ -295,6 +295,82 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     return tracks
 
 
+def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:
+    """Replace any voice orderlist that is nothing but an end marker, in place.
+
+    `gsong.c:1338-1349` derives `songlen` by scanning for the first byte
+    `>= LOOPSONG`, so a track whose first byte is already `$FF` has
+    `songlen == 0`. That is not merely an empty voice -- it invalidates the
+    whole subtune:
+
+        greloc.c:200-255   counts `songs` as the subtunes whose *three* voices
+                           all have nonzero length
+        greloc.c:653       writes `for (c = 0; c < songs; c++)`, over the
+                           ORIGINAL indices, re-testing validity as it goes
+
+    So an invalid subtune keeps its slot and is written as a zero-length stub
+    (`:701-706`) -- present in the packed `.sid`, playing nothing -- while every
+    subtune at or past the count is never written at all. Rasputin is the worst
+    case in the corpus: subtunes 0 and 1 are invalid, so `songs` is 15 of 17,
+    and subtunes 15 and 16 -- carrying 309 and 621 sounding rows -- are dropped
+    from the `.sid` with nothing anywhere reporting it.
+
+    Note what this is *not*: nothing is renumbered and the list is not
+    compacted. An earlier description of this bug in three of the repo's docs
+    said it was, and that was wrong.
+
+    Seven corpus files are affected (Rasputin, both Last V8s, One Man and his
+    Droid, Dragon's Lair II, Mega Apocalypse, Monty on the Run). The repair is
+    the placeholder every other unrepresentable subtune already gets, which
+    costs one orderlist step and makes the subtune valid.
+
+    This runs unconditionally. The same repair used to happen only as a side
+    effect of `--legal-restart`, which meant the default conversion silently
+    dropped subtunes from its packed `.sid`; a zero-length voice is a problem
+    regardless of whether any restart position is legal.
+
+    Making a subtune valid also exposes it to a check it was previously skipped
+    by. `greloc.c:244` rejects a restart position `>= songlen`, and it runs only
+    inside the `songlen[c][0] && [1] && [2]` guard -- so an invalid subtune's
+    illegal restart was never looked at. Repairing the empty voice alone turns
+    Rasputin from "packs 15 of 17 subtunes" into "packs nothing", because
+    subtune 0's *other* two voices end on Hubbard's `$FE` stop marker. The two
+    repairs are therefore one repair, applied together and only to the subtunes
+    this function revives: their alternative is not a stop, it is not being
+    exported at all. Subtunes that were already valid keep their stop markers
+    and remain `--legal-restart`'s business.
+
+    Tracks are grouped three per subtune, in voice order, as convert_tracks
+    emits them.
+
+    Returns the number of subtunes revived.
+    """
+    revived = 0
+    voices_fixed = 0
+    for base in range(0, len(tracks) - 2, 3):
+        group = tracks[base:base + 3]
+        if not any(t and t[0] == GT_ORDER_RESTART for t in group):
+            continue
+        revived += 1
+        for track in group:
+            if track and track[0] == GT_ORDER_RESTART:
+                track[:] = list(DEFAULT_TRACK)
+                voices_fixed += 1
+                continue
+            # Same walk as legalise_restarts: the first $FF is the marker, and
+            # the byte after it is the restart position (gsong.c:1344).
+            songlen = next((i for i, b in enumerate(track)
+                            if b == GT_ORDER_RESTART), None)
+            if (songlen is not None and songlen + 1 < len(track)
+                    and track[songlen + 1] >= songlen):
+                track[songlen + 1] = 0
+    if log and revived:
+        log(f"Empty voices............: {voices_fixed} voice orderlist(s) held "
+            f"nothing but an end marker; gave them a placeholder step and made "
+            f"{revived} subtune(s) exportable")
+    return revived
+
+
 def legalise_restarts(tracks: List[List[int]], log=None) -> int:
     """Replace restart positions Goattracker's exporter refuses, in place.
 
@@ -315,15 +391,11 @@ def legalise_restarts(tracks: List[List[int]], log=None) -> int:
     does so, because its error path prints to a console that does not exist
     headless, so the failure looks like success with a missing file.
 
-    The same defect reaches tracks that never saw an `$FE`: an orderlist whose
-    first byte is already `$FF` becomes `[$FF, $00]`, and with `songlen == 0`
-    even position 0 is out of range. Those do not fail the export -- they are
-    excluded from it. greloc.c:201 only validates (and only packs) a subtune
-    whose three channels all have nonzero length, and greloc.c:653 writes the
-    accepted ones consecutively, so a zero-length voice drops its whole subtune
-    and renumbers every later one in the packed .sid. A siddump comparison then
-    lines subtune N of the .sid up against subtune N+1 of the original, which
-    is a silent way to measure the wrong tune.
+    A track whose first byte is already `$FF` has `songlen == 0`, so even
+    position 0 is out of range -- but that is a different failure with a
+    different consequence (the subtune is excluded from the export rather than
+    failing it), and `ensure_playable_orderlists` repairs it unconditionally
+    before this runs.
 
     Restart position 0 is the only value that is legal without knowing the
     finished orderlist -- every other candidate depends on a length that
@@ -348,13 +420,13 @@ def legalise_restarts(tracks: List[List[int]], log=None) -> int:
         if track[songlen + 1] < songlen:
             continue                       # already legal
         if songlen == 0:
-            # A track that is nothing but an end marker has no position to
-            # restart at. The placeholder is the shape every other
-            # unrepresentable subtune already gets, so convert()'s emptiness
-            # check can still refuse a file where none survive.
-            track[:] = list(DEFAULT_TRACK)
-        else:
-            track[songlen + 1] = 0
+            # No position to restart at, and nothing this function can do about
+            # it. ensure_playable_orderlists owns that repair and convert()
+            # runs it first, unconditionally -- a zero-length voice invalidates
+            # its whole subtune whether or not the restart position is legal,
+            # so it must not depend on this opt-in flag.
+            continue
+        track[songlen + 1] = 0
         fixed += 1
     if log and fixed:
         log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's $FE "

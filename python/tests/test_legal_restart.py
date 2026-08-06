@@ -29,7 +29,7 @@ import sys
 import pytest
 
 from h2g.patterns import DEFAULT_TRACK, GT_ORDER_RESTART
-from h2g.tracks import legalise_restarts
+from h2g.tracks import ensure_playable_orderlists, legalise_restarts
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -85,12 +85,19 @@ def test_the_stop_marker_becomes_a_restart_at_zero():
     assert _greloc_ok(track)
 
 
-def test_a_track_that_is_only_a_stop_marker_becomes_the_placeholder():
+def test_a_track_that_is_only_a_stop_marker_is_left_to_the_other_pass():
     # songlen == 0: there is no position to restart at, so no operand can be
-    # legal. greloc.c:201 does not reject these -- it skips the whole subtune,
-    # and greloc.c:653 then renumbers every later one in the packed .sid.
+    # legal -- but that failure excludes the subtune from the export instead of
+    # failing it, and repairing it must not depend on this opt-in flag.
+    # ensure_playable_orderlists owns it, and convert() runs that first.
+    # See test_empty_voice.py.
     track = [GT_ORDER_RESTART, 0x00]
-    assert legalise_restarts([track]) == 1
+    assert legalise_restarts([track]) == 0
+    assert track == [GT_ORDER_RESTART, 0x00]
+    # ensure_playable_orderlists works a subtune at a time -- three voices, in
+    # the order convert_tracks emits them.
+    voices = [track, [0x01, GT_ORDER_RESTART, 0x00], [0x01, GT_ORDER_RESTART, 0x00]]
+    assert ensure_playable_orderlists(voices) == 1
     assert track == DEFAULT_TRACK
     assert _greloc_ok(track)
 

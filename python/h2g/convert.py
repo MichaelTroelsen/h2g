@@ -11,7 +11,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        apply_tempo, pattern_references, referenced_patterns,
                        reindex_tracks)
 from .sidfile import SidFile, load_sid
-from .tracks import convert_tracks, legalise_restarts
+from .tracks import (convert_tracks, ensure_playable_orderlists,
+                     legalise_restarts)
 
 Logger = Callable[[str], None]
 
@@ -128,6 +129,12 @@ def convert(sid_path: str, log: Logger = print,
         used=referenced_patterns(tracks, floor) if prune else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows)
+    # Unconditional, and before the restart pass: a voice whose orderlist
+    # holds nothing but an end marker makes greloc.c skip its whole subtune,
+    # and every subtune past the resulting count is never written to the
+    # packed .sid at all. That is silent data loss, not a stylistic choice,
+    # so it is not gated behind an option.
+    ensure_playable_orderlists(tracks, log)
     if legal_restart:
         # After reindexing, packing, merging and splitting: those all change an
         # orderlist's length, and whether a restart position is in range is a

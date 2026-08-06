@@ -617,10 +617,10 @@ because all four change an orderlist's length and "is this position in range"
 is a question about the finished list — position 0 is the only answer available
 before that.
 
-A quieter defect sits next to it, and `--legal-restart` does *not* fix it: a
-voice whose orderlist is nothing but a marker (`[$FF, $00]`, so `songlen == 0`)
-has no legal restart position either, but the option rewrites positions, not
-lengths. `greloc.c:201` does not reject such a subtune; it counts only the
+A quieter defect sits next to it: a voice whose orderlist is nothing but a
+marker (`[$FF, $00]`, so `songlen == 0`) has no legal restart position either,
+but the length is the problem, not the position.
+`greloc.c:201` does not reject such a subtune; it counts only the
 subtunes whose three channels all have nonzero length, and the writing loop at
 `greloc.c:653` then runs over the **original** indices `c < songs`. So nothing
 is renumbered — an invalid subtune keeps its slot and is written with
@@ -631,10 +631,26 @@ with no error from any layer. `fidelity.py` reads this before packing so a
 comparison against an empty stub is reported rather than scored — see
 `SNG2SID-FIDELITY.md` §7.
 
-> `version == 8` in the Python branch list is unreachable — `detect()` only ever
-> produces 0–7 or `0xFF`. Harmless dead condition, carried over from the VB
-> `Select Case` (which likewise has an unreachable literal `4` in its second
-> case list, because `Case 4` appears earlier and VB takes the first match).
+`tracks.ensure_playable_orderlists` repairs it, and **unconditionally**: a
+zero-length voice is silent data loss whatever the restart positions are, so it
+must not depend on an opt-in flag. Until v0.5.49 the repair happened only as a
+side effect of `--legal-restart`, which meant the default conversion quietly
+dropped subtunes from its packed `.sid`.
+
+The two repairs turn out to be one repair. `greloc.c:244`'s restart check runs
+*inside* the all-voices-nonzero guard, so an invalid subtune's illegal restart
+was never looked at; reviving the empty voice alone exposes it and turns
+`Rasputin` from "packs 15 of 17 subtunes" into "packs nothing". So the function
+also legalises the restart positions of the voices in the subtunes it revives —
+and only those. Their alternative is not a stop; it is not being exported at
+all. Subtunes that were already valid keep their stop markers and remain
+`--legal-restart`'s business. Measured with the flag off: `Rasputin` 15 → 17
+packed subtunes, `One_Man_and_his_Droid` 11 → 13, `Mega_Apocalypse` 10 → 11,
+and with the flag on not one byte of the corpus changes.
+
+> The `version == 8` branch was unreachable when this was written, because
+> `detect()` then produced only 0–7 or `0xFF`. It is live now: 8 is the digi
+> engine and 9 is Chain Reaction.
 
 ### A second engine: interleaved tables and a different pattern grammar
 

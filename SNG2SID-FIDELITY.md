@@ -261,6 +261,24 @@ ours 0 and 1 each have an empty third voice and come back silent *in place*;
 ours 15 and 16, carrying 309 and 621 sounding rows between them, do not come
 back at all. Seven corpus files are affected — see the table in `FIDELITY.md`.
 
+**Fixed in v0.5.49**, converter-side and unconditionally:
+`tracks.ensure_playable_orderlists` gives such a voice the one-step placeholder
+orderlist every other unrepresentable subtune already gets, so every subtune
+stays valid and the count never falls short of the index. The repair does not
+sit behind `--legal-restart`, because a zero-length voice loses data whatever
+the restart positions are — until v0.5.49 it happened only as a side effect of
+that flag, so the default conversion was the lossy one.
+
+One coupling is worth knowing if you touch this: `greloc.c:244`'s restart check
+runs *inside* the all-voices-nonzero guard, so an invalid subtune's illegal
+restart position was never examined. Repairing the empty voice on its own
+exposes it and makes the whole export abort — `Rasputin` goes from 15 subtunes
+to no file. The repair therefore also legalises restart positions within the
+subtunes it revives, and only those. Measured with `--legal-restart` off:
+`Rasputin` 15 → 17, `One_Man_and_his_Droid` 11 → 13, `Mega_Apocalypse` 10 → 11.
+With the flag on, no corpus file's bytes change at all — the flag was already
+doing this repair by accident.
+
 Two consequences worth separating:
 
 1. **For measurement.** A comparison against a stub scores our converter
