@@ -372,3 +372,45 @@ def test_a_conversion_that_plays_nothing_is_still_a_defect():
     text = fidelity.report(rows, _Args())
     assert "- measured: **2** of 2" in text
     assert "mean melody similarity: **50%**" in text
+
+
+# --- the scratch directory -------------------------------------------------
+#
+# Every file the harness writes has a fixed name -- a.sng, b.sid, o.sid -- so
+# two runs sharing a directory overwrite each other between the write and the
+# read, and each measures whichever file won the race. Nothing fails; the
+# numbers are plausible and about the wrong tune. It has contaminated a real
+# A/B in this repo, and this project runs concurrent agents as a matter of
+# course, so the default has to be private.
+
+
+def test_two_runs_never_share_a_scratch_directory():
+    a, owned_a = fidelity.make_workdir()
+    b, owned_b = fidelity.make_workdir()
+    try:
+        assert a != b
+        assert a.is_dir() and b.is_dir()
+        assert owned_a and owned_b
+        # The collision is between identically named files, so distinct
+        # directories are the whole guarantee.
+        (a / "a.sng").write_bytes(b"first")
+        (b / "a.sng").write_bytes(b"second")
+        assert (a / "a.sng").read_bytes() == b"first"
+    finally:
+        shutil.rmtree(a, ignore_errors=True)
+        shutil.rmtree(b, ignore_errors=True)
+
+
+def test_a_named_directory_is_used_as_given_and_not_owned(tmp_path):
+    """--workdir is the debugging route: it keeps the intermediates, so the
+    caller owns them and this script must not delete them."""
+    target = tmp_path / "keep" / "me"
+    d, owned = fidelity.make_workdir(str(target))
+    assert d == target and d.is_dir()
+    assert owned is False
+
+
+def test_the_default_is_unset_so_nothing_inherits_one_path():
+    """listen.py takes its default from this constant too. If it named a
+    directory, both scripts would default to the same one again."""
+    assert fidelity.WORKDIR is None or os.environ.get("H2G_FIDELITY_WORK")

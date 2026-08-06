@@ -4,6 +4,46 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.66 — 2026-08-06
+
+- end the instrument count at the records; give each fidelity run its own scratch directory
+- the instrument-count walk had nothing to stop it at the end of the records.
+  In the 34 files carrying the two-stage attack array it ran straight into
+  that array -- same 8-byte rows, and its `+2` is a frame count that is a
+  legal waveform often enough to keep going -- and reported roughly twice the
+  truth: IK+ 30 where 15 are real, Wiz 40/20, Delta 44/22, Bangkok 58/29.
+  `detect._bound_instruments` ends the count at the array, only where the gap
+  is a whole number of records (three files are not, and keep their count).
+  29 conversions change; **no file gains a dangling instrument reference**
+  under the shipped options, and in eight the bound lands on exactly the
+  highest instrument the music plays.
+- **This refutes what H2G-CONVERSION-METHOD.md §4.1 argued for eleven
+  versions**: that a 56-59 instrument count could not be an over-read because
+  Bangkok Knights and Thundercats share 29 byte-identical records, i.e. a
+  shared bank appended to the player. The bank is real but it is 16 records;
+  the other 13 of those 29 are rows of the attack array, which recurs across
+  these files because they share a player. No corpus file was ever over
+  Goattracker's 51-instrument ceiling -- ten were detected over it and the
+  nine of those that convert were listed in `SURVEY.md` as losing real
+  instruments to it. That paragraph is now gone, and the prose behind it in
+  `survey.py` corrected rather than only its output.
+- **Invisible to both metrics, and that is expected**: the removed records
+  were never referenced, so nothing that plays changed. Measured base vs
+  fix at presets over 10 s -- mean melody, sequence, pitch, wave and noise
+  frames identical to every decimal on all 81 scored files, no status
+  changes. The fix is to what the file *contains*, not to what it sounds
+  like.
+- fixed the bounds guard the bound is computed from: `not 0 <= off and ...`
+  binds as `(not (0 <= off)) and (...)`, so it rejected only a negative
+  offset that was also in range -- nothing -- and passed a table running off
+  the end of the file. No corpus file changes; it was latent.
+- `fidelity.py` and `listen.py` now take a private scratch directory per run.
+  They shared one path with fixed filenames (`a.sng`, `b.sid`, `o.sid`), so
+  two concurrent runs overwrote each other between write and read and each
+  measured whichever file won -- silently, with plausible numbers about the
+  wrong tune. It has already contaminated one A/B in this repo. `--workdir`
+  still names one for debugging.
+
 ## 0.5.65 — 2026-08-06
 
 - census the effect byte's high bits; read the two-stage waveform

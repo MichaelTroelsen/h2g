@@ -667,6 +667,7 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.effect_two_stage:
         log("Instrument effect byte..: two-stage waveform (bit $04 is not "
             "an arpeggio in this player)")
+        _bound_instruments(det, log)
 
     det.freq_table = find_freq_table(sid)
     if det.freq_table is not None:
@@ -915,6 +916,52 @@ def _find_two_stage(sid: SidFile, det: Detection):
     instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
     off = attack - instr_cpu + det.instr_start
     span = max(det.instr_used, 0) * det.instr_stride
-    if not 0 <= off and off + span + 2 <= len(data):
+    # Parenthesised: `not 0 <= off and ...` binds as `(not (0 <= off)) and
+    # (...)`, which rejects only a negative offset that is also in range --
+    # i.e. nothing -- and lets a table running off the end of the file
+    # through. This is the guard on the offset the instrument bound is
+    # computed from, so a bad one would be silently trusted.
+    if not (0 <= off and off + span + 2 <= len(data)):
         return False, -1, -1
     return True, off, off + 2
+
+
+def _bound_instruments(det: Detection, log: Logger):
+    """End the instrument table where the two-stage array begins.
+
+    The count comes from walking the records in `instr_stride` steps and
+    stopping at the first +2 byte that is not a waveform. Nothing stops that
+    walk at the end of the records: the array `_find_two_stage` just located
+    follows them immediately, its rows are the same 8 bytes long, and its own
+    +2 -- the low byte of the duration -- is a legal waveform often enough to
+    keep the walk going. So it counts both tables and lands at roughly twice
+    the truth: IK+ 30 where 15 are real, Wiz 40 where 20 are, Delta 44/22.
+
+    The consequence is not cosmetic. Those phantom records are written out as
+    instruments with an ADSR read from duration bytes, and a table of 58 trips
+    the wavetable ceiling, so files were reported as losing real instruments
+    to Goattracker's limit when they have half as many as counted.
+
+    `two_stage_wave` is the array's +1, so the array -- and therefore the end
+    of the records -- is one byte below it. Applied only when that lands on an
+    exact multiple of the stride, i.e. when the two tables really are adjacent
+    and equally sized; three corpus files (ACE II, Trans-Atlantic Balloon
+    Challenge, W.A.R.) do not, and keep the count they had.
+
+    Checked against what the music asks for rather than against the
+    arithmetic: over the 34 corpus files with this array, the bound never
+    falls below the highest instrument any pattern references, and in four
+    (Dragon's Lair II, Kings of the Beach ingame, Lightforce, Nemesis) it is
+    exactly that instrument. An accidental boundary does not land on the last
+    instrument a tune plays, four times.
+    """
+    base = det.two_stage_wave - 1
+    span = base - det.instr_start
+    if span <= 0 or span % det.instr_stride:
+        return
+    bound = span // det.instr_stride
+    if bound >= det.instr_used:
+        return
+    log(f"Instrument table ends at: ${base:X} (file offset) -- "
+        f"{det.instr_used} counted, {bound} before the two-stage array")
+    det.instr_used = bound

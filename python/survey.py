@@ -448,16 +448,18 @@ def build_report(results: list[Result], sid_dir: Path,
         names = ", ".join(f"`{r.path.name}`" for r in sorted(suspect, key=lambda x: x.path.name))
         dropped = sum(r.instruments - MAX_INSTRUMENTS for r in suspect)
         lines.append(f"- **{len(suspect)} tunes carry more than {MAX_INSTRUMENTS} "
-                     f"instruments and lose the excess** ({names}) — {dropped} real "
-                     "instruments dropped in total. These tables are genuine, not a "
-                     "detection artefact: the records are mostly distinct, and a set of "
-                     "them recurs byte-identically across these files, i.e. a shared "
-                     "Hubbard instrument bank appended to the player. The limit is "
-                     "Goattracker's: each instrument costs 5 wavetable entries against a "
-                     "255-entry table addressed by a single length byte, so at most "
+                     f"instruments and lose the excess** ({names}) — {dropped} "
+                     "instruments dropped in total. The limit is Goattracker's: each "
+                     "instrument costs 5 wavetable entries against a 255-entry table "
+                     "addressed by a single length byte, so at most "
                      f"{GT_MAX_TABLELEN // WAVE_ENTRIES_PER_INSTR} are representable. "
                      "Patterns referencing a dropped slot play with an undefined "
-                     "instrument — see the flag in the table below.")
+                     "instrument — see the flag in the table below. Check any entry "
+                     "here against the instrument count the log reports: until v0.5.66 "
+                     "this list held nine files that were never over the limit (ten "
+                     "detected over it, one of which does not convert), because the "
+                     "count ran off the end of the records into the table that follows "
+                     "them.")
     dangling = [r for r in ok if r.dangling]
     decode_fault = [r for r in dangling if r.dangling_sub0]
     phantom = [r for r in dangling if not r.dangling_sub0]

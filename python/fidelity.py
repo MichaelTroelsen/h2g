@@ -84,9 +84,42 @@ SIDM2_ROOT = os.environ.get(
 
 # gt2reloc strcpy()s argv[1] into a 60-byte MAX_FILENAME buffer without
 # reducing it to a basename, so it is run with short names and a short cwd.
-WORKDIR = os.environ.get("H2G_FIDELITY_WORK", r"C:\t\h2gfid")
+WORKDIR_ROOT = os.environ.get("H2G_FIDELITY_ROOT", r"C:\t")
+
+# The scratch directory is per-run, and unset here on purpose. Every file in
+# it has a fixed name -- a.sng, b.sid, o.sid -- so two harnesses sharing one
+# directory overwrite each other's input between the write and the read, and
+# each measures whichever file won the race. It fails silently: the numbers
+# are plausible, just not about the file named beside them. That is not
+# hypothetical, it has contaminated an A/B in this repo, and this project
+# forks concurrent agents as a matter of course.
+#
+# H2G_FIDELITY_WORK pins it to one directory for debugging, which is only
+# safe for one run at a time.
+WORKDIR = os.environ.get("H2G_FIDELITY_WORK")
 
 DEFAULT_SECONDS = 8
+
+
+def make_workdir(explicit: str | None = None) -> tuple[Path, bool]:
+    """Return (directory, owned). `owned` means this run created it.
+
+    An explicit path is used as given and never removed -- it is the debugging
+    route, and deleting a directory the caller named is not this script's
+    business. Otherwise a private one is made under WORKDIR_ROOT, which is
+    short because gt2reloc's cwd matters as much as its argv; if that root is
+    unavailable the system temp directory is the fallback, which is longer but
+    correct, and the filenames handed to gt2reloc are bare either way.
+    """
+    if explicit:
+        d = Path(explicit)
+        d.mkdir(parents=True, exist_ok=True)
+        return d, False
+    try:
+        Path(WORKDIR_ROOT).mkdir(parents=True, exist_ok=True)
+        return Path(tempfile.mkdtemp(prefix="fid", dir=WORKDIR_ROOT)), True
+    except OSError:
+        return Path(tempfile.mkdtemp(prefix="h2gfid")), True
 
 
 # --------------------------------------------------------------------------
@@ -969,7 +1002,11 @@ def main(argv=None) -> int:
                         "by a dropped subtune, and measured to move exactly "
                         "the two corpus files that are displaced. 1 disables it")
     p.add_argument("--workdir", default=WORKDIR,
-                   help="short scratch path; gt2reloc's filename buffer is 60 bytes")
+                   help="scratch path, kept short because gt2reloc's filename "
+                        "buffer is 60 bytes. Default is a private directory "
+                        "per run: the files in it have fixed names, so two "
+                        "harnesses sharing one directory silently measure each "
+                        "other's files. Name one only to keep the intermediates")
     p.add_argument("--siddump", default=SIDDUMP)
     p.add_argument("--gt2reloc", default=GT2RELOC)
     p.add_argument("--register", action="store_true",
@@ -982,12 +1019,15 @@ def main(argv=None) -> int:
         print(f"error: siddump not found: {args.siddump}", file=sys.stderr)
         return 1
 
-    workdir = Path(args.workdir)
+    workdir, owned = make_workdir(args.workdir)
     try:
-        workdir.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        workdir = Path(tempfile.mkdtemp(prefix="h2gfid"))
+        return _run(p, args, workdir)
+    finally:
+        if owned:
+            shutil.rmtree(workdir, ignore_errors=True)
 
+
+def _run(p, args, workdir: Path) -> int:
     if args.pair:
         a, b = (Path(x) for x in args.pair)
         sub = resolve_subtune(a, args.subtune)

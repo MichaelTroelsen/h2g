@@ -38,8 +38,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fidelity import (_preset_opts, legalise_restarts, pack_sid, run_siddump,
-                      GT2RELOC, SIDDUMP, WORKDIR)
+from fidelity import (_preset_opts, legalise_restarts, make_workdir, pack_sid,
+                      run_siddump, GT2RELOC, SIDDUMP, WORKDIR)
 from h2g import __version__
 from h2g.convert import convert
 
@@ -184,6 +184,9 @@ def main(argv=None) -> int:
     p.add_argument("--sid2wav", default=SID2WAV)
     p.add_argument("--gt2reloc", default=GT2RELOC)
     p.add_argument("--siddump", default=SIDDUMP)
+    # Shares fidelity.py's scratch layout, and so its collision: a.sng/b.sid
+    # are fixed names, and staging a listening pass while a measurement runs
+    # would have both writing them. Default is a private directory per run.
     p.add_argument("--workdir", default=WORKDIR)
     args = p.parse_args(argv)
 
@@ -206,8 +209,7 @@ def main(argv=None) -> int:
     sid_dir = Path(args.sid_dir) if args.sid_dir else None
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
-    workdir = Path(args.workdir)
-    workdir.mkdir(parents=True, exist_ok=True)
+    workdir, owned_workdir = make_workdir(args.workdir)
     doc = json.loads(Path(args.presets).read_text(encoding="utf-8"))
 
     lines = [
@@ -299,6 +301,8 @@ def main(argv=None) -> int:
     ]
     (outdir / "LISTENING.md").write_text("\n".join(lines), encoding="utf-8")
     print(f"staged {staged} tune(s) -> {outdir}", file=sys.stderr)
+    if owned_workdir:
+        shutil.rmtree(workdir, ignore_errors=True)
     return 0
 
 

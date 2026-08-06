@@ -333,19 +333,38 @@ The table "ends" where the bytes stop looking like waveforms.
 > over-read by one instrument. A tune using a legitimate waveform value not in
 > this 20-entry set (e.g. `$31`, tri+pulse+gate) truncates early.
 
-**A large count is not evidence of over-reading** — a trap worth naming,
-because it looks like one. Several corpus tunes report 56–59 instruments where
-the music plays a dozen, which reads as a runaway terminator. It isn't: those
-records are real. Bangkok Knights and Thundercats share **29 byte-identical
-8-byte records**, and entries such as `00 81 81 05 63 fd 00 00` recur unchanged
-across Bangkok Knights, Thundercats and Knucklebusters — a shared Hubbard
-instrument bank appended to the player, of which any one tune uses a subset.
-Only 2 of 58 records are all-zero.
+**A large count *was* evidence of over-reading, and this document argued the
+opposite for eleven versions.** The reasoning ran: several corpus tunes report
+56–59 instruments where the music plays a dozen, which looks like a runaway
+terminator, but cannot be — because Bangkok Knights and Thundercats share 29
+byte-identical 8-byte records, so the table must be a shared Hubbard bank
+appended to the player, of which any tune uses a subset.
 
-The real constraint is downstream: each instrument costs 5 wavetable entries
-against a 255-entry table with a one-byte length, so **at most 51 instruments
-are representable at all** regardless of how many the table holds. That, not
-`MAX_INSTR` (64), is why the writer clamps.
+The recurrence is real. It is not evidence for the count. In the 34 files that
+carry the two-stage attack array (§7), a second table of the same 8-byte rows
+begins immediately after the records, and the walk goes straight through it:
+its own `+2` is the low byte of a frame counter, which is a legal waveform
+often enough to keep going. So the count came out at roughly twice the truth —
+IK+ 30 where 15 are real, Wiz 40/20, Delta 44/22, Bangkok Knights 58/29 — and
+the 29 recurring rows are **16 instrument records and 13 rows of the attack
+array**, which recurs across these files for the obvious reason that they
+share a player. The shared bank exists; it is 16 records, not 29, and the
+figure that was quoted as proof was half of it player data.
+
+`_bound_instruments` ends the count at the array. It applies only where the
+gap is a whole number of records — three files put something between the two
+tables and keep the count they had — and it never cuts an instrument any
+pattern reaches. Corroboration beyond the arithmetic: in several files
+(Dragon's Lair II, Kings of the Beach ingame, Lightforce, Nemesis, Star Paws,
+Sigma Seven, IK+, Thanatos) the boundary lands on *exactly* the highest
+instrument the music plays.
+
+The downstream constraint is unchanged: each instrument costs 5 wavetable
+entries against a 255-entry table with a one-byte length, so **at most 51 are
+representable at all** regardless of how many the table holds. That, not
+`MAX_INSTR` (64), is why the writer clamps. What changed is that no corpus
+file reaches it: the ten that were reported as losing real instruments to that
+ceiling were all counting the array.
 
 ### 4.2 Pattern count — table-adjacency arithmetic
 
@@ -1292,7 +1311,10 @@ program (IK+ `$E33A` builds `$40`/`$41` from it), so a record setting both
 bits has no attack waveform to read. And a record's `$04` is meaningless if
 the attack byte is not a legal waveform nibble — 24 of 295 are not, and every
 one of them lies in the parallel array itself, which the instrument-count
-sniffer (§4.1) walks straight into and reports as extra instruments.
+sniffer (§4.1) walked straight into and reported as extra instruments until
+v0.5.66. Locating the array is what made that boundary knowable: the reading
+below is not written to the output, but it ended a miscount that had every
+one of these 34 files carrying roughly twice the instruments it has.
 
 ### Reading it is not the same as being able to write it
 

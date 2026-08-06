@@ -81,6 +81,11 @@ test dependency).
   of whether a conversion *sounds* right, so regenerate it after a commit that
   changes what the converter emits — and never from a working tree with
   unrelated edits in `h2g/`, for the same reason as the artefacts above.
+  Since v0.5.66 each run gets its own scratch directory, so two of them (or a
+  `fidelity.py` and a `listen.py`) can run at once. Before that they shared
+  one directory with fixed filenames and silently measured each other's
+  files — plausible numbers about the wrong tune. Pass `--workdir` only to
+  keep the intermediates, and never pass the same one twice concurrently.
 - **Do not treat `FIDELITY.md` as the last word on fidelity.** It compares note
   *attacks*; it cannot see an envelope, filter, tempo or timbre. v0.5.46 fixed a
   real defect that rewrote 66 rows of one file and moved the report by zero
