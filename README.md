@@ -681,6 +681,19 @@ one vibrato cycle for a re-struck note.
 fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
 elsewhere. Regenerate it after any commit that changes conversion.
 
+`siddump` names a note from the SID frequency register, so both sides have to
+be read on the same tuning or the comparison is measuring a key change. Four
+corpus files (Kings of the Beach intro, One on One, Powerplay Hockey, Rock
+Tells the Tale) carry frequency tables computed for the **NTSC** C64's faster
+clock, which puts every register value 0.647 semitones below the PAL
+equivalent — near enough a whole semitone that `siddump` names the original in
+a different key and scores four files that play the right notes at 0%. The
+harness reads each player's own frequency table (`sidfile.find_freq_table`) and
+recalibrates the *original's* dump to it with `siddump -c`; ours is always
+Goattracker-tuned, so nothing on our side moves. A row that needed it says so.
+This is a naming correction, not an allowance: a table whose *index* is shifted
+rather than its tuning is a converter defect and is fixed in the converter.
+
 Two further comparisons are wired up behind flags, both shelling out to
 [SIDM2](SIDM2-FIDELITY-TESTER.md)'s tools and inheriting their dependencies:
 `--audio` (onset-aligned audio, tolerates our tempo offset) and `--register`

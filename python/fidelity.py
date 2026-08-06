@@ -71,6 +71,7 @@ from pathlib import Path
 from h2g import __version__
 from h2g.convert import convert
 from h2g.goatwriter import FORMAT_GTS5
+from h2g.sidfile import find_freq_table, load_sid
 
 # Defaults are the tools as they sit on this machine; every one is overridable
 # so the harness is not pinned to one install.
@@ -183,10 +184,30 @@ def wave_timeline(voice: Voice, nframes: int) -> list[int]:
     return out
 
 
+# siddump's own middle C, the register value it names `C-4` unless -c says
+# otherwise (siddump.c prints it as "Middle C frequency is $1168").
+SIDDUMP_MIDDLE_C = 0x1168
+
+
+def calibration(detune: float) -> int:
+    """siddump -c value for a player whose table is `detune` semitones flat.
+
+    Note names come out of a register value, so a file whose frequency table
+    was computed for another clock is named in another key: the four NTSC
+    tables in the corpus sit 0.65 semitones below the PAL ones, which siddump
+    rounds to a whole semitone and reports as a tune playing the wrong notes.
+    Recalibrating the *original's* dump to its own table puts both sides on one
+    tuning, so what is left in the comparison is the conversion.
+    """
+    return round(SIDDUMP_MIDDLE_C * 2 ** (detune / 12))
+
+
 def run_siddump(sid: Path, seconds: int, subtune: int,
-                exe: str = SIDDUMP) -> list[Voice]:
-    proc = subprocess.run([exe, str(sid), f"-a{subtune}", f"-t{seconds}"],
-                          capture_output=True, text=True, timeout=180,
+                exe: str = SIDDUMP, calibrate: int = 0) -> list[Voice]:
+    cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}"]
+    if calibrate:
+        cmd.append(f"-c{calibrate:X}")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
                           stdin=subprocess.DEVNULL)
     return parse_dump(proc.stdout)
 
@@ -583,7 +604,14 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
 
     local_orig = workdir / "o.sid"
     shutil.copyfile(sid, local_orig)
-    a = run_siddump(local_orig, args.seconds, args.subtune, args.siddump)
+    # The original is traced on its own tuning; ours is always Goattracker's.
+    # Only a table that is off the semitone grid needs this -- a shifted one is
+    # a converter defect and gets no allowance (see sidfile.find_freq_table).
+    ft = find_freq_table(load_sid(str(sid)))
+    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    if cal:
+        row["calibration"] = {"detune": round(ft.detune, 3), "c": cal}
+    a = run_siddump(local_orig, args.seconds, args.subtune, args.siddump, cal)
     b = run_siddump(packed, args.seconds, args.subtune, args.siddump)
     row["status"] = "measured"
     row.update(compare(a, b))
@@ -740,6 +768,17 @@ def report(rows: list[dict], args) -> str:
             out.append(
                 f"- {patched} file(s) needed their song restart position "
                 "legalised before gt2reloc would pack them (SNG2SID-FIDELITY.md §2)")
+
+        cal = [r for r in rows if r.get("calibration")]
+        if cal:
+            names = ", ".join(sorted(r["file"] for r in cal))
+            out.append(
+                f"- {len(cal)} file(s) carry a frequency table tuned away from "
+                "Goattracker's, so siddump was recalibrated to each one before "
+                "naming the original's notes -- otherwise the same music comes "
+                "out named in another key and scores 0%. The tuning itself is "
+                "not corrected and cannot be: it is what the file plays. "
+                f"({names})")
 
         # The mean hides the shape, and the shape is the finding: this is not
         # a corpus that is uniformly 2/3 right, it is one where most files are

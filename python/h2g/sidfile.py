@@ -230,6 +230,127 @@ def _read_block_copy(data: bytes, off: int):
     return src, dst, data[off + 10]
 
 
+# --------------------------------------------------------------------------
+# the player's own note frequency table
+# --------------------------------------------------------------------------
+# Goattracker's freqtbl[0] (gplay.c:9/23), the frequency its lowest note
+# FIRSTNOTE ($60) plays. Every Hubbard player carries the equivalent table of
+# its own, and the two do not have to agree -- neither on where the note index
+# starts nor on what pitch it is tuned to. Both differences are measurable from
+# the file, and they mean opposite things:
+#
+#   * an index shift is a *converter* concern -- Skate or Die's table has a
+#     $0000 dummy at entry 0, so its note byte n means Goattracker's note n-1,
+#     and emitting $60+n plays the whole tune a semitone sharp;
+#   * a tuning offset is not. Four corpus files (Kings of the Beach intro, One
+#     on One, Powerplay Hockey, Rock Tells the Tale) carry tables computed for
+#     the NTSC C64's faster clock, so every register value is 0.65 semitones
+#     below the PAL equivalent. The notes are right; the whole tune sounds a
+#     little flat, and nothing in a Goattracker file can express that. It
+#     matters only to a harness that names notes from register values.
+GT_FREQ0 = 0x0117
+
+# How far off the semitone grid a table may sit and still be read as an index
+# shift rather than a tuning. The two populations are not close: a shifted
+# table is within 7 cents of the grid, and the NTSC tables sit 65 cents off it
+# (985248/1022727 clocks = 0.647 semitones).
+_GRID_TOLERANCE = 0.15
+
+
+@dataclass(frozen=True)
+class FreqTable:
+    """A player's note frequency table, placed against Goattracker's.
+
+    `shift` is what a note byte must be offset by to name the same pitch in
+    Goattracker (-1 for a table whose entry 0 is an unused $0000), and
+    `detune` is what is left over: the semitones the table sits below
+    Goattracker's tuning, which no note number can express.
+    """
+    addr: int          # C64 address of entry 0
+    start: int         # first entry with a frequency in it
+    length: int        # entries in the validated run
+    shift: int
+    detune: float
+
+
+def _semitones(freq: float) -> float:
+    """Goattracker note index (fractional) for a SID frequency register value."""
+    from math import log2
+    return 12 * log2(freq / GT_FREQ0)
+
+
+def _table_run(vals, start: int) -> int:
+    """How many entries from `start` rise by one semitone each, +-14 cents."""
+    from math import log2
+    n, i = 0, start
+    while i + 1 < len(vals) and vals[i] > 0 and vals[i + 1] > vals[i]:
+        if abs(1200 * log2(vals[i + 1] / vals[i]) - 100) > 14:
+            break
+        n += 1
+        i += 1
+    return n + 1 if n else 0
+
+
+def _freq_table_sites(data: bytes):
+    """Addresses a player looks a note frequency up in.
+
+    Three idioms cover the corpus, all of them "index the note, fetch the
+    frequency": `ASL / TAY / LDA tbl,Y` and `ASL / TAX / LDA tbl,X` for the
+    lo,hi,lo,hi tables, and a bare `TAY / LDA tbl,Y` for the split ones. The
+    candidates are only candidates -- each is confirmed by reading the table
+    and checking it really does rise a semitone at a time.
+    """
+    for i in range(len(data) - 5):
+        b = data[i]
+        if b == 0x0A and data[i + 1] == 0xA8 and data[i + 2] == 0xB9:
+            yield data[i + 3] | (data[i + 4] << 8)
+        elif b == 0x0A and data[i + 1] == 0xAA and data[i + 2] == 0xBD:
+            yield data[i + 3] | (data[i + 4] << 8)
+        elif b == 0xA8 and data[i + 1] == 0xB9 and (i == 0 or data[i - 1] != 0x0A):
+            yield data[i + 2] | (data[i + 3] << 8)
+
+
+def find_freq_table(sid: "SidFile") -> Optional[FreqTable]:
+    """The player's note frequency table, or None if no candidate validates.
+
+    Six corpus files hide their lookup behind an idiom this does not know; a
+    file with no table found keeps the default mapping, which is what it had
+    before this existed. The longest validated run wins, so a file carrying
+    two players (Powerplay Hockey has both a classic and a digi one) is read
+    from the table with the most entries -- and where the two disagree about
+    the *shift*, neither is applied, because a wrong shift transposes a whole
+    tune and no shift merely leaves it as it was.
+    """
+    data = sid.data
+    best: Optional[FreqTable] = None
+    shifts = set()
+    seen = set()
+    for addr in _freq_table_sites(data):
+        if addr in seen:
+            continue
+        seen.add(addr)
+        off = sid.to_offset(addr)
+        if not 0 <= off < len(data) - 8:
+            continue
+        n = min(100, (len(data) - off) // 2)
+        vals = [data[off + 2 * i] | (data[off + 2 * i + 1] << 8) for i in range(n)]
+        start, run = max(((s, _table_run(vals, s)) for s in range(3)),
+                         key=lambda t: t[1])
+        if run < 36:
+            continue
+        offset = _semitones(vals[start]) - start
+        shift = round(offset)
+        if abs(offset - shift) > _GRID_TOLERANCE:
+            shift = 0
+        shifts.add(shift)
+        cand = FreqTable(addr, start, run, shift, offset - shift)
+        if best is None or run > best.length:
+            best = cand
+    if best is not None and len(shifts) > 1:
+        best = replace(best, shift=0, detune=best.detune + best.shift)
+    return best
+
+
 @dataclass
 class SidFile:
     path: str

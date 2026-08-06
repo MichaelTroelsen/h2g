@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.63 — 2026-08-06
+
+- read the player's note frequency table: fix Skate or Die's shifted note base, name NTSC-tuned originals on their own tuning
+
 ## 0.5.62 — 2026-08-06
 
 - read the effect byte's drum and arpeggio only where the player has them

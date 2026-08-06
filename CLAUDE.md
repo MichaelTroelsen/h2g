@@ -120,6 +120,14 @@ test dependency).
     (Devils Galop). Applied only to a file whose tables as they stand name
     no patterns, so — like the relocation — it can rescue a file that reads
     nothing and never disturb one that reads correctly.
+    Also `find_freq_table`, which locates the player's own note frequency
+    table and places it against Goattracker's. It returns two numbers that
+    mean opposite things: a `shift` (the note byte is offset, a converter
+    defect — one corpus file, Skate or Die intro, whose table has a `$0000`
+    at entry 0) and a `detune` (the whole table is tuned elsewhere, which
+    no Goattracker file can express — four files carrying NTSC tables).
+    Only the shift is applied; the detune is reported and used by
+    `fidelity.py` to name the original's notes on its own tuning.
   - `search.py` — wildcard opcode-pattern search (`search_file`, port of `SSearchfile`).
   - `detect.py` — player-engine signature chains (`detect`, port of the
     `FindInstruments`/`FindSubSongs`/`FindTrackSelector`/`FindPattern`/

@@ -132,7 +132,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
                        status_bit6: bool = False,
-                       span: Optional[List[int]] = None) -> Optional[List[int]]:
+                       span: Optional[List[int]] = None,
+                       note_base: int = 0) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -151,6 +152,10 @@ def _build_raw_pattern(data: bytes, addr: int,
     consumed (terminator included) -- what phantom_patterns needs to know
     which file bytes an entry would claim as pattern data. Nothing is
     appended when the decode fails.
+
+    `note_base` shifts every note byte before it becomes a Goattracker note,
+    for the player whose frequency table does not start where Goattracker's
+    does (detect.Detection.note_base). Zero for all but one corpus file.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -243,7 +248,12 @@ def _build_raw_pattern(data: bytes, addr: int,
                 g_note &= 0x7F
             if g_note >= 0x5C:
                 g_note = 0x5C
-            g_note += 0x60
+            # A shifted table can push the lowest byte below its own entry 0;
+            # that entry holds $0000 in the one player this applies to, so the
+            # player sounds no pitch there at all. Goattracker's bottom note is
+            # 16 Hz and equally inaudible, which is what the byte already
+            # produced before the shift existed.
+            g_note = max(0, g_note + note_base) + 0x60
 
         resc_instr = -1
         if g_note == GT_NO_NOTE and g_instrument != 0:
@@ -316,7 +326,8 @@ DIGI_REST = 0x60
 DIGI_MAX_NOTE = 0x5C        # same ceiling the classic decoder clamps to
 
 
-def _build_raw_pattern_digi(data: bytes, addr: int) -> Optional[List[int]]:
+def _build_raw_pattern_digi(data: bytes, addr: int,
+                            note_base: int = 0) -> Optional[List[int]]:
     """Flat event stream for one digi-engine pattern, or None if out of range.
 
     Effects $82 and $83 are parsed for their length but not translated -- their
@@ -369,7 +380,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int) -> Optional[List[int]]:
             # ($BD) would sustain the previous note instead.
             events += [GT_KEYOFF, 0x00, 0x00, 0x00]
         else:
-            note = min(b, DIGI_MAX_NOTE) + 0x60
+            note = max(0, min(b, DIGI_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
@@ -413,7 +424,8 @@ CMDTABLE_MAX_NOTE = 0x5C
 def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 operands, instr_cmd: int,
                                 frames_per_row: int = 1,
-                                collect: Optional[Set[int]] = None
+                                collect: Optional[Set[int]] = None,
+                                note_base: int = 0
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
 
@@ -466,7 +478,8 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
         else:
             if addr + 1 >= len(data):
                 return None
-            note = min(data[addr + 1] & 0x7F, CMDTABLE_MAX_NOTE) + 0x60
+            note = max(0, min(data[addr + 1] & 0x7F,
+                              CMDTABLE_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
             addr += 2
         events += [GT_NO_NOTE, 0x00, 0x00, 0x00] * (rows - 1)
@@ -545,13 +558,15 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return None
     addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
     if det.pattern_dialect == "digi":
-        return _build_raw_pattern_digi(data, addr)
+        return _build_raw_pattern_digi(data, addr, det.note_base)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
-            det.cmd_instrument, det.frames_per_row)
+            det.cmd_instrument, det.frames_per_row,
+            note_base=det.note_base)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
-                              det.note_flag, status_bit6 and det.status_bit6)
+                              det.note_flag, status_bit6 and det.status_bit6,
+                              note_base=det.note_base)
 
 
 def pattern_top_note(events: List[int]) -> int:

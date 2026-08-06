@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
 from .search import search_file
-from .sidfile import HLEN, SidFile
+from .sidfile import HLEN, FreqTable, SidFile, find_freq_table
 
 WAVEFORMS = {
     0x00, 0x01, 0x09, 0x11, 0x13, 0x15, 0x17, 0x21, 0x23, 0x25, 0x27,
@@ -89,6 +89,15 @@ class Detection:
     # (a pattern-table entry, say) is provably not pointing at pattern data.
     # See patterns.phantom_patterns.
     code_spans: List[Tuple[int, int]] = field(default_factory=list)
+    # The player's note frequency table, once located, and the semitone
+    # offset a pattern's note byte needs to name the same pitch in
+    # Goattracker. 0 for 88 of the 95 corpus files; -1 for the one whose
+    # table has an unused $0000 at entry 0 (Skate or Die intro), which
+    # without this plays a semitone sharp from end to end. See
+    # sidfile.find_freq_table -- the *tuning* half of the same measurement
+    # is deliberately not applied here, only reported.
+    freq_table: Optional[FreqTable] = None
+    note_base: int = 0
 
     @property
     def can_convert(self) -> bool:
@@ -644,6 +653,17 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                                           ("pulse-lo", det.effect_pulse_lo))
                           if ok)
         log(f"Instrument effect byte..: {found}")
+
+    det.freq_table = find_freq_table(sid)
+    if det.freq_table is not None:
+        ft = det.freq_table
+        det.note_base = ft.shift
+        if ft.shift:
+            log(f"Note frequency table....: ${ft.addr:04X}, entry {ft.start} "
+                f"is Goattracker's note 0 ({ft.shift:+d} semitone)")
+        elif abs(ft.detune) > 0.2:
+            log(f"Note frequency table....: ${ft.addr:04X}, tuned "
+                f"{-100 * ft.detune:.0f} cents flat of Goattracker's")
 
     return det
 
