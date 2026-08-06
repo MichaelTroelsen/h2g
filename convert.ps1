@@ -135,9 +135,18 @@ if ($exitCode -ne 0) { exit $exitCode }
 # straight from the output extension, so this turns a conversion into
 # something a SID player can play.
 $wantSid = $Sid
-if ($Presets -and -not $Sid) {
+$multiplier = 1
+if ($Presets) {
     $doc = Get-Content -LiteralPath $Presets -Raw | ConvertFrom-Json
-    if ($doc.always.gt2reloc) { $wantSid = $true }
+    if (-not $Sid -and $doc.always.gt2reloc) { $wantSid = $true }
+    # The song's player advances one row every N frames, and Goattracker's
+    # player only reaches N < 3 by being called more often than once a frame.
+    # presets.py records that N as `multiplier`; gt2reloc's -S applies it by
+    # prepending a CIA stub that reprograms timer A. Without it the packed
+    # .sid plays N times too slow -- see whats-next.md and the tempo
+    # derivation in goatwriter.find_song_speeds.
+    $entry = $doc.songs.($resolvedSid | Split-Path -Leaf)
+    if ($entry -and $entry.multiplier -gt 1) { $multiplier = [int]$entry.multiplier }
 }
 
 if ($wantSid) {
@@ -155,16 +164,23 @@ if ($wantSid) {
     if (Test-Path -LiteralPath $sidOut) { Remove-Item -LiteralPath $sidOut -Force }
 
     # Bare filenames with the working directory set: gt2reloc strcpy()s argv
-    # into a 60-byte buffer before reducing it to a basename.
+    # into a 60-byte buffer before reducing it to a basename. Options must
+    # come *after* both filenames -- gt2reloc reads argv[1] and argv[2]
+    # positionally, so a leading -S2 is taken as the input name and the run
+    # writes nothing at all, silently, exactly like every other gt2reloc
+    # failure.
+    $gtArgs = @((Split-Path -Leaf $sngPath), (Split-Path -Leaf $sidOut))
+    if ($multiplier -gt 1) { $gtArgs += "-S$multiplier" }
     $dir = Split-Path -Parent $sngPath
     Start-Process -FilePath $exe -WorkingDirectory $dir -Wait -NoNewWindow `
-                  -ArgumentList @((Split-Path -Leaf $sngPath), (Split-Path -Leaf $sidOut)) | Out-Null
+                  -ArgumentList $gtArgs | Out-Null
 
     # Never trust the exit code: gt2reloc reports fatal errors through
     # fopen("CON") and SDL routines that do nothing headless, so a refusal is
     # exit 0 with no output and no file. The written file is the only signal.
     if (Test-Path -LiteralPath $sidOut) {
-        Write-Host "Packed $sidOut ($((Get-Item -LiteralPath $sidOut).Length) bytes)"
+        $note = if ($multiplier -gt 1) { " at speed multiplier $multiplier" } else { "" }
+        Write-Host "Packed $sidOut ($((Get-Item -LiteralPath $sidOut).Length) bytes)$note"
     } else {
         Write-Error ("gt2reloc wrote no .sid. The usual cause is the restart position " +
                      "this converter emits for a $FE track byte, which greloc.c:244 " +

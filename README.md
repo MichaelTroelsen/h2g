@@ -479,10 +479,25 @@ calls and the packing step must raise the call rate to match:
 gt2reloc song.sng song.sid -S2      # when "multiplier": 2
 ```
 
-A `.sng` packed without its recorded multiplier plays uniformly
-`multiplier` times too slow. Note that **siddump cannot check this** — it
-ignores the PSID speed field and calls the play routine 50 times a second
-regardless — only a cycle-counting emulator can.
+**Options go after both filenames.** `gt2reloc` reads `argv[1]` and `argv[2]`
+positionally, so `gt2reloc -S2 song.sng song.sid` takes `-S2` as the input
+name and writes nothing — silently, the same way every other `gt2reloc`
+refusal looks.
+
+`convert.ps1 -Sid` and `play.ps1` both apply the recorded multiplier when
+given `-Presets`: the first passes `-S{n}` to the packer, the second prints
+the number of `SHIFT+F6` presses the editor needs, which is the same setting
+reached a different way. A `.sng` packed without it plays uniformly
+`multiplier` times too slow.
+
+**siddump cannot check this** — it ignores the PSID speed field and calls the
+play routine 50 times a second regardless (`siddump.c:309/325`), so `-S`
+changes the packed bytes and not the trace. Measured A/B on `Chain_Reaction`:
+identical melody, sequence, retrigger ratio and attack counts with and
+without it; corpus-wide, applying it moves two files by one point (the CIA
+stub's one-time startup shift) and nothing else. `FIDELITY.md` therefore
+understates every `multiplier > 1` row and says so in its summary. Only a
+cycle-counting emulator can score them.
 
 [`presets.json`](presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.

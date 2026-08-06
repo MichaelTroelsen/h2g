@@ -91,6 +91,7 @@ if (-not (Test-Path -LiteralPath $Song)) {
 }
 $songPath = (Resolve-Path -LiteralPath $Song).Path
 $ext      = [System.IO.Path]::GetExtension($songPath).ToLowerInvariant()
+$speedMultiplier = 1
 
 # ---- convert a .sid -------------------------------------------------------
 if ($ext -eq ".sid") {
@@ -117,6 +118,19 @@ if ($ext -eq ".sid") {
         exit $LASTEXITCODE
     }
     $songPath = (Resolve-Path -LiteralPath $sngOut).Path
+
+    # The editor's equivalent of gt2reloc's -S. A song whose player advances
+    # one row every N frames needs GoatTracker called N times per frame, which
+    # the editor reaches through SHIFT+F6 and the packer through -S. The value
+    # is per song -- presets.py derives it from the player's own speed gate --
+    # so it is read here rather than assumed.
+    if ($Presets) {
+        $pdoc = Get-Content -LiteralPath $Presets -Raw | ConvertFrom-Json
+        $pentry = $pdoc.songs."$stem.sid"
+        if ($pentry -and $pentry.multiplier -gt 1) {
+            $speedMultiplier = [int]$pentry.multiplier
+        }
+    }
 }
 elseif ($ext -ne ".sng") {
     Write-Error "Expected a .sid or .sng file, got '$ext'"
@@ -195,7 +209,14 @@ if ($proc.HasExited) {
 }
 
 Write-Host "running (PID $($proc.Id)) -- F1 plays from the beginning, F2 from current position."
-if ($Tempo -and $Tempo -ne 'none') {
-    Write-Host "tempo written: press SHIFT+F6 once to set speed multiplier 2 for correct timing."
+if ($speedMultiplier -gt 1) {
+    $presses = $speedMultiplier - 1
+    $times = if ($presses -eq 1) { "once" } else { "$presses times" }
+    Write-Host ("this player advances one row every $speedMultiplier frames: press SHIFT+F6 $times " +
+                "to set speed multiplier $speedMultiplier, or it plays $($speedMultiplier)x too slow. " +
+                "convert.ps1 -Sid applies the same value as gt2reloc -S$speedMultiplier.")
+}
+elseif ($Tempo -and $Tempo -ne 'none') {
+    Write-Host "tempo written; this player needs no speed multiplier."
 }
 exit 0

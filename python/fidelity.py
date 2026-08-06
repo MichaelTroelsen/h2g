@@ -275,19 +275,41 @@ def greloc_export(lengths: list[tuple[int, int, int]]) -> dict:
     }
 
 
-def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC) -> Path | None:
+def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC,
+             multiplier: int = 1) -> Path | None:
     """Run gt2reloc, the standalone form of Goattracker's F9 packer.
 
     Returns the packed .sid, or None if gt2reloc refused. Its exit code is
     never the signal: fatal errors go to fopen("CON") and to screen routines
     that do nothing headless, so a refusal is exit 0 with no output and no
     file. The written file is the only thing worth testing.
+
+    `multiplier` becomes gt2reloc's -S, which prepends a CIA stub reprogramming
+    timer A so the play routine is called that many times per frame -- the only
+    way Goattracker reaches a row rate faster than three calls. It changes the
+    packed bytes (speed field $FFFFFFFF, ten bytes at playeradr-10) and it is
+    what makes the tune play at its real rate on hardware.
+
+    It does **not** change what this harness measures. siddump calls the play
+    routine `seconds * 50` times whatever the PSID speed field says
+    (siddump.c:309/325), so the trace is identical with and without -S --
+    verified on Chain_Reaction: same melody, sequence, retrigger ratio and
+    attack counts either way. It is passed anyway so the file the harness packs
+    is the file that would ship; the measurement gap is a siddump limitation
+    and is reported as such in the summary.
+
+    Options must follow both filenames. gt2reloc reads argv[1] and argv[2]
+    positionally, so a leading `-S2` is taken as the input filename and the run
+    writes nothing -- silently, indistinguishable from any other refusal.
     """
     src, dst = workdir / "a.sng", workdir / "b.sid"
     dst.unlink(missing_ok=True)
     src.write_bytes(sng)
+    args = [exe, "a.sng", "b.sid"]
+    if multiplier > 1:
+        args.append(f"-S{multiplier}")
     try:
-        subprocess.run([exe, "a.sng", "b.sid"], cwd=str(workdir), timeout=120,
+        subprocess.run(args, cwd=str(workdir), timeout=120,
                        capture_output=True, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired:
         return None
@@ -520,9 +542,16 @@ def _preset_multiplier(doc: dict, name: str) -> int:
         return 1
 
 
-def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
-    """One file, end to end: convert -> pack -> trace both -> compare."""
-    row: dict = {"file": sid.name, "options": opts}
+def measure(sid: Path, workdir: Path, opts: dict, args,
+            multiplier: int = 1) -> dict:
+    """One file, end to end: convert -> pack -> trace both -> compare.
+
+    `multiplier` is the song's gt2reloc -S value, a property of its player
+    rather than a conversion option, so it rides beside `opts` instead of in
+    it -- convert() takes no such keyword. It reaches the packing step only;
+    siddump cannot honour it (see pack_sid).
+    """
+    row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier}
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:  # noqa: BLE001 -- a file that will not convert is a result
@@ -545,7 +574,7 @@ def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
         if args.subtune in exp["stub"]:
             row["traced_subtune_dropped"] = True
 
-    packed = pack_sid(sng, workdir, args.gt2reloc)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
     if packed is None:
         row["status"] = "not packed"
         row["detail"] = "gt2reloc wrote no .sid"
@@ -687,14 +716,20 @@ def report(rows: list[dict], args) -> str:
             n_ok = n - len(slowed)
             out += [
                 f"- **{len(slowed)} of these {n} files score below their real "
-                "fidelity**, and no rerun will fix it: their player advances "
-                "one row every 2 frames, which Goattracker can only reach with "
-                "`gt2reloc -S2`. That flag reprograms a CIA timer, and siddump "
-                "ignores the PSID speed field entirely -- it calls the play "
-                "routine `seconds x 50` times regardless -- so those tunes are "
-                "traced at half their true row rate and lose roughly half their "
-                "notes inside the window. They carry a `multiplier` in "
-                "presets.json; only a cycle-accurate emulator can measure them."
+                "fidelity, and no rerun will fix it.** Their player advances "
+                "one row every 2 frames, which Goattracker reaches only by "
+                "being called twice a frame. They are packed here with "
+                "`gt2reloc -S2` and the packed `.sid` is correct -- it carries "
+                "the CIA stub that reprograms timer A to 100.25 Hz -- but "
+                "siddump ignores the PSID speed field entirely, calling the "
+                "play routine `seconds x 50` times regardless "
+                "(siddump.c:309/325). Applying `-S` therefore changes the "
+                "bytes and not the trace: measured A/B on one of these files, "
+                "melody, sequence, retrigger ratio and attack counts are "
+                "identical with and without it. So these rows are traced at "
+                "half their true row rate and lose roughly half their notes "
+                "inside the window. Only a cycle-accurate emulator can score "
+                "them; RetroDebugger has confirmed two at their correct rate."
                 + (f" Excluding them, mean melody similarity is "
                    f"**{_fmt_pct(mean_ok / n_ok)}** over {n_ok} file(s)."
                    if n_ok else ""),
@@ -869,12 +904,13 @@ def main(argv=None) -> int:
                 opts["slides"] = True
             if args.effects:
                 opts["effects"] = True
-            row = measure(sid, workdir, opts, args)
-            # Recorded, not applied: gt2reloc's -S reprograms a CIA timer,
-            # and siddump calls the play routine seconds x 50 times whatever
-            # the PSID speed field says. A file needing -S2 therefore traces
-            # at half its real row rate here, and its scores understate.
-            row["multiplier"] = _preset_multiplier(doc, sid.name)
+            # Applied to the packing step, not to the trace: gt2reloc's -S
+            # changes the packed bytes so the tune plays at its real rate,
+            # but siddump calls the play routine seconds x 50 times whatever
+            # the PSID speed field says, so a file needing -S2 still traces
+            # at half its real row rate here and its scores understate.
+            row = measure(sid, workdir, opts, args,
+                          _preset_multiplier(doc, sid.name))
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
                     f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
