@@ -564,6 +564,27 @@ def _preset_multiplier(doc: dict, name: str) -> int:
         return 1
 
 
+def resolve_subtune(sid: Path, requested) -> int:
+    """Which subtune of the original to trace.
+
+    `requested` is an int to force one, or "auto" (the default) to take the
+    PSID header's own `startSong` -- the subtune a player selects when the user
+    selects none, and therefore the one that is *the tune*. Seven corpus files
+    set it past 1 and tracing 0 measured them against the wrong music:
+    Samantha Fox Strip Poker's subtune 0 is a one-note stub against which a
+    correct conversion scored 5%, and at its real startSong it scores 89%.
+
+    Falls back to 0 for anything unreadable -- a header this harness cannot
+    parse is not a reason to skip the file.
+    """
+    if requested != "auto":
+        return int(requested)
+    try:
+        return max(0, load_sid(str(sid)).start_song - 1)
+    except Exception:  # noqa: BLE001 -- an unparseable header is not fatal here
+        return 0
+
+
 def measure(sid: Path, workdir: Path, opts: dict, args,
             multiplier: int = 1) -> dict:
     """One file, end to end: convert -> pack -> trace both -> compare.
@@ -573,7 +594,9 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
     it -- convert() takes no such keyword. It reaches the packing step only;
     siddump cannot honour it (see pack_sid).
     """
-    row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier}
+    sub = resolve_subtune(sid, args.subtune)
+    row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier,
+                 "subtune": sub}
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:  # noqa: BLE001 -- a file that will not convert is a result
@@ -593,7 +616,7 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
         exp = None
     if exp and (exp["stub"] or exp["lost"]):
         row["export"] = exp
-        if args.subtune in exp["stub"]:
+        if sub in exp["stub"]:
             row["traced_subtune_dropped"] = True
 
     packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
@@ -611,8 +634,8 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
     cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
     if cal:
         row["calibration"] = {"detune": round(ft.detune, 3), "c": cal}
-    a = run_siddump(local_orig, args.seconds, args.subtune, args.siddump, cal)
-    b = run_siddump(packed, args.seconds, args.subtune, args.siddump)
+    a = run_siddump(local_orig, args.seconds, sub, args.siddump, cal)
+    b = run_siddump(packed, args.seconds, sub, args.siddump)
     row["status"] = "measured"
     row.update(compare(a, b))
     best_dump = b
@@ -621,10 +644,13 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
         # a subtune whose orderlist exceeds Goattracker's limit costs itself,
         # and every later one shifts down. Trying each of ours against the
         # original's finds the real counterpart instead of scoring a
-        # comparison of two different pieces of music.
-        best, best_at = row["melody"], args.subtune
-        for st in range(args.search_subtunes):
-            if st == args.subtune:
+        # comparison of two different pieces of music. The window is centred on
+        # the traced subtune, not on 0, because a drop shifts the counterpart
+        # by one or two either way and `sub` is now rarely 0.
+        best, best_at = row["melody"], sub
+        half = args.search_subtunes // 2
+        for st in range(max(0, sub - half), sub + args.search_subtunes - half):
+            if st == sub:
                 continue
             cand_dump = run_siddump(packed, args.seconds, st, args.siddump)
             cand = compare(a, cand_dump)
@@ -634,7 +660,12 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
         row["matched_subtune"] = best_at
     row.update(wave_compare(a, best_dump, nframes=args.seconds * 50))
     if row["our_attacks"] == 0:
-        row["status"] = "silent"
+        # A conversion that plays nothing is a defect; a *window* in which
+        # neither side plays anything is not, and calling both "silent" put
+        # BMX_Kidz -- which opens with about thirteen seconds of rest and then
+        # matches at 95% -- in the bucket labelled "plays something else" for
+        # eighteen versions.
+        row["status"] = "window empty" if row["orig_attacks"] == 0 else "silent"
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, args.seconds)
     if args.audio:
@@ -650,6 +681,8 @@ def report(rows: list[dict], args) -> str:
     # A row whose traced subtune came back as an empty stub is a measurement
     # of gt2reloc, not of the converter. It stays in the table, marked, but
     # averaging it in would put a known-meaningless number into the headline.
+    # "window empty" is excluded for the same reason: nothing played on either
+    # side, so the 0% it would contribute measures the window, not the file.
     measured = [r for r in rows if r["status"] in ("measured", "silent")
                 and not r.get("traced_subtune_dropped")]
     excluded = [r for r in rows if r.get("traced_subtune_dropped")]
@@ -658,7 +691,10 @@ def report(rows: list[dict], args) -> str:
         "",
         f"Generated by `python/fidelity.py` (h2g {__version__}"
         f"{', ' + args.label if args.label else ''}), "
-        f"{args.seconds} s of subtune {args.subtune}, {len(rows)} file(s).",
+        f"{args.seconds} s of "
+        + ("each file's default subtune (PSID `startSong`)"
+           if args.subtune == "auto" else f"subtune {args.subtune}")
+        + f", {len(rows)} file(s).",
         "",
         "Each row converts the .sid with its preset options, packs the result "
         "back to a .sid with `gt2reloc`, traces both with `siddump`, and "
@@ -690,7 +726,7 @@ def report(rows: list[dict], args) -> str:
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
-        if r["status"] not in ("measured", "silent"):
+        if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
                 f"| {r['file']} | - | - | - | - | - | - | - | - | - | {r['status']} |")
             continue
@@ -763,6 +799,28 @@ def report(rows: list[dict], args) -> str:
                    f"**{_fmt_pct(mean_ok / n_ok)}** over {n_ok} file(s)."
                    if n_ok else ""),
             ]
+        off0 = sorted(r["file"] for r in rows if r.get("subtune"))
+        if off0:
+            out.append(
+                f"- {len(off0)} file(s) are traced at a subtune other than 0, "
+                "because their PSID header names another one as the default. "
+                "Subtune 0 is not always the tune: Samantha Fox Strip Poker's "
+                "is a one-note stub, and comparing a correct conversion "
+                "against it scored 5% where its real startSong scores 89%. "
+                f"({', '.join(off0)})")
+        shifted = sorted(
+            f"{r['file']} ({r['subtune']}->{r['matched_subtune']})"
+            for r in rows
+            if r.get("matched_subtune") is not None
+            and r["matched_subtune"] != r.get("subtune"))
+        if shifted:
+            out.append(
+                f"- {len(shifted)} file(s) are scored against a subtune of "
+                "*ours* other than the one traced in the original, because our "
+                "numbering shifts when a subtune is dropped. The window is one "
+                "either side; widening it moves no other file, so this is "
+                "identifying the counterpart rather than picking the "
+                f"flattering one. ({', '.join(shifted)})")
         patched = sum(1 for r in rows if r.get("restarts_patched"))
         if patched:
             out.append(
@@ -840,13 +898,20 @@ def report(rows: list[dict], args) -> str:
         "",
         "## What this does not say",
         "",
-        f"- Only **subtune {args.subtune}**, and only its first {args.seconds} "
-        "seconds. A tune whose subtunes shift when one is dropped can be "
-        "compared against the wrong piece of music; `--search-subtunes N` "
-        "tries ours against it and keeps the best match.",
+        "- Only **one subtune per file** -- the PSID header's own `startSong`, "
+        "which is the subtune a player selects when the user selects none -- "
+        f"and only its first {args.seconds} seconds. A tune whose subtunes "
+        "shift when one is dropped can still be compared against the wrong "
+        "piece of music; `--search-subtunes N` tries a window of ours around "
+        "it and keeps the best match. **A short window is its own hazard**: "
+        "`BMX_Kidz.sid` opens with about thirteen seconds of silence, so at "
+        "10 s both sides are empty and it scores 0%; at 60 s it scores 95%.",
         "- *not converted* is the converter refusing the file, which "
         "`SURVEY.md` explains per file; *not packed* is `gt2reloc` refusing "
-        "the `.sng`; *silent* is a conversion that packs and plays nothing.",
+        "the `.sng`; *silent* is a conversion that packs and plays nothing; "
+        "*window empty* is a file where **neither side** played a note in the "
+        "traced seconds, which says nothing about the conversion and is left "
+        "out of the averages rather than scored 0%.",
         "- The harness legalises song restart positions before packing "
         "(SNG2SID-FIDELITY.md §2), so a file counted here may still be "
         "unpackable as the converter writes it.",
@@ -879,8 +944,11 @@ def main(argv=None) -> int:
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
-    p.add_argument("-a", "--subtune", type=int, default=0,
-                   help="which subtune of the original to trace (default 0)")
+    p.add_argument("-a", "--subtune", default="auto",
+                   help="which subtune of the original to trace: a number, or "
+                        "'auto' (the default) for the PSID header's own "
+                        "startSong -- the subtune a player picks when the user "
+                        "picks none, which is not 0 in seven corpus files")
     p.add_argument("--slides", action="store_true",
                    help="convert with --slides (the two-byte pitch-slide "
                         "operand) regardless of what the presets say, so the "
@@ -893,9 +961,13 @@ def main(argv=None) -> int:
                    help="convert with --fold-transpose (orderlist transposes "
                         "over Goattracker's +14 folded into the notes) "
                         "regardless of what the presets say")
-    p.add_argument("--search-subtunes", type=int, default=1, metavar="N",
-                   help="try our subtunes 0..N-1 against it and keep the best "
-                        "match; our numbering shifts when a subtune is dropped")
+    p.add_argument("--search-subtunes", type=int, default=3, metavar="N",
+                   help="try a window of N of our subtunes centred on the "
+                        "traced one and keep the best match; our numbering "
+                        "shifts when a subtune is dropped. Default 3, i.e. one "
+                        "either side -- enough to find a counterpart displaced "
+                        "by a dropped subtune, and measured to move exactly "
+                        "the two corpus files that are displaced. 1 disables it")
     p.add_argument("--workdir", default=WORKDIR,
                    help="short scratch path; gt2reloc's filename buffer is 60 bytes")
     p.add_argument("--siddump", default=SIDDUMP)
@@ -918,9 +990,11 @@ def main(argv=None) -> int:
 
     if args.pair:
         a, b = (Path(x) for x in args.pair)
-        row = {"file": f"{a.name} vs {b.name}", "status": "measured"}
-        da = run_siddump(a, args.seconds, args.subtune, args.siddump)
-        db = run_siddump(b, args.seconds, args.subtune, args.siddump)
+        sub = resolve_subtune(a, args.subtune)
+        row = {"file": f"{a.name} vs {b.name}", "status": "measured",
+               "subtune": sub}
+        da = run_siddump(a, args.seconds, sub, args.siddump)
+        db = run_siddump(b, args.seconds, sub, args.siddump)
         row.update(compare(da, db))
         row.update(wave_compare(da, db, nframes=args.seconds * 50))
         if args.register:

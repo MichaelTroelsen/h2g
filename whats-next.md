@@ -34,6 +34,12 @@ into one tree with no lost hunks.
 
 `Commando.sid` → `Commando.sng` remains **byte-exact (15193 B)**.
 
+**v0.5.64 supersedes three of those rows** without touching the converter:
+tracing each file's own default subtune (and excluding windows in which
+neither side plays) puts mean melody at **77%**, the mis-scoring-adjusted
+figure at **85%** over 49 files, and the "plays something else" bucket at
+**8**. See work_remaining §3.
+
 ## Commits this session (pushed to `MichaelTroelsen/SIDDetector2`)
 
 ```
@@ -191,31 +197,48 @@ drum shape — has only ever been checked by disassembly. It is the one check
 that can catch an error shared by the reading *and* the metric, which this
 project has hit repeatedly. **It needs a human; an agent can only stage it.**
 
-## 3. The <50% bucket — 13 files, and the old partition no longer describes it
+## 3. The <50% bucket — re-partitioned at v0.5.64; two files are scrambled
 
-`Action_Biker, BMX_Kidz, Commodore_64_Music_Examples, Delta_Mix-E-Load_loader,
-Dragons_Lair_Part_II, Flash_Gordon, Hollywood_or_Bust, IK_plus, I_Ball,
-Knucklebusters, Phantoms_of_the_Asteroid, Rasputin, Samantha_Fox_Strip_Poker`
+Done. Five of the thirteen were **the harness measuring the wrong thing**, and
+fixing that (v0.5.64) took the bucket to eight and the mean melody from 73% to
+77% (85% excluding the 33 files siddump cannot rate).
 
-The previous handoff partitioned an 18-file bucket into named causes. Five of
-those (the transposition class) left via v0.5.61 and the composition has
-shifted, so **that partition is stale — do not quote it**. What is still
-known file-by-file:
+Left the bucket:
 
-- `Action_Biker`, `Commodore_64_Music_Examples`, `Dragons_Lair_Part_II`,
-  `Hollywood_or_Bust` (partial — v1 is `+0@100%`) were confirmed **genuinely
-  scrambled** and nothing since has touched them.
-- `IK_plus`, `I_Ball` are the percussion-figure case in §1.
-- `Phantoms_of_the_Asteroid` converts to silence (`rows: 0`).
-- `Flash_Gordon` was a rate artefact (`+0@100%`).
-- `Rasputin` is the one file whose packed subtune 0 is a zero-length stub.
-- `BMX_Kidz`, `Delta_Mix-E-Load_loader`, `Knucklebusters`,
-  `Samantha_Fox_Strip_Poker` have **not** been partitioned. Samantha_Fox's
-  row (orig 2 attacks, ours 116, retrig 58.0) says the original is
-  near-silent in the window, which is a harness artefact, not a defect.
+| file | was | now | why it was wrong |
+|---|---:|---:|---|
+| Samantha_Fox_Strip_Poker | 5% | **92%** | 14 subtunes, `startSong` 10, a one-note stub at 0 |
+| BMX_Kidz | 0% | **95%** | ~13 s of opening rest; at `-t 10` both sides are empty |
+| Knucklebusters | 30% | **85%** | `startSong` 2 |
+| Action_Biker | 13% | **78%** | `startSong` 2, and our counterpart is one lower |
+| Hollywood_or_Bust | 49% | **63%** | `startSong` 3 — still partial, see below |
 
-Re-running the per-voice modal-delta partition on the current bucket is
-cheap and is the right first step here.
+The eight that remain, by cause:
+
+| cause | files |
+|---|---|
+| **genuinely scrambled** | `Commodore_64_Music_Examples` (12%), `Dragons_Lair_Part_II` (5%) |
+| converts to silence (297 attacks → 0) | `Phantoms_of_the_Asteroid` |
+| two of three voices emit nothing | `Delta_Mix-E-Load_loader` (4%) |
+| one voice absent — the §1 percussion figure | `IK_plus` (35%), `I_Ball` (43% at 10 s, **94% at 30 s**) |
+| severe under-production, pitches exact | `Rasputin` (38 of 330 attacks, and voice 2 absent), `Flash_Gordon` (92 of 142) |
+
+**So "genuinely scrambled" is 2, not 4.** Action_Biker leaves on its own
+subtune; Hollywood_or_Bust is partial rather than scrambled (v0 97%, v1 50%,
+v2 39%, all at modal delta `+0` — it is missing and extra notes, not a wrong
+key).
+
+Method note worth keeping: the position-aligned modal delta degrades when
+either side drops notes, because the alignment slips. A *high* share is
+sufficient evidence of a transposition; a *low* share is not evidence of
+scrambling. The robust form is to sweep a constant shift k over ±24 and take
+the difflib ratio at each — a transposed file peaks sharply away from 0, a
+scrambled one is flat. Both scrambled files peak at 18–25% at a *different* k
+per voice; Flash_Gordon and Rasputin peak at exactly `k=0`, which is what
+"under-production, pitches exact" means.
+
+Still open here: `Delta_Mix-E-Load_loader`'s two dead voices and
+`Phantoms_of_the_Asteroid`'s silence are both named but unexplained.
 
 ## 4. Measuring the `-S2` group needs a cycle-accurate trace
 
@@ -289,36 +312,43 @@ From this session:
 6. **"A looser probe will find the drum routine in more files"** — of the 25
    files that test bit `$01` without matching Warhawk's block, only 2 write
    noise to `$D404` near the test, and neither regresses.
+7. **"The <50% bucket is 13 files that play something else"** — five were the
+   harness reading the wrong music: four traced at subtune 0 where the PSID
+   header names another default, one traced through a window shorter than its
+   opening silence. Two of the thirteen are genuinely scrambled.
+8. **"A low modal-delta share means the music is scrambled"** — it also means
+   the alignment slipped because one side dropped notes. Sweep a constant
+   shift through a difflib alignment before concluding anything.
 
 Carried forward from previous sessions (still refuted):
 
-7. **"~7× too many re-triggers"** — real ratio 0.78/0.98 median.
-8. **"`0xBD` hold rows re-trigger"** — `$BD` is a no-op in the note column
+9. **"~7× too many re-triggers"** — real ratio 0.78/0.98 median.
+10. **"`0xBD` hold rows re-trigger"** — `$BD` is a no-op in the note column
    (gplay.c:908-941); the editor writes it into blank rows itself.
-9. **"`gatetimer` holds a note length"** — it is a compare value against a
+11. **"`gatetimer` holds a note length"** — it is a compare value against a
    per-row countdown, capped at `tempo` (gplay.c:334).
-10. **"The fabricated wavetable invents noise"** — misplaced class. We
+12. **"The fabricated wavetable invents noise"** — misplaced class. We
     produce *half* the original's noise while inventing it elsewhere; both
     errors at once, which is why the aggregate looked like under-production.
-11. **"Devils Galop needs a table-copy reader"** — its init writes over the
+13. **"Devils Galop needs a table-copy reader"** — its init writes over the
     *operands in its own code*.
-12. **"GT's gate mask is sticky, so per-note `$BE` collapses attacks"** —
+14. **"GT's gate mask is sticky, so per-note `$BE` collapses attacks"** —
     `firstwave = 0x09` re-opens the gate on every note (gplay.c:356-363).
-13. **"The tempo scatter is per-file variance"** — per-voice medians over a
+15. **"The tempo scatter is per-file variance"** — per-voice medians over a
     mixed-voice measurement; the real distribution is four values.
-14. **"Wiring `-S` will unblock the 33 mis-scored files"** — nothing at the
+16. **"Wiring `-S` will unblock the 33 mis-scored files"** — nothing at the
     packing step can; siddump is blind to the PSID speed field.
-15. **"The slide gap explains the low melody scores"** — no correlation
+17. **"The slide gap explains the low melody scores"** — no correlation
     (47 slide-heavy files: 67%; 21 slide-free: 66%).
-16. **"Instrument +6 is vibrato"** — it is a pulse-width sweep
+18. **"Instrument +6 is vibrato"** — it is a pulse-width sweep
     (`$12BF → STA $D403,Y`).
-17. **"3 calls per row is the floor" as a corpus-wide constant** — per-file
+19. **"3 calls per row is the floor" as a corpus-wide constant** — per-file
     scatter; 19 files are already exact and a global `-S3` would wreck them.
-18. **"gt2reloc renumbers subtunes"** — invalid subtunes become in-place
+20. **"gt2reloc renumbers subtunes"** — invalid subtunes become in-place
     zero-length stubs and the count truncates the tail. The repair MUST
     legalise the revived subtune's restart or greloc.c:244 aborts the whole
     export.
-19. **"Delta has a pattern-table undercount"** — the orderlist was carrying
+21. **"Delta has a pattern-table undercount"** — the orderlist was carrying
     interleaved repeat counts.
 
 ## Process lessons
@@ -435,11 +465,12 @@ REPEAT $D0    TRANSDOWN $E0  TRANSUP $F0  LOOPSONG $FF
 
 ## Status: all work committed and pushed; tree clean
 
-- **HEAD `87030aa` (v0.5.63)** on `origin/master`,
+- **v0.5.64** on `master`,
   `https://github.com/MichaelTroelsen/SIDDetector2.git` (private).
-- **355 tests pass, 2 skipped** (from `python/`). `Commando.sng` byte-exact.
-- `SURVEY.md`, `presets.json`, `FIDELITY.md` are **current as of v0.5.63** —
-  regenerated once, on the settled tree, after all three forks landed.
+- **365 tests pass, 2 skipped** (from `python/`). `Commando.sng` byte-exact.
+- `SURVEY.md` and `presets.json` are current as of v0.5.63 and unaffected by
+  v0.5.64 (it changes the harness, not the converter — pinned by a test).
+  `FIDELITY.md` is current as of **v0.5.64**.
 
 ## Open decisions
 
@@ -449,8 +480,8 @@ REPEAT $D0    TRANSDOWN $E0  TRANSUP $F0  LOOPSONG $FF
 2. **The listening pass** (§2) — fourteen conversion-changing versions have
    shipped unheard, including the two largest fixes in the project. This is
    the only item that requires the user rather than an agent.
-3. **Re-partition the <50% bucket** (§3) — cheap, and the standing partition
-   is stale after v0.5.61.
+3. ~~Re-partition the <50% bucket~~ — done in v0.5.64; §3 records the result
+   and what is still unexplained in it.
 4. **Chain_Reaction's re-gridding** (§5) — the one inexpressible-rate file
    with an exact solution available.
 

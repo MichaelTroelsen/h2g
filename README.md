@@ -495,8 +495,8 @@ showed on their untransposed voices — not introduced here. Controls
 move. Off by default: it changes the output bytes of the files it reaches.
 
 Note that the file-wide **melody similarity** in `FIDELITY.md` can be blind to
-this: it traces subtune 0 only, and three of the four fixed files carry the
-defect in voices whose attacks the metric already scores at 0%. The modal
+this: it traces one subtune per file, and three of the four fixed files carry
+the defect in voices whose attacks the metric already scores at 0%. The modal
 delta above is the measurement that sees it.
 
 ### Per-song presets — `presets.json`
@@ -680,6 +680,29 @@ one vibrato cycle for a re-struck note.
 [`FIDELITY.md`](FIDELITY.md) is the committed report, and the single place
 fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
 elsewhere. Regenerate it after any commit that changes conversion.
+
+**Which subtune gets traced.** One per file, and it is the one the PSID
+header's `startSong` field names — the subtune a player selects when the user
+selects none — not subtune 0. Seven corpus files set it past 1, and for those,
+subtune 0 is not the tune: *Samantha Fox Strip Poker* has fourteen subtunes,
+`startSong` 10, and a one-note stub at 0. Tracing that stub scored a correct
+conversion at 5%; its own default subtune scores 89%. `-a N` forces a
+particular one, `-a auto` (the default) reads the header.
+
+Our subtune numbering does not have to line up with the original's — a subtune
+whose orderlist exceeds Goattracker's limit costs itself and shifts every later
+one down — so `--search-subtunes` tries a window of ours around the traced
+index and keeps the best match. The default window is 3, one either side, which
+is what a single dropped subtune can displace. That window moves exactly two
+corpus files and widening it moves none, so it identifies the counterpart
+rather than trawling for a flattering score; the report names the files it
+moved.
+
+A short trace is its own hazard in the same family. `BMX_Kidz.sid` opens with
+about thirteen seconds of rest, so at `-t 10` neither side has played a note
+and the file scored 0% — at `-t 60` it scores 95%. Rows where **both** sides
+are empty are now reported as *window empty* and left out of the averages
+instead of being scored as a failed conversion.
 
 `siddump` names a note from the SID frequency register, so both sides have to
 be read on the same tuning or the comparison is measuring a key change. Four

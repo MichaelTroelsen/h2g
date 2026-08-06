@@ -322,3 +322,53 @@ def test_a_file_compared_with_itself_is_a_perfect_match(tmp_path):
     assert wave["wave_frames"] > 0
     assert wave["wave"] == 1.0
     assert wave["orig_noise_frames"] == wave["our_noise_frames"]
+
+
+# --- what a row's status means ---------------------------------------------
+# Three ways a row can carry no melody score, and only two of them are the
+# converter's fault. Conflating the third with "silent" is what put BMX_Kidz
+# -- which matches its original at 95% once the window is long enough to
+# reach its first note -- in the bucket labelled "plays something else".
+
+
+class _Args:
+    seconds = 10
+    subtune = "auto"
+    label = None
+    search_subtunes = 3
+    register = False
+    audio = False
+
+
+def _row(name, status, melody=None, orig=0, ours=0):
+    r = {"file": name, "status": status, "subtune": 0,
+         "orig_attacks": orig, "our_attacks": ours, "retrigger_ratio": None,
+         "orig_slides": 0, "our_slides": 0, "multiplier": 1}
+    if melody is not None:
+        r.update(melody=melody, sequence=melody, pitch_jaccard=melody,
+                 retrigger_ratio=1.0, wave=melody, wave_frames=100,
+                 orig_noise_frames=0, our_noise_frames=0)
+    return r
+
+
+def test_a_window_in_which_neither_side_played_is_not_scored():
+    # compare() runs before the status is decided, so the row does carry a
+    # melody -- 0%, from two empty sequences. The point is that it is not
+    # averaged in, not that the number is missing.
+    rows = [_row("Good.sid", "measured", 1.0, 50, 50),
+            _row("Empty.sid", "window empty", 0.0, 0, 0)]
+    text = fidelity.report(rows, _Args())
+    # It stays visible in the table...
+    assert "| Empty.sid |" in text and "window empty" in text
+    # ...but a window with nothing in it must not drag the headline down.
+    assert "- measured: **1** of 2" in text
+    assert "mean melody similarity: **100%**" in text
+
+
+def test_a_conversion_that_plays_nothing_is_still_a_defect():
+    # The original played; we did not. That is ours, and it is scored 0%.
+    rows = [_row("Good.sid", "measured", 1.0, 50, 50),
+            _row("Mute.sid", "silent", 0.0, 50, 0)]
+    text = fidelity.report(rows, _Args())
+    assert "- measured: **2** of 2" in text
+    assert "mean melody similarity: **50%**" in text

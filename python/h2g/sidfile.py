@@ -360,6 +360,13 @@ class SidFile:
     released: str
     load_addr: int
     subtunes: int
+    # PSID `startSong`, 16-bit BE at 0x10, **1-based**: which subtune a player
+    # picks when the user picks none. Seven corpus files set it to something
+    # other than 1, and for those, subtune 0 is not the tune -- Samantha Fox
+    # Strip Poker's is a one-note stub while the music is at startSong 10. Read
+    # for measurement only; conversion emits every subtune and does not reorder
+    # them, so nothing in the pipeline branches on this.
+    start_song: int = 1
     speed: int = 0  # PSID `speed`, 32-bit BE at 0x12: one bit per subtune
     magic: str = "PSID"     # "PSID" or "RSID", header 0x00-0x03
     version: int = 0        # header `version`, 16-bit BE at 0x04
@@ -449,6 +456,12 @@ def load_sid(path: str) -> SidFile:
     released = _read_padded_string(data, 0x56, 0x20)
     load_addr = data[0x7D] * 256 + data[0x7C]
     subtunes = data[0x0F]
+    # PSID `startSong` at 0x10-0x11, big-endian and 1-based. Clamped into
+    # range rather than trusted: a file claiming a subtune it does not have
+    # would otherwise send the harness to trace silence.
+    start_song = int.from_bytes(data[0x10:0x12], "big")
+    if not 1 <= start_song <= max(subtunes, 1):
+        start_song = 1
     # PSID `speed` at 0x12-0x15, big-endian. Unlike load_addr/dataOffset (which
     # the original tool ignores and this port deliberately keeps ignoring), this
     # field is read straight from the header -- nothing in the VB6 original
@@ -471,6 +484,7 @@ def load_sid(path: str) -> SidFile:
         released=released,
         load_addr=load_addr,
         subtunes=subtunes,
+        start_song=start_song,
         speed=speed,
         magic=magic,
         version=version,

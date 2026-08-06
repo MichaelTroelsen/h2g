@@ -89,6 +89,17 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **A low score in `FIDELITY.md` is a claim about the harness until it is a
+  claim about the converter.** Three separate defects have now been *in the
+  measurement*: NTSC originals named in the wrong key (v0.5.63), subtune 0
+  traced where the header names another default (v0.5.64), and a 10 s window
+  shorter than a file's opening rest. Before treating a row as a conversion
+  bug, check what the original itself plays in that window and at that
+  subtune. The per-voice modal semitone delta is the tool: a constant non-zero
+  mode at a high share is one wrong number, a flat distribution is different
+  music. Its share degrades when either side drops notes, so a *low* share is
+  not evidence of scrambling — sweep a constant transposition through a
+  difflib alignment instead and see whether any shift peaks.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and
   `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those
