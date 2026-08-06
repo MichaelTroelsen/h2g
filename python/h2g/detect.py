@@ -66,6 +66,14 @@ class Detection:
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
     effect_drum: bool = False   # bit $01: pitch sweep down, then noise
     effect_pulse_lo: bool = False  # bit $08: accumulate +6 into pulse width LO
+    # A SECOND, mutually exclusive reading of the same byte -- see
+    # _find_two_stage(). In this family bit $04 is not an arpeggio at all: it
+    # holds an attack waveform for a per-instrument number of frames and then
+    # drops to the record's own +2. Both file offsets are indexed by the same
+    # i * instr_stride the effect byte itself is.
+    effect_two_stage: bool = False
+    two_stage_wave: int = -1    # file offset of the attack-waveform table
+    two_stage_frames: int = -1  # file offset of its duration table
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -654,6 +662,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                           if ok)
         log(f"Instrument effect byte..: {found}")
 
+    (det.effect_two_stage, det.two_stage_wave,
+     det.two_stage_frames) = _find_two_stage(sid, det)
+    if det.effect_two_stage:
+        log("Instrument effect byte..: two-stage waveform (bit $04 is not "
+            "an arpeggio in this player)")
+
     det.freq_table = find_freq_table(sid)
     if det.freq_table is not None:
         ft = det.freq_table
@@ -819,3 +833,88 @@ def _find_effect_routines(sid: SidFile, det: Detection):
         f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
         f"99 ?? ?? AC ?? ?? 99 02 D4") >= 1
     return rise, arp, drum, pulse_lo
+
+
+# --- The same byte, a second format ----------------------------------------
+#
+# _find_effect_routines reads +7 as Warhawk does: four flags in the low nibble
+# and an arpeggio interval in the high one, taken with `LSR x4`. That is not
+# the only format. Across the corpus the two readings are cleanly disjoint --
+# 13 files take the high nibble as a number and 41 test $10/$20/$40/$80 as
+# single bits, and **no file does both**. In that second family +7 is eight
+# flags, and bit $04 is not an arpeggio at all.
+#
+# IK+ $E38B, which 34 files share byte-for-byte in shape:
+#
+#     E38B  29 04     AND #$04
+#     E38D  F0 14     BEQ out
+#     E38F  BD FC E7  LDA counter,X     ; per-voice, set at note start
+#     E392  F0 09     BEQ expired
+#     E394  DE FC E7  DEC counter,X
+#     E397  B9 EE E9  LDA attack,Y      ; still running -> the attack waveform
+#     E39A  4C A0 E3  JMP store
+#     E39D  B9 77 E9  LDA $E977,Y       ; expired  -> instrument +2
+#     E3A0  9D 8F E5  STA wavslot,X
+#
+# `$E977` is the instrument's own +2, the waveform H2G already emits, so the
+# only new datum is the attack waveform and how long it lasts. Both live in a
+# second 8-byte-per-instrument array that runs parallel to the records and is
+# indexed by the same `Y = i * stride`: attack at its +1, duration at its +3.
+#
+# The duration is resolved a second, independent way and the two are required
+# to agree. At note start the player pushes three record fields and pops them
+# into per-voice slots, and the last thing pushed is the first thing popped --
+# into the very counter this block decrements (IK+ $E16E / $E18A):
+#
+#     E160  BD 75 E9 / 99 E5 E5 / 48     LDA instr+0,X / STA / PHA
+#     E167  BD 76 E9 / 99 E6 E5 / 48     LDA instr+1,X / STA / PHA
+#     E16E  BD F0 E9 / 48                LDA duration,X / PHA
+#     ...
+#     E18A  68 / 9D FC E7                PLA / STA counter,X
+#
+# Corpus-wide that push chain names exactly `attack + 2` in **34 files out of
+# 34**. Requiring both is what makes this a reading rather than an inference:
+# a player that matches the block but keeps its duration elsewhere is skipped
+# instead of being given a made-up one.
+TWO_STAGE_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
+                   "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
+# LDA instr+0,X / STA .. / PHA / LDA instr+1,X / STA .. / PHA / LDA dur,X / PHA
+TWO_STAGE_PUSH = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48 BD ?? ?? 48"
+
+
+def _find_two_stage(sid: SidFile, det: Detection):
+    """(found, attack_offset, duration_offset) for the two-stage waveform.
+
+    Both offsets are into `sid.data` and are indexed by `i * instr_stride`,
+    exactly like the instrument records themselves. Returns (False, -1, -1)
+    unless the block is found *and* the note-start push chain independently
+    puts the duration at attack+2.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found or det.instr_start < 0:
+        return False, -1, -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, TWO_STAGE_SHAPE.format(load=load))
+    if i <= -1:
+        return False, -1, -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 20 >= len(data):
+        return False, -1, -1
+    attack = data[p + 13] | data[p + 14] << 8
+
+    j = search_file(data, TWO_STAGE_PUSH)
+    if j <= -1 or j + 16 >= len(data):
+        return False, -1, -1
+    duration = data[j + 15] | data[j + 16] << 8
+    if duration != attack + 2:
+        return False, -1, -1
+
+    # Same inverse of SidFile.to_offset _effect_byte_address uses.
+    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    off = attack - instr_cpu + det.instr_start
+    span = max(det.instr_used, 0) * det.instr_stride
+    if not 0 <= off and off + span + 2 <= len(data):
+        return False, -1, -1
+    return True, off, off + 2

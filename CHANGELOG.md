@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.65 — 2026-08-06
+
+- census the effect byte's high bits; read the two-stage waveform
+
 ## 0.5.64 — 2026-08-06
 
 - trace each file's own default subtune, not subtune 0

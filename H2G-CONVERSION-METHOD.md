@@ -1232,6 +1232,106 @@ choice, not a translation — and it is where converted output stops being
 census is the discipline that keeps the choice honest: *measure how often the
 structure you are about to synthesize is actually there.*
 
+### The census was half a census — `+7` has eight flags, and two formats
+
+Phase 1 inventoried bits `$01`, `$02`, `$04` and `$08`, on the assumption that
+the high nibble was Warhawk's arpeggio interval (`LDA effect / LSR x4`). It is
+not, in most files. Re-running the census over all eight bits — and looking for
+`BIT effect / BVC` and `LDA effect / BPL` as well as `AND #$xx`, without which
+bits `$40` and `$80` are invisible — gives:
+
+| bit | files testing it | files setting it | records set | in a testing file | in one that does not |
+|---|---:|---:|---:|---:|---:|
+| `$01` | 69 | 73 | 427 | 419 | 8 |
+| `$02` | 56 | 57 | 252 | 237 | 15 |
+| `$04` | 75 | 75 | 606 | 606 | 0 |
+| `$08` | 55 | 60 | 264 | 230 | 34 |
+| `$10` | 31 | 53 | 317 | 210 | 107 |
+| `$20` | 30 | 50 | 317 | 189 | 128 |
+| `$40` | 34 | 50 | 295 | 198 | 97 |
+| `$80` | 12 | 41 | 209 | 117 | 92 |
+
+(77 files, those whose `+7` address resolves.) All eight are real flags in some
+player. Sorting the same files by *which* reading they use partitions them
+exactly:
+
+| reading | files |
+|---|---:|
+| high nibble as a number (Warhawk's arpeggio interval) | 13 |
+| high nibble as four more flags | 41 |
+| neither — `+7` unread or read whole | 23 |
+| **both** | **0** |
+
+Zero overlap is the finding. These are two formats, not one format read two
+ways, and they are told apart by the player's own code rather than by the
+dialect number. In the second one bit `$04` is not an arpeggio at all. IK+
+`$E38B`, a shape 34 files share:
+
+```
+E38B  29 04     AND #$04
+E38F  BD FC E7  LDA counter,X     ; per-voice, set at note start
+E392  F0 09     BEQ expired
+E394  DE FC E7  DEC counter,X
+E397  B9 EE E9  LDA attack,Y      ; still running -> the attack waveform
+E39D  B9 77 E9  LDA $E977,Y       ; expired -> the instrument's own +2
+E3A0  9D 8F E5  STA wavslot,X
+```
+
+`$E977` is `instr + 2`, the waveform the converter already emits — which is
+what proves the block is a two-stage waveform and not something else. The
+attack waveform and its duration live in a **second 8-byte-per-instrument
+array** parallel to the records, indexed by the same `Y = i * stride`: attack
+at its `+1`, duration at its `+3`. The duration is corroborated independently
+from the note-start push chain, whose last `PHA` is the first `PLA` into the
+very counter this block decrements — and corpus-wide that names `attack + 2`
+in **34 files out of 34**.
+
+Two details make this format hostile to a naive reader. Bit `$08` reuses the
+same field as the *high byte of a pointer* to a per-instrument byte-code
+program (IK+ `$E33A` builds `$40`/`$41` from it), so a record setting both
+bits has no attack waveform to read. And a record's `$04` is meaningless if
+the attack byte is not a legal waveform nibble — 24 of 295 are not, and every
+one of them lies in the parallel array itself, which the instrument-count
+sniffer (§4.1) walks straight into and reports as extra instruments.
+
+### Reading it is not the same as being able to write it
+
+`detect._find_two_stage` lands this reading; `goatwriter` does not use it.
+Encoding it was tried and measured on the corpus against a controlled
+baseline -- the same tree, the same presets, the same trace window, differing
+only in this change. Writing the attack as an *N*-entry prefix (capped at
+three, since the fifth wavetable slot is the stop and the fourth carries the
+sustained waveform) moves **18 files and costs 82 points of wave agreement**,
+taking the corpus mean from 62% to 61%:
+
+| file | wave | | file | wave |
+|---|---:|---|---|---:|
+| Skate or Die intro | −13 | | Thanatos | −6 |
+| Kings of the Beach ingame | −9 | | ACE II | −5 |
+| Trans-Atlantic Balloon | −8 | | W.A.R. Preview | −4 |
+| Lightforce | −7 | | Delta, Food Feud, IK+, Saboteur II | −3 each |
+| Sigma Seven | −7 | | Deep Strike, Pandora, Wiz | −2 each |
+| Tarzan | −6 | | **Dragons Lair II** | **+2** |
+
+Only one file gains. A second encoding -- making the attack the *sustained*
+waveform wherever `frames` exceeds what the table can spell, which is what a
+note shorter than `frames` actually plays -- was also tried and was worse
+still; its numbers were taken before v0.5.64 changed which subtune the harness
+traces, so they are not quoted here.
+
+A Goattracker wavetable steps one entry per *play call*, so a two-to-three
+frame transient is only worth writing if it lands on the same frames as the
+original's, and for most of these files the note onsets are not aligned that
+closely. The reading is certain; the encoding is not, so the reading ships and
+the encoding does not.
+
+**Lesson, and it is the second time this section has had to record one:** a
+correct reading of the player can still be the wrong thing to write. Keep the
+two decisions apart — resolve what the byte means from the 6502, then decide
+separately, by measurement, whether the target format can carry it. Landing
+the reading with nothing consuming it costs one dataclass field and saves the
+next reader from re-deriving it.
+
 ---
 
 ## 8. Impedance mismatch: slicing and re-indexing
