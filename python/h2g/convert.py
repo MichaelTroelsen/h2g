@@ -33,6 +33,42 @@ class UnsupportedSidError(Exception):
 MAX_DANGLING_SHARE = 2 / 3
 
 
+def _tables_readable(det: Detection) -> bool:
+    """True if detection found tables that actually name patterns.
+
+    `can_convert` only says all four bases were located; a player whose table
+    operands are placeholders until init patches them locates bases fine and
+    then reads no patterns at all.
+    """
+    return det.can_convert and det.pattern_used > 0
+
+
+def _detect_tables(sid: SidFile, log: Logger):
+    """(image, detection), re-reading the file with init's writes if needed.
+
+    The re-read is a strict fallback: a file whose operands already name real
+    tables is returned untouched, so applying init writes can rescue a file
+    that reads nothing but can never disturb one that reads correctly. Only
+    the winning attempt's log lines are emitted, so the output shows one
+    SEARCHING block either way.
+    """
+    lines: List[str] = []
+    det = detect(sid, lines.append)
+    if not _tables_readable(det):
+        staged = sid.with_init_writes()
+        if staged is not None:
+            staged_lines: List[str] = []
+            staged_det = detect(staged, staged_lines.append)
+            if _tables_readable(staged_det):
+                for line in staged_lines:
+                    log(line)
+                log("Table pointers..........: written by init, re-read after applying them")
+                return staged, staged_det
+    for line in lines:
+        log(line)
+    return sid, det
+
+
 def check_detection_sound(tracks, pattern_used: int, log: Logger,
                           floor: int = GT_COMMAND_FLOOR) -> None:
     """Reject a detection whose orderlists mostly name patterns that don't exist.
@@ -126,7 +162,7 @@ def convert(sid_path: str, log: Logger = print,
             f"-> ${r.dst:X} at init")
 
     log("-----------------------------------------------------SEARCHING---")
-    det = detect(sid, log)
+    sid, det = _detect_tables(sid, log)
 
     log("--------------------------------------------------------STATUS---")
     if not det.can_convert:

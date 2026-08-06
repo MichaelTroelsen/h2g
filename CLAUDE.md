@@ -115,6 +115,11 @@ test dependency).
     part of itself at init (I, Ball) so `to_offset` can resolve the
     addresses its player names. Consulted only when the plain formula
     lands outside the file, so it cannot change a file that already works.
+    Also `find_init_writes`, for a player whose table addresses are not in
+    its instructions at all but written over them by the init routine
+    (Devils Galop). Applied only to a file whose tables as they stand name
+    no patterns, so — like the relocation — it can rescue a file that reads
+    nothing and never disturb one that reads correctly.
   - `search.py` — wildcard opcode-pattern search (`search_file`, port of `SSearchfile`).
   - `detect.py` — player-engine signature chains (`detect`, port of the
     `FindInstruments`/`FindSubSongs`/`FindTrackSelector`/`FindPattern`/

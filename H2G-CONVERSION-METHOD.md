@@ -223,6 +223,73 @@ can therefore fail to rescue a file, but it can never move an address in a
 file that already works -- which is also why reading just the page numbers,
 and assuming the copy is page-aligned, is good enough.
 
+### When the address isn't in the instruction at all
+
+The whole method (§2) rests on the table's address being *in the operand of
+the instruction that reads it*. Devils Galop breaks that assumption outright.
+Its player reads
+
+```
+1359  BD 95 17  LDA $1795,X      ; orderlist pointer lo, per voice
+135E  BD 96 17  LDA $1796,X      ;                    hi
+138C  B9 97 17  LDA $1797,Y      ; pattern pointer lo
+1391  B9 98 17  LDA $1798,Y      ;                 hi
+```
+
+and `$1790-$1798` is nine bytes of zeroes that nothing ever stores to. Read
+literally, every one of those pointers is `$0000`, and the pattern count
+arithmetic of §4.2 gives `$1798 - $1797 - 1` = **no patterns** — a file that
+detects perfectly and converts to nothing.
+
+The operands are placeholders. The init routine writes the real addresses
+over them, one byte at a time, before the first play call:
+
+```
+18B3  A9 1E     LDA #$1E
+18B5  8D 5A 13  STA $135A        ; the lo operand byte of the LDA at $1359
+18B8  A9 0A     LDA #$0A
+18BA  8D 5B 13  STA $135B        ; ...and its hi byte -> $0A1E
+18BD  8D 60 13  STA $1360        ; one LDA feeds several stores
+18C0  8D 8E 13  STA $138E
+18C3  8D 93 13  STA $1393
+```
+
+leaving orderlists at `$0A1E`/`$0A21` and patterns at `$0A24`/`$0A50` — 44
+entries. `sidfile.find_init_writes` walks the routine from the PSID
+`initAddress`, following the leading `JMP` chain (the near-universal
+`init: JMP realinit` indirection) and stopping at the first `JMP` taken after
+the routine has started, which in this file is the `JMP $12EB` into the
+player. Going further would read the play routine's per-frame `LDA #imm /
+STA abs` state writes as though they were patches. `JSR`s are stepped over
+rather than followed, so writes a helper makes are missed — an under-read,
+which costs a rescue at worst and can never invent one.
+
+The same routine ends with a block copy that moves the authored instrument
+records over a stale set sitting at the address the player reads:
+
+```
+18E7  A2 00     LDX #$00
+18E9  BD 3B 18  LDA $183B,X
+18EC  9D 99 17  STA $1799,X
+18EF  E8        INX
+18F0  E0 78     CPX #$78         ; 15 records x 8 bytes
+18F2  D0 F5     BNE $18E9
+```
+
+That one is pure fidelity rather than a blocker, and it is not a small
+effect: without it the tune converts with the disk records, whose waveform
+bytes are wrong, and plays as noise — waveform-class agreement 6% with 2842
+invented noise frames against an original that has none. With it, 76% and
+zero. The melody columns are identical either way, since instruments do not
+change which notes are struck.
+
+**The safety rule mirrors the relocation's**, and has to, because unlike a
+relocation these writes *overwrite* bytes: init writes are applied only to a
+file whose tables, read as they stand, name **no patterns at all**. A file
+that already reads its tables never sees a patched byte. That gate is doing
+real work rather than being theoretical — 45 of the 95 corpus files have a
+findable set of init writes, and exactly one has them applied.
+
 ---
 
 ## 4. What gets located, and how sizes are derived without any length field

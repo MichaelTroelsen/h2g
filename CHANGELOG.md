@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.55 — 2026-08-06
+
+- read a player whose table addresses its init writes over the code
+
 ## 0.5.54 — 2026-08-06
 
 - regenerate artefacts at v0.5.53; rewrite the handoff
