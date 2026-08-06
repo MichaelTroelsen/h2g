@@ -55,6 +55,10 @@ class Detection:
     instr_stride: int = 8
     # Which pattern-byte grammar the tune uses -- see patterns.py.
     pattern_dialect: str = "classic"
+    # True when the player fetches a SECOND pattern byte after a `>= $80`
+    # command operand -- the high byte of a 16-bit pitch-slide step. See
+    # _find_slide_operand().
+    slide_operand: bool = False
 
     @property
     def can_convert(self) -> bool:
@@ -427,4 +431,35 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.transpose_operand:
         log("Track transpose form....: two-byte (value follows the command)")
 
+    det.slide_operand = _find_slide_operand(data)
+    if det.slide_operand:
+        log("Pattern slide form......: two-byte (16-bit step)")
+
     return det
+
+
+# The pattern-fetch shape that consumes a second operand byte. Warhawk $10EC:
+#
+#     10EC  C8        INY
+#     10ED  B1 FD     LDA (patt),Y      ; the command operand
+#     10EF  10 0F     BPL instrument    ; < $80 -> an instrument number instead
+#     10F1  9D B7 15  STA slidelo,X     ; >= $80 -> slide step LOW + direction
+#     10F4  C8        INY
+#     10F5  B1 FD     LDA (patt),Y      ; <- the byte H2G never consumed
+#     10F7  9D BA 15  STA slidehi,X     ; slide step HIGH
+#
+# The two `STA abs,X` targets are the low and high halves of the 16-bit value
+# the slide routine adds to the voice frequency each frame (Warhawk $1320:
+# `LDA slidelo,X / AND #$7E` and `SBC/ADC slidehi,X`, written to $D400/$D401).
+#
+# Not every player has it. Of 95 corpus files 41 match this shape and **none**
+# match a one-byte variant of it -- the rest have a differently shaped fetch
+# routine altogether. Version 5 (Battle of Britain, Gremlins) and Commando are
+# among those that do not, which is why the original VB6 tool -- written and
+# verified against Commando -- never needed the second byte and why the
+# byte-exact fixture does not move when this is honoured.
+SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
+
+
+def _find_slide_operand(data: bytes) -> bool:
+    return search_file(data, SLIDE_OPERAND_SHAPE) >= 1

@@ -63,35 +63,69 @@ def test_default_is_gts2_and_byte_exact(tmp_path):
     assert out.read_bytes()[:4] == b"GTS2"
 
 
+SPEEDTABLE_COMMANDS = (1, 2, 3)   # CMD_PORTAUP / PORTADOWN / TONEPORTA
+
+
+def _command_column(patterns):
+    """(command, data) for every row of every pattern."""
+    return [(p[k + 2], p[k + 3])
+            for p in patterns for k in range(0, len(p), 4)]
+
+
 def test_gts5_magic_and_fourth_table(tmp_path):
     out = tmp_path / "g5.sng"
     assert _run(out, "--format", "gts5").returncode == 0
     s = _parse(out.read_bytes(), GT_MAX_TABLES)
     assert s["magic"] == b"GTS5"
     assert len(s["tables"]) == GT_MAX_TABLES
-    # The added table is the speed table, and it is empty: every instrument this
-    # writer emits carries ptr[STBL] == 0.
+
+    # The added table is the speed table. It holds one entry per distinct
+    # portamento parameter in the pattern data, because in GTS3+ that column is
+    # an index into this table rather than a packed value -- see
+    # patterns.build_speed_table. Every instrument still carries ptr[STBL] == 0:
+    # the entries here are referenced from patterns, not from instruments.
     ltable, rtable = s["tables"][3]
-    assert len(ltable) == 0 and len(rtable) == 0
+    assert len(ltable) == len(rtable)
+    used = {d for c, d in _command_column(s["patterns"])
+            if c in SPEEDTABLE_COMMANDS and d}
+    assert used, "Commando emits portamento commands; the fixture would be weak without"
+    assert len(ltable) == len(used)
+    assert used == set(range(1, len(ltable) + 1)), "indices must be 1..len, dense"
     for b in s["instr"]:
-        assert b[5] == 0, "ptr[STBL] must be 0 while the speed table is empty"
+        assert b[5] == 0
 
 
-def test_gts5_differs_from_gts2_only_by_magic_and_speed_table(tmp_path):
+def test_gts5_differs_from_gts2_only_by_magic_speed_table_and_indices(tmp_path):
     g2, g5 = tmp_path / "a.sng", tmp_path / "b.sng"
     assert _run(g2).returncode == 0
     assert _run(g5, "--format", "gts5").returncode == 0
     b2, b5 = g2.read_bytes(), g5.read_bytes()
-
-    assert len(b5) == len(b2) + 1, "GTS5 adds exactly one byte (empty 4th table)"
 
     a = _parse(b2, GTS2_TABLES)
     b = _parse(b5, GT_MAX_TABLES)
     assert a["subtunes"] == b["subtunes"]
     assert a["tracks"] == b["tracks"]
     assert a["instr"] == b["instr"]
-    assert a["patterns"] == b["patterns"]
     assert a["tables"][:3] == b["tables"][:3]
+
+    # Same rows, same notes, same instruments: only the data byte of a
+    # speedtable-requiring command differs, and only because GTS2 stores the
+    # value where GTS3+ stores an index to it.
+    assert [len(p) for p in a["patterns"]] == [len(p) for p in b["patterns"]]
+    for pa, pb in zip(a["patterns"], b["patterns"]):
+        for k in range(0, len(pa), 4):
+            assert pa[k:k + 3] == pb[k:k + 3]
+            if pa[k + 2] not in SPEEDTABLE_COMMANDS or not pa[k + 2]:
+                assert pa[k + 3] == pb[k + 3]
+
+    # And the index really does resolve back to the GTS2 value: Goattracker's
+    # own encoding is a 16-bit step of four times the stored byte
+    # (gtable.c:881, MST_PORTAMENTO), reassembled as (left << 8) | right.
+    ltable, rtable = b["tables"][3]
+    for (ca, va), (cb, vb) in zip(_command_column(a["patterns"]),
+                                  _command_column(b["patterns"])):
+        if ca in SPEEDTABLE_COMMANDS and va:
+            assert (ltable[vb - 1] << 8) | rtable[vb - 1] == va * 4
 
 
 def test_gts5_composes_with_other_options(tmp_path):

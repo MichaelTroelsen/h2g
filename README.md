@@ -295,6 +295,47 @@ in the packed `.sid` no longer match the `.sng` it came from. A `siddump`
 comparison then quietly measures the wrong tune. Such voices get the same
 placeholder orderlist every other unrepresentable subtune gets.
 
+### `--slides` (pitch bends)
+
+Hubbard's pitch-bend command carries a **16-bit** step split across two pattern
+bytes. This converter only ever read the first. The second was then decoded as
+the note, and every byte after it in that pattern was read one position out —
+so a bend did not merely come out at the wrong depth, it desynchronised the
+rest of the pattern.
+
+The players do not all agree, so this is gated on detection rather than on the
+dialect number: 41 of the 95 corpus files have the second fetch
+(`detect.SLIDE_OPERAND_SHAPE`, matched against the player's own
+`INY / LDA (patt),Y / STA slidehi,X`), none has a one-byte variant of the same
+shape, and for the other 54 the flag does nothing at all. `Commando` is one of
+the 54, which is why the original tool never needed it and why the byte-exact
+fixture does not move.
+
+Measured over the corpus with each song's presets, 10 s per file:
+
+| | mean melody |
+|---|---:|
+| without | 67.0% |
+| with `--slides` | **67.6%** |
+
+Three files improve — `Flash_Gordon` 8% → **52%**, `Arcade_Classics` 92% →
+100%, `International_Karate` 86% → 87% — and one, `ACE_II`, drops 3 points.
+Off by default because it changes the output bytes of the 41 files it reaches.
+
+**The related fix is not optional and has no flag.** A portamento's data byte
+is a packed value in a GTS2 file but a *1-based index into the speed table* in
+GTS3+ (`gplay.c:740`), and this writer emitted an empty speed table — so every
+bend it wrote was silently inert in the `gts5` output the presets use. Writing
+the table took the corpus from **7** slide frames to **1214** against the
+originals' 22876. It changes no melody score, because an attack-based
+comparison cannot see pitch movement at all; `FIDELITY.md` now carries a
+**slides** column so that class of change is measurable.
+
+The remaining gap is not in the pattern data. Most of what the originals bend
+comes from per-instrument effects — the `+7` effect byte's semitone sweep and
+arpeggio, and a pulse-width sweep in `+6` that is *not* vibrato (see
+`H2G-CONVERSION-METHOD.md` §7) — none of which is converted yet.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes

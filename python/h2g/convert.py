@@ -4,12 +4,12 @@ from __future__ import annotations
 from typing import Callable, List
 
 from .detect import Detection, detect
-from .goatwriter import (DEFAULT_FORMAT, FORMATS, GT_MIN_TEMPO, build_sng,
-                         tempo_command_value)
+from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
+                         build_sng, tempo_command_value)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
-                       ConversionAbort, command_floor, convert_patterns,
-                       apply_tempo, pattern_references, referenced_patterns,
-                       reindex_tracks)
+                       ConversionAbort, build_speed_table, command_floor,
+                       convert_patterns, apply_tempo, pattern_references,
+                       referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (convert_tracks, ensure_playable_orderlists,
                      legalise_restarts)
@@ -68,6 +68,7 @@ def convert(sid_path: str, log: Logger = print,
             prune: bool = False,
             pack: bool = False,
             legal_restart: bool = False,
+            slides: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -96,6 +97,13 @@ def convert(sid_path: str, log: Logger = print,
     slice that lacks one, matching what Goattracker's own saver writes.
     Off by default: it changes the bytes, and the Commando fixture encodes
     the original tool's unterminated output.
+
+    slides reads a pitch-slide command's second operand byte in the players
+    that have one, giving the true 16-bit step instead of half of it and --
+    more importantly -- keeping the rest of the pattern in step. It applies
+    only where detection found that fetch (det.slide_operand), so it is a
+    no-op for 54 of the 95 corpus files and for the Commando fixture. Off by
+    default because it changes the bytes of the 41 files it does reach.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -126,7 +134,8 @@ def convert(sid_path: str, log: Logger = print,
     check_detection_sound(tracks, det.pattern_used, log, floor)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
-        used=referenced_patterns(tracks, floor) if prune else None)
+        used=referenced_patterns(tracks, floor) if prune else None,
+        slides=slides)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows)
     # Unconditional, and before the restart pass: a voice whose orderlist
@@ -153,4 +162,11 @@ def convert(sid_path: str, log: Logger = print,
                 f"tempo must be {GT_MIN_TEMPO}..127 (Goattracker reads 0 and 1 "
                 f"as funktempo, gplay.c:325), got {resolved_tempo}")
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
-    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt)
+
+    # Last, so it sees every command any earlier stage emitted. It rewrites the
+    # data column in place, so nothing downstream may read it as a value again.
+    speed_table = build_speed_table(new_patterns) if fmt != FORMAT_GTS2 else []
+    if log and speed_table:
+        log(f"Speed table entries.....: {len(speed_table)}")
+    return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
+                     speed_table=speed_table)

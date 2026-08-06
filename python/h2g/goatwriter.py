@@ -275,7 +275,8 @@ def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
 
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
-              fmt: str = DEFAULT_FORMAT) -> bytes:
+              fmt: str = DEFAULT_FORMAT,
+              speed_table: List[tuple] | None = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     out = bytearray()
@@ -305,11 +306,20 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
 
     out += bytes([0x02, 0x11, 0xFF, 0x22, 0x01])  # empty filter table
     if fmt == FORMAT_GTS5:
-        # Fourth table (STBL). GTS2 has no stored speed table -- the loader
-        # derives one from each instrument's byte 6 -- so this exists only in
-        # GTS3+. Every instrument this writer emits carries ptr[STBL] == 0
-        # ("none"), so an empty table is the correct counterpart.
-        out.append(0x00)
+        # Fourth table (STBL), stored only in GTS3+. A GTS2 file has none: its
+        # loader builds one while reading, both from each instrument's vibrato
+        # byte and from every portamento command's data column
+        # (gsong.c:285, :311-321).
+        #
+        # So the same conversion that is correct in a GTS2 file is inert in a
+        # GTS5 one unless the table is written out here -- gplay.c:740 reads a
+        # portamento's speed from `ltable[STBL][cmddata-1]`, and against an
+        # empty table that is zero, i.e. no pitch movement at all. See
+        # patterns.build_speed_table.
+        table = speed_table or []
+        out.append(_table_length_byte(len(table), "speed"))
+        out += bytes(left for left, _ in table)
+        out += bytes(right for _, right in table)
 
     out.append(len(patterns) & 0xFF)
     for pattern in patterns:

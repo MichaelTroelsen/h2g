@@ -300,6 +300,14 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "melody": weighted("melody"),
         "sequence": weighted("sequence"),
         "pitch_jaccard": (len(op & up) / len(op | up)) if (op | up) else 1.0,
+        # Frames on which the player moved a voice's frequency without
+        # retriggering it -- vibrato, portamento, any pitch bend. None of the
+        # metrics above can see them: an attack-based comparison is blind to
+        # everything that happens *within* a note, so a change that only adds
+        # or removes pitch movement leaves melody, sequence and retrigger
+        # identical. Reported so that class of work is measurable at all.
+        "orig_slides": sum(v.slides for v in orig),
+        "our_slides": sum(v.slides for v in ours),
         "voices": per_voice,
     }
 
@@ -383,6 +391,7 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "dedup": bool(entry.get("dedup")),
         "fmt": always.get("format", FORMAT_GTS5),
         "tempo": always.get("tempo", "auto"),
+        "slides": bool(always.get("slides")),
     }
 
 
@@ -476,13 +485,19 @@ def report(rows: list[dict], args) -> str:
         "* **retrig** -- our attacks over the original's. 1.0 is right; higher "
         "means we re-strike held notes.",
         "* **pitch** -- Jaccard overlap of the distinct pitches played.",
+        "* **slides** -- frames on which a voice's frequency moved without "
+        "being retriggered (vibrato, portamento, any bend), ours over the "
+        "original's. Every other column is blind to these: they happen "
+        "*within* a note, so a change that only adds or removes pitch "
+        "movement leaves melody, seq and retrig identical.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent"):
-            out.append(f"| {r['file']} | - | - | - | - | - | - | {r['status']} |")
+            out.append(
+                f"| {r['file']} | - | - | - | - | - | - | - | {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -492,6 +507,7 @@ def report(rows: list[dict], args) -> str:
             f"| {r['file']} | {r['orig_attacks']} | {r['our_attacks']} | "
             f"{'-' if rr is None else f'{rr:.2f}'} | {_fmt_pct(r['melody'])} | "
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
+            f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{status} |")
 
     if measured:
@@ -598,6 +614,10 @@ def main(argv=None) -> int:
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", type=int, default=0,
                    help="which subtune of the original to trace (default 0)")
+    p.add_argument("--slides", action="store_true",
+                   help="convert with --slides (the two-byte pitch-slide "
+                        "operand) regardless of what the presets say, so the "
+                        "option can be measured before it is stored in one")
     p.add_argument("--search-subtunes", type=int, default=1, metavar="N",
                    help="try our subtunes 0..N-1 against it and keep the best "
                         "match; our numbering shifts when a subtune is dropped")
@@ -646,7 +666,10 @@ def main(argv=None) -> int:
             if target.is_dir() else [target]
         rows = []
         for sid in sids:
-            row = measure(sid, workdir, _preset_opts(doc, sid.name), args)
+            opts = _preset_opts(doc, sid.name)
+            if args.slides:
+                opts["slides"] = True
+            row = measure(sid, workdir, opts, args)
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
                     f"{row['retrigger_ratio']:.2f}"

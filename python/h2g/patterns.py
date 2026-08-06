@@ -65,6 +65,19 @@ DEFAULT_TRACK = [0x00, 0xFF, 0x00]
 GT_END_PATTERN = 0xFF          # ENDPATT: note-column value marking a pattern's end
 GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
 
+# Commands whose data byte is a *packed value* in a GTS2 file but a **1-based
+# index into the speed table** everywhere else (gcommon.h: CMD_PORTAUP 1,
+# CMD_PORTADOWN 2, CMD_TONEPORTA 3). gplay.c:740 reads the speed as
+# `(ltable[STBL][cmddata-1] << 8) | rtable[STBL][cmddata-1]`, so a raw value
+# left in that column indexes whatever the speed table holds at that position
+# -- and this writer emitted an *empty* speed table, which meant every
+# portamento command it wrote was silently inert in a GTS5 file. GTS2 files
+# escaped it because the loader converts the column itself (gsong.c:311-321).
+#
+# CMD_SETTEMPO (15) is deliberately absent: gplay.c:494 uses its value
+# directly and never consults the table.
+GT_SPEEDTABLE_COMMANDS = (1, 2, 3)
+
 # Lowest byte value that is a *command* rather than a pattern number, used to
 # read a track that convert_tracks has produced but reindex_tracks has not yet
 # renumbered. Such a track is still in Hubbard numbering, and which byte values
@@ -111,8 +124,16 @@ class ConversionAbort(Exception):
     pass
 
 
-def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
-    """Flat event stream for one Hubbard pattern, or None if out of range."""
+def _build_raw_pattern(data: bytes, addr: int,
+                       slide_operand: bool = False) -> Optional[List[int]]:
+    """Flat event stream for one Hubbard pattern, or None if out of range.
+
+    slide_operand says the player fetches a *second* byte after a `>= $80`
+    command operand -- the high half of a 16-bit pitch-slide step. See
+    detect.SLIDE_OPERAND_SHAPE. It is off by default because 54 of 95 corpus
+    players do not have that fetch, and reading a byte they never read
+    desynchronises the rest of the pattern.
+    """
     if addr <= 1 or addr >= len(data):
         return None
 
@@ -149,11 +170,31 @@ def _build_raw_pattern(data: bytes, addr: int) -> Optional[List[int]]:
                     cmd2 = 0x00
                 g_old_instr2 = g_old_instr1
             if b2 & 0x80:
+                # Bit 0 is the direction, and it is the player's own test:
+                # Warhawk $132D does `AND #$01 / BEQ add`, so a clear bit adds
+                # to the frequency (CMD_PORTAUP, 1) and a set bit subtracts
+                # (CMD_PORTADOWN, 2). The two comments below have always been
+                # the wrong way round; the values they emit are right.
                 if (b2 & 1) == 0:
                     cmd1, g_instrument = 1, 0  # pitch down
                 else:
                     cmd1, g_instrument = 2, 0  # pitch up
                 cmd2 = (b2 & 0x7F) // 4
+                if slide_operand:
+                    # The step is 16-bit: this byte is its low half (masked
+                    # $7E -- bit 0 is the direction flag, bit 7 the command
+                    # flag) and the *next* byte is its high half. Warhawk
+                    # $1320 adds both to the voice frequency each frame.
+                    #
+                    # Goattracker's own portamento parameter is the 16-bit
+                    # speed divided by four (gtable.c:881, MST_PORTAMENTO:
+                    # `l = (data << 2) >> 8, r = (data << 2) & 0xff`), so
+                    # emit that and let build_speed_table encode it.
+                    i2 += 1
+                    if addr + i2 >= len(data):
+                        return None
+                    speed = (data[addr + i2] << 8) | (b2 & 0x7E)
+                    cmd2 = min(speed // 4, 0xFF)
             else:
                 g_instrument = (b2 & 0x7F) + 2
                 g_old_instr2 = g_old_instr1
@@ -384,11 +425,44 @@ def referenced_patterns(tracks: List[List[int]],
     return set(pattern_references(tracks, floor))
 
 
+def build_speed_table(patterns: List[List[int]]) -> List[tuple]:
+    """Encode every portamento parameter as a speed table, in place.
+
+    Rewrites each speedtable-requiring command's data column to a 1-based
+    index and returns the table as (left, right) pairs.
+
+    The encoding is Goattracker's own, so a GTS5 file plays identically to the
+    GTS2 file it was written from: `makespeedtable(v, MST_PORTAMENTO)` is
+    `l = (v << 2) >> 8, r = (v << 2) & 0xff` (gtable.c:881-884), i.e. the
+    16-bit per-frame frequency step is four times the stored value. gplay.c
+    reassembles it as `(l << 8) | r`.
+
+    The table cannot overflow: a data byte has 255 non-zero values and each
+    distinct one costs one entry, which is exactly MAX_TABLELEN.
+    """
+    index: dict = {}
+    table: List[tuple] = []
+    for pattern in patterns:
+        for k in range(0, len(pattern), 4):
+            cmd, value = pattern[k + 2], pattern[k + 3]
+            # value 0 means "no parameter": gplay.c leaves cmddata 0 alone and
+            # every command special-cases it, so it must stay 0 rather than
+            # become index 1.
+            if cmd not in GT_SPEEDTABLE_COMMANDS or not value:
+                continue
+            if value not in index:
+                index[value] = len(table)
+                table.append(((value * 4) >> 8 & 0xFF, (value * 4) & 0xFF))
+            pattern[k + 3] = index[value] + 1
+    return table
+
+
 def convert_patterns(sid: SidFile, det: Detection, log,
                      max_rows: int = GT_DEFAULT_ROWS,
                      terminate_patterns: bool = False,
                      dedup: bool = False,
-                     used: Optional[Set[int]] = None):
+                     used: Optional[Set[int]] = None,
+                     slides: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -433,7 +507,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
         events = (_build_raw_pattern_digi(data, addr)
                   if det.pattern_dialect == "digi"
-                  else _build_raw_pattern(data, addr))
+                  else _build_raw_pattern(data, addr, slides and det.slide_operand))
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)

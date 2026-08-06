@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.50 — 2026-08-06
+
+- map Hubbard pitch bends onto Goattracker's speed table
+
 ## 0.5.49 — 2026-08-06
 
 - repair empty voice orderlists unconditionally

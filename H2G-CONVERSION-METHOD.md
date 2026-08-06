@@ -388,6 +388,29 @@ else:
 The `+2` is because Goattracker instrument 1 is reserved by H2G as an empty
 "Clear Voice" slot, so Hubbard instrument 0 becomes GT instrument 2.
 
+**The bend operand is two bytes, in most players.** The step is 16-bit and the
+second half is the *next* pattern byte — Warhawk `$10EC`:
+
+```
+10EC  INY / LDA (patt),Y      ; the operand
+10EF  BPL instrument          ; < $80 -> an instrument number, one byte only
+10F1  STA slidelo,X           ; >= $80 -> step LOW, with bit 0 the direction
+10F4  INY / LDA (patt),Y      ; <- a second byte
+10F7  STA slidehi,X           ; step HIGH
+```
+
+and `$1320` adds `(slidehi,X << 8) | (slidelo,X & $7E)` to the voice frequency
+every frame, up or down according to bit 0 (`AND #$01 / BEQ add`). Reading only
+the first byte therefore gets half the parameter *and* leaves the other half to
+be decoded as the note, putting every byte after it in that pattern one
+position out.
+
+41 of the 95 corpus players have that second fetch and none has a one-byte
+variant of the same shape; the other 54 have a differently shaped fetch routine
+entirely. `Commando` is among the 54, which is why the original tool never
+needed it and why honouring it does not move the byte-exact fixture. It is
+`--slides`, gated on `detect.SLIDE_OPERAND_SHAPE`.
+
 **2. Optional note byte** (if `GetNext` *or* not `NoNote`):
 
 ```python
@@ -747,8 +770,28 @@ punts on the rest:
 | `+3` | AD (attack/decay) → GT instrument byte 0 |
 | `+4` | SR (sustain/release) → GT instrument byte 1, clamped: `if sr >= 0xF0: sr &= 0xEF` |
 | `+5` | **not interpreted** — printed in the instrument name |
-| `+6` | **not interpreted** — printed in the instrument name |
+| `+6` | **not interpreted** — printed in the instrument name (it is the *pulse-width sweep*, see below) |
 | `+7` | arpeggio-style byte (see below) — *and* printed in the name |
+
+`+6` is worth naming, because it is easy to mistake for a vibrato parameter and
+it is not one. Warhawk loads it per instrument at `$11E1` (`LDA $163D,Y` against
+an instrument table based at `$1637`, so record `+6`) into `$158B`, and the
+routine at `$12BF` consumes it:
+
+```
+12BF  LDA $158B / BEQ skip     ; zero -> no sweep
+12C7  AND #$0F                 ; low nibble  = rate (frames between steps)
+12C9  DEC $1593,X / BPL skip   ; per-voice countdown
+12D4  AND #$F0                 ; high nibble = step, kept in the high position
+12DE  ... ADC $15C9,X          ; 16-bit add to the running value
+12EE  CMP #$0E / INC $1596,X   ; flip direction at $0E, and at $08 coming down
+1313  STA $D403,Y              ; <- PULSE WIDTH HIGH, not frequency
+```
+
+The write is `$D403`, so this is a **pulse-width sweep**: a triangle between
+duty $8xx and $Exx. H2G already writes the pulse *table* from `+0`/`+1`, so
+what is missing is the sweep, not a vibrato — and Goattracker's counterpart is
+the pulse table's own sweep rows, not the speed table.
 
 ### The instrument-name trick — steal this
 
@@ -945,9 +988,38 @@ has no such conversion loop.
 The observable consequence: a GTS2 file loads fine, then **crashes GoatTracker
 when you press play**. The same tune written as GTS5 plays.
 
-The format delta is tiny — different magic, plus an empty fourth (speed) table.
+The format delta looks tiny — different magic, plus a fourth (speed) table.
 Instrument bytes 5 and 6 swap meaning between the two, but this converter emits
-`0x00` for both, so nothing needs converting. One extra byte in the file.
+`0x00` for both, so nothing needs converting there.
+
+**The speed table is not optional, and getting that wrong cost this converter
+every pitch bend it emitted.** In a GTS2 file a portamento's data byte is a
+packed value; in GTS3+ it is a **1-based index into the speed table**:
+
+```c
+speed = (ltable[STBL][cptr->cmddata-1] << 8) | rtable[STBL][cptr->cmddata-1];
+                                                        // gplay.c:740
+```
+
+The GTS2 loader builds that table while reading — `makespeedtable(value,
+MST_PORTAMENTO, 0) + 1` for every `$1`/`$2`/`$3` row (`gsong.c:311-321`) — so
+the *same bytes* mean different things in the two formats. This writer emitted
+an empty fourth table and left the raw values in the column, which is correct
+GTS2 and silently inert GTS5: `cmddata-1` indexed a zero-length table, so every
+slide resolved to speed 0.
+
+Nothing detected it for a long time, because it is invisible from every
+direction anyone was looking: the file parses, GoatTracker loads it, the
+patterns show the commands in the editor, and the fidelity harness compares
+*note attacks* — which a pitch bend does not produce. Measured over 10 s of 82
+corpus files, the originals slide 22876 times and the conversions managed 7.
+Writing the table (`patterns.build_speed_table`, the same quarter-of-the-16-bit-
+step encoding GoatTracker uses) brings that to 1214 with no change to any
+melody score, which is exactly the shape of a defect a metric cannot see.
+
+> **Lesson:** when a format has two encodings of the same field, "we emit
+> nothing there" is a decision, not a default. And a measurement that cannot
+> distinguish "working" from "inert" will report both as fine.
 
 > **Lesson worth more than the bug:** the target format had *two* loaders, and
 > the one matching the era of the source tool was the broken one. Writing what

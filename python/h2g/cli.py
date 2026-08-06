@@ -80,6 +80,16 @@ def main(argv=None) -> int:
              "which loses the composer's intent but is what makes a packed "
              ".sid possible at all. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--slides", action="store_true",
+        help="read the second operand byte of a pitch-slide command in the "
+             "players that have one. Those players hold the slide step as a "
+             "16-bit value split across two pattern bytes; this converter read "
+             "only the first, so the second was played as a note and every "
+             "byte after it in that pattern was read one position out. Applies "
+             "only where detection finds that fetch (41 of 95 corpus files), "
+             "and is a no-op for the rest. Off by default: it changes the "
+             "output bytes of the files it does reach")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
