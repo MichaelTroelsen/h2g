@@ -123,6 +123,18 @@ def main(argv=None) -> int:
              "Off by default: it changes the output bytes of the files it "
              "reaches")
     parser.add_argument(
+        "--fold-transpose", action="store_true",
+        help="recover the orderlist transposes that do not fit Goattracker's "
+             "+14 ceiling. Hubbard's players carry transposes of 24, 36 and "
+             "48 semitones; the ceiling exists because $FF is LOOPSONG, so "
+             "those steps were clamped and played up to 34 semitones flat. "
+             "This keeps the remainder in the orderlist and folds the whole "
+             "octaves into a copy of each pattern the step plays, which costs "
+             "one pattern-table entry per distinct (pattern, octaves) pair. A "
+             "step whose notes have no room to rise is left clamped rather "
+             "than partly folded. Off by default: it changes the output bytes "
+             "of the 17 corpus files it reaches")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -161,7 +173,8 @@ def main(argv=None) -> int:
             args.legal_restart = True
         for flag, key in (("--slides", "slides"), ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
-                          ("--reject-phantoms", "reject_phantoms")):
+                          ("--reject-phantoms", "reject_phantoms"),
+                          ("--fold-transpose", "fold_transpose")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -208,7 +221,8 @@ def main(argv=None) -> int:
                       slides=args.slides,
                       effects=args.effects,
                       status_bit6=args.status_bit6,
-                      reject_phantoms=args.reject_phantoms)
+                      reject_phantoms=args.reject_phantoms,
+                      fold_transpose=args.fold_transpose)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

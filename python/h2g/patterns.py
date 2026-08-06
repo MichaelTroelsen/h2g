@@ -34,6 +34,10 @@ GT_MAX_PATTERN_LEN = GT_DEFAULT_ROWS * 4  # 376 bytes
 # Silencing a voice is $BE, which clears cptr->gate.
 GT_NO_NOTE = 0xBD
 GT_KEYOFF = 0xBE
+# gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
+# value in that column ($BD-$BF, $FF) is a marker, not a pitch.
+GT_FIRSTNOTE = 0x60
+GT_LASTNOTE = 0xBC
 MAX_PATTERNS = 0xD0
 MAX_TRACK_LEN = 0xFF
 
@@ -521,6 +525,55 @@ def cmdtable_frames_per_row(sid: SidFile, det: Detection,
     return factor if 2 <= factor <= 0x7F else 1
 
 
+def decode_entry(sid: SidFile, det: Detection, i: int,
+                 slides: bool = False,
+                 status_bit6: bool = False) -> Optional[List[int]]:
+    """Decoded event stream for pattern-table entry `i`, or None if unusable.
+
+    The dialect dispatch convert_patterns and phantom_patterns both perform,
+    in one place, so a caller that needs a pattern's *contents* (rather than
+    its place in the output) reads it under exactly the grammar the
+    conversion will use. tracks.fold_transposes is such a caller: it has to
+    know a pattern's highest note before deciding whether an octave can be
+    folded into it, and reading that under a different grammar would answer a
+    question about a file that is not being converted.
+    """
+    data = sid.data
+    step = i * det.table_stride
+    lo_i, hi_i = det.pattern_lo + step, det.pattern_hi + step
+    if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
+        return None
+    addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
+    if det.pattern_dialect == "digi":
+        return _build_raw_pattern_digi(data, addr)
+    if det.pattern_dialect == "cmdtable":
+        return _build_raw_pattern_cmdtable(
+            data, addr, det.duration_table, det.cmd_operands,
+            det.cmd_instrument, det.frames_per_row)
+    return _build_raw_pattern(data, addr, slides and det.slide_operand,
+                              det.note_flag, status_bit6 and det.status_bit6)
+
+
+def pattern_top_note(events: List[int]) -> int:
+    """Highest pitch in an event stream, or 0 if it sounds no note."""
+    return max((events[k] for k in range(0, len(events), 4)
+                if GT_FIRSTNOTE <= events[k] <= GT_LASTNOTE), default=0)
+
+
+def shift_notes(events: List[int], semitones: int) -> List[int]:
+    """Copy of an event stream with every pitch raised, markers untouched.
+
+    Only the note column moves, and only where it holds a pitch: $BD (hold),
+    $BE (key off) and $FF (end of pattern) are not notes and shifting them
+    would turn one into another.
+    """
+    out = list(events)
+    for k in range(0, len(out), 4):
+        if GT_FIRSTNOTE <= out[k] <= GT_LASTNOTE:
+            out[k] += semitones
+    return out
+
+
 def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
                    terminate: bool = False) -> List[List[int]]:
     """Chunk a flat event stream into <=max_len pieces.
@@ -727,7 +780,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      used: Optional[Set[int]] = None,
                      slides: bool = False,
                      status_bit6: bool = False,
-                     phantoms: Optional[dict] = None):
+                     phantoms: Optional[dict] = None,
+                     variants: Optional[List[tuple]] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -751,6 +805,13 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     undecodable address gets, so a track that references one still resolves
     -- to a single rest -- instead of to the player's own code decoded as
     music.
+
+    `variants` (from tracks.fold_transposes) appends octave-shifted copies of
+    existing entries, as `(source entry, octaves)` pairs. They extend the
+    pattern table's numbering rather than replacing anything: variant j is
+    entry `det.pattern_used + 1 + j`, which is the number the folded
+    orderlists already reference. A source that `used` pruned is decoded here
+    anyway -- the variant is played even when the unshifted original is not.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -781,21 +842,24 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             raw_patterns.append(list(ERROR_PATTERN))
             continue
 
-        addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
-        if det.pattern_dialect == "digi":
-            events = _build_raw_pattern_digi(data, addr)
-        elif det.pattern_dialect == "cmdtable":
-            events = _build_raw_pattern_cmdtable(
-                data, addr, det.duration_table, det.cmd_operands,
-                det.cmd_instrument, det.frames_per_row)
-        else:
-            events = _build_raw_pattern(data, addr, slides and det.slide_operand,
-                                        det.note_flag,
-                                        status_bit6 and det.status_bit6)
+        events = decode_entry(sid, det, i, slides, status_bit6)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
         raw_patterns.append(events)
+
+    # Appended after the whole table, never inserted into it, so entry numbers
+    # 0..pattern_used keep meaning what the orderlists say they mean.
+    for src, octaves in (variants or ()):
+        base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
+        if base is None:
+            base = decode_entry(sid, det, src, slides, status_bit6)
+        if base is None:
+            log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
+                "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
+            raw_patterns.append(list(ERROR_PATTERN))
+        else:
+            raw_patterns.append(shift_notes(base, 12 * octaves))
 
     new_patterns: List[List[int]] = []
     track_index: List[List[int]] = []
@@ -830,10 +894,13 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         track_index.append(indices)
 
     if used is not None:
-        pruned = sum(1 for p in raw_patterns if p is None)
+        # Over the pattern *table*, not raw_patterns: appended variants are
+        # extra outputs, not table entries that could have been pruned.
+        total = det.pattern_used + 1
+        pruned = sum(1 for p in raw_patterns[:total] if p is None)
         if pruned:
-            log(f"Pruned {pruned} of {len(raw_patterns)} patterns "
-                f"({100 * pruned // len(raw_patterns)}%) that no track plays")
+            log(f"Pruned {pruned} of {total} patterns "
+                f"({100 * pruned // total}%) that no track plays")
 
     if dedup and reused:
         total = len(new_patterns) + reused
@@ -1047,7 +1114,7 @@ def _voice_sounds(body: List[int], patterns: List[List[int]]) -> bool:
         if b >= MAX_PATTERNS or b >= len(patterns):
             continue
         p = patterns[b]
-        if any(0x60 <= p[k] <= 0xBC for k in range(0, len(p), 4)):
+        if any(GT_FIRSTNOTE <= p[k] <= GT_LASTNOTE for k in range(0, len(p), 4)):
             return True
     return False
 

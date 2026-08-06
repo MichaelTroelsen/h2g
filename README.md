@@ -432,6 +432,41 @@ flagged entries already decoded to the placeholder, so bytes actually change
 only for `Last_V8`, `Last_V8_C128_version` and `Kings_of_the_Beach_ingame`.
 Off by default: it changes the output bytes of those files.
 
+### `--fold-transpose` (transposes past Goattracker's ceiling)
+
+Goattracker's orderlist transpose runs `$E0`–`$FE`, i.e. −16..+14: `$FF` is
+`LOOPSONG`, and `gorder.c:70` rewrites a typed `$FF` back to `$FE` for exactly
+that reason. Hubbard's players have no such limit and use **24, 36 and 48**
+semitones — two to four octaves — in 17 corpus files. Those steps were
+clamped to +14, so every note under one played 10 to 34 semitones flat.
+
+A transpose is a pitch offset and nothing else on either side of the
+frequency lookup (`CLC` / `ADC transpose,X` in the player, `newnote + trans`
+at `gplay.c:927`), so `T` and `(T mod 12) + 12k` are the same interval. This
+flag keeps the remainder — always 0..11 — in the orderlist and folds the
+whole octaves into the note column of a copy of each pattern the step plays.
+Pitches span `$60`–`$BC`, so there is usually room; where there is not, the
+step keeps its clamp rather than being *partly* folded, which would only be a
+different wrong pitch (and for a transpose of 24, a worse one). The
+unfoldable remainder is almost entirely phantom subtunes carrying transposes
+of 96 and more.
+
+The cost is one pattern-table entry per distinct (pattern, octaves) pair
+against Goattracker's 208; no corpus file stops converting at its presets.
+Measured by position-aligned modal semitone delta against the original's
+trace: `Deep_Strike` voice 0 `-10@100%` → `+0@100%` (and its melody
+similarity 78% → 100%), `Kings_of_the_Beach_intro` and `Rock_Tells_the_Tale`
+`-21@100%` → `+1@100%`, `One_on_One_Jordan_vs_Bird` `-9@100%` → `+1@100%`.
+The remaining `+1` is a separate unexplained residual those files already
+showed on their untransposed voices — not introduced here. Controls
+(`Commando`, `Zoids`, `Crazy_Comets`, `Kings_of_the_Beach_ingame`) do not
+move. Off by default: it changes the output bytes of the files it reaches.
+
+Note that the file-wide **melody similarity** in `FIDELITY.md` can be blind to
+this: it traces subtune 0 only, and three of the four fixed files carry the
+defect in voices whose attacks the metric already scores at 0%. The modal
+delta above is the measurement that sees it.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes
@@ -459,8 +494,11 @@ size tie-break picks them up: 76 of 78 songs take dedup, 73 take packing.
 
 Options given on the command line always beat the stored preset. A song with
 no entry converts at the defaults. The file's `always` block carries what is
-right for every song rather than searched per song — `gts5`, `--tempo auto`
-and `--legal-restart` — which is what lets a preset reproduce the exact bytes
+right for every song rather than searched per song — `gts5`, `--tempo auto`,
+`--legal-restart`, `--slides`, `--effects`, `--status-bit6`,
+`--reject-phantoms` and `--fold-transpose`, each of them either the player's
+own reading or a no-op in the files it does not reach — which is what lets a
+preset reproduce the exact bytes
 it records, and what makes the `gt2reloc` step at the end of the block
 succeed for all 78.
 

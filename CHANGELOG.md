@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.61 — 2026-08-06
+
+- fold orderlist transposes past Goattracker's +14 into the notes
+
 ## 0.5.60 — 2026-08-06
 
 - pack at the speed multiplier the player needs

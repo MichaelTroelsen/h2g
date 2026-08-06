@@ -736,6 +736,38 @@ transpose range is `$E0..$FE` because `$FF` is `LOOPSONG` (`gplay.c:977` gates o
 values are clamped rather than dropped, since dropping one would leave the voice
 at the *previous* transpose for the rest of the track.
 
+Hubbard uses larger values freely — **24, 36 and 48 semitones**, two to four
+octaves, in 17 corpus files — so the clamp was not a corner case: every note
+under such a step played 10 to 34 semitones flat, and on four files that is
+the whole tune in the wrong key. `--fold-transpose`
+(`tracks.fold_transposes`) recovers it. The transpose is a pitch offset and
+nothing else on either side of the lookup, so `T` and `(T mod 12) + 12k` are
+the same interval; the remainder — always `0..11`, comfortably inside the
+format — stays in the orderlist, and the whole octaves are added to the note
+column of a *copy* of each pattern the step plays. The note column has the
+room: pitches span `$60`–`$BC` and a decoded Hubbard note tops out wherever
+the tune's own melody does.
+
+Where it does not have the room the step keeps its clamp. A partial fold is
+only a different wrong pitch, and for a transpose of 24 (remainder 0) it is a
+worse one — the note would come out 24 flat rather than 10 — so each step is
+either exactly right or exactly as it was. The unfoldable steps are almost
+all in phantom subtunes carrying transposes of 96 and more, which no
+frequency table has entries for. The cost is one pattern-table entry per
+distinct (pattern, octaves) pair against Goattracker's 208; variants are
+numbered from `pattern_used + 1`, extending the table rather than displacing
+anything, and stop at the dialect's command floor.
+
+Measured by position-aligned modal semitone delta against the original's
+siddump trace, with files that were already right as controls: Deep Strike's
+voice 0 `-10@100%` → `+0@100%`, Kings of the Beach (intro) and Rock Tells the
+Tale `-21@100%` → `+1@100%`, One on One `-9@100%` → `+1@100%`. The `+1` is a
+separate, still-unexplained residual those files already showed on their
+untransposed voices (§ "Three unexplained residuals" in the handoff); it is
+not introduced here, and it is now the *only* constant offset left on them.
+Commando, Zoids, Crazy Comets and Kings of the Beach (ingame) stay at
+`+0@100%` on every voice.
+
 Two sub-variants share the version-2 fingerprint, told apart by the first
 instruction after the marker tests: `$29` (`AND #$7F`, value in the command
 byte) in 13 of the 14 corpus files, `$C8` (`INY`, value in the next byte) in

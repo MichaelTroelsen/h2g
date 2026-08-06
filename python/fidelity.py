@@ -525,6 +525,7 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "effects": bool(always.get("effects")),
         "status_bit6": bool(always.get("status_bit6")),
         "reject_phantoms": bool(always.get("reject_phantoms")),
+        "fold_transpose": bool(always.get("fold_transpose")),
     }
 
 
@@ -849,6 +850,10 @@ def main(argv=None) -> int:
                    help="convert with --effects (the instrument effect byte's "
                         "chromatic rise, and no fabricated octave arpeggio) "
                         "regardless of what the presets say")
+    p.add_argument("--fold-transpose", action="store_true",
+                   help="convert with --fold-transpose (orderlist transposes "
+                        "over Goattracker's +14 folded into the notes) "
+                        "regardless of what the presets say")
     p.add_argument("--search-subtunes", type=int, default=1, metavar="N",
                    help="try our subtunes 0..N-1 against it and keep the best "
                         "match; our numbering shifts when a subtune is dropped")
@@ -904,6 +909,8 @@ def main(argv=None) -> int:
                 opts["slides"] = True
             if args.effects:
                 opts["effects"] = True
+            if args.fold_transpose:
+                opts["fold_transpose"] = True
             # Applied to the packing step, not to the trace: gt2reloc's -S
             # changes the packed bytes so the tune plays at its real rate,
             # but siddump calls the play routine seconds x 50 times whatever

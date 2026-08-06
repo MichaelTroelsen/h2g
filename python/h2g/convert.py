@@ -13,7 +13,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (convert_tracks, ensure_playable_orderlists,
-                     legalise_restarts)
+                     fold_transposes, legalise_restarts)
 
 Logger = Callable[[str], None]
 
@@ -109,6 +109,7 @@ def convert(sid_path: str, log: Logger = print,
             effects: bool = False,
             status_bit6: bool = False,
             reject_phantoms: bool = False,
+            fold_transpose: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -168,6 +169,15 @@ def convert(sid_path: str, log: Logger = print,
     count over-counts, and a phantom entry is what made the bit-6 fix
     net-negative on Last V8. Off by default: it changes the bytes of the
     files it reaches.
+
+    fold_transpose recovers the orderlist transposes Goattracker's +14
+    ceiling used to clamp away, by keeping `T mod 12` in the orderlist and
+    folding the whole octaves into a copy of each pattern the step plays.
+    17 corpus files carry such a transpose and five of them are audibly
+    detuned by it -- up to 34 semitones. Costs one pattern-table entry per
+    distinct (pattern, octaves) pair; steps whose notes have no room to rise
+    are left clamped. Off by default: it changes the bytes of the files it
+    reaches. See tracks.fold_transposes.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -191,11 +201,19 @@ def convert(sid_path: str, log: Logger = print,
     log("*** HUBBARD PLAYER DETECTED, CONVERTING ***")
     log("----------------------------------------------------CONVERTING---")
 
-    tracks = convert_tracks(sid, det, log)
+    raw_transposes: List[dict] | None = [] if fold_transpose else None
+    tracks = convert_tracks(sid, det, log, raw_transposes)
     # These three all read orderlists that are still in Hubbard numbering, so
     # they need the dialect's command boundary rather than Goattracker's.
     floor = command_floor(det.read_track_version)
     check_detection_sound(tracks, det.pattern_used, log, floor)
+    # After the soundness check, which counts a reference above pattern_used as
+    # dangling -- and every variant this adds is one, by construction. Before
+    # `played`, so the variants are what pruning keeps rather than what it
+    # drops.
+    variants = (fold_transposes(sid, det, tracks, raw_transposes, log,
+                                slides, status_bit6)
+                if fold_transpose else [])
     played = referenced_patterns(tracks, floor)
     # Decided before the patterns are built, because it sets how many rows
     # each event becomes -- and it is only ever anything but 1 for the
@@ -206,7 +224,8 @@ def convert(sid_path: str, log: Logger = print,
         used=played if prune else None,
         slides=slides, status_bit6=status_bit6,
         phantoms=(phantom_patterns(sid, det, slides, status_bit6)
-                  if reject_phantoms else None))
+                  if reject_phantoms else None),
+        variants=variants)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3

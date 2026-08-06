@@ -60,7 +60,7 @@ TOGGLES = ("pack", "prune", "dedup")
 # Not searched; see the module docstring.
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "slides": True, "effects": True, "status_bit6": True,
-         "reject_phantoms": True}
+         "reject_phantoms": True, "fold_transpose": True}
 
 
 def _parse(blob: bytes, ntables: int = 4):
@@ -223,6 +223,14 @@ def main(argv=None) -> int:
                    # table file-wide, so one junk subtune's phantom
                    # corrupts every other subtune's pitches.
                    "reject_phantoms": FIXED["reject_phantoms"],
+                   # Hubbard's transposes of 24, 36 and 48 semitones do not
+                   # fit Goattracker's +14 orderlist ceiling and were
+                   # clamped, playing four files up to 21 semitones flat.
+                   # Fixed rather than searched for the same reason as the
+                   # rest of this block: it is the player's own arithmetic
+                   # where it applies, and a no-op in the 79 files it does
+                   # not reach.
+                   "fold_transpose": FIXED["fold_transpose"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

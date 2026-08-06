@@ -6,11 +6,12 @@ GoatSave derives as len(track) - 1).
 """
 from __future__ import annotations
 
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
-from .patterns import (DEFAULT_TRACK, GT_ORDER_RESTART, command_floor,
-                       pattern_references)
+from .patterns import (DEFAULT_TRACK, GT_LASTNOTE, GT_ORDER_RESTART,
+                       command_floor, decode_entry, pattern_references,
+                       pattern_top_note)
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
@@ -39,7 +40,15 @@ def _transpose_byte(semitones: int) -> int:
 
 
 def _build_track(data: bytes, addr: int, version: int, log=None,
-                 transpose_operand: bool = False) -> List[int]:
+                 transpose_operand: bool = False,
+                 transposes: Optional[Dict[int, int]] = None) -> List[int]:
+    """One voice's orderlist. `transposes` records what was clamped away.
+
+    The emitted byte cannot say whether it is a real +14 or a clamped +48, so
+    a caller that wants to undo the clamp (fold_transposes) needs the value
+    the player actually stores. Keyed by position in the returned list, and
+    filled only by the dialects that have a transpose command at all.
+    """
     track: List[int] = []
     i2 = 0
     _delta_repeat = 1        # version 10 only; see that branch
@@ -145,6 +154,8 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                     track[-1] = _transpose_byte(semitones)
                 else:
                     track.append(_transpose_byte(semitones))
+                if transposes is not None:
+                    transposes[len(track) - 1] = semitones
             else:
                 track.append(b1)
 
@@ -249,7 +260,17 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
     return addr
 
 
-def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
+def convert_tracks(sid: SidFile, det: Detection, log,
+                   transposes: Optional[List[Dict[int, int]]] = None
+                   ) -> List[List[int]]:
+    """Every subtune's three orderlists, in voice order.
+
+    `transposes`, when given a list, receives one {position: semitones} map
+    per emitted track -- the true transpose behind each clamped command byte,
+    for fold_transposes. Filled here rather than re-derived later because the
+    passes that follow (reindexing, packing, merging, splitting) all move
+    orderlist positions around.
+    """
     data = sid.data
     tracks: List[List[int]] = []
 
@@ -277,6 +298,7 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
             "NOT CONVERTED -- GOATTRACKER HAS 3 VOICES ***")
     n_voices = min(3, det.track_voices)
     built: List[List[List[int]]] = []   # per subtune, per voice
+    tmaps: List[List[Dict[int, int]]] = []
     addr_ok: List[List[bool]] = []
     subtunes = sid.subtunes
     if det.subtunes_available:
@@ -286,14 +308,18 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
                 f"${subtunes:X}")
     for i in range(subtunes):
         voices: List[List[int]] = []
+        maps: List[Dict[int, int]] = []
         flags: List[bool] = []
         for voice in range(3):
             addr = None if voice >= det.track_voices else _voice_addr(sid, det, i, voice)
             flags.append(addr is not None)
+            tmap: Dict[int, int] = {}
+            maps.append(tmap)
             voices.append(list(DEFAULT_TRACK) if addr is None else
                           _build_track(data, addr, det.read_track_version, None,
-                                       det.transpose_operand))
+                                       det.transpose_operand, tmap))
         built.append(voices)
+        tmaps.append(maps)
         addr_ok.append(flags)
 
     usable = [all(flags[:n_voices]) for flags in addr_ok]
@@ -317,6 +343,7 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
         if ok and not play:
             log(f"*** SUBTUNE ${i:X} PLAYS NO EXISTING PATTERN, DROPPED ***")
             built[i] = [list(DEFAULT_TRACK) for _ in range(3)]
+            tmaps[i] = [{} for _ in range(3)]
 
     keep = max((i + 1 for i, ok in enumerate(playable) if ok), default=0)
     if keep < subtunes:
@@ -328,6 +355,8 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
             if voice < det.track_voices and not addr_ok[i][voice]:
                 log(f"*** SUBTUNE ${i:X} (VOICE {voice:X}) ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             tracks.append(built[i][voice])
+            if transposes is not None:
+                transposes.append(tmaps[i][voice])
 
     # No fabricated placeholder subtune when nothing survived. Returning one
     # kept the .sng structurally valid, but it also referenced pattern 0, which
@@ -336,6 +365,124 @@ def convert_tracks(sid: SidFile, det: Detection, log) -> List[List[int]]:
     # answer; convert() turns it into a refusal.
 
     return tracks
+
+
+SEMITONES_PER_OCTAVE = 12
+
+
+def fold_transposes(sid: SidFile, det: Detection, tracks: List[List[int]],
+                    transposes: List[Dict[int, int]], log=None,
+                    slides: bool = False,
+                    status_bit6: bool = False) -> List[Tuple[int, int]]:
+    """Undo the +14 clamp by moving whole octaves into the notes, in place.
+
+    Hubbard's orderlists carry transposes of 24, 36 and 48 -- two, three and
+    four octaves -- and Goattracker's orderlist transpose stops at +14,
+    because $FF is LOOPSONG and gorder.c:70 rewrites a typed $FF back to $FE
+    for exactly that reason. `_transpose_byte` therefore clamped, and every
+    note under such a step played 10 to 34 semitones flat. That is measurable
+    in the fidelity report as a constant, 100%-consistent negative interval on
+    five files, against controls that return +0 at 100%.
+
+    The transpose is a pitch offset and nothing else -- the player adds it to
+    the note before the frequency lookup (`CLC / ADC transpose,X`), and
+    Goattracker adds `cptr->trans` at gplay.c:927 -- so `T` and
+    `(T mod 12) + 12k` are the same interval whichever side of the lookup the
+    `12k` is applied on. The remainder is always 0..11, comfortably inside the
+    format, and the octaves go into a copy of each pattern the step plays.
+    The note column has room: pitches span $60-$BC, and a decoded Hubbard note
+    tops out wherever the tune's own melody does.
+
+    Where it does *not* have room the step is left exactly as it was. A
+    partial fold would only be a different wrong pitch, and for a transpose
+    like 24 (remainder 0) a partial fold is worse than the clamp it replaces
+    -- the note would come out 24 semitones flat rather than 10. So each step
+    is either transposed exactly right or untouched, which is also what makes
+    the change safe to reason about file by file. The corpus's unfoldable
+    steps are almost entirely phantom subtunes carrying transposes of 96 and
+    more, which no frequency table this side of the player has entries for.
+
+    Costs one pattern-table entry per distinct (pattern, octaves) pair, against
+    Goattracker's 208. Variants are numbered from `det.pattern_used + 1` --
+    they extend the table rather than displacing anything -- and stop at the
+    dialect's command floor, since an orderlist byte at or above it would be
+    read as a command rather than a pattern.
+
+    Returns the `(source entry, octaves)` list convert_patterns needs, in
+    variant order.
+    """
+    floor = command_floor(det.read_track_version)
+    first = det.pattern_used + 1
+    variants: List[Tuple[int, int]] = []
+    index: Dict[Tuple[int, int], int] = {}
+    tops: Dict[int, int] = {}
+
+    def headroom(entry: int) -> int:
+        """Octaves this pattern's highest note can rise by and stay a note."""
+        if entry not in tops:
+            events = decode_entry(sid, det, entry, slides, status_bit6)
+            tops[entry] = pattern_top_note(events) if events else 0
+        top = tops[entry]
+        # No note at all: nothing to shift, so no ceiling and no variant.
+        return 0x7F if not top else (GT_LASTNOTE - top) // SEMITONES_PER_OCTAVE
+
+    folded = steps = 0
+    worst_kept = 0
+    for track, tmap in zip(tracks, transposes):
+        if not any(v > GT_MAX_TRANSPOSE for v in tmap.values()):
+            continue
+        # Group each over-range transpose with the pattern references it
+        # governs. A transpose is assigned, not accumulated, and holds until
+        # the next one -- the same semantics on both sides -- so the run is
+        # every reference from the command to the following command.
+        runs: Dict[int, List[int]] = {}
+        cur = None
+        i = 0
+        while i < len(track):
+            b = track[i]
+            if b == GT_ORDER_RESTART:
+                break              # the restart position is not a reference
+            if b >= floor:
+                cur = i
+            elif cur is not None and tmap.get(cur, 0) > GT_MAX_TRANSPOSE:
+                runs.setdefault(cur, []).append(i)
+            i += 1
+
+        for at, positions in runs.items():
+            steps += 1
+            semitones = tmap[at]
+            octaves = semitones // SEMITONES_PER_OCTAVE
+            # Sorted, so the variant numbering depends only on the file.
+            entries = sorted({track[p] for p in positions})
+            if any(headroom(e) < octaves for e in entries):
+                worst_kept = max(worst_kept, semitones)
+                continue
+            need = [e for e in entries
+                    if tops.get(e) and (e, octaves) not in index]
+            if first + len(variants) + len(need) > floor:
+                worst_kept = max(worst_kept, semitones)
+                continue
+            for e in need:
+                index[(e, octaves)] = first + len(variants)
+                variants.append((e, octaves))
+            track[at] = _transpose_byte(semitones % SEMITONES_PER_OCTAVE)
+            for p in positions:
+                # A pattern that sounds no note is its own transposition.
+                new = index.get((track[p], octaves))
+                if new is not None:
+                    track[p] = new
+            folded += 1
+
+    if log and steps:
+        if folded:
+            log(f"Transposes..............: folded {folded} of {steps} orderlist "
+                f"step(s) over Goattracker's +14 into {len(variants)} "
+                f"octave-shifted pattern(s)")
+        if folded < steps:
+            log(f"*** {steps - folded} ORDERLIST STEP(S) TRANSPOSE UP TO "
+                f"+{worst_kept} AND DO NOT FIT THE NOTE RANGE, LEFT CLAMPED "
+                f"AT +{GT_MAX_TRANSPOSE} ***")
+    return variants
 
 
 def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:
