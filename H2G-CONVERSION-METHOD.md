@@ -363,11 +363,30 @@ the whole gap between the arrays is *authored* entries; any padding becomes a
 **phantom pattern** whose pointer is whatever bytes happen to sit there.
 Last V8's entry `$1C` points into the middle of the player's own track
 selector (`8D 17 85 / 0A / 18 / 6D 17 85 / AA / …`), and both possible
-decodings of that code-as-pattern are garbage. Harmless while nothing
-references it — but any change that alters how *unreferenced* bytes decode
-(the bit-6 status byte, below §5) swings the file's output wildly in either
-direction. A phantom entry is a landmine, not an error: it costs nothing
-until a correct change elsewhere steps on it.
+decodings of that code-as-pattern are garbage. Harmless-looking while no real
+subtune references it — but the garbage feeds *global* structures: its
+portamento commands become speed-table entries, and gt2reloc re-encodes the
+speed table for the whole file (`tablemap[STBL]`, content-dependent choices
+like `nocalculatedspeed`, greloc.c:2184), so a change that alters how the
+garbage decodes (the bit-6 status byte, below §5) swings the *measured
+subtune's* portamento wildly. That was the actual mechanism behind the
+71% → 3% regression that blocked the bit-6 fix: not the phantom being
+played, but the phantom's garbage perturbing a table every subtune shares.
+
+`--reject-phantoms` (patterns.phantom_patterns) now disarms this on the
+player's own terms, never statistically: an entry is rejected when its cell
+or address lies outside the file, when decoding it under the file's own
+grammar runs off the end of the file, or when the bytes it would decode
+overlap the pointer tables themselves or a run of code the detection
+signatures matched (`Detection.code_spans` — the match *is* the proof those
+bytes are the player). Last V8's `$1C` is caught by the last rule: its
+decode span contains the very track-selector signature detect.py located.
+A rejected entry becomes the one-rest `ERROR_PATTERN` placeholder, so
+references to it still resolve. Reachability is deliberately not a
+criterion — unreferenced entries are `--prune-patterns`' business, and
+dangling *references* (orderlists naming entries beyond the table) are a
+separate phenomenon this pass leaves alone. Corpus-wide the pass flags
+entries in 10 files, none referenced by any clean subtune.
 
 ### 4.3 Track/orderlist count — from the PSID header
 
@@ -522,13 +541,19 @@ column) but the note survives; detection is `det.note_flag`, gated on the
 
 **A bit-6 status byte skips the operand *and* the note** — `BIT status / BVS`
 at Commando `$50CF` and Last V8 `$80DC` branches over both reads, so a status
-byte of `$C0-$FE` consumes nothing but itself, where this decoder consumes
-three bytes. Verified in the 6502 but **deliberately not implemented**: the
-only file it moves significantly is Last V8, where it drops melody 71% → 3% —
-not because the decoding is wrong but because it changes how Last V8's
-*phantom* pattern `$1C` (§4.2) decodes, and the wrong reading happens to be
-luckier there. A correct fix that is net-negative until phantom entries are
-handled is recorded here instead of shipped.
+byte of `$C0-$FE` consumes nothing but itself, where the bit-7-first reading
+consumes three bytes. Verified in the 6502 (the AND #$1F / STA wait sits
+*before* the BVS, so the skipped event still holds its rows), and now
+implemented as `--status-bit6`, gated on the `BIT`/`BVS` shape
+(`detect.STATUS_BIT6_SHAPE`, 61 of 95 corpus files). It shipped **blocked**
+for two versions: the only file it moved significantly was Last V8, where it
+dropped melody 71% → 3% — not because the decoding is wrong but because it
+changed how Last V8's *phantom* pattern `$1C` (§4.2) decodes, and the
+phantom's garbage feeds the file-global speed table. With
+`--reject-phantoms` disarming that entry the two flags together move no
+corpus file's melody by a point at its presets; Commando has the shape but
+no `$C0-$FE` byte in any played pattern, so the byte-exact fixture holds
+even with the flag on.
 
 **3. Legato → tone portamento.** If `NoADSR` is set and the *same instrument
 was used twice in a row*, emit GT command `$3` (tone portamento):

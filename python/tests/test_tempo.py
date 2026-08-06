@@ -53,7 +53,11 @@ def test_the_fastest_steady_tempo_is_three_calls_per_row():
     assert GT_MIN_TEMPO == 2
 
 
-def test_auto_picks_the_fastest_steady_tempo():
+def test_auto_derives_commandos_own_speed():
+    # No longer a constant: the value comes from the player's speed gate
+    # (goatwriter.find_song_speeds). Commando's main tune ticks every 3
+    # frames, so the derived value happens to equal the old constant --
+    # subtune 1 ticks every 4 and gets a 4 (see test_song_speed.py).
     assert tempo_command_value(load_sid(str(SID))) == TEMPO_FASTEST_STEADY
 
 

@@ -5,11 +5,12 @@ from typing import Callable, List
 
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
-                         build_sng, tempo_command_value)
+                         build_sng, derived_group_tempos)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table, command_floor,
                        convert_patterns, apply_tempo, cmdtable_frames_per_row,
-                       pattern_references, referenced_patterns, reindex_tracks)
+                       pattern_references, phantom_patterns,
+                       referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (convert_tracks, ensure_playable_orderlists,
                      legalise_restarts)
@@ -106,6 +107,8 @@ def convert(sid_path: str, log: Logger = print,
             legal_restart: bool = False,
             slides: bool = False,
             effects: bool = False,
+            status_bit6: bool = False,
+            reject_phantoms: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -148,6 +151,23 @@ def convert(sid_path: str, log: Logger = print,
     an octave-up arpeggio the player never plays. Both live in the wavetable.
     Off by default: the Commando fixture has six instruments in the second
     case and one in the first. See goatwriter._wavetable_entries.
+
+    status_bit6 honours the player's bit-6-first status test (`BIT status /
+    BVS`, detect.STATUS_BIT6_SHAPE): a $C0-$FE status byte consumes only
+    itself instead of also an operand and a note the player never reads.
+    Applies only where detection finds that shape (61 of 95 corpus files,
+    Commando among them), so it is gated the same way slides is. Off by
+    default: it changes the bytes, and the byte-exact Commando fixture
+    encodes the old three-byte reading.
+
+    reject_phantoms validates the inferred pattern table against the
+    player's own layout (patterns.phantom_patterns): an entry whose decode
+    runs off the file, or whose bytes overlap the pointer tables or
+    signature-matched player code, is replaced by the ERROR_PATTERN
+    placeholder instead of being decoded as music. The `hi - lo - 1` entry
+    count over-counts, and a phantom entry is what made the bit-6 fix
+    net-negative on Last V8. Off by default: it changes the bytes of the
+    files it reaches.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -184,7 +204,12 @@ def convert(sid_path: str, log: Logger = print,
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
-        slides=slides)
+        slides=slides, status_bit6=status_bit6,
+        phantoms=(phantom_patterns(sid, det, slides, status_bit6)
+                  if reject_phantoms else None))
+    # Captured before reindexing: groups equal header subtune numbers until a
+    # split inserts extra ones, and the tempo derivation is per subtune.
+    subtunes_before = len(tracks) // 3
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows)
     # Unconditional, and before the restart pass: a voice whose orderlist
@@ -214,7 +239,23 @@ def convert(sid_path: str, log: Logger = print,
         log(f"Row length..............: {det.frames_per_row} player calls "
             "(from the note-duration table's common factor)")
     else:
-        resolved_tempo = tempo_command_value(sid)
+        # Derived per file, per subtune, from the player's own speed gate --
+        # see goatwriter.find_song_speeds. Applied here rather than through
+        # resolved_tempo because the values differ between subtunes.
+        resolved_tempo = None
+        groups = len(tracks) // 3
+        values, mult, note = derived_group_tempos(sid, det, groups)
+        if groups != subtunes_before:
+            # A split subtune shifted the numbering, so per-subtune
+            # attribution is unsafe; every group gets subtune 0's timebase.
+            values = [values[0]] * groups
+        written = sum(apply_tempo(new_patterns, tracks[3 * k:3 * k + 3],
+                                  values[k]) for k in range(groups))
+        log(f"Tempo...................: CMD_SETTEMPO "
+            f"{sorted(set(values))} in {written} pattern(s) ({note})")
+        if mult > 1:
+            log(f"*** TUNE TICKS FASTER THAN ITS ROWS CAN PLAY AT 1x -- PACK "
+                f"WITH gt2reloc -S{mult} OR IT PLAYS {mult}x TOO SLOW ***")
     if resolved_tempo is not None:
         if not GT_MIN_TEMPO <= resolved_tempo <= 0x7F:
             raise ValueError(

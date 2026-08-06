@@ -126,7 +126,9 @@ class ConversionAbort(Exception):
 
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
-                       note_flag: bool = False) -> Optional[List[int]]:
+                       note_flag: bool = False,
+                       status_bit6: bool = False,
+                       span: Optional[List[int]] = None) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -134,6 +136,17 @@ def _build_raw_pattern(data: bytes, addr: int,
     detect.SLIDE_OPERAND_SHAPE. It is off by default because 54 of 95 corpus
     players do not have that fetch, and reading a byte they never read
     desynchronises the rest of the pattern.
+
+    status_bit6 says the player tests bit 6 of the status byte first and
+    alone (`BIT status / BVS`, detect.STATUS_BIT6_SHAPE), branching past the
+    operand read AND the note read -- so a $C0-$FE status byte consumes only
+    itself, where the bit-7-first reading below consumes three bytes. Off by
+    default: the byte-exact Commando fixture encodes the old reading.
+
+    `span`, when given a list, receives the number of bytes the decode
+    consumed (terminator included) -- what phantom_patterns needs to know
+    which file bytes an entry would claim as pattern data. Nothing is
+    appended when the decode fails.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -155,6 +168,8 @@ def _build_raw_pattern(data: bytes, addr: int,
 
         if b1 == 0xFF:
             events += [0xFF, 0x00, 0x00, 0x00]
+            if span is not None:
+                span.append(i2 + 1)
             break
 
         get_next = b1 & 0x80
@@ -162,14 +177,18 @@ def _build_raw_pattern(data: bytes, addr: int,
         no_adsr = b1 & 0x20
         wait = b1 & 0x1F
 
-        # Bit 6 is tested *first* and on its own -- Commando $50CF is
-        # `BIT status / BVS $5118`, which jumps past the operand read AND the
-        # note read whatever bit 7 says. So a status byte of $C0-$FE consumes
-        # nothing but itself. Reading an operand and a note for those (the
-        # `get_next or not no_note` below used to) over-consumed two bytes and
-        # desynchronised the rest of the pattern; 37 such bytes occur in
-        # played patterns across Chicken Song, Hollywood or Bust, Last V8 and
-        # W.A.R.
+        # In the players with the BIT/BVS shape, bit 6 is tested *first* and
+        # on its own -- Commando $50CF `BIT status / BVS $5118` jumps past the
+        # operand read AND the note read whatever bit 7 says, so a status byte
+        # of $C0-$FE consumes nothing but itself where the `get_next` /
+        # `get_next or not no_note` reads below consume three bytes. Zeroing
+        # get_next reproduces that skip: no operand is read, and the note
+        # condition reduces to `not no_note`, which bit 6 has already denied.
+        # The low 5 bits still count -- the player stores the wait before the
+        # BVS -- and the event emits its hold rows like any other no-note one.
+        if status_bit6 and no_note:
+            get_next = 0
+
         if get_next:
             i2 += 1
             b2 = data[addr + i2]
@@ -582,6 +601,93 @@ def referenced_patterns(tracks: List[List[int]],
     return set(pattern_references(tracks, floor))
 
 
+def _overlap(a_start: int, a_len: int, b_start: int, b_len: int) -> bool:
+    return a_start < b_start + b_len and b_start < a_start + a_len
+
+
+def phantom_patterns(sid: SidFile, det: Detection,
+                     slides: bool = False,
+                     status_bit6: bool = False) -> dict:
+    """Entries of the inferred pattern table that provably are not pattern data.
+
+    The `hi - lo - 1` entry count (detect.py, H2G-CONVERSION-METHOD.md §4.2)
+    is table-adjacency arithmetic: nothing says every byte in the gap between
+    the LO and HI arrays is an authored entry, so the table can claim entries
+    whose "pointer" is whatever bytes happen to sit in the cells. Decoding
+    such an entry yields garbage whose shape swings arbitrarily with any
+    change to the decode grammar -- Last V8's entry $1C points one byte past
+    the last real pattern's terminator, straight into the player's own
+    track-selector routine, and blocked the (verified-correct) bit-6 status
+    read for exactly that reason.
+
+    An entry is judged phantom on the player's own terms, never statistically:
+
+      * its table cell, or the address stored in it, lies outside the file
+        (the existing per-entry guards in convert_patterns catch these too;
+        naming them here gives every rejection one vocabulary), or
+      * decoding it under the file's own grammar -- the same dialect,
+        slide-operand, note-flag and bit-6 settings the conversion will use
+        -- runs off the end of the file, or
+      * the bytes the decode would claim overlap the pattern pointer tables
+        themselves, or code that detection matched a player signature in
+        (det.code_spans). Those bytes are *known* to be something other than
+        pattern data; a decode that "succeeds" over them is reading the
+        player as music.
+
+    This is deliberately not a reachability test: patterns that no orderlist
+    references are --prune-patterns' business, and orderlists that reference
+    entries beyond the table (dangling references, SURVEY.md) are a separate,
+    known phenomenon this pass must not conflate with.
+
+    Returns {entry index: reason string}; empty when the table is sound.
+    """
+    data = sid.data
+    n = det.pattern_used + 1
+    stride = det.table_stride
+    # The pointer tables themselves, and every signature-matched run of
+    # player code, are provably not pattern data.
+    not_data = [(det.pattern_lo, n * stride), (det.pattern_hi, n * stride)]
+    not_data += det.code_spans
+
+    out: dict = {}
+    for i in range(n):
+        step = i * stride
+        lo_i, hi_i = det.pattern_lo + step, det.pattern_hi + step
+        if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
+            out[i] = "table cell outside the file"
+            continue
+        addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
+        if addr <= 1 or addr >= len(data):
+            out[i] = "address outside the file"
+            continue
+
+        span: List[int] = []
+        if det.pattern_dialect == "digi":
+            events = _build_raw_pattern_digi(data, addr)
+        elif det.pattern_dialect == "cmdtable":
+            events = _build_raw_pattern_cmdtable(
+                data, addr, det.duration_table, det.cmd_operands,
+                det.cmd_instrument, det.frames_per_row)
+        else:
+            events = _build_raw_pattern(data, addr,
+                                        slides and det.slide_operand,
+                                        det.note_flag,
+                                        status_bit6 and det.status_bit6,
+                                        span=span)
+        if events is None:
+            out[i] = "decode runs off the end of the file"
+            continue
+        if span:        # classic dialect only: the byte extent is known
+            hit = next((s for s in not_data
+                        if _overlap(addr, span[0], s[0], s[1])), None)
+            if hit is not None:
+                what = ("the pattern pointer tables"
+                        if hit in not_data[:2] else
+                        f"player code (signature at offset {hit[0]})")
+                out[i] = f"decode overlaps {what}"
+    return out
+
+
 def build_speed_table(patterns: List[List[int]]) -> List[tuple]:
     """Encode every portamento parameter as a speed table, in place.
 
@@ -619,7 +725,9 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      terminate_patterns: bool = False,
                      dedup: bool = False,
                      used: Optional[Set[int]] = None,
-                     slides: bool = False):
+                     slides: bool = False,
+                     status_bit6: bool = False,
+                     phantoms: Optional[dict] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -637,6 +745,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     Note it cannot help the *orderlist* limit: sharing a pattern renumbers a
     track's entries without removing any, so track length is unchanged.
+
+    `phantoms` (from phantom_patterns) rejects entries that provably are not
+    pattern data: each gets the same ERROR_PATTERN placeholder an
+    undecodable address gets, so a track that references one still resolves
+    -- to a single rest -- instead of to the player's own code decoded as
+    music.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -649,6 +763,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             # Not decoded at all: an unreferenced entry is often out-of-range
             # table padding, whose address diagnostics would be noise.
             raw_patterns.append(None)
+            continue
+
+        if phantoms and i in phantoms:
+            log(f"*** PATTERN ${i:X} IS NOT PATTERN DATA "
+                f"({phantoms[i]}), REJECTED ***")
+            raw_patterns.append(list(ERROR_PATTERN))
             continue
 
         # pattern_used is inferred from the gap between the LO and HI tables, so
@@ -670,7 +790,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 det.cmd_instrument, det.frames_per_row)
         else:
             events = _build_raw_pattern(data, addr, slides and det.slide_operand,
-                                        det.note_flag)
+                                        det.note_flag,
+                                        status_bit6 and det.status_bit6)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)

@@ -6,7 +6,9 @@ modeled here.
 """
 from __future__ import annotations
 
-from typing import List
+import re
+from dataclasses import dataclass
+from typing import List, Optional, Tuple
 
 from .detect import Detection
 from .sidfile import SidFile
@@ -78,8 +80,9 @@ RISE_SHIFT = 2
 # --- Tempo -----------------------------------------------------------------
 #
 # This converter emits exactly one pattern row per Hubbard player tick (see
-# patterns.py: an event with wait W occupies W+1 rows, one frame each). So a row
-# must last one player tick.
+# patterns.py: an event with wait W occupies W+1 rows). So a row must last one
+# player tick -- and a tick is reload+1 frames, not one frame: see the speed
+# gate below (find_song_speeds).
 #
 # Goattracker makes a row last `tempo+1` calls of the play routine (gplay.c:325
 # reloads tick from tempo, :322 advances the row when it hits 0). The startup
@@ -122,15 +125,200 @@ TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
 # in the editor, and costs nothing.
 
 
-def tempo_command_value(sid: SidFile, subtune: int = 0) -> int:
-    """Calls-per-row to write for this SID, from its PSID speed field.
+# --- The player's own song speed -------------------------------------------
+#
+# The classic players do NOT advance the sequencer every frame. Commando $5052:
+#
+#     5054  CE 13 55  DEC $5513     ; master speed counter, every call
+#     5057  10 06     BPL $505F
+#     5059  AD 17 55  LDA $5517     ; reload value
+#     505C  8D 13 55  STA $5513
+#     ...
+#     5066  AD 13 55  LDA $5513
+#     5069  CD 17 55  CMP $5517     ; equal only on the reload frame
+#     506C  D0 15     BNE $5083     ; other frames skip the sequencer
+#     ...
+#     5078  DE F2 54  DEC $54F2,X   ; the per-voice duration DEC (wait+1 rows)
+#
+# so a duration *unit* -- what one converted pattern row represents -- lasts
+# reload+1 frames, not one. The reload value is per subtune where init loads it
+# from a table (Commando $5F0F: TAX / LDA $5514,X / STA $5517 -> speeds 2,3,2
+# for its three tunes), and a static data byte in the players whose init never
+# writes it (Zoids: $146F holds 2, one speed for every subtune). The digi
+# engine carries the same gate (Off the Cuff: table at $183F, value 1).
+#
+# The DEC/BPL/LDA/STA 10-byte sequence with matching counter operands is the
+# fingerprint; it matches 85 of the 95 corpus files, and everywhere it was
+# checked per voice against siddump of the original (Commando, Thing on a
+# Spring, Crazy Comets, IK+, Zoids, After 8, Pandora, Nemesis, Off the Cuff)
+# the original's attack gaps are exactly reload+1 times the decoded rows.
+#
+# What it deliberately does not match: the *prescaler* variant (Mozart, Ninja,
+# Mega Apocalypse), `DEC / BPL past-an-RTS / LDA #imm / STA / RTS`, which runs
+# the whole player only v of every v+1 calls -- an effective rate of (v+1)/v
+# frames per call that no steady Goattracker tempo can express -- and the
+# command-table dialect, whose row length comes from its duration table's
+# common factor instead (patterns.cmdtable_frames_per_row).
+SPEED_GATE = re.compile(rb"\xce(..)\x10\x06\xad(..)\x8d(..)", re.DOTALL)
+SPEED_TABLE_LOAD = b"\xbd"       # LDA abs,X -- X is the subtune number
+SPEED_RELOAD_STORE = b"\x8d"     # STA abs
 
-    The header records only *whether* a subtune is CIA-timed, never at what
-    rate, so it cannot yield a multispeed factor. Either way one row is one
-    player tick, so the answer is the same minimum in both cases; the speed bit
-    is surfaced for logging and for callers that want to warn about multispeed.
+# A reload byte above this is not a song speed. Real corpus values are 0-8
+# (f = 1..9); per-subtune tables are read past their end for files whose
+# header over-counts subtunes (Commando claims 19), and the bytes that follow
+# are code whose values (0x70+) would otherwise become absurd tempos.
+MAX_SANE_SPEED_RELOAD = 15
+
+
+@dataclass(frozen=True)
+class SongSpeeds:
+    """Frames per duration unit, per subtune, read from the player.
+
+    `frames[s]` is reload+1 for subtune `s`, or None where the table byte is
+    not a sane speed (over-counted subtunes read past the real table).
     """
-    return TEMPO_FASTEST_STEADY
+    frames: Tuple[Optional[int], ...]
+    reload_addr: int
+    table_addr: Optional[int]    # None = static reload byte, one speed for all
+
+    def frames_for(self, subtune: int) -> Optional[int]:
+        if 0 <= subtune < len(self.frames):
+            return self.frames[subtune]
+        return None
+
+    @property
+    def source(self) -> str:
+        if self.table_addr is not None:
+            return f"per-subtune table at ${self.table_addr:04X}"
+        return f"static reload byte at ${self.reload_addr:04X}"
+
+
+def _gate_hits(data: bytes):
+    """(match offset, reload address) for every speed-gate shape in the file."""
+    hits = []
+    for m in SPEED_GATE.finditer(data):
+        ctr, rel, ctr2 = m.group(1), m.group(2), m.group(3)
+        if ctr != ctr2:
+            continue
+        hits.append((m.start(), rel[0] | rel[1] << 8))
+    return hits
+
+
+def _speeds_for_reload(sid: SidFile, rel_addr: int) -> Optional[SongSpeeds]:
+    """SongSpeeds for one gate, from its init table or its static byte."""
+    data = sid.data
+    rel_bytes = bytes([rel_addr & 0xFF, rel_addr >> 8])
+    load = re.escape(SPEED_TABLE_LOAD) + b"(..)" + \
+        re.escape(SPEED_RELOAD_STORE + rel_bytes)
+    n = max(sid.subtunes, 1)
+    for m in re.finditer(load, data, re.DOTALL):
+        t = m.group(1)
+        table_addr = t[0] | t[1] << 8
+        off = sid.to_offset(table_addr)
+        if not 0 <= off < len(data):
+            continue
+        vals = data[off:off + n]
+        frames = tuple(v + 1 if v <= MAX_SANE_SPEED_RELOAD else None
+                       for v in vals)
+        if frames and frames[0] is not None:
+            return SongSpeeds(frames, rel_addr, table_addr)
+    off = sid.to_offset(rel_addr)
+    if 0 <= off < len(data) and data[off] <= MAX_SANE_SPEED_RELOAD:
+        return SongSpeeds((data[off] + 1,) * n, rel_addr, None)
+    return None
+
+
+def find_song_speeds(sid: SidFile,
+                     det: Detection | None = None) -> Optional[SongSpeeds]:
+    """The tune's frames-per-duration-unit, or None where it cannot be read.
+
+    A file can hold several gate shapes (5 Title Tunes carries five separate
+    players; One on One's sample data happens to contain the byte sequence).
+    With a detection to hand, the gate nearest the detected instrument table is
+    the detected player's own. Without one, agreement across all hits is
+    required -- disagreeing hits mean the wrong one may be chosen, and a wrong
+    tempo is worse than the old constant.
+    """
+    candidates = []
+    for pos, rel_addr in _gate_hits(sid.data):
+        speeds = _speeds_for_reload(sid, rel_addr)
+        if speeds is not None:
+            candidates.append((pos, speeds))
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0][1]
+    if det is not None and det.instr_start >= 0:
+        return min(candidates, key=lambda c: abs(c[0] - det.instr_start))[1]
+    first = candidates[0][1]
+    if all(c[1].frames == first.frames for c in candidates):
+        return first
+    return None
+
+
+def recommended_multiplier(speeds: Optional[SongSpeeds],
+                           subtune: int = 0) -> int:
+    """gt2reloc -S value under which this tune's tempo is expressible.
+
+    A row must last `frames` player calls scaled by the multiplier, and
+    Goattracker's fastest steady row is three calls (values 2 and 3 both give
+    tempo 2; below that is funktempo). So frames >= 3 works at 1x, frames == 2
+    needs the play routine called twice per frame, and frames == 1 three
+    times. greloc.c:1595 arms a CIA stub for exactly this.
+    """
+    f = speeds.frames_for(subtune) if speeds is not None else None
+    if f is None or f >= GT_MIN_TEMPO + 1:
+        return 1
+    return -(-(GT_MIN_TEMPO + 1) // f)     # ceil(3 / f)
+
+
+def tempo_command_value(sid: SidFile, subtune: int = 0,
+                        speeds: Optional[SongSpeeds] = None,
+                        multiplier: int = 1) -> int:
+    """CMD_SETTEMPO value for this subtune: its player's frames per unit.
+
+    One converted row is one duration unit, and the player's speed gate says a
+    unit lasts `frames` frames -- so a row must last `frames` play calls, and
+    the command value for any count >= 3 *is* the count (gplay.c:494
+    decrements values >= 3, :325 makes a row last tempo+1 calls).
+
+    `multiplier` is the gt2reloc -S factor the caller intends to pack with:
+    at 50*m Hz a row of the same real length needs frames*m calls. Where the
+    speed cannot be read (no gate shape, a prescaler player, an over-counted
+    subtune) the old constant stands, scaled the same way, so a file keeps one
+    consistent timebase.
+    """
+    if speeds is None:
+        speeds = find_song_speeds(sid)
+    f = speeds.frames_for(subtune) if speeds is not None else None
+    if f is None:
+        # The old constant, scaled to the caller's timebase: 3 calls at 1x is
+        # 3*m calls at m-times the call rate.
+        return min(TEMPO_FASTEST_STEADY * multiplier, 0x7F)
+    # The floor is not only the funktempo boundary: every instrument this
+    # writer emits carries gatetimer 2 (_write_instruments), and gplay.c:334
+    # stops the song outright when gatetimer exceeds the channel's tick. A
+    # command value of 3 lands as effective tempo 2 -- exactly at that
+    # boundary -- so nothing below 3 may ever be emitted here.
+    return min(max(f * multiplier, TEMPO_FASTEST_STEADY), 0x7F)
+
+
+def derived_group_tempos(sid: SidFile, det: Detection,
+                         groups: int) -> Tuple[List[int], int, str]:
+    """Per-subtune CMD_SETTEMPO values, the -S multiplier, and a source note.
+
+    `groups` is how many 3-track groups the caller has, which equals the
+    header subtune numbering as long as no subtune has been split (the caller
+    checks that). The multiplier is chosen from subtune 0 -- the canonical
+    tune, and what a packed .sid plays by default -- and every subtune's value
+    is scaled by it, so the whole file shares one timebase.
+    """
+    speeds = find_song_speeds(sid, det)
+    mult = recommended_multiplier(speeds)
+    values = [tempo_command_value(sid, s, speeds, mult) for s in range(groups)]
+    note = speeds.source if speeds is not None else \
+        "no speed gate found, keeping the constant"
+    return values, mult, note
 
 
 def _table_length_byte(entries: int, what: str) -> int:

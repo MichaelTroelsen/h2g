@@ -127,40 +127,50 @@ byte: an empty fourth (speed) table, which GTS2 has no slot for.
 
 ### `--tempo` (playback speed)
 
-This converter emits **one pattern row per Hubbard player tick**, so a row must
-last one tick. Goattracker makes a row last `tempo+1` play-routine calls and
-defaults to **6**, so an untempo'd conversion plays 6× too slow.
+This converter emits **one pattern row per Hubbard player tick** — and a tick
+is not a frame. The classic players gate their sequencer behind a countdown
+(Commando `$5054`: `DEC $5513 / BPL / LDA $5517 / STA $5513`, with the
+per-voice duration DEC running only on the reload frame), so one tick lasts
+`reload+1` frames: 3 for Commando's main tune, 2 for Thing on a Spring, 4 for
+Nemesis the Warlock. The reload value is **per subtune** where init loads it
+from a table (Commando `$5F0F`: `TAX / LDA $5514,X / STA $5517` — speeds
+2,3,2), and a static data byte where init never writes it (Zoids `$146F`).
+The digi engine carries the same gate.
 
-Raising Goattracker's speed multiplier alone does not fix it: the default tempo
-is computed as `6*multiplier-1` (`gplay.c:212`), which cancels out exactly. The
-only lever stored *in the file* is the last instrument's Attack/Decay
-(`gplay.c:221`), and that one does **not** scale:
-
-```c
-if ((instr[MAX_INSTR-1].ad >= 2) && (!(instr[MAX_INSTR-1].ptr[WTBL])))
-    cptr->tempo = instr[MAX_INSTR-1].ad - 1;
-```
-
-So `instr[63].ad = A` means A calls per row, i.e. `A/multiplier` frames per row.
-Goattracker treats `A < 2` as funktempo, so the fastest expressible row is 2
-calls — **one frame per row therefore requires speed multiplier 2**. That is
-exactly the "2×" a converted tune needs.
+`--tempo auto` reads that value out of the player and writes it as each
+subtune's `CMD_SETTEMPO` — a row of `frames` calls is exactly one tick of
+`frames` frames. The value goes in pattern data because it survives
+`gt2reloc`; the old instrument-63 Attack/Decay route did not (the ~1.2 KB of
+padding it needed was stripped by the packer, leaving the tune at
+Goattracker's 6-calls-per-row default).
 
 ```sh
-python -m h2g song.sid --tempo auto     # derive from the PSID speed field
-python -m h2g song.sid --tempo 6        # explicit calls-per-row
+python -m h2g song.sid --tempo auto     # derive per subtune from the player
+python -m h2g song.sid --tempo 6        # explicit calls-per-row, all subtunes
 ```
 
-Writing a tempo pads the instrument list out to 63 entries (the padding is
-inert — no table pointers, ~1.2 KB), so it is **off by default** to keep the
-byte-exact `Commando.sng` fixture intact. `play.ps1` passes `-Tempo auto`
-by default, since that path exists to actually play the file.
+Two limits, both from the Goattracker player:
 
-**On the PSID speed field:** it is a per-subtune bitmap saying only *whether* a
-subtune is CIA-timed rather than VBI-driven — never at what rate. It therefore
-cannot yield a multispeed factor, and 90 of the 95 corpus files have it set to
-zero. It is parsed and reported (`SidFile.speed`, `is_cia_timed()`), but the
-tempo is one tick per row either way.
+- The fastest steady row is **three calls** (`gplay.c:325` reads tempo 0/1 as
+  funktempo, and `gplay.c:334` stops the song outright if an instrument's
+  gatetimer — always 2 here — exceeds the tick). A tune ticking every 1-2
+  frames therefore cannot play at speed in a 1× Goattracker: `--tempo auto`
+  writes `frames × multiplier` calls and the log names the `gt2reloc -S`
+  value to pack with. See [presets](#per-song-presets--presetsjson) — the
+  recommended multiplier is recorded per song. 30 of the 80 converting corpus
+  files tick every 2 frames and need `-S2`; none tick every frame.
+- Where no speed gate is found (the command-table dialect derives its row
+  from the duration table instead; Mozart/Ninja/Mega Apocalypse use a
+  *prescaler* — run the player v of every v+1 calls — whose jittery rate no
+  steady tempo can express), auto falls back to the old constant of 3.
+
+`--tempo` is **off by default** to keep the byte-exact `Commando.sng` fixture
+intact — an untempo'd file plays at 6 calls per row. `play.ps1` passes
+`-Tempo auto`, since that path exists to actually play the file.
+
+**On the PSID speed field:** it is a per-subtune bitmap saying only *whether*
+a subtune is CIA-timed rather than VBI-driven — never at what rate. It cannot
+yield the tick length; the player's own speed gate is what does.
 
 ### `--prune-patterns` and `--dedup-patterns` (size)
 
@@ -374,6 +384,54 @@ exercises it at all within 60 s (0 → 76 slide frames against the original's
 Off by default: it changes the output bytes of the files it reaches, the
 fixture among them.
 
+### `--status-bit6` (the skipped operand and note)
+
+In 61 of the 95 corpus players the status-byte fetch tests **bit 6 first,
+and alone**: Commando `$50CF` is `BIT status / BVS`, and the branch lands
+past *both* the operand read and the note read, whatever bit 7 says. A
+status byte of `$C0-$FE` therefore consumes nothing but itself — where this
+decoder read an operand and a note the player never fetched, putting every
+byte after them one or two positions out. Gated on the `BIT`/`BVS` shape
+(`detect.STATUS_BIT6_SHAPE`); the digi and cmdtable engines fetch
+differently and are untouched.
+
+Commando has the shape but its played patterns contain no `$C0-$FE` byte, so
+the byte-exact fixture does not move even with the flag on (pinned by a
+test). Corpus-wide the bytes it reaches are almost all in *phantom* table
+entries and unplayed remainders — at each song's presets only `Last_V8` and
+`W_A_R` change at all — which is why this flag shipped **blocked** for two
+versions: decoding Last V8's phantom entry `$1C` differently poisoned the
+packed file's speed table and took its measured melody from 71% to 3%. Use
+it together with `--reject-phantoms`, which removes that hazard; measured
+with both flags at each song's presets, no corpus file moves by a point.
+
+### `--reject-phantoms` (pattern-table validation)
+
+The pattern count is inferred as `hi - lo - 1` — the gap between the LO and
+HI pointer tables (`H2G-CONVERSION-METHOD.md` §4.2). Nothing says every byte
+of that gap is an authored entry, so the table can claim **phantom** entries
+whose "pointer" is whatever bytes sit in the cells. `Last_V8`'s entry `$1C`
+points one byte past the last real pattern's terminator, straight into the
+player's own track-selector routine.
+
+The pass judges entries on the player's own terms, never statistically: an
+entry is rejected if its cell or address lies outside the file, if decoding
+it under the file's own grammar (dialect, `--slides`, `--status-bit6`) runs
+off the end of the file, or if the bytes it would decode overlap the pointer
+tables themselves or code that detection matched a player signature in
+(`Detection.code_spans` — bytes *known* to be the player). A rejected entry
+becomes the same one-rest placeholder an unresolvable address gets, so
+orderlists that name it still resolve. Reachability is deliberately not a
+criterion — unreferenced patterns are `--prune-patterns`' business, and
+orderlists naming entries beyond the table (dangling references, see
+`SURVEY.md`) are a separate phenomenon.
+
+Corpus-wide the pass flags entries in 10 files, none of them referenced by
+any clean subtune's orderlist; 7 of the 10 are digi-engine files whose
+flagged entries already decoded to the placeholder, so bytes actually change
+only for `Last_V8`, `Last_V8_C128_version` and `Kings_of_the_Beach_ingame`.
+Off by default: it changes the output bytes of those files.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes
@@ -405,6 +463,26 @@ right for every song rather than searched per song — `gts5`, `--tempo auto`
 and `--legal-restart` — which is what lets a preset reproduce the exact bytes
 it records, and what makes the `gt2reloc` step at the end of the block
 succeed for all 78.
+
+Each song also records a **`multiplier`** — the `gt2reloc -S` value its
+`.sng` is tempo'd for. It is not a searched option but a property of the
+tune's player: the classic players gate their sequencer behind a countdown
+(`DEC counter / BPL / LDA reload / STA counter`), so one pattern row lasts
+`reload+1` frames, per subtune where init loads the reload from a table.
+`--tempo auto` reads that value out of the file and writes it as each
+subtune's `CMD_SETTEMPO`. A tune ticking every 3+ frames plays exactly right
+at `multiplier` 1; one ticking every 1–2 frames cannot (Goattracker's fastest
+steady row is three calls), so its tempo is written as `frames × multiplier`
+calls and the packing step must raise the call rate to match:
+
+```powershell
+gt2reloc song.sng song.sid -S2      # when "multiplier": 2
+```
+
+A `.sng` packed without its recorded multiplier plays uniformly
+`multiplier` times too slow. Note that **siddump cannot check this** — it
+ignores the PSID speed field and calls the play routine 50 times a second
+regardless — only a cycle-counting emulator can.
 
 [`presets.json`](presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.

@@ -11,8 +11,8 @@ these chains -- see CLAUDE.md.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Callable, Optional
+from dataclasses import dataclass, field
+from typing import Callable, List, Optional, Tuple
 
 from .search import search_file
 from .sidfile import HLEN, SidFile
@@ -67,6 +67,10 @@ class Detection:
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
+    # True when the player tests bit 6 of the status byte FIRST and alone
+    # (`BIT status / BVS`), branching past the operand read AND the note read
+    # -- so a $C0-$FE status byte consumes only itself. See STATUS_BIT6_SHAPE.
+    status_bit6: bool = False
     # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
     # note-duration lookup table, how many operand bytes each $8x command
     # takes, and which command index sets the instrument.
@@ -77,6 +81,12 @@ class Detection:
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
     frames_per_row: int = 1
+    # (offset, length) of every signature the main detection chains matched.
+    # Each is a run of bytes *known* to be the player's own code -- that is
+    # what the signature fingerprints -- so anything else claiming those bytes
+    # (a pattern-table entry, say) is provably not pointing at pattern data.
+    # See patterns.phantom_patterns.
+    code_spans: List[Tuple[int, int]] = field(default_factory=list)
 
     @property
     def can_convert(self) -> bool:
@@ -339,7 +349,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     det = Detection()
 
     def find(pattern: str) -> int:
-        return search_file(data, pattern)
+        i = search_file(data, pattern)
+        if i >= 1:
+            # A successful match IS player code -- that is the premise the
+            # whole detection method rests on -- so remember where it was.
+            det.code_spans.append((i, len(pattern.split())))
+        return i
 
     # Probed before anything else: it sets the instrument record size the
     # instrument pass below depends on, and its tables are read from their own
@@ -613,6 +628,10 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.slide_operand:
         log("Pattern slide form......: two-byte (16-bit step)")
 
+    det.status_bit6 = _find_status_bit6(data)
+    if det.status_bit6:
+        log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
+
     det.effect_rise, det.effect_arp = _find_effect_routines(sid, det)
     if det.effect_rise or det.effect_arp:
         found = ", ".join(n for n, ok in (("rise", det.effect_rise),
@@ -647,6 +666,33 @@ SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
 
 def _find_slide_operand(data: bytes) -> bool:
     return search_file(data, SLIDE_OPERAND_SHAPE) >= 1
+
+
+# The status-byte fetch that tests bit 6 first, and alone. Commando $50C2
+# (Last V8 $80CF is byte-for-byte the same shape):
+#
+#     50C2  B1 5F     LDA ($5F),Y       ; the status byte
+#     50C4  9D F5 54  STA $54F5,X       ; kept raw, per voice
+#     50C7  8D 02 55  STA $5502         ; ...and in a scratch cell
+#     50CA  29 1F     AND #$1F
+#     50CC  9D F2 54  STA $54F2,X       ; wait counter (low 5 bits)
+#     50CF  2C 02 55  BIT $5502         ; V := bit 6 of the status byte
+#     50D2  70 44     BVS $5118         ; set -> skip BOTH reads below
+#     50D4  ...       INC / LDA $5502 / BPL ...
+#     50DC  C8 B1 5F  INY / LDA ($5F),Y ; bit 7 set: the operand byte
+#     50ED  C8 B1 5F  INY / LDA ($5F),Y ; the note byte
+#
+# The BVS lands at the DEC past both INY/LDA pairs, whatever bit 7 says --
+# so a status byte of $C0-$FE consumes nothing but itself, where a decoder
+# that honours bit 7 first reads an operand and a note it never read and
+# desynchronises the rest of the pattern. 61 of 95 corpus files have this
+# shape; the rest (the digi and cmdtable engines among them) fetch
+# differently and are not touched by the flag this gates.
+STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
+
+
+def _find_status_bit6(data: bytes) -> bool:
+    return search_file(data, STATUS_BIT6_SHAPE) >= 1
 
 
 # --- The instrument effect byte (+7) ---------------------------------------

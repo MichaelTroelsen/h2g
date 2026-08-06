@@ -46,12 +46,14 @@ def main(argv=None) -> int:
         "--tempo", metavar="N|auto", default=None,
         help="write a startup tempo (calls per pattern row, 2..127) as a "
              "CMD_SETTEMPO on each subtune's first pattern row. 'auto' "
-             "derives it from the PSID speed field. Omitted by default, "
-             "which leaves Goattracker's startup default of 6 calls/row -- "
-             "too slow, since this converter emits one row per player tick. "
-             "Original speed also needs Goattracker's speed multiplier "
-             "raised (3 for exact one-row-per-frame, though the best "
-             "multiplier varies per file)")
+             "derives it per subtune from the player's own speed gate -- "
+             "the counter that makes a duration unit last reload+1 frames "
+             "-- and falls back to 3 where no gate is found. Omitted by "
+             "default, which leaves Goattracker's startup default of 6 "
+             "calls/row -- too slow, since this converter emits one row per "
+             "player tick. Tunes ticking every 1-2 frames also need the "
+             "packed player's call rate raised: convert logs the gt2reloc "
+             "-S value, and presets.json records it per song")
     parser.add_argument(
         "--dedup-patterns", action="store_true",
         help="share one pattern between byte-identical slices. Hubbard tunes repeat heavily, so this typically removes 10-20%% of patterns and brings some tunes under Goattracker's 208-pattern limit. Off by default because it changes the output bytes. Does not shorten orderlists")
@@ -103,6 +105,24 @@ def main(argv=None) -> int:
              "arpeggio for it -- half of every arpeggio instrument in the "
              "corpus. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--status-bit6", action="store_true",
+        help="honour the player's bit-6-first status test (BIT/BVS): a "
+             "$C0-$FE status byte consumes only itself, instead of also an "
+             "operand and a note the player never reads -- which kept the "
+             "rest of the pattern in step. Applies only where detection "
+             "finds that shape (61 of 95 corpus files) and is a no-op for "
+             "the rest. Off by default: it changes the output bytes of the "
+             "files it reaches")
+    parser.add_argument(
+        "--reject-phantoms", action="store_true",
+        help="validate the inferred pattern table: an entry whose decode "
+             "runs off the file, or whose bytes overlap the pointer tables "
+             "or signature-matched player code, is provably not pattern "
+             "data (the hi-lo-1 entry count over-counts) and is replaced "
+             "by a one-rest placeholder instead of being decoded as music. "
+             "Off by default: it changes the output bytes of the files it "
+             "reaches")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -139,7 +159,9 @@ def main(argv=None) -> int:
             args.tempo = always["tempo"]
         if not _given("--legal-restart") and always.get("legal_restart"):
             args.legal_restart = True
-        for flag, key in (("--slides", "slides"), ("--effects", "effects")):
+        for flag, key in (("--slides", "slides"), ("--effects", "effects"),
+                          ("--status-bit6", "status_bit6"),
+                          ("--reject-phantoms", "reject_phantoms")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -184,7 +206,9 @@ def main(argv=None) -> int:
                       pack=args.pack_repeats,
                       legal_restart=args.legal_restart,
                       slides=args.slides,
-                      effects=args.effects)
+                      effects=args.effects,
+                      status_bit6=args.status_bit6,
+                      reject_phantoms=args.reject_phantoms)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

@@ -47,9 +47,11 @@ import sys
 from pathlib import Path
 
 from h2g import __version__
-from h2g.convert import convert
-from h2g.goatwriter import FORMAT_GTS5
+from h2g.convert import _detect_tables, convert
+from h2g.goatwriter import (FORMAT_GTS5, find_song_speeds,
+                            recommended_multiplier)
 from h2g.patterns import DEFAULT_TRACK
+from h2g.sidfile import load_sid
 
 # Searched per song. Order is irrelevant -- every combination is tried.
 MAX_ROWS = (94, 128)
@@ -124,6 +126,27 @@ def _score(blob: bytes) -> tuple[int, int, int]:
     return playable, rows, -len(blob)
 
 
+def pack_multiplier(sid_path: Path) -> int:
+    """The gt2reloc -S value this song's .sng is tempo'd for.
+
+    Not searched and not an option of convert(): it is a property of the
+    tune's player, read from its speed gate (goatwriter.find_song_speeds). A
+    tune whose sequencer ticks every frame or every other frame cannot play
+    at speed in a 1x Goattracker -- the fastest steady row is three calls --
+    so `--tempo auto` writes frames*multiplier calls per row and the packing
+    step must raise the call rate to match. 1 means pack plainly; siddump
+    cannot check this (it ignores the PSID speed field), only a
+    cycle-counting emulator can.
+    """
+    try:
+        sid = load_sid(str(sid_path))
+        sid, det = _detect_tables(sid, lambda m: None)
+        speeds = find_song_speeds(sid, det if det.can_convert else None)
+        return recommended_multiplier(speeds)
+    except Exception:  # noqa: BLE001 - an unreadable song just packs plainly
+        return 1
+
+
 def best_options(sid_path: Path) -> dict | None:
     """Search every combination for one file; None if it never converts."""
     best = None
@@ -164,6 +187,7 @@ def main(argv=None) -> int:
     for path in paths:
         found = best_options(path)
         if found:
+            found["multiplier"] = pack_multiplier(path)
             songs[path.name] = found
         print(f"  {path.name:44} {'-' if not found else found['max_rows']}",
               file=sys.stderr)
