@@ -148,7 +148,23 @@ test dependency).
   - `detect.py` — player-engine signature chains (`detect`, port of the
     `FindInstruments`/`FindSubSongs`/`FindTrackSelector`/`FindPattern`/
     `FindPlayerVersion` blocks in `loadfile()`). Returns a `Detection` dataclass.
-  - `tracks.py` — `convert_tracks`, port of `GoatConvertTracks`.
+    Every signature in the instrument chain fingerprints the *store* into the
+    SID (`LDA record,X / STA $D40x,Y`), which is why a player that reaches the
+    SID through subroutines matched none of them. `INSTRUMENT_INDEX_SHAPE`
+    fingerprints the *load* instead (`LDA idx,X / STX / ASL ASL ASL / TAX /
+    LDA record+2,X`) and is consulted last, so it can rescue a file that finds
+    nothing and never disturb one that reads correctly — the same rule as
+    `find_relocation` and `find_init_writes`. The one match it yields names
+    two things: the instrument table, and the per-voice instrument index array
+    (`Detection.initial_instruments`).
+  - `tracks.py` — `convert_tracks`, port of `GoatConvertTracks`. Also
+    `apply_initial_instruments` (behind `--initial-instrument`), which gives a
+    voice the instrument the player starts it on where no pattern names one.
+    **Off by default and deliberately not in `presets.json`'s `always`
+    block**: the index array is mutable player state, so its file-image value
+    is the starting instrument only for a rip of a single tune — right for
+    `Delta_Mix-E-Load_loader`, wrong for a fifteen-subtune demo. See
+    README.md § `--initial-instrument`.
   - `patterns.py` — `convert_patterns` + `reindex_tracks`, port of `GoatConvertPattern`
     (pattern decode, >376-byte pattern slicing, track pattern-number re-indexing).
   - `goatwriter.py` — `build_sng`, port of `GoatClear` + `GoatSave` (assembles the

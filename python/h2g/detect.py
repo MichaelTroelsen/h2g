@@ -91,6 +91,13 @@ class Detection:
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
     frames_per_row: int = 1
+    # The instrument each voice plays before any pattern selects one. The
+    # player keeps a per-voice instrument index in a three-byte array and only
+    # writes it when a pattern carries an instrument byte, so the array's
+    # image value is what a voice sounds until then. Empty when the shape that
+    # names it (INSTRUMENT_INDEX_SHAPE) is not present. See
+    # tracks.apply_initial_instruments.
+    initial_instruments: Tuple[int, ...] = ()
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -189,6 +196,47 @@ def _digi_entry_ok(sid: SidFile, k: int) -> bool:
         return False
     off = sid.to_offset(data[k + 1] * 256 + data[k])
     return 1 < off < len(data)
+
+
+# `LDA voice_instr,X / STX save / ASL ASL ASL / TAX / LDA record+2,X`: the
+# player turning a voice's instrument *number* into a record offset. Records
+# are 8 bytes, so the three shifts are the multiply, and the load that follows
+# names the record's waveform field -- two bytes into the table.
+#
+# This fingerprints the load rather than the store, which is what makes it
+# work where the store-shaped signatures do not, and it yields two addresses
+# at once: the instrument table (operand of the second `LDA`, minus 2) and the
+# per-voice instrument array the first `LDA` indexes.
+INSTRUMENT_INDEX_SHAPE = "BD ?? ?? 8E ?? ?? 0A 0A 0A AA BD ?? ??"
+
+
+def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
+    """Locate the per-voice instrument array, and return the match offset.
+
+    Fills `det.initial_instruments` with the array's image bytes: the
+    instrument each voice sounds until one of its patterns selects another.
+    The player writes this array only when a pattern carries an instrument
+    byte, so for a voice whose first pattern carries none -- 41 of the
+    corpus's 821 voice orderlists -- the image value is the whole answer.
+    Goattracker has no equivalent: gplay.c:223 starts every channel on
+    instrument 1, which this converter writes as the empty "Clear Voice"
+    record, so those voices come out silent. See
+    tracks.apply_initial_instruments.
+
+    Returns -1 when the shape is absent, which leaves every caller on its
+    existing path.
+    """
+    data = sid.data
+    i = search_file(data, INSTRUMENT_INDEX_SHAPE)
+    if i <= -1:
+        return -1
+    off = sid.to_offset(_addr16(data, i + 1, i + 2))
+    if off < 0 or off + 3 > len(data):
+        return i
+    det.initial_instruments = tuple(data[off:off + 3])
+    log("Initial instruments.....: "
+        + " ".join(f"${b:02X}" for b in det.initial_instruments))
+    return i
 
 
 def _detect_digi(sid: SidFile, det: Detection, log: Logger) -> bool:
@@ -381,17 +429,36 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     digi = _detect_digi(sid, det, log)
 
     # --- Instruments ---------------------------------------------------
+    # Every signature in this chain fingerprints the *store* into the SID:
+    # `LDA record,X / STA $D40x,Y`. That is what makes them fail on a player
+    # which reaches the SID through subroutines instead -- Phantoms of the
+    # Asteroid writes its five instrument bytes with `JSR $F04E/$F056/$F066/
+    # $F06E` and matches none of them, so it converted with zero instruments
+    # and played silence. INSTRUMENT_INDEX_SHAPE below fingerprints the *load*
+    # instead, which is common to both.
+    idx = _find_instrument_index(sid, det, log)
     i = find("BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4")       # Chimera
     if i <= -1:
         i = find("BD ?? ?? 99 02 D4 BD ?? ?? 99 03 D4")      # ACE2
     if i <= -1:
         i = find("BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48")  # IK+
-    if i <= -1:
+    addr = -1
+    if i > -1:
+        addr = _addr16(data, i + 1, i + 2)
+        log(f"Found Instruments at....: ${addr:X}")
+    elif idx >= 0:
+        # Last, and only consulted once every store-shaped signature has
+        # failed, so it can rescue a file that finds nothing and can never
+        # move one that already reads correctly. Corpus-wide the shape is
+        # present in 70 files and names the same address the chain above
+        # already found in 68 of them; the two it does not are the digi
+        # engine, which has its own detection path and never reaches here.
+        addr = _addr16(data, idx + 11, idx + 12) - 2
+        log(f"Found Instruments at....: ${addr:X} (via the index load)")
+    if addr < 0:
         log("*** CAN'T FIND INSTRUMENTS ***")
     else:
-        addr = _addr16(data, i + 1, i + 2)
         det.instr_start = sid.to_offset(addr)
-        log(f"Found Instruments at....: ${addr:X}")
         if not _base_ok("INSTRUMENTS", det.instr_start, len(data), log):
             # instr_used stays 0, not -1: goatwriter always emits the "Clear
             # Voice" record, so -1 would write a count byte of 0 that disagrees

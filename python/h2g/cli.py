@@ -140,6 +140,18 @@ def main(argv=None) -> int:
              "than partly folded. Off by default: it changes the output bytes "
              "of the 17 corpus files it reaches")
     parser.add_argument(
+        "--initial-instrument", action="store_true",
+        help="give each voice the instrument the player starts it on. Hubbard "
+             "keeps a per-voice instrument index and writes it only when a "
+             "pattern carries an instrument byte, so a voice whose first note "
+             "arrives before any pattern names one sounds the index array's "
+             "loaded value. Goattracker instead starts every channel on "
+             "instrument 1, which this writer emits as an empty record, so "
+             "those voices came out silent -- Delta Mix-E-Load loses two of "
+             "its three. Costs one pattern-table entry per distinct "
+             "(pattern, instrument) pair. Off by default: it changes the "
+             "output bytes of the 9 corpus files it reaches")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -179,7 +191,8 @@ def main(argv=None) -> int:
         for flag, key in (("--slides", "slides"), ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
                           ("--reject-phantoms", "reject_phantoms"),
-                          ("--fold-transpose", "fold_transpose")):
+                          ("--fold-transpose", "fold_transpose"),
+                          ("--initial-instrument", "initial_instrument")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -227,7 +240,8 @@ def main(argv=None) -> int:
                       effects=args.effects,
                       status_bit6=args.status_bit6,
                       reject_phantoms=args.reject_phantoms,
-                      fold_transpose=args.fold_transpose)
+                      fold_transpose=args.fold_transpose,
+                      initial_instrument=args.initial_instrument)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

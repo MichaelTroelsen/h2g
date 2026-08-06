@@ -12,8 +12,9 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
-from .tracks import (convert_tracks, ensure_playable_orderlists,
-                     fold_transposes, legalise_restarts)
+from .tracks import (apply_initial_instruments, convert_tracks,
+                     ensure_playable_orderlists, fold_transposes,
+                     legalise_restarts)
 
 Logger = Callable[[str], None]
 
@@ -110,6 +111,7 @@ def convert(sid_path: str, log: Logger = print,
             status_bit6: bool = False,
             reject_phantoms: bool = False,
             fold_transpose: bool = False,
+            initial_instrument: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -237,6 +239,11 @@ def convert(sid_path: str, log: Logger = print,
     # packed .sid at all. That is silent data loss, not a stylistic choice,
     # so it is not gated behind an option.
     ensure_playable_orderlists(tracks, log)
+    # After reindexing, so the orderlist bytes and `new_patterns` indices are
+    # both Goattracker's; before the restart pass, which reads orderlist
+    # lengths this may not change but must not race.
+    if initial_instrument:
+        apply_initial_instruments(tracks, new_patterns, det, log)
     if legal_restart:
         # After reindexing, packing, merging and splitting: those all change an
         # orderlist's length, and whether a restart position is in range is a

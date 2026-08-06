@@ -10,8 +10,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
 from .patterns import (DEFAULT_TRACK, GT_LASTNOTE, GT_ORDER_RESTART,
-                       command_floor, decode_entry, pattern_references,
-                       pattern_top_note)
+                       MAX_PATTERNS, command_floor, decode_entry,
+                       pattern_references, pattern_top_note)
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
@@ -483,6 +483,108 @@ def fold_transposes(sid: SidFile, det: Detection, tracks: List[List[int]],
                 f"+{worst_kept} AND DO NOT FIT THE NOTE RANGE, LEFT CLAMPED "
                 f"AT +{GT_MAX_TRANSPOSE} ***")
     return variants
+
+
+def apply_initial_instruments(tracks: List[List[int]],
+                              patterns: List[List[int]],
+                              det: Detection, log=None) -> int:
+    """Give each voice the instrument it starts on, where a pattern names none.
+
+    Hubbard's player keeps a per-voice instrument *index* and writes it only
+    when a pattern carries an instrument byte; until then the voice sounds
+    whatever the index array held when the file was loaded
+    (`Detection.initial_instruments`). Goattracker has the same carry-forward
+    rule -- `gplay.c:914` assigns `cptr->instr` only when the row's instrument
+    column is non-zero -- but a different starting point: `gplay.c:223` sets
+    every channel to instrument 1, which this writer emits as the empty
+    "Clear Voice" record. A voice whose first note is reached before any
+    pattern selects an instrument therefore plays with attack/decay 0 and
+    sustain/release 0, which is silence.
+
+    That is Delta Mix-E-Load's two dead voices exactly: its orderlists are one
+    pattern each, patterns $18 and $17 carry no instrument byte, and the array
+    at $C535 reads `03 09 00` -- the three instruments siddump shows the
+    original playing. It is 41 of the corpus's 821 voice orderlists in nine
+    files.
+
+    Applied by copying the pattern and pointing that one orderlist step at the
+    copy, never by patching in place: the same pattern is played again later
+    in half these files, and there the voice's instrument is whatever earlier
+    patterns set, so an instrument column written into the shared copy would
+    fire every time round. Costs one pattern entry per distinct
+    (pattern, instrument) pair against Goattracker's 208.
+
+    Returns the number of orderlist steps repointed.
+    """
+    if not det.initial_instruments:
+        return 0
+    # goatwriter drops instruments past MAX_INSTRUMENTS, so an initial index
+    # beyond what will be written names a record the .sng does not contain.
+    ceiling = min(det.instr_used + 1, 50)
+    copies: Dict[Tuple[int, int], int] = {}
+    fixed = 0
+    for ti, track in enumerate(tracks):
+        instr = _initial_for(det, ti % 3)
+        if instr is None or not 2 <= instr <= ceiling:
+            continue
+        for pos, entry in enumerate(track):
+            if entry == GT_ORDER_RESTART:
+                break
+            if entry >= MAX_PATTERNS or entry >= len(patterns):
+                continue
+            row = _first_sounding_row(patterns[entry])
+            if row is None:         # an instrument is set before any note
+                break
+            if row < 0:             # no note in this pattern; try the next
+                continue
+            key = (entry, instr)
+            if key not in copies:
+                if len(patterns) >= MAX_PATTERNS:
+                    if log:
+                        log("*** NO ROOM FOR AN INITIAL-INSTRUMENT PATTERN "
+                            f"COPY (AT GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                    break
+                copy = list(patterns[entry])
+                copy[row * 4 + 1] = instr
+                copies[key] = len(patterns)
+                patterns.append(copy)
+            track[pos] = copies[key]
+            fixed += 1
+            break
+    if fixed and log:
+        log(f"Initial instruments.....: {fixed} voice orderlist(s) began on a "
+            f"note no pattern gave an instrument; {len(copies)} pattern "
+            "copy/copies added")
+    return fixed
+
+
+def _initial_for(det: Detection, voice: int) -> Optional[int]:
+    """The Goattracker instrument number `voice` starts on, or None.
+
+    Hubbard index k is written as Goattracker instrument k + 2 -- slot 1 is
+    the "Clear Voice" record goatwriter always emits -- matching the `+ 2` in
+    patterns.decode_entry.
+    """
+    if voice >= len(det.initial_instruments):
+        return None
+    return det.initial_instruments[voice] + 2
+
+
+def _first_sounding_row(events: List[int]) -> Optional[int]:
+    """Row index of the first note played with no instrument column set.
+
+    None when a row sets an instrument before any note is reached -- the
+    player would have been given one by then, so nothing needs adding -- and
+    -1 when the pattern holds no note at all, which leaves the question to
+    the next pattern in the orderlist.
+    """
+    for row in range(len(events) // 4):
+        note, instr = events[row * 4], events[row * 4 + 1]
+        if instr:
+            return None
+        if note <= GT_LASTNOTE:
+            return row
+    return -1
 
 
 def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:

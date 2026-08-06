@@ -1356,6 +1356,73 @@ next reader from re-deriving it.
 
 ---
 
+### 7.x Finding the table when the player does not store inline
+
+Every signature in the instrument chain fingerprints the **store** into the
+SID: `LDA record,X` followed by `STA $D40x,Y`. That is a fair fingerprint for
+most of the family, and a blind spot for any player that reaches the SID
+through a subroutine. `Phantoms_of_the_Asteroid` does exactly that —
+
+```
+E0F9  BD 36 E4  LDA $E436,X     ; this voice's instrument index
+E0FC  8E 3C E4  STX $E43C
+E0FF  0A 0A 0A  ASL ASL ASL     ; x8, the record size
+E102  AA        TAX
+E103  BD 69 E4  LDA $E469,X     ; record +2, the waveform
+...
+E112  BD 67 E4  LDA $E467,X     ; record +0
+E115  20 4E F0  JSR $F04E       ; ... written by a trampoline, not STA $D402,Y
+```
+
+— so it matched nothing, converted with **zero** instruments, and every note
+named an instrument the `.sng` did not contain. Goattracker plays that as
+silence, and the file sat in the report as `silent` for the project's whole
+history.
+
+Fingerprinting the **load** instead is dialect-independent, because the
+index-to-offset arithmetic is the same wherever the bytes end up going:
+
+```
+BD ?? ??  8E ?? ??  0A 0A 0A  AA  BD ?? ??
+```
+
+The trailing operand is the record's `+2` field, so the table base is that
+address minus two. The shape is present in 70 corpus files and names the same
+base the store-shaped chain already found in **68** of them; the two it does
+not are the digi engine, whose 16-byte records have their own detection path.
+It is consulted last, only once every other signature has failed, so it can
+rescue a file that reads nothing and can never move one that reads correctly
+— 94 of 95 corpus conversions are byte-identical, and the 95th is Phantoms,
+which goes from `silent` to melody 53%.
+
+### 7.y The instrument a voice starts on
+
+The first operand of that same match names the **per-voice instrument index
+array**, and it answers a separate question. The player writes the array only
+when a pattern carries an instrument byte, so a voice whose first note is
+reached before any pattern names one sounds whatever the array held.
+Goattracker carries instruments forward the same way — `gplay.c:914` assigns
+`cptr->instr` only on a non-zero column — but starts every channel on
+instrument 1 (`gplay.c:223`), which H2G writes as an empty record. Those
+voices come out silent.
+
+41 of the corpus's 821 voice orderlists begin that way.
+`Delta_Mix-E-Load_loader` is the unambiguous case: three orderlists of one
+pattern each, patterns `$18` and `$17` with no instrument byte anywhere, and
+`$C535` reading `03 09 00` — the three records whose ADSR (`3A98`, `BC5D`,
+`0CF8`) siddump shows the original playing, with voice 1 as a built-in
+control because its pattern names `$09` explicitly.
+
+**But the array is mutable state, not a constant**, and that is the boundary
+this reading has. Its file-image value is the starting instrument only for a
+rip of a single tune. `Commodore_64_Music_Examples` carries fifteen subtunes;
+its array reads `00 07 05`, naming records with ADSR `4764`/`2524`/`2740`
+while the original plays `5C3A`/`1858`/`0868`. The snapshot caught the array
+mid-tune, and nothing static can recover what each subtune starts from. So
+the reading ships as `--initial-instrument` and is deliberately **not** in
+`presets.json`'s `always` block — a rule that is right for a jingle and wrong
+for a demo does not belong in a block that claims to be right for everything.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

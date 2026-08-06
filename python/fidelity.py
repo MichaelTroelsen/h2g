@@ -580,6 +580,7 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "status_bit6": bool(always.get("status_bit6")),
         "reject_phantoms": bool(always.get("reject_phantoms")),
         "fold_transpose": bool(always.get("fold_transpose")),
+        "initial_instrument": bool(always.get("initial_instrument")),
     }
 
 

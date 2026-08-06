@@ -499,6 +499,41 @@ this: it traces one subtune per file, and three of the four fixed files carry
 the defect in voices whose attacks the metric already scores at 0%. The modal
 delta above is the measurement that sees it.
 
+### `--initial-instrument` (the instrument a voice starts on)
+
+Hubbard's player keeps a per-voice instrument *index* in a three-byte array
+and writes it only when a pattern carries an instrument byte. A voice whose
+first note is reached before any pattern names one therefore sounds whatever
+that array held. Goattracker has the same carry-forward rule --
+`gplay.c:914` assigns `cptr->instr` only when the row's instrument column is
+non-zero -- but a different starting point: `gplay.c:223` sets every channel
+to instrument **1**, which this writer emits as the empty "Clear Voice"
+record (attack/decay 0, sustain/release 0). Those voices came out silent.
+
+`Delta_Mix-E-Load_loader` is the clear case. Its orderlists are one pattern
+per voice, patterns `$18` and `$17` carry no instrument byte at all, and the
+array at `$C535` reads `03 09 00` -- exactly the three records whose ADSR
+siddump shows the original playing (`3A98`, `BC5D`, `0CF8`). Voice 1 is the
+control: its pattern selects `$09` explicitly, and the array agrees. With the
+flag its waveform agreement goes 33% → 97% and its melody 10% → 29%.
+
+The flag copies the pattern and repoints that one orderlist step at the copy,
+rather than patching in place: the same pattern is played again later in half
+these files, where the voice already has an instrument, and a column written
+into the shared copy would re-select it every time round. Costs one
+pattern-table entry per distinct (pattern, instrument) pair. It reaches 11
+corpus files.
+
+**Not in `presets.json`'s `always` block, and this is the reason.** The array
+is mutable player state, so its file-image value is the starting instrument
+only for a rip of a single tune. `Commodore_64_Music_Examples` has fifteen
+subtunes, and its array (`00 07 05`) names records whose ADSR is `4764`,
+`2524` and `2740` while the original plays `5C3A`, `1858` and `0868` -- the
+snapshot caught the array mid-tune, and no static read can recover what each
+subtune starts from. Turning the flag on there raises melody 15% → 19% and
+drops waveform agreement 29% → 0%. Use it on single-tune rips; the two files
+it was derived from are both of those.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes
@@ -529,7 +564,8 @@ no entry converts at the defaults. The file's `always` block carries what is
 right for every song rather than searched per song — `gts5`, `--tempo auto`,
 `--legal-restart`, `--slides`, `--effects`, `--status-bit6`,
 `--reject-phantoms` and `--fold-transpose`, each of them either the player's
-own reading or a no-op in the files it does not reach — which is what lets a
+own reading or a no-op in the files it does not reach (`--initial-instrument`
+is deliberately *not* among them -- see its section above) — which is what lets a
 preset reproduce the exact bytes
 it records, and what makes the `gt2reloc` step at the end of the block
 succeed for all 78.

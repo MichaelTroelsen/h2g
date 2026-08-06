@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.67 — 2026-08-06
+
+- read the instrument table through the index load; the instrument a voice starts on
+
 ## 0.5.66 — 2026-08-06
 
 - end the instrument count at the records; give each fidelity run its own scratch directory
