@@ -59,7 +59,8 @@ TOGGLES = ("pack", "prune", "dedup")
 
 # Not searched; see the module docstring.
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
-         "slides": True, "effects": True}
+         "slides": True, "effects": True, "status_bit6": True,
+         "reject_phantoms": True}
 
 
 def _parse(blob: bytes, ntables: int = 4):
@@ -210,6 +211,18 @@ def main(argv=None) -> int:
                    # that reads them, a no-op elsewhere. fidelity.py reads
                    # `always.effects` too.
                    "effects": FIXED["effects"],
+                   # A $C0-$FE status byte consumes only itself, per the
+                   # player's own `BIT status / BVS`. Gated on that shape,
+                   # so a no-op in the 34 files that lack it. Measured
+                   # delta is zero across every file whose bytes it moves:
+                   # taken for faithfulness, not for score.
+                   "status_bit6": FIXED["status_bit6"],
+                   # Its companion, and not optional beside it: a phantom
+                   # pattern entry decoded under the bit-6 grammar emits
+                   # garbage portamento, and gt2reloc re-encodes the speed
+                   # table file-wide, so one junk subtune's phantom
+                   # corrupts every other subtune's pitches.
+                   "reject_phantoms": FIXED["reject_phantoms"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

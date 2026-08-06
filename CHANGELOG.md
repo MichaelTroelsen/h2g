@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.58 — 2026-08-06
+
+- regenerate on the settled tree
+
 ## 0.5.57 — 2026-08-06
 
 - reject phantom patterns, honour the status byte, derive tempo per file

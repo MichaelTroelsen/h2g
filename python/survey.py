@@ -21,8 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from h2g import __version__
-from h2g.convert import UnsupportedSidError, check_detection_sound
-from h2g.detect import detect
+from h2g.convert import (UnsupportedSidError, _detect_tables,
+                         check_detection_sound)
 from h2g.goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS,
                             GT_MAX_TABLELEN, MAX_INSTRUMENTS,
                             WAVE_ENTRIES_PER_INSTR, build_sng)
@@ -156,7 +156,12 @@ def survey_one(path: Path, sng_dir: Path | None,
     r.subtunes, r.load_addr = sid.subtunes, sid.load_addr
 
     try:
-        det = detect(sid, log=lambda m: None)
+        # Must be convert()'s own detection path, not a bare detect(): a
+        # player whose table operands are placeholders until init patches
+        # them locates its bases fine and reads no patterns, so a raw
+        # detect() reports a tracks-stage failure for a file convert()
+        # rescues and converts. See convert._detect_tables.
+        sid, det = _detect_tables(sid, log=lambda m: None)
     except Exception as exc:  # noqa: BLE001
         r.stage, r.error = "detect", f"{type(exc).__name__}: {exc}"
         return r

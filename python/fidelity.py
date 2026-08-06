@@ -501,7 +501,23 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "tempo": always.get("tempo", "auto"),
         "slides": bool(always.get("slides")),
         "effects": bool(always.get("effects")),
+        "status_bit6": bool(always.get("status_bit6")),
+        "reject_phantoms": bool(always.get("reject_phantoms")),
     }
+
+
+def _preset_multiplier(doc: dict, name: str) -> int:
+    """The gt2reloc -S value this song's player needs, 1 if none.
+
+    Not an option -- a property of the player's own speed gate, recorded by
+    presets.py. Kept out of _preset_opts because convert() takes no such
+    keyword: it belongs to the packing step, not the conversion.
+    """
+    entry = (doc.get("songs") or {}).get(name, {})
+    try:
+        return max(1, int(entry.get("multiplier", 1)))
+    except (TypeError, ValueError):
+        return 1
 
 
 def measure(sid: Path, workdir: Path, opts: dict, args) -> dict:
@@ -665,6 +681,24 @@ def report(rows: list[dict], args) -> str:
         ratios = [r["retrigger_ratio"] for r in measured if r["retrigger_ratio"]]
         if ratios:
             out.append(f"- median retrigger ratio: **{sorted(ratios)[len(ratios) // 2]:.2f}**")
+        slowed = [r for r in measured if r.get("multiplier", 1) > 1]
+        if slowed:
+            mean_ok = sum(r["melody"] for r in measured if r.get("multiplier", 1) == 1)
+            n_ok = n - len(slowed)
+            out += [
+                f"- **{len(slowed)} of these {n} files score below their real "
+                "fidelity**, and no rerun will fix it: their player advances "
+                "one row every 2 frames, which Goattracker can only reach with "
+                "`gt2reloc -S2`. That flag reprograms a CIA timer, and siddump "
+                "ignores the PSID speed field entirely -- it calls the play "
+                "routine `seconds x 50` times regardless -- so those tunes are "
+                "traced at half their true row rate and lose roughly half their "
+                "notes inside the window. They carry a `multiplier` in "
+                "presets.json; only a cycle-accurate emulator can measure them."
+                + (f" Excluding them, mean melody similarity is "
+                   f"**{_fmt_pct(mean_ok / n_ok)}** over {n_ok} file(s)."
+                   if n_ok else ""),
+            ]
         patched = sum(1 for r in rows if r.get("restarts_patched"))
         if patched:
             out.append(
@@ -836,6 +870,11 @@ def main(argv=None) -> int:
             if args.effects:
                 opts["effects"] = True
             row = measure(sid, workdir, opts, args)
+            # Recorded, not applied: gt2reloc's -S reprograms a CIA timer,
+            # and siddump calls the play routine seconds x 50 times whatever
+            # the PSID speed field says. A file needing -S2 therefore traces
+            # at half its real row rate here, and its scores understate.
+            row["multiplier"] = _preset_multiplier(doc, sid.name)
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
                     f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"

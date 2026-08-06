@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.53 presets.py",
+  "generator": "h2g 0.5.57 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -7,6 +7,8 @@
     "legal_restart": true,
     "slides": true,
     "effects": true,
+    "status_bit6": true,
+    "reject_phantoms": true,
     "gt2reloc": true
   },
   "criteria": "most playable subtunes, then most rows, then smallest file",
@@ -18,7 +20,8 @@
       "dedup": true,
       "bytes": 8773,
       "subtunes": 1,
-      "rows": 2346
+      "rows": 2346,
+      "multiplier": 1
     },
     "ACE_II.sid": {
       "max_rows": 128,
@@ -27,7 +30,8 @@
       "dedup": true,
       "bytes": 13236,
       "subtunes": 1,
-      "rows": 18009
+      "rows": 18009,
+      "multiplier": 2
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -36,7 +40,8 @@
       "dedup": true,
       "bytes": 15789,
       "subtunes": 3,
-      "rows": 13180
+      "rows": 13180,
+      "multiplier": 1
     },
     "After_8.sid": {
       "max_rows": 94,
@@ -45,7 +50,8 @@
       "dedup": true,
       "bytes": 29364,
       "subtunes": 1,
-      "rows": 11070
+      "rows": 11070,
+      "multiplier": 1
     },
     "Arcade_Classics.sid": {
       "max_rows": 128,
@@ -54,7 +60,8 @@
       "dedup": true,
       "bytes": 16859,
       "subtunes": 1,
-      "rows": 19816
+      "rows": 19816,
+      "multiplier": 1
     },
     "Auf_Wiedersehen_Monty.sid": {
       "max_rows": 128,
@@ -63,7 +70,8 @@
       "dedup": true,
       "bytes": 39606,
       "subtunes": 13,
-      "rows": 24151
+      "rows": 24151,
+      "multiplier": 1
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -72,7 +80,8 @@
       "dedup": true,
       "bytes": 14733,
       "subtunes": 1,
-      "rows": 19334
+      "rows": 19334,
+      "multiplier": 1
     },
     "Battle_of_Britain.sid": {
       "max_rows": 128,
@@ -81,7 +90,8 @@
       "dedup": true,
       "bytes": 34380,
       "subtunes": 1,
-      "rows": 20903
+      "rows": 20903,
+      "multiplier": 2
     },
     "BMX_Kidz.sid": {
       "max_rows": 128,
@@ -90,7 +100,8 @@
       "dedup": true,
       "bytes": 4017,
       "subtunes": 1,
-      "rows": 9176
+      "rows": 9176,
+      "multiplier": 1
     },
     "Bump_Set_Spike.sid": {
       "max_rows": 94,
@@ -99,7 +110,8 @@
       "dedup": true,
       "bytes": 19397,
       "subtunes": 2,
-      "rows": 18341
+      "rows": 18341,
+      "multiplier": 1
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -108,7 +120,8 @@
       "dedup": true,
       "bytes": 11465,
       "subtunes": 1,
-      "rows": 15169
+      "rows": 15169,
+      "multiplier": 2
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -117,7 +130,8 @@
       "dedup": false,
       "bytes": 7005,
       "subtunes": 1,
-      "rows": 7830
+      "rows": 7830,
+      "multiplier": 1
     },
     "Chimera.sid": {
       "max_rows": 94,
@@ -126,7 +140,8 @@
       "dedup": true,
       "bytes": 13292,
       "subtunes": 2,
-      "rows": 17441
+      "rows": 17441,
+      "multiplier": 1
     },
     "Commando.sid": {
       "max_rows": 128,
@@ -135,7 +150,8 @@
       "dedup": true,
       "bytes": 15563,
       "subtunes": 14,
-      "rows": 35636
+      "rows": 35636,
+      "multiplier": 1
     },
     "Commodore_64_Music_Examples.sid": {
       "max_rows": 94,
@@ -144,7 +160,8 @@
       "dedup": true,
       "bytes": 10092,
       "subtunes": 5,
-      "rows": 23326
+      "rows": 23326,
+      "multiplier": 1
     },
     "Confuzion.sid": {
       "max_rows": 128,
@@ -153,7 +170,8 @@
       "dedup": true,
       "bytes": 14565,
       "subtunes": 1,
-      "rows": 15886
+      "rows": 15886,
+      "multiplier": 1
     },
     "Crazy_Comets.sid": {
       "max_rows": 128,
@@ -162,7 +180,8 @@
       "dedup": true,
       "bytes": 19480,
       "subtunes": 11,
-      "rows": 46713
+      "rows": 46713,
+      "multiplier": 1
     },
     "Deep_Strike.sid": {
       "max_rows": 94,
@@ -171,7 +190,8 @@
       "dedup": true,
       "bytes": 13427,
       "subtunes": 1,
-      "rows": 12328
+      "rows": 12328,
+      "multiplier": 2
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -180,7 +200,8 @@
       "dedup": true,
       "bytes": 46887,
       "subtunes": 13,
-      "rows": 36076
+      "rows": 36076,
+      "multiplier": 2
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -189,7 +210,18 @@
       "dedup": false,
       "bytes": 7228,
       "subtunes": 10,
-      "rows": 17309
+      "rows": 17309,
+      "multiplier": 1
+    },
+    "Devils_Galop.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 22108,
+      "subtunes": 1,
+      "rows": 16023,
+      "multiplier": 2
     },
     "Dragons_Lair_Part_II.sid": {
       "max_rows": 128,
@@ -198,7 +230,8 @@
       "dedup": true,
       "bytes": 21104,
       "subtunes": 10,
-      "rows": 28723
+      "rows": 28723,
+      "multiplier": 2
     },
     "Flash_Gordon.sid": {
       "max_rows": 128,
@@ -207,7 +240,8 @@
       "dedup": true,
       "bytes": 45014,
       "subtunes": 9,
-      "rows": 31074
+      "rows": 31074,
+      "multiplier": 2
     },
     "Food_Feud.sid": {
       "max_rows": 128,
@@ -216,7 +250,8 @@
       "dedup": true,
       "bytes": 15899,
       "subtunes": 1,
-      "rows": 14212
+      "rows": 14212,
+      "multiplier": 2
     },
     "Formula_1_Simulator.sid": {
       "max_rows": 128,
@@ -225,7 +260,8 @@
       "dedup": true,
       "bytes": 10604,
       "subtunes": 1,
-      "rows": 12912
+      "rows": 12912,
+      "multiplier": 2
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -234,7 +270,8 @@
       "dedup": true,
       "bytes": 9317,
       "subtunes": 1,
-      "rows": 8113
+      "rows": 8113,
+      "multiplier": 2
     },
     "Geoff_Capes_Strongman_Challenge.sid": {
       "max_rows": 128,
@@ -243,7 +280,8 @@
       "dedup": true,
       "bytes": 11109,
       "subtunes": 16,
-      "rows": 18534
+      "rows": 18534,
+      "multiplier": 1
     },
     "Gerry_the_Germ.sid": {
       "max_rows": 128,
@@ -252,7 +290,8 @@
       "dedup": true,
       "bytes": 41473,
       "subtunes": 7,
-      "rows": 32302
+      "rows": 32302,
+      "multiplier": 1
     },
     "Gremlins.sid": {
       "max_rows": 94,
@@ -261,7 +300,8 @@
       "dedup": false,
       "bytes": 55634,
       "subtunes": 16,
-      "rows": 104468
+      "rows": 104468,
+      "multiplier": 1
     },
     "Hollywood_or_Bust.sid": {
       "max_rows": 128,
@@ -270,7 +310,8 @@
       "dedup": true,
       "bytes": 13622,
       "subtunes": 3,
-      "rows": 7778
+      "rows": 7778,
+      "multiplier": 1
     },
     "Human_Race.sid": {
       "max_rows": 94,
@@ -279,7 +320,8 @@
       "dedup": true,
       "bytes": 22939,
       "subtunes": 5,
-      "rows": 21036
+      "rows": 21036,
+      "multiplier": 1
     },
     "Hunter_Patrol.sid": {
       "max_rows": 128,
@@ -288,7 +330,8 @@
       "dedup": true,
       "bytes": 21124,
       "subtunes": 1,
-      "rows": 10942
+      "rows": 10942,
+      "multiplier": 1
     },
     "I_Ball.sid": {
       "max_rows": 128,
@@ -297,7 +340,8 @@
       "dedup": true,
       "bytes": 12697,
       "subtunes": 1,
-      "rows": 15077
+      "rows": 15077,
+      "multiplier": 1
     },
     "IK_plus.sid": {
       "max_rows": 94,
@@ -306,7 +350,8 @@
       "dedup": true,
       "bytes": 11886,
       "subtunes": 1,
-      "rows": 23374
+      "rows": 23374,
+      "multiplier": 1
     },
     "International_Karate.sid": {
       "max_rows": 128,
@@ -315,7 +360,8 @@
       "dedup": true,
       "bytes": 18603,
       "subtunes": 1,
-      "rows": 30754
+      "rows": 30754,
+      "multiplier": 1
     },
     "Kentilla.sid": {
       "max_rows": 94,
@@ -324,7 +370,8 @@
       "dedup": true,
       "bytes": 31405,
       "subtunes": 1,
-      "rows": 36388
+      "rows": 36388,
+      "multiplier": 1
     },
     "Kings_of_the_Beach_ingame.sid": {
       "max_rows": 128,
@@ -333,7 +380,8 @@
       "dedup": true,
       "bytes": 9328,
       "subtunes": 7,
-      "rows": 2769
+      "rows": 2769,
+      "multiplier": 1
     },
     "Kings_of_the_Beach_intro.sid": {
       "max_rows": 128,
@@ -342,7 +390,8 @@
       "dedup": true,
       "bytes": 11699,
       "subtunes": 1,
-      "rows": 8522
+      "rows": 8522,
+      "multiplier": 1
     },
     "Knucklebusters.sid": {
       "max_rows": 128,
@@ -351,7 +400,8 @@
       "dedup": true,
       "bytes": 43042,
       "subtunes": 3,
-      "rows": 66780
+      "rows": 66780,
+      "multiplier": 1
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -360,16 +410,18 @@
       "dedup": true,
       "bytes": 12347,
       "subtunes": 16,
-      "rows": 6748
+      "rows": 6748,
+      "multiplier": 1
     },
     "Last_V8.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 20445,
+      "bytes": 16533,
       "subtunes": 9,
-      "rows": 31279
+      "rows": 28384,
+      "multiplier": 2
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 94,
@@ -378,7 +430,8 @@
       "dedup": true,
       "bytes": 16567,
       "subtunes": 9,
-      "rows": 31294
+      "rows": 31294,
+      "multiplier": 2
     },
     "Lightforce.sid": {
       "max_rows": 94,
@@ -387,7 +440,8 @@
       "dedup": true,
       "bytes": 20167,
       "subtunes": 1,
-      "rows": 19006
+      "rows": 19006,
+      "multiplier": 1
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -396,7 +450,8 @@
       "dedup": true,
       "bytes": 21872,
       "subtunes": 3,
-      "rows": 27965
+      "rows": 27965,
+      "multiplier": 2
     },
     "Mega_Apocalypse.sid": {
       "max_rows": 128,
@@ -405,7 +460,8 @@
       "dedup": true,
       "bytes": 16833,
       "subtunes": 8,
-      "rows": 55961
+      "rows": 55961,
+      "multiplier": 1
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 94,
@@ -414,7 +470,8 @@
       "dedup": true,
       "bytes": 48059,
       "subtunes": 20,
-      "rows": 123925
+      "rows": 123925,
+      "multiplier": 2
     },
     "Mozart.sid": {
       "max_rows": 128,
@@ -423,7 +480,8 @@
       "dedup": true,
       "bytes": 35198,
       "subtunes": 1,
-      "rows": 12698
+      "rows": 12698,
+      "multiplier": 1
     },
     "Mr_Meaner.sid": {
       "max_rows": 94,
@@ -432,7 +490,8 @@
       "dedup": true,
       "bytes": 20409,
       "subtunes": 1,
-      "rows": 9083
+      "rows": 9083,
+      "multiplier": 1
     },
     "Nemesis_the_Warlock.sid": {
       "max_rows": 94,
@@ -441,7 +500,8 @@
       "dedup": true,
       "bytes": 17326,
       "subtunes": 6,
-      "rows": 40118
+      "rows": 40118,
+      "multiplier": 1
     },
     "Nineteen.sid": {
       "max_rows": 128,
@@ -450,7 +510,8 @@
       "dedup": true,
       "bytes": 11170,
       "subtunes": 1,
-      "rows": 11455
+      "rows": 11455,
+      "multiplier": 1
     },
     "Ninja.sid": {
       "max_rows": 128,
@@ -459,7 +520,8 @@
       "dedup": true,
       "bytes": 5498,
       "subtunes": 1,
-      "rows": 4715
+      "rows": 4715,
+      "multiplier": 1
     },
     "Off_the_Cuff.sid": {
       "max_rows": 128,
@@ -468,7 +530,8 @@
       "dedup": true,
       "bytes": 23168,
       "subtunes": 1,
-      "rows": 12339
+      "rows": 12339,
+      "multiplier": 2
     },
     "One_Man_and_his_Droid.sid": {
       "max_rows": 128,
@@ -477,7 +540,8 @@
       "dedup": true,
       "bytes": 21036,
       "subtunes": 7,
-      "rows": 44246
+      "rows": 44246,
+      "multiplier": 2
     },
     "One_on_One_Jordan_vs_Bird.sid": {
       "max_rows": 128,
@@ -486,7 +550,8 @@
       "dedup": true,
       "bytes": 10561,
       "subtunes": 1,
-      "rows": 5584
+      "rows": 5584,
+      "multiplier": 1
     },
     "Pandora.sid": {
       "max_rows": 94,
@@ -495,7 +560,8 @@
       "dedup": true,
       "bytes": 11506,
       "subtunes": 1,
-      "rows": 5695
+      "rows": 5695,
+      "multiplier": 1
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -504,7 +570,8 @@
       "dedup": true,
       "bytes": 25642,
       "subtunes": 4,
-      "rows": 0
+      "rows": 0,
+      "multiplier": 2
     },
     "Powerplay_Hockey_USA_vs_USSR.sid": {
       "max_rows": 94,
@@ -513,7 +580,8 @@
       "dedup": true,
       "bytes": 15182,
       "subtunes": 1,
-      "rows": 9310
+      "rows": 9310,
+      "multiplier": 2
     },
     "Proteus.sid": {
       "max_rows": 128,
@@ -522,7 +590,8 @@
       "dedup": true,
       "bytes": 11897,
       "subtunes": 1,
-      "rows": 16038
+      "rows": 16038,
+      "multiplier": 2
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
@@ -531,7 +600,8 @@
       "dedup": true,
       "bytes": 25858,
       "subtunes": 1,
-      "rows": 11189
+      "rows": 11189,
+      "multiplier": 1
     },
     "Rasputin.sid": {
       "max_rows": 128,
@@ -540,7 +610,8 @@
       "dedup": true,
       "bytes": 14087,
       "subtunes": 10,
-      "rows": 30848
+      "rows": 30848,
+      "multiplier": 2
     },
     "Ricochet.sid": {
       "max_rows": 128,
@@ -549,7 +620,8 @@
       "dedup": true,
       "bytes": 12613,
       "subtunes": 1,
-      "rows": 10207
+      "rows": 10207,
+      "multiplier": 2
     },
     "Rikky.sid": {
       "max_rows": 128,
@@ -558,7 +630,8 @@
       "dedup": true,
       "bytes": 28593,
       "subtunes": 1,
-      "rows": 14874
+      "rows": 14874,
+      "multiplier": 1
     },
     "Rock_Tells_the_Tale.sid": {
       "max_rows": 128,
@@ -567,7 +640,8 @@
       "dedup": true,
       "bytes": 21223,
       "subtunes": 1,
-      "rows": 9973
+      "rows": 9973,
+      "multiplier": 1
     },
     "Saboteur_II.sid": {
       "max_rows": 128,
@@ -576,7 +650,8 @@
       "dedup": true,
       "bytes": 12968,
       "subtunes": 1,
-      "rows": 14821
+      "rows": 14821,
+      "multiplier": 2
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -585,7 +660,8 @@
       "dedup": true,
       "bytes": 14675,
       "subtunes": 14,
-      "rows": 11439
+      "rows": 11439,
+      "multiplier": 1
     },
     "Sanxion.sid": {
       "max_rows": 94,
@@ -594,7 +670,8 @@
       "dedup": true,
       "bytes": 17638,
       "subtunes": 1,
-      "rows": 17654
+      "rows": 17654,
+      "multiplier": 1
     },
     "Shockway_Rider.sid": {
       "max_rows": 128,
@@ -603,7 +680,8 @@
       "dedup": true,
       "bytes": 17050,
       "subtunes": 1,
-      "rows": 19978
+      "rows": 19978,
+      "multiplier": 2
     },
     "Sigma_Seven.sid": {
       "max_rows": 94,
@@ -612,7 +690,8 @@
       "dedup": true,
       "bytes": 6767,
       "subtunes": 1,
-      "rows": 3593
+      "rows": 3593,
+      "multiplier": 1
     },
     "Skate_or_Die_intro.sid": {
       "max_rows": 94,
@@ -621,7 +700,8 @@
       "dedup": true,
       "bytes": 4710,
       "subtunes": 1,
-      "rows": 10031
+      "rows": 10031,
+      "multiplier": 1
     },
     "Spellbound.sid": {
       "max_rows": 94,
@@ -630,7 +710,8 @@
       "dedup": true,
       "bytes": 33504,
       "subtunes": 7,
-      "rows": 65763
+      "rows": 65763,
+      "multiplier": 2
     },
     "Star_Paws.sid": {
       "max_rows": 128,
@@ -639,7 +720,8 @@
       "dedup": true,
       "bytes": 13841,
       "subtunes": 3,
-      "rows": 12550
+      "rows": 12550,
+      "multiplier": 2
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -648,7 +730,8 @@
       "dedup": true,
       "bytes": 13123,
       "subtunes": 11,
-      "rows": 9422
+      "rows": 9422,
+      "multiplier": 2
     },
     "Thanatos.sid": {
       "max_rows": 128,
@@ -657,7 +740,8 @@
       "dedup": true,
       "bytes": 7377,
       "subtunes": 1,
-      "rows": 2321
+      "rows": 2321,
+      "multiplier": 1
     },
     "Thing_on_a_Spring.sid": {
       "max_rows": 128,
@@ -666,7 +750,8 @@
       "dedup": false,
       "bytes": 18819,
       "subtunes": 13,
-      "rows": 143189
+      "rows": 143189,
+      "multiplier": 2
     },
     "Thrust.sid": {
       "max_rows": 94,
@@ -675,7 +760,8 @@
       "dedup": true,
       "bytes": 16930,
       "subtunes": 1,
-      "rows": 18397
+      "rows": 18397,
+      "multiplier": 1
     },
     "Thundercats.sid": {
       "max_rows": 128,
@@ -684,7 +770,8 @@
       "dedup": true,
       "bytes": 12553,
       "subtunes": 9,
-      "rows": 46574
+      "rows": 46574,
+      "multiplier": 2
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -693,16 +780,18 @@
       "dedup": true,
       "bytes": 13101,
       "subtunes": 1,
-      "rows": 12899
+      "rows": 12899,
+      "multiplier": 1
     },
     "W_A_R.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 56448,
+      "bytes": 56480,
       "subtunes": 8,
-      "rows": 45642
+      "rows": 45650,
+      "multiplier": 2
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -711,7 +800,8 @@
       "dedup": true,
       "bytes": 13359,
       "subtunes": 1,
-      "rows": 12130
+      "rows": 12130,
+      "multiplier": 2
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -720,7 +810,8 @@
       "dedup": true,
       "bytes": 16909,
       "subtunes": 12,
-      "rows": 32266
+      "rows": 32266,
+      "multiplier": 2
     },
     "Wiz.sid": {
       "max_rows": 128,
@@ -729,7 +820,8 @@
       "dedup": true,
       "bytes": 17084,
       "subtunes": 3,
-      "rows": 20367
+      "rows": 20367,
+      "multiplier": 1
     },
     "Zoids.sid": {
       "max_rows": 128,
@@ -738,7 +830,8 @@
       "dedup": true,
       "bytes": 16940,
       "subtunes": 3,
-      "rows": 18087
+      "rows": 18087,
+      "multiplier": 1
     },
     "Zoolook.sid": {
       "max_rows": 128,
@@ -747,7 +840,8 @@
       "dedup": true,
       "bytes": 11465,
       "subtunes": 1,
-      "rows": 15169
+      "rows": 15169,
+      "multiplier": 2
     }
   }
 }
