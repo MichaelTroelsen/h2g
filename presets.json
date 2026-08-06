@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.66 presets.py",
+  "generator": "h2g 0.5.68 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -569,9 +569,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 25642,
+      "bytes": 26619,
       "subtunes": 4,
-      "rows": 0,
+      "rows": 29884,
       "multiplier": 2
     },
     "Powerplay_Hockey_USA_vs_USSR.sid": {

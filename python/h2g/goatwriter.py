@@ -85,6 +85,16 @@ RISE_SHIFT = 2
 # (gplay.c:562). The drum block decrements the frequency HIGH byte once per
 # frame ($1387-$138D: `LDA counter / DEC counter / STA $D401,Y`), which is
 # exactly 256 units per frame.
+#
+# KNOWN DEFECT, not fixed here: "per frame" is this player's unit, but
+# Goattracker applies a speed-table delta once per *play call*
+# (gplay.c:748/758, inside the per-call TICKNEFFECTS) and advances the
+# wavetable one entry per play call (gplay.c:707). In the 33 corpus files
+# packed at `gt2reloc -S2` a call is half a frame, so this sweep -- and every
+# slide -- travels twice as far per frame as the player's, and an instrument
+# transient lasts half as long. `multiplier` reaches the tempo path (below)
+# and nothing else. siddump ignores the PSID speed field, so the harness
+# cannot see this; RetroDebugger can. See whats-next.md work_remaining SS1.
 DRUM_SPEED = (0x01, 0x00)
 
 

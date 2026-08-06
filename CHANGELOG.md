@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.68 — 2026-08-06
+
+- regenerate the artefacts on the settled tree; record the per-call multiplier defect
+
 ## 0.5.67 — 2026-08-06
 
 - read the instrument table through the index load; the instrument a voice starts on
