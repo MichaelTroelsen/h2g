@@ -68,13 +68,24 @@ assert MAX_INSTRUMENTS <= MAX_REPRESENTABLE_INSTRUMENTS
 # command with the right side as its parameter; $F0 + CMD_PORTAUP (1) is a
 # portamento up, and $FF is a jump whose right side is the target position.
 WAVECMD_PORTAUP = 0xF1
+WAVECMD_PORTADOWN = 0xF2
 
+# Waveform value $80 is noise with the gate bit clear -- literally the `LDA
+# #$80 / STA $D404,Y` the drum block ends on. A gated-off voice keeps its last
+# waveform latched, so this is also what the voice shows until its next note.
+WAVE_NOISE_GATEOFF = 0x80
 # Speed-table left side with bit $80 set selects a realtime-calculated,
 # note-relative speed; the right side is then a shift applied to the semitone
 # interval at the current note (readme.txt:171-174, gplay.c:539-547). Shift 2
 # is a quarter semitone per frame == one semitone per four frames.
 SPEED_NOTE_RELATIVE = 0x80
 RISE_SHIFT = 2
+
+# An absolute speed-table entry is (hi, lo) of a per-frame frequency step
+# (gplay.c:562). The drum block decrements the frequency HIGH byte once per
+# frame ($1387-$138D: `LDA counter / DEC counter / STA $D401,Y`), which is
+# exactly 256 units per frame.
+DRUM_SPEED = (0x01, 0x00)
 
 
 # --- Tempo -----------------------------------------------------------------
@@ -402,20 +413,23 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple]) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
-    With `effects` false this reproduces the VB6 original exactly. With it on,
-    the two effect-byte bits the original mis-read are decoded as the player
-    reads them -- but only where detection actually found the routine that
-    reads them (det.effect_rise / det.effect_arp), because +7 is not a shared
-    format: see detect._find_effect_routines. 4 of 83 convertible corpus files
-    have the rise routine and 13 the arpeggio one; for the rest this is a
-    no-op, which is the point.
+    With `effects` false this reproduces the VB6 original exactly, fabricating
+    a drum and an arpeggio from bits $01 and $04 of every instrument record in
+    every file. With it on, each bit is read only where detection found the
+    routine that reads it (det.effect_drum / det.effect_arp / det.effect_rise),
+    because +7 is not a shared format: see detect._find_effect_routines and the
+    census in H2G-CONVERSION-METHOD.md section 7. Corpus-wide that gate is the
+    larger half of this function's error -- 159 of 450 records setting the drum
+    bit and 544 of 683 setting the arpeggio bit are in a player with no such
+    routine, and the original invents the effect for all of them.
+
+    Where the drum routine *is* present the shape is also deepened; see
+    _drum_entries.
     """
     data = sid.data
     base = det.instr_start + i * det.instr_stride
     arp_style = data[base + 7]
-    arp_set_keybit = 0 if (arp_style & 1) == 1 else 1
     wave = data[base + 2]
-    tail = (wave & 0xFE) | arp_set_keybit
 
     arp_note = (arp_style & 0xF0) >> 4
     # The original substitutes $74 -- a +12 relative note, an octave-up
@@ -425,22 +439,40 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # of the alternation play the same note. Half of every arpeggio instrument
     # in the corpus (315 of 660 records) has nibble zero, so the substitution
     # invents an octave arpeggio for all of them.
+    drum = (arp_style & 1) == 1
     arp = (arp_style & 4) == 4
-    if effects and det.effect_arp and arp_note == 0:
-        arp = False
+    if effects:
+        if not det.effect_drum:
+            drum = False
+        if not det.effect_arp or arp_note == 0:
+            arp = False
     if arp_note == 0:
         arp_note = 0x74
+
+    arp_set_keybit = 0 if drum else 1
+    tail = (wave & 0xFE) | arp_set_keybit
 
     left = [wave, 0x00, tail, 0xFF, 0xFF]
     right = [0x00, 0x00, 0x00, 0x00, 0x00]
 
-    # 2nd tick: the $01 "drum" bit swaps in noise and drops the pitch. Left
-    # alone here -- the player's version of it is a per-frame frequency
-    # decrement at $1372-$138D, which this two-entry shape only gestures at,
-    # but correcting that is a separate question from the arpeggio.
-    if (arp_style & 1) == 1:
-        left[1] = 0x80 | arp_set_keybit
-        right[1] = (0x80 - arp_note) & 0xFF
+    # A record that sets both bits gets both blocks in the player -- the drum
+    # sets the waveform, the arpeggio then overwrites the frequency it swept
+    # ($13F4 runs after $139F). Five entries cannot hold both, so the arpeggio
+    # keeps the pair it needs and such a record stays on the original's shape.
+    # 62 of the 291 drum records this gate keeps are in that case.
+    if drum and effects and not arp:
+        return _drum_entries(wave, fmt, speed_table)
+
+    if drum:
+        if effects:
+            # The arpeggio keeps entries 2-4, so all the drum can say here is
+            # where it starts: the voice's own waveform, gate released. The
+            # leading noise tick the original wrote is not in the player at
+            # all, and on the corpus it scores at chance.
+            left[1] = (wave & 0xFE) or WAVE_NOISE_GATEOFF
+        else:
+            left[1] = 0x80 | arp_set_keybit
+            right[1] = (0x80 - arp_note) & 0xFF
     else:
         left[1] = tail
 
@@ -463,6 +495,69 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             right[3] = third
 
     return left, right
+
+
+def _drum_entries(wave: int, fmt: str, speed_table: List[tuple]) -> tuple:
+    """The five wavetable entries for a record whose player really has a drum.
+
+    Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
+
+        1366  LDA effect / AND #$01 / BEQ out
+        136D  LDA $15B1,X / BEQ out       ; per-voice drum counter, still running?
+        1372  LDA $1576,X / BEQ out       ; drum length, set?
+        1377  LDA $1579,X / AND #$1F / SEC / SBC #$01 / CMP $1576,X
+        1385  BCC $1397                   ; late in the note -> the noise ending
+        1387  LDA $15B1,X / DEC $15B1,X / STA $D401,Y  ; freq HI -= 1 per frame
+        1390  LDA $157C,X / AND #$FE / BNE $139F       ; the voice's own waveform
+        1397  LDA $15B1,X / STA $D401,Y / LDA #$80     ; ... or noise
+        139F  STA $D404,Y
+
+    So the drum is the voice's own waveform with the gate released and the
+    frequency falling one high byte per frame -- and noise either at the end
+    (the BCC branch) or throughout, when the waveform masked to `& $FE` is
+    zero. H2G's version was a single noise tick *first* and then the waveform,
+    with no sweep at all.
+
+    Emitted here: attack, the gate-off waveform, one step of the sweep, stop.
+    The sweep is one entry rather than a loop because the player's is bounded
+    by a runtime counter and the table has three free slots (the fifth is the
+    stop); the step size is literal (see DRUM_SPEED) and the depth is not. The
+    wave metric cannot see it either way -- it compares waveform class, and the
+    class does not change while the frequency falls.
+
+    **The noise ending is deliberately not written.** Emitting it as a fourth
+    entry costs 2.4 points of corpus wave agreement (60.5% -> 58.1%) and takes
+    noise frames from 5680 to 10666 against the original's 11641: in
+    Goattracker a gated-off voice keeps its last waveform latched until the
+    next note, so a noise entry at the end of the table stands for the whole
+    rest of the note, while the player stops writing $D404 the moment its
+    counter runs out. Measured on the corpus, not argued.
+
+    A record that also sets the rise bit loses the rise here; it needs the same
+    slots. 4 files have the rise routine at all.
+    """
+    left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF, 0xFF, 0xFF, 0xFF]
+    right = [0x00, 0x00, 0x00, 0x00, 0x00]
+    index = _drum_speed_index(fmt, speed_table)
+    if index:
+        left[2], right[2] = WAVECMD_PORTADOWN, index
+    return left, right
+
+
+def _drum_speed_index(fmt: str, speed_table: List[tuple]) -> int:
+    """1-based speed-table index for the drum's downward sweep, or 0.
+
+    Zero for a GTS2 file for the same reason as _rise_speed_index: it stores no
+    speed table, so an index written here would name whatever entry the
+    loader's own reconstruction happened to put at that position.
+    """
+    if fmt != FORMAT_GTS5:
+        return 0
+    if DRUM_SPEED not in speed_table:
+        if len(speed_table) >= GT_MAX_TABLELEN:
+            return 0
+        speed_table.append(DRUM_SPEED)
+    return speed_table.index(DRUM_SPEED) + 1
 
 
 def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:

@@ -95,15 +95,20 @@ def main(argv=None) -> int:
              "output bytes of the files it does reach")
     parser.add_argument(
         "--effects", action="store_true",
-        help="decode the two bits of the instrument effect byte (+7) that the "
-             "original mis-read. Bit $02 raises the note a semitone every four "
-             "frames for as long as it is held (252 instrument records across "
-             "59 corpus files); it was ignored entirely, and is written here as "
-             "a note-relative portamento in the wavetable, which needs "
-             "--format gts5. Bit $04's arpeggio with a zero interval nibble is "
-             "silent in the player, but the original substituted an octave-up "
-             "arpeggio for it -- half of every arpeggio instrument in the "
-             "corpus. Off by default: it changes the output bytes")
+        help="read the instrument effect byte (+7) as each player really "
+             "reads it, instead of as Warhawk's bit-field for every file. Bit "
+             "$02 raises the note a semitone every four frames while it is "
+             "held (252 records across 59 corpus files); it was ignored "
+             "entirely, and is written here as a note-relative portamento in "
+             "the wavetable, which needs --format gts5. Bit $04's arpeggio is "
+             "silent in the player when its interval nibble is zero, and bits "
+             "$01 and $04 mean nothing at all in a player with no such "
+             "routine -- 159 of 450 drum records and 544 of 683 arpeggio "
+             "records corpus-wide, all of which the original synthesized. "
+             "Where the drum routine is present the gesture is also written "
+             "the way the player plays it: waveform with the gate released, a "
+             "downward frequency sweep, then noise. Off by default: it "
+             "changes the output bytes")
     parser.add_argument(
         "--status-bit6", action="store_true",
         help="honour the player's bit-6-first status test (BIT/BVS): a "

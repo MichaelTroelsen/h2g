@@ -358,11 +358,11 @@ his Droid does `AND #$E0`. Chicken Song does have an `AND #$02` on it, but its
 block `ORA #$80`s into the waveform register — a noise swap, not a pitch
 change. Five players, five meanings.
 
-So `--effects` decodes two bits **only where the routine that reads them is
+So `--effects` reads each bit **only where the routine that reads it is
 present**, found by resolving the address the instrument-load routine stores
-`+7` to and requiring the test block to name that address. 4 of the 83
-convertible files have the chromatic-rise routine; 13 have the arpeggio one.
-For every other file the flag does nothing.
+`+7` to and requiring the test block to name that address. 44 of the 88 files
+that reach a wavetable have the drum routine, 13 the arpeggio one, 4 the
+chromatic rise, 21 the pulse-width variant.
 
 - **Bit `$02`, the chromatic rise** — the note climbs a semitone every four
   frames while it is held. Written as a looping note-relative portamento in the
@@ -373,6 +373,15 @@ For every other file the flag does nothing.
   the nibble is written into the operand of an `SBC`. The original substitutes
   a `+12` relative note, inventing an octave-up arpeggio — for **315 of the
   corpus's 660** arpeggio instrument records, including all six of Commando's.
+- **Bits `$01` and `$04` mean nothing at all in a player that has no such
+  routine**, and the original synthesizes both for every file regardless:
+  **159 of 450** records setting the drum bit and **544 of 683** setting the
+  arpeggio bit are in such a file. Nothing is written for them now.
+- **Where the drum routine is present the gesture is written the way the
+  player plays it** (Warhawk `$1366`): the voice's own waveform with the gate
+  released, then the frequency falling one high byte per frame — not the
+  leading noise tick the original wrote, which is in no player. The drum's
+  *noise ending* is measured and deliberately left out; see below.
 
 An earlier version applied Warhawk's reading corpus-wide and was caught by
 measurement: it put 287 frames of pitch movement into `W.A.R. Preview` and 256
@@ -380,6 +389,29 @@ into `Mega Apocalypse`, whose originals have **none**. Gated, the flag changes
 no melody score and no corpus slide total in a 10 s window — only `Thrust`
 exercises it at all within 60 s (0 → 76 slide frames against the original's
 536). It is shipped narrow and verified rather than broad and plausible.
+
+Corpus effect of the drum/arpeggio work, measured over the 82 scored files:
+mean **wave** agreement 60.5% → **60.6%**, mean melody unchanged, no file's
+convert-or-pack status changed; 22 files up, 16 down. The arpeggio half of it
+is invisible to both metrics by construction — an arpeggio moves pitch, and
+`melody` compares note attacks while `wave` compares waveform class — so 544
+records of invention were removed for a change of 0.0 points. That it does not
+show is not evidence it did nothing.
+
+Two shapes were tried and rejected on the corpus rather than on argument:
+
+- **Ending the drum on noise**, as `$139D` does, costs **2.4 points** of wave
+  agreement (60.5% → 58.1%) and takes corpus noise frames from 5680 to 10666
+  against the originals' 11641. Goattracker latches the last waveform of a
+  gated-off voice until the next note, so a trailing noise entry stands for the
+  rest of the note; the player stops writing `$D404` when its counter runs out.
+- **Keeping the fabricated noise tick** where no drum routine was found is
+  worth +0.3 points, and that is about what chance pays: in the files that lose
+  the most (`Bangkok_Knights`, `Nineteen`, `Ricochet`) the originals are 46%
+  noise by frame, so a tick lands on noise roughly half the time whatever it
+  means. Removing it takes corpus noise frames further from the original's
+  total (5680 → 4548) while raising agreement — the under-production is real
+  and is a separate defect from the invention.
 
 Off by default: it changes the output bytes of the files it reaches, the
 fixture among them.

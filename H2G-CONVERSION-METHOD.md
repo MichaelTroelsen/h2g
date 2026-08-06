@@ -1159,14 +1159,63 @@ those the byte may be inert entirely.
 Two blocks are documented here for the first time:
 
 **Bit `$01` — a drum** (Warhawk `$1366`). Two guard loads follow the bit test
-(a per-voice counter at `$15B1,X` and the note's own duration), then the block
-decrements that counter into `$D401` — a downward pitch sweep, one step per
-frame — and on the exhausted branch writes `#$80` to `$D404`, swapping in
-noise. H2G's version is two wavetable entries: one noise tick, then back. It
-gestures at the noise and drops the sweep entirely, which is why the corpus
-under-produces noise (5710 frames against the original's 11641) *while*
-inventing it in 148 records elsewhere. Both errors at once, which is exactly
-why the aggregate reads as simple under-production.
+(a per-voice counter at `$15B1,X` and a drum length at `$1576,X`), then the
+block decrements that counter into `$D401` — a downward pitch sweep, one step
+per frame — while writing the voice's own waveform with the gate bit cleared
+(`$1390 LDA $157C,X / AND #$FE`), and on the late branch writes `#$80` to
+`$D404` instead, swapping in noise. H2G's version is two wavetable entries:
+one noise tick, then back. It gestures at the noise, in the wrong place, and
+drops the sweep entirely — which is why the corpus under-produces noise (5710
+frames against the original's 11641) *while* inventing it in 148 records
+elsewhere. Both errors at once, which is exactly why the aggregate reads as
+simple under-production.
+
+### What Phase 2 did with the census, and what it cost
+
+Under `--effects` the wavetable builder now writes bits `$01` and `$04` only
+in a file whose player has the matching block, and writes the drum the way the
+block plays it: attack, the voice's waveform with the gate released, one step
+of a downward sweep at 256 units per frame (`goatwriter._drum_entries`). The
+leading noise tick is gone from every path.
+
+The measurements, corpus-wide over the 82 scored files, are worth recording in
+full because two of the three plausible readings lost:
+
+| shape | mean wave | our noise frames (orig 11641) |
+|---|---:|---:|
+| inherited: tick + arpeggio for every file | 60.5% | 5680 |
+| gate both bits on the block, keep the tick | 60.2% | 5383 |
+| gate, and end the drum on noise as `$139D` does | 58.1% | 10666 |
+| **gate, gate-off waveform + sweep, no noise ending** | **60.6%** | 4548 |
+
+The noise *ending* is the interesting loss. It is unambiguously in the player,
+and writing it is unambiguously worse — because Goattracker latches the last
+waveform of a gated-off voice until the next note, so a trailing noise entry
+stands for the whole rest of the note, while the player stops writing `$D404`
+the moment its counter runs out. A literal transcription of one instruction is
+not a faithful transcription of what it does.
+
+The second loss is subtler. Keeping the fabricated tick where no routine was
+found is worth about +0.3 points — but the files that lose most from dropping
+it (`Bangkok_Knights`, `Nineteen`, `Ricochet`) have originals that are 46%
+noise *by frame*, so a tick anywhere lands on a noise frame about half the
+time. Scoring at chance is what an invention looks like when the metric is
+coarse enough to reward it. A looser probe was tried first and refuted: of the
+25 files that test bit `$01` without matching Warhawk's block, only 2 write
+noise to `$D404` anywhere near the test, and those 2 are not the files that
+regress. There is no evidence the bit means "drum" in them.
+
+The arpeggio half — 544 of 683 records — is invisible to both metrics by
+construction: an arpeggio moves pitch, `melody` compares note attacks and
+`wave` compares waveform class. It moved the report by 0.0 points. That is not
+evidence it did nothing, and this is the fourth time in this project that a
+correct fix has been invisible to the harness that was built to see it.
+
+What remains of the census's four blocks: bit `$08`'s pulse-width variant is
+still unwritten, because the pulse table has two entries per instrument and no
+metric here can see a duty cycle — tracking siddump's `Pul` column comes
+first. The drum's sweep is one entry deep rather than the counter's length,
+since the counter is a runtime value and the wavetable has three free slots.
 
 **Bit `$08` — a pulse-width variant** (Warhawk `$12A3`). It selects between
 two treatments of instrument byte `+6`: with the bit clear, the triangle sweep

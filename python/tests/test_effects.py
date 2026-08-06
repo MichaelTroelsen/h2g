@@ -25,8 +25,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from h2g.detect import (Detection, _effect_byte_address,
                         _find_effect_routines)
-from h2g.goatwriter import (FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
-                            SPEED_NOTE_RELATIVE, WAVECMD_PORTAUP,
+from h2g.goatwriter import (DRUM_SPEED, FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
+                            SPEED_NOTE_RELATIVE, WAVE_NOISE_GATEOFF,
+                            WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
                             _wavetable_entries)
 from h2g.sidfile import load_sid
 
@@ -45,12 +46,13 @@ class _FakeSid:
         self.data = bytes(8) + record
 
 
-def _entries(effect_byte, *, effects=False, rise=False, arp=False,
-             fmt=FORMAT_GTS5, speed_table=None):
+def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
+             fmt=FORMAT_GTS5, speed_table=None, wave=0x41):
     det = Detection(instr_start=8, instr_stride=8,
-                    effect_rise=rise, effect_arp=arp)
-    return _wavetable_entries(_FakeSid(effect_byte), det, 0, effects, fmt,
-                              speed_table if speed_table is not None else [])
+                    effect_rise=rise, effect_arp=arp, effect_drum=drum)
+    return _wavetable_entries(_FakeSid(effect_byte, wave), det, 0, effects,
+                              fmt, speed_table if speed_table is not None
+                              else [])
 
 
 # --- the fabricated octave arpeggio ----------------------------------------
@@ -77,10 +79,14 @@ def test_a_real_interval_is_kept_and_is_a_negative_relative_note():
         assert on[1][4] != 0x00, "and it still loops"
 
 
-def test_the_arpeggio_is_untouched_where_the_player_has_no_such_routine():
+def test_the_arpeggio_is_dropped_where_the_player_has_no_such_routine():
     # det.effect_arp false: we do not know what +7 means in that player, so
-    # the inherited reading stands rather than being replaced by a guess.
-    assert _entries(ARP, effects=True, arp=False) == _entries(ARP)
+    # nothing is synthesized from it. 544 of the 683 corpus records that set
+    # the bit are in such a file, and the inherited reading arpeggiates all of
+    # them -- the larger half of this function's error.
+    on = _entries(ARP | 0x30, effects=True, arp=False)
+    assert on == _entries(0x00), "the same as a record with no bits set"
+    assert on[0][3] == 0xFF and on[1][4] == 0x00, "no loop back"
 
 
 # --- the chromatic rise -----------------------------------------------------
@@ -128,9 +134,84 @@ def test_an_arpeggio_wins_over_a_rise_on_the_same_instrument():
 
 
 def test_effects_off_changes_nothing_at_all():
+    # The gate is --effects, not detection: with the option off, a file whose
+    # player has every routine still gets the VB6 shape byte for byte. That is
+    # what keeps the Commando fixture exact.
     for byte in (0x00, DRUM, RISE, ARP, DRUM | RISE | ARP, 0xC4, 0x3F):
-        assert _entries(byte, effects=True, rise=False, arp=False) == \
+        assert _entries(byte, rise=True, arp=True, drum=True) == \
             _entries(byte)
+
+
+# --- the drum ---------------------------------------------------------------
+
+def test_the_drum_is_dropped_where_the_player_has_no_such_routine():
+    # 159 of the 450 corpus records that set the bit are in a file with no
+    # drum routine, and each got a fabricated noise tick and a released gate.
+    assert _entries(DRUM, effects=True, drum=False) == _entries(0x00)
+
+
+def test_the_drum_is_a_gate_off_waveform_and_a_downward_sweep():
+    # $1390 `LDA $157C,X / AND #$FE` -- the voice's own waveform with the gate
+    # released -- and $1387 `LDA counter / DEC counter / STA $D401,Y`, the
+    # frequency high byte falling one step per frame.
+    table = []
+    left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                           speed_table=table)
+    assert left[1] == 0x40, "the voice's own waveform, gate released"
+    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1)
+    assert table == [DRUM_SPEED], "256 units per frame == one $D401 step"
+    assert left[3] == 0xFF and right[3] == 0x00, "and then stop"
+
+
+def test_the_noise_ending_is_measured_and_rejected():
+    """The one part of the drum block that is not written.
+
+    $139D does end the drum on `LDA #$80 / STA $D404,Y`, but Goattracker
+    latches the last waveform of a gated-off voice until the next note, so a
+    noise entry at the end of the table stands for the whole rest of the note
+    while the player stops writing $D404 when its counter runs out. Emitting
+    it costs 2.4 points of corpus wave agreement and overshoots the original's
+    noise frames. Ours ends on the sweep instead.
+    """
+    left, _ = _entries(DRUM, effects=True, drum=True, wave=0x41)
+    assert WAVE_NOISE_GATEOFF not in left[2:]
+
+
+def test_the_drum_no_longer_leads_with_a_noise_tick():
+    # The inherited shape is one noise tick and then the waveform. There is no
+    # such tick in the player, and on the corpus it lands on a noise frame
+    # about as often as noise occurs -- chance, not information.
+    assert _entries(DRUM)[0][1] == WAVE_NOISE_GATEOFF, "the original's tick"
+    for on in (_entries(DRUM, effects=True, drum=True),
+               _entries(DRUM, effects=True, drum=False),
+               _entries(DRUM | ARP | 0x30, effects=True, drum=True, arp=True)):
+        assert on[0][1] != WAVE_NOISE_GATEOFF
+
+
+def test_a_waveform_of_zero_is_noise_for_the_whole_drum():
+    # $1390 `LDA $157C,X / AND #$FE / BNE` falls through to the noise store
+    # when the masked waveform is zero.
+    left, _ = _entries(DRUM, effects=True, drum=True, wave=0x01)
+    assert left[1] == WAVE_NOISE_GATEOFF
+
+
+def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
+    table = []
+    left, _ = _entries(DRUM, effects=True, drum=True, fmt=FORMAT_GTS2,
+                       speed_table=table)
+    assert table == [], "a GTS2 file stores no speed table"
+    assert left[1] == 0x40 and left[2] == 0xFF
+
+
+def test_an_arpeggio_keeps_the_pair_it_needs_over_the_deep_drum():
+    # Both bits set: the player runs both blocks and the arpeggio's frequency
+    # write ($13F4) lands after the drum's. Five entries cannot hold both, so
+    # such a record stays on the original's shape -- 62 of the 291 drum
+    # records this gate keeps.
+    left, right = _entries(DRUM | ARP | 0x30, effects=True, drum=True,
+                           arp=True, wave=0x41)
+    assert right[4] == 8, "the arpeggio keeps its loop"
+    assert left[1] == 0x40, "and the drum says only where it starts"
 
 
 # --- detection --------------------------------------------------------------
