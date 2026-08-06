@@ -64,6 +64,24 @@ def test_funktempo_values_are_rejected(tmp_path):
         assert "funktempo" in r.stderr.lower()
 
 
+def test_values_above_127_are_a_clean_error(tmp_path):
+    # gplay.c:494 masks the command value with $7F (>= $80 means "this channel
+    # only"), so 128..255 cannot mean a faster tempo. The CLI used to accept
+    # them and traceback on convert()'s ValueError.
+    for bad in ("128", "200", "255"):
+        r = _run(tmp_path / "x.sng", "--tempo", bad)
+        assert r.returncode != 0, bad
+        assert "Traceback" not in r.stderr, bad
+        assert "--tempo" in r.stderr, bad
+
+
+def test_the_top_of_the_range_is_still_accepted(tmp_path):
+    out = tmp_path / "x.sng"
+    r = _run(out, "--tempo", "127")
+    assert r.returncode == 0, r.stderr
+    assert out.is_file()
+
+
 # --- where it is written ---------------------------------------------------
 
 def test_it_lands_in_the_first_pattern_the_subtune_plays():

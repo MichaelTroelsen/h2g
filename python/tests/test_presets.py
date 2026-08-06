@@ -70,6 +70,25 @@ def test_the_always_block_is_applied(tmp_path):
     assert out.read_bytes()[:4] == b"GTS5"
 
 
+def test_an_equals_form_flag_beats_the_always_block(tmp_path):
+    # Argparse accepts `--format=gts5` as a single token; the explicit-flag
+    # detection used to test raw argv membership and miss it, letting the
+    # preset silently override what the user typed.
+    path = _write(tmp_path, {}, always={"format": "gts2"})
+    r, out = _run(tmp_path, "--presets", str(path), "--format=gts5")
+    assert r.returncode == 0, r.stderr
+    assert out.read_bytes()[:4] == b"GTS5"
+
+
+def test_an_equals_form_flag_beats_the_song_entry(tmp_path):
+    # Same defect on the per-song side: an explicit `--max-rows=94` must beat
+    # the stored 128 and reproduce the byte-exact fixture.
+    path = _write(tmp_path, {"max_rows": 128})
+    r, out = _run(tmp_path, "--presets", str(path), "--max-rows=94")
+    assert r.returncode == 0, r.stderr
+    assert out.read_bytes() == REFERENCE.read_bytes()
+
+
 def test_a_missing_file_is_a_clean_error(tmp_path):
     r, _ = _run(tmp_path, "--presets", str(tmp_path / "nope.json"))
     assert r.returncode != 0

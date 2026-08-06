@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.53 — 2026-08-06
+
+- audit fixes: CLI bounds, help text, equals-form flags, effects preset
+
 ## 0.5.52 — 2026-08-06
 
 - Delta orderlist repeats, bit-7 note flag, cmdtable dialect

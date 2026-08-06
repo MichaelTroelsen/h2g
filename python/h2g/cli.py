@@ -44,12 +44,14 @@ def main(argv=None) -> int:
              "it for files you will actually open in Goattracker")
     parser.add_argument(
         "--tempo", metavar="N|auto", default=None,
-        help="write a startup tempo (calls per pattern row) into the last "
-             "instrument. 'auto' derives it from the PSID speed field. "
-             "Omitted by default, which leaves Goattracker's startup "
-             "default of 6 calls/row -- 6x too slow, since this converter "
-             "emits one row per player tick. With a tempo written, play at "
-             "Goattracker speed multiplier 2 for correct timing")
+        help="write a startup tempo (calls per pattern row, 2..127) as a "
+             "CMD_SETTEMPO on each subtune's first pattern row. 'auto' "
+             "derives it from the PSID speed field. Omitted by default, "
+             "which leaves Goattracker's startup default of 6 calls/row -- "
+             "too slow, since this converter emits one row per player tick. "
+             "Original speed also needs Goattracker's speed multiplier "
+             "raised (3 for exact one-row-per-frame, though the best "
+             "multiplier varies per file)")
     parser.add_argument(
         "--dedup-patterns", action="store_true",
         help="share one pattern between byte-identical slices. Hubbard tunes repeat heavily, so this typically removes 10-20%% of patterns and brings some tunes under Goattracker's 208-pattern limit. Off by default because it changes the output bytes. Does not shorten orderlists")
@@ -93,15 +95,13 @@ def main(argv=None) -> int:
         "--effects", action="store_true",
         help="decode the two bits of the instrument effect byte (+7) that the "
              "original mis-read. Bit $02 raises the note a semitone every four "
-             "frames for as long as it is held; it was ignored entirely, and "
-             "is written here as a note-relative portamento in the wavetable, "
-             "which needs --format gts5. Bit $04's arpeggio with a zero "
-             "interval nibble is silent in the player, but the original "
-             "substituted an octave-up arpeggio for it -- 315 of the corpus's "
-             "660 arpeggio instrument records. Applies only where detection "
-             "finds the routine that reads those bits (4 and 13 files "
-             "respectively); a no-op for the rest. Off by default: it changes "
-             "the output bytes")
+             "frames for as long as it is held (252 instrument records across "
+             "59 corpus files); it was ignored entirely, and is written here as "
+             "a note-relative portamento in the wavetable, which needs "
+             "--format gts5. Bit $04's arpeggio with a zero interval nibble is "
+             "silent in the player, but the original substituted an octave-up "
+             "arpeggio for it -- half of every arpeggio instrument in the "
+             "corpus. Off by default: it changes the output bytes")
     parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
@@ -125,26 +125,33 @@ def main(argv=None) -> int:
         # because an untempo'd file plays at the wrong speed. Applying them is
         # what makes a preset reproduce the size it records.
         always = doc.get("always", {})
-        given = set(argv if argv is not None else sys.argv[1:])
-        if "--format" not in given and always.get("format") in FORMATS:
+        # Argparse also accepts a flag and its value as one `--flag=value`
+        # token, so plain set membership on argv would miss an explicit
+        # `--format=gts5` and let the preset silently override it.
+        tokens = argv if argv is not None else sys.argv[1:]
+
+        def _given(flag: str) -> bool:
+            return any(a == flag or a.startswith(flag + "=") for a in tokens)
+
+        if not _given("--format") and always.get("format") in FORMATS:
             args.format = always["format"]
-        if "--tempo" not in given and always.get("tempo") is not None:
+        if not _given("--tempo") and always.get("tempo") is not None:
             args.tempo = always["tempo"]
-        if "--legal-restart" not in given and always.get("legal_restart"):
+        if not _given("--legal-restart") and always.get("legal_restart"):
             args.legal_restart = True
         for flag, key in (("--slides", "slides"), ("--effects", "effects")):
-            if flag not in given and always.get(key):
+            if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
             # always beats the stored preset.
-            if "--max-rows" not in given:
+            if not _given("--max-rows"):
                 args.max_rows = entry.get("max_rows", args.max_rows)
             for flag, key in (("--pack-repeats", "pack"),
                               ("--prune-patterns", "prune"),
                               ("--dedup-patterns", "dedup")):
-                if flag not in given:
+                if not _given(flag):
                     setattr(args, flag[2:].replace("-", "_"), bool(entry.get(key)))
             if not args.quiet:
                 print(f"presets: {args.presets} -> max-rows {args.max_rows}, "
@@ -157,9 +164,11 @@ def main(argv=None) -> int:
             tempo = int(tempo)
         except ValueError:
             parser.error("--tempo must be an integer or 'auto'")
-        if not GT_MIN_TEMPO <= tempo <= 255:
-            parser.error(f"--tempo must be {GT_MIN_TEMPO}..255 or 'auto' "
-                         "(Goattracker reads 0 and 1 as funktempo)")
+        if not GT_MIN_TEMPO <= tempo <= 0x7F:
+            parser.error(f"--tempo must be {GT_MIN_TEMPO}..127 or 'auto' "
+                         "(Goattracker reads 0 and 1 as funktempo, and masks "
+                         "the value with $7F -- gplay.c:494 -- so higher "
+                         "values cannot mean a faster tempo)")
 
     if not 1 <= args.max_rows <= GT_MAX_ROWS:
         parser.error(f"--max-rows must be between 1 and {GT_MAX_ROWS}")

@@ -27,13 +27,16 @@ What "best" means, in priority order:
     between settings carrying identical music, which is what prune and dedup
     are.
 
-Format, tempo and the restart position are not searched: gts5, `--tempo auto`
-and `--legal-restart` are simply correct for anything you intend to open in
-Goattracker or pack back to a .sid (the legacy GTS2 importer overruns its
-pattern array on the portamento commands this converter emits; an untempo'd
-file plays at the wrong speed; and greloc.c:244 refuses to export a song whose
-restart position is out of range, which is what Hubbard's "tune ended" marker
-becomes). None of them affects whether a tune converts.
+Format, tempo, the restart position, slides and effects are not searched:
+gts5, `--tempo auto`, `--legal-restart`, `--slides` and `--effects` are simply
+correct for anything you intend to open in Goattracker or pack back to a .sid
+(the legacy GTS2 importer overruns its pattern array on the portamento
+commands this converter emits; an untempo'd file plays at the wrong speed;
+greloc.c:244 refuses to export a song whose restart position is out of range,
+which is what Hubbard's "tune ended" marker becomes; and `--slides` /
+`--effects` fix mis-reads that are gated on detection finding the relevant
+routine in the player, a no-op elsewhere). None of them affects whether a
+tune converts.
 """
 from __future__ import annotations
 
@@ -53,7 +56,8 @@ MAX_ROWS = (94, 128)
 TOGGLES = ("pack", "prune", "dedup")
 
 # Not searched; see the module docstring.
-FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True}
+FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
+         "slides": True, "effects": True}
 
 
 def _parse(blob: bytes, ntables: int = 4):
@@ -172,6 +176,16 @@ def main(argv=None) -> int:
                    # it belongs with the packing step rather than beside the
                    # searched options.
                    "legal_restart": FIXED["legal_restart"],
+                   # The second operand byte of a pitch slide, in the players
+                   # that have one; a no-op everywhere else. Correct wherever
+                   # it applies, so fixed rather than searched — and emitted
+                   # here because fidelity.py reads `always.slides`.
+                   "slides": FIXED["slides"],
+                   # Same footing as slides: the instrument effect byte's two
+                   # decoded bits are gated on detection finding the routine
+                   # that reads them, a no-op elsewhere. fidelity.py reads
+                   # `always.effects` too.
+                   "effects": FIXED["effects"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

@@ -57,12 +57,13 @@ test dependency).
   `python/`:
 
   ```sh
-  python survey.py <sid_dir> -o ../SURVEY.md --legal-restart   # corpus report
-  python presets.py <sid_dir> -o ../presets.json               # per-song best options
+  python survey.py <sid_dir> -o ../SURVEY.md --legal-restart --gt2reloc   # corpus report
+  python presets.py <sid_dir> -o ../presets.json                          # per-song best options
   ```
 
-  `--legal-restart` is part of the survey command because the report carries a
-  `gt2reloc` column, and without it `greloc.c:244` refuses every tune that ends
+  `--gt2reloc` is what fills the report's pack-back column at all — omit it
+  and the column comes out empty, silently. `--legal-restart` is part of the
+  same command because without it `greloc.c:244` refuses every tune that ends
   on Hubbard's `$FE` marker — the column would measure the option's absence
   rather than the converter. The report states which setting produced it.
 
