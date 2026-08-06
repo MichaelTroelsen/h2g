@@ -291,6 +291,17 @@ memory**: the distance between them *is* the length of the LO array. Elegant,
 and free — but it silently produces nonsense the moment a player interleaves
 the arrays, pads between them, or orders them HI-then-LO.
 
+It also over-counts, and the over-count has a concrete victim. Nothing says
+the whole gap between the arrays is *authored* entries; any padding becomes a
+**phantom pattern** whose pointer is whatever bytes happen to sit there.
+Last V8's entry `$1C` points into the middle of the player's own track
+selector (`8D 17 85 / 0A / 18 / 6D 17 85 / AA / …`), and both possible
+decodings of that code-as-pattern are garbage. Harmless while nothing
+references it — but any change that alters how *unreferenced* bytes decode
+(the bit-6 status byte, below §5) swings the file's output wildly in either
+direction. A phantom entry is a landmine, not an error: it costs nothing
+until a correct change elsewhere steps on it.
+
 ### 4.3 Track/orderlist count — from the PSID header
 
 Subtune count comes from the PSID header (`data[0x0F]`), and voices are assumed
@@ -424,6 +435,34 @@ semitone index from the same origin as Goattracker's: GT2 encodes notes as
 `$60`–`$BC`, with `$BD` = rest, `$FF` = pattern end. Hubbard `0x00..0x5C` maps
 onto `$60..$BC` by a constant bias. Clean 1:1.
 
+**Except that in 14 corpus players, bit 7 of the note byte is a legato flag,
+not part of the note.** Delta `$BEFF`:
+
+```
+BEFF  LDA (patt),Y / STA $C33D    ; keep the raw byte
+      AND #$7F / STA note,X       ; the note is the low 7 bits
+BF31  LDA $C33D / BMI ...         ; flag set -> skip the pulse/ADSR retrigger
+```
+
+Same idiom in Sanxion `$B11C`, W.A.R. `$E536`, Zoolook `$411D`; the shape
+`C8 B1 ?? 8D ?? ?? 29 7F 9D ?? ?? 0A A8` matches 14 files. Clamping the raw
+byte — what the VB6 did and the port copied — collapses every flagged note
+onto `$BC`: Delta's pattern `$01` is six distinct notes (`$B4 $B2 $B4 $AF $AD
+$AF`, confirmed by siddump) that all came out as one repeated top note. The
+flag itself is dropped on conversion (Goattracker has no tie in the note
+column) but the note survives; detection is `det.note_flag`, gated on the
+`AND #$7F` shape being present in the player.
+
+**A bit-6 status byte skips the operand *and* the note** — `BIT status / BVS`
+at Commando `$50CF` and Last V8 `$80DC` branches over both reads, so a status
+byte of `$C0-$FE` consumes nothing but itself, where this decoder consumes
+three bytes. Verified in the 6502 but **deliberately not implemented**: the
+only file it moves significantly is Last V8, where it drops melody 71% → 3% —
+not because the decoding is wrong but because it changes how Last V8's
+*phantom* pattern `$1C` (§4.2) decodes, and the wrong reading happens to be
+luckier there. A correct fix that is net-negative until phantom entries are
+handled is recorded here instead of shipped.
+
 **3. Legato → tone portamento.** If `NoADSR` is set and the *same instrument
 was used twice in a row*, emit GT command `$3` (tone portamento):
 
@@ -496,10 +535,10 @@ value` — which is why every event above appends exactly 4 bytes, and why the
 
 ---
 
-## 6. The orderlist / track format and its 9 dialects
+## 6. The orderlist / track format and its 10 dialects
 
 `tracks.py::_build_track` walks the raw orderlist byte stream and rewrites it.
-Five behaviours, selected by `read_track_version`:
+Six behaviours, selected by `read_track_version`:
 
 ```python
 version == 4:                 # ACE 2
@@ -529,6 +568,12 @@ version in (0, 1, 3):         # Warhawk / Last V8 / Samantha Fox
                        see "$FE means stop" below -- this is what blocks export)
     0xFF        -> end, with restart position 0x00 (loop to start)
     <= 0xFD     -> pattern number, emit as-is
+
+version == 10:                # Delta
+    layout is  P0, r1, P1, r2, P2, ... marker  -- version 0's read with a
+    repeat count woven between the pattern numbers; each pattern is emitted
+    r times (a stored 0 counts 256: the player's DEC wraps and BNE replays)
+    0xFE / 0xFF -> as version 0 (the BMI leaves markers unconsumed)
 ```
 
 **Version 4 emitted nothing at all until v0.5.48.** Its branch tested the end
@@ -550,6 +595,30 @@ has already made unreachable. Because version 0's signature is
 it fell through to `version $FF`. Note what that means for `command_floor`:
 `$FE` is the only reserved byte, so `$FD` is still a pattern number here where
 in a version-2 dialect it would be a transpose.
+
+**Version 10 hid in plain sight as "half the orderlist dangles".** Delta's
+player at `$BF85` replays a pattern while a per-voice counter counts down and
+only then steps the orderlist — twice, because the byte it lands on is the
+*next* pattern's repeat count:
+
+```
+BF85  DEC $C354,X / BNE      ; still repeating -> replay, orderlist unmoved
+BF8A  INC $C2EC,X            ; else step to the repeat byte
+BF90  LDA (track),Y / BMI    ; $FE/$FF: a marker, leave it to be read as one
+BF94  STA $C354,X            ; otherwise it is a repeat count
+BF97  INC $C2EC,X            ; and step past it to the pattern number
+```
+
+Warhawk's equivalent (`$115D`) has a plain `INC` where this has the `DEC`;
+Delta is the only corpus file with the DEC form. Read flat — what version 0
+does — every second byte is a repeat count played as a pattern number, which
+is what Delta's famous "2 dangling refs of 337" and its 2% melody really
+were. The confirmation is structural, not aural: decoded this way, all 13
+subtunes come out with their three voices **exactly** equal in frames
+(subtune 0 is 13632 in all three), while the equally plausible
+`(pattern, repeat)` pairing disagrees by up to 12×. When two readings of a
+table are both syntactically fine, the one under which the voices agree in
+length is the player's.
 
 **Version 2 is a correction to the original**, which lumped it in with 0/1/3
 and emitted its command bytes as pattern references — they dangled past the end
@@ -742,6 +811,38 @@ same offsets in both, so only the stride differs.
 
 The engine drives **four** voices; the fourth is the sample channel these
 files are named for, and Goattracker has no place for it.
+
+### A third engine: a command jump table and a duration table
+
+Chicken Song (`$10A0`) and Hollywood or Bust (`$04A9`) share version 0's
+orderlist and the classic separate-LO/HI table layout, but nothing inside a
+pattern — a third grammar, the `"cmdtable"` dialect
+(`patterns.py::_build_raw_pattern_cmdtable`):
+
+- `b >= $80` is a **command**: `AND #$0F / TAX / LDA $1738,X / STA $10B7`
+  indexes a jump table and self-modifies the dispatch. Each handler eats a
+  fixed number of operand bytes and returns to the fetch. One of them sets
+  the instrument — there is no per-event instrument operand at all.
+- `b < $80` is a note event whose low 5 bits index a **duration table**
+  (`AND #$1F / TAX / LDA $14BE,X` → `6 12 24 36 72 48 96 18`), not a frame
+  count. Bit 6 = no note follows; the note byte's bit 7 is the same legato
+  flag as §5.
+- `$FF` is only ever *peeked* (`$1169`), never fetched — the same trap as the
+  digi engine's `$81`, and why 15 of Chicken Song's 37 patterns previously
+  ran off the end of the file.
+
+Everything is derived from the player, nothing hardcoded: the two halves of
+the jump table are adjacent, so their distance is the command count, and each
+handler's operand count is its `INY` count minus one. Chicken Song yields 6
+commands, Hollywood or Bust 7; `$80` sets the instrument in both.
+
+One more piece was needed. The durations are all multiples of a common
+factor (GCD 6 for Chicken Song, 3 for HoB), and Goattracker's fastest steady
+row is 3 player calls — so emitting one row per frame cannot play at the
+right rate. Dividing the durations by their GCD and handing the factor to
+`CMD_SETTEMPO` (`Detection.frames_per_row`) is what took Chicken Song from
+47% to 98% melody, and it is confined to this dialect: `frames_per_row` is 1
+everywhere else, so no other file's bytes can move.
 
 ### An undetected/`0xFF` version is a real hazard
 

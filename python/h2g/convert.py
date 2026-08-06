@@ -8,8 +8,8 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, tempo_command_value)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table, command_floor,
-                       convert_patterns, apply_tempo, pattern_references,
-                       referenced_patterns, reindex_tracks)
+                       convert_patterns, apply_tempo, cmdtable_frames_per_row,
+                       pattern_references, referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (convert_tracks, ensure_playable_orderlists,
                      legalise_restarts)
@@ -140,9 +140,14 @@ def convert(sid_path: str, log: Logger = print,
     # they need the dialect's command boundary rather than Goattracker's.
     floor = command_floor(det.read_track_version)
     check_detection_sound(tracks, det.pattern_used, log, floor)
+    played = referenced_patterns(tracks, floor)
+    # Decided before the patterns are built, because it sets how many rows
+    # each event becomes -- and it is only ever anything but 1 for the
+    # command-table dialect, so no other file's output can move.
+    det.frames_per_row = cmdtable_frames_per_row(sid, det, played)
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
-        used=referenced_patterns(tracks, floor) if prune else None,
+        used=played if prune else None,
         slides=slides)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
                             patterns=new_patterns, max_rows=max_rows)
@@ -163,7 +168,17 @@ def convert(sid_path: str, log: Logger = print,
         raise UnsupportedSidError(
             "EVERY SUBTUNE'S ORDERLIST EXCEEDS GOATTRACKER'S LIMIT, CAN'T CONVERT")
 
-    resolved_tempo = tempo_command_value(sid) if tempo == "auto" else tempo
+    if tempo != "auto":
+        resolved_tempo = tempo
+    elif det.frames_per_row > 1:
+        # gplay.c:494 decrements a value >= 3 and gplay.c:325 makes a row last
+        # tempo+1 calls, so for values in this range the command value *is*
+        # the number of player calls per row.
+        resolved_tempo = det.frames_per_row
+        log(f"Row length..............: {det.frames_per_row} player calls "
+            "(from the note-duration table's common factor)")
+    else:
+        resolved_tempo = tempo_command_value(sid)
     if resolved_tempo is not None:
         if not GT_MIN_TEMPO <= resolved_tempo <= 0x7F:
             raise ValueError(

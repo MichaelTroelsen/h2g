@@ -42,6 +42,7 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                  transpose_operand: bool = False) -> List[int]:
     track: List[int] = []
     i2 = 0
+    _delta_repeat = 1        # version 10 only; see that branch
     while True:
         # The track byte stream is only terminated by a marker byte, so a bad
         # start address (or a stream with no terminator before EOF) walks off
@@ -164,6 +165,48 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 break
             if b1 <= 0xFD:
                 track.append(b1)
+
+        elif version == 10:  # Delta
+            # A version-0 orderlist read with a repeat counter woven through
+            # it. The pattern-end path at $BF85 decrements $C354,X and only
+            # when it reaches zero steps the orderlist -- twice, because the
+            # byte it lands on is the *next* pattern's repeat count:
+            #     DEC $C354,X / BNE      ; replay the same pattern
+            #     INC $C2EC,X            ; step to the repeat byte
+            #     LDA (track),Y / BMI    ; $FE/$FF: a marker, leave it alone
+            #     STA $C354,X            ; else it is a repeat count
+            #     INC $C2EC,X            ; step to the pattern number
+            # $BE8C seeds the counter with 1, so the byte at position 0 plays
+            # once and the layout is  P0, r1, P1, r2, P2, ... , marker.
+            #
+            # Reading it flat -- what version 0 does, and what this file got
+            # until now -- plays every repeat count as a pattern number.
+            # Proof that this is the right reading and not the equally
+            # plausible (pattern, repeat) pairing: decoding all 13 subtunes
+            # both ways, this one makes the three voices come out exactly
+            # equal in frames every time (subtune 0 is 13632 frames in all
+            # three), while the pairing disagrees by up to 12x.
+            if b1 in (0xFE, 0xFF):
+                track += [0xFF, 0xFD if b1 == 0xFE else 0x00]
+                break
+            repeat = 1 if not track else _delta_repeat
+            # Clamp the expansion itself, not just the next iteration: a
+            # stored count of 0 is 256 plays, which alone overflows the
+            # 254-byte orderlist if appended before checking.
+            room = 252 - len(track)
+            track += [b1] * min(repeat, room)
+            if repeat >= room:
+                track += [0xFF, 0x00]
+                break
+            if addr + i2 >= len(data):
+                continue                     # bounds check runs at the top
+            nxt = data[addr + i2]
+            if nxt >= 0x80:
+                continue                     # marker: read it as one next time
+            # A stored 0 counts 256 times, not none: the player's DEC wraps
+            # $00 to $FF and the BNE keeps replaying.
+            _delta_repeat = nxt or 256
+            i2 += 1
 
         elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox
             if b1 == 0xFE:

@@ -64,6 +64,19 @@ class Detection:
     # a shared format across the player family -- see _find_effect_routines().
     effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
+    # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
+    # the note -- the player masks it off before the frequency lookup.
+    note_flag: bool = False
+    # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
+    # note-duration lookup table, how many operand bytes each $8x command
+    # takes, and which command index sets the instrument.
+    duration_table: int = -1
+    cmd_operands: tuple = ()
+    cmd_instrument: int = -1
+    # Player calls one emitted row is meant to last. 1 everywhere except the
+    # "cmdtable" dialect, whose durations come from a table of multiples --
+    # see patterns.cmdtable_frames_per_row, which fills this in.
+    frames_per_row: int = 1
 
     @property
     def can_convert(self) -> bool:
@@ -200,6 +213,125 @@ def _detect_digi(sid: SidFile, det: Detection, log: Logger) -> bool:
     det.pattern_used = used - 1
     log(f"Pattern used............: ${det.pattern_used:X}")
     return det.pattern_used >= 0
+
+
+# --- The "command table" engine --------------------------------------------
+#
+# A third pattern grammar, used by Chicken Song ($10A0) and Hollywood or Bust
+# ($04A9). Its orderlist is version 0's, and its tables are found by the
+# classic chains, so only the pattern-byte grammar differs -- but it differs
+# completely:
+#
+#     10A0  B1 FD     LDA (patt),Y
+#     10A2  10 15     BPL $10B9          ; < $80 -> a note event
+#     10A4  29 0F     AND #$0F           ; >= $80 -> a command, low nibble
+#     10A6  AA        TAX                ;   indexes a jump table...
+#     10A7  BD 38 17  LDA $1738,X        ;   ...whose LO half is here
+#     10AA  8D B7 10  STA $10B7          ;   (self-modifying JMP operand)
+#     10AD  BD 3E 17  LDA $173E,X        ;   ...and HI half here
+#
+#     10B9  9D 93 15  STA $1593,X        ; note event: keep the status byte
+#     10BF  29 1F     AND #$1F           ; low 5 bits are an INDEX...
+#     10C1  AA        TAX
+#     10C2  BD BE 14  LDA $14BE,X        ; ...into a note-DURATION table
+#     10C8  9D 90 15  STA $1590,X        ;    (6 12 24 36 72 48 96 18)
+#     10CE  2C A1 15  BIT $15A1
+#     10D1  50 03     BVC $10D6          ; bit 6 clear -> a note byte follows
+#     10D6  C8 ...    INY / LDA (patt),Y ; note; bit 7 is a flag (AND #$7F)
+#
+# Three things the classic decoder gets wrong here, in order of damage:
+#   * the low 5 bits are a table index, not a frame count -- so every event's
+#     length was wrong, and the file's whole rhythm with it;
+#   * bit 7 of the status byte is not "an operand follows", it makes the byte
+#     a command with its own operand count, so the byte stream desynchronised
+#     at the first one;
+#   * the instrument comes from a command, not from a per-event operand.
+#
+# Everything the decoder needs is read out of the code rather than assumed:
+# the two jump-table halves are adjacent, so their distance is the command
+# count (the same trick §4.2 uses for the pattern table), and each handler's
+# operand count is its INY count minus one -- one INY to reach the operand,
+# one to step past the last of them before jumping back to the fetch.
+CMDTABLE_DISPATCH = "B1 ?? 10 ?? 29 0F AA BD ?? ?? 8D ?? ?? BD ?? ?? 8D ?? ??"
+CMDTABLE_DURATION = "9D ?? ?? 8D ?? ?? 29 1F AA BD ?? ??"
+CMDTABLE_INSTR_CELL = "BD ?? ?? 0A 0A 0A"
+CMDTABLE_MAX_COMMANDS = 16      # the dispatch masks with AND #$0F
+
+
+def _handler_operands(data: bytes, off: int, instr_cell: int):
+    """(operand count, sets-the-instrument) for one command handler.
+
+    Walks until the JMP back to the fetch point, counting INY. Sizes are
+    taken from the handful of opcodes these handlers are built from; anything
+    else is assumed one byte, which is safe because the walk stops at the
+    first JMP or RTS either way.
+    """
+    size = {0xA9: 2, 0xB1: 2, 0x9D: 3, 0x29: 2, 0x8D: 3, 0xBD: 3, 0xB9: 3}
+    iny = 0
+    sets_instr = False
+    for _ in range(40):
+        if not 0 <= off < len(data):
+            return None, False
+        b = data[off]
+        if b == 0xC8:               # INY
+            iny += 1
+            off += 1
+            continue
+        if b in (0x4C, 0x60):       # JMP back / RTS
+            break
+        if b == 0x9D and off + 2 < len(data):
+            if (data[off + 1] | data[off + 2] << 8) == instr_cell:
+                sets_instr = True
+        off += size.get(b, 1)
+    else:
+        return None, False
+    return max(0, iny - 1), sets_instr
+
+
+def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
+    """Recognise the command-table pattern grammar, or leave `det` untouched."""
+    data = sid.data
+    disp = search_file(data, CMDTABLE_DISPATCH)
+    dur = search_file(data, CMDTABLE_DURATION)
+    cell = search_file(data, CMDTABLE_INSTR_CELL)
+    if min(disp, dur, cell) <= -1:
+        return False
+
+    cmd_lo = sid.to_offset(_addr16(data, disp + 8, disp + 9))
+    cmd_hi = sid.to_offset(_addr16(data, disp + 14, disp + 15))
+    duration = sid.to_offset(_addr16(data, dur + 10, dur + 11))
+    instr_cell = _addr16(data, cell + 1, cell + 2)
+    count = cmd_hi - cmd_lo
+    if not 1 <= count <= CMDTABLE_MAX_COMMANDS:
+        return False
+    if not (_base_ok("COMMAND TABLE", cmd_lo, len(data), log)
+            and _base_ok("COMMAND TABLE HI", cmd_hi, len(data), log)
+            and _base_ok("DURATION TABLE", duration, len(data), log)):
+        return False
+
+    operands, instrument = [], -1
+    for c in range(count):
+        if cmd_hi + c >= len(data):
+            return False
+        handler = sid.to_offset(data[cmd_lo + c] | data[cmd_hi + c] << 8)
+        n, is_instr = _handler_operands(data, handler, instr_cell)
+        if n is None:
+            return False
+        operands.append(n)
+        if is_instr and instrument < 0:
+            instrument = c
+    if instrument < 0:
+        return False        # no handler feeds the instrument index: not this engine
+
+    det.pattern_dialect = "cmdtable"
+    det.duration_table = duration
+    det.cmd_operands = tuple(operands)
+    det.cmd_instrument = instrument
+    log(f"Pattern grammar.........: command-table ({count} commands, "
+        f"${0x80 + instrument:02X} sets the instrument)")
+    log("Note durations..........: " + " ".join(
+        str(data[duration + i]) for i in range(min(8, len(data) - duration))))
+    return True
 
 
 def detect(sid: SidFile, log: Logger) -> Detection:
@@ -432,6 +564,47 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         i = find("BC ?? ?? B1 ?? C9 FE F0 ?? C9 FE D0")
         if i >= 1:
             det.read_track_version = 9    # Chain Reaction
+    # --- Pattern grammar ----------------------------------------------------
+    # Probed after the tables, which the classic chains locate correctly for
+    # this engine too -- only the bytes inside a pattern are read differently.
+    if not digi:
+        _detect_cmdtable(sid, det, log)
+
+    # --- Pattern note byte: is bit 7 part of the note? ----------------------
+    # Commando $50ED reads the note and indexes the frequency table with it
+    # directly:
+    #     INY / LDA (patt),Y / STA note,X / ASL / TAY
+    # Delta $BEFF, Sanxion $B11C, W.A.R. $E536 and Zoolook $411D keep the raw
+    # byte in a scratch cell and mask it first:
+    #     INY / LDA (patt),Y / STA flag / AND #$7F / STA note,X / ASL / TAY
+    # and the saved bit 7 is tested a few instructions later ($BF31 `LDA
+    # $C33D` / `BMI`) to skip the pulse-width and ADSR writes -- i.e. it is a
+    # legato marker, and the low seven bits are the note.
+    #
+    # h2g clamped the whole byte to $5C ("if note >= 0x5C: note = 0x5C"), so
+    # in these 14 files every flagged note collapsed onto the top note of the
+    # range. Delta's pattern $01 is `01 B4 01 B2 01 B4 01 AF 01 AD 01 AF FF`,
+    # whose notes siddump confirms the player plays as absolute $B4 $B2 $B4
+    # $AF $AD $AF -- all six were emitted as one repeated $BC.
+    if find("C8 B1 ?? 8D ?? ?? 29 7F 9D ?? ?? 0A A8") >= 1:
+        det.note_flag = True
+
+    # Delta's orderlist carries a repeat count between pattern numbers. Its
+    # *read* is version 0's shape byte for byte ($BE79: LDY $C2EC,X /
+    # LDA ($A6),Y / CMP #$FF / BEQ / CMP #$FE), so the discriminator has to be
+    # the advance, at the end of a pattern ($BF85):
+    #     DEC $C354,X    ; repeat counter
+    #     BNE  ...       ; still repeating -> replay, orderlist unmoved
+    #     INC $C2EC,X    ; else step the orderlist
+    #     LDY $C2EC,X / LDA ($A6),Y
+    #     BMI  ...       ; $FE/$FF marker -> leave it to be read as one
+    #     STA $C354,X    ; else the byte is the NEXT pattern's repeat count
+    #     INC $C2EC,X    ; ...and step past it to the pattern number
+    # Warhawk's equivalent ($115D) has a plain INC where this has the DEC, and
+    # no second read at all. Delta is the only corpus file with the DEC form.
+    if det.read_track_version == 0 and find(
+            "DE ?? ?? D0 ?? FE ?? ?? BC ?? ?? B1 ?? 30 ?? 9D ?? ?? FE ?? ??") >= 1:
+        det.read_track_version = 10   # Delta
     log(f"Player Trackread version: {det.read_track_version:X}")
     if det.transpose_operand:
         log("Track transpose form....: two-byte (value follows the command)")

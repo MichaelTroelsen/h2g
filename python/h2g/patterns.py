@@ -125,7 +125,8 @@ class ConversionAbort(Exception):
 
 
 def _build_raw_pattern(data: bytes, addr: int,
-                       slide_operand: bool = False) -> Optional[List[int]]:
+                       slide_operand: bool = False,
+                       note_flag: bool = False) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -161,6 +162,14 @@ def _build_raw_pattern(data: bytes, addr: int,
         no_adsr = b1 & 0x20
         wait = b1 & 0x1F
 
+        # Bit 6 is tested *first* and on its own -- Commando $50CF is
+        # `BIT status / BVS $5118`, which jumps past the operand read AND the
+        # note read whatever bit 7 says. So a status byte of $C0-$FE consumes
+        # nothing but itself. Reading an operand and a note for those (the
+        # `get_next or not no_note` below used to) over-consumed two bytes and
+        # desynchronised the rest of the pattern; 37 such bytes occur in
+        # played patterns across Chicken Song, Hollywood or Bust, Last V8 and
+        # W.A.R.
         if get_next:
             i2 += 1
             b2 = data[addr + i2]
@@ -203,6 +212,12 @@ def _build_raw_pattern(data: bytes, addr: int,
         if get_next or not no_note:
             i2 += 1
             g_note = data[addr + i2]
+            if note_flag:
+                # Bit 7 is the player's legato flag (`AND #$7F` before the
+                # frequency lookup), not part of the note. Goattracker has no
+                # tie, so the flag itself is dropped and the note is kept --
+                # the player still re-gates, so the attack is real.
+                g_note &= 0x7F
             if g_note >= 0x5C:
                 g_note = 0x5C
             g_note += 0x60
@@ -343,6 +358,148 @@ def _build_raw_pattern_digi(data: bytes, addr: int) -> Optional[List[int]]:
             break
 
     return events
+
+
+# --- The "command table" engine's pattern grammar ---------------------------
+#
+# Chicken Song $10A0 / Hollywood or Bust $04A9; see detect._detect_cmdtable
+# for the disassembly this is read from.
+#
+#   b >= $80   a command. b & $0F indexes a jump table of handlers, each of
+#              which consumes a fixed number of operand bytes and returns to
+#              the fetch point without consuming a duration. One of them sets
+#              the instrument.
+#   b <  $80   a note event lasting durations[b & $1F] frames -- an index
+#              into a table, not a frame count.
+#              bit 6 set -> no note byte follows (the event is a hold)
+#              bit 6 clear -> a note byte follows; its bit 7 is a legato flag
+#              that the player masks off (`AND #$7F`) before the frequency
+#              lookup, and its low 7 bits are the note.
+#   $FF        end of pattern -- and, exactly as in the digi engine, it is
+#              only ever *peeked* ($1169: INC pos / LDA (patt),Y / CMP #$FF),
+#              never fetched, so a decoder that only tests fetched bytes runs
+#              past the end of every pattern.
+#
+# A duration D is D frames, not D+1: $105C tests the counter for zero
+# *before* the fetch and $141C decrements it at the end of each frame's
+# per-voice pass, so the DEC/BMI reasoning of the classic players (§5) does
+# not apply here.
+CMDTABLE_MAX_NOTE = 0x5C
+
+
+def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
+                                operands, instr_cmd: int,
+                                frames_per_row: int = 1,
+                                collect: Optional[Set[int]] = None
+                                ) -> Optional[List[int]]:
+    """Flat event stream for one command-table pattern, or None if unusable.
+
+    With `collect` given, the durations the pattern uses are added to it and
+    the returned stream is ignored -- that pre-pass is how frames_per_row is
+    derived (see cmdtable_frames_per_row).
+    """
+    if addr <= 1 or addr >= len(data):
+        return None
+
+    events: List[int] = []
+    instrument = 0
+
+    for _ in range(20000):
+        if addr <= 1 or addr >= len(data):
+            return None
+        b = data[addr]
+        if b == GT_END_PATTERN:
+            # Only reachable on a malformed pattern -- a well-formed one ends
+            # at the peek below -- but ending here beats reading $FF as
+            # command $F, which indexes past a jump table of six entries.
+            events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            break
+
+        if b & 0x80:
+            c = b & 0x0F
+            if c >= len(operands):
+                return None
+            if addr + operands[c] >= len(data):
+                return None
+            if c == instr_cmd:
+                # +2 for the same reason every other decoder here adds it:
+                # Goattracker instrument 1 is the empty "Clear Voice" slot.
+                instrument = data[addr + 1] + 2
+            addr += 1 + operands[c]
+            continue
+
+        di = durations + (b & 0x1F)
+        if not 0 <= di < len(data):
+            return None
+        frames = data[di]
+        if frames < 1:
+            return None
+        if collect is not None:
+            collect.add(frames)
+        rows = max(1, frames // frames_per_row)
+        if b & 0x40:
+            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+            addr += 1
+        else:
+            if addr + 1 >= len(data):
+                return None
+            note = min(data[addr + 1] & 0x7F, CMDTABLE_MAX_NOTE) + 0x60
+            events += [note, instrument, 0x00, 0x00]
+            addr += 2
+        events += [GT_NO_NOTE, 0x00, 0x00, 0x00] * (rows - 1)
+
+        if addr < len(data) and data[addr] == GT_END_PATTERN:
+            events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            break
+    else:
+        return None
+
+    return events
+
+
+def cmdtable_frames_per_row(sid: SidFile, det: Detection,
+                            used: Optional[Set[int]] = None) -> int:
+    """How many player calls one Goattracker row should last, for this tune.
+
+    Every other dialect measures an event in frames and emits one row per
+    frame, so a row is a frame. This engine measures events in a *duration
+    table* whose entries are 6 12 24 36 72 48 96 18 (Chicken Song) and
+    3 6 12 18 36 24 48 (Hollywood or Bust) -- so its shortest note is already
+    three or six frames long, and one row per frame would make the tune three
+    to six times longer than the .sng needs to be.
+
+    That is not merely wasteful: Goattracker's fastest *steady* row is three
+    calls (gplay.c:325 -- 0 and 1 are funktempo, not a rate), so a one-row-
+    per-frame stream cannot play at one frame per row and the tune comes out
+    three times too slow. Dividing the durations by their common factor and
+    handing that factor to CMD_SETTEMPO plays them at exactly the right rate.
+    Chicken Song's melody similarity goes from 47% to 98% on this alone.
+
+    Only the durations the tune actually uses are divided: the table's length
+    is not recorded anywhere, and reading past its end picks up the frequency
+    table that follows it, whose bytes would destroy the common factor.
+    Returns 1 when no usable factor exists, which leaves the old behaviour.
+    """
+    if det.pattern_dialect != "cmdtable":
+        return 1
+    data = sid.data
+    seen: Set[int] = set()
+    for i in range(det.pattern_used + 1):
+        if used is not None and i not in used:
+            continue
+        lo_i, hi_i = det.pattern_lo + i, det.pattern_hi + i
+        if min(lo_i, hi_i) < 0 or max(lo_i, hi_i) >= len(data):
+            continue
+        _build_raw_pattern_cmdtable(
+            data, sid.to_offset(data[hi_i] * 256 + data[lo_i]),
+            det.duration_table, det.cmd_operands, det.cmd_instrument,
+            collect=seen)
+    factor = 0
+    for v in seen:
+        factor = gcd(factor, v)
+    # Goattracker reads a tempo under 2 as funktempo rather than a rate, and
+    # CMD_SETTEMPO's value is 7 bits.
+    return factor if 2 <= factor <= 0x7F else 1
 
 
 def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
@@ -505,9 +662,15 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
 
         addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
-        events = (_build_raw_pattern_digi(data, addr)
-                  if det.pattern_dialect == "digi"
-                  else _build_raw_pattern(data, addr, slides and det.slide_operand))
+        if det.pattern_dialect == "digi":
+            events = _build_raw_pattern_digi(data, addr)
+        elif det.pattern_dialect == "cmdtable":
+            events = _build_raw_pattern_cmdtable(
+                data, addr, det.duration_table, det.cmd_operands,
+                det.cmd_instrument, det.frames_per_row)
+        else:
+            events = _build_raw_pattern(data, addr, slides and det.slide_operand,
+                                        det.note_flag)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
