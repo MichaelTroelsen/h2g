@@ -90,6 +90,19 @@ def main(argv=None) -> int:
              "and is a no-op for the rest. Off by default: it changes the "
              "output bytes of the files it does reach")
     parser.add_argument(
+        "--effects", action="store_true",
+        help="decode the two bits of the instrument effect byte (+7) that the "
+             "original mis-read. Bit $02 raises the note a semitone every four "
+             "frames for as long as it is held; it was ignored entirely, and "
+             "is written here as a note-relative portamento in the wavetable, "
+             "which needs --format gts5. Bit $04's arpeggio with a zero "
+             "interval nibble is silent in the player, but the original "
+             "substituted an octave-up arpeggio for it -- 315 of the corpus's "
+             "660 arpeggio instrument records. Applies only where detection "
+             "finds the routine that reads those bits (4 and 13 files "
+             "respectively); a no-op for the rest. Off by default: it changes "
+             "the output bytes")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -119,6 +132,9 @@ def main(argv=None) -> int:
             args.tempo = always["tempo"]
         if "--legal-restart" not in given and always.get("legal_restart"):
             args.legal_restart = True
+        for flag, key in (("--slides", "slides"), ("--effects", "effects")):
+            if flag not in given and always.get(key):
+                setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
@@ -157,7 +173,9 @@ def main(argv=None) -> int:
                       dedup=args.dedup_patterns,
                       prune=args.prune_patterns,
                       pack=args.pack_repeats,
-                      legal_restart=args.legal_restart)
+                      legal_restart=args.legal_restart,
+                      slides=args.slides,
+                      effects=args.effects)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

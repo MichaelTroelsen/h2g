@@ -332,9 +332,47 @@ comparison cannot see pitch movement at all; `FIDELITY.md` now carries a
 **slides** column so that class of change is measurable.
 
 The remaining gap is not in the pattern data. Most of what the originals bend
-comes from per-instrument effects — the `+7` effect byte's semitone sweep and
-arpeggio, and a pulse-width sweep in `+6` that is *not* vibrato (see
-`H2G-CONVERSION-METHOD.md` §7) — none of which is converted yet.
+comes from per-instrument effects — the `+7` effect byte, and a pulse-width
+sweep in `+6` that is *not* vibrato (see `H2G-CONVERSION-METHOD.md` §7).
+
+### `--effects` (the instrument effect byte)
+
+Instrument byte `+7` has always been read as an "arp style" bit-field — bit
+`$01` a drum, bit `$04` an arpeggio whose interval is the high nibble — and a
+five-entry wavetable fabricated from it for **every** converted file.
+
+**That reading is one player's.** Warhawk tests the byte with `AND #$08` /
+`#$01` / `#$02` / `#$04` and `LSR`×4. Mega Apocalypse tests the whole byte with
+`LDA` / `BEQ`. W.A.R. Preview does `LDA` / `BEQ` then `CLC` / `ADC`. One Man and
+his Droid does `AND #$E0`. Chicken Song does have an `AND #$02` on it, but its
+block `ORA #$80`s into the waveform register — a noise swap, not a pitch
+change. Five players, five meanings.
+
+So `--effects` decodes two bits **only where the routine that reads them is
+present**, found by resolving the address the instrument-load routine stores
+`+7` to and requiring the test block to name that address. 4 of the 83
+convertible files have the chromatic-rise routine; 13 have the arpeggio one.
+For every other file the flag does nothing.
+
+- **Bit `$02`, the chromatic rise** — the note climbs a semitone every four
+  frames while it is held. Written as a looping note-relative portamento in the
+  wavetable, which needs `--format gts5`; a GTS2 file stores no speed table.
+  Continuous glide rather than four-frame steps: the rate is exact, the
+  stepping is not.
+- **Bit `$04` with a zero interval nibble is silent** in the player, because
+  the nibble is written into the operand of an `SBC`. The original substitutes
+  a `+12` relative note, inventing an octave-up arpeggio — for **315 of the
+  corpus's 660** arpeggio instrument records, including all six of Commando's.
+
+An earlier version applied Warhawk's reading corpus-wide and was caught by
+measurement: it put 287 frames of pitch movement into `W.A.R. Preview` and 256
+into `Mega Apocalypse`, whose originals have **none**. Gated, the flag changes
+no melody score and no corpus slide total in a 10 s window — only `Thrust`
+exercises it at all within 60 s (0 → 76 slide frames against the original's
+536). It is shipped narrow and verified rather than broad and plausible.
+
+Off by default: it changes the output bytes of the files it reaches, the
+fixture among them.
 
 ### Per-song presets — `presets.json`
 

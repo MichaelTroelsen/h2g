@@ -392,6 +392,7 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "fmt": always.get("format", FORMAT_GTS5),
         "tempo": always.get("tempo", "auto"),
         "slides": bool(always.get("slides")),
+        "effects": bool(always.get("effects")),
     }
 
 
@@ -618,6 +619,10 @@ def main(argv=None) -> int:
                    help="convert with --slides (the two-byte pitch-slide "
                         "operand) regardless of what the presets say, so the "
                         "option can be measured before it is stored in one")
+    p.add_argument("--effects", action="store_true",
+                   help="convert with --effects (the instrument effect byte's "
+                        "chromatic rise, and no fabricated octave arpeggio) "
+                        "regardless of what the presets say")
     p.add_argument("--search-subtunes", type=int, default=1, metavar="N",
                    help="try our subtunes 0..N-1 against it and keep the best "
                         "match; our numbering shifts when a subtune is dropped")
@@ -669,6 +674,8 @@ def main(argv=None) -> int:
             opts = _preset_opts(doc, sid.name)
             if args.slides:
                 opts["slides"] = True
+            if args.effects:
+                opts["effects"] = True
             row = measure(sid, workdir, opts, args)
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "

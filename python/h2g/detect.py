@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from .search import search_file
-from .sidfile import SidFile
+from .sidfile import HLEN, SidFile
 
 WAVEFORMS = {
     0x00, 0x01, 0x09, 0x11, 0x13, 0x15, 0x17, 0x21, 0x23, 0x25, 0x27,
@@ -59,6 +59,11 @@ class Detection:
     # command operand -- the high byte of a 16-bit pitch-slide step. See
     # _find_slide_operand().
     slide_operand: bool = False
+    # True when the player's instrument effect byte (+7) really is Warhawk's
+    # bit-field, proved by finding the routine that tests it. The byte is NOT
+    # a shared format across the player family -- see _find_effect_routines().
+    effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
+    effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
 
     @property
     def can_convert(self) -> bool:
@@ -435,6 +440,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.slide_operand:
         log("Pattern slide form......: two-byte (16-bit step)")
 
+    det.effect_rise, det.effect_arp = _find_effect_routines(sid, det)
+    if det.effect_rise or det.effect_arp:
+        found = ", ".join(n for n, ok in (("rise", det.effect_rise),
+                                          ("arpeggio", det.effect_arp)) if ok)
+        log(f"Instrument effect byte..: {found}")
+
     return det
 
 
@@ -463,3 +474,77 @@ SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
 
 def _find_slide_operand(data: bytes) -> bool:
     return search_file(data, SLIDE_OPERAND_SHAPE) >= 1
+
+
+# --- The instrument effect byte (+7) ---------------------------------------
+#
+# H2G has always read +7 as a bit-field -- bit $01 a drum, bit $04 an arpeggio
+# whose interval is the high nibble -- and written a fabricated wavetable from
+# it for every file. That reading is Warhawk's, and it is **not** the format.
+# Reading the byte's own consumers out of four other players:
+#
+#     Warhawk               $15BD   AND #$08 / AND #$01 / AND #$02 / AND #$04
+#                                   / LSR x4        <- the bit-field
+#     Mega Apocalypse       $4F60   LDA / BEQ       <- whole byte, zero or not
+#     W.A.R. Preview        $0CF8   LDA / BEQ, then CLC / ADC
+#     One Man and his Droid $1501   LDA / BEQ, then AND #$E0
+#     Chicken Song          $15C1   AND #$02, but the block ORAs #$80 into the
+#                                   waveform at $D404 -- a noise swap, not a
+#                                   pitch rise
+#
+# So the same bit means different things in different players, and a converter
+# that assumes otherwise invents effects. Measured: applying Warhawk's reading
+# corpus-wide put 287 frames of pitch movement into W.A.R. Preview and 256 into
+# Mega Apocalypse, whose originals have none at all in the traced window.
+#
+# Hence these two probes, which do not trust the dialect number or a bare
+# opcode shape. They resolve the address the instrument-load routine stores +7
+# to, and then require the test block to name *that* address. Warhawk $13A2:
+#
+#     13A2  AD BD 15  LDA effect        13CD  AD BD 15  LDA effect
+#     13A5  29 02     AND #$02          13D0  29 04     AND #$04
+#     13A7  F0 24     BEQ                13D2  F0 3F     BEQ
+#     13A9  AD BF 15  LDA framecount    13D4  AD BD 15  LDA effect
+#     13AC  29 03     AND #$03          13D7  4A 4A 4A 4A  LSR x4
+#     13AE  D0 1D     BNE                13DB  8D F5 13  STA (into an SBC operand)
+#     13B0  FE 7F 15  INC noteindex,X
+#
+# 4 of 83 convertible corpus files have the rise block, 13 the arpeggio block.
+EFFECT_STORE_ABS = 0x8D
+EFFECT_STORE_ZP = 0x85
+
+
+def _effect_byte_address(sid: SidFile, det: Detection):
+    """(address, is_zeropage) the player keeps instrument byte +7 in, or None."""
+    if det.instr_start < 0 or det.instr_stride != 8:
+        return None
+    # Inverse of SidFile.to_offset. A relocated file (to_offset's `relocation`
+    # branch) would need the relocated form instead, but no such corpus file
+    # gets this far -- the probe returns None when the load is not found.
+    base = det.instr_start - (HLEN - 1) + sid.load_addr + 7
+    if not 0 <= base <= 0xFFFF:
+        return None
+    i = search_file(sid.data, "B9 %02X %02X" % (base & 0xFF, base >> 8))
+    if i <= -1 or i + 5 >= len(sid.data):
+        return None
+    store = sid.data[i + 3]
+    if store == EFFECT_STORE_ABS:
+        return (sid.data[i + 4] | sid.data[i + 5] << 8, False)
+    if store == EFFECT_STORE_ZP:
+        return (sid.data[i + 4], True)
+    return None
+
+
+def _find_effect_routines(sid: SidFile, det: Detection):
+    """(rise, arpeggio): whether the player really implements those +7 bits."""
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return False, False
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    any_load = "A5 ??" if zp else "AD ?? ??"
+    rise = search_file(
+        sid.data, f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? FE") >= 1
+    arp = search_file(
+        sid.data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D") >= 1
+    return rise, arp

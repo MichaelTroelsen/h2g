@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.51 — 2026-08-06
+
+- decode the instrument effect byte where the player has it
+
 ## 0.5.50 — 2026-08-06
 
 - map Hubbard pitch bends onto Goattracker's speed table

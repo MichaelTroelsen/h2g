@@ -62,6 +62,18 @@ MAX_INSTRUMENTS = 50
 
 assert MAX_INSTRUMENTS <= MAX_REPRESENTABLE_INSTRUMENTS
 
+# Wavetable left-side encodings, readme.txt:790-792. $F0-$FE execute a pattern
+# command with the right side as its parameter; $F0 + CMD_PORTAUP (1) is a
+# portamento up, and $FF is a jump whose right side is the target position.
+WAVECMD_PORTAUP = 0xF1
+
+# Speed-table left side with bit $80 set selects a realtime-calculated,
+# note-relative speed; the right side is then a shift applied to the semitone
+# interval at the current note (readme.txt:171-174, gplay.c:539-547). Shift 2
+# is a quarter semitone per frame == one semitone per four frames.
+SPEED_NOTE_RELATIVE = 0x80
+RISE_SHIFT = 2
+
 
 # --- Tempo -----------------------------------------------------------------
 #
@@ -198,51 +210,125 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
     return instr_used
 
 
-def _write_wavetable(out: bytearray, sid: SidFile, det: Detection, instr_used: int) -> None:
-    data = sid.data
-    n = max(instr_used - 1, 0)
+def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
+                       fmt: str, speed_table: List[tuple]) -> tuple:
+    """The five (left, right) wavetable entries for instrument `i`.
 
-    # LEFT side
+    With `effects` false this reproduces the VB6 original exactly. With it on,
+    the two effect-byte bits the original mis-read are decoded as the player
+    reads them -- but only where detection actually found the routine that
+    reads them (det.effect_rise / det.effect_arp), because +7 is not a shared
+    format: see detect._find_effect_routines. 4 of 83 convertible corpus files
+    have the rise routine and 13 the arpeggio one; for the rest this is a
+    no-op, which is the point.
+    """
+    data = sid.data
+    base = det.instr_start + i * det.instr_stride
+    arp_style = data[base + 7]
+    arp_set_keybit = 0 if (arp_style & 1) == 1 else 1
+    wave = data[base + 2]
+    tail = (wave & 0xFE) | arp_set_keybit
+
+    arp_note = (arp_style & 0xF0) >> 4
+    # The original substitutes $74 -- a +12 relative note, an octave-up
+    # arpeggio -- whenever the high nibble is zero. The player does no such
+    # thing: the nibble is written into the operand of the `SBC` at $13F4
+    # ($13DB `STA $13F5`), so a nibble of zero subtracts zero and both halves
+    # of the alternation play the same note. Half of every arpeggio instrument
+    # in the corpus (315 of 660 records) has nibble zero, so the substitution
+    # invents an octave arpeggio for all of them.
+    arp = (arp_style & 4) == 4
+    if effects and det.effect_arp and arp_note == 0:
+        arp = False
+    if arp_note == 0:
+        arp_note = 0x74
+
+    left = [wave, 0x00, tail, 0xFF, 0xFF]
+    right = [0x00, 0x00, 0x00, 0x00, 0x00]
+
+    # 2nd tick: the $01 "drum" bit swaps in noise and drops the pitch. Left
+    # alone here -- the player's version of it is a per-frame frequency
+    # decrement at $1372-$138D, which this two-entry shape only gestures at,
+    # but correcting that is a separate question from the arpeggio.
+    if (arp_style & 1) == 1:
+        left[1] = 0x80 | arp_set_keybit
+        right[1] = (0x80 - arp_note) & 0xFF
+    else:
+        left[1] = tail
+
+    # The instrument's own entries are 1-based indices i*5+6 .. i*5+10, so its
+    # third is i*5+8 -- the loop target for both the arpeggio and the rise.
+    third = (i * WAVE_ENTRIES_PER_INSTR + 8) & 0xFF
+
+    if arp:
+        # $13CD: alternate between the note and the note minus the high
+        # nibble, one frame each. Readme p.794: right side $60-$7F is a
+        # negative relative note, so $80-N is -N semitones.
+        left[3] = tail
+        right[3] = (0x80 - arp_note) & 0xFF
+        right[4] = third
+    elif effects and det.effect_rise and (arp_style & 2) == 2:
+        index = _rise_speed_index(fmt, speed_table)
+        if index:
+            left[2] = WAVECMD_PORTAUP
+            right[2] = index
+            right[3] = third
+
+    return left, right
+
+
+def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:
+    """1-based speed-table index for the effect byte's chromatic rise, or 0.
+
+    Effect bit $02 makes the player raise the note by one semitone every four
+    frames, for as long as the note is held: `$13A2 LDA effect / AND #$02`,
+    then `LDA $15BF / AND #$03 / BNE` -- the global frame counter, so it acts
+    only on every fourth frame -- then `INC $157F,X`, the voice's note index,
+    and a rewrite of $D400/$D401 from the frequency table. 252 instrument
+    records across 59 corpus files set it, and H2G read none of them.
+
+    Goattracker cannot step a note from the wavetable without spending one
+    entry per semitone, which the fixed five-entry-per-instrument layout has
+    no room for. It *can* glide at a note-relative rate: readme.txt:171 says a
+    speed-table left side with bit $80 set selects a realtime-calculated
+    speed, and gplay.c:539-547 then computes it as the semitone interval at
+    the current note shifted right by the table's right byte. A shift of 2 is
+    a quarter of a semitone per frame -- the player's rate exactly, as a
+    continuous glide rather than four-frame steps. That approximation is
+    deliberate and is the only part of this mapping that is not literal.
+
+    Returns 0 for a GTS2 file, which has no stored speed table: its loader
+    builds one from instrument vibrato bytes and *pattern* command columns
+    only (gsong.c:285, :311-321) and reads the wavetable verbatim, so an index
+    written here would name whatever entry happened to land at that position.
+    """
+    if fmt != FORMAT_GTS5:
+        return 0
+    entry = (SPEED_NOTE_RELATIVE, RISE_SHIFT)
+    if entry not in speed_table:
+        if len(speed_table) >= GT_MAX_TABLELEN:
+            return 0
+        speed_table.append(entry)
+    return speed_table.index(entry) + 1
+
+
+def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
+                     instr_used: int, effects: bool = False,
+                     fmt: str = DEFAULT_FORMAT,
+                     speed_table: List[tuple] | None = None) -> None:
+    n = max(instr_used - 1, 0)
+    table = speed_table if speed_table is not None else []
+    entries = [_wavetable_entries(sid, det, i, effects, fmt, table)
+               for i in range(n)]
+
     out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
     out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
-    for i in range(n):
-        base = det.instr_start + i * det.instr_stride
-        arp_style = data[base + 7]
-        arp_set_keybit = 0 if (arp_style & 1) == 1 else 1
-        wave = data[base + 2]
+    for left, _ in entries:
+        out += bytes(left)
 
-        out.append(wave)  # 1st tick
-        if (arp_style & 1) == 1:
-            out.append(0x80 | arp_set_keybit)  # 2nd tick: noise
-        else:
-            out.append((wave & 0xFE) | arp_set_keybit)
-
-        tail = (wave & 0xFE) | arp_set_keybit
-        if (arp_style & 4) == 4:
-            out += bytes([tail, tail, 0xFF])
-        else:
-            out += bytes([tail, 0xFF, 0xFF])
-
-    # RIGHT side
     out += bytes([0x00, 0x00, 0x00, 0x00, 0x00])
-    for i in range(n):
-        base = det.instr_start + i * det.instr_stride
-        arp_style = data[base + 7]
-        arp_note = (arp_style & 0xF0) >> 4
-        if arp_note == 0:
-            arp_note = 0x74
-
-        out.append(0x00)  # 1st tick note
-        if (arp_style & 1) == 1:  # (ArpStyle&4)==1 in the original is always false
-            out.append((0x80 - arp_note) & 0xFF)
-        else:
-            out.append(0x00)
-
-        if (arp_style & 4) == 4:
-            jump_to = ((i + 2) * 5 - 2) & 0xFF
-            out += bytes([0x00, (0x80 - arp_note) & 0xFF, jump_to])
-        else:
-            out += bytes([0x00, 0x00, 0x00])
+    for _, right in entries:
+        out += bytes(right)
 
 
 def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: int) -> None:
@@ -276,9 +362,13 @@ def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
-              speed_table: List[tuple] | None = None) -> bytes:
+              speed_table: List[tuple] | None = None,
+              effects: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
+    # _write_wavetable may append the note-relative entry the chromatic rise
+    # needs, and the table is written after it, so give it a list to grow.
+    table = list(speed_table or [])
     out = bytearray()
     out += _build_header(sid, fmt)
     # Derived from the tracks actually emitted, not sid.subtunes: convert_tracks
@@ -292,7 +382,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out += bytes(track)
 
     instr_used = _write_instruments(out, sid, det, log)
-    _write_wavetable(out, sid, det, instr_used)
+    _write_wavetable(out, sid, det, instr_used, effects, fmt, table)
     _write_pulsetable(out, sid, det, instr_used)
 
     if log:
@@ -316,7 +406,6 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # portamento's speed from `ltable[STBL][cmddata-1]`, and against an
         # empty table that is zero, i.e. no pitch movement at all. See
         # patterns.build_speed_table.
-        table = speed_table or []
         out.append(_table_length_byte(len(table), "speed"))
         out += bytes(left for left, _ in table)
         out += bytes(right for _, right in table)

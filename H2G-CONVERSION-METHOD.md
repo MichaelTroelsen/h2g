@@ -771,7 +771,7 @@ punts on the rest:
 | `+4` | SR (sustain/release) → GT instrument byte 1, clamped: `if sr >= 0xF0: sr &= 0xEF` |
 | `+5` | **not interpreted** — printed in the instrument name |
 | `+6` | **not interpreted** — printed in the instrument name (it is the *pulse-width sweep*, see below) |
-| `+7` | arpeggio-style byte (see below) — *and* printed in the name |
+| `+7` | effect byte — read as Warhawk's "arp style" bit-field for every file, which is wrong for most of them (see below); *and* printed in the name |
 
 `+6` is worth naming, because it is easy to mistake for a vibrato parameter and
 it is not one. Warhawk loads it per instrument at `$11E1` (`LDA $163D,Y` against
@@ -836,11 +836,64 @@ the right-hand column carries the arp note and the final entry jumps back to
 index `((i + 2) * 5) - 2`, i.e. the 3rd of that instrument's 5 slots, producing
 a two-step alternation.
 
-> **Unverified:** I did not check Goattracker's own source for the exact
-> semantics of the wavetable right-hand column, so the note/transpose encoding
-> (`0x80 - arp_note`, default `arp_note = 0x74` → `0x0C`) is reported as written
-> rather than interpreted. The `$FF`-left + `$00`-right = stop convention is
-> confirmed by instrument 1's fixed `09 FF 00 00 00` / `00 00 00 00 00` pair.
+The right-hand column encoding is now confirmed against Goattracker's own
+source and manual: `readme.txt:794-796` gives `$00-$5F` relative notes,
+`$60-$7F` *negative* relative notes and `$80` "keep frequency unchanged", and
+`gplay.c:717-728` implements exactly that (`if (note < 0x80) note +=
+cptr->note; note &= 0x7f`). So `0x80 - N` is "N semitones down", which is the
+right shape for an arpeggio. The `$FF`-left + `$00`-right = stop convention is
+confirmed by instrument 1's fixed `09 FF 00 00 00` / `00 00 00 00 00` pair.
+
+### `+7` is not a format — it is one player's bit-field
+
+This is the important correction, and it applies to the block above.
+
+The `arp_style` reading — bit `$01` a drum, bit `$04` an arpeggio whose
+interval is the high nibble — is **Warhawk's**, and H2G applies it to every
+file it converts. Reading the byte's own consumers out of five players shows
+five different treatments. In each case the instrument-load routine stores
+`+7` somewhere, and that address is what the player later tests:
+
+| Player | holds `+7` in | what it does with it |
+|---|---|---|
+| Warhawk | `$15BD` | `AND #$08` / `#$01` / `#$02` / `#$04`, `LSR`×4 — the bit-field |
+| Mega Apocalypse | `$4F60` | `LDA` / `BEQ` — the whole byte, zero or not |
+| W.A.R. Preview | `$0CF8` | `LDA` / `BEQ`, then `CLC` / `ADC` |
+| One Man and his Droid | `$1501` | `LDA` / `BEQ`, then `AND #$E0` |
+| Chicken Song | `$15C1` | `AND #$02`, but the block `ORA #$80`s into `$D404` — a noise swap, not a pitch rise |
+
+So the same bit means different things in different players. That was measured
+rather than argued: an early version of `--effects` applied Warhawk's reading
+corpus-wide and put **287 frames of pitch movement into W.A.R. Preview and 256
+into Mega Apocalypse, whose originals have none at all** in the traced window.
+
+`--effects` therefore decodes two bits only where the routine that reads them
+is actually present, found by resolving the address the instrument-load routine
+stores `+7` to and requiring the test block to name *that* address
+(`detect._find_effect_routines`). 4 of 83 convertible corpus files have the
+rise routine; 13 have the arpeggio one.
+
+**Bit `$02` — a chromatic rise** (Warhawk `$13A2`): every fourth frame
+(`LDA framecount / AND #$03 / BNE`) the player does `INC noteindex,X` and
+rewrites `$D400`/`$D401` from the frequency table, so the note climbs a
+semitone every four frames for as long as it is held. Goattracker cannot step a
+note from the wavetable without one entry per semitone, which the fixed
+five-entry-per-instrument layout has no room for — but it can *glide* at a
+note-relative rate: a speed-table left side with bit `$80` set selects a
+realtime-calculated speed, computed as the semitone interval at the current
+note shifted right by the table's right byte (`readme.txt:171-174`,
+`gplay.c:539-547`). Shift 2 is a quarter semitone per frame — the player's rate
+exactly, as a continuous glide rather than four-frame steps. That approximation
+is the only part of the mapping that is not literal, and it needs `--format
+gts5`: a GTS2 file stores no speed table.
+
+**Bit `$04` with a zero interval nibble is silent.** `$13DB` writes the nibble
+into the operand of the `SBC` at `$13F4`, so a zero nibble subtracts zero and
+both halves of the alternation play the same note. The original substitutes
+`$74` — a `+12` relative note — for a zero nibble, inventing an octave-up
+arpeggio. **315 of the corpus's 660 arpeggio instrument records have a zero
+nibble**, including all six of Commando's, which is why turning this on moves
+the byte-exact fixture.
 
 **Lesson:** when the source format is *poorer* than the target format, you have
 to synthesize plausible target-side structure. That synthesis is a creative

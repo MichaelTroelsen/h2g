@@ -69,6 +69,7 @@ def convert(sid_path: str, log: Logger = print,
             pack: bool = False,
             legal_restart: bool = False,
             slides: bool = False,
+            effects: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -104,6 +105,13 @@ def convert(sid_path: str, log: Logger = print,
     only where detection found that fetch (det.slide_operand), so it is a
     no-op for 54 of the 95 corpus files and for the Commando fixture. Off by
     default because it changes the bytes of the 41 files it does reach.
+
+    effects decodes the two bits of the instrument effect byte (+7) that the
+    original mis-read: bit $02's chromatic rise, which it ignored entirely,
+    and bit $04's arpeggio with a zero interval nibble, for which it invented
+    an octave-up arpeggio the player never plays. Both live in the wavetable.
+    Off by default: the Commando fixture has six instruments in the second
+    case and one in the first. See goatwriter._wavetable_entries.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -169,4 +177,4 @@ def convert(sid_path: str, log: Logger = print,
     if log and speed_table:
         log(f"Speed table entries.....: {len(speed_table)}")
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
-                     speed_table=speed_table)
+                     speed_table=speed_table, effects=effects)
