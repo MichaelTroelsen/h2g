@@ -200,6 +200,17 @@ test dependency).
     `find_relocation` and `find_init_writes`. The one match it yields names
     two things: the instrument table, and the per-voice instrument index array
     (`Detection.initial_instruments`).
+    `_find_table_vibrato` follows the same rule for the *other* vibrato: the
+    command-table engine (Hollywood or Bust, Chicken Song) parameterises it
+    with an LFO table rather than the `$78`/`$07` pair every other player
+    shares, so it is consulted only where `_find_vibrato` returned None.
+    Note what finding it turned up about the target: Goattracker's vibrato
+    half-period is `cmp + 2` play calls, **not** `cmp / 2` -- simulated from
+    `gplay.c:795-801` rather than read off it -- so the classic mapping in
+    `_classic_vibrato_entry` oscillates at about half the player's rate for
+    all 56 files it covers. Its excursion is right, the correction is one
+    line, and it moves 56 files' output: a measured commit of its own. See
+    H2G-CONVERSION-METHOD.md section 7.jj.
   - `tracks.py` — `convert_tracks`, port of `GoatConvertTracks`. Also
     `apply_initial_instruments` (behind `--initial-instrument`), which gives a
     voice the instrument the player starts it on where no pattern names one.

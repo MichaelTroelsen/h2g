@@ -677,6 +677,68 @@ round (`gsong.c:284-285`). Off by default because it changes the output bytes;
 `presets.json`'s `always` block sets it. `Commando.sng` is byte-identical
 either way — its player has no such routine.
 
+
+#### The other form: an LFO table (2 files)
+
+The command-table engine — Hollywood or Bust and Chicken Song — carries no byte
+in that format at all, which is why both stayed at `bend` 0.00x after the flag
+landed. Its parameter byte (the same record `+5`) is a pair of nibbles: the
+high one picks **one of four LFO tables**, the low one says how many units of
+`interval >> 4` a single table step is worth. The player walks the table one
+entry per frame, `$FF` wrapping to the start, and applies
+
+```
+table[i] * count * (interval >> 4)
+```
+
+as an absolute offset from the note's own frequency. Both files carry the same
+four tables and all four are triangles — `0 1 0 -1`, `0 1 2 1 0 -1`,
+`0 1 2 1 0 -1 -2 -1`, `0 1 2 3 2 1 0 -1 -2 -1` — which is the only reason a
+fixed triangle can stand in for them. The table's **length** is the period and
+its **peak** the excursion, so
+
+```
+cmp    = length × multiplier / 2 − 2
+rshift = log2((cmp + 2) × 2**4 / (2 × peak × count))     rounded in log space
+```
+
+Five of Hollywood or Bust's seven vibrato records ask for a ratio that is
+already a power of two; two round, the worse of them by a third. The interval
+here is `freq(note+1) − freq(note)`, the one *above* the note — exactly what
+Goattracker computes — so this mapping does not carry the classic form's 6%
+error.
+
+| at `-t 10` | before | after |
+|---|---:|---:|
+| Hollywood_or_Bust `bend` | 0.00x | **0.41x** |
+| Chicken_Song | — | unchanged (nothing it emits falls in the window) |
+
+At `-t 40`, where both files' vibrato instruments are reached, Hollywood or
+Bust reads 0.00x → **0.58x** and Chicken_Song 0.79x → **2.07x**. Chicken's
+overshoot is not explained by the rounding above (its four reachable records
+ask for 1.33x, 1.6x, 1.14x and 0.5x) and is not investigated here; its `bend`
+mixes the vibrato with a pre-existing drum-sweep contribution, which is what
+already put it at 0.79x with no vibrato emitted at all.
+
+Detection is gated on the parameter split, the table walk and the shift count
+all three, and it is consulted **only where the classic form found nothing** —
+so it can rescue a file that vibrates not at all and can never disturb one that
+already reads. No other corpus file matches the shape (`tests/
+test_table_vibrato.py` checks all 95).
+
+#### A note on the half-period both forms are matched against
+
+Simulating `gplay.c:795-801` rather than reading its constants gives a
+peak-to-peak of `(cmpvalue + 2) × speed` over a period of `2 × (cmpvalue + 2)`
+calls — so the **half-period is `cmp + 2` calls, not `cmp / 2`**. The classic
+mapping above was derived from the `cmp / 2` reading, which means the 56 files
+it covers oscillate at about half the player's rate; their *excursion*, which
+the `+ 1` in the shift was chosen to match, is right regardless. Correcting it
+is `cmp = bound × multiplier − 2` with `rshift = shift + log2(multiplier)`, and
+it moves the output of all 56 — a measured change of its own rather than a
+silent rider on the commit that found it. The LFO-table form is derived from
+the simulated semantics.
+
 ### `--pulse` (the duty cycle that never moved)
 
 Hubbard has **two** pulse engines and no file uses both: 34 corpus files sweep

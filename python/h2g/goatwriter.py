@@ -506,6 +506,143 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
     return instr_used
 
 
+# What Goattracker's vibrato actually does, simulated from gplay.c:795-801
+# rather than read off the constants:
+#
+#     if ((vibtime < 0x80) && (vibtime > cmpvalue)) vibtime ^= 0xff;
+#     vibtime += 0x02;
+#     if (vibtime & 0x01) freq -= speed; else freq += speed;
+#
+# `vibtime` walks the even values up to `cmpvalue`, flips to the odd half by
+# XOR, walks that down, and flips back. Counting the calls in each phase for
+# cmpvalue 0..16, odd and even alike:
+#
+#     peak-to-peak = (cmpvalue + 2) * speed
+#     full period  = 2 * (cmpvalue + 2) calls
+#
+# so an amplitude (half the peak-to-peak) of `(cmpvalue + 2) / 2 * speed`, and
+# a HALF period of `cmpvalue + 2` calls. The +2 matters at the small values
+# both engines produce: cmpvalue 2 oscillates twice as fast as cmpvalue 6, not
+# three times.
+VIBRATO_CMP_BIAS = 2
+
+
+def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
+    """Speed-table entry for one instrument byte in the $78/$07 format.
+
+    The mapping is close to literal because both sides express the depth the
+    same way. The player computes `(freq(note) - freq(note-1)) >> shift` and
+    oscillates a counter between 0 and `bound`; Goattracker's note-relative
+    speed (`ltable >= $80`) computes the interval at the current note shifted
+    right by `rtable`, and flips direction when its own counter passes
+    `ltable & $7f`. So:
+
+        entry = ($80 | cmp, rshift)
+
+    with the two derived from the excursion and the half-period:
+
+    * The player's peak excursion is `(bound >> 1) * depth` and its half-period
+      is `bound` frames. Matching the period against a Goattracker half-period
+      read as `cmp / 2` *calls* gives `cmp = 2 * bound * multiplier`, and
+      matching the excursion then gives `rshift = shift + 1 + log2(multiplier)`.
+    * `multiplier` is there because Goattracker's counter advances per play
+      call and the player's per frame -- the same per-frame/per-call division
+      every other rate in this file takes (see _drum_speed).
+
+    **The half-period this assumes is wrong, and these numbers are kept
+    anyway.** Simulating gplay.c (see VIBRATO_CMP_BIAS) puts it at
+    `cmp + 2` calls, not `cmp / 2`, so the emitted oscillation runs at about
+    half the player's rate; the excursion, which the `+1` in the shift was
+    chosen to match, comes out right regardless. Correcting it is
+    `cmp = bound * multiplier - VIBRATO_CMP_BIAS` with
+    `rshift = shift + log2(multiplier)`, and it moves the output of all 56
+    files that carry this format -- a measured change of its own, not a
+    silent rider on the table-vibrato commit that found it.
+    _table_vibrato_entry below is derived from the simulated semantics.
+
+    Two deliberate approximations besides, neither hidden: the player applies
+    its counter as a *position* (an absolute offset from the note) where
+    Goattracker integrates a step, which is the same triangle reached
+    differently; and Goattracker takes the interval *above* the note where the
+    player takes the one below, about 6% of a semitone.
+    """
+    bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
+    if not byte or not bound:
+        # The player's own test: `LDA record+5,Y / BNE` at Warhawk $11EA. A
+        # bound of zero is an oscillation with no excursion, which is the same
+        # silence reached one step later.
+        return None
+    shift = byte & VIBRATO_SHIFT_MASK
+    cmp_value = min(0x7F, 2 * bound * multiplier)
+    rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+
+
+def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
+    """Speed-table entry for one instrument byte in the LFO-table format.
+
+    The command-table engine's vibrato is a table walked one entry per frame,
+    the offset in frame `i` being `table[i] * count * (interval >> unit)` with
+    `count` the parameter byte's low nibble and the table its high one; see
+    detect._find_table_vibrato for the routine. All four tables in both corpus
+    files are triangles, which is the only reason a fixed triangle can stand
+    in for them at all -- an arbitrary shape could not be approximated, and
+    this returns None for a table that is not one (peak or length unreadable).
+
+    The table's LENGTH is the whole period in frames, against Goattracker's
+    `2 * (cmp + 2)` calls, so matching the period gives
+
+        cmp = length * multiplier / 2 - 2
+
+    and matching the excursion equates the two amplitudes,
+
+        (cmp + 2) / 2 * (interval >> rshift)
+            == peak * count * (interval >> unit)
+
+    which the interval cancels out of entirely, leaving
+
+        rshift = log2((cmp + 2) * 2**unit / (2 * peak * count))
+
+    rounded to the nearest integer -- Goattracker's depth is a shift, so only
+    powers of two are reachable and the rounding is in log space, where the
+    error is multiplicative and symmetric. Hollywood or Bust's seven vibrato
+    records ask for ratios of 4, 4, 3, 5.33, 4, 8 and 4 -- five land on a
+    power of two exactly and two round, the worst of them by a third.
+
+    Both numbers come from the *simulated* gplay.c semantics (see
+    VIBRATO_CMP_BIAS), not from the reading _classic_vibrato_entry above was
+    built on. A `cmp` of 0 is a legal entry, not an empty one: `$80` still
+    selects the note-relative speed and `cmpvalue & 0x7f` is then 0, which is
+    the fastest oscillation Goattracker has -- 4 calls -- and exactly what the
+    shortest of the four tables asks for.
+
+    One approximation the classic mapping has and this does not: the player
+    takes the interval *above* the note here (`freq(note+1) - freq(note)`),
+    which is the one Goattracker computes. What remains is the shape: the
+    player's table is a position sequence sampled per frame where Goattracker
+    integrates a step per call, so the two triangles agree in period and
+    excursion and differ in how they get there whenever the table is not
+    symmetric -- table 1 (`0 1 2 1 0 -1`) spends four of its six frames above
+    zero.
+    """
+    count = byte & 0x0F
+    index = (byte & 0xF0) >> 4
+    if not byte or not count or index >= len(tv.shapes):
+        # The player's own test is on the whole byte (`LDA record+5,Y / BNE`
+        # at Hollywood or Bust $05D1); a count of zero multiplies the unit by
+        # nothing, which is the same silence reached one step later.
+        return None
+    length, peak = tv.shapes[index]
+    if not length or not peak:
+        return None
+    half = max(1, round(length * multiplier / 2.0))
+    cmp_value = min(0x7F, max(0, half - VIBRATO_CMP_BIAS))
+    ratio = ((cmp_value + VIBRATO_CMP_BIAS) * (1 << tv.unit_shift)
+             / (2.0 * peak * count))
+    rshift = min(max(round(math.log2(ratio)), 0), GT_MAX_VIB_SHIFT)
+    return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+
+
 def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
                     speed_table: List[tuple], log=None) -> dict:
@@ -520,31 +657,11 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     ever produced vibrates, and why a third of the corpus moves the pitch not
     at all where the original does.
 
-    The mapping is close to literal because both sides express the depth the
-    same way. The player computes `(freq(note) - freq(note-1)) >> shift` and
-    oscillates a counter between 0 and `bound`; Goattracker's note-relative
-    speed (`ltable >= $80`) computes the interval at the current note shifted
-    right by `rtable`, and flips direction when its own counter passes
-    `ltable & $7f`. So:
-
-        entry = ($80 | cmp, rshift)
-
-    with the two derived from the excursion and the half-period:
-
-    * The player's peak excursion is `(bound >> 1) * depth`, Goattracker's is
-      `(cmp / 2) * speed`; its half-period is `bound` frames against
-      Goattracker's `cmp / 2` *calls*. Matching the period first gives
-      `cmp = 2 * bound * multiplier`, and matching the excursion then gives
-      `rshift = shift + 1 + log2(multiplier)`.
-    * `multiplier` is there because Goattracker's counter advances per play
-      call and the player's per frame -- the same per-frame/per-call division
-      every other rate in this file takes (see _drum_speed).
-
-    Two deliberate approximations, neither hidden: the player applies its
-    counter as a *position* (an absolute offset from the note) where
-    Goattracker integrates a step, which is the same triangle reached
-    differently; and Goattracker takes the interval *above* the note where the
-    player takes the one below, about 6% of a semitone.
+    Two player engines reach this, and they share no byte format: the classic
+    $78-bound/$07-shift pair (56 corpus files, _classic_vibrato_entry) and the
+    command-table engine's LFO table (2 files, _table_vibrato_entry). Both end
+    at the same place -- a note-relative speed-table entry and a vibdelay --
+    and the derivation of each is in its own function.
 
     GTS5 only. A GTS2 file stores no speed table -- its loader packs the
     vibrato into a single instrument byte and calls makespeedtable itself
@@ -552,25 +669,28 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     (vibdelay first, gsong.c:284) -- so the same numbers would need a
     different encoding, and the byte-exact fixture is a GTS2 file.
     """
-    if not vibrato or det.vibrato_offset is None or fmt != FORMAT_GTS5:
+    if not vibrato or fmt != FORMAT_GTS5:
+        return {}
+    mult = max(1, multiplier)
+    if det.vibrato_offset is not None:
+        offset = det.vibrato_offset
+        entry_of = lambda b: _classic_vibrato_entry(b, mult)
+        engine = "bound/shift"
+    elif det.table_vibrato is not None:
+        offset = det.table_vibrato.offset
+        entry_of = lambda b: _table_vibrato_entry(b, det.table_vibrato, mult)
+        engine = "LFO table"
+    else:
         return {}
     data = sid.data
     out: dict = {}
     for i in range(max(instr_used - 1, 0)):
-        base = det.instr_start + i * det.instr_stride + det.vibrato_offset
+        base = det.instr_start + i * det.instr_stride + offset
         if base >= len(data):
             continue
-        byte = data[base]
-        bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
-        if not byte or not bound:
-            # The player's own test: `LDA record+5,Y / BNE` at Warhawk $11EA.
-            # A bound of zero is an oscillation with no excursion, which is the
-            # same silence reached one step later.
+        entry = entry_of(data[base])
+        if entry is None:
             continue
-        shift = byte & VIBRATO_SHIFT_MASK
-        cmp_value = min(0x7F, 2 * bound * max(1, multiplier))
-        rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
-        entry = (SPEED_NOTE_RELATIVE | cmp_value, rshift)
         if entry not in speed_table:
             if len(speed_table) >= GT_MAX_TABLELEN:
                 continue
@@ -579,7 +699,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     if log and out:
         log(f"Instrument vibrato......: {len(out)} of "
             f"{max(instr_used - 1, 0)} record(s), "
-            f"{len({v[0] for v in out.values()})} speed-table entry(ies)")
+            f"{len({v[0] for v in out.values()})} speed-table entry(ies) "
+            f"({engine})")
     return out
 
 

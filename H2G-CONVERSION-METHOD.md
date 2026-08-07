@@ -2025,8 +2025,9 @@ Goattracker has:
 so the frequency offset each frame is `(interval >> 4) × table[i]` — an
 arbitrary LFO shape, where `--vibrato` reads a bound and a shift. Goattracker's
 vibrato is a fixed triangle, so this can only ever be approximated: the table's
-peak gives the excursion and its length the period. That approximation is
-**not** implemented, and Hollywood or Bust's `bend` of 0.00x is still open.
+peak gives the excursion and its length the period. That approximation
+**is** implemented -- see § 7.jj, which also corrects what § 7.ee
+assumed Goattracker's half-period to be.
 
 ### 7.hh The overshoot: three quarters of it was the metric
 
@@ -2429,6 +2430,178 @@ for b in track:
 > the bug.
 
 ---
+
+### 7.jj The LFO-table vibrato, and what Goattracker's half-period really is
+
+§ 7.gg ends by naming Hollywood or Bust's missing movement — a vibrato driven
+by an arbitrary table rather than by the `$78`/`$07` pair § 7.ee reads — and
+leaving it unimplemented. This is that approximation, and finding it required
+correcting a fact § 7.ee had assumed about the *target* rather than the source.
+
+#### The player: two nibbles, four tables
+
+The parameter byte sits at instrument record `+5`, the same offset the classic
+form uses, and splits the other way (Hollywood or Bust `$05CE`, Chicken Song
+`$11AF`, byte for byte the same routine):
+
+```
+05CE  B9 00 0A  LDA record+5,Y
+05D1  D0 03     BNE on
+05D3  4C 91 06  JMP past          ; zero -> no vibrato at all
+05D6  48        PHA
+05D7  29 0F     AND #$0F          ; low nibble: how many units per table step
+05D9  8D 86 09  STA count
+05DC  68        PLA
+05DD  29 F0     AND #$F0          ; high nibble: WHICH table
+05DF  4A 4A 4A 4A / AA
+05E4  BD F3 09  LDA lfo_lo,X      ; two pointer tables, LO then HI...
+05E7  8D FA 05  STA $05FA         ; ...patched straight into the fetch
+05EA  BD F7 09  LDA lfo_hi,X
+05ED  8D FB 05  STA $05FB
+```
+
+then the walk, one entry per frame, and the unit:
+
+```
+05F3  BC B1 09  LDY lfo_index,X / INC lfo_index,X
+05F9  B9 DF 09  LDA table,Y / CMP #$FF          ; $FF wraps the index to 0
+060E  BD 7A 09  LDA note,X / ASL / TAY
+0613  38 B9 A7 08 F9 A5 08   SEC / LDA freq+2,Y / SBC freq,Y   ; the interval
+0622  4A 66 4D  LSR / ROR x4                    ; >> 4
+0630  AC 86 09  LDY count / ... ADC ... DEY / BNE
+0652  68 F0 2F 30 17   PLA / BEQ / BMI          ; the entry's own sign bit
+```
+
+so frame `i` writes `table[i] * count * (interval >> 4)` as an **absolute
+offset from the note's frequency** — a position, not an accumulation. The LFO
+index is per voice, free-running, and reset only by the `$FF` wrap: a new note
+does not restart it.
+
+Both files carry four tables, at the same four shapes:
+
+| index | table | length | peak |
+|---:|---|---:|---:|
+| 0 | `0 1 0 -1` | 4 | 1 |
+| 1 | `0 1 2 1 0 -1` | 6 | 2 |
+| 2 | `0 1 2 1 0 -1 -2 -1` | 8 | 2 |
+| 3 | `0 1 2 3 2 1 0 -1 -2 -1` | 10 | 3 |
+
+All four are triangles. That is the whole reason this is expressible at all:
+Goattracker's vibrato is a fixed triangle, and an arbitrary LFO shape could
+only have been approximated by its envelope. Nothing in the mapping assumes it
+— `_read_lfo_table` measures length and peak and would happily encode the
+envelope of a shape that was not a triangle — but the fidelity of the result
+rests on it, and it is worth saying that the corpus, not the design, is what
+makes it hold.
+
+#### The target: simulate `gplay.c`, do not read its constants
+
+Matching a period needs Goattracker's period, and § 7.ee took it from the code
+in front of it: a counter compared against `ltable & $7f`, so a half-period of
+`cmp / 2` calls. Running `gplay.c:795-801` instead —
+
+```c
+if ((vibtime < 0x80) && (vibtime > cmpvalue)) vibtime ^= 0xff;
+vibtime += 0x02;
+if (vibtime & 0x01) freq -= speed; else freq += speed;
+```
+
+— for every `cmpvalue` from 0 to 23 gives something else. `vibtime` walks the
+even values up to `cmpvalue`, XORs into the odd half, walks that down, and
+flips back, so:
+
+```
+peak-to-peak = (cmpvalue + 2) * speed
+full period  = 2 * (cmpvalue + 2) calls
+```
+
+The **half-period is `cmp + 2` calls, not `cmp / 2`** — a factor of about four
+at the small values both engines produce, and at `cmpvalue` 0 the `+ 2` is the
+entire period. § 7.ee's `cmp = 2 × bound × multiplier` therefore emits an
+oscillation at roughly half the player's rate for all 56 files that carry the
+classic form. Its *excursion* is unaffected: `(cmp + 2) / 2 × speed` against
+the `(cmp / 2) × speed` it assumed differ by one part in `cmp`, and the `+ 1`
+in `rshift = shift + 1 + log2(multiplier)` was chosen to cancel the doubled
+`cmp`, so the two errors meet in the middle. Correcting it is
+`cmp = bound × multiplier − 2` with `rshift = shift + log2(multiplier)`; it
+moves 56 files' output and belongs to a measured commit of its own, not to
+this one. `tests/test_table_vibrato.py` pins the simulation so the next
+derivation starts from the fact rather than the constant.
+
+> **The transferable lesson:** a mapping has two sides, and the side you did
+> not write is the one you are most likely to have read rather than measured.
+> Four lines of C, run rather than read, moved the period by 4x.
+
+#### The mapping
+
+Period first, from the table's length in frames against Goattracker's calls:
+
+```
+cmp = length × multiplier / 2 − 2
+```
+
+then the excursion, equating the two amplitudes:
+
+```
+(cmp + 2) / 2 × (interval >> rshift)  ==  peak × count × (interval >> 4)
+```
+
+The interval cancels out of both sides entirely — which is the same reason the
+classic form maps cleanly, and it is worth noticing that it holds here for a
+*better* reason: this player takes `freq(note+1) − freq(note)`, the semitone
+**above** the note, which is exactly what Goattracker's note-relative speed
+computes. The classic players take the one below, about 6% of a semitone out.
+Solving leaves
+
+```
+rshift = log2((cmp + 2) × 2**unit_shift / (2 × peak × count))
+```
+
+rounded to the nearest integer *in log space*, because the depth is a shift and
+only powers of two are reachable, so the error to minimise is multiplicative.
+`unit_shift` is counted off the `LSR A / ROR zp` pairs the player executes
+rather than hard-coded at 4: it is the 16 in that expression, and a player
+shifting by 3 would bend twice as far for the same byte.
+
+Five of Hollywood or Bust's seven vibrato records ask for a ratio that is
+already a power of two; two round, the worse of them by a third.
+
+#### What it moved
+
+| at `-t 10` | before | after |
+|---|---:|---:|
+| Hollywood_or_Bust `bend` | 0.00x | **0.41x** |
+| Chicken_Song | 0.79x at `-t 40` | see below |
+| any other corpus file's bytes | — | unchanged (95-file differential hash) |
+
+At `-t 40`, where both files reach their vibrato instruments, Hollywood or Bust
+reads 0.00x → **0.58x** and Chicken Song 0.79x → **2.07x**. The overshoot is
+**not** explained by the rounding above: Chicken's four reachable records ask
+for per-frame travel ratios of 1.33, 1.6, 1.14 and 0.5. Nor is `bend` a clean
+signal there — the file already read 0.79x with no vibrato emitted at all, so
+its number mixes the new movement with a pre-existing drum-sweep contribution,
+which Hollywood or Bust (0 moving frames before this) does not. Left open, and
+named here rather than smoothed: the emission is gated by one detection
+function and can be withdrawn from that file alone if a listening pass says it
+should be.
+
+#### Detection, and the rule it follows
+
+Three shapes must all match — the parameter split, the table walk with its
+`$FF` wrap, and the `LSR/ROR` chain — and the self-modifying pair must patch
+two consecutive bytes, which is what pins the routine as the one it looks like.
+The record offset is read out of the `LDA record,Y` operand rather than assumed
+to be `+5`, and the number of tables comes from `hi_pointers − lo_pointers`
+rather than from the four the corpus happens to have.
+
+It is consulted **only where `_find_vibrato` found nothing** — the same rule
+`find_relocation`, `find_init_writes` and the instrument-index shape follow. It
+can rescue a file that vibrates not at all; it can never disturb one that
+already reads. Across all 95 corpus files exactly two match, which a test
+asserts by sweeping the corpus rather than by naming the two.
+
+---
+
 
 ## 9. The `.sng` output layout
 
