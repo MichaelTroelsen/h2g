@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.98 — 2026-08-07
+
+- read the LFO-table vibrato, the second form Hollywood or Bust uses
+
 ## 0.5.97 — 2026-08-07
 
 - fidelity --diagnose: subtune correspondence first, then per-voice cause

@@ -68,6 +68,10 @@ class Detection:
     # is found), or None where the player has no such routine. See
     # _find_vibrato().
     vibrato_offset: Optional[int] = None
+    # The OTHER vibrato: an LFO table walked one entry per frame, which is the
+    # command-table engine's form and shares no byte format with the above.
+    # Mutually exclusive with vibrato_offset -- see _find_table_vibrato().
+    table_vibrato: "TableVibrato | None" = None
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -830,6 +834,13 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.vibrato_offset is not None:
         log(f"Instrument vibrato......: record +{det.vibrato_offset} "
             "(bound $78>>3, depth shift $07, note-relative)")
+    else:
+        det.table_vibrato = _find_table_vibrato(sid, det)
+        if det.table_vibrato is not None:
+            tv = det.table_vibrato
+            log(f"Instrument vibrato......: record +{tv.offset} "
+                f"(LFO table $F0>>4, unit $0F x interval>>{tv.unit_shift}), "
+                + ", ".join(f"len {l} peak {p}" for l, p in tv.shapes))
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
@@ -1167,6 +1178,173 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
             if 0 <= off < det.instr_stride:
                 return off
     return None
+
+
+# --- The table-driven vibrato ----------------------------------------------
+#
+# The command-table engine (Hollywood or Bust, Chicken Song) has no vibrato
+# byte in the shared $78/$07 format, and _find_vibrato returns None for both.
+# Its movement is a *table*: an arbitrary LFO shape walked one entry per frame,
+# which is a third form again -- neither the classic pair nor anything
+# Goattracker has. Hollywood or Bust $05CE, the parameter split:
+#
+#     05CE  B9 00 0A  LDA record+5,Y    ; ...the same +5 the classic form uses
+#     05D1  D0 03     BNE on
+#     05D3  4C 91 06  JMP past          ; zero -> no vibrato at all
+#     05D6  48        PHA
+#     05D7  29 0F     AND #$0F          ; low nibble: how many units per step
+#     05D9  8D 86 09  STA count
+#     05DC  68        PLA
+#     05DD  29 F0     AND #$F0          ; high nibble: WHICH LFO table
+#     05DF  4A 4A 4A 4A  LSR A x4
+#     05E3  AA        TAX
+#     05E4  BD F3 09  LDA lfo_lo,X      ; the two pointer tables...
+#     05E7  8D FA 05  STA $05FA         ; ...patched into the fetch below
+#     05EA  BD F7 09  LDA lfo_hi,X
+#     05ED  8D FB 05  STA $05FB
+#
+# then $05F3, the walk, and $060E, the unit:
+#
+#     05F3  BC B1 09  LDY lfo_index,X / INC lfo_index,X   ; one entry per frame
+#     05F9  B9 DF 09  LDA table,Y / CMP #$FF              ; $FF wraps to 0
+#     060E  BD 7A 09  LDA note,X / ASL / TAY
+#     0613  38 B9 A7 08 F9 A5 08  SEC / LDA freq+2,Y / SBC freq,Y   ; interval
+#     0622  4A 66 4D  LSR / ROR x4                        ; >> 4 -> the unit
+#     0630  AC 86 09  LDY count / ... ADC ... DEY / BNE   ; unit x count
+#     0652  68 F0 2F 30 17  PLA / BEQ / BMI               ; the entry sign
+#     0657  A8 ... 18 65 ...  add (or, at $066E, AND #$7F and subtract) that
+#                             many times, to the note frequency itself
+#
+# So the offset in frame `i` is `table[i] * count * (interval >> 4)`, applied
+# as an absolute *position* relative to the note rather than integrated. Both
+# corpus files carry the same four tables, and all four are triangles:
+#
+#     0: 0 1 0 -1                    len  4, peak 1
+#     1: 0 1 2 1 0 -1                len  6, peak 2
+#     2: 0 1 2 1 0 -1 -2 -1          len  8, peak 2
+#     3: 0 1 2 3 2 1 0 -1 -2 -1      len 10, peak 3
+#
+# which is why this maps onto Goattracker at all: an arbitrary shape could not
+# be approximated by a fixed triangle, and these are already triangles. The
+# table PEAK gives the excursion and its LENGTH the period; the arithmetic is
+# in goatwriter._table_vibrato_entry.
+#
+# One thing the classic form has and this does not: the interval here is
+# `freq(note+1) - freq(note)`, the semitone ABOVE the note, which is exactly
+# what Goattracker note-relative speed computes. The classic players take the
+# one below, about 6% of a semitone out. This mapping has no such error.
+TABLE_VIBRATO_SHAPE = ("B9 ?? ?? D0 03 4C ?? ?? 48 29 0F 8D ?? ?? 68 29 F0 "
+                       "4A 4A 4A 4A AA BD ?? ?? 8D ?? ?? BD ?? ?? 8D ?? ??")
+
+# The walk: index per voice, one entry per frame, $FF wraps to 0.
+TABLE_VIBRATO_LFO_SHAPE = ("BC ?? ?? FE ?? ?? B9 ?? ?? C9 FF D0 07 "
+                           "A9 00 9D ?? ?? F0")
+
+# The unit: the 16-bit semitone interval at the current note, then one
+# `LSR A / ROR zp` per bit of right shift. The shift is COUNTED rather than
+# assumed -- it is the 16 in the excursion arithmetic, and a player that
+# shifted by 3 would bend twice as far for the same parameter byte.
+TABLE_VIBRATO_UNIT_SHAPE = ("0A A8 38 B9 ?? ?? F9 ?? ?? 85 ?? "
+                            "B9 ?? ?? F9 ?? ?? 4A 66 ??")
+
+# The high nibble indexes the pointer tables, so no more than 16 of them; and
+# the LO table is immediately followed by the HI one, which is what gives the
+# count. Anything outside this is not the layout and the file gets no vibrato.
+TABLE_VIBRATO_MAX_SHAPES = 16
+# The end marker of an LFO table, and the bit that makes an entry negative.
+TABLE_VIBRATO_END = 0xFF
+TABLE_VIBRATO_SIGN = 0x80
+# A table shorter than this is not an oscillation.
+TABLE_VIBRATO_MIN_LEN = 2
+
+
+@dataclass
+class TableVibrato:
+    """The command-table engine LFO vibrato, once located.
+
+    `offset` is the instrument-record offset of the parameter byte (+5 in both
+    corpus files, read out of the `LDA record,Y` rather than assumed).
+    `unit_shift` is the player's own right shift on the semitone interval.
+    `shapes` is (length, peak) per LFO table, indexed by the parameter byte's
+    high nibble; an unreadable table is (0, 0) and yields no vibrato.
+    """
+    offset: int
+    unit_shift: int
+    shapes: Tuple[Tuple[int, int], ...]
+
+
+def _table_vibrato_unit_shift(data: bytes) -> Optional[int]:
+    """How far the player shifts the semitone interval right, or None."""
+    at = search_file(data, TABLE_VIBRATO_UNIT_SHAPE)
+    if at < 1:
+        return None
+    zp = data[at + 19]          # the `ROR zp` operand of the first pair
+    shift, k = 1, at + 20
+    while k + 2 < len(data) and data[k] == 0x4A and data[k + 1] == 0x66 \
+            and data[k + 2] == zp:
+        shift += 1
+        k += 3
+    return shift
+
+
+def _read_lfo_table(sid: SidFile, addr: int) -> Tuple[int, int]:
+    """(length, peak magnitude) of the LFO table at `addr`, or (0, 0)."""
+    data = sid.data
+    off = sid.to_offset(addr)
+    if not 0 <= off < len(data):
+        return 0, 0
+    peak = length = 0
+    while off < len(data) and data[off] != TABLE_VIBRATO_END:
+        peak = max(peak, data[off] & (TABLE_VIBRATO_SIGN - 1))
+        length += 1
+        off += 1
+        if length > 0xFF:
+            return 0, 0         # ran off the end of a table with no marker
+    if length < TABLE_VIBRATO_MIN_LEN or not peak:
+        return 0, 0
+    return length, peak
+
+
+def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
+    """The LFO vibrato of the command-table engine, or None.
+
+    Consulted only where `_find_vibrato` found nothing, so it can rescue a
+    file that vibrates not at all and never disturb one that already reads --
+    the same rule find_relocation, find_init_writes and the instrument-index
+    shape follow.
+    """
+    data = sid.data
+    at = search_file(data, TABLE_VIBRATO_SHAPE)
+    if at < 1:
+        return None
+    if search_file(data, TABLE_VIBRATO_LFO_SHAPE) < 1:
+        return None
+    unit_shift = _table_vibrato_unit_shift(data)
+    if unit_shift is None:
+        return None
+    # The two STAs must patch consecutive bytes -- the operand of the LDA
+    # abs,Y in the walk. If they do not, this is not the routine it looks like.
+    if (data[at + 32] | data[at + 33] << 8) != (data[at + 26]
+                                                | data[at + 27] << 8) + 1:
+        return None
+    start = det.instr_start + sid.load_addr - HLEN + 1
+    offset = (data[at + 1] | data[at + 2] << 8) - start
+    if not 0 <= offset < det.instr_stride:
+        return None
+    lo = data[at + 23] | data[at + 24] << 8
+    hi = data[at + 29] | data[at + 30] << 8
+    count = hi - lo
+    if not 1 <= count <= TABLE_VIBRATO_MAX_SHAPES:
+        return None
+    shapes = []
+    for i in range(count):
+        a, b = sid.to_offset(lo + i), sid.to_offset(hi + i)
+        if not (0 <= a < len(data) and 0 <= b < len(data)):
+            return None
+        shapes.append(_read_lfo_table(sid, data[a] | data[b] << 8))
+    if not any(s[0] for s in shapes):
+        return None
+    return TableVibrato(offset, unit_shift, tuple(shapes))
 
 
 # The status-byte fetch that tests bit 6 first, and alone. Commando $50C2
