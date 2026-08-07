@@ -7,6 +7,12 @@ the shipped Win32 binaries and traced to a line in the distributed source.
 We are not patching GoatTracker — this is a report, written so each item can be
 acted on independently or sent upstream.
 
+For where to send it, and which build to open the output in, see
+[GOATTRACKER-FORKS.md](GOATTRACKER-FORKS.md): LoadTracker, GTUltra, Silver Fork
+and GTMobile, with links and a comparison. Issue #1 below is present in **every
+fork checked** — LoadTracker ported it to C++ unchanged — so the `--format
+gts5` rule holds against all of them.
+
 Line numbers refer to `GoatTracker_2.77/src/`. Where a claim is inference rather
 than observation, it says so.
 
