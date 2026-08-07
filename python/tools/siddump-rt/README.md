@@ -33,6 +33,15 @@ multispeed trace lands on the same axis as a single-speed one and the two can
 be compared frame for frame. Give the tune's real call rate divided by 50 —
 which for anything this repo packs is exactly `gt2reloc`'s `-S`.
 
+`-v<0|1>` sets `$02A6`, the KERNAL's PAL/NTSC flag, before init. Default 0,
+which is what a bare emulated machine looks like — and **three corpus players
+branch on it to compensate for NTSC**, skipping a frame periodically when it
+reads 0. Tracing them without `-v1` measures their NTSC behaviour: Phantoms of
+the Asteroid skips one frame in six that a PAL machine never skips, and Las
+Vegas Video Poker picks a reload of 2 where PAL picks 4 (verified: its skip
+period goes 3 → 5 under `-v1`). A fourth, Skate or Die's intro, uses the flag
+to select tuning constants instead, so it changes pitch rather than rate.
+
 Also: the `-z` cycle column now sums the frame's calls instead of reporting the
 last one (`initcpu` zeroes `cpucycles`).
 

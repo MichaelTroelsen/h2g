@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.109 — 2026-08-07
+
+- scan for $02A6 readers; siddump-rt -v traces as PAL
+
 ## 0.5.108 — 2026-08-07
 
 - the frame-skip idiom has a second site and four dialects; $02A6 makes one measurement NTSC

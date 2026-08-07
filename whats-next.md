@@ -623,15 +623,33 @@ Warhawk 8, Spellbound 11, Las_Vegas 3.
   jumps to a lighter routine instead of returning, so "skipped" and "run" are
   not the two states the others have.
 
-### `$02A6` — a measurement caveat with teeth
+### `$02A6` — the corpus scanned, and two more files leave the set
 
-Las_Vegas picks its reload from **`$02A6`, the KERNAL's PAL/NTSC flag**: 4 on
-PAL, 2 on NTSC. siddump starts with that cell at 0, so **every measurement
-this project has taken of that file is its NTSC behaviour**. Its PAL row is
-3 x 5/4 = 3.75, not the 4.50 measured — and the agreement between prediction
-and measurement above is therefore agreement about the wrong machine. Any file
-whose player reads `$02A6` has the same problem, and nothing currently checks
-for it.
+**Four files read `$02A6`, the KERNAL PAL/NTSC flag.** Three branch on it to
+compensate for NTSC — on a 60 Hz machine they skip a frame periodically so the
+music keeps PAL's tempo — and one uses it to pick tuning constants.
+
+siddump starts that cell at **0**, which is NTSC, so every trace this project
+has taken of those files ran their compensation code. `tools/siddump-rt` now
+takes **`-v<0|1>`** to set it; the default is unchanged, so no existing number
+moves until something asks for `-v1`.
+
+| file | what it does with `$02A6` | consequence |
+|---|---|---|
+| `Phantoms_of_the_Asteroid` | `LDA $02A6 / BNE play`, else a 1-in-6 skip | **not a defect.** Its 2.44 is NTSC-only; under `-v1` the skip disappears and its row is 2.00, which *is* the gate |
+| `Las_Vegas_Video_Poker` | reload 4 on PAL, 2 on NTSC | its PAL row is **3.75**, not the 4.50 measured. Verified: skip period goes 3 → 5 under `-v1`. v0.5.108's "closes exactly" was about the wrong machine |
+| `Bump_Set_Spike` | same idiom at `$B006` — but the PSID play address is `$B016`, **past it** | never executed from a play call. Its real skip has period 10, and 3 x 10/9 = **3.33**, its measured value exactly. **Closes.** |
+| `Skate_or_Die_intro` | `LDX $02A6` indexes tuning constants into three self-modified sites | affects pitch, not rate. Worth remembering next to its known frequency-table shift |
+
+So the unexplained set is down to **Spellbound** (period 11 predicts 2.20,
+`--pace` says 2.97) and **Action_Biker** (`BMI` to a lighter routine rather
+than a return). Everything else timed is either explained by the skip
+arithmetic or was the harness.
+
+**Not yet done:** `fidelity.py` does not pass `-v1`. Doing so is correct —
+these are PAL tunes and Goattracker targets PAL — but it changes what `--pace`
+and `--ticks` report for at least two files, so it wants its own commit and a
+re-measurement rather than riding along here.
 
 ## 8. Four players have no expressible rate
 

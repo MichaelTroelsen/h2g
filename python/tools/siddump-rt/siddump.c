@@ -73,6 +73,7 @@ int main(int argc, char **argv)
   int subtune = 0;
   int seconds = 60;
   int callsperframe = 1;
+  int palflag = 0;
   int instr = 0;
   int frames = 0;
   int spacing = 0;
@@ -129,6 +130,10 @@ int main(int argc, char **argv)
         lowres = 1;
         break;
 
+        case 'V':
+        sscanf(&argv[c][2], "%u", &palflag);
+        break;
+
         case 'M':
         sscanf(&argv[c][2], "%u", &callsperframe);
         if (callsperframe < 1) callsperframe = 1;
@@ -177,6 +182,10 @@ int main(int argc, char **argv)
            "-d<value> Select calibration note (abs.notation 80-DF). Default middle-C (B0)\n"
            "-f<value> First frame to display, default 0\n"
            "-l        Low-resolution mode (only display 1 row per note)\n"
+           "-v<value> Value for $02A6, the KERNAL PAL/NTSC flag, set before init.\n"
+           "          Default 0, which is what a bare machine looks like and what\n"
+           "          NTSC-compensating players branch on -- several skip a frame\n"
+           "          periodically when it reads 0. Give -v1 to trace as PAL.\n"
            "-m<value> Playroutine calls per displayed frame, default 1. Give the\n"
            "          tune's real call rate divided by 50: a CIA-driven tune at\n"
            "          100Hz (Goattracker gt2reloc -S2) needs -m2, or every row\n"
@@ -257,6 +266,7 @@ int main(int argc, char **argv)
 
   // Print info & run initroutine
   printf("Load address: $%04X Init address: $%04X Play address: $%04X\n", loadaddress, initaddress, playaddress);
+  if (palflag) mem[0x02a6] = 1;
   printf("Calling initroutine with subtune %d\n", subtune);
   mem[0x01] = 0x37;
   initcpu(initaddress, subtune, 0, 0);
