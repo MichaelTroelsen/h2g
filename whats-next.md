@@ -554,17 +554,40 @@ files: zero changes). Encoding it is a separate job with a real obstacle:
 play calls. Deep_Strike's 2.67 needs rows of 3, 3 and 2 frames, which is
 §8's problem — a re-gridding decision, not a number to round.
 
-### Still open
+### Still open — and it is a *second* mechanism, not a strict regex
 
-- **Four timed files have no outer counter** the shape finds: `Action_Biker`
-  (3.75), `Human_Race` (5.33), `Las_Vegas_Video_Poker` (4.50) and `Spellbound`
-  (2.97). Warhawk measures 2.25 — the 9/8 of O = 8 — with no match either. A
-  different idiom, or a second mechanism. **Absence of a match is not evidence
-  of absence**, and `true_frames` returns the plain gate value when nothing
-  matched, so those files read as "no skip" when they are really "not looked
-  at properly".
-- The shape requires the `DEC`/`STA` to name the same cell and the branch to
-  clear exactly 8 bytes. Both were read off one file.
+Five timed files show the same symptom with no match: `Action_Biker` (3.75 vs
+a gate of 3), `Human_Race` (5.33 vs 4), `Las_Vegas_Video_Poker` (4.50 vs 3),
+`Spellbound` (2.97 vs 2) and `Warhawk` (2.25 vs 2). v0.5.105 guessed the shape
+was too strict — it requires the `DEC`/`STA` to name one cell and the branch to
+clear exactly 8 bytes, both read off a single file. **Checked in v0.5.106 by
+disassembly rather than by widening the pattern, and the guess was wrong.**
+
+- **None of the five has an outer counter at all.** In every one the gate is
+  the *first* thing the play routine does, preceded only by the voice-count
+  `LDX` (`$1062 LDX #$02 / $1064 DEC $1599` in Warhawk; the same in Human_Race,
+  Las_Vegas and Spellbound; Action_Biker loads X from a cell instead). There is
+  nothing above the gate to loosen the shape onto.
+- **Their gate reload is not a decoy either.** The image byte matches the init
+  table's entry 0 in all five, so the one trap that explained Tarzan does not
+  apply here.
+- What follows the gate is the canonical structure with nothing extra:
+  `LDA gate / CMP reload / BNE skip` then `DEC duration,X / BMI next-note`.
+  Warhawk and Spellbound are byte-for-byte the same idiom.
+
+So a *different* mechanism eats their frames, and it is unattributed. Do not
+loosen `OUTER_GATE` to chase them — there is nothing there to match, and a
+looser shape would only manufacture false positives on the 44 files it
+currently, correctly, ignores.
+
+Hypotheses not yet tested, in the order worth trying: that the note-duration
+decrement is skipped on some frames further down the voice loop; that these
+players run the sequencer for a *subset* of voices per frame; or that
+`--pace`'s row figure is itself wrong for them, which is checkable because
+`--ticks` reads the period from the original alone and reaches Spellbound.
+
+`true_frames` returns the plain gate value when nothing matched, so these five
+read as "no skip" when they are really "not explained".
 - Whether encoding this is worth it at all is unmeasured: `FIDELITY.md` cannot
   see a tempo change (siddump plays every file at the trace's own rate), so
   the evidence would have to come from `--pace` before and after.
