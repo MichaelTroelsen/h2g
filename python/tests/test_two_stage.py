@@ -17,6 +17,7 @@ H2G-CONVERSION-METHOD.md section 7 for the numbers. These tests pin the
 reading, and pin the fact that it changes no output.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -26,7 +27,7 @@ from h2g.detect import (WAVEFORMS, _effect_byte_address, _find_two_stage,
                         detect)
 from h2g.sidfile import HLEN, load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 
 ARP = 0x04
 POINTER = 0x08

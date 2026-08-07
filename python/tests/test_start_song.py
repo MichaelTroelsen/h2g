@@ -13,6 +13,7 @@ one of the seven scores the same or better at its header's subtune, so this is
 not a tuning knob -- it was a measurement reading the wrong music.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -20,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from fidelity import resolve_subtune
 from h2g.sidfile import load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 COMMANDO = pathlib.Path(__file__).resolve().parents[2] / "Commando.sid"
 
 # Every corpus file whose header names a default other than the first subtune,

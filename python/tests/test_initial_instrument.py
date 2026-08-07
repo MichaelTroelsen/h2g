@@ -12,6 +12,7 @@ they ship on different terms:
     only the starting value for a rip of a single tune.
 """
 import os
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 import pytest
@@ -24,7 +25,7 @@ from h2g.search import search_file                    # noqa: E402
 from h2g.sidfile import load_sid                      # noqa: E402
 from h2g.tracks import apply_initial_instruments      # noqa: E402
 
-CORPUS = r"C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob"
+CORPUS = _CORPUS
 # The repo's own Commando.sid, not the corpus copy -- they are different rips
 # (4222 B / 3 subtunes here against 4165 B / 19 there), and only this one is
 # the byte-exact fixture.

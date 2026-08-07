@@ -19,9 +19,11 @@ bits this module adds are gated on finding the routine that reads them, bound
 to the address the instrument-load routine stores +7 to.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+
 
 from h2g.detect import (Detection, _effect_byte_address,
                         _find_effect_routines)
@@ -31,7 +33,7 @@ from h2g.goatwriter import (DRUM_SPEED, FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
                             _wavetable_entries)
 from h2g.sidfile import load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 
 RISE = 0x02
 ARP = 0x04

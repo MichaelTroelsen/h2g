@@ -19,6 +19,7 @@ and this converter used to manage **7**.
    everything after it in that pattern read one position out.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -168,7 +169,7 @@ from h2g.detect import (SLIDE_HIGH_FIRST_DOWN, SLIDE_HIGH_FIRST_MASK,
                         _find_slide_high_first)
 from h2g.patterns import MAX_SLIDE_STEPS, _step_index
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 
 # The operand $84: bit 7 set (a command), below $BF so upward, and its low 6
 # bits are 4 -- so the step's high half is 4. The next byte, $48, is the low
