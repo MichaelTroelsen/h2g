@@ -419,14 +419,65 @@ notes. A *high* share is sufficient evidence of a transposition; a *low* share
 is **not** evidence of scrambling. Sweep a constant shift k over ±24 and take
 the difflib ratio at each.
 
-## 7. Measuring the `-S2` group needs a cycle-accurate trace
+## 7. ~~Measuring the `-S2` group needs a cycle-accurate trace~~ — done in v0.5.99, and it found something
 
-33 of 82 measured files score below their real fidelity: they pack correctly
-with `gt2reloc -S2` (CIA stub, timer A at 100.25 Hz) but **siddump ignores the
-PSID speed field** (`siddump.c:309/325`). `-S` changes the bytes and not the
-trace. **The VICE harness built in v0.5.91 is now the tool for this** — see
-critical_context for the working recipe. Nothing in `FIDELITY.md` can confirm
-v0.5.82's multiplier fix; only a cycle-accurate trace can.
+The 33 `-S2` files are now traced at the rate they are packed for.
+**`python/tools/siddump-rt`** is siddump 1.08 vendored plus one option,
+`-m<n>` = playroutine calls per displayed frame; a dump row stays one PAL
+frame of real time, so both sides share a time axis whatever the call rate.
+`fidelity.py` passes each song its own multiplier and **refuses** a
+multiplier > 1 song on a binary without `-m` — siddump's option switch has no
+`default:`, so a stock binary handed `-m2` drops it silently and returns half
+the tune.
+
+The VICE harness was not needed. Verified rather than assumed:
+
+- `-m1` output is **byte-identical** to the shipped `siddump.exe`.
+- The `-S` stub is at the packed file's **init** address, writes
+  `0x4cc7/multiplier` to timer A and falls through to the player; the play
+  address is the player itself (`greloc.c:140`, `:1616`, `:1636`). So entering
+  play *n* times a frame is what the CIA does, not a model of it.
+- The same `.sng` packed at `-S1` and `-S2` traces identically at a given
+  `-m`, on three files. `-S` really is invisible to siddump; `-m` is the knob.
+
+**What it found is not the uniform lift this item expected.** Of the 33:
+**15 score better at the packed rate** — Ricochet 70% → 100%, Flash_Gordon
+30% → 75%, Warhawk 68% → 96%, W_A_R_Preview 73% → 95%, Star_Paws 62% → 91% —
+and **17 score better at 50 Hz**, some steeply (Deep_Strike 100% → 14%,
+Game_Killer 71% → 5%, Spellbound 78% → 11%). One is flat. Corpus mean melody
+78% → 74% because the report now scores the file that ships.
+
+Ricochet is the confirmation §7 was after: at 100 Hz its attacks land within
+0.4% of the original's frames, per voice. v0.5.82's multiplier fix does reach
+real time — for that half of the group.
+
+**The other 17 are the new open item, and it is the largest one in the
+converter.** Something in them is a factor of two out: `find_song_speeds`
+reads `frames = 2` for all 33 alike, and the source kind (static reload byte
+vs per-subtune table) does not separate the groups, so it is not simply a
+mis-read gate. Candidates: the rows the converter gives a note (a doubled
+rows-per-unit would cancel the multiplier exactly), `tempo_command_value`'s
+floor at `TEMPO_FASTEST_STEADY`, or the `-S` choice itself. **Not
+attributed** — do not assume the direction. A caution from doing this: the
+attack-frame slope is only meaningful where the two note sequences align, so
+it reads as garbage on exactly the files in dispute; `melody_at_1x` in the
+JSON is the number to work from, and `--calls-per-frame 1` reproduces every
+pre-v0.5.99 measurement.
+
+Still not cycle-accurate: calls inside a frame run back to back rather than at
+timer intervals, registers are sampled at end of frame, and the 0.25% between
+100.25 Hz and 2 × 50 Hz is ignored. The VICE harness remains the tool if any
+of that starts to matter.
+
+**`FIDELITY.md` is deliberately not in this commit** (the concurrency rule:
+generated files are regenerated once on `master`, after the merges). The
+numbers above were taken from a run of this branch. Regenerate on the merged
+tree — **and build the tool first, or the run will refuse the 33 files**:
+
+```sh
+cd python/tools/siddump-rt && make && cd ../..
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
+```
 
 ## 8. Four players have no expressible rate
 

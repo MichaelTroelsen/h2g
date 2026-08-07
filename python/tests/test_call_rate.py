@@ -14,12 +14,15 @@ Those units agree only at `gt2reloc -S1`. 33 of the 83 preset corpus songs
 pack at -S2 -- a CIA stub calling the player at 100 Hz -- and every one of
 those rates ran at twice the player's until v0.5.82.
 
-**Nothing in FIDELITY.md can move on this.** siddump calls the play routine
-`seconds * 50` times whatever the PSID speed field says (siddump.c:309/325),
-so in the trace every file behaves as multiplier 1 and a multiplier-dependent
-change is invisible by construction. The evidence that it reaches anything is
-here and in the differential hash: exactly the 33 multiplier-2 songs change
-bytes, and no multiplier-1 song does.
+**Nothing in FIDELITY.md could move on this until v0.5.99.** Stock siddump
+calls the play routine `seconds * 50` times whatever the PSID speed field says
+(siddump.c:309/325), so in the trace every file behaved as multiplier 1 and a
+multiplier-dependent change was invisible by construction. tools/siddump-rt
+takes `-m` and the harness now passes the song's multiplier, so the trace does
+see the rate -- but what it sees is whether the file lands in *real time*,
+which is a different question from whether an edit reached the bytes. The
+evidence for reach is still here and in the differential hash: exactly the 33
+multiplier-2 songs change bytes, and no multiplier-1 song does.
 """
 import pathlib
 import sys

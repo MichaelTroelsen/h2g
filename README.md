@@ -992,14 +992,24 @@ now wrong in the slides as well. Three rates keep a stated residual — the
 arpeggio alternation, the drum's own attack, and the rise at a non-power-of-two
 multiplier — see H2G-CONVERSION-METHOD.md § 7.bb.
 
-**siddump cannot check this** — it ignores the PSID speed field and calls the
-play routine 50 times a second regardless (`siddump.c:309/325`), so `-S`
-changes the packed bytes and not the trace. Measured A/B on `Chain_Reaction`:
-identical melody, sequence, retrigger ratio and attack counts with and
-without it; corpus-wide, applying it moves two files by one point (the CIA
-stub's one-time startup shift) and nothing else. `FIDELITY.md` therefore
-understates every `multiplier > 1` row and says so in its summary. Only a
-cycle-counting emulator can score them.
+**Stock siddump cannot check this** — it ignores the PSID speed field and
+calls the play routine 50 times a second regardless (`siddump.c:309/325`), so
+`-S` changes the packed bytes and not the trace. Measured A/B on
+`Chain_Reaction`: identical melody, sequence, retrigger ratio and attack counts
+with and without it; and the same `.sng` packed at `-S1` and `-S2` traces
+byte-identically at a given rate. So for six versions `FIDELITY.md` scored
+every `multiplier > 1` row against a file played at half its speed.
+
+**Since v0.5.99 it can.** `python/tools/siddump-rt` is siddump 1.08 plus
+`-m<n>`, "playroutine calls per displayed frame", and `fidelity.py` passes each
+song its own multiplier — a dump row stays one PAL frame of real time, so the
+two sides share a time axis whatever the call rate. The result is not the
+uniform lift it was expected to be: **15 of the 33 score better at the packed
+rate** (Ricochet 70% → 100%, Flash_Gordon 30% → 75%, Warhawk 68% → 96%) and
+**17 score better at 50 Hz**, which says something in those files is a factor
+of two out — the speed gate, the rows given a note, or the `-S` choice itself.
+The report names both groups and `--calls-per-frame 1` reproduces the old
+numbers. See `python/tools/siddump-rt/README.md`.
 
 [`presets.json`](presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.
@@ -1094,6 +1104,14 @@ python fidelity.py --pair original.sid ours.sid        # two files you already h
 It needs `siddump.exe` and `gt2reloc.exe` (`H2G_SIDDUMP` / `H2G_GT2RELOC`
 override the paths) and is otherwise stdlib-only. The whole 95-file corpus
 takes a few seconds.
+
+For siddump it prefers `python/tools/siddump-rt/siddump.exe` when that has been
+built, because a song packed at `gt2reloc -S2` is traced at half speed without
+it. It **refuses** such a song on a binary lacking `-m` rather than return the
+half-speed dump, which is indistinguishable from a bad conversion — siddump's
+option switch has no `default:` case, so an unknown letter is dropped without a
+word. `--calls-per-frame N` overrides the rate; `1` reproduces every number
+taken before v0.5.99.
 
 What it counts is **note attacks** — the notes `siddump` prints bare, which it
 does only after a gate rising edge (`siddump.c:376-380`). A note in parentheses

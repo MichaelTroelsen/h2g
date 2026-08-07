@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.99 — 2026-08-07
+
+- trace each conversion at the call rate it was packed for
+
 ## 0.5.98 — 2026-08-07
 
 - read the LFO-table vibrato, the second form Hollywood or Bust uses
