@@ -1423,6 +1423,62 @@ the reading ships as `--initial-instrument` and is deliberately **not** in
 `presets.json`'s `always` block — a rule that is right for a jingle and wrong
 for a demo does not belong in a block that claims to be right for everything.
 
+### 7.z The envelope: a misread register and an invented reset
+
+Two defects sat in the envelope for the project's whole life, and neither was
+findable from the report. Both were raised by the first listening pass, in
+the form *"the notes sound correct, but the sounds are not correct"*.
+
+**The sustain nibble.** The VB6 original masks bit `$10` out of any
+sustain/release byte `>= $F0` (`h2g.frm:578-579`). Its comment states the
+field as `SSSX RRRR` -- three bits of sustain, one spare, four of release.
+SID register 6 is `SSSS RRRR`: four bits each. There is no spare bit, so the
+mask does not discard a flag, it turns a sustain of F into E on every
+instrument that asked for full sustain. That is the level the note holds for
+its entire duration, so it is audible for longer than anything else in the
+record. The port inherited the mask verbatim; `--sustain-exact` removes it and
+reaches 64 of the 83 convertible files.
+
+This is worth generalising: **an inherited comment is not evidence.** The mask
+survived the port because the comment explained it, and the explanation was
+confidently wrong about a register whose layout is in the datasheet.
+
+**The hard restart.** Goattracker writes its `HR` parameter -- default
+`$0F00` (`goattrk2.c:49`), baked into the packed player as `ADPARAM`/`SRPARAM`
+at `greloc.c:1138` -- into `$D405`/`$D406` for one frame before every note,
+unless the instrument sets `gatetimer` bit `$80` (`gplay.c:930-937`; the flag
+is defined at `gsong.c:381`). This is standard C64 practice: it resets the
+envelope generator so an attack lands reliably.
+
+Hubbard's players do not do it. `$0F00` occurs in **no** corpus original, and
+is the **most common ADSR value in every conversion** that does not set the
+bit. So the converter was adding an envelope reset to every note in music
+that never had one. `--no-hard-restart` sets bit `$80` on every instrument
+read from the file; it deliberately does not set bit `$40`, which suppresses
+the gate-off too and would stop notes releasing.
+
+Note the asymmetry with the rest of this document: the other readings here
+recover something the player *does*. This one removes something the *target
+format* does. A converter inherits defaults from both ends, and the ones from
+the output side are harder to notice because nothing in the input contradicts
+them.
+
+**Measured.** Per-frame ADSR agreement across the 83 convertible files, each
+voice's last written value carried forward between writes:
+
+| | agreement |
+|---|---:|
+| inherited | 54.2% |
+| `--sustain-exact` | 60.6% |
+| `--no-hard-restart` | 59.3% |
+| both (shipped, in `always`) | **66.2%** |
+
+The cost is one file: hard restart exists for a reason, and Confuzion drops
+82% → 78% melody. Nothing else moves on melody, sequence, pitch or waveform
+-- because **no column in `FIDELITY.md` compares ADSR at all**. The table
+above comes from a separate comparison of siddump's `ADSR` column written for
+this change, not from the report.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

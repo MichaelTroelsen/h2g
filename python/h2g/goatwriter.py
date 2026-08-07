@@ -377,7 +377,8 @@ def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
 
 
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
-                       log=None) -> int:
+                       log=None, sustain_exact: bool = False,
+                       no_hard_restart: bool = False) -> int:
     available = det.instr_used + 1
     instr_used = min(available, MAX_INSTRUMENTS)
     if log and available > instr_used:
@@ -406,11 +407,28 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         base = det.instr_start + i * det.instr_stride
         ad = data[base + 3]
         sr = data[base + 4]
-        if sr >= 0xF0:
+        if not sustain_exact and sr >= 0xF0:
+            # Inherited from the VB6 original (h2g.frm:578-579), whose comment
+            # reads "&SSSXRRRR (S=Sustain, R=Release, X=Cut this bit out)".
+            # There is no X bit: SID register 6 is SSSS RRRR, four bits of
+            # sustain and four of release (6581 datasheet). Clearing $10 lowers
+            # a sustain of F to E on every instrument that asked for full
+            # sustain -- the level the note holds at for its whole duration.
+            # Kept as the default only because the byte-exact Commando fixture
+            # encodes it; --sustain-exact reads the register as the SID does.
             sr &= 0xEF
         wave_ptr = (i * 5 + wtable_start) & 0xFF
         pulse_ptr = (i * 2 + ptable_start) & 0xFF
-        out += bytes([ad, sr, wave_ptr, pulse_ptr, 0x00, 0x00, 0x00, 0x02, 0x09])
+        # gatetimer bit $80 is Goattracker's "no hard restart" flag
+        # (gsong.c:381). Without it, gplay.c:930-937 writes `adparam` -- the
+        # editor's HR value, default $0F00 (goattrk2.c:49), baked into the
+        # packed player as ADPARAM/SRPARAM (greloc.c:1138) -- into $D405/$D406
+        # for one frame before every note. Hubbard's players never do that:
+        # $0F00 appears in none of the corpus originals and is the most common
+        # ADSR value in every conversion without this flag.
+        gatetimer = 0x82 if no_hard_restart else 0x02
+        out += bytes([ad, sr, wave_ptr, pulse_ptr, 0x00, 0x00, 0x00,
+                      gatetimer, 0x09])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
         name = f"{i + 2:02X}:{b5:02X}-{b6:02X}-{b7:02X}"
@@ -656,7 +674,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
               speed_table: List[tuple] | None = None,
-              effects: bool = False) -> bytes:
+              effects: bool = False,
+              sustain_exact: bool = False,
+              no_hard_restart: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -674,7 +694,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
-    instr_used = _write_instruments(out, sid, det, log)
+    instr_used = _write_instruments(out, sid, det, log, sustain_exact,
+                                    no_hard_restart)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table)
     _write_pulsetable(out, sid, det, instr_used)
 

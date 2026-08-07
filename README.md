@@ -534,6 +534,52 @@ subtune starts from. Turning the flag on there raises melody 15% → 19% and
 drops waveform agreement 29% → 0%. Use it on single-tune rips; the two files
 it was derived from are both of those.
 
+### `--sustain-exact` (the sustain nibble as the SID reads it)
+
+The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`
+(`h2g.frm:578-579`), with the comment *"&SSSXRRRR (S=Sustain, R=Release,
+X=Cut this bit out)"*. There is no X bit. SID register 6 is `SSSS RRRR` --
+four bits of sustain, four of release -- so clearing `$10` does not remove a
+spare flag, it lowers a sustain of F to E. That is the level the note holds
+at for its entire length, on every instrument that asked for full sustain.
+
+The port inherited the mask and this flag removes it. It reaches **64 of the
+83 convertible files**, which is why it is opt-in rather than simply fixed:
+it changes the bytes of the `Commando.sng` fixture too.
+
+### `--no-hard-restart` (stop resetting the envelope before every note)
+
+Goattracker writes its hard-restart value into `$D405`/`$D406` for one frame
+ahead of each note unless the instrument sets `gatetimer` bit `$80`
+(`gplay.c:930-937`, flag at `gsong.c:381`). The value is the editor's `HR`
+parameter, default `$0F00` (`goattrk2.c:49`), baked into the packed player as
+`ADPARAM`/`SRPARAM` (`greloc.c:1138`).
+
+Hubbard's players never do this. `$0F00` appears in **none** of the corpus
+originals and is the **most common ADSR value in every conversion** without
+this flag -- an envelope reset on every note that the music being converted
+does not contain. The flag sets bit `$80` on every instrument read from the
+file. It does not set bit `$40`, which would suppress the gate-off as well
+and stop notes releasing at all.
+
+**Together the two options take per-frame ADSR agreement from 54.2% to
+66.2%** across the 83 convertible files (`--sustain-exact` +6.3,
+`--no-hard-restart` +5.0, measured separately). Both are in `presets.json`'s
+`always` block.
+
+**The cost is one file.** Hard restart exists because the SID's envelope
+generator does not always retrigger cleanly without it, and Confuzion goes
+from 82% to 78% melody similarity with `--no-hard-restart` on. Nothing else
+in the corpus moves on melody, sequence, pitch or waveform.
+
+**No column in `FIDELITY.md` can see either change.** `wave` compares the
+waveform class and ignores ADSR entirely; melody, sequence and pitch are
+attack comparisons. The 54.2% → 66.2% figure comes from a separate
+per-frame comparison of siddump's `ADSR` column, not from the report. Both
+options were prompted by a listening pass -- "the notes sound correct, but
+the sounds are not correct" -- which is the only check in the project that
+could have raised them.
+
 ### Per-song presets — `presets.json`
 
 No single setting is right for the whole corpus: `--max-rows 128` fits tunes

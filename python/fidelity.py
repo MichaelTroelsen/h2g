@@ -581,6 +581,8 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "reject_phantoms": bool(always.get("reject_phantoms")),
         "fold_transpose": bool(always.get("fold_transpose")),
         "initial_instrument": bool(always.get("initial_instrument")),
+        "sustain_exact": bool(always.get("sustain_exact")),
+        "no_hard_restart": bool(always.get("no_hard_restart")),
     }
 
 

@@ -60,7 +60,8 @@ TOGGLES = ("pack", "prune", "dedup")
 # Not searched; see the module docstring.
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "slides": True, "effects": True, "status_bit6": True,
-         "reject_phantoms": True, "fold_transpose": True}
+         "reject_phantoms": True, "fold_transpose": True,
+         "sustain_exact": True, "no_hard_restart": True}
 
 
 def _parse(blob: bytes, ntables: int = 4):
@@ -231,6 +232,19 @@ def main(argv=None) -> int:
                    # where it applies, and a no-op in the 79 files it does
                    # not reach.
                    "fold_transpose": FIXED["fold_transpose"],
+                   # Both read the instrument's envelope as the player means
+                   # it. --sustain-exact undoes a VB6 misreading of SID
+                   # register 6 that lowered a full sustain to E in 64 files;
+                   # --no-hard-restart stops Goattracker writing $0F00 over
+                   # $D405/$D406 before every note, which no Hubbard player
+                   # does. Together they take per-frame ADSR agreement from
+                   # 54.2% to 66.2% corpus-wide. Fixed rather than searched:
+                   # neither is a per-song taste, both are what the register
+                   # holds. The cost is recorded -- no-hard-restart takes
+                   # Confuzion from 82% to 78% melody, because hard restart is
+                   # what makes a re-struck note retrigger reliably.
+                   "sustain_exact": FIXED["sustain_exact"],
+                   "no_hard_restart": FIXED["no_hard_restart"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

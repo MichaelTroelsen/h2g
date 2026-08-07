@@ -112,6 +112,8 @@ def convert(sid_path: str, log: Logger = print,
             reject_phantoms: bool = False,
             fold_transpose: bool = False,
             initial_instrument: bool = False,
+            sustain_exact: bool = False,
+            no_hard_restart: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -295,4 +297,6 @@ def convert(sid_path: str, log: Logger = print,
     if log and speed_table:
         log(f"Speed table entries.....: {len(speed_table)}")
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
-                     speed_table=speed_table, effects=effects)
+                     speed_table=speed_table, effects=effects,
+                     sustain_exact=sustain_exact,
+                     no_hard_restart=no_hard_restart)

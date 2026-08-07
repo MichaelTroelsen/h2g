@@ -152,6 +152,28 @@ def main(argv=None) -> int:
              "(pattern, instrument) pair. Off by default: it changes the "
              "output bytes of the 9 corpus files it reaches")
     parser.add_argument(
+        "--sustain-exact", action="store_true",
+        help="read the instrument's sustain nibble as the SID does. The VB6 "
+             "original masked bit $10 out of any sustain/release byte >= $F0, "
+             "on the belief that the field was three bits of sustain plus one "
+             "spare (h2g.frm:578-579); SID register 6 is four bits of sustain "
+             "and four of release, so the mask lowered a full sustain of F to "
+             "E on every instrument that asked for one -- the level the note "
+             "holds at for its whole length. Off by default: it changes the "
+             "output bytes of the 64 corpus files it reaches, including the "
+             "Commando fixture")
+    parser.add_argument(
+        "--no-hard-restart", action="store_true",
+        help="stop Goattracker resetting the envelope before every note. "
+             "Goattracker writes its hard-restart value (default $0F00) into "
+             "$D405/$D406 for one frame ahead of each note unless the "
+             "instrument sets gatetimer bit $80; Hubbard's players never do "
+             "this, and $0F00 occurs in no corpus original while being the "
+             "most common ADSR value in every conversion without the flag. "
+             "Off by default: it changes the output bytes of every file, and "
+             "costs Confuzion 4 points of melody similarity -- hard restart "
+             "exists to make notes retrigger reliably")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -192,7 +214,9 @@ def main(argv=None) -> int:
                           ("--status-bit6", "status_bit6"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--fold-transpose", "fold_transpose"),
-                          ("--initial-instrument", "initial_instrument")):
+                          ("--initial-instrument", "initial_instrument"),
+                          ("--sustain-exact", "sustain_exact"),
+                          ("--no-hard-restart", "no_hard_restart")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -241,7 +265,9 @@ def main(argv=None) -> int:
                       status_bit6=args.status_bit6,
                       reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,
-                      initial_instrument=args.initial_instrument)
+                      initial_instrument=args.initial_instrument,
+                      sustain_exact=args.sustain_exact,
+                      no_hard_restart=args.no_hard_restart)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
