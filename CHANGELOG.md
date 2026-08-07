@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.107 — 2026-08-07
+
+- ticks clears Human_Race and declines the other four
+
 ## 0.5.106 — 2026-08-07
 
 - the five files that missed have no outer counter -- checked, not assumed

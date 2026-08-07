@@ -556,9 +556,14 @@ play calls. Deep_Strike's 2.67 needs rows of 3, 3 and 2 frames, which is
 
 ### Still open — and it is a *second* mechanism, not a strict regex
 
-Five timed files show the same symptom with no match: `Action_Biker` (3.75 vs
-a gate of 3), `Human_Race` (5.33 vs 4), `Las_Vegas_Video_Poker` (4.50 vs 3),
-`Spellbound` (2.97 vs 2) and `Warhawk` (2.25 vs 2). v0.5.105 guessed the shape
+Four timed files show the same symptom with no match: `Action_Biker` (3.75 vs
+a gate of 3), `Las_Vegas_Video_Poker` (4.50 vs 3), `Spellbound` (2.97 vs 2)
+and `Warhawk` (2.25 vs 2). **`Human_Race` was a fifth and is now out of the
+set** — `--ticks` (v0.5.106) measures its player ticking every **3.98 frames**
+against a gate of 4, i.e. *the gate is right*. It is one of the five corpus
+files whose PSID header declares CIA timing, so its play routine is not called
+at 50 Hz and `--pace`'s 5.33 is in different units from `--ticks`'s 3.98. Its
+row was never a converter defect. v0.5.105 guessed the shape
 was too strict — it requires the `DEC`/`STA` to name one cell and the branch to
 clear exactly 8 bytes, both read off a single file. **Checked in v0.5.106 by
 disassembly rather than by widening the pattern, and the guess was wrong.**
@@ -580,11 +585,24 @@ loosen `OUTER_GATE` to chase them — there is nothing there to match, and a
 looser shape would only manufacture false positives on the 44 files it
 currently, correctly, ignores.
 
+**`--ticks` cannot adjudicate the remaining four**, which was the cheap check
+and it failed: Warhawk, Spellbound and Las_Vegas_Video_Poker all come back
+*"no quiet class -- every frame does similar work"*, and Action_Biker *"only
+68% of gaps are a whole number of the modal 3"*. None of the four declares CIA
+timing, so unlike Human_Race they are not measuring in the wrong units. A
+claim in v0.5.106 that `--ticks` reaches Spellbound was wrong: Spellbound's
+2.97 is a `--pace` figure.
+
+Action_Biker's 68% is the one positive signal in that refusal — busy frames
+that are *not* one period is what an irregular sequencer looks like, and it is
+the same shape the outer counter produces elsewhere.
+
 Hypotheses not yet tested, in the order worth trying: that the note-duration
 decrement is skipped on some frames further down the voice loop; that these
-players run the sequencer for a *subset* of voices per frame; or that
-`--pace`'s row figure is itself wrong for them, which is checkable because
-`--ticks` reads the period from the original alone and reaches Spellbound.
+players run the sequencer for a *subset* of voices per frame; or that the
+`--ticks` refusal itself is the evidence — "every frame does similar work"
+means the play routine has no cheap path, which is what you would see if the
+sequencer step were spread across frames rather than gated into one.
 
 `true_frames` returns the plain gate value when nothing matched, so these five
 read as "no skip" when they are really "not explained".
