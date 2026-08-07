@@ -720,13 +720,31 @@ length is independently confirmed carry 100–400 gaps at an IQR of 0–3%
 (Ricochet 359 at zero, Tarzan 418 at zero). Its 3.75 was noise. Its row is
 3.00, exactly its gate, from 331 of 331 local maxima three frames apart.
 
-**Spellbound's rested on 19.** With the gate below it now refuses that rate and
-falls back to the 100-gap `-m1` figure, which says 3.00 — and its own cycle
-profile said 2.20 under a block analysis and ~3.2 under a local-maxima one.
-**Spellbound is not resolved**, and v0.5.111's claim that it "closes" at 2.20
-was one detector's answer stated as a fact. It is back open, with the honest
-summary being that three methods disagree on a file whose melody agreement is
-11% — which is itself the likeliest reason they disagree.
+**Spellbound's rested on 19**, and it took three attempts to measure properly
+(v0.5.116). Its row **is 2.20 frames**, but not for the reason v0.5.111 gave:
+
+- The block analysis that produced 2.20 counted *frames above the block mean*,
+  and about half of any series sits above its own mean by construction. It
+  would have returned ~5 ticks per 10 frames whatever the truth. **Right
+  answer, invalid method** — and it was stated as a close.
+- The local-maxima detector gave ~3.2, aliased by the 11-frame skip rhythm.
+- The unbiased test is the one that settled Action_Biker: mean frame cost by
+  index mod N, over the *running* frames with the 136 skip frames removed.
+  **mod 2 spreads 15.4%; mod 3 and mod 5 are flat at 0.0% and 0.1%**, and mod
+  4 and 6 spread only as multiples of 2. It ticks every 2 running frames —
+  exactly its gate — and one frame in 11 is skipped, so 2 x 11/10 = 2.20.
+
+**That revives the rows-per-note question for this one file.** Our row at
+`-m1` is 4.00 frames and their row is 2.20, so the gap ratio should be 1.82;
+`--pace` measures 1.333 over 100 gaps at an IQR of 5.9%, which passes the
+gate. The discrepancy is 0.73, near 3/4 — our conversion appears to emit 3
+rows where the player holds 4 units.
+
+Held loosely, for one reason: Spellbound's melody agreement is **11%**, so
+difflib's 100 matched notes may be a biased subset of a badly-converted file.
+Unlike §7c's Action_Biker half — which was 7 gaps and whose row is exactly its
+gate — this one is worth the static check: the player's `wait` bytes against
+our emitted rows, no timing involved.
 
 **The tool now refuses rather than states.** `pace()` requires
 `MIN_PACE_GAPS = 40` matched gaps and an interquartile range within
