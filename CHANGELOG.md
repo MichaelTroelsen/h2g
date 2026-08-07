@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.81 — 2026-08-07
+
+- regenerate after the accumulate pulse engine
+
 ## 0.5.80 — 2026-08-07
 
 - read the accumulate pulse engine, effect bit $08
