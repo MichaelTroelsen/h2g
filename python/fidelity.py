@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import functools
 import hashlib
 import inspect
 import json
@@ -88,8 +89,15 @@ from h2g.sidfile import find_freq_table, load_sid
 
 # Defaults are the tools as they sit on this machine; every one is overridable
 # so the harness is not pinned to one install.
+# tools/siddump-rt is siddump 1.08 plus -m (playroutine calls per frame); see
+# its README. Preferred when built, because a tune packed at gt2reloc -S2 is
+# traced at half speed without it. Stock siddump still works for everything at
+# multiplier 1 -- and run_siddump refuses to pretend otherwise for the rest.
+SIDDUMP_RT = Path(__file__).resolve().parent / "tools" / "siddump-rt" / "siddump.exe"
 SIDDUMP = os.environ.get(
-    "H2G_SIDDUMP", r"C:\Users\mit\claude\c64server\SIDM2\tools\siddump.exe")
+    "H2G_SIDDUMP",
+    str(SIDDUMP_RT) if SIDDUMP_RT.exists()
+    else r"C:\Users\mit\claude\c64server\SIDM2\tools\siddump.exe")
 GT2RELOC = os.environ.get(
     "H2G_GT2RELOC", r"C:\Users\mit\Downloads\GoatTracker_2.77\win32\gt2reloc.exe")
 SIDM2_ROOT = os.environ.get(
@@ -365,11 +373,47 @@ def calibration(detune: float) -> int:
     return round(SIDDUMP_MIDDLE_C * 2 ** (detune / 12))
 
 
+@functools.lru_cache(maxsize=None)
+def supports_calls_per_frame(exe: str) -> bool:
+    """Does this siddump build take -m (playroutine calls per frame)?
+
+    Worth asking because siddump's option switch has no default case: an
+    unknown letter is dropped without a word, so a stock binary handed -m2
+    prints a trace that looks entirely normal and is half the tune. The usage
+    text is the only thing that distinguishes the two builds, and siddump
+    prints it whenever it is given no filename.
+    """
+    try:
+        proc = subprocess.run([exe], capture_output=True, text=True, timeout=30,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "-m<value>" in (proc.stdout + proc.stderr)
+
+
 def run_siddump(sid: Path, seconds: int, subtune: int,
-                exe: str = SIDDUMP, calibrate: int = 0) -> Trace:
+                exe: str = SIDDUMP, calibrate: int = 0, calls: int = 1) -> Trace:
+    """Trace `seconds` of real time, `calls` playroutine calls per frame.
+
+    `calls` is the tune's call rate over 50Hz -- gt2reloc's -S multiplier for
+    something this harness packed. A row is one PAL frame either way, so a
+    multispeed trace lands on the same time axis as a single-speed one and the
+    two stay comparable frame for frame. Without it siddump calls the play
+    routine 50 times a second whatever the PSID speed field says
+    (siddump.c:309/325), and a tune written to tick at 100Hz plays at half
+    speed for the whole trace.
+    """
     cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}"]
     if calibrate:
         cmd.append(f"-c{calibrate:X}")
+    if calls > 1:
+        if not supports_calls_per_frame(exe):
+            raise RuntimeError(
+                f"{exe} does not support -m, so a tune at {calls} calls per "
+                f"frame cannot be traced at its real rate. Build "
+                f"python/tools/siddump-rt (see its README), or pass "
+                f"--multiplier 1 to measure the whole corpus at 50Hz.")
+        cmd.append(f"-m{calls}")
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
                           stdin=subprocess.DEVNULL)
     return parse_dump(proc.stdout)
@@ -474,13 +518,12 @@ def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC,
     packed bytes (speed field $FFFFFFFF, ten bytes at playeradr-10) and it is
     what makes the tune play at its real rate on hardware.
 
-    It does **not** change what this harness measures. siddump calls the play
-    routine `seconds * 50` times whatever the PSID speed field says
-    (siddump.c:309/325), so the trace is identical with and without -S --
-    verified on Chain_Reaction: same melody, sequence, retrigger ratio and
-    attack counts either way. It is passed anyway so the file the harness packs
-    is the file that would ship; the measurement gap is a siddump limitation
-    and is reported as such in the summary.
+Stock siddump cannot see it. It calls the play routine `seconds * 50`
+    times whatever the PSID speed field says (siddump.c:309/325), so the trace
+    is identical with and without -S -- which is why every multiplier-2 song
+    was measured at half speed until v0.5.96. `run_siddump(calls=multiplier)`
+    against the tools/siddump-rt build closes that; the packed bytes here are
+    unchanged either way.
 
     Options must follow both filenames. gt2reloc reads argv[1] and argv[2]
     positionally, so a leading `-S2` is taken as the input filename and the run
@@ -867,9 +910,14 @@ NOT_MEASURED = (
     "**note length** -- `$D404`'s gate bit is read as an *edge* (which is what "
     "makes an attack an attack) and never as a duration, so a note held twice "
     "as long with the right waveform scores the same",
-    "**tempo and row rate** -- siddump calls the play routine `seconds x 50` "
-    "times whatever the PSID speed field says (siddump.c:309/325), so "
-    "`gt2reloc -S` changes the packed bytes and not one number here",
+    "**tempo and row rate** -- nothing here scores how long a row lasts. What "
+    "did change in v0.5.98 is that a conversion is now *played* at the rate "
+    "it was packed for: stock siddump calls the play routine `seconds x 50` "
+    "times whatever the PSID speed field says (siddump.c:309/325), so a tune "
+    "packed at `gt2reloc -S2` used to be traced at half speed. The "
+    "tools/siddump-rt build takes `-m` and the harness passes the song's "
+    "multiplier, so the two sides now share a real-time axis -- but a row "
+    "that is the right length is still not something any column measures",
     "**anything outside the traced window or subtune** -- one subtune per "
     "file, its first few seconds",
     "**master volume** -- `$D418`'s low nibble. The register is listed as "
@@ -1239,7 +1287,22 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     if cal:
         row["calibration"] = {"detune": round(ft.detune, 3), "c": cal}
     a = run_siddump(local_orig, args.seconds, sub, args.siddump, cal)
-    b = run_siddump(packed, args.seconds, sub, args.siddump)
+    # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
+    # that is the rate its tempo values were written for. Tracing each at its
+    # own rate is what puts both on one time axis -- see run_siddump.
+    b = run_siddump(packed, args.seconds, sub, args.siddump,
+                    calls=getattr(args, "calls_per_frame", None) or multiplier)
+    if multiplier > 1:
+        calls = getattr(args, "calls_per_frame", None) or multiplier
+        row["traced_calls_per_frame"] = calls
+        if calls != 1:
+            # The same conversion scored at 50Hz, which is every rate this
+            # harness could see before v0.5.98 and is still what a player
+            # ignoring the speed field would produce. Carrying both is what
+            # lets the summary say which rate a file actually plays right at
+            # instead of asserting that the packed one must be it.
+            row["melody_at_1x"] = compare(a, run_siddump(
+                packed, args.seconds, sub, args.siddump, calls=1))["melody"]
     row["status"] = "measured"
     row.update(compare(a, b))
     best_dump = b
@@ -1256,7 +1319,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         for st in range(max(0, sub - half), sub + args.search_subtunes - half):
             if st == sub:
                 continue
-            cand_dump = run_siddump(packed, args.seconds, st, args.siddump)
+            cand_dump = run_siddump(packed, args.seconds, st, args.siddump,
+                                    calls=getattr(args, "calls_per_frame", None) or multiplier)
             cand = compare(a, cand_dump)
             if cand["melody"] > best:
                 best, best_at, row = cand["melody"], st, {**row, **cand}
@@ -1614,26 +1678,53 @@ def report(rows: list[dict], args) -> str:
         if slowed:
             mean_ok = sum(r["melody"] for r in measured if r.get("multiplier", 1) == 1)
             n_ok = n - len(slowed)
-            out += [
-                f"- **{len(slowed)} of these {n} files score below their real "
-                "fidelity, and no rerun will fix it.** Their player advances "
-                "one row every 2 frames, which Goattracker reaches only by "
-                "being called twice a frame. They are packed here with "
-                "`gt2reloc -S2` and the packed `.sid` is correct -- it carries "
-                "the CIA stub that reprograms timer A to 100.25 Hz -- but "
-                "siddump ignores the PSID speed field entirely, calling the "
-                "play routine `seconds x 50` times regardless "
-                "(siddump.c:309/325). Applying `-S` therefore changes the "
-                "bytes and not the trace: measured A/B on one of these files, "
-                "melody, sequence, retrigger ratio and attack counts are "
-                "identical with and without it. So these rows are traced at "
-                "half their true row rate and lose roughly half their notes "
-                "inside the window. Only a cycle-accurate emulator can score "
-                "them; RetroDebugger has confirmed two at their correct rate."
+            traced = sorted({r.get("traced_calls_per_frame", 1) for r in slowed})
+            out.append(
+                f"- **{len(slowed)} of these {n} files are played faster than "
+                "50Hz and are traced that way.** Their player advances a row "
+                "every 2 frames, which Goattracker reaches only by being "
+                "called twice a frame, so they are packed with `gt2reloc -S2` "
+                "-- a CIA stub at the init address that reprograms timer A to "
+                "50.125x2 Hz (greloc.c:140, :1616). Stock siddump cannot see "
+                "that: it calls the play routine `seconds x 50` times whatever "
+                "the PSID speed field says (siddump.c:309/325), which traced "
+                "every one of these files at half speed until v0.5.98. The "
+                "`tools/siddump-rt` build takes `-m` and this run passed "
+                + (f"`-m{traced[0]}`" if len(traced) == 1
+                   else "each song its own multiplier")
+                + ", so both sides now sit on one real-time axis."
                 + (f" Excluding them, mean melody similarity is "
                    f"**{_fmt_pct(mean_ok / n_ok)}** over {n_ok} file(s)."
-                   if n_ok else ""),
-            ]
+                   if n_ok else ""))
+            both = [r for r in slowed if r.get("melody_at_1x") is not None]
+            if both:
+                faster = [r for r in both if r["melody"] > r["melody_at_1x"] + 0.02]
+                slower = [r for r in both if r["melody_at_1x"] > r["melody"] + 0.02]
+                flat = len(both) - len(faster) - len(slower)
+                out.append(
+                    f"- **Which rate each of those files actually plays right "
+                    f"at is now a measurement, and it splits them.** Scoring "
+                    f"the same conversion at 1 call per frame as well: "
+                    f"**{len(faster)}** score better at the packed rate, "
+                    f"**{len(slower)}** score better at 50Hz, {flat} cannot "
+                    "tell. A file in the first group is confirmation that the "
+                    "multiplier machinery lands it in real time -- "
+                    + ", ".join(f"`{r['file']}` {_fmt_pct(r['melody_at_1x'])}"
+                                f" -> {_fmt_pct(r['melody'])}"
+                                for r in sorted(
+                                    faster, key=lambda r: r["melody"] - r["melody_at_1x"],
+                                    reverse=True)[:3])
+                    + ". The second group is not: something in those files is "
+                    "a factor of two out, and this report cannot yet say "
+                    "whether it is the speed gate `goatwriter.find_song_speeds` "
+                    "reads, the rows the converter gives a note, or the "
+                    "`-S` choice itself -- only that the two do not agree ("
+                    + ", ".join(f"`{r['file']}`" for r in sorted(
+                        slower, key=lambda r: r["melody_at_1x"] - r["melody"],
+                        reverse=True)[:5])
+                    + (", ..." if len(slower) > 5 else "") + "). "
+                    "`--calls-per-frame 1` reproduces the pre-v0.5.98 numbers "
+                    "for the whole corpus.")
         off0 = sorted(r["file"] for r in rows if r.get("subtune"))
         if off0:
             out.append(
@@ -2200,6 +2291,12 @@ def main(argv=None) -> int:
                         "per run: the files in it have fixed names, so two "
                         "harnesses sharing one directory silently measure each "
                         "other's files. Name one only to keep the intermediates")
+    p.add_argument("--calls-per-frame", type=int, metavar="N",
+                   help="playroutine calls per frame when tracing our "
+                        "conversion. Defaults to the song's gt2reloc -S "
+                        "multiplier, which is the rate its tempo values "
+                        "were written for; pass 1 to reproduce a "
+                        "pre-v0.5.96 run.")
     p.add_argument("--siddump", default=SIDDUMP)
     p.add_argument("--gt2reloc", default=GT2RELOC)
     p.add_argument("--register", action="store_true",

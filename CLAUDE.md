@@ -156,12 +156,22 @@ test dependency).
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
   `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_delay` and
-  the pulse programs now are. **No number in `FIDELITY.md` can move on such a
-  change**: siddump calls the play routine `seconds × 50` times whatever the
-  PSID speed field says (`siddump.c:309/325`), so the trace sees every file as
-  multiplier 1. Prove reach with a differential hash over the corpus instead —
-  the multiplier-2 songs must change and the multiplier-1 songs must not. See
-  H2G-CONVERSION-METHOD.md § 7.bb and `tests/test_call_rate.py`.
+  the pulse programs now are. Until v0.5.98 **no number in `FIDELITY.md` could
+  move on such a change**: stock siddump calls the play routine `seconds × 50`
+  times whatever the PSID speed field says (`siddump.c:309/325`), so the trace
+  saw every file as multiplier 1. `python/tools/siddump-rt` (vendored siddump
+  1.08 plus `-m<n>`, calls per displayed frame) closes that, and `fidelity.py`
+  now traces each conversion at the rate it was packed for. **Build it before
+  taking a fidelity number** — the harness refuses a multiplier > 1 song
+  without it rather than trace one at half speed. A differential hash over the
+  corpus is still the check that a multiplier-dependent edit *reaches*
+  anything (the multiplier-2 songs must change bytes and the multiplier-1 ones
+  must not); the trace now says whether it lands in real time. It also said
+  something new: **17 of the 33 score better at 50 Hz than at the rate they
+  are packed for**, so their multiplier and their tempo do not agree —
+  unattributed, and now the largest open item in the converter. See
+  H2G-CONVERSION-METHOD.md § 7.bb, `tests/test_call_rate.py` and
+  `tests/test_calls_per_frame.py`.
 - **`--max-rows` defaults to 94 — do not change the default.** It is what the
   byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
   fidelity anchor. See README.md § `--max-rows`.

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.98 — 2026-08-07
+
+- trace each conversion at the call rate it was packed for
+
 ## 0.5.96 — 2026-08-07
 
 - read effect bit $80 in full: nine files' block is the game's sound effect, two are a wave program

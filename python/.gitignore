@@ -5,3 +5,9 @@ __pycache__/
 # Scratch survey reports from --max-rows comparison runs. The committed report
 # is ../SURVEY.md and is the only place conversion rates are quoted.
 survey-*.md
+
+# tools/siddump-rt is vendored C; its build products are not committed. See its
+# README -- fidelity.py prefers the built exe and refuses a multiplier > 1 song
+# without it rather than trace one at half speed.
+tools/siddump-rt/*.exe
+tools/siddump-rt/*.o
