@@ -38,8 +38,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fidelity import (_preset_opts, legalise_restarts, make_workdir, pack_sid,
-                      run_siddump, GT2RELOC, SIDDUMP, WORKDIR)
+from fidelity import (_preset_opts, _preset_multiplier, legalise_restarts,
+                      make_workdir, pack_sid, run_siddump, GT2RELOC, SIDDUMP,
+                      WORKDIR)
 from h2g import __version__
 from h2g.convert import convert
 
@@ -250,7 +251,15 @@ def main(argv=None) -> int:
         sng_out = outdir / f"{stem}.h2g.sng"
         sng_out.write_bytes(sng)
 
-        packed = pack_sid(legalise_restarts(sng)[0], workdir, args.gt2reloc)
+        # The multiplier is not optional here, as it is in fidelity.py. siddump
+        # ignores the PSID speed field, so a trace is identical with and without
+        # -S; a *render* is not. Packed at -S1 a tune whose player wants two
+        # calls per frame plays at half speed, which is what a listener hears
+        # first and what the attack metric can never report. Reported by ear on
+        # Formula_1_Simulator, where every staged file had multiplier 2.
+        multiplier = _preset_multiplier(doc, name)
+        packed = pack_sid(legalise_restarts(sng)[0], workdir, args.gt2reloc,
+                          multiplier)
         if packed is None:
             print(f"  {name:44} not packed", file=sys.stderr)
             lines += [f"## {stem} — *{label}*", "",
@@ -281,6 +290,13 @@ def main(argv=None) -> int:
                 f"({r['orig_attacks']} attacks in the original, "
                 f"{r['our_attacks']} in ours).")
             lines.append("")
+        if multiplier > 1:
+            lines += [f"Packed at `-S{multiplier}`: this player wants "
+                      f"{multiplier} calls per frame, so the CIA stub runs the "
+                      f"tune at {50 * multiplier} Hz. Rate is the one thing "
+                      f"`FIDELITY.md` cannot check at all -- siddump ignores "
+                      f"the PSID speed field -- so if this sounds slow or fast "
+                      f"against the original, say so.", ""]
         for note in listen_notes(r, orig, ours):
             lines += [f"- {note}"]
         lines += [""]

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.70 — 2026-08-07
+
+- pack the listening pass at the multiplier its player needs
+
 ## 0.5.69 — 2026-08-07
 
 - record the RSID gap in the listening harness
