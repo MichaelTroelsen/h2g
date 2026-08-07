@@ -11,7 +11,9 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from .detect import Detection, FILTER_ENABLE_BIT
+from .detect import (Detection, FILTER_ENABLE_BIT,
+                     VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
+                     VIBRATO_SHIFT_MASK)
 from .sidfile import SidFile
 
 HEADER_LEN = 0x64
@@ -86,6 +88,14 @@ WAVE_NOISE_GATEOFF = 0x80
 # is a quarter semitone per frame == one semitone per four frames.
 SPEED_NOTE_RELATIVE = 0x80
 RISE_SHIFT = 2
+
+# A note-relative speed is the semitone interval shifted right by the table's
+# right byte; past 15 the interval is gone whatever the note, so a shift beyond
+# this is a vibrato with no depth rather than a very small one.
+GT_MAX_VIB_SHIFT = 0x0F
+# gplay.c:769-772 counts the delay down and only acts at 1, so 1 is "start on
+# the note". None of the players this reads has a delay before the vibrato.
+VIBRATO_DELAY = 0x01
 
 # An absolute speed-table entry is (hi, lo) of a frequency step applied once
 # per *play call* (gplay.c:562, inside the per-call TICKNEFFECTS at :748/758).
@@ -439,7 +449,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_used: int, pulse_starts: List[int],
                        sustain_exact: bool = False,
                        no_hard_restart: bool = False,
-                       filter_ptrs: dict | None = None) -> int:
+                       filter_ptrs: dict | None = None,
+                       vib_ptrs: dict | None = None) -> int:
     out.append(instr_used)
 
     # Instrument 1: always the empty "Clear Voice" slot.
@@ -480,14 +491,96 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # ADSR value in every conversion without this flag.
         gatetimer = 0x82 if no_hard_restart else 0x02
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
-        out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, 0x00, 0x00,
-                      gatetimer, 0x09])
+        # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
+        # (gsong.c:224-225) and the same pair the other way round, packed, in a
+        # GTS2 one (gsong.c:284-285) -- which is why they stay 0,0 unless
+        # _vibrato_layout produced something, and it only does for GTS5.
+        stbl_ptr, vib_delay = (vib_ptrs or {}).get(i, (0x00, 0x00))
+        out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, stbl_ptr,
+                      vib_delay, gatetimer, 0x09])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
         name = f"{i + 2:02X}:{b5:02X}-{b6:02X}-{b7:02X}"
         out += _padded_name_bytes(name)
 
     return instr_used
+
+
+def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
+                    vibrato: bool, fmt: str, multiplier: int,
+                    speed_table: List[tuple], log=None) -> dict:
+    """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    Goattracker runs a per-instrument vibrato with no pattern command at all:
+    on every new note `gplay.c:352-354` loads `cptr->vibdelay = iptr->vibdelay`
+    and `cptr->cmddata = iptr->ptr[STBL]`, and a channel whose command is
+    CMD_DONOTHING falls through into CMD_VIBRATO once the delay expires
+    (gplay.c:769-780). Those are instrument-record bytes 5 and 6, and this
+    writer has always written `0x00, 0x00` there -- which is why no file it has
+    ever produced vibrates, and why a third of the corpus moves the pitch not
+    at all where the original does.
+
+    The mapping is close to literal because both sides express the depth the
+    same way. The player computes `(freq(note) - freq(note-1)) >> shift` and
+    oscillates a counter between 0 and `bound`; Goattracker's note-relative
+    speed (`ltable >= $80`) computes the interval at the current note shifted
+    right by `rtable`, and flips direction when its own counter passes
+    `ltable & $7f`. So:
+
+        entry = ($80 | cmp, rshift)
+
+    with the two derived from the excursion and the half-period:
+
+    * The player's peak excursion is `(bound >> 1) * depth`, Goattracker's is
+      `(cmp / 2) * speed`; its half-period is `bound` frames against
+      Goattracker's `cmp / 2` *calls*. Matching the period first gives
+      `cmp = 2 * bound * multiplier`, and matching the excursion then gives
+      `rshift = shift + 1 + log2(multiplier)`.
+    * `multiplier` is there because Goattracker's counter advances per play
+      call and the player's per frame -- the same per-frame/per-call division
+      every other rate in this file takes (see _drum_speed).
+
+    Two deliberate approximations, neither hidden: the player applies its
+    counter as a *position* (an absolute offset from the note) where
+    Goattracker integrates a step, which is the same triangle reached
+    differently; and Goattracker takes the interval *above* the note where the
+    player takes the one below, about 6% of a semitone.
+
+    GTS5 only. A GTS2 file stores no speed table -- its loader packs the
+    vibrato into a single instrument byte and calls makespeedtable itself
+    (gsong.c:285), and it reads bytes 5 and 6 the other way round
+    (vibdelay first, gsong.c:284) -- so the same numbers would need a
+    different encoding, and the byte-exact fixture is a GTS2 file.
+    """
+    if not vibrato or det.vibrato_offset is None or fmt != FORMAT_GTS5:
+        return {}
+    data = sid.data
+    out: dict = {}
+    for i in range(max(instr_used - 1, 0)):
+        base = det.instr_start + i * det.instr_stride + det.vibrato_offset
+        if base >= len(data):
+            continue
+        byte = data[base]
+        bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
+        if not byte or not bound:
+            # The player's own test: `LDA record+5,Y / BNE` at Warhawk $11EA.
+            # A bound of zero is an oscillation with no excursion, which is the
+            # same silence reached one step later.
+            continue
+        shift = byte & VIBRATO_SHIFT_MASK
+        cmp_value = min(0x7F, 2 * bound * max(1, multiplier))
+        rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+        entry = (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+        if entry not in speed_table:
+            if len(speed_table) >= GT_MAX_TABLELEN:
+                continue
+            speed_table.append(entry)
+        out[i] = (speed_table.index(entry) + 1, VIBRATO_DELAY)
+    if log and out:
+        log(f"Instrument vibrato......: {len(out)} of "
+            f"{max(instr_used - 1, 0)} record(s), "
+            f"{len({v[0] for v in out.values()})} speed-table entry(ies)")
+    return out
 
 
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
@@ -985,7 +1078,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               multiplier: int = 1,
               sustain_exact: bool = False,
               no_hard_restart: bool = False,
-              filters: bool = False) -> bytes:
+              filters: bool = False,
+              vibrato: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -1015,8 +1109,12 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         filter_entries, filter_ptrs = [], {}
     pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
                                                 multiplier, log)
+    # Before the records, because each one carries its speed-table index -- and
+    # into `table`, which the wavetable also grows and the file writes last.
+    vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
+                               table, log)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
-                       sustain_exact, no_hard_restart, filter_ptrs)
+                       sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier)
     _write_pulsetable(out, pulse_entries)
 

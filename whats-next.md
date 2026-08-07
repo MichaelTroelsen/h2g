@@ -303,19 +303,40 @@ routine at `$1245` (depth `$158C/$158D`, counter `$15C3,X`, applied between the
 frequency-table lookup and the SID write — so it is *player state*, in no byte
 the ripper reads).
 
-### The next piece of work, and it is the largest one measured
+### CLOSED in v0.5.85 — `--vibrato`
 
-**Emit vibrato.** It costs two bytes per instrument record and one speed-table
-entry, and Goattracker's note-relative speed form (`cmpvalue >= 0x80`,
-`gplay.c:786-792`) already has the right shape — depth from the semitone
-interval at the current note, which is what the traces show. What has to be
-found first is **where each player keeps its depth and rate**; Warhawk's cells
-are one player's answer, not the family's, so this needs the same
-signature-and-census treatment the effect byte and the slide dialect got.
+**Done.** 56 of 95 players carry it in instrument-record byte `+5`: bits 3-6 an
+amplitude bound, bits 0-2 a right-shift on the semitone interval at the current
+note. Goattracker's note-relative speed form is the same arithmetic, so the
+entry is `($80 | 2·bound·multiplier, shift + 1 + log2(multiplier))` with the
+instrument's `ptr[STBL]` naming it. The census has no exceptions — masks `$78`
+and `$07` in all 56, and all 56 carry the depth derivation too.
 
-Two smaller residuals behind the same zero: 10 files (9 digi, 1 cmdtable) have
-no slide path in their decoder at all, and 11 classic files have no two-byte
-fetch for `--slides` to read.
+| | before | after |
+|---|---:|---:|
+| corpus median `bend` | 0.06x | **0.33x** |
+| files bending nothing | 33 | **11** |
+| moved toward / away | — | **29 / 6** |
+
+No other dimension moved. In `presets.json`'s `always`; needs gts5; Commando
+byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
+
+### What is left of the zero, and what `bend` now points at
+
+- **11 files still bend nothing.** 10 of them (9 digi-grammar, 1 cmdtable)
+  have no slide path in their pattern decoder *at all* —
+  `_build_raw_pattern_digi` and `_build_raw_pattern_cmdtable` emit no
+  portamento in any branch — and the digi files are the ones with the largest
+  remaining `orig_bend`. That is the next tranche.
+- **The overshoot is now the visible defect.** Six files bend far *too much*
+  (Bump_Set_Spike 11.8x, Delta_Mix-E-Load 10.8x, Zoolook 9.7x, Thrust 7.5x),
+  and vibrato only added to an error that was already there. `bend` says it is
+  the slide step: § 1b corrected which *byte* is which half, not whether the
+  resulting step is applied for the right number of frames.
+- The 7 files whose vibrato byte is reached by addressing `_find_vibrato` does
+  not recognise (Go_Go_Dash, I_Ball, Lakers_vs_Celtics, Lion_Heart,
+  Pacific_Coast, Radio_ACE, Sun_Never_Shines). An under-read; only I_Ball
+  converts today.
 
 ## 2. The listening pass — never performed, now eighteen versions overdue
 

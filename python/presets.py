@@ -62,7 +62,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "slides": True, "effects": True, "status_bit6": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
-         "filters": True, "pulse": True}
+         "filters": True, "pulse": True, "vibrato": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing
@@ -278,6 +278,19 @@ def main(argv=None) -> int:
                    # (AUDIT.md, first verified defect).
                    "filters": FIXED["filters"],
                    "pulse": FIXED["pulse"],
+                   # 56 of 95 players run a per-instrument vibrato out of one
+                   # record byte, and this writer left the two Goattracker
+                   # bytes that drive it at zero -- so nothing it produced ever
+                   # vibrated and a third of the corpus moved the pitch not at
+                   # all where the original does. Gated on finding the routine
+                   # and on a nonzero parameter, so a no-op in the other 39.
+                   # Fixed rather than searched, like the rest of this block:
+                   # it is the player's own parameter, not a per-song taste.
+                   # Takes the corpus median `bend` from 0.06x to 0.33x and the
+                   # files bending nothing from 33 to 11, moving 29 of the 35
+                   # files it touches toward the original and 6 away -- all six
+                   # already overshooting for another reason.
+                   "vibrato": FIXED["vibrato"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

@@ -117,6 +117,7 @@ def convert(sid_path: str, log: Logger = print,
             no_hard_restart: bool = False,
             filters: bool = False,
             pulse: bool = False,
+            vibrato: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -346,4 +347,4 @@ def convert(sid_path: str, log: Logger = print,
                      pulse=pulse, multiplier=multiplier,
                      sustain_exact=sustain_exact,
                      no_hard_restart=no_hard_restart,
-                     filters=filters)
+                     filters=filters, vibrato=vibrato)

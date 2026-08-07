@@ -633,6 +633,42 @@ above: the per-voice cutoff collapsed into one, and the fixed passband.
 Off by default: it changes the output bytes of the 15 files it reaches, and
 `Commando.sng` -- which has no filter routine -- is byte-identical either way.
 
+### `--vibrato` (the pitch movement that never happened)
+
+Goattracker runs a per-instrument vibrato with no pattern command at all: on
+every new note `gplay.c:352-354` loads the instrument's `vibdelay` and its
+speed-table pointer, and a channel with no command of its own falls through
+into `CMD_VIBRATO`. Those are instrument-record bytes 5 and 6 — and this writer
+emitted `0x00, 0x00` there from the day the port began, so **no `.sng` this
+project has ever produced vibrated**. 33 of 95 corpus files moved the pitch not
+at all where the original does, and 20 of those originals are vibrato-shaped:
+their movement returns rather than travels.
+
+**56 of 95 players carry it in one instrument-record byte** (`+5`): bits 3-6 an
+amplitude bound, bits 0-2 a right-shift applied to the semitone interval at the
+current note. Goattracker's note-relative speed form is the same arithmetic
+(`gplay.c:786-792`), so the mapping is close to literal — the period gives
+`cmp = 2 × bound × multiplier` and the excursion then gives
+`rshift = shift + 1 + log2(multiplier)`. Detection is gated on finding both the
+parameter split and the depth derivation, which the corpus never separates (all
+56, no exceptions), so the flag is a no-op in the other 39 files.
+
+| | before | after |
+|---|---:|---:|
+| corpus median `bend` | 0.06x | **0.33x** |
+| files bending nothing where the original bends | 33 | **11** |
+| moved toward the original / away | — | **29 / 6** |
+
+No other column moved. All six that moved away were already overshooting for an
+unrelated reason (Thrust 3.74x, Bump_Set_Spike 11.45x) — a correct vibrato
+added to a file that already bends ten times too far is still correct.
+
+**Needs `--format gts5`.** A GTS2 file stores no speed table; its loader packs
+the vibrato into a single instrument byte and reads bytes 5 and 6 the other way
+round (`gsong.c:284-285`). Off by default because it changes the output bytes;
+`presets.json`'s `always` block sets it. `Commando.sng` is byte-identical
+either way — its player has no such routine.
+
 ### `--pulse` (the duty cycle that never moved)
 
 Hubbard has **two** pulse engines and no file uses both: 34 corpus files sweep

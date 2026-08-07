@@ -84,6 +84,16 @@ def main(argv=None) -> int:
              "which loses the composer's intent but is what makes a packed "
              ".sid possible at all. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--vibrato", action="store_true",
+        help="give each instrument the vibrato its player runs. 56 of 95 "
+             "corpus players carry it in one record byte (bits 3-6 an "
+             "amplitude bound, bits 0-2 a depth shift applied to the semitone "
+             "interval at the current note), and Goattracker expresses the "
+             "same thing natively -- but this writer has always left the two "
+             "record bytes that drive it at zero, so no file it produced has "
+             "ever vibrated. Needs --format gts5. Off by default: it changes "
+             "the output bytes")
+    parser.add_argument(
         "--slides", action="store_true",
         help="read the second operand byte of a pitch-slide command in the "
              "players that have one. Those players hold the slide step as a "
@@ -233,7 +243,8 @@ def main(argv=None) -> int:
             args.tempo = always["tempo"]
         if not _given("--legal-restart") and always.get("legal_restart"):
             args.legal_restart = True
-        for flag, key in (("--slides", "slides"), ("--effects", "effects"),
+        for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
+                          ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--fold-transpose", "fold_transpose"),
@@ -285,7 +296,7 @@ def main(argv=None) -> int:
                       prune=args.prune_patterns,
                       pack=args.pack_repeats,
                       legal_restart=args.legal_restart,
-                      slides=args.slides,
+                      slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
                       status_bit6=args.status_bit6,
                       reject_phantoms=args.reject_phantoms,

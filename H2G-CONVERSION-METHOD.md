@@ -1806,9 +1806,86 @@ The other two causes of a zero, both smaller and both structural:
 
 So the ranking is clear and the cheap fix is the big one: **the missing pitch
 movement is mostly vibrato, and vibrato costs two bytes per instrument record
-plus one speed-table entry.** What has to be found first is where each player
-keeps its depth and rate — Warhawk's are `$158C/$158D` and the `$15C3,X`
-counter, which is one player's answer, not the family's.
+plus one speed-table entry.** That is § 7.ee.
+
+### 7.ee Vibrato: one record byte, and Goattracker says the same thing
+
+The parameter is a single instrument-record byte, and the player splits it in
+two. Warhawk `$11EF`:
+
+```
+11E7  B9 3C 16  LDA record+5,Y
+11EA  D0 03     BNE on              ; zero -> no vibrato at all
+11EF  48        PHA
+11F0  29 78     AND #$78            ; bits 3-6: the amplitude bound
+11F2  4A 4A 4A  LSR A x3            ;           ... >> 3, so 0..15
+11F5  9D C3 15  STA bound,X
+11F8  68        PLA
+11F9  29 07     AND #$07            ; bits 0-2: a right-shift
+11FB  8D 8A 15  STA shift
+```
+
+and the depth, at `$1221`, is what makes this map onto Goattracker at all:
+
+```
+1221  BD 7F 15  LDA note,X
+1224  0A A8     ASL A / TAY
+1226  38        SEC
+1227  B9 AC 14  LDA freqtbl+2,Y
+122A  F9 AA 14  SBC freqtbl,Y       ; the semitone interval AT THIS NOTE
+122D  8D 8C 15  STA depth           ; ... then >> shift
+```
+
+That is `gplay.c:786-792` written in 6502. A Goattracker speed-table entry with
+bit `$80` on its left side selects a **note-relative** speed, computed as the
+semitone interval at the current note shifted right by the entry's right byte.
+The player and the tracker express vibrato depth the same way.
+
+**The census is the cleanest in this document.** 56 of 95 files match the
+split; the masks are `$78` and `$07` in **all 56**; the byte is at record `+5`
+in every one whose addressing the reader recognises (49 of 56 — the other 7
+reach it some other way and are skipped, an under-read); and **all 56 also
+carry the note-relative depth**. Unlike `+7`, this is a shared format.
+
+The mapping, derived rather than fitted:
+
+* the player's peak excursion is `(bound >> 1) × depth` and Goattracker's is
+  `(cmp / 2) × speed`; the player's half-period is `bound` frames and
+  Goattracker's `cmp / 2` **calls**.
+* Match the period: `cmp = 2 × bound × multiplier`. Match the excursion under
+  that: `rshift = shift + 1 + log2(multiplier)`.
+* So the entry is `($80 | cmp, rshift)`, the instrument's `ptr[STBL]` is its
+  1-based index, and `vibdelay` is 1 — none of these players delays the onset.
+
+Two stated approximations: the player applies its counter as a *position*, an
+absolute offset from the note, where Goattracker integrates a step — the same
+triangle reached differently; and Goattracker takes the interval *above* the
+note where the player takes the one below, about 6% of a semitone.
+
+**And the two bytes were there all along.** `gplay.c:352-354` loads
+`cptr->vibdelay = iptr->vibdelay` and `cptr->cmddata = iptr->ptr[STBL]` on
+every new note, and a channel with no pattern command falls through
+`CMD_DONOTHING` into `CMD_VIBRATO`. Those are instrument-record bytes 5 and 6
+in a GTS5 file (`gsong.c:224-225`) — and this writer had emitted `0x00, 0x00`
+there since the port began.
+
+| | before | after |
+|---|---:|---:|
+| corpus median `bend` | 0.06x | **0.33x** |
+| files bending nothing where the original bends | 33 | **11** |
+| files moved toward the original / away | — | **29 / 6** |
+| any other dimension moved | — | none |
+
+All six that moved away were **already overshooting** before vibrato existed —
+Thrust 3.74x, Delta_Mix-E-Load 9.84x, Zoolook 9.38x, Bump_Set_Spike 11.45x.
+Adding a correct vibrato to a file that already bends ten times too far makes
+the number worse and the file no less right; that overshoot is the slide step,
+a separate defect, and it is now the thing `bend` is pointing at.
+
+**GTS5 only.** A GTS2 file stores no speed table: its loader packs the vibrato
+into one instrument byte and calls `makespeedtable` itself (`gsong.c:285`), and
+it reads bytes 5 and 6 *the other way round* (`vibdelay` first, `:284`). Same
+numbers, different encoding — and the byte-exact fixture is a GTS2 file.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

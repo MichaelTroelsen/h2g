@@ -64,6 +64,10 @@ class Detection:
     # bit 0 -- a second slide dialect sharing the same fetch shape. 22 corpus
     # files. See _find_slide_high_first().
     slide_high_first: bool = False
+    # Instrument-record offset of the vibrato parameter byte (+5 wherever it
+    # is found), or None where the player has no such routine. See
+    # _find_vibrato().
+    vibrato_offset: Optional[int] = None
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -741,6 +745,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                if det.slide_high_first else
                "operand is the low half (bit 0 direction)"))
 
+    det.vibrato_offset = _find_vibrato(sid, det)
+    if det.vibrato_offset is not None:
+        log(f"Instrument vibrato......: record +{det.vibrato_offset} "
+            "(bound $78>>3, depth shift $07, note-relative)")
+
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
@@ -986,6 +995,83 @@ SLIDE_HIGH_FIRST_MASK = 0x3F
 
 def _find_slide_high_first(data: bytes) -> bool:
     return search_file(data, SLIDE_HIGH_FIRST_SHAPE) >= 1
+
+
+# --- Vibrato ---------------------------------------------------------------
+#
+# The pitch movement that is in no byte the ripper reads. The player applies it
+# *between* the frequency-table lookup and the SID write, so nothing in a
+# pattern or an instrument record shows it happening -- only the one byte that
+# parameterises it. 33 corpus files moved the pitch not at all where the
+# original does, and 20 of those originals are vibrato-shaped (their movement
+# returns rather than travels); see H2G-CONVERSION-METHOD.md section 7.dd.
+#
+# Warhawk $11EF, the parameter split -- one record byte carries both halves:
+#
+#     11E7  B9 3C 16  LDA record+5,Y
+#     11EA  D0 03     BNE on            ; zero -> no vibrato at all
+#     11EF  48        PHA
+#     11F0  29 78     AND #$78          ; bits 3-6: the amplitude bound
+#     11F2  4A 4A 4A  LSR A x3
+#     11F5  9D C3 15  STA bound,X
+#     11F8  68        PLA
+#     11F9  29 07     AND #$07          ; bits 0-2: a right-shift
+#     11FB  8D 8A 15  STA shift
+#
+# ... and $1221, the depth, which is the whole reason this maps onto
+# Goattracker at all:
+#
+#     1221  BD 7F 15  LDA note,X
+#     1224  0A A8     ASL A / TAY
+#     1226  38        SEC
+#     1227  B9 AC 14  LDA freqtbl+2,Y
+#     122A  F9 AA 14  SBC freqtbl,Y     ; the semitone interval AT THIS NOTE
+#     122D  8D 8C 15  STA depth         ; ...then >> shift
+#
+# That is `gplay.c:786-792` in 6502: a speed-table left side with bit $80 set
+# makes Goattracker compute the speed as the semitone interval at the current
+# note shifted right by the table's right byte. The player and the tracker
+# express the depth the same way.
+#
+# The census is unusually clean -- **56 of 95 files match the split, all 56
+# with the masks $78 and $07, and all 56 also have the note-relative depth.**
+# Unlike the effect byte at +7, this one is a shared format.
+VIBRATO_SHAPE = "48 29 78 4A 4A 4A 9D ?? ?? 68 29 07 8D ?? ??"
+
+# The depth, in the two forms the corpus uses: the interval stored to an
+# absolute cell or to zero page. Nothing else differs, and 56 of 56 match one.
+VIBRATO_DEPTH_SHAPES = (
+    "0A A8 38 B9 ?? ?? F9 ?? ?? 8D ?? ??",
+    "0A A8 38 B9 ?? ?? F9 ?? ?? 85 ??",
+)
+
+VIBRATO_BOUND_MASK = 0x78       # AND #$78 -- the amplitude bound...
+VIBRATO_BOUND_SHIFT = 3         # ...>> 3, so 0..15
+VIBRATO_SHIFT_MASK = 0x07       # AND #$07 -- the depth's right-shift
+
+
+def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
+    """Instrument-record offset of the vibrato byte, or None.
+
+    The offset is read out of the `LDA record+n,Y` that feeds the split rather
+    than assumed: it is +5 in 49 of the 56 files that have the routine, and the
+    other 7 reach the byte by some addressing this does not recognise. Those
+    return None and get no vibrato -- an under-read, never a wrong one, the
+    same rule find_relocation and the instrument-index shape follow.
+    """
+    data = sid.data
+    at = search_file(data, VIBRATO_SHAPE)
+    if at < 1:
+        return None
+    if not any(search_file(data, s) >= 1 for s in VIBRATO_DEPTH_SHAPES):
+        return None
+    start = det.instr_start + sid.load_addr - HLEN + 1
+    for k in range(at - 3, max(0, at - 26), -1):
+        if data[k] in (0xB9, 0xBD):     # LDA abs,Y / LDA abs,X
+            off = (data[k + 1] | data[k + 2] << 8) - start
+            if 0 <= off < det.instr_stride:
+                return off
+    return None
 
 
 # The status-byte fetch that tests bit 6 first, and alone. Commando $50C2
