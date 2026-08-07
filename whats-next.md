@@ -318,6 +318,23 @@ impossibility.
 - **`Kings_of_the_Beach_ingame` plays 138 noise frames where the original
   plays none** — the report's new `!` marker, and the only file flagged.
   Uninvestigated.
+- **`listen.py` cannot render an RSID original.** `SID2WAV` is version 1.8
+  (1997), predating RSID, and answers `ERROR: Could not determine file
+  format`; our own side always renders because gt2reloc writes PSID. **18 of
+  the 95 corpus files are RSID** — After_8, Arcade_Classics, BMX_Kidz,
+  Chimera, I_Ball, Kings_of_the_Beach_intro, Last_V8, Last_V8_C128_version,
+  Mega_Apocalypse, Mr_Meaner, Off_the_Cuff, One_on_One, Powerplay_Hockey,
+  Ricochet, Rikky, Rock_Tells_the_Tale, Skate_or_Die_intro, Tarzan. That set
+  includes Skate_or_Die_intro (the v0.5.63 shift fix) and all four NTSC
+  files, so the one check that covers the unmeasured region structurally
+  cannot reach the files this session changed most. `listen.py` does detect
+  the failure and says so rather than staging a half pair. VICE 3.9's
+  `vsid.exe` is present at
+  `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\` and
+  handles RSID, but three attempts at `-sounddev wav` produced a 44-byte
+  (header-only) file on **both** an RSID and a PSID input, so the invocation
+  is wrong, not the format. Worth solving — it would nearly double the
+  listenable corpus.
 - **Six players index their frequency table through an idiom
   `find_freq_table` does not recognise** — `Casio_Extended`,
   `Dont_Step_on_My_Wire`, `Era_of_Eidolon`, `Robs_Life`, `Task_Force`,
