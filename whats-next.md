@@ -518,6 +518,58 @@ Ruled out already, by measurement:
   `(2, 3, 2, 2)` and its measured 3.00 is tempting, but the static-byte files
   fail the same way and have no table to be off by one in.
 
+**Started, v0.5.102 — the locus is found, the arithmetic is not.** There is a
+**second counter immediately above the gate**, and `SPEED_GATE` cannot see it:
+the pattern matches the `DEC ctr / BPL +6 / LDA reload / STA ctr` at the
+bottom, and this sits three instructions earlier.
+
+```
+Tarzan  $5558  LDX $59F7        Ricochet  $9067  LDX $96DC
+        $555B  DEC $59F6                  $906A  DEC $96DB
+        $555E  BPL $5568   -+             $906D  BPL $9077   -+
+        $5560  LDA #$0B     |             $906F  LDA #$7F     |
+        $5562  STA $59F6    |  skips      $9071  STA $96DB    |  skips
+        $5565  JMP $5573    |  the gate   $9074  JMP $9082    |  the gate
+        $5568  DEC $59DE   <+             $9077  DEC $9689   <+
+```
+
+On the frame this counter underflows, the speed-gate counter is **not**
+decremented and the reload is jumped over. And it discriminates the two
+cases exactly:
+
+- **Ricochet** reloads it with `$7F` — one skipped frame in 128, negligible —
+  and measures **2.00** against a gate of 2. It is the control, and it is
+  correct for a reason.
+- **Tarzan** reloads it with `$0B` — one in 12 — and measures **3.00**.
+
+So this is the missing mechanism, or contains it. Two things checked since:
+
+- **It runs once per frame, not once per voice.** Nothing in either file
+  jumps to `$5558`/`$9067`; the block is the play routine's own head, and the
+  `LDX voices` on its first line sets up the voice loop that comes *after*
+  the gate.
+- **The same counter is read a second time, as a flag.** Three instructions
+  below the gate Tarzan has `$557A LDA $59F6 / BEQ $5599`, which skips the
+  voice work outright on the frame the counter reads zero. So a 12-frame
+  cycle loses **two** frames of sequencing, not one: the frame it reads zero
+  and the frame it underflows and reloads.
+- Each file writes the counter at exactly one site — the reload itself — so
+  it is a fixed constant per player, not per subtune.
+
+**The arithmetic still does not close.** Two frames lost in twelve stretches 2
+frames per tick to 2.4, and Tarzan measures 3.00. Something else is still
+unaccounted for. The most likely remaining candidate is the tick test itself:
+`LDA ctr / CMP reload / BNE` holds only on the frame after a reload, so on a
+frame where the gate's `DEC` is skipped `ctr` is unchanged and the test can
+hold twice — the skip may *repeat* a tick rather than only losing one, which
+changes the sign of part of this. Work it out before touching
+`find_song_speeds`.
+
+Next concrete steps: settle that repeat question by hand-simulating twelve
+frames of Tarzan's head; then confirm against a third file with a known
+target — Delta (2.50) and Deep_Strike (2.67) are the non-integer cases and
+will not be explained by a skip count alone.
+
 **Where to start.** Two files with a clean 3:2 target and a control:
 
 | file | gate | measured | note |

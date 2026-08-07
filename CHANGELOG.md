@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.102 — 2026-08-07
+
+- locate the second counter above the speed gate
+
 ## 0.5.101 — 2026-08-07
 
 - pace: time the conversion against the original, and correct v0.5.99's reading
