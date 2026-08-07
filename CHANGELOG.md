@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.117 — 2026-08-07
+
+- start the static check; record what blocks it rather than guess the decode
+
 ## 0.5.116 — 2026-08-07
 
 - Spellbound's row is 2.20, by a method that is not circular

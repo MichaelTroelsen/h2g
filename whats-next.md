@@ -746,6 +746,30 @@ Unlike §7c's Action_Biker half — which was 7 gaps and whose row is exactly it
 gate — this one is worth the static check: the player's `wait` bytes against
 our emitted rows, no timing involved.
 
+**The static check was started in v0.5.117 and is not finished.** What it
+established, from Spellbound's own fetch:
+
+| | |
+|---|---|
+| `$E0C2` | status byte read; `AND #$1F` is the wait, stored to the duration counter at `$E0CB` |
+| `$E0CB` + `DEC $E4CA,X / BMI` | the note lasts **wait + 1** ticks — the same rule `patterns.py` implements |
+| `$E0E2` | index advances past the status byte, **only when bit 6 is clear** |
+| `$E0EF` | index advances past an operand, when bit 7 is set |
+| `$E16B` | index advances past the note byte, on the note path |
+
+**What blocks it:** bit 6 set sends the fetch to `$E11C`, and nothing in that
+path advances the pattern index — which cannot be right, since the player
+would re-read the same byte forever. `$E11C` is therefore reached from more
+than one context, and which increments apply needs the control flow traced
+properly rather than by reading forward from each site.
+
+Do not write the independent decoder until that is resolved. A decoder built
+on this model would produce a byte count that looks authoritative and is
+wrong, and this section has already produced three numbers that had to be
+retracted — 3.75 (7 gaps), Spellbound's first 2.20 (circular method), and
+§7c's direction (backwards). The value of the static check is that it owes
+nothing to timing; that value is lost if the decode itself is guessed.
+
 **The tool now refuses rather than states.** `pace()` requires
 `MIN_PACE_GAPS = 40` matched gaps and an interquartile range within
 `MAX_PACE_IQR = 10%` of the median, both calibrated against the corpus. Over
