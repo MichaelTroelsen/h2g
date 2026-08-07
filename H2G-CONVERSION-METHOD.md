@@ -2074,13 +2074,44 @@ it. So the sweep stays, and the three overshooting files are a gating problem �
 the bit says the instrument can drum, not that this note does. Recorded and not
 acted on, because the discriminator is runtime state.
 
-`Thrust` is the one overshoot neither explanation covers: 43x, with melody and
-pitch both 100% and both sides playing the same notes, emitting `±$01BD` where
-the original plays `±$0034`. Goattracker's note-relative vibrato computes the
-semitone interval at `cptr->lastnote`, and a step that size corresponds to a
-note about two octaves above the one that sounds. `--fold-transpose` was the
-obvious suspect and is refuted: Thrust converts to identical bytes with it on
-and off. Open.
+#### `Thrust` at 43x is not an overshoot at all
+
+The last one turned out to be neither the metric's arithmetic nor the
+converter's magnitude. **It is the deliberate glide-versus-step approximation
+in the chromatic rise, seen through a metric that counts only what siddump
+labels a bend.**
+
+Thrust's tune *is* the rise: all three voices sweep the same run of semitones,
+offset from one another. Both sides play it. The difference is how each moves:
+
+* **The player steps.** `$13A2`'s block does `INC noteindex,X` and re-reads the
+  frequency table, so every frame lands on an exact semitone and siddump names
+  it — **443 tie lines against 25 bend lines**.
+* **We glide.** `_rise_speed_index` emits a note-relative portamento, a
+  continuous quarter-semitone-per-call slide, because Goattracker cannot step a
+  note from the wavetable without one entry per semitone and the fixed
+  five-entry layout has no room. A third of our frames therefore land *between*
+  notes, and siddump prints those as bends — **125 tie lines against 89**.
+
+`bend` sums bend-labelled frames and excludes ties, because a tie is normally a
+legato note change. In a stepped sweep the tie *is* the pitch movement. So the
+original's sweep is almost invisible to the dimension and ours is fully
+visible, and the ratio comes out 43x while the two sides travel comparable
+distances over the same notes.
+
+**No converter change follows.** The approximation is the only encoding
+Goattracker offers, it was recorded as deliberate when the rise shipped, and
+the emitted rate is right (a semitone per four calls against the player's per
+four frames, at `-S1`). What follows is a limit on the dimension:
+`bend` cannot compare a stepped sweep against a glided one, and a file whose
+pitch movement is mostly stepped will read as an overshoot however faithful the
+conversion is. That is now in the report's *What this does not say*.
+
+Two smaller things fell out of the same trace and are worth not re-deriving:
+`--fold-transpose` is refuted as a cause (Thrust converts to identical bytes
+with it on and off), and this file's `pitch` of 100% rests on **4 attacks
+against the original's 2** — a sample too small to mean anything, on a tune
+that is nearly all sustained sweep.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

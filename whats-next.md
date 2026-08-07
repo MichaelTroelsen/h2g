@@ -364,12 +364,17 @@ byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
   sees. Re-measured against pitch: removing the sweep is right for **one** file
   and wrong for **eight** (Game_Killer 1.08x and Crazy_Comets 1.03x drop to
   0.00x), at zero cost in `wave`. It stays; the gate is the open question.
-- **`Thrust` is the one overshoot neither covers**: 43x with melody and pitch
-  both 100% and both sides on the same notes, emitting +-$01BD where the
-  original plays +-$0034. Goattracker computes a note-relative vibrato from the
-  interval at `cptr->lastnote`, and a step that size belongs to a note about
-  two octaves higher. `--fold-transpose` refuted -- identical bytes with it on
-  and off.
+- **`Thrust` at 43x is explained and is not an overshoot** (v0.5.89). Its tune
+  *is* the chromatic rise, and both sides play it. The player **steps** on
+  exact semitones (`INC noteindex,X` + a table re-read), so siddump names every
+  frame: 443 tie lines against 25 bends. We **glide** (a note-relative
+  portamento -- Goattracker cannot step a note from the wavetable without one
+  entry per semitone), so a third of our frames land between notes and siddump
+  prints a bend: 125 ties against 89. `bend` counts only bend-labelled frames,
+  so the original's sweep is invisible to it and ours is fully visible. No
+  converter change follows; the limit is now in the report's caveats.
+  `--fold-transpose` refuted as a cause -- identical bytes with it on and off.
+  Note also that this file's `pitch` of 100% rests on 4 attacks against 2.
 - The 7 files whose vibrato byte is reached by addressing `_find_vibrato` does
   not recognise (Go_Go_Dash, I_Ball, Lakers_vs_Celtics, Lion_Heart,
   Pacific_Coast, Radio_ACE, Sun_Never_Shines). An under-read; only I_Ball
