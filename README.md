@@ -1188,6 +1188,15 @@ saying what the measurement predicts for each. Needs `SID2WAV.EXE`
 (`--sid2wav`); output is gitignored, because it is for ears rather than for
 review.
 
+**RSID originals render through VICE.** `SID2WAV` is from 1997 and predates
+RSID, so it refused 18 of the 95 corpus files — including all four NTSC ones
+and `Skate_or_Die_intro`. Since v0.5.92 those fall back to VICE's `vsid`, and
+both sides of the pair then go through *it* rather than one renderer each,
+because two emulations differ in level and filter enough to colour a listening
+judgement. The trick, after three earlier attempts produced a 44-byte
+header-only file, is that **`-warp` suppresses the sound device's output**
+whatever `-soundwarpmode` says; without warp it renders, in realtime.
+
 The reason it exists: `fidelity.py` compares note attacks and nothing else. It
 cannot hear an envelope, a filter, a tempo or a timbre, and it scored *zero*
 change for a correctness fix that rewrote 66 rows of one file (v0.5.46). Its

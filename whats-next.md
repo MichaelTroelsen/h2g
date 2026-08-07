@@ -477,23 +477,23 @@ impossibility.
 - **`Kings_of_the_Beach_ingame` plays 138 noise frames where the original
   plays none** — the report's new `!` marker, and the only file flagged.
   Uninvestigated.
-- **`listen.py` cannot render an RSID original.** `SID2WAV` is version 1.8
-  (1997), predating RSID, and answers `ERROR: Could not determine file
-  format`; our own side always renders because gt2reloc writes PSID. **18 of
-  the 95 corpus files are RSID** — After_8, Arcade_Classics, BMX_Kidz,
-  Chimera, I_Ball, Kings_of_the_Beach_intro, Last_V8, Last_V8_C128_version,
-  Mega_Apocalypse, Mr_Meaner, Off_the_Cuff, One_on_One, Powerplay_Hockey,
-  Ricochet, Rikky, Rock_Tells_the_Tale, Skate_or_Die_intro, Tarzan. That set
-  includes Skate_or_Die_intro (the v0.5.63 shift fix) and all four NTSC
-  files, so the one check that covers the unmeasured region structurally
-  cannot reach the files this session changed most. `listen.py` does detect
-  the failure and says so rather than staging a half pair. VICE 3.9's
-  `vsid.exe` is present at
-  `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\` and
-  handles RSID, but three attempts at `-sounddev wav` produced a 44-byte
-  (header-only) file on **both** an RSID and a PSID input, so the invocation
-  is wrong, not the format. Worth solving — it would nearly double the
-  listenable corpus.
+- **CLOSED (v0.5.92): `listen.py` renders RSID originals.** `SID2WAV` is
+  version 1.8 (1997) and predates RSID, so it refused **18 of the 95 corpus
+  files** — a set that includes all four NTSC files and Skate_or_Die_intro,
+  the one v0.5.63 fixed, meaning the only check covering the unmeasured region
+  could not reach the files this project changed most.
+
+  The blocker was **`-warp`**, not the format. Warp suppresses VICE's sound
+  device output entirely, which is what produced the 44-byte header-only file
+  in three earlier attempts; `-soundwarpmode 1` does *not* rescue it (tested).
+  Dropping warp works — rendering is realtime, so `render_vsid` is a fallback
+  reached only when the header says `RSID`.
+
+  Both sides of a pair go through **one** renderer: gt2reloc always writes
+  PSID, so a naive fallback would put sid2wav on one side and vsid on the
+  other, and two emulations differ in level and filter enough to colour the
+  judgement the staging exists to support. Verified end to end on Last_V8 and
+  Off_the_Cuff — both sides 959,788 bytes, byte-for-byte comparable lengths.
 - **Six players index their frequency table through an idiom
   `find_freq_table` does not recognise** — `Casio_Extended`,
   `Dont_Step_on_My_Wire`, `Era_of_Eidolon`, `Robs_Life`, `Task_Force`,

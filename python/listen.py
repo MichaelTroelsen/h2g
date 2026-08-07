@@ -68,6 +68,63 @@ BANDS = [
 ]
 
 
+# SID2WAV is version 1.8, from 1997, and predates RSID entirely: it answers
+# `ERROR: Could not determine file format` on one and renders nothing. **18 of
+# the 95 corpus files are RSID** -- After_8, Arcade_Classics, BMX_Kidz,
+# Chimera, I_Ball, Kings_of_the_Beach_intro, Last_V8, Last_V8_C128_version,
+# Mega_Apocalypse, Mr_Meaner, Off_the_Cuff, One_on_One, Powerplay_Hockey,
+# Ricochet, Rikky, Rock_Tells_the_Tale, Skate_or_Die_intro, Tarzan -- and that
+# set includes all four NTSC files and Skate_or_Die_intro, the one v0.5.63
+# fixed, so the only check covering the unmeasured region could not reach the
+# files this project changed most.
+#
+# VICE's vsid reads both. The one thing that matters in the invocation is that
+# it must run **without `-warp`**: warp suppresses the sound device's output
+# whatever `-soundwarpmode` says, and that is what produced the 44-byte
+# header-only file in three earlier attempts. `-soundwarpmode 1` does not
+# rescue it -- tested. Rendering is therefore realtime, which is why this is a
+# fallback rather than the default.
+VSID = r"C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\vsid.exe"
+PAL_CYCLES_PER_SECOND = 985248
+# A WAV header with no samples. The failure this fallback exists to avoid, and
+# the shape a silent success takes here.
+EMPTY_WAV = 64
+
+
+def render_vsid(sid: Path, out: Path, seconds: int, subtune: int,
+                exe: str = VSID) -> bool:
+    """One .sid to one WAV via VICE, for the files SID2WAV cannot read.
+
+    `-tune` is 1-based like sid2wav's `-o`, and `-limitcycles` is what makes it
+    terminate -- without it vsid plays forever.
+    """
+    out.unlink(missing_ok=True)
+    try:
+        subprocess.run([exe, "-console", "-sounddev", "wav",
+                        "-soundarg", str(out),
+                        "-limitcycles", str(seconds * PAL_CYCLES_PER_SECOND),
+                        "-tune", str(subtune + 1), str(sid)],
+                       capture_output=True, timeout=seconds * 6 + 120,
+                       stdin=subprocess.DEVNULL)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return out.exists() and out.stat().st_size > EMPTY_WAV
+
+
+def _sid2wav_can_read(sid: Path, exe: str = SID2WAV) -> bool:
+    """True if SID2WAV recognises this file at all -- i.e. it is not an RSID.
+
+    Read from the magic rather than by running it: `RSID` is the only thing in
+    the corpus it refuses, and a header test costs nothing where a trial
+    render costs a realtime pass.
+    """
+    try:
+        with open(sid, "rb") as fh:
+            return fh.read(4) != b"RSID"
+    except OSError:
+        return False
+
+
 def render(sid: Path, out: Path, seconds: int, subtune: int,
            exe: str = SID2WAV) -> bool:
     """One .sid to one 16-bit 44.1 kHz WAV. sid2wav's -o is 1-based."""
@@ -78,8 +135,11 @@ def render(sid: Path, out: Path, seconds: int, subtune: int,
                        capture_output=True, timeout=300,
                        stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError):
-        return False
-    return out.exists() and out.stat().st_size > 0
+        pass
+    if out.exists() and out.stat().st_size > EMPTY_WAV:
+        return True
+    # SID2WAV refused it -- an RSID, in every corpus case. VICE reads those.
+    return render_vsid(sid, out, seconds, subtune)
 
 
 def pick(rows: list[dict], per_band: int) -> list[tuple[str, dict]]:
@@ -270,10 +330,20 @@ def main(argv=None) -> int:
         ours_sid = outdir / f"{stem}.h2g.sid"
         shutil.copyfile(packed, ours_sid)
 
+        # Both sides through one renderer. Where the original is an RSID only
+        # VICE can read it, and gt2reloc always writes a PSID -- so a naive
+        # fallback would put sid2wav on one side of the pair and vsid on the
+        # other. Two emulations differ in level and filter enough to colour a
+        # listening judgement, which is the one thing this staging exists to
+        # support.
         ok_a = render(src, outdir / f"{stem}.original.wav", args.seconds,
                       args.subtune, args.sid2wav)
-        ok_b = render(ours_sid, outdir / f"{stem}.h2g.wav", args.seconds,
-                      args.subtune, args.sid2wav)
+        both_vice = ok_a and not _sid2wav_can_read(src, args.sid2wav)
+        render_pair = render_vsid if both_vice else render
+        if both_vice:
+            print(f"  {name:44} rendered by VICE (RSID)", file=sys.stderr)
+        ok_b = render_pair(ours_sid, outdir / f"{stem}.h2g.wav", args.seconds,
+                           args.subtune)
 
         orig = run_siddump(src, args.seconds, args.subtune, args.siddump)
         ours = run_siddump(ours_sid, args.seconds, args.subtune, args.siddump)

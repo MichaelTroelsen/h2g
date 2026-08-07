@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.92 — 2026-08-07
+
+- render RSID originals through VICE, both sides of the pair
+
 ## 0.5.91 — 2026-08-07
 
 - run the player: the drum does fire, and bend cannot see it
