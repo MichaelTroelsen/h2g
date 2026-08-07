@@ -83,12 +83,96 @@ def test_waveform_writes_are_recorded_per_voice():
     assert v2.wf_events == [(0, 0x41), (3, 0x41)]
 
 
-def test_wave_timeline_carries_the_register_forward():
+def test_register_timeline_carries_the_register_forward():
     # siddump prints a row only on change; between writes the chip keeps
     # playing the latched value, and skipped frames (2, 4, 5) inherit it.
     v0 = fidelity.parse_dump(DUMP)[0]
-    assert fidelity.wave_timeline(v0, 8) == \
+    assert fidelity.register_timeline(v0.wf_events, 8) == \
         [0x15, 0x80, 0x80, 0x80, 0x80, 0x80, 0x41, 0x41]
+
+
+# --- the rest of the row: ADSR, pulse width, and the global filter cell -----
+#
+# siddump prints five register groups per frame and the harness used to read
+# two fields out of three of them. These pin the other seven, and above all
+# the one property they share: a field printed as dots is the chip *holding*
+# its last value, so every one of them has to carry forward.
+
+def test_adsr_writes_are_recorded_per_voice():
+    v0, v1, v2 = fidelity.parse_dump(DUMP)
+    assert v0.adsr_events == [(0, 0x0DFB)]
+    assert v1.adsr_events == [(0, 0x0FC4)]
+    assert v2.adsr_events == [(0, 0x099F)]
+
+
+def test_pulse_writes_are_recorded_per_voice():
+    v0, v1, v2 = fidelity.parse_dump(DUMP)
+    assert v0.pulse_events == [(0, 0x180), (3, 0xCE0), (5, 0xD40), (6, 0xC80)]
+    assert v1.pulse_events == [(0, 0x200), (3, 0x140), (5, 0x1C0), (6, 0x200)]
+    assert v2.pulse_events == \
+        [(0, 0x180), (1, 0x196), (3, 0x1C0), (5, 0x240), (6, 0x280)]
+
+
+def test_the_global_cell_is_read():
+    # ' 0000 00 Off F ' on frame 0, dots on every later frame in DUMP.
+    f = fidelity.parse_dump(DUMP).filter
+    assert f.cutoff_events == [(0, 0x0000)]
+    assert f.ctrl_events == [(0, 0x00)]
+    assert f.passband_events == [(0, 0)]      # 'Off'
+    assert f.volume_events == [(0, 0xF)]
+
+
+# A filter sweep: cutoff moving frame by frame, the $D417 byte and the
+# passband changing once each, and the master volume ducking. Written in
+# siddump's exact column widths (siddump.c:451-467) -- note 'Hi ' is padded
+# to three characters in siddump's own table, so the cell reads 'Hi  '.
+FILTER_DUMP = """| Frame | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | FCut RC Typ V |
++-------+---------------------------+---------------------------+---------------------------+---------------+
+|     0 | AF58  E-7 D8  15 0DFB 180 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | 0800 F1 Low F |
+|     1 | ....  ... ..  .. 0A08 ... | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | 0A00 .. ... . |
+|     2 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | 0C00 .. Hi  . |
+|     4 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | .... 04 ... 8 |
+"""
+
+
+def test_every_global_field_is_read_independently():
+    f = fidelity.parse_dump(FILTER_DUMP).filter
+    assert f.cutoff_events == [(0, 0x0800), (1, 0x0A00), (2, 0x0C00)]
+    assert f.ctrl_events == [(0, 0xF1), (4, 0x04)]
+    assert f.passband_events == [(0, 1), (2, 4)]   # 'Low', then 'Hi '
+    assert f.volume_events == [(0, 0xF), (4, 0x8)]
+
+
+def test_the_passband_name_round_trips_to_its_register_bits():
+    # The index is ($D418 >> 4) & 7, so the name is the register value.
+    assert fidelity.FILTER_PASSBAND[4] == "Hi"
+    assert fidelity.FILTER_PASSBAND[0] == "Off"
+    assert len(fidelity.FILTER_PASSBAND) == 8
+
+
+def test_a_held_register_is_not_a_zero():
+    # The whole point of the parse contract. Frames 3 and 5+ print no cutoff
+    # at all; the filter is still open at $0C00, not closed.
+    f = fidelity.parse_dump(FILTER_DUMP).filter
+    assert fidelity.register_timeline(f.cutoff_events, 6) == \
+        [0x0800, 0x0A00, 0x0C00, 0x0C00, 0x0C00, 0x0C00]
+    assert fidelity.register_timeline(f.volume_events, 6) == \
+        [0xF, 0xF, 0xF, 0xF, 0x8, 0x8]
+    assert fidelity.register_timeline(f.passband_events, 6) == \
+        [1, 1, 4, 4, 4, 4]
+
+
+def test_adsr_and_pulse_carry_forward_the_same_way():
+    v0 = fidelity.parse_dump(FILTER_DUMP)[0]
+    assert fidelity.register_timeline(v0.adsr_events, 5) == \
+        [0x0DFB, 0x0A08, 0x0A08, 0x0A08, 0x0A08]
+    assert fidelity.register_timeline(v0.pulse_events, 5) == \
+        [0x180] * 5
+
+
+def test_a_silent_voice_contributes_no_events():
+    v1 = fidelity.parse_dump(FILTER_DUMP)[1]
+    assert v1.wf_events == v1.adsr_events == v1.pulse_events == []
 
 
 def test_collapsed_merges_consecutive_repeats_only():

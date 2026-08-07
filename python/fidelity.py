@@ -129,16 +129,38 @@ def make_workdir(explicit: str | None = None) -> tuple[Path, bool]:
 # One voice cell, after splitting a row on '|', is a 4-hex frequency (or
 # '....') then a 9-character note field written by one of exactly four
 # sprintf formats in siddump.c:409-429, then the 2-hex waveform register
-# (or '..' when the register was not written this frame).
+# (or '..' when the register was not written this frame), the 4-hex ADSR pair
+# and the 3-hex pulse width (siddump.c:436-446). The trailing cell is global:
+# 4-hex cutoff, the 2-hex $D417 byte, a 3-character passband name and the
+# 1-hex master volume (siddump.c:451-467).
 _ATTACK = re.compile(r" ([A-G][-#]\d) ([0-9A-F]{2})  ")
 _TIE = re.compile(r"\(([A-G][-#]\d) ([0-9A-F]{2})\) ")
 _SLIDE = re.compile(r"\(([+-]) ([0-9A-F]{4})\) ")
-_WF = re.compile(r"[0-9A-F]{2}$")
+_HEX = re.compile(r"[0-9A-F]+\Z")
 
 # $D404 waveform-register bits. The upper nibble selects the waveform(s);
 # the lower nibble is gate/sync/ring/test, none of which is a timbre.
 WF_GATE = 0x01
 WF_NOISE = 0x80
+
+# siddump.c:54-55, verbatim apart from the padding on "Hi ". The index is
+# ($D418 >> 4) & 7, so the name is losslessly reversible into the passband
+# bits and a timeline of them is a timeline of the register.
+FILTER_PASSBAND = ("Off", "Low", "Bnd", "L+B", "Hi", "L+H", "B+H", "LBH")
+_PASSBAND = {name: i for i, name in enumerate(FILTER_PASSBAND)}
+
+
+def _hex_field(text: str, width: int) -> int | None:
+    """One sparse register field, or None when siddump printed it as dots.
+
+    siddump writes a register's value only on the frame it changed and dots of
+    the same width otherwise (siddump.c:436-467), so "absent" here means *the
+    chip is still holding the last value*, never zero. Returning None keeps
+    that distinction; register_timeline() is what turns it back into a value.
+    """
+    if len(text) != width or not _HEX.match(text):
+        return None
+    return int(text, 16)
 
 
 @dataclass
@@ -147,11 +169,18 @@ class Voice:
     attack_frames: list[int] = field(default_factory=list)
     ties: int = 0
     slides: int = 0
-    # (frame, value) for every frame siddump shows the waveform register
-    # written. siddump prints a row only when something changed, so between
-    # events the register holds its last value -- wave_timeline() expands
+    # (frame, value) for every frame siddump shows the register written.
+    # siddump prints a value only when it changed, so between events the
+    # register holds its last value -- register_timeline() expands any of
     # these into a per-frame view.
+    #
+    # Comparing these sparse lists directly would be wrong for all three:
+    # a side that writes $0F00 on every frame and one that writes it once
+    # sound identical and would score as opposites. Every consumer must go
+    # through register_timeline() first.
     wf_events: list[tuple[int, int]] = field(default_factory=list)
+    adsr_events: list[tuple[int, int]] = field(default_factory=list)
+    pulse_events: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def collapsed(self) -> list[str]:
@@ -168,9 +197,55 @@ class Voice:
         return out
 
 
-def parse_dump(text: str) -> list[Voice]:
-    """Three Voices out of siddump's table."""
+@dataclass
+class FilterState:
+    """The one global cell, which is not per voice: $D415-$D418.
+
+    siddump prints these four fields on their own change conditions
+    (siddump.c:451-467), each independent of the voices and of each other, so
+    they are four sparse event lists exactly like a voice's -- and like a
+    voice's they mean *held*, not zero, on the frames they are absent.
+
+    `ctrl` is the whole $D417 byte as siddump's `RC` column prints it:
+    resonance in the high nibble, filter routing (voices 1-3 and the external
+    input) in the low one. siddump never separates them, so neither does this.
+    `passband` is ($D418 >> 4) & 7, an index into FILTER_PASSBAND; `volume` is
+    $D418 & $F.
+    """
+    cutoff_events: list[tuple[int, int]] = field(default_factory=list)
+    ctrl_events: list[tuple[int, int]] = field(default_factory=list)
+    passband_events: list[tuple[int, int]] = field(default_factory=list)
+    volume_events: list[tuple[int, int]] = field(default_factory=list)
+
+
+class Trace(list):
+    """The three Voices, with the file-level FilterState attached.
+
+    A list subclass so that every existing caller -- `a, b, c = parse_dump(t)`,
+    `zip(orig, ours)`, `orig + ours` -- keeps working unchanged and keeps
+    treating the voices as the payload. The filter is one object per dump, not
+    per voice, so it cannot live on Voice; hanging it here is what lets a
+    single pass over the table produce both.
+    """
+
+    def __init__(self, voices, filt: FilterState):
+        super().__init__(voices)
+        self.filter = filt
+
+
+def parse_dump(text: str) -> Trace:
+    """Three Voices and the global filter state out of siddump's table.
+
+    Every register siddump prints is read here, and every one of them is
+    sparse: a value appears on the frame it was written and dots thereafter.
+    Absence means *held*, not zero, so nothing downstream may compare these
+    event lists directly -- a side that rewrites the same value each frame and
+    one that writes it once are the same sound and would score as opposites.
+    register_timeline() is the carry-forward that makes them comparable, and
+    it is the only correct way to read any of these fields.
+    """
     voices = [Voice(), Voice(), Voice()]
+    filt = FilterState()
     for line in text.splitlines():
         if not line.startswith("|"):
             continue
@@ -183,10 +258,16 @@ def parse_dump(text: str) -> list[Voice]:
             continue  # header/rule row
         for v, cell in enumerate(cells[2:5]):
             rest = cell[6:]  # past ' FREQ ' (or ' .... ')
-            # The waveform register is the 2 characters after the 9-char
-            # note field, in every one of the four note formats.
-            if _WF.match(rest[9:11]):
-                voices[v].wf_events.append((frame, int(rest[9:11], 16)))
+            # Fixed offsets into the tail of the cell: the 9-char note field
+            # is the same width in all four note formats, so the waveform,
+            # ADSR and pulse fields that follow it always sit here.
+            for text_slice, width, events in (
+                    (rest[9:11], 2, voices[v].wf_events),
+                    (rest[12:16], 4, voices[v].adsr_events),
+                    (rest[17:20], 3, voices[v].pulse_events)):
+                val = _hex_field(text_slice, width)
+                if val is not None:
+                    events.append((frame, val))
             m = _ATTACK.match(rest)
             if m:
                 voices[v].attacks.append(m.group(1))
@@ -197,22 +278,40 @@ def parse_dump(text: str) -> list[Voice]:
                 continue
             if _SLIDE.match(rest):
                 voices[v].slides += 1
-    return voices
+
+        glob = cells[5]  # ' FCut RC Typ V ', or dots for the unwritten fields
+        for text_slice, width, events in (
+                (glob[1:5], 4, filt.cutoff_events),
+                (glob[6:8], 2, filt.ctrl_events),
+                (glob[13:14], 1, filt.volume_events)):
+            val = _hex_field(text_slice, width)
+            if val is not None:
+                events.append((frame, val))
+        # The passband is the one field siddump prints as a name rather than
+        # hex; '...' is its "unwritten" marker.
+        band = _PASSBAND.get(glob[9:12].strip())
+        if band is not None:
+            filt.passband_events.append((frame, band))
+    return Trace(voices, filt)
 
 
-def wave_timeline(voice: Voice, nframes: int) -> list[int]:
-    """The waveform register's value on every frame 0..nframes-1.
+def register_timeline(events: list[tuple[int, int]], nframes: int) -> list[int]:
+    """A sparse register's value on every frame 0..nframes-1.
 
-    siddump prints the register only on the frame it is written; on every
-    other frame the chip keeps playing whatever was latched, so the value
-    carries forward. Before the first write (siddump always prints frame 0 in
-    full, so in practice never) the value is 0.
+    siddump prints a register only on the frame it is written; on every other
+    frame the chip keeps whatever was latched, so the value carries forward.
+    Before the first write (siddump always prints frame 0 in full, so in
+    practice never) the value is 0.
+
+    This is deliberately register-agnostic -- waveform, ADSR, pulse width,
+    cutoff, $D417 and volume are all written sparsely by the same rule, so
+    they all need exactly this expansion before they can be compared.
     """
     out: list[int] = []
-    cur, idx, ev = 0, 0, voice.wf_events
+    cur, idx = 0, 0
     for f in range(nframes):
-        while idx < len(ev) and ev[idx][0] <= f:
-            cur = ev[idx][1]
+        while idx < len(events) and events[idx][0] <= f:
+            cur = events[idx][1]
             idx += 1
         out.append(cur)
     return out
@@ -237,7 +336,7 @@ def calibration(detune: float) -> int:
 
 
 def run_siddump(sid: Path, seconds: int, subtune: int,
-                exe: str = SIDDUMP, calibrate: int = 0) -> list[Voice]:
+                exe: str = SIDDUMP, calibrate: int = 0) -> Trace:
     cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}"]
     if calibrate:
         cmd.append(f"-c{calibrate:X}")
@@ -465,7 +564,8 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     agree = total = o_noise = u_noise = 0
     per_voice = []
     for a, b in zip(orig, ours):
-        ta, tb = wave_timeline(a, nframes), wave_timeline(b, nframes)
+        ta = register_timeline(a.wf_events, nframes)
+        tb = register_timeline(b.wf_events, nframes)
         va = vt = vo_n = vu_n = 0
         for x, y in zip(ta, tb):
             if x & WF_NOISE:

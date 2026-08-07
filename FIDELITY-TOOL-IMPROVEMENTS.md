@@ -49,6 +49,15 @@ and would have caught both this and the `--slides` no-op.
 
 ## 1. Stop discarding four fifths of what siddump already prints
 
+**Landed in v0.5.76.** `parse_dump` now reads every field siddump prints:
+`Voice.adsr_events` and `Voice.pulse_events` per voice, and a file-level
+`Trace.filter` (`FilterState`, carrying cutoff, the `$D417` byte, passband and
+volume). `wave_timeline` is now `register_timeline(events, nframes)`, taking
+the event list rather than a `Voice`, because all six registers are written
+sparsely by the same rule. No column of `FIDELITY.md` changed — the data is
+available, and §2 is what spends it. The rest of this section is kept as the
+argument for why.
+
 **This is the single highest-leverage change in the file, and everything in
 §2 is blocked on it.**
 
