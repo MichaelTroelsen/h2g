@@ -97,6 +97,17 @@ class Detection:
     # +0/+1 seed the 12-bit width at note start and whose +6 is added to the
     # low byte every frame. -1 when the block is absent or unreadable.
     pulse_lo_base: int = -1
+    # Effect byte bit $80, in the eight-flag format only -- and it is not one
+    # block. The 12 corpus files that test it split three ways; see
+    # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
+    # off a global state cell no converted tune ever writes; "program" (2) is a
+    # per-instrument byte-code wave program; "pitch" (1) steps the frequency
+    # from a duration/delta table. Read only -- goatwriter consumes none of it,
+    # for the reasons in H2G-CONVERSION-METHOD.md section 7.jj.
+    effect_bit80: str = ""
+    # File offset of the "program" shape's per-instrument pointer array (two
+    # bytes per record, strided like the instrument table), or -1.
+    effect_program: int = -1
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -853,6 +864,20 @@ def detect(sid: SidFile, log: Logger) -> Detection:
             "an arpeggio in this player)")
         _bound_instruments(det, log)
 
+    det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
+    if det.effect_bit80 == "sfx":
+        log("Instrument effect byte..: bit $80 fires the game's own sound "
+            "effect (global state, voice 3 + volume) -- not music, not "
+            "converted")
+    elif det.effect_bit80 == "program":
+        where = (f"file +0x{det.effect_program:04X}"
+                 if det.effect_program >= 0 else "an unresolvable address")
+        log(f"Instrument effect byte..: bit $80 selects a byte-code wave "
+            f"program, pointers at {where} (read, not written)")
+    elif det.effect_bit80 == "pitch":
+        log("Instrument effect byte..: bit $80 steps the frequency from a "
+            "duration/delta table (read, not written)")
+
     det.freq_table = find_freq_table(sid)
     if det.freq_table is not None:
         ft = det.freq_table
@@ -1407,6 +1432,98 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
     if at != det.instr_start:
         return -1
     return at
+
+
+def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
+    """("sfx"|"program"|"pitch"|"", pointer-array offset): what bit $80 drives.
+
+    Bit $80 belongs to the eight-flag reading of +7 (see below), and the one
+    thing every earlier note about it got wrong is treating it as *one* block.
+    All 12 corpus files that test it reach it the same way -- `LDA effect /
+    BPL` -- and then do three unrelated things:
+
+    **"sfx", 9 files.** IK+ `$E41A`, Bangkok Knights `$8488`, Mega Apocalypse
+    `$4E43`, Nineteen `$946E`, Pandora `$F81E`, Ricochet `$946D`, Star Paws
+    `$B3F9`, Thundercats `$F17E`, Trans-Atlantic Balloon `$0C2E`. A *global*
+    state cell -- not per voice, not per instrument -- is compared against 1
+    and then against 6, 8 or 9, and the arms write fixed constants into
+    `$D40F` (cutoff high, `$48`/`$38`), `$D412` (voice-3 control, `$81` =
+    noise + gate), `$D416` (`$60`/`$50`) and `$D418` (volume, `$2F`/`$1F`),
+    zeroing the cell when it runs past the end. IK+ writes two of them into
+    its own code (`$E5F2`, `$E5F5`) rather than to the chip; Ricochet's arms
+    are `LDA #$00` with the writes stripped out of the rip entirely.
+
+    That is the game's noise -- an explosion or a hit -- triggered by code
+    that is not in the SID file at all, and nothing a converted tune does ever
+    writes the cell. So it is not merely inexpressible in a per-instrument
+    wavetable (it is global, and it seizes voice 3 and the master volume): it
+    is **not music, and must not be converted**. This probe exists to say so.
+
+    **"program", 2 files.** ACE II `$E357`, Auf Wiedersehen Monty `$E743`. A
+    16-bit pointer per instrument, from an array strided like the records
+    (`LDA $E624,Y / LDA $E625,Y`, the same `Y = i * instr_stride`), into a
+    byte-code program stepped one entry per frame by a per-voice program
+    counter (`$EBC7,X`). An entry >= $80 is `$85` -- hold here, the counter is
+    not advanced -- or a two-byte (waveform -> `$D404`, next byte -> `$D401`
+    frequency high) pair. An entry < $80 is three bytes: a waveform into the
+    voice's own waveform cell, then a 16-bit `SBC` of the following two bytes
+    off the voice's frequency. This one *is* a wavetable, and Goattracker can
+    carry the waveform half exactly; the pitch half is a raw frequency delta
+    where Goattracker's right column is a note, so it can only be approximated.
+
+    **"pitch", 1 file.** Delta `$C1EC`. A per-voice counter (`$C351,X`) is
+    decremented, and on expiry reloaded from `$C43E,Y` while `$C43F,Y` is
+    added to the voice's frequency-high cell (`$C34B,X`) -- a stepped sweep in
+    the same family as the vibrato of section 7.ee, but table-walked.
+
+    Nothing here is written to the output. The reading ships and the encoding
+    does not, for the reason `_find_two_stage` records: resolve what the byte
+    means from the 6502, then decide separately, by measurement, whether the
+    target format should carry it.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return "", -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    llen = 2 if zp else 3
+    data = sid.data
+
+    # The pointer-array shape. The two `B9`s must read consecutive bytes of the
+    # same array (low then high) into consecutive zero-page cells, and the
+    # program byte itself is fetched indirectly through them.
+    off = search_file(
+        data,
+        f"{load} 10 ?? 8E ?? ?? B9 ?? ?? 85 ?? B9 ?? ?? 85 ?? "
+        f"BD ?? ?? A8 B1 ?? 10 ??")
+    if off >= 0:
+        lo = data[off + llen + 6] | (data[off + llen + 7] << 8)
+        hi = data[off + llen + 11] | (data[off + llen + 12] << 8)
+        zp_lo, zp_hi = data[off + llen + 9], data[off + llen + 14]
+        at = sid.to_offset(lo)
+        if hi == lo + 1 and zp_hi == zp_lo + 1 and 0 <= at < len(data):
+            return "program", at
+        return "program", -1
+
+    # Delta's counter/delta table: DEC the per-voice counter, and only on the
+    # frame it goes negative reload it and add the paired byte to the voice's
+    # frequency cell. The `18 79` (CLC / ADC abs,Y) is what separates it from
+    # every reload-a-counter block that does not move pitch.
+    if search_file(
+            data,
+            f"{load} 10 ?? AC ?? ?? DE ?? ?? 10 ?? B9 ?? ?? 9D ?? ?? "
+            f"BD ?? ?? 18 79 ?? ?? 9D ?? ??") >= 0:
+        return "pitch", -1
+
+    # The sound effect: bit $80 set, then a *global* cell (absolute or
+    # zero-page, never indexed) compared against a constant. Deliberately loose
+    # about what the arms write -- IK+ patches its own code and Ricochet's arms
+    # are empty -- because the shape being matched is "a global state machine",
+    # which is already enough to know this is not per-instrument music.
+    for state in ("AD ?? ??", "A5 ??"):
+        if search_file(data, f"{load} 10 ?? {state} C9 ?? F0 ??") >= 0:
+            return "sfx", -1
+    return "", -1
 
 
 # --- The same byte, a second format ----------------------------------------

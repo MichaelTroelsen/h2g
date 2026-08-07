@@ -1241,13 +1241,19 @@ construction: an arpeggio moves pitch, `melody` compares note attacks and
 evidence it did nothing, and this is the fourth time in this project that a
 correct fix has been invisible to the harness that was built to see it.
 
-What remains of the census's four blocks: bit `$08`'s pulse-width variant is
-still unwritten, because the pulse table has two entries per instrument and,
-when this was written, no metric here could see a duty cycle. Tracking
-siddump's `Pul` column was named as the prerequisite; it is the report's `pul`
-column as of v0.5.78, so the blocker on that block is now the encoding rather
-than the measurement. The drum's sweep is one entry deep rather than the counter's length,
-since the counter is a runtime value and the wavetable has three free slots.
+What remains of the census's four blocks: none of them, as of v0.5.80. Bit
+`$08`'s pulse-width variant was the last one, blocked twice over — the pulse
+table had two fixed entries per instrument, and no metric here could see a
+duty cycle. Tracking siddump's `Pul` column was named as the prerequisite and
+landed as the report's `pul` column in v0.5.78; `_pulse_layout` returns each
+instrument's start position instead of a stride in the same version, which is
+what let a program be longer than two entries. The engine itself is
+`goatwriter._pulse_lo_program`, and corpus-wide it fires on **294 records
+across 21 files**, with **no file** carrying both it and the sweep — the
+mutual exclusivity the block's own bit test implies, confirmed rather than
+assumed. The drum's sweep is still one entry deep rather than the counter's
+length, since the counter is a runtime value and the wavetable has three free
+slots.
 
 **Bit `$08` — a pulse-width variant** (Warhawk `$12A3`). It selects between
 two treatments of instrument byte `+6`: with the bit clear, the triangle sweep
@@ -2218,6 +2224,117 @@ The residual is real but smaller than § 7.ii first claimed: the gate is
 cross-voice runtime state (`LDA effect` is `AD`, absolute, written once in the
 note-start path), so a per-instrument wavetable cannot reproduce *when* the
 player drums — only that it does.
+
+### 7.jj Effect bit `$80` is three blocks, and the biggest one is not music
+
+Every earlier note in this project described bit `$80` in one sentence: it
+"drives a hard-coded voice-3 noise hit plus global filter/volume off a global
+state byte, which no per-instrument wavetable can express." That sentence was
+carried across five handoffs without an address behind it. Reading all twelve
+blocks — every corpus file whose `+7` resolves and which tests the bit, found
+by `LDA effect / BPL` against the resolved address — shows it is true of nine
+files and false of three, and that the three are the interesting ones.
+
+**Nine files: the game's sound effect.** IK+ `$E41A`, Bangkok Knights `$8488`,
+Mega Apocalypse `$4E43`, Nineteen `$946E`, Pandora `$F81E`, Ricochet `$946D`,
+Star Paws `$B3F9`, Thundercats `$F17E`, Trans-Atlantic Balloon `$0C2E`. One
+shape, copied file to file:
+
+```
+E41A  AD 58 E7  LDA effect
+E41D  10 2D     BPL $E44C        ; bit $80 clear -> ordinary instrument
+E41F  AD 1E E8  LDA $E81E        ; a GLOBAL cell -- not per voice, not per
+E422  C9 01     CMP #$01         ;   instrument, and never indexed
+E424  F0 10     BEQ $E436
+E426  A0 1F     LDY #$1F
+E428  8C 18 D4  STY $D418        ; volume down
+E42B  C9 06     CMP #$06
+E42D  90 1D     BCC $E44C
+E42F  A9 00     LDA #$00
+E431  8D 1E E8  STA $E81E        ; ran past the end -> disarm
+E436  A9 48     LDA #$48
+E438  8D F2 E5  STA $E5F2        ; IK+ patches its own code here; the other
+E43B  A9 81     LDA #$81         ;   eight write $D40F / $D412 directly
+E43D  8D F5 E5  STA $E5F5        ; $81 = noise + gate, on voice 3
+E440  A9 60     LDA #$60
+E442  8D 16 D4  STA $D416
+E445  A9 2F     LDA #$2F
+E447  8D 18 D4  STA $D418        ; volume back up
+```
+
+The constants differ a little — Trans-Atlantic uses `$38`/`$50`, Pandora and
+Star Paws count to 8, Ricochet to 9 — and Ricochet's arms are `LDA #$00` with
+the writes stripped out of the rip altogether. The structure does not: a
+global counter compared against 1 and then against a ceiling, driving fixed
+writes to `$D40F` (cutoff high), `$D412` (voice-3 control), `$D416` and
+`$D418` (master volume).
+
+Nothing in the SID file ever writes that counter. It is set by the *game* —
+an explosion, a hit, a jingle — and a rip contains only the player. So this is
+not a case of the target format being too poor to carry the source: **the
+block is dead code in every one of these files, and firing it would be wrong
+even if Goattracker could.** It seizes voice 3 and the master volume, neither
+of which belongs to any instrument. This is the one result in section 7 where
+the right encoding is provably no encoding.
+
+**Two files: a byte-code wave program.** ACE II `$E357`, Auf Wiedersehen Monty
+`$E743` — the same player, and the shape the "half a census" note above
+predicted when it observed that bit `$08` doubles as the high byte of a
+pointer in this family:
+
+```
+E357  8E 5E E5  STX $E55E
+E35A  B9 24 E6  LDA $E624,Y      ; Y = i * stride, the same index as the record
+E35D  85 FC     STA $FC          ; a 16-bit pointer, per instrument
+E35F  B9 25 E6  LDA $E625,Y
+E362  85 FD     STA $FD
+E364  BD C7 EB  LDA $EBC7,X      ; per-VOICE program counter
+E367  A8        TAY
+E368  B1 FC     LDA ($FC),Y
+E36A  10 1E     BPL $E38A        ; < $80 -> the three-byte form
+E36C  C9 85     CMP #$85
+E36E  D0 03     BNE $E373
+E370  4C 5E E4  JMP $E45E        ; $85 -> hold; the counter is NOT advanced
+E373  AE 4F E5  LDX $E54F
+E376  9D 04 D4  STA $D404,X      ; waveform, straight to the chip
+E379  C8        INY
+E37A  B1 FC     LDA ($FC),Y
+E37C  9D 01 D4  STA $D401,X      ; frequency high, absolute
+...
+E38A  9D 59 E5  STA $E559,X      ; < $80: waveform into the voice's own cell
+E38D  C8        INY
+E38E  38        SEC
+E38F  BD 75 E5  LDA $E575,X      ; then a 16-bit SBC of the next two bytes
+E392  F1 FC     SBC ($FC),Y      ;   off the voice's frequency
+E394  9D 75 E5  STA $E575,X
+E398  BD A2 EC  LDA $ECA2,X
+E39B  F1 FC     SBC ($FC),Y
+E39D  9D A2 EC  STA $ECA2,X
+```
+
+One entry per frame, two bytes or three. ACE II instrument 1's program reads
+`81 40 | 41 80 03 | 40 00 02 | 40 55 05 ...` — noise+gate at frequency high
+`$40`, then pulse+gate falling by `$0380`, then gate off and falling further.
+**This one is a wavetable**, and Goattracker's carries the waveform column
+exactly. The pitch column is where it stops being a translation: the player
+subtracts a raw 16-bit frequency, Goattracker's right side names a *note*, and
+the two are only the same thing at one pitch. Encodable, unencoded, and
+unmeasured — the decision belongs to a controlled A/B on two files, not to a
+reading.
+
+**One file: a stepped frequency table.** Delta `$C1EC` decrements a per-voice
+counter (`$C351,X`) and, on the frame it goes negative, reloads it from
+`$C43E,Y` while adding `$C43F,Y` to the voice's frequency-high cell
+(`$C34B,X`) — a table-walked sweep in the family of § 7.ee's vibrato, two
+bytes per entry, duration and delta.
+
+`detect._find_effect_bit80` lands all three as `Detection.effect_bit80`
+("sfx" / "program" / "pitch") plus `effect_program`, the pointer array's
+offset. `goatwriter` consumes none of it, for the reason § 7 has now recorded
+three times: resolve what the byte means from the 6502, then decide
+separately, by measurement, whether the target format should carry it. The
+difference here is that for nine of the twelve files the measurement is not
+needed — the block is not part of the tune.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

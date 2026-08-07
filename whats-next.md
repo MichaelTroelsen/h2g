@@ -367,14 +367,33 @@ something else.
 
 ## 4. Wavetable Phase 2 — what is left
 
-- **Bit `$08`'s pulse-width variant.** Selects between a triangle sweep into
-  `$D403` and an `ADC`-accumulate of `+6` into the instrument's own `+0`
-  written to `$D402`, storing the total **back into the record** — so `+0`
-  cannot be read statically in those 21 files. Needs the pulse table's
-  two-entries-per-instrument layout changed.
-- **Bit `$80`** drives a hard-coded voice-3 noise hit plus global
-  filter/volume off a global state byte, which no per-instrument wavetable can
-  express.
+- ~~**Bit `$08`'s pulse-width variant.**~~ **Shipped in v0.5.80**, one version
+  before this session began; the bullet below it was carried stale for five
+  handoffs. `goatwriter._pulse_lo_program` fires on **294 records across 21
+  files**, and **no file** carries both it and the triangle sweep. The
+  two-entries-per-instrument layout it needed changed in the same version
+  (`_pulse_layout` returns start positions, not a stride).
+- ~~**Bit `$80`** … which no per-instrument wavetable can express.~~ **That
+  sentence was true of 9 of the 12 files and false of 3.** All twelve blocks
+  are now disassembled — method-doc § 7.jj, `detect._find_effect_bit80`,
+  `tests/test_effect_bit80.py`:
+  - **9 files — the *game's* sound effect, not the tune's.** A global counter
+    cell driving fixed writes to `$D40F`/`$D412`/`$D416`/`$D418` (voice-3
+    noise + filter + master volume). Nothing in a rip ever writes that cell,
+    so the block is dead code, and converting it would be wrong even if the
+    format allowed it. **Closed: the right encoding is no encoding.**
+  - **2 files — a real per-instrument byte-code wave program** (ACE II
+    `$E357`, Auf Wiedersehen Monty `$E743`). 16-bit pointer per record, per-
+    voice PC, one entry per frame: `$85` holds, `>= $80` is (waveform →
+    `$D404`, next → `$D401`), `< $80` is (waveform, 16-bit `SBC` off the
+    frequency). **This is the one open piece of Phase 2.** The waveform column
+    maps to a Goattracker wavetable exactly; the pitch column is a raw
+    frequency delta against a note-named right side, so it can only be
+    approximated. Encode it behind `--effects`, A/B the two files with
+    `fidelity.py --baseline`, ship only if it wins. Do not ship it unmeasured.
+  - **1 file — a stepped frequency table** (Delta `$C1EC`): per-voice counter,
+    on expiry reload duration from `$C43E,Y` and add `$C43F,Y` to the voice's
+    frequency high. Same family as § 7.ee's vibrato. One file; low priority.
 - **Do not re-derive and re-ship the shelved encodings** — but see §3: one of
   the two measurements is now known to have tested the wrong thing.
 
