@@ -632,9 +632,18 @@ Warhawk 8, Spellbound 11, Las_Vegas 3.
   is a pattern-decoding question and not a tempo one. Where `--pace` and the
   cycle profile disagree, the profile wins: it measures the original alone and
   owes nothing to what we emitted.
-- **Action_Biker is a different shape** and unresolved: it branches `BMI` and
-  jumps to a lighter routine instead of returning, so "skipped" and "run" are
-  not the two states the others have.
+- **Action_Biker closes too, and it has no skip at all (v0.5.112).** Its
+  `JMP $C28D` lands on a bare `RTS`, so the "light path" is the same
+  return-immediately skip the others use — but its reload comes from `$C000`,
+  which **holds 0**. A counter reloaded with 0 underflows every frame, so the
+  heavy path runs every frame and the counter is inert. `$C000` is a game
+  variable at the load address; nothing in a PSID rip writes it.
+
+  Measured, its tick period is exactly its gate: local maxima in the cycle
+  profile are **331 of 331 gaps of 3**, and grouping frame cost by index mod N
+  gives a 21% spread at N=3 and a flat profile at 2, 4 and 5. The gate reads 3.
+  `--pace`'s 3.75 is 1.25x that — the same rows-per-note confound as
+  Spellbound.
 
 ### `$02A6` — the corpus scanned, and two more files leave the set
 
@@ -654,8 +663,11 @@ moves until something asks for `-v1`.
 | `Bump_Set_Spike` | same idiom at `$B006` — but the PSID play address is `$B016`, **past it** | never executed from a play call. Its real skip has period 10, and 3 x 10/9 = **3.33**, its measured value exactly. **Closes.** |
 | `Skate_or_Die_intro` | `LDX $02A6` indexes tuning constants into three self-modified sites | affects pitch, not rate. Worth remembering next to its known frequency-table shift |
 
-So the unexplained set is down to **Action_Biker** alone (`BMI` to a lighter
-routine rather than a return, so "skipped" and "run" are not its two states). Everything else timed is either explained by the skip
+**The unexplained set is now empty.** Every timed discrepancy is accounted
+for: the skip mechanism above the gate or at the play entry (Tarzan,
+Deep_Strike, Delta, ACE_II, Warhawk, Las_Vegas, Bump_Set_Spike and the rest),
+an NTSC artefact (Phantoms), or `--pace`'s rows-per-note confound (Spellbound,
+Action_Biker). Everything else timed is either explained by the skip
 arithmetic or was the harness.
 
 ### v0.5.110 — `-v1` is now the default, and the re-measurement
@@ -684,6 +696,22 @@ bound the default at definition time, so `--ntsc` did nothing and the two
 columns printed identically. The A/B was what exposed it — had the
 re-measurement been run one way only, the numbers would have been right by
 accident and the flag silently dead.
+
+## 7c. Rows per note — the item §7b turned into
+
+Two files are now known to give a note **more rows than the player gives it
+duration units**: Spellbound by about 4/3, Action_Biker by 5/4. Both were
+misread as row-length defects because `--pace` measures the product of the two
+and the tight IQR made it look settled.
+
+This is a pattern-decoding question, and it is testable without `--pace`: the
+player's units per note are in its pattern data, and our rows per note are in
+the `.sng`. Compare them directly rather than inferring from timing. The gate
+values for both files are **correct**, so nothing in `find_song_speeds` is at
+fault here.
+
+Do not reach for `--pace` to measure a fix. It cannot see the difference
+between the two factors, which is what caused the misattribution.
 
 ## 8. Four players have no expressible rate
 

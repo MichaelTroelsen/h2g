@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.112 — 2026-08-07
+
+- Action_Biker closes: its skip counter reloads 0 and is inert
+
 ## 0.5.111 — 2026-08-07
 
 - Spellbound closes; --pace cannot separate rows-per-note from row length
