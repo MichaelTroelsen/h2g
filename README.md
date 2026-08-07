@@ -1,5 +1,15 @@
 # H2G — Hubbard 2 Goattracker
 
+> This repository is the home of H2G. Its history up to v0.5.104 was extracted
+> from the `hubbard/` directory of
+> [SIDDetector2](https://github.com/MichaelTroelsen/SIDDetector2), where the
+> copy is now a tombstone — do not edit it.
+>
+> The 95-tune Hubbard corpus the tests and reports are built against is **not**
+> in this repository; it is an HVSC-derived collection that lives elsewhere.
+> Point `H2G_CORPUS` at it. Without it the suite still runs and passes — the
+> corpus sweeps skip.
+
 Converts Commodore 64 `.sid` files containing music by **Rob Hubbard** into
 Bitops **Goattracker** (`.sng`, v2.34+) format.
 
