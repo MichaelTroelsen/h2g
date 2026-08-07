@@ -19,6 +19,7 @@ the census -- 56 of 95 files, masks $78 and $07 in all 56, and all 56 also
 carrying the note-relative depth.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -31,7 +32,7 @@ from h2g.goatwriter import (FORMAT_GTS2, FORMAT_GTS5, GT_MAX_VIB_SHIFT,
 from h2g.search import search_file
 from h2g.sidfile import load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 
 
 class _FakeSid:

@@ -20,6 +20,7 @@ These tests pin the boundary against what the *music* asks for, which is the
 only check independent of the arithmetic that produced it.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
@@ -29,7 +30,7 @@ from h2g.detect import WAVEFORMS, detect
 from h2g.sidfile import load_sid
 from presets import FIXED, _parse
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
 

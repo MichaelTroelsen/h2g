@@ -5,7 +5,9 @@ pinning here is every way it can go wrong, because each one was reached by
 measurement before it was reached by argument.
 """
 import json
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 from pathlib import Path
+
 
 import pytest
 
@@ -15,7 +17,7 @@ from h2g.goatwriter import (GT_MAX_FILT, MAX_INSTRUMENTS, FILT_SET_PARAMS,
                             FILT_SET_CUTOFF, FILT_STOP, _filter_entries)
 from h2g.sidfile import load_sid
 
-CORPUS = Path(r"C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob")
+CORPUS = _CORPUS
 REPO = Path(__file__).resolve().parents[2]
 
 pytestmark = pytest.mark.skipif(not CORPUS.is_dir(),

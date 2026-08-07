@@ -18,6 +18,7 @@ peak-to-peak `(cmpvalue + 2) * speed` over a period of `2 * (cmpvalue + 2)`
 calls. See goatwriter.VIBRATO_CMP_BIAS.
 """
 import math
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import pathlib
 import sys
 
@@ -33,7 +34,7 @@ from h2g.goatwriter import (FORMAT_GTS2, FORMAT_GTS5, GT_MAX_VIB_SHIFT,
 from h2g.search import search_file
 from h2g.sidfile import load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 # The two files that carry it, and the four tables both of them carry.
 TABLE_FILES = ("Hollywood_or_Bust", "Chicken_Song")
 SHAPES = ((4, 1), (6, 2), (8, 2), (10, 3))
@@ -230,6 +231,7 @@ def test_a_player_with_neither_form_gets_none():
 
 # --- against the corpus -----------------------------------------------------
 
+@needs_corpus
 def test_both_files_carry_it_at_record_plus_five():
     for name in TABLE_FILES:
         sid = load_sid(str(CORPUS / f"{name}.sid"))
@@ -239,6 +241,7 @@ def test_both_files_carry_it_at_record_plus_five():
         assert det.table_vibrato.offset == 5, name
 
 
+@needs_corpus
 def test_both_files_carry_the_same_four_triangles():
     for name in TABLE_FILES:
         sid = load_sid(str(CORPUS / f"{name}.sid"))
@@ -247,6 +250,7 @@ def test_both_files_carry_the_same_four_triangles():
         assert tv.unit_shift == UNIT_SHIFT, name
 
 
+@needs_corpus
 def test_the_unit_shift_is_counted_rather_than_assumed():
     # It is the 16 in the excursion arithmetic: a player shifting by 3 would
     # bend twice as far for the same parameter byte, so it is read off the
@@ -262,6 +266,7 @@ def test_the_unit_shift_is_counted_rather_than_assumed():
     assert pairs == UNIT_SHIFT
 
 
+@needs_corpus
 def test_it_is_consulted_only_where_the_classic_form_found_nothing():
     # The same rule find_relocation and the instrument-index shape follow: it
     # can rescue a file that vibrates not at all and never disturb one that
@@ -272,6 +277,7 @@ def test_it_is_consulted_only_where_the_classic_form_found_nothing():
     assert det.table_vibrato is None
 
 
+@needs_corpus
 def test_no_other_corpus_file_matches_the_shape():
     # Two files, and the whole corpus checked rather than the two asserted:
     # a shape this long matching a third player would be news either way.
@@ -284,6 +290,7 @@ def test_no_other_corpus_file_matches_the_shape():
     assert matched == sorted(TABLE_FILES)
 
 
+@needs_corpus
 def test_the_files_that_do_not_match_get_nothing_from_it():
     for name in ("Commando", "Warhawk", "Delta"):
         sid = load_sid(str(CORPUS / f"{name}.sid"))
@@ -291,6 +298,7 @@ def test_the_files_that_do_not_match_get_nothing_from_it():
         assert _find_table_vibrato(sid, det) is None, name
 
 
+@needs_corpus
 def test_hollywood_or_bust_emits_the_entries_its_records_ask_for():
     # Seven of twenty records carry a parameter byte; those seven collapse to
     # three distinct speed-table entries.

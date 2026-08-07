@@ -13,6 +13,7 @@ identical to the decimal before and after. The evidence that it works is the
 `Pul` column of siddump, which moves from 1% of the original's changes to 60%.
 """
 from pathlib import Path
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 
 import pytest
 
@@ -25,7 +26,7 @@ from h2g.goatwriter import (GT_MAX_PULSE_SPEED, GT_MAX_PULSE_TICKS,
                             _split_ticks)
 from h2g.sidfile import SidFile, load_sid
 
-CORPUS = Path(r"C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob")
+CORPUS = _CORPUS
 COMMANDO = Path(__file__).resolve().parents[2] / "Commando.sid"
 
 STRIDE = 8
@@ -207,6 +208,7 @@ def test_a_full_table_keeps_the_instrument_and_loses_only_its_sweep():
 
 # --- against the real players ----------------------------------------------
 
+@needs_corpus
 def test_the_sweep_is_found_in_the_corpus_and_the_rate_is_record_plus_six():
     sids = sorted(CORPUS.glob("*.sid"))
     if not sids:

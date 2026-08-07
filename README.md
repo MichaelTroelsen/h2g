@@ -1045,6 +1045,19 @@ regenerate it after bumping so the committed docs match the committed version.
 cd python && python -m pytest tests/ -q
 ```
 
+**The 95-tune Hubbard corpus is not in this repository.** It is an
+HVSC-derived collection belonging elsewhere, so the tests point at it rather
+than vendor it: set `H2G_CORPUS` to the directory holding the `.sid` files.
+Without it the fourteen test files that sweep the corpus **skip** and the rest
+still run — 579 pass, 32 skip on a corpus-less checkout — so a fresh clone is
+green. Before v0.5.103 each of those files spelled out one machine's absolute
+path and five of them had no existence check at all, which made a clone
+without the corpus fail rather than skip.
+
+`tests/corpus.py` is the single definition. A new corpus-dependent test wants
+`from corpus import CORPUS, needs_corpus` and the `@needs_corpus` marker — not
+a bare `if not CORPUS.is_dir(): return`, which passes a test that never ran.
+
 The suite runs the real CLI as a subprocess, in three layers of increasing
 strength:
 

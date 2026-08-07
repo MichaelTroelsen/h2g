@@ -19,11 +19,13 @@ converting it would be wrong.
 `goatwriter` consumes none of this. See H2G-CONVERSION-METHOD.md section 7.jj.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
+
 
 from h2g.detect import detect
 from h2g.sidfile import load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 
 SFX = ["ACE_II", "Auf_Wiedersehen_Monty", "Bangkok_Knights", "Delta",
        "IK_plus", "Mega_Apocalypse", "Nineteen", "Pandora", "Ricochet",

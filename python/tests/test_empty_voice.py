@@ -19,14 +19,16 @@ one such voice, and Rasputin is the worst: subtunes 0 and 1 invalid, `songs`
 the packed .sid with no layer reporting it.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+
 from h2g.patterns import DEFAULT_TRACK, GT_ORDER_RESTART
 from h2g.tracks import ensure_playable_orderlists
 
-CORPUS = pathlib.Path(r"C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob")
+CORPUS = _CORPUS
 
 
 def _songlen(track):
@@ -107,6 +109,7 @@ def test_nothing_is_logged_when_nothing_changes():
 
 # --- end to end ------------------------------------------------------------
 
+@needs_corpus
 def test_rasputin_keeps_every_subtune_without_legal_restart():
     """The regression itself, at default options.
 

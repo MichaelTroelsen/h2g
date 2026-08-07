@@ -14,6 +14,7 @@ and can never disturb one that reads correctly -- 45 of the 95 corpus files
 have a findable set of init writes and exactly one has them applied.
 """
 import struct
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 
 from h2g.convert import _detect_tables, _tables_readable
 from h2g.detect import Detection
@@ -147,6 +148,7 @@ def test_writes_that_change_no_byte_stage_nothing():
     assert sid.with_init_writes() is None
 
 
+@needs_corpus
 def test_a_file_that_already_reads_its_tables_is_never_patched():
     """The whole safety argument: the fallback is unreachable for a working file."""
     seen = []
@@ -171,7 +173,7 @@ def test_a_file_that_already_reads_its_tables_is_never_patched():
 
 # --- the file this was built for -------------------------------------------
 
-CORPUS = r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob/Devils_Galop.sid"
+CORPUS = str(_CORPUS / "Devils_Galop.sid")
 
 
 def _devils_galop():

@@ -27,14 +27,16 @@ table sits within 7 cents of the semitone grid and an NTSC one 65 cents off
 it.
 """
 import pathlib
+from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+
 from h2g.detect import detect
 from h2g.sidfile import GT_FREQ0, find_freq_table, load_sid
 
-CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+CORPUS = _CORPUS
 COMMANDO = pathlib.Path(__file__).resolve().parents[2] / "Commando.sid"
 
 # 12 * log2(985248 / 1022727): a table written for NTSC, read at PAL.
