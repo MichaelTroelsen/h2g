@@ -534,6 +534,88 @@ subtune starts from. Turning the flag on there raises melody 15% → 19% and
 drops waveform agreement 29% → 0%. Use it on single-tune rips; the two files
 it was derived from are both of those.
 
+### `--filter` (the filter, which was never emitted at all)
+
+Hubbard drives the SID filter in **32 of the 95 corpus files**, and every one
+of them has always been converted with the filter switched off: `goatwriter.py`
+wrote a hard-coded empty filter table for every file it has ever produced.
+The notes were right and the sound was not.
+
+The data is per instrument, in a two-byte array parallel to the instrument
+table and indexed by the same `i * instr_stride`. One routine reads it, and it
+is the same routine in every player that has it -- Deep Strike `$C376`, and 23
+more files identical apart from the operands:
+
+```
+C376  BD E9 C4  LDA cutoff,X      ; per-VOICE running cutoff
+C379  18        CLC
+C37A  79 56 C5  ADC step,Y        ; += this instrument's sweep step
+C37D  9D E9 C4  STA cutoff,X      ; accumulate back
+C380  8D 16 D4  STA $D416         ; cutoff HIGH byte only
+C383  B9 55 C5  LDA resctl,Y      ; this instrument's resonance/routing
+C386  8D 17 D4  STA $D417
+```
+
+`resctl` is always exactly `step - 1` -- one array, byte +0 resonance and
+routing, byte +1 the signed per-frame step. That held in **24 of 24** files the
+shape matched, which is what proves the layout rather than assuming it. Only
+`$D416` is written; the low three bits of cutoff at `$D415` are untouched in 26
+of the 32 filter-using files, and Goattracker's filter-table cutoff is likewise
+a single byte, so the value transfers without scaling.
+
+Goattracker expresses that as three steps -- set passband and resonance, set
+cutoff, modulate -- which is what this flag emits, one block per filtered
+instrument.
+
+**The gate is the player's own.** The routine runs only for an instrument whose
+status byte has bit `$20` set (`LDA status / AND #$20 / BEQ past`). Reading the
+array without that test invents a filter: Powerplay Hockey and Wiz both carry
+the routine *and* plausible-looking array data while their originals never turn
+the filter on, and an earlier version of this flag gave Powerplay five filtered
+instruments and 497 cutoff writes against an original that writes it once.
+With the gate, both come out untouched.
+
+Applied only where the routine, its passband and the cutoff each note starts
+from can all be read. That is 15 files; 10 of them gain an audible filter and
+the other 5 have no instrument with the bit set. Measured against the original
+over 60 s, in cutoff writes:
+
+| file | original | before | after |
+|---|---:|---:|---:|
+| I_Ball | 2752 | 1 | 2993 |
+| IK_plus | 2916 | 1 | 2993 |
+| Pandora | 2831 | 1 | 2993 |
+| Trans-Atlantic_Balloon_Challenge | 2759 | 1 | 2961 |
+| Nemesis_the_Warlock | 2105 | 1 | 1969 |
+| ACE_II | 2860 | 1 | 1915 |
+| Nineteen | 2224 | 1 | 1841 |
+| Star_Paws | 2777 | 1 | 1674 |
+| Thundercats | 2489 | 1 | 1371 |
+| Deep_Strike | 481 | 1 | 1515 |
+| **Powerplay_Hockey** (never filters) | **1** | **1** | **1** |
+
+Deep Strike is the one that overshoots: a Goattracker modulation step runs for
+a fixed number of ticks and the player's sweep is bounded by its own counter,
+so a file whose sweep is short gets a longer one here. The others land in the
+right order of magnitude.
+
+**What this cannot express.** The player accumulates the cutoff *per voice*;
+Goattracker has one filter and one cutoff for the whole tune. That is the SID
+chip's limit rather than the format's -- the original has the same single
+filter and the same last-writer-wins race between voices -- but it does mean
+two instruments sweeping at once come out as whichever was struck last. The
+passband is also fixed per file here, so the files that alternate lowpass and
+bandpass per note (I_Ball, IK+, Pandora, Star_Paws, Thundercats,
+Trans-Atlantic, Nineteen) keep whichever the mode register was set to.
+
+**`FIDELITY.md` cannot see any of this.** Its `wave` column compares the
+waveform *class* and explicitly ignores the filter; melody, sequence and pitch
+compare note attacks. Every column is unchanged by this flag. The evidence that
+it works is the cutoff-write table above and the disassembly, not the report.
+
+Off by default: it changes the output bytes of the 15 files it reaches, and
+`Commando.sng` -- which has no filter routine -- is byte-identical either way.
+
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
 The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`

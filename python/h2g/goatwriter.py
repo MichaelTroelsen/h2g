@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from .detect import Detection
+from .detect import Detection, FILTER_ENABLE_BIT
 from .sidfile import SidFile
 
 HEADER_LEN = 0x64
@@ -378,7 +378,8 @@ def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
 
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        log=None, sustain_exact: bool = False,
-                       no_hard_restart: bool = False) -> int:
+                       no_hard_restart: bool = False,
+                       filter_ptrs: dict | None = None) -> int:
     available = det.instr_used + 1
     instr_used = min(available, MAX_INSTRUMENTS)
     if log and available > instr_used:
@@ -427,7 +428,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # $0F00 appears in none of the corpus originals and is the most common
         # ADSR value in every conversion without this flag.
         gatetimer = 0x82 if no_hard_restart else 0x02
-        out += bytes([ad, sr, wave_ptr, pulse_ptr, 0x00, 0x00, 0x00,
+        filt_ptr = (filter_ptrs or {}).get(i, 0x00)
+        out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, 0x00, 0x00,
                       gatetimer, 0x09])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
@@ -660,6 +662,77 @@ def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: 
         out.append(0x00)
 
 
+# Goattracker's filter table is bounded by MAX_FILT, not MAX_TABLELEN
+# (gcommon.h:26), and it is the only table with a limit that low -- which is
+# why entries are spent only on instruments whose routing byte actually routes
+# a channel, rather than one block per instrument as wave and pulse do.
+GT_MAX_FILT = 64
+
+# Goattracker filter-table left side (readme.txt:905-913):
+FILT_SET_CUTOFF = 0x00   # right side is the cutoff
+FILT_SET_PARAMS = 0x80   # | passband; right side is resonance/routing
+FILT_STOP = 0xFF
+# "For N ticks, change cutoff by the signed right side." $7F is the longest a
+# single step can run, and the sweep is meant to last the note, so one maximal
+# step is the closest a static table gets to a per-frame accumulation.
+FILT_MODULATE = 0x7F
+
+
+def _filter_entries(sid: SidFile, det: Detection, instr_used: int):
+    """(entries, pointers) for the filter table, or ([], {}) when unreadable.
+
+    The player adds a per-instrument step to a per-voice cutoff accumulator
+    every frame and writes the result to $D416; Goattracker's filter table
+    expresses exactly that as "set params, set cutoff, modulate". What it
+    cannot express is the accumulator being *per voice* -- Goattracker has one
+    filter and one cutoff for the whole tune, as the SID chip does, so two
+    voices sweeping at once come out as whichever instrument was struck last.
+    That is the chip's limit, not the format's: the original has the same
+    single filter and the same last-writer-wins race.
+    """
+    filt = det.filter
+    if filt is None:
+        return [], {}
+    data = sid.data
+    entries: List[tuple] = []
+    pointers: dict = {}
+    for i in range(max(instr_used - 1, 0)):
+        base = filt.offset + i * det.instr_stride
+        if base + 1 >= len(data):
+            break
+        status = filt.status + i * det.instr_stride
+        if status >= len(data):
+            break
+        # The player's own switch, not ours: it runs the whole filter block
+        # only for an instrument whose status byte has bit $20 set. Reading the
+        # array without this test gives a plausible resonance byte for every
+        # instrument in every file that merely *contains* the routine.
+        if not data[status] & FILTER_ENABLE_BIT:
+            continue
+        resctl, step = data[base], data[base + 1]
+        if not resctl & 0x0F:
+            continue  # routes no voice through the filter: nothing to hear
+        block = [(FILT_SET_PARAMS | filt.passband, resctl),
+                 (FILT_SET_CUTOFF, filt.cutoff)]
+        if step:
+            block.append((FILT_MODULATE, step))
+        block.append((FILT_STOP, 0x00))
+        if len(entries) + len(block) > GT_MAX_FILT:
+            break
+        pointers[i] = len(entries) + 1  # table steps are 1-based
+        entries += block
+    return entries, pointers
+
+
+def _write_filtertable(out: bytearray, entries: List[tuple]) -> None:
+    if not entries:
+        out += bytes([0x02, 0x11, 0xFF, 0x22, 0x01])  # empty filter table
+        return
+    out.append(len(entries))
+    out += bytes(left for left, _ in entries)
+    out += bytes(right for _, right in entries)
+
+
 def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
     """Largest instrument number any pattern row selects (column 1 of 4)."""
     highest = 0
@@ -676,7 +749,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               speed_table: List[tuple] | None = None,
               effects: bool = False,
               sustain_exact: bool = False,
-              no_hard_restart: bool = False) -> bytes:
+              no_hard_restart: bool = False,
+              filters: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -694,8 +768,17 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
+    # The filter table has to be built before the instruments, because each
+    # instrument record carries the table step it starts on -- but it is
+    # written after them, with the other tables.
+    if filters:
+        filter_entries, filter_ptrs = _filter_entries(
+            sid, det, min(det.instr_used + 1, MAX_INSTRUMENTS))
+    else:
+        filter_entries, filter_ptrs = [], {}
+
     instr_used = _write_instruments(out, sid, det, log, sustain_exact,
-                                    no_hard_restart)
+                                    no_hard_restart, filter_ptrs)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table)
     _write_pulsetable(out, sid, det, instr_used)
 
@@ -708,7 +791,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             log(f"*** PATTERNS REFERENCE INSTRUMENT ${highest:X} BUT ONLY "
                 f"${instr_used:X} WERE WRITTEN -- {highest - instr_used} DANGLING ***")
 
-    out += bytes([0x02, 0x11, 0xFF, 0x22, 0x01])  # empty filter table
+    _write_filtertable(out, filter_entries)
     if fmt == FORMAT_GTS5:
         # Fourth table (STBL), stored only in GTS3+. A GTS2 file has none: its
         # loader builds one while reading, both from each instrument's vibrato

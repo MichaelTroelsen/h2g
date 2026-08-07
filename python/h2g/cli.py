@@ -94,6 +94,18 @@ def main(argv=None) -> int:
              "and is a no-op for the rest. Off by default: it changes the "
              "output bytes of the files it does reach")
     parser.add_argument(
+        "--filter", dest="filters", action="store_true",
+        help="emit the player's filter instead of an empty filter table. "
+             "Hubbard keeps a resonance/routing byte and a signed per-frame "
+             "cutoff step per instrument, in a two-byte array parallel to the "
+             "instrument table; 32 of the 95 corpus files drive the filter and "
+             "every one of them has always been written with the filter "
+             "switched off. Applied only where the routine, its passband and "
+             "the cutoff each note starts from can all be read (16 files), and "
+             "only to instruments whose routing byte actually routes a voice. "
+             "Off by default: it changes the output bytes of the files it "
+             "does reach")
+    parser.add_argument(
         "--effects", action="store_true",
         help="read the instrument effect byte (+7) as each player really "
              "reads it, instead of as Warhawk's bit-field for every file. Bit "
@@ -216,7 +228,8 @@ def main(argv=None) -> int:
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
-                          ("--no-hard-restart", "no_hard_restart")):
+                          ("--no-hard-restart", "no_hard_restart"),
+                          ("--filter", "filters")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -267,7 +280,8 @@ def main(argv=None) -> int:
                       fold_transpose=args.fold_transpose,
                       initial_instrument=args.initial_instrument,
                       sustain_exact=args.sustain_exact,
-                      no_hard_restart=args.no_hard_restart)
+                      no_hard_restart=args.no_hard_restart,
+                      filters=args.filters)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

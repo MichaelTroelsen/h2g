@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.72 — 2026-08-07
+
+- read the player's filter into Goattracker's filter table
+
 ## 0.5.71 — 2026-08-07
 
 - read the envelope: the sustain nibble, and Goattracker's hard restart

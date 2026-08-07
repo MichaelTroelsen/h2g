@@ -98,6 +98,10 @@ class Detection:
     # names it (INSTRUMENT_INDEX_SHAPE) is not present. See
     # tracks.apply_initial_instruments.
     initial_instruments: Tuple[int, ...] = ()
+    # The per-instrument filter array, once located. None in the 71 corpus
+    # files whose player either has no filter routine or whose sweep origin
+    # cannot be read statically -- see find_filter().
+    filter: "FilterInfo | None" = None
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -747,7 +751,130 @@ def detect(sid: SidFile, log: Logger) -> Detection:
             log(f"Note frequency table....: ${ft.addr:04X}, tuned "
                 f"{-100 * ft.detune:.0f} cents flat of Goattracker's")
 
+    det.filter = find_filter(sid, det)
+    if det.filter is not None:
+        f = det.filter
+        log(f"Filter..................: ${f.addr:04X}, stride "
+            f"{det.instr_stride}, passband ${f.passband:02X}, "
+            f"cutoff starts at ${f.cutoff:02X}")
+
     return det
+
+
+# --- Filter ---------------------------------------------------------------
+#
+# Hubbard's filter is per instrument, in a two-byte-per-record array parallel
+# to the instrument table and indexed by the same `i * instr_stride`. The
+# routine that reads it is the same in every player that has it -- Deep Strike
+# $C376, and 23 more files byte-for-byte apart from the operands:
+#
+#     C376  BD E9 C4  LDA cutoff,X      ; per-VOICE running cutoff
+#     C379  18        CLC
+#     C37A  79 56 C5  ADC step,Y        ; += this instrument's sweep step
+#     C37D  9D E9 C4  STA cutoff,X      ; accumulate back
+#     C380  8D 16 D4  STA $D416         ; cutoff HIGH byte only
+#     C383  B9 55 C5  LDA resctl,Y      ; this instrument's resonance/routing
+#     C386  8D 17 D4  STA $D417
+#
+# `resctl` is always exactly `step - 1` -- one array, byte +0 resonance and
+# routing, byte +1 the signed per-frame step. That held in 24 of 24 files the
+# shape matched, which is what proves the layout rather than assuming it.
+#
+# Y is the instrument index scaled by the record stride: the players shift it
+# left three times (x8) and the one digi player that has the routine shifts
+# four (x16), matching det.instr_stride in every case.
+#
+# Only $D416 is written -- the low three bits of cutoff at $D415 are untouched
+# in 26 of the 32 filter-using files -- and Goattracker's filter table cutoff
+# is likewise a single byte, so the value transfers without scaling.
+# The routine is entered only when bit $20 of the instrument's status byte is
+# set -- `LDA status / AND #$20 / BEQ past`. That bit is the player's own
+# per-instrument filter switch, and it is the gate that matters: a file can
+# carry the routine and the array and still never filter anything, which is
+# what Powerplay Hockey and Wiz do. Reading the array without this test
+# invents a filter for both of them.
+FILTER_SHAPE = ("AD ?? ?? 29 20 F0 ?? BD ?? ?? "
+                "18 79 ?? ?? 9D ?? ?? 8D 16 D4 B9 ?? ?? 8D 17 D4")
+
+# `LDA status_array,Y / STA status` -- how that byte is loaded for the
+# instrument about to be played, which names the per-instrument array.
+FILTER_STATUS_SHAPE = "B9 ?? ?? 8D {lo:02X} {hi:02X}"
+
+FILTER_ENABLE_BIT = 0x20
+
+# `LDA #imm / STA cutoff,X` at note start: the cutoff every note begins from.
+# Without it the sweep has no origin -- Goattracker would carry whatever the
+# previous instrument left -- so a file whose start value cannot be read is
+# left alone rather than given an invented one.
+FILTER_CUTOFF_SHAPES = ("A9 ?? 9D {lo:02X} {hi:02X}", "A9 ?? 8D {lo:02X} {hi:02X}")
+
+# `LDA #imm / STA $D418`: mode nibble (bit 4 lowpass, 5 bandpass, 6 highpass)
+# plus master volume. Goattracker's filter-table left side is $80 | those same
+# three bits, so the passband maps across unshifted.
+FILTER_MODE_SHAPE = "A9 ?? 8D 18 D4"
+
+
+@dataclass
+class FilterInfo:
+    addr: int      # C64 address of the parallel array (resonance byte of #0)
+    offset: int    # the same, as an offset into sid.data
+    passband: int  # $D418 & $70
+    cutoff: int    # the value every note's sweep starts from
+    status: int    # offset of the per-instrument status array (bit $20 = on)
+
+
+def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
+    """The per-instrument filter array, or None when the player has no filter.
+
+    Under-reads by design: every gate here can only refuse a file, so a player
+    without the routine, without a readable start cutoff, or without a mode
+    write keeps the empty filter table it has always had.
+    """
+    if det.instr_start < 0:
+        return None
+    data = sid.data
+    i = search_file(data, FILTER_SHAPE)
+    if i <= -1:
+        return None
+
+    status_var = data[i + 1] | data[i + 2] << 8
+    step = data[i + 12] | data[i + 13] << 8
+    cutoff_var = data[i + 15] | data[i + 16] << 8
+    resctl = data[i + 21] | data[i + 22] << 8
+    # The layout claim, tested rather than assumed: one array, resonance then
+    # step. A file where the two operands are not adjacent is reading some
+    # other pair of tables and is not ours to interpret.
+    if resctl != step - 1:
+        return None
+
+    j = search_file(data, FILTER_MODE_SHAPE)
+    if j <= -1:
+        return None
+    passband = data[j + 1] & 0x70
+    if not passband:
+        return None  # filter switched off at the mode register: nothing to say
+
+    cutoff = -1
+    for shape in FILTER_CUTOFF_SHAPES:
+        k = search_file(data, shape.format(lo=cutoff_var & 0xFF,
+                                           hi=cutoff_var >> 8))
+        if k > -1:
+            cutoff = data[k + 1]
+            break
+    if cutoff < 0:
+        return None
+
+    m = search_file(data, FILTER_STATUS_SHAPE.format(lo=status_var & 0xFF,
+                                                    hi=status_var >> 8))
+    if m <= -1:
+        return None
+    status = sid.to_offset(data[m + 1] | data[m + 2] << 8)
+
+    offset = sid.to_offset(resctl)
+    if not 0 <= offset < len(data) or not 0 <= status < len(data):
+        return None
+    return FilterInfo(addr=resctl, offset=offset, passband=passband,
+                      cutoff=cutoff, status=status)
 
 
 # The pattern-fetch shape that consumes a second operand byte. Warhawk $10EC:
