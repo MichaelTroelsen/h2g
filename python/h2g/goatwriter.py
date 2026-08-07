@@ -702,16 +702,23 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         136D  LDA $15B1,X / BEQ out       ; per-voice drum counter, still running?
         1372  LDA $1576,X / BEQ out       ; drum length, set?
         1377  LDA $1579,X / AND #$1F / SEC / SBC #$01 / CMP $1576,X
-        1385  BCC $1397                   ; late in the note -> the noise ending
+        1385  BCC $1397                   ; R still large -> EARLY in the note
         1387  LDA $15B1,X / DEC $15B1,X / STA $D401,Y  ; freq HI -= 1 per frame
         1390  LDA $157C,X / AND #$FE / BNE $139F       ; the voice's own waveform
         1397  LDA $15B1,X / STA $D401,Y / LDA #$80     ; ... or noise
         139F  STA $D404,Y
 
     So the drum is the voice's own waveform with the gate released and the
-    frequency falling one high byte per frame -- and noise either at the end
-    (the BCC branch) or throughout, when the waveform masked to `& $FE` is
-    zero. H2G's version was a single noise tick *first* and then the waveform,
+    frequency falling one high byte per frame -- and noise at the *start* (the
+    BCC branch, taken while the remaining-duration counter is still large),
+    or throughout, when the waveform masked to `& $FE` is zero.
+
+    **The branch direction was recorded backwards until v0.5.90.** `A` is
+    `W - 1` (the note's original duration less one) and `M` is the counter
+    still counting down from `W`, so `BCC` -- taken on `A < M` -- fires while
+    the counter is large, which is the beginning of the note, not its end. The
+    sweep then runs for the rest of it: `W - 1` steps per note against the one
+    this writes. See H2G-CONVERSION-METHOD.md section 7.ii. H2G's version was a single noise tick *first* and then the waveform,
     with no sweep at all.
 
     Emitted here: attack, the gate-off waveform, one step of the sweep, stop.

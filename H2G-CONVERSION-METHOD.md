@@ -1214,6 +1214,17 @@ stands for the whole rest of the note, while the player stops writing `$D404`
 the moment its counter runs out. A literal transcription of one instruction is
 not a faithful transcription of what it does.
 
+> **Correction, v0.5.90: it is not an ending.** Re-reading the branch for
+> § 7.ii shows `BCC` is taken while the remaining-duration counter is still
+> *large* — the beginning of the note. The noise is the drum's **attack** and
+> the sweep runs after it. The measurement above stands as a measurement (that
+> shape scored 58.1% against 60.6%), but it was testing noise at the wrong end,
+> so it is not evidence about the player's actual shape. It also puts the
+> *inherited* leading noise tick — which this section dismissed as "not in the
+> player at all" — back in question. Neither has been re-measured; the drum's
+> five wavetable entries are full, so writing an attack tick means dropping
+> something else, and that trade has not been tried.
+
 The second loss is subtler. Keeping the fabricated tick where no routine was
 found is worth about +0.3 points — but the files that lose most from dropping
 it (`Bangkok_Knights`, `Nineteen`, `Ricochet`) have originals that are 46%
@@ -2070,9 +2081,7 @@ So the sweep was re-measured, this time against pitch rather than waveform:
 
 **Removing it is right for one file and wrong for eight.** Game_Killer and
 Crazy_Comets sit at 1.08x and 1.03x *because* of it and drop to zero without
-it. So the sweep stays, and the three overshooting files are a gating problem —
-the bit says the instrument can drum, not that this note does. Recorded and not
-acted on, because the discriminator is runtime state.
+it. So the sweep stays. What gates it is § 7.ii.
 
 #### `Thrust` at 43x is not an overshoot at all
 
@@ -2112,6 +2121,62 @@ Two smaller things fell out of the same trace and are worth not re-deriving:
 with it on and off), and this file's `pitch` of 100% rests on **4 attacks
 against the original's 2** — a sample too small to mean anything, on a tune
 that is nearly all sustained sweep.
+
+### 7.ii The drum gate: read in full, and not expressible
+
+The block is byte-identical in every file that has it — Warhawk `$1366`,
+Bump_Set_Spike `$B34B`, Gerry_the_Germ `$E2FA` — so the reading below is the
+family's, not one player's:
+
+```
+1366  AD BD 15  LDA effect        ; the effect byte cell
+1369  29 01     AND #$01 / BEQ out
+136D  BD B1 15  LDA freqhi,X / BEQ out      ; guard 1
+1372  BD 76 15  LDA remaining,X / BEQ out   ; guard 2
+1377  BD 79 15  LDA status,X / AND #$1F     ; W, the note's original duration
+137C  38 E9 01  SEC / SBC #$01              ; W-1
+137F  DD 76 15  CMP remaining,X             ; ... against R, counting down
+1385  90 10     BCC noise
+1387  BD B1 15  LDA freqhi,X / DEC freqhi,X / STA $D401,Y   ; the sweep
+```
+
+`R` starts at `W` and counts down, so `W-1 < R` holds **only on the note's
+first frame**. That inverts the reading § 7 shipped with: the noise is the
+*attack*, not the ending, and the 256-unit sweep runs on every frame after it —
+**`W-1` steps per note**, where this converter emits exactly one. Corpus-wide
+the emitted drum is therefore an *under*-render, which is why deleting it costs
+eight files and helps one.
+
+**The condition is not a property of the instrument.** `LDA effect` is
+`AD` — absolute, not `,X`. The cell (`$15BD` in Warhawk, `$B504` in
+Bump_Set_Spike) is written in exactly **one** place in the whole player, the
+note-start path, as `STA abs`. So all three voices share it, and a sweep frame
+— which by construction is a frame with no note start — reads whichever voice
+most recently *started* a note. A Goattracker wavetable is per-instrument and
+cannot carry cross-voice runtime state, so no encoding of it exists.
+
+Three static proxies were tried against the split (Bump_Set_Spike 11.79x,
+Phantoms 4.40x and Gerry_the_Germ 2.29x overshooting; Game_Killer, Crazy_Comets,
+Rasputin, Last_V8, Thing_on_a_Spring benefiting) and **all three are refuted**:
+
+| proxy | result |
+|---|---|
+| the note is one tick long, so only the noise frame runs | no drum-instrument note in any of the three lasts 1 tick — lengths are 2-9 |
+| the share of note-starts made by drum instruments | 30% / 14% / 39% overshooting against 14% / 34% / 23% / 32% / 19% benefiting — overlapping |
+| the `freqhi` guard rejects low notes | Bump_Set_Spike's originals sit at `$02B9` and above, well clear of the guard |
+
+And the probe is not a false positive: Bump_Set_Spike's block is Warhawk's
+byte for byte, its instruments do set bit `$01` (27 of 60 records), and its
+notes are long enough. Its original nevertheless plays **no** 256-unit step in
+ten seconds — its largest frequency delta is `$000D`. The player has the
+routine, the data to trigger it, and does not trigger it, for a reason that is
+not in any byte a ripper reads.
+
+So the sweep stays as measured, and this is the residual: not "the gate is
+unknown" but "the gate is known, and it is cross-voice runtime state". The only
+thing that would settle the three files is running the player — RetroDebugger
+with a watch on the effect cell — which is the same tool §1 wants for the
+`-S2` rates.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 
