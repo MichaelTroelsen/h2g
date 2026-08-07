@@ -145,6 +145,22 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **A score is not a clock.** Every column of `FIDELITY.md` compares
+  *what* is played, never *when*: `melody` is a difflib ratio over a note
+  sequence in a fixed window, and a conversion playing too fast overruns that
+  window and is charged for the surplus while one playing too slow returns a
+  prefix. So a score can prefer the wrong call rate, and in v0.5.99 one did —
+  17 files were written up as "a factor of two out" on that evidence and
+  `fidelity.py <file> --pace` refuted it: timed over difflib-matched notes,
+  32 of those 33 are closest to the original at the rate they are packed for.
+  **Use `--pace` before saying anything about speed, tempo or `-S`.** What it
+  found instead is live: the speed gate `goatwriter.find_song_speeds` reads
+  is **under-read across the corpus** by a tune-specific 1.1–1.5x (gate 2 vs a
+  measured 2.5–3.0 on Tarzan, Delta, ACE II, Deep Strike; gate 3 vs 3.5–4.5 on
+  Lightforce, Thanatos, Pygmies Revenge; gate 4 vs 5.33 on Human Race). It is
+  right for 26 of 43 multiplier-1 files, so it is not a constant to correct —
+  the mechanism has to be found in the players. Per-file targets are in
+  `build/pace.txt`; `tests/test_pace.py` pins the estimator.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and
   `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those
@@ -176,11 +192,12 @@ test dependency).
   corpus is still the check that a multiplier-dependent edit *reaches*
   anything (the multiplier-2 songs must change bytes and the multiplier-1 ones
   must not); the trace now says whether it lands in real time. It also said
-  something new: **17 of the 33 score better at 50 Hz than at the rate they
-  are packed for**, so their multiplier and their tempo do not agree —
-  unattributed, and now the largest open item in the converter. See
-  H2G-CONVERSION-METHOD.md § 7.bb, `tests/test_call_rate.py` and
-  `tests/test_calls_per_frame.py`.
+  something new: 17 of the 33 *score* better at 50 Hz than at the rate they
+  are packed for. **That is a fact about `melody`, not about the files** —
+  see the bullet above; timed with `--pace`, 32 of the 33 are closest to the
+  original at their packed rate. See H2G-CONVERSION-METHOD.md § 7.bb,
+  `tests/test_call_rate.py`, `tests/test_calls_per_frame.py` and
+  `tests/test_pace.py`.
 - **`--max-rows` defaults to 94 — do not change the default.** It is what the
   byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
   fidelity anchor. See README.md § `--max-rows`.

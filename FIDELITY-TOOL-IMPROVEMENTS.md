@@ -252,28 +252,65 @@ current report simply cannot.
 
 ---
 
-## 6. Rate: the dimension that cannot be measured here at all
+## 6. Rate — **built, v0.5.99 and v0.5.101** (and one proposal here was wrong)
 
-33 of 82 measured files are scored below their real fidelity and no rerun
-fixes it. siddump calls the play routine `seconds × 50` times regardless of
-the PSID speed field (siddump.c:309/325), so `gt2reloc -S2` changes the packed
-bytes and not the trace. The report states this at length and correctly.
+This section's premise no longer holds. It read: *33 of 82 measured files are
+scored below their real fidelity and no rerun fixes it, because siddump calls
+the play routine `seconds × 50` times regardless of the PSID speed field
+(siddump.c:309/325).* True until v0.5.99, which vendored siddump 1.08 as
+`python/tools/siddump-rt` with one added option — `-m<n>`, playroutine calls
+per displayed frame — and made `fidelity.py` pass each song its own
+multiplier. A dump row is still one PAL frame of real time, so both sides
+share a time axis whatever the call rate, and the harness now **refuses** a
+multiplier > 1 song on a binary without `-m` rather than return the
+half-speed dump.
 
-Two things the tool could still do, neither of which needs siddump to change:
+**The first proposal above must not be built to its own spec.** It asked for a
+flag on files "whose ratio sits near `1/multiplier`" — i.e. near 2×. Measured
+over the corpus with `fidelity.py --pace`, the row-length errors are a
+tune-specific **1.1× to 1.5×, and never near 2×**. A detector looking for
+`1/multiplier` would have matched nothing, and its silence would have been
+read as *no problem here* — worse than the prose it was meant to replace.
+This is the more useful half of the correction: the shape a defect is expected
+to have is a hypothesis, and building the detector around it bakes the
+hypothesis in.
 
-- **Detect the mismatch instead of only describing it.** The harness knows the
-  multiplier (`_preset_multiplier`, `:589`). It could compare our attack-rate
-  against the original's and flag a file whose ratio sits near `1/multiplier`
-  — turning a paragraph of prose into a per-row marker. `Chain_Reaction`'s
-  0.66× was found by hand and turned out to be a *different* defect (5.5 calls
-  per row, inexpressible); a column would have separated the two classes
-  immediately rather than after a fork's investigation.
-- **Drive RetroDebugger for the flagged rows.** It honours CIA timing and has
-  already confirmed two files at their correct rate. It does not need to run
-  over the corpus — only over the 33.
+**The second proposal is superseded.** Driving RetroDebugger for the flagged
+rows is unnecessary — the `-m` patch does the same job inside siddump with no
+emulator — and it is no longer possible anyway: RetroDebugger crashed out in
+v0.5.91 and its MCP server could not be reloaded.
 
-Until one of those exists, the honest reading of the corpus mean is the
-excluded-subset figure, and the report is right to print both.
+**What this section got right is the prediction**, and it is worth keeping:
+a rate measure "would have separated the two classes immediately rather than
+after a fork's investigation". `--pace` does separate them, and it also
+dissolves the special case — `Chain_Reaction`'s 0.66× is not a class of its
+own. It reads **2.75 frames against a gate of 2**, which is the same family as
+`Tarzan` (3.00 vs 2), `Deep_Strike` (2.67 vs 2) and a dozen others.
+
+What was found once the rate could be measured (raw output in
+`build/pace.txt`, regenerate with
+`fidelity.py <sid_dir> --pace -t 30 --presets ../presets.json`):
+
+- 75 of 83 files carry enough shared material to time at all.
+- Of the 32 timed multiplier-2 files, **10 are within 5%** of the original's
+  pace; of the 43 multiplier-1 files, **26** are.
+- Where the gate is wrong it is wrong *low*, by a tune-specific factor: gate 2
+  measures 2.5–3.0, gate 3 measures 3.5–4.5, gate 4 measures 4.5–5.33, gate 5
+  measures 6.0. See `whats-next.md` § 7b.
+- **32 of the 33 multiplier-2 files are closest to the original's speed at the
+  rate they are packed for**, which refutes the v0.5.99 write-up's reading of
+  "17 score better at 50 Hz" as "a factor of two out". `melody` is a sequence
+  ratio inside a fixed window; a conversion playing too fast overruns it and
+  is charged for the surplus, one playing too slow returns a prefix. A score
+  is not a clock.
+
+The closing line — *the honest reading of the corpus mean is the
+excluded-subset figure* — no longer applies for the reason it gave. Those 33
+rows are now traced at the rate they are packed for, so they are measured on
+the same footing as the rest and belong in the mean; the report still prints
+the excluded figure beside it, but as context rather than as the honest
+number. What is now excluded from *no* figure, and visible in none of them, is
+the row-length error itself: it is a `--pace` result, not a column.
 
 ---
 

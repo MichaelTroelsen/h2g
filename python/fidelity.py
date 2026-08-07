@@ -84,7 +84,7 @@ from pathlib import Path
 
 from h2g import __version__
 from h2g.convert import convert
-from h2g.goatwriter import FORMAT_GTS5
+from h2g.goatwriter import FORMAT_GTS5, find_song_speeds
 from h2g.sidfile import find_freq_table, load_sid
 
 # Defaults are the tools as they sit on this machine; every one is overridable
@@ -910,14 +910,17 @@ NOT_MEASURED = (
     "**note length** -- `$D404`'s gate bit is read as an *edge* (which is what "
     "makes an attack an attack) and never as a duration, so a note held twice "
     "as long with the right waveform scores the same",
-    "**tempo and row rate** -- nothing here scores how long a row lasts. What "
+    "**tempo and row rate** -- no column here scores how long a row "
+    "lasts. `--pace` is the mode that does, and on this corpus it finds "
+    "row-length errors of 10-33% that every column below is blind to. "
+    "What "
     "did change in v0.5.99 is that a conversion is now *played* at the rate "
     "it was packed for: stock siddump calls the play routine `seconds x 50` "
     "times whatever the PSID speed field says (siddump.c:309/325), so a tune "
     "packed at `gt2reloc -S2` used to be traced at half speed. The "
     "tools/siddump-rt build takes `-m` and the harness passes the song's "
     "multiplier, so the two sides now share a real-time axis -- but a row "
-    "that is the right length is still not something any column measures",
+    "that is the right length is still not something any column measures -- see --pace",
     "**anything outside the traced window or subtune** -- one subtune per "
     "file, its first few seconds",
     "**master volume** -- `$D418`'s low nibble. The register is listed as "
@@ -1700,31 +1703,21 @@ def report(rows: list[dict], args) -> str:
             if both:
                 faster = [r for r in both if r["melody"] > r["melody_at_1x"] + 0.02]
                 slower = [r for r in both if r["melody_at_1x"] > r["melody"] + 0.02]
-                flat = len(both) - len(faster) - len(slower)
                 out.append(
-                    f"- **Which rate each of those files actually plays right "
-                    f"at is now a measurement, and it splits them.** Scoring "
-                    f"the same conversion at 1 call per frame as well: "
-                    f"**{len(faster)}** score better at the packed rate, "
-                    f"**{len(slower)}** score better at 50Hz, {flat} cannot "
-                    "tell. A file in the first group is confirmation that the "
-                    "multiplier machinery lands it in real time -- "
-                    + ", ".join(f"`{r['file']}` {_fmt_pct(r['melody_at_1x'])}"
-                                f" -> {_fmt_pct(r['melody'])}"
-                                for r in sorted(
-                                    faster, key=lambda r: r["melody"] - r["melody_at_1x"],
-                                    reverse=True)[:3])
-                    + ". The second group is not: something in those files is "
-                    "a factor of two out, and this report cannot yet say "
-                    "whether it is the speed gate `goatwriter.find_song_speeds` "
-                    "reads, the rows the converter gives a note, or the "
-                    "`-S` choice itself -- only that the two do not agree ("
-                    + ", ".join(f"`{r['file']}`" for r in sorted(
-                        slower, key=lambda r: r["melody_at_1x"] - r["melody"],
-                        reverse=True)[:5])
-                    + (", ..." if len(slower) > 5 else "") + "). "
-                    "`--calls-per-frame 1` reproduces the pre-v0.5.99 numbers "
-                    "for the whole corpus.")
+                    f"- Scoring the same conversion at 1 call per frame as "
+                    f"well, **{len(faster)}** score better at the packed rate "
+                    f"and **{len(slower)}** at 50Hz. **Do not read that as "
+                    f"the second group wanting `-S1`** -- v0.5.99 did, and "
+                    "`--pace` refuted it: timed against the original over "
+                    "difflib-matched notes, 32 of the 33 are closer to the "
+                    "original's speed at the rate they are packed for. "
+                    "`melody` is a sequence ratio inside a fixed window, and "
+                    "the two errors are not symmetric there -- a conversion "
+                    "playing too fast reaches past the window and is charged "
+                    "for the surplus, one playing too slow returns a prefix. "
+                    "What those files really carry is a *row length* error of "
+                    "10-33%, which is a different defect in a different place "
+                    "(see `--pace`).")
         off0 = sorted(r["file"] for r in rows if r.get("subtune"))
         if off0:
             out.append(
@@ -2234,6 +2227,137 @@ def _dim(key: str) -> Dimension:
 
 
 # --------------------------------------------------------------------------
+# --pace: does the conversion play at the tune's speed?
+# --------------------------------------------------------------------------
+def matched_gaps(orig: Voice, ours: Voice,
+                 floor: int = 4) -> list[tuple[int, int]]:
+    """(their frames, our frames) for consecutive notes both sides play.
+
+    Aligned with difflib rather than by index, because index alignment is
+    only meaningful where the two note sequences agree -- which is never true
+    of a file whose pace is in question. Gaps below `floor` frames are
+    dropped: those are chord onsets and same-row retriggers, where the
+    quantisation swamps the ratio being measured.
+    """
+    sm = difflib.SequenceMatcher(None, orig.attacks, ours.attacks,
+                                 autojunk=False)
+    pairs = []
+    for i, j, n in sm.get_matching_blocks():
+        for k in range(n):
+            pairs.append((orig.attack_frames[i + k], ours.attack_frames[j + k]))
+    out = []
+    for (a0, b0), (a1, b1) in zip(pairs, pairs[1:]):
+        if a1 - a0 >= floor:
+            out.append((a1 - a0, b1 - b0))
+    return out
+
+
+def pace(orig: Trace, ours: Trace) -> dict:
+    """How long our row is against the original's, and how uniformly.
+
+    `median` is the ratio to read: a few very long gaps -- a voice resting
+    through a section -- dominate a least-squares fit, and on ACE_II the fit
+    comes out 0.727 where the median of the same ratios is 1.509, disagreeing
+    about which side is faster. `slope` is kept beside it because the two
+    parting company is itself a signal that the material diverges.
+
+    `spread` is the interquartile range of those ratios. A row of the wrong
+    length compresses every gap by the same factor and reads tight; a spread
+    one means the pacing is *irregular*, which is a gate whose interval
+    alternates (ACE II runs 5 frames then 6) or material dropped often enough
+    to move a quartile. It is deliberately not sensitive to a single omission:
+    one dropped section leaves eleven gaps at 1.0 and one at 4, the quartiles
+    do not move, and the median still correctly says the row length is right.
+    """
+    g = [x for v in range(3) for x in matched_gaps(orig[v], ours[v])]
+    if len(g) < 6:
+        return {"n": len(g)}
+    num = sum(a * b for a, b in g)
+    den = sum(a * a for a, _ in g)
+    ratios = sorted(b / a for a, b in g)
+    q1, q3 = ratios[len(ratios) // 4], ratios[3 * len(ratios) // 4]
+    return {"n": len(g), "slope": num / den if den else None,
+            "median": ratios[len(ratios) // 2], "q1": q1, "q3": q3,
+            "spread": q3 - q1}
+
+
+def pace_report(sid: Path, workdir: Path, opts: dict, args,
+                multiplier: int = 1) -> str:
+    """What `--pace` prints for one file.
+
+    The question it exists for: `melody` is a sequence ratio, and reading one
+    as evidence about speed is an inference that has been wrong here before.
+    A conversion playing too fast overruns the traced window and scores worse
+    than one playing too slow, so `melody` can prefer the wrong call rate --
+    it did for 17 files in v0.5.99, which were written up as "a factor of two
+    out" when the real error was between 10% and 50%.
+    """
+    out: list[str] = []
+    traced = resolve_subtune(sid, args.subtune)
+    try:
+        sng = convert(str(sid), log=lambda m: None, **opts)
+    except Exception as exc:                                  # noqa: BLE001
+        return f"{sid.name}: will not convert -- {type(exc).__name__}: {exc}\n"
+    sng, _ = legalise_restarts(sng)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
+    if packed is None:
+        return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
+    local = workdir / "o.sid"
+    shutil.copyfile(sid, local)
+    ft = find_freq_table(load_sid(str(sid)))
+    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    a = run_siddump(local, args.seconds, traced, args.siddump, cal)
+
+    speeds = find_song_speeds(load_sid(str(sid)))
+    read = speeds.frames_for(traced) if speeds is not None else None
+    tempo = None
+    out.append(f"{sid.name}: subtune {traced}, {args.seconds}s, "
+               f"packed -S{multiplier}; speed gate reads "
+               f"{read if read is not None else 'nothing'} frame(s) per "
+               f"duration unit")
+
+    tempo = (read or 0) * multiplier          # calls per row, as emitted
+    rates = sorted({1, multiplier})
+    seen = []
+    for m in rates:
+        b = run_siddump(packed, args.seconds, traced, args.siddump, calls=m)
+        got = pace(a, b)
+        if got.get("slope") is None:
+            out.append(f"  -m{m}: only {got['n']} matched gap(s) -- the two "
+                       "sides share too little material to time")
+            continue
+        # Our row is `tempo` calls, which is tempo/m frames when the play
+        # routine runs m times a frame. Dividing that by the slope gives the
+        # original's row in frames -- the same number whichever rate it is
+        # taken at, which is what makes it worth reporting over a slope.
+        ours = tempo / m if tempo else None
+        seen.append((m, got, (ours / got["median"]) if ours else None))
+        out.append(
+            f"  -m{m}: our row {'' if ours is None else f'{ours:.2f} frames, '}"
+            f"ours/theirs {got['median']:.3f}  (IQR {got['q1']:.3f}-"
+            f"{got['q3']:.3f} over {got['n']} gaps; least-squares fit "
+            f"{got['slope']:.3f})")
+    if seen:
+        trues = [t for _, _, t in seen if t]
+        spread = min(g["spread"] for _, g, _ in seen)
+        if trues:
+            out.append(
+                f"  **their row is {sum(trues) / len(trues):.2f} frames**, "
+                f"where the gate was read as {read}. "
+                + ("Tight ratios: this is the row length, not irregular "
+                   "pacing."
+                   if spread < 0.12 else
+                   "Spread ratios: the pacing is irregular, so the row "
+                   "length above is an average over gaps that differ -- an "
+                   "alternating gate, or material dropped throughout."))
+        at_packed = next((g for m, g, _ in seen if m == multiplier), None)
+        if at_packed:
+            out.append(f"  at the rate it is packed for, "
+                       f"{abs(1 - at_packed['median']):.0%} out")
+    return "\n".join(out) + "\n"
+
+
+# --------------------------------------------------------------------------
 # --diagnose: why one file scores low
 # --------------------------------------------------------------------------
 # A low melody score names no cause. Four different defects present as one
@@ -2498,6 +2622,14 @@ def main(argv=None) -> int:
                    help="convert with --fold-transpose (orderlist transposes "
                         "over Goattracker's +14 folded into the notes) "
                         "regardless of what the presets say")
+    p.add_argument("--pace", action="store_true",
+                   help="one file, timed instead of scored: our row length "
+                        "against the original's at each candidate call rate, "
+                        "fitted over difflib-matched notes. `melody` is a "
+                        "sequence ratio and cannot answer this -- a "
+                        "conversion playing too fast overruns the window and "
+                        "scores worse than one playing too slow. Prints "
+                        "text; writes no report")
     p.add_argument("--diagnose", action="store_true",
                    help="one file, explained instead of scored: the subtune "
                         "correspondence matrix (the original's subtunes "
@@ -2584,6 +2716,12 @@ def _run(p, args, workdir: Path) -> int:
         target = Path(args.target)
         sids = sorted(target.rglob("*.sid"), key=lambda q: q.name.lower()) \
             if target.is_dir() else [target]
+        if args.pace:
+            for sid in sids:
+                opts = _preset_opts(doc, sid.name)
+                print(pace_report(sid, workdir, opts, args,
+                                  _preset_multiplier(doc, sid.name)))
+            return 0
         if args.diagnose:
             # Deliberately not a row: the output is an argument about one
             # file, and folding it into the report would put a paragraph in a

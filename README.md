@@ -1006,10 +1006,15 @@ song its own multiplier — a dump row stays one PAL frame of real time, so the
 two sides share a time axis whatever the call rate. The result is not the
 uniform lift it was expected to be: **15 of the 33 score better at the packed
 rate** (Ricochet 70% → 100%, Flash_Gordon 30% → 75%, Warhawk 68% → 96%) and
-**17 score better at 50 Hz**, which says something in those files is a factor
-of two out — the speed gate, the rows given a note, or the `-S` choice itself.
-The report names both groups and `--calls-per-frame 1` reproduces the old
-numbers. See `python/tools/siddump-rt/README.md`.
+**17 score better at 50 Hz**.
+
+That second group was written up in v0.5.99 as "a factor of two out". It is
+not, and `--pace` refuted it: **32 of the 33 are closest to the original's
+speed at the rate they are packed for**, with errors of 1–33%. `melody` is a
+sequence ratio inside a fixed window and the two errors are not symmetric
+there — see [`--pace`](#timing-one-file----pace), which is now the mode to
+use before saying anything about speed. `--calls-per-frame 1` reproduces the
+old numbers. See `python/tools/siddump-rt/README.md`.
 
 [`presets.json`](presets.json) is the committed result for the Hubbard corpus:
 78 songs, every one reproducing its recorded size exactly.
@@ -1205,6 +1210,56 @@ tune a fifth low, not that adding seven would fix it.
 
 It writes no report and takes no `-o`/`--json`/`--baseline`; the output is an
 argument about one file, not a row.
+
+### Timing one file — `--pace`
+
+```sh
+python fidelity.py <one.sid> --pace -t 30
+```
+
+Every column of the report is a *what*, never a *when*. `melody` is a
+sequence ratio over a fixed window, so it says whether the same notes arrive
+in the same order and not whether they arrive at the same time — and the two
+errors are not symmetric there. A conversion playing **too fast** reaches past
+the end of the window and difflib is charged for the surplus; one playing
+**too slow** returns a prefix. So a score can prefer the wrong call rate, and
+in v0.5.99 it did: 17 files scored better traced at 50 Hz, the report called
+it "a factor of two out", and timing them showed **32 of those 33 are closest
+to the original's speed at the rate they are packed for**, with errors between
+1% and 33%.
+
+`--pace` measures it directly. It pairs notes with difflib (never by index —
+index alignment is meaningful only where the sequences already agree, which is
+never true of a file whose speed is in question), takes the ratio of each
+consecutive gap, and reports:
+
+* **the median ratio**, not the least-squares fit. A few very long gaps — a
+  voice resting through a section — dominate a fit: on ACE II it comes out
+  0.727 where the median of the same ratios is 1.509, disagreeing about which
+  side is even faster. The fit is printed beside it because the two parting
+  company is itself a sign the material has diverged.
+* **the interquartile range**. Tight means a row of the wrong length, which
+  compresses every gap alike. Spread means the pacing is *irregular* — a gate
+  whose interval alternates (ACE II runs 5 frames then 6), or material dropped
+  often enough to move a quartile. It is deliberately blind to a single
+  omission: one dropped section leaves the quartiles where they were and the
+  median still correctly reports the row length as right.
+* **the original's row in frames**, derived by dividing our row length by that
+  ratio. It comes out the same whichever call rate it is taken at, which is
+  what makes it worth printing over a ratio — and it is directly comparable
+  with what `goatwriter.find_song_speeds` read out of the player.
+
+That last number is the one that found something. Across the corpus the
+speed gate is **under-read**, in both multiplier groups: where it says 2 the
+measured row is 2.5–3.0 (Tarzan, Delta, ACE II, Deep Strike, Spellbound,
+Chain Reaction), where it says 3 it is 3.5–4.5 (Lightforce, Thanatos,
+Pygmies Revenge, Las Vegas Video Poker), where it says 4 it is 4.5–5.33
+(Mr Meaner, Human Race), and Rock Tells the Tale reads 5 and plays 6. It is
+right for most files — 26 of 43 at multiplier 1 and 10 of 32 at multiplier 2
+are within 5% — and where it is wrong the error is a tune-specific factor
+between 1.1 and 1.5, never 2. Our own row length is not in question: Ricochet's
+gaps land on exactly 8 and 16 frames, so Goattracker honours the tempo as
+written. See CLAUDE.md and `whats-next.md` for what remains.
 
 A short trace is its own hazard in the same family. `BMX_Kidz.sid` opens with
 about thirteen seconds of rest, so at `-t 10` neither side has played a note

@@ -447,22 +447,23 @@ and **17 score better at 50 Hz**, some steeply (Deep_Strike 100% → 14%,
 Game_Killer 71% → 5%, Spellbound 78% → 11%). One is flat. Corpus mean melody
 78% → 74% because the report now scores the file that ships.
 
+Those *scores* stand; the conclusion drawn from them in v0.5.99 does not —
+see below.
+
 Ricochet is the confirmation §7 was after: at 100 Hz its attacks land within
 0.4% of the original's frames, per voice. v0.5.82's multiplier fix does reach
 real time — for that half of the group.
 
-**The other 17 are the new open item, and it is the largest one in the
-converter.** Something in them is a factor of two out: `find_song_speeds`
-reads `frames = 2` for all 33 alike, and the source kind (static reload byte
-vs per-subtune table) does not separate the groups, so it is not simply a
-mis-read gate. Candidates: the rows the converter gives a note (a doubled
-rows-per-unit would cancel the multiplier exactly), `tempo_command_value`'s
-floor at `TEMPO_FASTEST_STEADY`, or the `-S` choice itself. **Not
-attributed** — do not assume the direction. A caution from doing this: the
-attack-frame slope is only meaningful where the two note sequences align, so
-it reads as garbage on exactly the files in dispute; `melody_at_1x` in the
-JSON is the number to work from, and `--calls-per-frame 1` reproduces every
-pre-v0.5.99 measurement.
+**~~The other 17 are a factor of two out~~ — wrong, and refuted in v0.5.101
+by `--pace`.** They are not a factor of two out and they do not want `-S1`.
+Timed against the original over difflib-matched notes, **32 of the 33 are
+closest to the original's speed at the rate they are packed for**; the errors
+are 1–33%. `melody` preferred 50 Hz for 17 of them because it is a sequence
+ratio inside a fixed window and the two errors are not symmetric there — a
+conversion playing too fast reaches past the window and is charged for the
+surplus, one playing too slow returns a prefix. **A score is not a clock**;
+that inference should not have been made from one, and `--pace` is now the
+mode that answers it. See §7b for what the timing found instead.
 
 Still not cycle-accurate: calls inside a frame run back to back rather than at
 timer intervals, registers are sampled at end of frame, and the 0.25% between
@@ -478,6 +479,62 @@ tree — **and build the tool first, or the run will refuse the 33 files**:
 cd python/tools/siddump-rt && make && cd ../..
 python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
 ```
+
+## 7b. The speed gate is under-read, corpus-wide — the largest open item
+
+Found by `--pace` (v0.5.101) while attributing §7's 17, and it is not confined
+to them. `goatwriter.find_song_speeds` reads the gate's reload byte and
+reports `frames = reload + 1` frames per duration unit. Timed against the
+original, that number is **too small on a large minority of the corpus, in
+both multiplier groups**:
+
+| gate reads | measured row | files |
+|---|---|---|
+| 2 | 2.50 – 3.00 | Tarzan (3.00), Spellbound (2.97), Chain_Reaction (2.75), Deep_Strike (2.67), Food_Feud (2.68), Zoolook (2.71), ACE_II (2.65), Saboteur_II (2.65), Thundercats (2.65), Delta (2.50) |
+| 3 | 3.50 – 4.50 | Las_Vegas_Video_Poker (4.50), Pygmies_Revenge (4.00), Thanatos (3.75), Action_Biker (3.75), Kings_of_the_Beach_intro (3.50), Lightforce (3.50) |
+| 4 | 4.50 – 5.33 | Human_Race (5.33), Mr_Meaner (4.50) |
+| 5 | 6.00 | Rock_Tells_the_Tale (6.00) |
+
+**It is not a constant to correct.** The reader is right for 26 of 43
+multiplier-1 files and 10 of 32 multiplier-2 files — Ricochet, Monty,
+Master_of_Magic, Star_Paws, Thing_on_a_Spring, Last_V8 and others come out at
+2.00 against a gate of 2, within 1%. Where it is wrong the factor is
+tune-specific and between 1.1 and 1.5, never 2. So something in *those*
+players consumes frames the gate does not describe, and the mechanism has to
+be found in the 6502 rather than fitted.
+
+Ruled out already, by measurement:
+
+- **Not our tempo.** Ricochet's gaps land on exactly 8 and 16 frames against
+  an emitted tempo of 4 calls at `-S2`, so Goattracker honours the tempo as
+  written and our row really is `tempo / multiplier` frames.
+- **Not dropped rows.** The gap ratios are *tight* (Tarzan's IQR is 0.000 at
+  0.667 over 418 gaps): every gap is compressed by the same factor, which is
+  a row length and not material we fail to play. `--pace` reports the IQR for
+  exactly this distinction.
+- **Not the table-vs-static split.** Both sources appear on both sides of the
+  correct/incorrect divide.
+- **Not an off-by-one in the per-subtune table.** Tarzan's table is
+  `(2, 3, 2, 2)` and its measured 3.00 is tempting, but the static-byte files
+  fail the same way and have no table to be off by one in.
+
+**Where to start.** Two files with a clean 3:2 target and a control:
+
+| file | gate | measured | note |
+|---|---|---|---|
+| `Tarzan.sid` | 2 | **3.00** | tight, per-subtune table at `$59DF` |
+| `Delta.sid` | 2 | **2.50** | tight, per-subtune table at `$C311` |
+| `Ricochet.sid` | 2 | **2.00** | the control — reads correctly |
+
+Disassemble the row advance in each and find what the gate shape
+(`SPEED_GATE`, `DEC ctr / BPL +6 / LDA reload / STA ctr`) is missing: a second
+counter, a conditional skip, or a sequencer that steps on some ticks only.
+Per-file targets for the whole corpus are in `build/pace.txt` (regenerate with
+`python fidelity.py <sid_dir> --pace -t 30 --presets ../presets.json`).
+
+`tests/test_pace.py` pins the estimator, including the two ways it has already
+been read wrong: a least-squares fit that one resting voice can drag, and the
+difference between a short row and dropped material.
 
 ## 8. Four players have no expressible rate
 
