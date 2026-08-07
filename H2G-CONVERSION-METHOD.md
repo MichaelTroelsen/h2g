@@ -1887,6 +1887,66 @@ into one instrument byte and calls `makespeedtable` itself (`gsong.c:285`), and
 it reads bytes 5 and 6 *the other way round* (`vibdelay` first, `:284`). Same
 numbers, different encoding — and the byte-exact fixture is a GTS2 file.
 
+### 7.ff The digi engine's own slide, and what its bend number really counts
+
+The digi grammar has two two-operand effects. § 5 recorded both as "parsed for
+their length but not translated". One of them is a pitch slide.
+
+Off the Cuff's handler stores the operands at `$1133` and its consumer adds
+them every frame at `$134C`:
+
+```
+1133  C8 B1 FA  INY / LDA (patt),Y
+1136  9D 7B 16  STA slidehi,X       ; the FIRST operand is the HIGH half
+1139  C8 B1 FA  INY / LDA (patt),Y
+113C  9D 78 16  STA slidelo,X       ; the second is the low half
+1140  DE 7E 16  DEC gate,X          ; 0 -> $FF, "slide running"
+
+134C  BD 7E 16  LDA gate,X / BEQ out
+1351  18        CLC
+1352  BD 75 16  LDA freqlo,X / ADC slidelo,X / STA freqlo,X
+135B  BD 72 16  LDA freqhi,X / ADC slidehi,X / STA freqhi,X
+```
+
+One `CLC / ADC` pair and no direction test, so the step is **signed**: a high
+byte of `$80` or above slides down. The gate is cleared at every note start
+(`$10F4`), which is what Goattracker does with a channel's command
+(`gplay.c:351`), so the two persist alike — and `$82` maps onto CMD_PORTAUP /
+CMD_PORTADOWN directly, through the same full-width step collector the classic
+decoder uses.
+
+`$83` turns out to be a **vibrato** in the very same `$78`-bound / `$07`-shift
+format as § 7.ee, overriding the instrument's own byte for the rest of the note
+(`$1229`, falling back to `$1704,Y` at `$123F`). It stays untranslated:
+`--vibrato` already emits the instrument-level parameter, and a row has one
+command column.
+
+**All nine digi files carry both shapes. The music barely uses `$82`** — 128
+portamento columns across 5 of the 9, none at all in the other 4. So this is a
+correctness fix with a small footprint, and no dimension in the report moved on
+it. That is stated rather than glossed: the evidence is the 6502 and the 128
+columns, not a number.
+
+#### What the digi files' `bend` was actually measuring
+
+Chasing why those files still scored near zero produced a better finding than
+the slide did. **`bend` cannot tell a pitch bend from a voice being used as a
+sample channel**, and the digi engine plays its samples by rewriting a SID
+voice's frequency every frame:
+
+| Off the Cuff, original, 10 s | voice 1 | voice 2 | voice 3 |
+|---|---:|---:|---:|
+| pitch travel | 3,032 | 8,855 | **5,426,086** |
+
+99.8% of that file's `orig_bend` is the digi channel, so its ratio is not a
+score of the conversion at all. An octave guard — reject a frame whose
+frequency ratio exceeds 2 — was tried and **rejected**: it removed only a sixth
+of the sample movement (5.43M to 901k) while costing real signal elsewhere
+(Delta 56,531 to 40,429, two voices zeroed outright). A threshold that keeps
+vibrato and drops sample playback is two orders of magnitude wide and would be
+a number chosen to fit, so the limit is documented instead — in the report's
+own *What this does not say*.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

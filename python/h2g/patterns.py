@@ -381,18 +381,67 @@ DIGI_DURATION = 0xC0        # bit 7 and bit 6 set
 DIGI_END = 0x81
 DIGI_SET_INSTRUMENT = 0x80
 DIGI_TWO_OPERAND = (0x82, 0x83)
+# $82 is a 16-bit pitch slide added to the voice frequency every frame. Off the
+# Cuff's handler stores the two operands ($1133) and its consumer ($134C) adds
+# them:
+#
+#     1133  C8 B1 FA  INY / LDA (patt),Y
+#     1136  9D 7B 16  STA slidehi,X      ; FIRST operand is the HIGH half
+#     1139  C8 B1 FA  INY / LDA (patt),Y
+#     113C  9D 78 16  STA slidelo,X      ; second is the low half
+#     1140  DE 7E 16  DEC gate,X         ; 0 -> $FF, i.e. "slide running"
+#
+#     134C  BD 7E 16  LDA gate,X / BEQ out
+#     1351  18        CLC
+#     1352  BD 75 16  LDA freqlo,X / ADC slidelo,X / STA freqlo,X
+#     135B  BD 72 16  LDA freqhi,X / ADC slidehi,X / STA freqhi,X
+#
+# One `CLC / ADC` pair, so the step is *signed*: a high byte of $80 or above
+# slides down. All nine digi files carry both shapes. The gate is cleared at
+# every note start ($10F4-$10F6), which is also what Goattracker does with a
+# channel's command (gplay.c:351), so the two persist alike.
+#
+# $83 sets a vibrato, in the same $78-bound/$07-shift format the classic
+# players use, overriding the instrument's own byte for the rest of the note
+# (Off the Cuff $1229, falling back to $1704,Y at $123F). Not translated: the
+# instrument-level vibrato --vibrato already emits covers the common case, and
+# Goattracker's CMD_VIBRATO would have to displace the slide in the one command
+# column a row has.
+DIGI_SLIDE = 0x82
+DIGI_VIBRATO = 0x83
 DIGI_REST = 0x60
 DIGI_MAX_NOTE = 0x5C        # same ceiling the classic decoder clamps to
 
 
+def _digi_command(pending: tuple, steps: Optional[List[int]]) -> tuple:
+    """(command, data) columns for a decoded $82 slide.
+
+    Packed exactly as the classic decoder packs its own: an index into `steps`
+    where the caller is collecting them at full 16-bit width, and otherwise the
+    old `step // 4` byte, which a GTS2 loader multiplies back (gsong.c:311-321).
+    """
+    cmd, step = pending
+    if steps is not None:
+        return cmd, _step_index(steps, step)
+    return cmd, min(step // 4, 0xFF)
+
+
 def _build_raw_pattern_digi(data: bytes, addr: int,
-                            note_base: int = 0) -> Optional[List[int]]:
+                            note_base: int = 0,
+                            slides: bool = False,
+                            steps: Optional[List[int]] = None
+                            ) -> Optional[List[int]]:
     """Flat event stream for one digi-engine pattern, or None if out of range.
 
-    Effects $82 and $83 are parsed for their length but not translated -- their
-    two operands land in per-voice slots this converter does not model. Notes,
-    instruments and timing are complete; dropping an effect leaves a note
-    playing plainly rather than corrupting the stream.
+    With `slides`, effect $82 becomes a portamento: its two operands are the
+    high and low halves of a signed 16-bit per-frame step (see DIGI_SLIDE), and
+    it is attached to the next row this decoder emits -- which is where the
+    player starts it, since a command byte is read between one note's rows and
+    the next's. Off by default like the classic decoder's slide reading.
+
+    Effect $83 is parsed for its length and not translated; see DIGI_VIBRATO.
+    Notes, instruments and timing are complete either way, and dropping an
+    effect leaves a note playing plainly rather than corrupting the stream.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -400,6 +449,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
     events: List[int] = []
     instrument = 0
     wait = 0
+    pending: Optional[tuple] = None
 
     while True:
         if addr <= 1 or addr >= len(data):
@@ -423,6 +473,16 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             addr += 2
             continue
         if b in DIGI_TWO_OPERAND:
+            if addr + 2 >= len(data):
+                return None
+            if b == DIGI_SLIDE and slides:
+                # First operand high, second low, and the pair is signed: the
+                # player has one CLC/ADC and no direction test.
+                step = (data[addr + 1] << 8) | data[addr + 2]
+                if step >= 0x8000:
+                    pending = (2, 0x10000 - step)   # CMD_PORTADOWN
+                else:
+                    pending = (1, step)             # CMD_PORTAUP
             addr += 3
             continue
         if b >= 0x80:
@@ -438,9 +498,15 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # $D404 write at $148D, so bit 0 (GATE) is cleared. A hold row
             # ($BD) would sustain the previous note instead.
             events += [GT_KEYOFF, 0x00, 0x00, 0x00]
+            if pending is not None:
+                events[-2], events[-1] = _digi_command(pending, steps)
+                pending = None
         else:
             note = max(0, min(b, DIGI_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
+            if pending is not None:
+                events[-2], events[-1] = _digi_command(pending, steps)
+                pending = None
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
         addr += 1
@@ -618,7 +684,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return None
     addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
     if det.pattern_dialect == "digi":
-        return _build_raw_pattern_digi(data, addr, det.note_base)
+        return _build_raw_pattern_digi(data, addr, det.note_base,
+                                       slides=slides, steps=steps)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -793,7 +860,8 @@ def phantom_patterns(sid: SidFile, det: Detection,
 
         span: List[int] = []
         if det.pattern_dialect == "digi":
-            events = _build_raw_pattern_digi(data, addr)
+            events = _build_raw_pattern_digi(data, addr,
+                                             slides=slides)
         elif det.pattern_dialect == "cmdtable":
             events = _build_raw_pattern_cmdtable(
                 data, addr, det.duration_table, det.cmd_operands,

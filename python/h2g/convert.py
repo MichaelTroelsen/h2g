@@ -245,9 +245,14 @@ def convert(sid_path: str, log: Logger = print,
     # keeps the packed value too, because its loader reads that column as the
     # value (gsong.c:311-321) and there is no stored table for an index to
     # name.
+    #
+    # The digi grammar qualifies on the same terms: its $82 effect is the only
+    # thing that puts a non-zero value in a portamento column, and it needs no
+    # separate fetch flag -- the operands are part of the command.
     slide_steps: list | None = None
-    if (fmt != FORMAT_GTS2 and slides and det.slide_operand
-            and det.pattern_dialect == "classic"):
+    if fmt != FORMAT_GTS2 and slides and (
+            (det.slide_operand and det.pattern_dialect == "classic")
+            or det.pattern_dialect == "digi"):
         slide_steps = []
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,

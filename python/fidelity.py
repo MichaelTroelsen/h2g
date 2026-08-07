@@ -1759,6 +1759,17 @@ def report(rows: list[dict], args) -> str:
         "twice as long with the right waveform still scores 100% here. A "
         "gated-off voice keeps its last waveform latched, so silence between "
         "notes inherits the previous note's class on both sides.",
+        "- **bend** cannot tell a pitch bend from a voice being used as a "
+        "*sample channel*. The nine digi-engine files play their samples "
+        "through a SID voice by rewriting its frequency every frame, and that "
+        "movement is counted: `Off_the_Cuff`'s three voices travel 3,032, "
+        "8,855 and **5,426,086** units in ten seconds, so 99.8% of its "
+        "original's `bend` is the digi channel and the ratio for that row is "
+        "not a score of the conversion. An octave guard was tried and "
+        "rejected -- it removed only a sixth of the sample movement and cost "
+        "real signal elsewhere (Delta 56,531 to 40,429, two voices zeroed). "
+        "The affected rows are the files SURVEY.md marks as the digi "
+        "dialect.",
         "- **adsr**, **pul**, **filt** and **cut** are register comparisons, "
         "not sound comparisons. `adsr` scores the envelope pair frame by "
         "frame, so it sees a wrong sustain or an invented hard restart, and "

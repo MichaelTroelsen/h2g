@@ -264,3 +264,67 @@ def test_the_table_is_the_steps_when_the_decoder_indexed_them():
 
 def test_indexed_steps_are_scaled_by_the_multiplier_too():
     assert build_speed_table([], 2, [0x0448]) == [(0x02, 0x24)]
+
+
+# --- the digi engine's own slide -------------------------------------------
+#
+# The digi grammar has two two-operand effects. $82 is a 16-bit pitch slide
+# added to the voice frequency every frame (Off the Cuff: handler $1133,
+# consumer $134C); this decoder consumed its length and dropped it. $83 sets a
+# vibrato in the same $78/$07 format --vibrato already reads from the
+# instrument, and is still dropped.
+#
+# All nine digi files carry both the handler and the consumer. The *music*
+# uses $82 sparingly -- 128 columns across 5 of the 9 -- so this is a
+# correctness fix with a small footprint, not a large one.
+
+from h2g.patterns import (DIGI_SLIDE, DIGI_VIBRATO, _build_raw_pattern_digi)
+
+# $80 02 sets instrument 2; $82 01 00 is a slide of +$0100 a frame; then note
+# $20; $81 ends. Addresses start at 2 because to_offset is 1-based here.
+DIGI_WITH_SLIDE = [0x00, 0x00, 0x80, 0x02, 0x82, 0x01, 0x00, 0x20, 0x81]
+
+
+def test_the_digi_slide_is_dropped_by_default():
+    rows = _rows(_build_raw_pattern_digi(bytes(DIGI_WITH_SLIDE), 2))
+    assert rows[0][2] == 0 and rows[0][3] == 0
+
+
+def test_the_first_operand_is_the_high_half():
+    rows = _rows(_build_raw_pattern_digi(bytes(DIGI_WITH_SLIDE), 2, slides=True))
+    # $0100 // 4 == $40, packed the way the classic decoder packs its own.
+    assert rows[0][2] == 1 and rows[0][3] == 0x40
+
+
+def test_the_step_is_signed_and_a_high_bit_slides_down():
+    # One CLC/ADC and no direction test, so $FF00 is -$0100.
+    ev = [0x00, 0x00, 0x82, 0xFF, 0x00, 0x20, 0x81]
+    rows = _rows(_build_raw_pattern_digi(bytes(ev), 2, slides=True))
+    assert rows[0][2] == 2, "CMD_PORTADOWN"
+    assert rows[0][3] == 0x40, "and the magnitude, not the two's complement"
+
+
+def test_the_slide_lands_on_the_next_row_the_decoder_emits():
+    # A command byte is read between one note's rows and the next's, which is
+    # where the player starts it.
+    ev = [0x00, 0x00, 0x20, 0x82, 0x01, 0x00, 0x21, 0x81]
+    rows = _rows(_build_raw_pattern_digi(bytes(ev), 2, slides=True))
+    assert rows[0][2] == 0, "the note before it is untouched"
+    assert rows[1][2] == 1, "the note after it carries the slide"
+
+
+def test_it_uses_the_step_collector_when_one_is_given():
+    steps: list = []
+    rows = _rows(_build_raw_pattern_digi(bytes(DIGI_WITH_SLIDE), 2,
+                                         slides=True, steps=steps))
+    assert steps == [0x0100], "the step at full 16-bit width"
+    assert rows[0][3] == 1, "and a 1-based index in the column"
+
+
+def test_the_vibrato_effect_is_still_only_measured_for_length():
+    # $83's two operands are a vibrato parameter and a delay; --vibrato reads
+    # the instrument's own byte instead, and a row has one command column.
+    ev = [0x00, 0x00, 0x83, 0x2B, 0x04, 0x20, 0x81]
+    rows = _rows(_build_raw_pattern_digi(bytes(ev), 2, slides=True))
+    assert len(rows) == 2, "three bytes consumed, then the note, then the end"
+    assert rows[0][2] == 0 and DIGI_VIBRATO == 0x83 and DIGI_SLIDE == 0x82

@@ -323,11 +323,19 @@ byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
 
 ### What is left of the zero, and what `bend` now points at
 
-- **11 files still bend nothing.** 10 of them (9 digi-grammar, 1 cmdtable)
-  have no slide path in their pattern decoder *at all* —
-  `_build_raw_pattern_digi` and `_build_raw_pattern_cmdtable` emit no
-  portamento in any branch — and the digi files are the ones with the largest
-  remaining `orig_bend`. That is the next tranche.
+- **The digi decoder's slide landed in v0.5.86** — effect `$82`, a signed
+  16-bit per-frame step, first operand high. All nine digi files carry the
+  handler and the consumer, but the music uses it in only 5 of them and 128
+  columns in total, so no report number moved. `$83` turned out to be a
+  vibrato in the same format § 7.ee reads from the instrument, left
+  untranslated. **`_build_raw_pattern_cmdtable` still has no slide path**;
+  Hollywood_or_Bust is the one file that needs it (0/425 slide frames).
+- **`bend` on a digi file is not a conversion score.** The engine plays
+  samples by rewriting a voice's frequency every frame and the metric counts
+  it: Off_the_Cuff's three voices travel 3,032 / 8,855 / **5,426,086**. An
+  octave guard was tried and rejected (see § 7.ff). Documented in the report;
+  the real fix would be identifying which SID voice carries the sample per
+  file, which needs the player's digi routine read.
 - **The overshoot is now the visible defect.** Six files bend far *too much*
   (Bump_Set_Spike 11.8x, Delta_Mix-E-Load 10.8x, Zoolook 9.7x, Thrust 7.5x),
   and vibrato only added to an error that was already there. `bend` says it is

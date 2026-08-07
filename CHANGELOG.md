@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.86 — 2026-08-07
+
+- read the digi engine's own pitch slide, effect $82
+
 ## 0.5.85 — 2026-08-07
 
 - emit the vibrato every player runs and no output ever had
