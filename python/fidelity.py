@@ -190,6 +190,10 @@ class Voice:
     # a side that writes $0F00 on every frame and one that writes it once
     # sound identical and would score as opposites. Every consumer must go
     # through register_timeline() first.
+    # The voice frequency ($D400/$D401), siddump's first per-voice field.
+    # Parsed for `bend`: how far the pitch travels *within* notes, which is the
+    # question a count of moved frames cannot answer -- see compare().
+    freq_events: list[tuple[int, int]] = field(default_factory=list)
     wf_events: list[tuple[int, int]] = field(default_factory=list)
     adsr_events: list[tuple[int, int]] = field(default_factory=list)
     pulse_events: list[tuple[int, int]] = field(default_factory=list)
@@ -270,6 +274,9 @@ def parse_dump(text: str) -> Trace:
             continue  # header/rule row
         for v, cell in enumerate(cells[2:5]):
             rest = cell[6:]  # past ' FREQ ' (or ' .... ')
+            fval = _hex_field(cell[1:5], 4)
+            if fval is not None:
+                voices[v].freq_events.append((frame, fval))
             # Fixed offsets into the tail of the cell: the 9-char note field
             # is the same width in all four note formats, so the waveform,
             # ADSR and pulse fields that follow it always sit here.
@@ -493,6 +500,31 @@ def _ratio(a: list[str], b: list[str]) -> float:
     return difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
 
 
+def _bend_travel(v: Voice) -> int:
+    """How far this voice's frequency moves *within* notes, in SID units.
+
+    The pitch counterpart of `cutoff_travel`, and it exists for the same
+    reason: `slides` counts the frames on which the frequency moved and a
+    count cannot judge a step size. Two conversions that bend the same note
+    over the same frames score identically there whether each step is the
+    player's or ten times it.
+
+    Frames on which the voice was struck are excluded on both sides -- the
+    jump from one note to the next is not a bend, and counting it would swamp
+    the thing being measured. siddump prints the frequency only when it
+    changed, so consecutive events are the moves themselves; no carry-forward
+    is needed and a held note contributes nothing.
+    """
+    struck = set(v.attack_frames)
+    travel = 0
+    prev = None
+    for frame, value in v.freq_events:
+        if frame not in struck and prev is not None:
+            travel += abs(value - prev)
+        prev = value
+    return travel
+
+
 def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     """Per-voice and whole-file note-sequence metrics.
 
@@ -522,6 +554,8 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
 
     oa = sum(v["orig_attacks"] for v in per_voice)
     ua = sum(v["our_attacks"] for v in per_voice)
+    ob = sum(_bend_travel(v) for v in orig)
+    ub = sum(_bend_travel(v) for v in ours)
     op = set().union(*(set(v["orig_pitches"]) for v in per_voice)) if per_voice else set()
     up = set().union(*(set(v["our_pitches"]) for v in per_voice)) if per_voice else set()
     return {
@@ -539,6 +573,18 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         # identical. Reported so that class of work is measurable at all.
         "orig_slides": sum(v.slides for v in orig),
         "our_slides": sum(v.slides for v in ours),
+        # ... and how far that movement actually goes. siddump splits pitch
+        # movement between two printed forms -- a bare delta and a parenthesised
+        # note -- by whether the new frequency lands near a note in its table,
+        # so a change in step *size* moves frames between the two buckets and
+        # `slides` counts only one of them. v0.5.83's slide-dialect fix showed
+        # exactly that: Flash_Gordon's slides fell 635 -> 266 while its ties
+        # rose 181 -> 340 and its total pitch movement moved *toward* the
+        # original. Travel is the measure that does not care which form
+        # siddump chose.
+        "orig_bend": ob,
+        "our_bend": ub,
+        "bend_ratio": (ub / ob) if ob else None,
         "voices": per_voice,
     }
 
@@ -872,6 +918,10 @@ DIMENSIONS = (
     Dimension("slides", "slides", _PITCH_REGS, "count",
               "frames on which a voice's pitch moved without a retrigger",
               source="our_slides"),
+    # The other half of the same question, and the half a count cannot answer
+    # -- `cut` exists beside `filt` for exactly this reason.
+    Dimension("bend_ratio", "bend", _PITCH_REGS, "ratio",
+              "how far the pitch travels within notes, over the original's"),
     Dimension("wave", "wave", ("$D404",), "fraction",
               "per-frame agreement of the waveform-select nibble"),
     Dimension("noise", "noise", ("$D404",), "count",
@@ -1438,6 +1488,16 @@ def report(rows: list[dict], args) -> str:
         "original's. Every other column is blind to these: they happen "
         "*within* a note, so a change that only adds or removes pitch "
         "movement leaves melody, seq and retrig identical.",
+        "* **bend** -- our pitch *travel* -- the summed frame-to-frame "
+        "movement of $D400/$D401, excluding the frames a note is struck on -- "
+        "over the original's. The other half of **slides**, and the half a "
+        "count cannot answer: a bend taken in steps ten times too large moves "
+        "the same frames and goes ten times as far. It is also the half that "
+        "does not care how siddump *printed* the movement, which matters "
+        "because it prints a bare delta or a parenthesised note depending on "
+        "where the new frequency lands, so a change in step size shifts "
+        "frames between the two forms and **slides** counts only one of them. "
+        "`-` is an original whose pitch never moves within a note.",
         "* **wave** -- per-frame agreement of the waveform *class* (the "
         "waveform-select nibble of $D404: triangle/saw/pulse/noise, with a "
         "combined waveform its own class and the gate/sync/ring/test bits "
@@ -1466,8 +1526,8 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | wave | noise | adsr | pul | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | adsr | pul | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
@@ -1484,6 +1544,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if rr is None else f'{rr:.2f}'} | {_fmt_pct(r['melody'])} | "
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
+            f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "

@@ -89,10 +89,15 @@ test dependency).
 - **Do not treat `FIDELITY.md` as the last word on fidelity.** It compares note
   *attacks* and, since v0.5.78, every SID register beside them — waveform
   class, noise frames, the envelope pair, duty-cycle movement, filtered
-  frames and cutoff travel. It still cannot see tempo, note length or the
-  volume nibble, and none of the register columns is a listening test: `pul`
+  frames, cutoff travel and (v0.5.83) pitch travel. It still cannot see tempo,
+  note length or the volume nibble, and none of the register columns is a
+  listening test: `pul`
   counts movement without judging the sweep, `adsr` scores a register value
-  and not when it arrives. v0.5.46 fixed a
+  and not when it arrives. **Prefer a travel measure to a count whenever the
+  change is to a step *size*** — `slides` reported v0.5.83's slide-dialect fix
+  as a regression because siddump splits pitch movement between two printed
+  forms and it counts one; `bend` (travel) reads the same fix as 0.30x → 0.66x.
+  `cut` exists next to `filt` for the identical reason. v0.5.46 fixed a
   real defect that rewrote 66 rows of one file and moved the report by zero
   percent. A flat report is not evidence a change did nothing — when a fix is
   invisible to the metric, say so in the doc beside the fix.

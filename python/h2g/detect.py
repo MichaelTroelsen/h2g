@@ -59,6 +59,11 @@ class Detection:
     # command operand -- the high byte of a 16-bit pitch-slide step. See
     # _find_slide_operand().
     slide_operand: bool = False
+    # True when that second byte is the step's LOW half rather than its high,
+    # and the direction is a `CMP #$BF` threshold rather than the operand's
+    # bit 0 -- a second slide dialect sharing the same fetch shape. 22 corpus
+    # files. See _find_slide_high_first().
+    slide_high_first: bool = False
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -729,8 +734,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         log("Track transpose form....: two-byte (value follows the command)")
 
     det.slide_operand = _find_slide_operand(data)
+    det.slide_high_first = _find_slide_high_first(data)
     if det.slide_operand:
-        log("Pattern slide form......: two-byte (16-bit step)")
+        log("Pattern slide form......: two-byte (16-bit step), "
+            + ("operand is the HIGH half (CMP #$BF direction)"
+               if det.slide_high_first else
+               "operand is the low half (bit 0 direction)"))
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
@@ -927,6 +936,56 @@ SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
 
 def _find_slide_operand(data: bytes) -> bool:
     return search_file(data, SLIDE_OPERAND_SHAPE) >= 1
+
+
+# The fetch above says a second byte exists. It does not say which half of the
+# step it is -- and two players disagree, with the *same* fetch shape.
+#
+# Warhawk $1320 is the reading this converter was built on:
+#
+#     1320  BD B7 15  LDA slidelo,X
+#     1325  29 7E     AND #$7E          ; the operand IS the step's low half
+#     132A  BD B7 15  LDA slidelo,X
+#     132D  29 01     AND #$01          ; ...and its bit 0 is the direction
+#     132F  F0 1C     BEQ add
+#     1332  BD B4 15  LDA freqlo,X / SBC $1588 / STA $D400,Y
+#     133E  BD B1 15  LDA freqhi,X
+#     1341  FD BA 15  SBC slidehi,X     ; the second byte is the HIGH half
+#
+# Flash Gordon $12EB puts the halves the other way round, and takes the
+# direction from a threshold rather than a bit:
+#
+#     12EB  BD 40 15  LDA slidelo,X
+#     12F0  C9 BF     CMP #$BF
+#     12F2  90 1A     BCC up            ; < $BF adds, >= $BF subtracts
+#     12F4  29 3F     AND #$3F          ; the operand is the step's HIGH half,
+#     12F6  8D 07 13  STA $1307         ; self-modified into the SBC below
+#     12FA  BD 3A 15  LDA freqlo,X
+#     12FD  FD 3D 15  SBC slidehi,X     ; the second byte is the LOW half
+#     1303  BD 37 15  LDA freqhi,X
+#     1306  E9 08     SBC #$08          ; <- operand written at $12F6
+#
+# Read Flash Gordon's bytes Warhawk's way round and the step comes out about
+# 256 times too large, which then saturates the 8-bit pattern column: **all 15
+# corpus files whose slide parameter sits on that clamp are in this dialect.**
+#
+# The census partitions cleanly, the same way the effect byte's two formats do:
+# of 95 corpus files 25 have Warhawk's consumer and 22 have this one, and
+# **none has both**. 22 of the 41 files with the two-byte fetch are in this
+# dialect and were being decoded with the halves swapped. The `CMP` immediate
+# is $BF in all 22 and the mask is $3F in all 22, so both are literals here
+# rather than parameters.
+SLIDE_HIGH_FIRST_SHAPE = \
+    "BD ?? ?? F0 ?? C9 BF 90 ?? 29 3F 8D ?? ?? 38 BD ?? ?? FD ?? ??"
+
+# The `CMP #$BF` above: an operand at or above this subtracts.
+SLIDE_HIGH_FIRST_DOWN = 0xBF
+# The `AND #$3F`: which bits of the operand are the step's high half.
+SLIDE_HIGH_FIRST_MASK = 0x3F
+
+
+def _find_slide_high_first(data: bytes) -> bool:
+    return search_file(data, SLIDE_HIGH_FIRST_SHAPE) >= 1
 
 
 # The status-byte fetch that tests bit 6 first, and alone. Commando $50C2

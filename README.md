@@ -151,6 +151,17 @@ python -m h2g song.sid --tempo 6        # explicit calls-per-row, all subtunes
 
 Two limits, both from the Goattracker player:
 
+`--slides` reads the second operand byte in the 41 players that fetch one —
+and since v0.5.83 it reads it under the right dialect. Two players disagree
+about which byte is which half of the 16-bit step behind the *same* fetch
+shape: Warhawk takes the operand as the low half with bit 0 as the direction,
+and 22 corpus files take it as the high half with `CMP #$BF` as the direction.
+Detection picks per file. Read the wrong way round the step came out ~256×
+too large and then saturated the 8-bit pattern column, which is what 39% of
+the corpus's portamento parameters were doing. In a `gts5` file the column now
+carries a speed-table index and the step keeps its full width; a `gts2` file
+keeps the packed byte, because its loader reads that column as the value.
+
 - The fastest steady row is **three calls** (`gplay.c:325` reads tempo 0/1 as
   funktempo, and `gplay.c:334` stops the song outright if an instrument's
   gatetimer — always 2 here — exceeds the tick). A tune ticking every 1-2

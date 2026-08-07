@@ -621,7 +621,8 @@ class _Args:
 def _row(name, status, melody=None, orig=0, ours=0):
     r = {"file": name, "status": status, "subtune": 0,
          "orig_attacks": orig, "our_attacks": ours, "retrigger_ratio": None,
-         "orig_slides": 0, "our_slides": 0, "multiplier": 1}
+         "orig_slides": 0, "our_slides": 0, "multiplier": 1,
+         "orig_bend": 0, "our_bend": 0, "bend_ratio": None}
     if melody is not None:
         r.update(melody=melody, sequence=melody, pitch_jaccard=melody,
                  retrigger_ratio=1.0, wave=melody, wave_frames=100,
@@ -631,7 +632,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
-                 cutoff_sweep=1.0)
+                 cutoff_sweep=1.0, bend_ratio=1.0)
     return r
 
 
@@ -914,3 +915,48 @@ def test_a_run_is_labelled_or_unlabelled_but_never_mislabelled(monkeypatch):
         raise OSError("no git here")
     monkeypatch.setattr(fidelity.subprocess, "run", boom)
     assert fidelity.git_label() is None
+
+
+# --- bend: the half of a pitch question a count cannot answer ---------------
+#
+# `slides` counts frames on which the frequency moved. Two conversions that
+# bend the same note over the same frames score identically there whether each
+# step is the player's or ten times it -- which is exactly the reading that had
+# to be settled when v0.5.83 corrected the slide dialect's byte order.
+
+def test_bend_travel_sums_movement_within_notes():
+    v = fidelity.Voice()
+    v.freq_events = [(0, 1000), (1, 1010), (2, 1000)]
+    assert fidelity._bend_travel(v) == 20
+
+
+def test_bend_travel_ignores_the_jump_into_a_new_note():
+    # The frame a note is struck on is a note change, not a bend. Counting it
+    # would swamp the thing being measured -- an octave jump dwarfs any sweep.
+    v = fidelity.Voice()
+    v.freq_events = [(0, 1000), (1, 8000), (2, 8010)]
+    v.attack_frames = [1]
+    assert fidelity._bend_travel(v) == 10
+
+
+def test_a_held_note_contributes_no_travel():
+    # siddump prints the frequency only when it changed, so a held note emits
+    # no events at all and needs no carry-forward.
+    v = fidelity.Voice()
+    v.freq_events = [(0, 1000)]
+    assert fidelity._bend_travel(v) == 0
+
+
+def test_bend_sees_a_step_size_change_that_slides_cannot():
+    # Same frames moved on both sides, ten times the distance. `slides` is
+    # equal; `bend` is 10x. This is the case the dimension exists for.
+    def voice(step):
+        v = fidelity.Voice()
+        v.freq_events = [(f, 1000 + f * step) for f in range(5)]
+        v.slides = 4
+        return v
+    orig = [voice(10), fidelity.Voice(), fidelity.Voice()]
+    ours = [voice(100), fidelity.Voice(), fidelity.Voice()]
+    out = fidelity.compare(orig, ours)
+    assert out["our_slides"] == out["orig_slides"]
+    assert out["bend_ratio"] == 10.0

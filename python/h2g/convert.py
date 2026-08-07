@@ -232,13 +232,29 @@ def convert(sid_path: str, log: Logger = print,
     # each event becomes -- and it is only ever anything but 1 for the
     # command-table dialect, so no other file's output can move.
     det.frames_per_row = cmdtable_frames_per_row(sid, det, played)
+    # The pattern data column holds one byte, and a slide step is sixteen. In a
+    # GTS5 file the column ends up a 1-based *index* into the speed table
+    # anyway (gplay.c:740), so let the decoder write that index directly and
+    # keep the steps themselves at full width here -- see patterns._step_index.
+    #
+    # Only where every non-zero portamento column can have come from the slide
+    # branch: the classic grammar, with the two-byte fetch honoured. Without
+    # the fetch the column is the old packed value and must stay one, and the
+    # digi and cmdtable grammars build their columns elsewhere. A GTS2 file
+    # keeps the packed value too, because its loader reads that column as the
+    # value (gsong.c:311-321) and there is no stored table for an index to
+    # name.
+    slide_steps: list | None = None
+    if (fmt != FORMAT_GTS2 and slides and det.slide_operand
+            and det.pattern_dialect == "classic"):
+        slide_steps = []
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
         slides=slides, status_bit6=status_bit6,
         phantoms=(phantom_patterns(sid, det, slides, status_bit6)
                   if reject_phantoms else None),
-        variants=variants)
+        variants=variants, steps=slide_steps)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
@@ -309,7 +325,7 @@ def convert(sid_path: str, log: Logger = print,
     # data column in place, so nothing downstream may read it as a value again.
     scaled = 0
     if fmt != FORMAT_GTS2:
-        speed_table = build_speed_table(new_patterns, multiplier)
+        speed_table = build_speed_table(new_patterns, multiplier, slide_steps)
         # Every stored step is the divided one, so at -S2 and above the count
         # of scaled slides is the count of entries.
         scaled = len(speed_table) if multiplier > 1 else 0

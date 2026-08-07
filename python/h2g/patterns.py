@@ -16,7 +16,8 @@ from __future__ import annotations
 from math import gcd
 from typing import List, Optional, Set
 
-from .detect import Detection
+from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN,
+                     SLIDE_HIGH_FIRST_MASK)
 from .goatwriter import CMD_SETTEMPO
 from .sidfile import SidFile
 
@@ -128,12 +129,48 @@ class ConversionAbort(Exception):
     pass
 
 
+# Distinct slide steps a file may carry. A pattern data column is one byte and
+# 0 means "no parameter", so 255 indices are available -- the same ceiling
+# MAX_TABLELEN puts on the speed table those indices name.
+MAX_SLIDE_STEPS = 0xFF
+
+
+def _step_index(steps: List[int], speed: int) -> int:
+    """1-based index of `speed` in `steps`, appending it if new.
+
+    The pattern column cannot hold a 16-bit step, so for a GTS5 file it holds
+    an *index* into the file's own list of distinct steps instead of a packed
+    value -- which is what build_speed_table would overwrite it with anyway.
+    That removes both ends of the packing error at once: `min(step // 4, 0xFF)`
+    saturated every step above 1020 (2189 of the corpus's 5566 portamento
+    parameters before the dialect fix) and rounded every step below 4 to zero,
+    which reads as no parameter at all.
+
+    Past 255 distinct steps the nearest one already listed is reused. No corpus
+    file comes close, and reusing a neighbour is a slide a fraction off rather
+    than a column that means something else entirely.
+    """
+    if not speed:
+        return 0
+    try:
+        return steps.index(speed) + 1
+    except ValueError:
+        pass
+    if len(steps) < MAX_SLIDE_STEPS:
+        steps.append(speed)
+        return len(steps)
+    nearest = min(range(len(steps)), key=lambda k: abs(steps[k] - speed))
+    return nearest + 1
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
                        status_bit6: bool = False,
                        span: Optional[List[int]] = None,
-                       note_base: int = 0) -> Optional[List[int]]:
+                       note_base: int = 0,
+                       slide_high_first: bool = False,
+                       steps: Optional[List[int]] = None) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -141,6 +178,13 @@ def _build_raw_pattern(data: bytes, addr: int,
     detect.SLIDE_OPERAND_SHAPE. It is off by default because 54 of 95 corpus
     players do not have that fetch, and reading a byte they never read
     desynchronises the rest of the pattern.
+
+    slide_high_first says that in *this* player the fetched byte is the step's
+    LOW half and the operand carries the high half -- a second dialect behind
+    the same fetch shape, in 22 corpus files. Read the wrong way round the step
+    comes out about 256x too large; see detect.SLIDE_HIGH_FIRST_SHAPE. It has
+    no effect unless slide_operand is set, since without the fetch there is no
+    second byte to assign.
 
     status_bit6 says the player tests bit 6 of the status byte first and
     alone (`BIT status / BVS`, detect.STATUS_BIT6_SHAPE), branching past the
@@ -218,10 +262,10 @@ def _build_raw_pattern(data: bytes, addr: int,
                     cmd1, g_instrument = 2, 0  # pitch up
                 cmd2 = (b2 & 0x7F) // 4
                 if slide_operand:
-                    # The step is 16-bit: this byte is its low half (masked
-                    # $7E -- bit 0 is the direction flag, bit 7 the command
-                    # flag) and the *next* byte is its high half. Warhawk
-                    # $1320 adds both to the voice frequency each frame.
+                    # The step is 16-bit and split across these two bytes --
+                    # but which byte is which half depends on the player, and
+                    # the two dialects share one fetch shape. See
+                    # detect.SLIDE_HIGH_FIRST_SHAPE for both routines.
                     #
                     # Goattracker's own portamento parameter is the 16-bit
                     # speed divided by four (gtable.c:881, MST_PORTAMENTO:
@@ -230,8 +274,23 @@ def _build_raw_pattern(data: bytes, addr: int,
                     i2 += 1
                     if addr + i2 >= len(data):
                         return None
-                    speed = (data[addr + i2] << 8) | (b2 & 0x7E)
-                    cmd2 = min(speed // 4, 0xFF)
+                    if slide_high_first:
+                        # Flash Gordon $12EB: the operand's low 6 bits are the
+                        # step's HIGH half (self-modified into an immediate)
+                        # and the fetched byte is its low half. Direction is a
+                        # threshold, not a bit: `CMP #$BF / BCC` adds below it.
+                        speed = ((b2 & SLIDE_HIGH_FIRST_MASK) << 8) \
+                            | data[addr + i2]
+                        cmd1 = 2 if b2 >= SLIDE_HIGH_FIRST_DOWN else 1
+                    else:
+                        # Warhawk $1320: this byte is the low half (masked
+                        # $7E -- bit 0 is the direction flag, bit 7 the command
+                        # flag) and the *next* byte is the high half.
+                        speed = (data[addr + i2] << 8) | (b2 & 0x7E)
+                    if steps is not None:
+                        cmd2 = _step_index(steps, speed)
+                    else:
+                        cmd2 = min(speed // 4, 0xFF)
             else:
                 g_instrument = (b2 & 0x7F) + 2
                 g_old_instr2 = g_old_instr1
@@ -540,7 +599,8 @@ def cmdtable_frames_per_row(sid: SidFile, det: Detection,
 
 def decode_entry(sid: SidFile, det: Detection, i: int,
                  slides: bool = False,
-                 status_bit6: bool = False) -> Optional[List[int]]:
+                 status_bit6: bool = False,
+                 steps: Optional[List[int]] = None) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -566,7 +626,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             note_base=det.note_base)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
-                              note_base=det.note_base)
+                              note_base=det.note_base,
+                              slide_high_first=det.slide_high_first,
+                              steps=steps)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -741,7 +803,8 @@ def phantom_patterns(sid: SidFile, det: Detection,
                                         slides and det.slide_operand,
                                         det.note_flag,
                                         status_bit6 and det.status_bit6,
-                                        span=span)
+                                        span=span,
+                                        slide_high_first=det.slide_high_first)
         if events is None:
             out[i] = "decode runs off the end of the file"
             continue
@@ -756,8 +819,23 @@ def phantom_patterns(sid: SidFile, det: Detection,
     return out
 
 
+def _scaled_step(step: int, multiplier: int) -> tuple:
+    """A 16-bit per-frame step as a per-call (hi, lo) speed-table entry.
+
+    Never rounds down to zero: a step of nothing is a slide that does not move,
+    which is further from the player than the slowest step the table can hold.
+    Never reaches $8000 either -- a left side that high selects Goattracker's
+    note-relative mode (gplay.c:539-547) and would mean something else
+    entirely. Both bounds are reachable only with absurd inputs; they are here
+    so that is a fact about the code rather than about the corpus.
+    """
+    v = min(max(1, round(step / max(1, multiplier))), 0x7FFF)
+    return (v >> 8) & 0xFF, v & 0xFF
+
+
 def build_speed_table(patterns: List[List[int]],
-                      multiplier: int = 1) -> List[tuple]:
+                      multiplier: int = 1,
+                      steps: Optional[List[int]] = None) -> List[tuple]:
     """Encode every portamento parameter as a speed table, in place.
 
     Rewrites each speedtable-requiring command's data column to a 1-based
@@ -780,6 +858,11 @@ def build_speed_table(patterns: List[List[int]],
     distinct one costs one entry, which is exactly MAX_TABLELEN.
     """
     m = max(1, multiplier)
+    if steps is not None:
+        # The decoder already wrote 1-based indices into the data column, so
+        # the table is `steps` itself and no column needs rewriting. This is
+        # the path that carries the step at full 16-bit width; see _step_index.
+        return [_scaled_step(v, m) for v in steps]
     index: dict = {}
     table: List[tuple] = []
     for pattern in patterns:
@@ -795,8 +878,7 @@ def build_speed_table(patterns: List[List[int]],
                 # Never round down to zero: a step of nothing is a slide that
                 # does not move, which is further from the player than the
                 # slowest step the table can hold.
-                step = max(1, round(value * 4 / m))
-                table.append((step >> 8 & 0xFF, step & 0xFF))
+                table.append(_scaled_step(value * 4, m))
             pattern[k + 3] = index[value] + 1
     return table
 
@@ -835,7 +917,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      slides: bool = False,
                      status_bit6: bool = False,
                      phantoms: Optional[dict] = None,
-                     variants: Optional[List[tuple]] = None):
+                     variants: Optional[List[tuple]] = None,
+                     steps: Optional[List[int]] = None):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -896,7 +979,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             raw_patterns.append(list(ERROR_PATTERN))
             continue
 
-        events = decode_entry(sid, det, i, slides, status_bit6)
+        events = decode_entry(sid, det, i, slides, status_bit6, steps)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -907,7 +990,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     for src, octaves in (variants or ()):
         base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
         if base is None:
-            base = decode_entry(sid, det, src, slides, status_bit6)
+            base = decode_entry(sid, det, src, slides, status_bit6,
+                                steps)
         if base is None:
             log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")

@@ -250,30 +250,40 @@ drum path has no free slot, all five entries are in use.
 field), so RetroDebugger is the only way to confirm it. This is the largest
 identified-but-unfixed defect on the list.
 
-## 1b. The slide step saturates an 8-bit column — 39% of the corpus's
+## 1b. The slide step — CLOSED in v0.5.83, and the clamp was not the disease
 
-**New in v0.5.82, found in the trace taken to check §1.** `patterns.py` packs
-a 16-bit player slide step as `min(speed // 4, 0xFF)` in the pattern data
-column, and **2189 of the corpus's 5566 portamento parameters (39%, in 15
-files) sit on that clamp**: ACE_II, Arcade_Classics, Auf_Wiedersehen_Monty,
-Delta, Flash_Gordon, IK_plus, Knucklebusters, Nineteen, Ninja, Pandora,
-Sanxion, Shockway_Rider, Thanatos, Trans-Atlantic_Balloon_Challenge and W_A_R.
-A clamped parameter is not a slide that is slightly fast, it is a slide whose
-speed was never read.
+**Closed.** The 8-bit clamp (2189 of 5566 portamento parameters, 39%, in 15
+files) was a symptom. The disease is a **second slide dialect**: 22 corpus
+files put the two operand bytes the opposite way round from Warhawk — the
+command operand's low 6 bits (`AND #$3F`, self-modified into an immediate) are
+the step's HIGH half, the fetched byte is the low half, and the direction comes
+from `CMP #$BF` rather than bit 0. Verified byte-for-byte in Flash Gordon
+`$12EB`, Sanxion `$B2E1` and Delta `$C0D6`. The census partitions cleanly, the
+way `+7`'s two formats do: 25 files Warhawk, 22 this, **none both**. Read the
+wrong way round the step comes out ~256× too large, which is exactly why those
+15 files saturated — and all 15 are in this dialect. See
+H2G-CONVERSION-METHOD.md § 7.cc.
 
-Flash_Gordon is the worked example: its original moves the frequency about
-`$0063` a frame and ours `$01FE` — and `$03FC` (what it emitted before §1) is
-exactly `0xFF * 4`, so the file was saturating rather than reading 1020.
-Whether the underlying read is right at all is a second question that example
-does not answer.
+The column is fixed too. In a GTS5 file it becomes a speed-table index anyway
+(`gplay.c:740`), so the decoder now writes the index and the steps keep their
+full 16-bit width beside the patterns. Nothing saturates and nothing rounds to
+zero — correcting the dialect alone had pushed 250 columns *under* 4, which
+`gplay.c` reads as no parameter at all. Ceiling 255 distinct steps per file;
+the worst corpus file has 40. GTS2 keeps the packed byte, a real format limit.
 
-A **GTS5 speed table stores the step at full 16 bits** (`build_speed_table`
-writes `(hi, lo)`), so the format can carry every one of these — the value
-reaches it through the 8-bit column, which is a GTS2 constraint applied to a
-GTS5 file. The fix is to keep the raw 16-bit steps beside the patterns and let
-the column stay what it becomes anyway, a table index. Unlike §1 this one is
-**visible to the harness**: the `slides` column moved on 8 files for a halving,
-so an order-of-magnitude correction should move it much further.
+**A new dimension had to be built to judge it.** `slides` said the fix was
+worse — Flash_Gordon 635 → 266 against an original of 740. It counts one of
+siddump's *two* printed forms for pitch movement, and a change in step size
+moves frames between them: that file's ties rose 181 → 340 as its slides fell.
+`bend` — pitch travel, the `cut` to `slides`' `filt` — reads **0.30x → 0.66x**.
+
+### What `bend` showed immediately, and nobody has looked at
+
+**The corpus median `bend` is 0.00x, and 24 files bend nothing at all where
+the original bends**, across 81 measurable rows. Step size was never the main
+gap: the slides are largely not being emitted in the first place. That is now
+the largest *measured* defect on this list — and unlike the previous largest,
+it is measured.
 
 ## 2. The listening pass — never performed, now eighteen versions overdue
 

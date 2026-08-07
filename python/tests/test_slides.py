@@ -147,3 +147,120 @@ def test_the_table_cannot_overflow_max_tablelen():
     patterns = [[b for v in range(1, 256)
                  for b in (GT_NO_NOTE, 0, 1, v)]]
     assert len(build_speed_table(patterns)) == 255
+
+
+# --- the second slide dialect ----------------------------------------------
+#
+# The two-byte fetch says a second byte exists. It does not say which half of
+# the step it is, and two players disagree behind the same fetch shape:
+#
+#   Warhawk $1320     operand & $7E is the LOW half, bit 0 the direction,
+#                     the fetched byte the HIGH half
+#   Flash Gordon $12EB  operand & $3F is the HIGH half (self-modified into an
+#                     immediate), the fetched byte the LOW half, and the
+#                     direction is `CMP #$BF / BCC` rather than a bit
+#
+# Read Flash Gordon's bytes Warhawk's way round and the step comes out about
+# 256x too large -- which then saturated the 8-bit pattern column. All 15
+# corpus files whose parameter sat on that clamp are in this dialect.
+
+from h2g.detect import (SLIDE_HIGH_FIRST_DOWN, SLIDE_HIGH_FIRST_MASK,
+                        _find_slide_high_first)
+from h2g.patterns import MAX_SLIDE_STEPS, _step_index
+
+CORPUS = pathlib.Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+
+# The operand $84: bit 7 set (a command), below $BF so upward, and its low 6
+# bits are 4 -- so the step's high half is 4. The next byte, $48, is the low
+# half: $0448. Read the other way round it would be $4884, which saturates.
+HIGH_FIRST = [0x00, 0x00, 0x80, 0x84, 0x48, 0x17, 0xFF]
+
+
+def test_the_operand_carries_the_high_half():
+    rows = _rows(_build_raw_pattern(bytes(HIGH_FIRST), 2, slide_operand=True,
+                                    slide_high_first=True))
+    assert rows[0][3] == min(0x0448 // 4, 0xFF), "0x0448 packed, not clamped"
+
+
+def test_the_other_way_round_saturates_the_column():
+    # The reading this replaces, on the same bytes: $4884 // 4 is 4641, which
+    # the byte cannot hold, so it lands on the clamp and the step is lost.
+    rows = _rows(_build_raw_pattern(bytes(HIGH_FIRST), 2, slide_operand=True))
+    assert rows[0][3] == 0xFF
+
+
+def test_the_direction_is_a_threshold_not_a_bit():
+    # $84 and $85 differ in bit 0 -- Warhawk's direction flag -- and both are
+    # below $BF, so both slide the same way here.
+    for operand in (0x84, 0x85):
+        ev = [0x00, 0x00, 0x80, operand, 0x48, 0x17, 0xFF]
+        rows = _rows(_build_raw_pattern(bytes(ev), 2, slide_operand=True,
+                                        slide_high_first=True))
+        assert rows[0][2] == 1, "CMD_PORTAUP below the threshold"
+    ev = [0x00, 0x00, 0x80, SLIDE_HIGH_FIRST_DOWN, 0x48, 0x17, 0xFF]
+    rows = _rows(_build_raw_pattern(bytes(ev), 2, slide_operand=True,
+                                    slide_high_first=True))
+    assert rows[0][2] == 2, "$BF itself subtracts -- CMP/BCC, not CMP/BCC+1"
+
+
+def test_the_two_dialects_partition_the_corpus():
+    if not CORPUS.is_dir():
+        return
+    from h2g.search import search_file
+    from h2g.sidfile import load_sid
+    warhawk = "BD ?? ?? F0 ?? 29 7E 8D ?? ?? BD ?? ?? 29 01 F0 ??"
+    both = []
+    for path in sorted(CORPUS.glob("*.sid")):
+        data = load_sid(str(path)).data
+        if search_file(data, warhawk) >= 1 and _find_slide_high_first(data):
+            both.append(path.name)
+    assert both == [], "a file matching both consumers would need a tiebreak"
+
+
+def test_the_dialect_is_read_out_of_the_two_named_players():
+    if not CORPUS.is_dir():
+        return
+    from h2g.sidfile import load_sid
+    assert _find_slide_high_first(load_sid(str(CORPUS / "Flash_Gordon.sid")).data)
+    assert not _find_slide_high_first(load_sid(str(CORPUS / "Warhawk.sid")).data)
+
+
+# --- the step index ---------------------------------------------------------
+#
+# A pattern data column is one byte and a step is sixteen. In a GTS5 file the
+# column becomes a 1-based speed-table index anyway, so the decoder writes that
+# index directly and the step keeps its full width.
+
+def test_the_index_is_one_based_and_deduplicates():
+    steps: list = []
+    assert [_step_index(steps, v) for v in (0x0448, 0x0063, 0x0448)] == [1, 2, 1]
+    assert steps == [0x0448, 0x0063]
+
+
+def test_a_zero_step_stays_zero():
+    # gplay.c reads cmddata 0 as "no parameter"; an index of 1 would name the
+    # first entry instead.
+    steps: list = []
+    assert _step_index(steps, 0) == 0
+    assert steps == []
+
+
+def test_past_the_ceiling_the_nearest_step_is_reused():
+    steps = list(range(100, 100 + MAX_SLIDE_STEPS))
+    assert len(steps) == MAX_SLIDE_STEPS
+    got = _step_index(steps, 10_000)
+    assert len(steps) == MAX_SLIDE_STEPS, "the column cannot hold a 256th index"
+    assert steps[got - 1] == max(steps), "the nearest one it has"
+
+
+def test_the_table_is_the_steps_when_the_decoder_indexed_them():
+    # The column already holds indices, so build_speed_table emits the steps
+    # rather than unpacking a column -- and does not rewrite anything.
+    patterns = [[GT_NO_NOTE, 0, 1, 1, GT_NO_NOTE, 0, 2, 2]]
+    table = build_speed_table(patterns, 1, [0x0448, 0x0063])
+    assert table == [(0x04, 0x48), (0x00, 0x63)]
+    assert [patterns[0][3], patterns[0][7]] == [1, 2], "columns left alone"
+
+
+def test_indexed_steps_are_scaled_by_the_multiplier_too():
+    assert build_speed_table([], 2, [0x0448]) == [(0x02, 0x24)]

@@ -1605,14 +1605,10 @@ literal halving, and a slower slide spends more frames moving before it
 arrives. That is the division showing up in the register writes, not the
 harness measuring the call rate; siddump still traced both runs at 50 Hz.
 
-The same trace turned up a **larger, older defect standing behind this one**.
-Flash_Gordon's *original* moves its frequency by about `$0063` a frame; ours
-moves `$01FE`. `$03FC` is `0xFF * 4` — the pattern data column is one byte and
-`patterns.py` clamps the packed step to it, so that file was not reading a
-step of 1020, it was reading *at least* 1020 and saturating. **2189 of the
-corpus's 5566 portamento parameters (39%, in 15 files) sit on that clamp.**
-A GTS5 speed table stores the step at full 16-bit width and could carry them,
-but the value reaches it through the 8-bit column. Open; see whats-next.md.
+The same trace turned up a **larger, older defect standing behind this one** —
+`$03FC` is `0xFF * 4`, the clamp in `min(step // 4, 0xFF)`, and **2189 of the
+corpus's 5566 portamento parameters (39%, in 15 files) sat on it**. That is
+§ 7.cc.
 
 **Nothing else in `FIDELITY.md` can move on any of this, and that is a fact
 about the harness, not about the fix.** siddump calls the play routine `seconds × 50`
@@ -1624,6 +1620,105 @@ that this reaches anything is the differential hash above and
 `tests/test_call_rate.py`; the evidence that it reaches the right thing is
 `gplay.c` and the 6502. Confirming it audibly needs RetroDebugger, which
 honours the CIA rate, or a listening pass.
+
+### 7.cc The slide step: one fetch shape, two dialects, and an 8-bit column
+
+A pitch slide is a 16-bit step split across two pattern bytes — the command
+operand and a byte fetched after it. `detect.SLIDE_OPERAND_SHAPE` finds the
+fetch (41 of 95 corpus files have it). **It does not say which byte is which
+half, and two players disagree.**
+
+Warhawk `$1320`, the routine this converter was built on:
+
+```
+1320  BD B7 15  LDA slidelo,X       ; the command operand
+1325  29 7E     AND #$7E            ; ... IS the step's low half
+132A  BD B7 15  LDA slidelo,X
+132D  29 01     AND #$01            ; ... and its bit 0 is the direction
+132F  F0 1C     BEQ add
+1332  BD B4 15  LDA freqlo,X / SBC $1588 / STA $D400,Y
+133E  BD B1 15  LDA freqhi,X
+1341  FD BA 15  SBC slidehi,X       ; the fetched byte is the HIGH half
+```
+
+Flash Gordon `$12EB` — same fetch shape, halves the other way round, and the
+direction taken from a threshold rather than a bit:
+
+```
+12EB  BD 40 15  LDA slidelo,X
+12F0  C9 BF     CMP #$BF
+12F2  90 1A     BCC up              ; < $BF adds, >= $BF subtracts
+12F4  29 3F     AND #$3F            ; the operand is the step's HIGH half...
+12F6  8D 07 13  STA $1307           ; ...self-modified into the SBC below
+12FA  BD 3A 15  LDA freqlo,X
+12FD  FD 3D 15  SBC slidehi,X       ; the fetched byte is the LOW half
+1303  BD 37 15  LDA freqhi,X
+1306  E9 08     SBC #$08            ; <- operand written at $12F6
+```
+
+Byte-for-byte the same routine, relocated, in Sanxion `$B2E1` and Delta
+`$C0D6`. The `CMP` immediate is `$BF` in all 22 matches and the mask `$3F` in
+all 22, so both are literals rather than parameters.
+
+**The census partitions cleanly, the way `+7`'s two formats do:** 25 corpus
+files have Warhawk's consumer, 22 have this one, and **none has both**. 22 of
+the 41 files with the two-byte fetch were being decoded with the halves
+swapped — a step about 256× too large.
+
+#### The column that hid it
+
+`patterns.py` packed the step as `min(step // 4, 0xFF)`, because the pattern
+data column is one byte. A step read 256× too large therefore did not look
+wrong, it looked *saturated*: **2189 of the corpus's 5566 portamento
+parameters (39%, in 15 files) sat on that clamp**, and all 15 are in the
+swapped dialect. The clamp was not the defect; it was the defect's hiding
+place.
+
+Correcting the dialect alone made it worse in the other direction — 250
+columns whose true step was under 4 now packed to zero, which `gplay.c` reads
+as *no parameter at all*. Both ends are the same mistake: an 8-bit column
+carrying a 16-bit quantity.
+
+**In a GTS5 file that column does not need to carry the value.** It ends up a
+1-based speed-table index anyway (`gplay.c:740`), and the table stores the step
+at full 16-bit width — so the decoder now writes the index directly and keeps
+the steps beside the patterns (`patterns._step_index`). Nothing saturates and
+nothing rounds to zero. The ceiling is 255 distinct steps per file; the worst
+corpus file has **40**.
+
+A GTS2 file keeps the packed byte, because its loader reads that column as the
+value (`gsong.c:311-321`) and there is no stored table for an index to name.
+That is a real format limit rather than an oversight, and it is one more reason
+the presets use gts5.
+
+#### What it measured, and the column that had to be built to see it
+
+`slides` — frames on which the frequency moved — said the fix made things
+**worse**: Flash_Gordon 635 → 266 against an original of 740. It was measuring
+the wrong thing. siddump prints pitch movement in two forms, a bare delta
+(`(+ 03FC)`) and a parenthesised note, choosing between them by whether the new
+frequency lands near a note in its table. A change in step *size* moves frames
+between the two forms, and `slides` counts only the first: Flash_Gordon's ties
+rose 181 → 340 as its slides fell, and its *total* pitch movement rose 518 →
+552 against the original's 569.
+
+A count cannot judge a step size — the same lesson `cut` had to be built for
+next to `filt`. **`bend` is the pitch counterpart**: our summed frame-to-frame
+movement of `$D400/$D401`, excluding the frames a note is struck on, over the
+original's. On it the fix reads **0.30x → 0.66x**, a clear move toward the
+original's travel, and the reading does not depend on which form siddump chose.
+
+| | before | after |
+|---|---:|---:|
+| portamento parameters on the clamp | 2189 of 5566 (39%) | none — no clamp |
+| Flash_Gordon `slides` (orig 740) | 635 | 266 |
+| Flash_Gordon **`bend`** | 0.30x | **0.66x** |
+
+Only one corpus file moves either number, because the other 16 whose bytes
+changed emit no pitch movement at all in the traced window. Which is the next
+thing this dimension makes visible: **24 files bend nothing where the original
+bends**, and the corpus median `bend` is **0.00x**. The step size was never the
+main gap — the missing slides are.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 
