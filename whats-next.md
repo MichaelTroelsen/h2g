@@ -275,15 +275,47 @@ the worst corpus file has 40. GTS2 keeps the packed byte, a real format limit.
 worse — Flash_Gordon 635 → 266 against an original of 740. It counts one of
 siddump's *two* printed forms for pitch movement, and a change in step size
 moves frames between them: that file's ties rose 181 → 340 as its slides fell.
-`bend` — pitch travel, the `cut` to `slides`' `filt` — reads **0.30x → 0.66x**.
+`bend` — pitch travel, the `cut` to `slides`' `filt` — reads **1.67x → 1.51x**,
+still overshooting but by less.
 
-### What `bend` showed immediately, and nobody has looked at
+*(v0.5.83 published that as 0.30x → 0.66x. The dimension's first cut excluded
+only attack frames, so a **tie** — a note change with no re-gate — counted its
+whole pitch jump as bending, inflating the original side wherever a player uses
+legato. v0.5.84 excludes ties. The verdict's direction survived; its magnitude
+did not.)*
 
-**The corpus median `bend` is 0.00x, and 24 files bend nothing at all where
-the original bends**, across 81 measurable rows. Step size was never the main
-gap: the slides are largely not being emitted in the first place. That is now
-the largest *measured* defect on this list — and unlike the previous largest,
-it is measured.
+## 1c. CLOSED: why a third of the corpus bends nothing — the vibrato
+
+**33 of 95 files** (not the 24 the contaminated metric showed) move the pitch
+not at all where the original does; the corpus median `bend` is **0.06x**.
+Splitting those 33 by what the *original* does — net movement over total, so a
+sweep travels and a vibrato returns — gives **20 vibrato, 11 mixed, 2 sweep**.
+
+**The converter has never emitted vibrato.** Goattracker drives it per
+instrument: `gplay.c:352-354` loads `cptr->vibdelay = iptr->vibdelay` and
+`cptr->cmddata = iptr->ptr[STBL]` on every new note, and a channel with no
+pattern command falls through `CMD_DONOTHING` into `CMD_VIBRATO`. Those are
+instrument-record bytes 5 and 6, and `goatwriter._write_instruments` writes
+`0x00, 0x00`. `CMD_VIBRATO` is never written into a pattern either.
+
+Full working in H2G-CONVERSION-METHOD.md § 7.dd, including Warhawk's own
+routine at `$1245` (depth `$158C/$158D`, counter `$15C3,X`, applied between the
+frequency-table lookup and the SID write — so it is *player state*, in no byte
+the ripper reads).
+
+### The next piece of work, and it is the largest one measured
+
+**Emit vibrato.** It costs two bytes per instrument record and one speed-table
+entry, and Goattracker's note-relative speed form (`cmpvalue >= 0x80`,
+`gplay.c:786-792`) already has the right shape — depth from the semitone
+interval at the current note, which is what the traces show. What has to be
+found first is **where each player keeps its depth and rate**; Warhawk's cells
+are one player's answer, not the family's, so this needs the same
+signature-and-census treatment the effect byte and the slide dialect got.
+
+Two smaller residuals behind the same zero: 10 files (9 digi, 1 cmdtable) have
+no slide path in their decoder at all, and 11 classic files have no two-byte
+fetch for `--slides` to read.
 
 ## 2. The listening pass — never performed, now eighteen versions overdue
 

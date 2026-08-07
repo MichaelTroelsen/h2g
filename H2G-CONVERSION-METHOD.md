@@ -1704,21 +1704,111 @@ rose 181 → 340 as its slides fell, and its *total* pitch movement rose 518 →
 
 A count cannot judge a step size — the same lesson `cut` had to be built for
 next to `filt`. **`bend` is the pitch counterpart**: our summed frame-to-frame
-movement of `$D400/$D401`, excluding the frames a note is struck on, over the
-original's. On it the fix reads **0.30x → 0.66x**, a clear move toward the
-original's travel, and the reading does not depend on which form siddump chose.
+movement of `$D400/$D401`, excluding every frame the voice changes note on,
+over the original's. On it the fix reads **1.67x → 1.51x** — still overshooting
+the original's travel, but by less — and the reading does not depend on which
+form siddump chose.
 
 | | before | after |
 |---|---:|---:|
 | portamento parameters on the clamp | 2189 of 5566 (39%) | none — no clamp |
 | Flash_Gordon `slides` (orig 740) | 635 | 266 |
-| Flash_Gordon **`bend`** | 0.30x | **0.66x** |
+| Flash_Gordon **`bend`** | 1.67x | **1.51x** |
+
+**Those `bend` figures are not the ones v0.5.83 shipped**, which read 0.30x →
+0.66x. The dimension's first cut excluded only *attack* frames, so a **tie** —
+a note change the player did not re-gate — counted its whole pitch jump as
+bending. It inflated the original side wherever a player uses legato:
+Pygmies_Revenge, which ties 493 times in ten seconds, read 21.7 million units
+of travel against about 12 thousand of real bending. v0.5.84 excludes ties
+too. The direction of the v0.5.83 verdict survives the correction and its
+magnitude does not, which is the second time in three versions that a number
+about the converter turned out to be a number about the harness.
 
 Only one corpus file moves either number, because the other 16 whose bytes
-changed emit no pitch movement at all in the traced window. Which is the next
-thing this dimension makes visible: **24 files bend nothing where the original
-bends**, and the corpus median `bend` is **0.00x**. The step size was never the
-main gap — the missing slides are.
+changed emit no pitch movement at all in the traced window — which is what
+§ 7.dd is about.
+
+### 7.dd Why a third of the corpus bends nothing: the vibrato was never written
+
+`bend` was built to judge a step size and immediately answered a bigger
+question. **33 of 95 corpus files move the pitch not at all where the original
+moves it**, and the corpus median `bend` is **0.06x** — the converter produces
+about a sixteenth of the pitch movement its sources do.
+
+Sorting those 33 by *what the original is doing* in those frames settles it.
+Take the summed movement and the **net** movement of each voice, excluding note
+changes: a sweep travels (net ≈ total), a vibrato returns (net ≈ 0).
+
+| net / total | reading | files |
+|---|---|---:|
+| < 0.25 | vibrato — it comes back | **20** |
+| 0.25 – 0.6 | mixed | 11 |
+| > 0.6 | a sweep that travels | 2 |
+
+Warhawk is typical: 419 moved frames against 52 attacks in ten seconds, in
+matched pairs — 104 × `(+ 0034)` against 97 × `(- 0034)`, 80 × `(- 0037)`
+against 79 × `(+ 0037)`, and so on, with the depth growing with pitch.
+
+**And it is not in the patterns at all.** Warhawk applies it between the
+frequency-table lookup and the SID write, at `$1245`:
+
+```
+1245  B9 AC 14  LDA $14AC,Y / STA $158E   ; the note's frequency, lo
+124B  B9 AD 14  LDA $14AD,Y / STA $158F   ; ...and hi
+1251  BD C3 15  LDA $15C3,X               ; the voice's vibrato counter
+1254  4A        LSR A / TAY / DEY
+1257  30 16     BMI out
+1259  38 AD 8E 15 ED 8C 15 ...            ; freq -= depth ($158C/$158D),
+126C  4C 56 12  JMP $1256                 ; ...counter/2 times
+1294  AC 6F 15  LDY $156F
+1297  AD 8E 15  LDA $158E / STA $D400,Y   ; only now does the SID see it
+```
+
+The pitch the SID receives is `note − (counter / 2) × depth`, with the counter
+oscillating. Nothing the ripper reads — pattern bytes, instrument records,
+orderlists — carries it; it is player state.
+
+**Goattracker can express exactly this, and the writer zeroes the two bytes
+that would.** `gplay.c:352-354`, on every new note:
+
+```c
+cptr->vibdelay = iptr->vibdelay;
+cptr->cmddata  = iptr->ptr[STBL];
+```
+
+so a channel with no pattern command falls through `CMD_DONOTHING` into
+`CMD_VIBRATO` (`gplay.c:769-780`) once the delay expires, taking its half-period
+and depth from the speed-table entry the *instrument* names. Those are record
+bytes 5 and 6 — and `goatwriter._write_instruments` writes:
+
+```python
+out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, 0x00, 0x00,
+              gatetimer, 0x09])
+```
+
+`0x00, 0x00`: no speed-table pointer, no delay. **No file this project has ever
+produced has vibrated**, and `CMD_VIBRATO` is never written into a pattern
+either. Better still, the note-relative speed form (`cmpvalue >= 0x80`,
+`gplay.c:786-792`) computes the depth from the semitone interval at the current
+note — which is the shape Warhawk's trace shows, the depth growing with pitch.
+
+The other two causes of a zero, both smaller and both structural:
+
+- **10 files have no slide path in their decoder at all** — the 9 digi-grammar
+  files and Hollywood_or_Bust's cmdtable grammar. `_build_raw_pattern_digi` and
+  `_build_raw_pattern_cmdtable` emit no portamento command in any branch.
+- **11 classic-grammar files emit zero portamento commands** because their
+  players have no two-byte fetch for `--slides` to read.
+- The remaining 12 *do* emit portamento — on 0.3% to 3.4% of their rows, and
+  often late. Warhawk's 112 commands sit in 4 of 65 patterns, first named at
+  orderlist position 86 of 91; sixty seconds of trace never reach them.
+
+So the ranking is clear and the cheap fix is the big one: **the missing pitch
+movement is mostly vibrato, and vibrato costs two bytes per instrument record
+plus one speed-table entry.** What has to be found first is where each player
+keeps its depth and rate — Warhawk's are `$158C/$158D` and the `$15C3,X`
+counter, which is one player's answer, not the family's.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

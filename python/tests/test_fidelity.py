@@ -960,3 +960,14 @@ def test_bend_sees_a_step_size_change_that_slides_cannot():
     out = fidelity.compare(orig, ours)
     assert out["our_slides"] == out["orig_slides"]
     assert out["bend_ratio"] == 10.0
+
+
+def test_bend_travel_ignores_a_tie_as_well_as_an_attack():
+    # A tie is a note change the player did not re-gate. Its frequency jump is
+    # a note change, not a bend -- and excluding only attacks reported
+    # Pygmies_Revenge, which ties 493 times in ten seconds, as travelling 21.7
+    # million units against about 32 thousand of actual bending.
+    v = fidelity.Voice()
+    v.freq_events = [(0, 1000), (1, 9000), (2, 9010)]
+    v.tie_frames = [1]
+    assert fidelity._bend_travel(v) == 10

@@ -180,6 +180,11 @@ class Voice:
     attacks: list[str] = field(default_factory=list)   # note names, in order
     attack_frames: list[int] = field(default_factory=list)
     ties: int = 0
+    # Frames on which siddump printed a *tie* -- a note change with no gate
+    # retrigger. Recorded, not just counted, because `bend` has to exclude
+    # them: a legato note change is a jump between notes, not movement within
+    # one, and counting it swamps the thing being measured.
+    tie_frames: list[int] = field(default_factory=list)
     slides: int = 0
     # (frame, value) for every frame siddump shows the register written.
     # siddump prints a value only when it changed, so between events the
@@ -294,6 +299,7 @@ def parse_dump(text: str) -> Trace:
                 continue
             if _TIE.match(rest):
                 voices[v].ties += 1
+                voices[v].tie_frames.append(frame)
                 continue
             if _SLIDE.match(rest):
                 voices[v].slides += 1
@@ -509,13 +515,18 @@ def _bend_travel(v: Voice) -> int:
     over the same frames score identically there whether each step is the
     player's or ten times it.
 
-    Frames on which the voice was struck are excluded on both sides -- the
-    jump from one note to the next is not a bend, and counting it would swamp
-    the thing being measured. siddump prints the frequency only when it
-    changed, so consecutive events are the moves themselves; no carry-forward
-    is needed and a held note contributes nothing.
+    Frames on which the voice changed note are excluded on both sides -- and
+    that means **ties as well as attacks**. A tie is a note change the player
+    did not re-gate, so its frequency jump is a note change like any other; the
+    first cut of this dimension excluded only attacks and reported
+    Pygmies_Revenge, which ties 493 times in ten seconds, as travelling 21.7
+    million units where its actual bends total about 32 thousand.
+
+    siddump prints the frequency only when it changed, so consecutive events
+    are the moves themselves; no carry-forward is needed and a held note
+    contributes nothing.
     """
-    struck = set(v.attack_frames)
+    struck = set(v.attack_frames) | set(v.tie_frames)
     travel = 0
     prev = None
     for frame, value in v.freq_events:
@@ -1489,7 +1500,8 @@ def report(rows: list[dict], args) -> str:
         "*within* a note, so a change that only adds or removes pitch "
         "movement leaves melody, seq and retrig identical.",
         "* **bend** -- our pitch *travel* -- the summed frame-to-frame "
-        "movement of $D400/$D401, excluding the frames a note is struck on -- "
+        "movement of $D400/$D401, excluding every frame the voice changes "
+        "note on, tie as well as attack -- "
         "over the original's. The other half of **slides**, and the half a "
         "count cannot answer: a bend taken in steps ten times too large moves "
         "the same frames and goes ten times as far. It is also the half that "
