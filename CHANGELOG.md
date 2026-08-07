@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.94 — 2026-08-07
+
+- the forks LoadTracker merged: gt2fork, leafo, Langner's GTUltra
+
 ## 0.5.93 — 2026-08-07
 
 - compare GoatTracker's forks; the GTS2 overrun is in all of them
