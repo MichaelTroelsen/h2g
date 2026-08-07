@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.75 — 2026-08-07
+
+- record the branch/worktree/PR convention for parallel work
+
 ## 0.5.74 — 2026-08-07
 
 - regenerate the artefacts on the settled tree

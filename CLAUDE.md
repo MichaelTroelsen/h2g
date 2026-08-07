@@ -181,6 +181,50 @@ test dependency).
   ever appear to disagree; the VB6 source is still the ground truth for what the
   original tool did, even though the Python port is now where new work happens.
 
+## Parallel work: branches, worktrees, PRs
+
+Several agents have repeatedly worked this repo at once. Sharing one working
+tree does not survive that, and the failures are not theoretical — both of
+these happened:
+
+- A fork had to **blob-stage** its commit because siblings held uncommitted
+  edits in the same files. That left `cli.py`/`convert.py`/`goatwriter.py` in
+  the tree *without* its hunks while the committed `presets.py` referenced
+  options those copies did not accept. For a while, no measurement taken from
+  the working tree was valid — and nothing announced that.
+- v0.5.72 shipped `--filter` wired into `convert()` and README but into
+  neither `presets.py` nor `_preset_opts`. It reached nothing. A regeneration
+  taken in that window would have written an `always` block without it and
+  shipped the feature inert.
+
+So, for any work that runs concurrently:
+
+- **One branch per unit of work, one PR per branch.** Branch from a pushed
+  `master`, never from a tree holding someone else's uncommitted edits.
+- **Each concurrent agent gets its own git worktree** (`isolation: "worktree"`
+  on the Agent tool). There is then no shared working tree to corrupt, and a
+  sibling's half-finished edit cannot silently enter your measurement.
+- **No PR touches `SURVEY.md`, `presets.json` or `FIDELITY.md`.** They are
+  generated; parallel branches conflict on every line of them, and a
+  per-branch regeneration records a tree state that never existed.
+  `master` regenerates **once**, after the merges, per the rule above.
+- **Re-take every number after rebasing onto what landed.** HEAD moving under
+  a fork has invalidated measurements more than once; numbers from the tree
+  you started on are not numbers about the tree you are merging into.
+- **Verify the staged path list before committing** (`git diff --cached
+  --name-only`). One fork committed nine duplicate files at the repo root and
+  then swept a sibling's uncommitted work in while trying to amend it.
+- Worktree checkouts can be CRLF against LF blobs, which shows up as bogus
+  whole-file merge conflicts. Normalise before concluding the conflict is
+  real — and note that it usually is real anyway.
+
+A new `convert()` option is inert until it is in **three** places: the
+signature, `presets.py`'s `FIXED`, and `_preset_opts`. `_preset_opts` now
+derives its keys from `inspect.signature(convert)` and
+`tests/test_preset_passthrough.py` fails if any option escapes, with
+`presets.EXCLUDED_FROM_ALWAYS` naming deliberate omissions. Do not hand-edit
+that list back into existence.
+
 ## VB6 original — build / run (reference only, not actively developed)
 
 Requires Visual Basic 6.0 (IDE or `VB6.EXE` command-line compiler) on Windows, plus the
