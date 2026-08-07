@@ -210,6 +210,17 @@ wave 29% → **0%**. Opt-in, with the boundary documented.
 
 ## 1. The multiplier is a per-frame rate written into a per-call table
 
+**CLOSED in v0.5.82** (the pulse table's half of it landed earlier, in
+v0.5.80). Slides, the drum sweep, the chromatic rise and the attack transient
+are each divided by the `-S` multiplier at the point they are encoded. Exactly
+the 33 multiplier-2 corpus songs change bytes and none of the 50 multiplier-1
+songs do; `FIDELITY.md` is flat by construction and says why. Three residuals
+remain and are named in H2G-CONVERSION-METHOD.md § 7.bb: the arpeggio
+alternation and the drum's own attack have no free wavetable slot, and the
+rise's shift is exact only for power-of-two multipliers (no corpus file asks
+for `-S3`). The audible confirmation — RetroDebugger or a listening pass —
+has still not been done. The original statement of the defect follows.
+
 **Found while refuting the call-rate hypothesis (see attempted_approaches);
 nothing is committed for it.** `multiplier` never appears in `goatwriter.py`
 past line 328 — it reaches the tempo path and nothing else. But Goattracker
@@ -238,6 +249,31 @@ drum path has no free slot, all five entries are in use.
 **Invisible to the harness by construction** (siddump ignores the speed
 field), so RetroDebugger is the only way to confirm it. This is the largest
 identified-but-unfixed defect on the list.
+
+## 1b. The slide step saturates an 8-bit column — 39% of the corpus's
+
+**New in v0.5.82, found in the trace taken to check §1.** `patterns.py` packs
+a 16-bit player slide step as `min(speed // 4, 0xFF)` in the pattern data
+column, and **2189 of the corpus's 5566 portamento parameters (39%, in 15
+files) sit on that clamp**: ACE_II, Arcade_Classics, Auf_Wiedersehen_Monty,
+Delta, Flash_Gordon, IK_plus, Knucklebusters, Nineteen, Ninja, Pandora,
+Sanxion, Shockway_Rider, Thanatos, Trans-Atlantic_Balloon_Challenge and W_A_R.
+A clamped parameter is not a slide that is slightly fast, it is a slide whose
+speed was never read.
+
+Flash_Gordon is the worked example: its original moves the frequency about
+`$0063` a frame and ours `$01FE` — and `$03FC` (what it emitted before §1) is
+exactly `0xFF * 4`, so the file was saturating rather than reading 1020.
+Whether the underlying read is right at all is a second question that example
+does not answer.
+
+A **GTS5 speed table stores the step at full 16 bits** (`build_speed_table`
+writes `(hi, lo)`), so the format can carry every one of these — the value
+reaches it through the 8-bit column, which is a GTS2 constraint applied to a
+GTS5 file. The fix is to keep the raw 16-bit steps beside the patterns and let
+the column stay what it becomes anyway, a table index. Unlike §1 this one is
+**visible to the harness**: the `slides` column moved on 8 files for a halving,
+so an order-of-magnitude correction should move it much further.
 
 ## 2. The listening pass — never performed, now eighteen versions overdue
 

@@ -1544,6 +1544,87 @@ the argument for building the `Pul` metric rather than a reason to doubt it.
 That metric exists as of v0.5.78: the `pul` column counts duty-cycle movement
 on each side, in the same ours/original form the table above uses.
 
+### 7.bb Per-frame rates written into per-call tables
+
+Every rate read out of a Hubbard player is *per frame*. The player is a raster
+interrupt: the drum sweep decrements the frequency high byte once a frame
+(Warhawk `$1387-$138D`), the chromatic rise steps a semitone every fourth frame
+(`$13A2`), a pattern slide adds its 16-bit step once a frame (`$1320`), and an
+instrument's attack waveform stands for one frame.
+
+Every place Goattracker takes those numbers is *per play call*. Speed-table
+deltas are applied inside the per-call `TICKNEFFECTS` (`gplay.c:748/758`) and
+the wavetable advances one entry per call (`gplay.c:707`).
+
+Those units are the same thing only at `gt2reloc -S1`. **33 of the 83 preset
+corpus songs pack at `-S2`** — a CIA stub calling the player at 100 Hz, which
+is the only way their tempo is expressible at all (§ *the fastest steady row is
+3 calls*). In every one of them, until v0.5.82, each of those rates ran at
+exactly twice the player's: slides bent twice as far per frame, the drum swept
+twice as deep, the rise glided twice as fast, and the attack waveform lasted
+half a frame instead of one.
+
+The repo had stated the mismatch in its own words for twenty versions without
+drawing the conclusion — `goatwriter.py`'s `DRUM_SPEED` comment described "256
+units per frame" and then wrote it into a per-call table.
+
+The fix is division at the point of encoding, by the `-S` factor the file will
+be packed at, which `convert()` already derives for the tempo:
+
+| rate | where | at `-S{m}` |
+|---|---|---|
+| pattern slide | speed-table entry, `build_speed_table` | 16-bit step ÷ m — **exact**, the table stores the whole step |
+| pattern slide, GTS2 | the pattern data column | ÷ m rounded — the column holds an eighth of the step and the loader multiplies (`gsong.c:311-321`) |
+| drum sweep | `_drum_speed` | 256 ÷ m, floored, never 0 |
+| chromatic rise | `_rise_speed_index` | one more right-shift per doubling |
+| attack transient | a wavetable delay entry `$01-$0F` | held m calls instead of 1 |
+
+**3023 of the corpus's 5566 portamento commands (54%) are in a file that packs
+at `-S2`.** The differential is clean: exactly the 33 multiplier-2 songs change
+bytes and not one of the 50 multiplier-1 songs does.
+
+Three residuals, named rather than left to be re-found:
+
+- **The arpeggio alternation stays at the call rate.** It swaps note on
+  consecutive wavetable entries and each half would need a delay beside it;
+  the five-entry-per-instrument layout has no room.
+- **The drum shape has no slot for the transient delay** either — all five
+  entries are the attack, the gate-off waveform, the sweep and two stops — so
+  its attack still lasts one call. Spending the sweep to buy the frame would
+  give back more than it bought.
+- **The rise's shift is exact only for powers of two.** The multipliers this
+  converter emits are `ceil(3/f)` for `f` in 1..2, i.e. 2 and 3, and 3 is not
+  one: at `-S3` the rise glides ¾ of the player's rate where before it glided
+  three times it. No corpus file asks for `-S3` today.
+
+**One column moved anyway, and it is worth understanding why.** `slides`
+counts frames on which siddump printed a bare frequency delta, and it moved on
+8 of the 33 — 7 of them toward the original. The trace says exactly what
+happened: Flash_Gordon's emitted step went from `(+ 03FC)` to `(+ 01FE)`, a
+literal halving, and a slower slide spends more frames moving before it
+arrives. That is the division showing up in the register writes, not the
+harness measuring the call rate; siddump still traced both runs at 50 Hz.
+
+The same trace turned up a **larger, older defect standing behind this one**.
+Flash_Gordon's *original* moves its frequency by about `$0063` a frame; ours
+moves `$01FE`. `$03FC` is `0xFF * 4` — the pattern data column is one byte and
+`patterns.py` clamps the packed step to it, so that file was not reading a
+step of 1020, it was reading *at least* 1020 and saturating. **2189 of the
+corpus's 5566 portamento parameters (39%, in 15 files) sit on that clamp.**
+A GTS5 speed table stores the step at full 16-bit width and could carry them,
+but the value reaches it through the 8-bit column. Open; see whats-next.md.
+
+**Nothing else in `FIDELITY.md` can move on any of this, and that is a fact
+about the harness, not about the fix.** siddump calls the play routine `seconds × 50`
+times whatever the PSID speed field says (`siddump.c:309/325`), so in the trace
+every file behaves as multiplier 1 and a multiplier-dependent change is
+invisible *by construction* — the same reason § *the shelved transient
+encodings* could not have been biased by the multiplier either. The evidence
+that this reaches anything is the differential hash above and
+`tests/test_call_rate.py`; the evidence that it reaches the right thing is
+`gplay.c` and the 6502. Confirming it audibly needs RetroDebugger, which
+honours the CIA rate, or a listening pass.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

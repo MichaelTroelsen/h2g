@@ -6,6 +6,7 @@ modeled here.
 """
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
@@ -86,21 +87,61 @@ WAVE_NOISE_GATEOFF = 0x80
 SPEED_NOTE_RELATIVE = 0x80
 RISE_SHIFT = 2
 
-# An absolute speed-table entry is (hi, lo) of a per-frame frequency step
-# (gplay.c:562). The drum block decrements the frequency HIGH byte once per
-# frame ($1387-$138D: `LDA counter / DEC counter / STA $D401,Y`), which is
-# exactly 256 units per frame.
+# An absolute speed-table entry is (hi, lo) of a frequency step applied once
+# per *play call* (gplay.c:562, inside the per-call TICKNEFFECTS at :748/758).
+# The drum block decrements the frequency HIGH byte once per *frame*
+# ($1387-$138D: `LDA counter / DEC counter / STA $D401,Y`), which is exactly
+# 256 units per frame.
 #
-# KNOWN DEFECT, not fixed here: "per frame" is this player's unit, but
-# Goattracker applies a speed-table delta once per *play call*
-# (gplay.c:748/758, inside the per-call TICKNEFFECTS) and advances the
-# wavetable one entry per play call (gplay.c:707). In the 33 corpus files
-# packed at `gt2reloc -S2` a call is half a frame, so this sweep -- and every
-# slide -- travels twice as far per frame as the player's, and an instrument
-# transient lasts half as long. `multiplier` reaches the tempo path (below)
-# and nothing else. siddump ignores the PSID speed field, so the harness
-# cannot see this; RetroDebugger can. See whats-next.md work_remaining SS1.
-DRUM_SPEED = (0x01, 0x00)
+# Those two units are the same only at `gt2reloc -S1`. Under -S2 a call is
+# half a frame, so a step written as 256 travels 512 units per frame -- twice
+# the player's -- and under -S3, three times. `_drum_speed` divides the
+# per-frame step by the multiplier the file will be packed at, which is what
+# makes the emitted sweep the player's sweep at any -S value.
+#
+# siddump ignores the PSID speed field (siddump.c:309/325), so no number in
+# FIDELITY.md can move on this; RetroDebugger can see it.
+DRUM_SPEED_PER_FRAME = 0x0100
+
+
+def _drum_speed(multiplier: int = 1) -> tuple:
+    """`DRUM_SPEED_PER_FRAME` as a per-call (hi, lo) step at `-S{multiplier}`.
+
+    Floor rather than round, and never zero: a step of zero is a sweep that
+    does not move, which is further from the player than one 1/256th slow.
+    """
+    step = max(1, DRUM_SPEED_PER_FRAME // max(1, multiplier))
+    return (step >> 8) & 0xFF, step & 0xFF
+
+
+# The multiplier-1 value, kept as a name because the wavetable tests and the
+# method doc both quote it.
+DRUM_SPEED = _drum_speed(1)
+
+
+# A wavetable left side of $01-$0F is a delay: the entry holds whatever
+# waveform is already set for that many play calls before advancing
+# (gcommon.h:56-57 WAVEDELAY/WAVELASTDELAY, executed at gplay.c:698-704).
+WAVE_MAX_DELAY = 0x0F
+
+
+def _wave_delay(multiplier: int = 1) -> int:
+    """Delay entry that stretches one play call to `multiplier` calls, or 0.
+
+    Zero at -S1, where a call already is a frame and no entry is needed.
+    """
+    return min(max(0, max(1, multiplier) - 1), WAVE_MAX_DELAY)
+
+
+def _rate_shift(multiplier: int = 1) -> int:
+    """Extra right-shift that turns a per-frame rate into a per-call one.
+
+    Only the note-relative speed entries take their rate as a shift, so this
+    is exact for 1 and 2 and rounds for 3 (log2(3) = 1.58 -> 2, a division by
+    four where three is wanted). See _rise_speed_index.
+    """
+    m = max(1, multiplier)
+    return max(0, round(math.log2(m)))
 
 
 # --- Tempo -----------------------------------------------------------------
@@ -450,7 +491,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
 
 
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
-                       fmt: str, speed_table: List[tuple]) -> tuple:
+                       fmt: str, speed_table: List[tuple],
+                       multiplier: int = 1) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -501,7 +543,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # keeps the pair it needs and such a record stays on the original's shape.
     # 62 of the 291 drum records this gate keeps are in that case.
     if drum and effects and not arp:
-        return _drum_entries(wave, fmt, speed_table)
+        return _drum_entries(wave, fmt, speed_table, multiplier)
 
     if drum:
         if effects:
@@ -524,20 +566,41 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # $13CD: alternate between the note and the note minus the high
         # nibble, one frame each. Readme p.794: right side $60-$7F is a
         # negative relative note, so $80-N is -N semitones.
+        #
+        # The alternation is one entry per play call, so at -S2 it swaps twice
+        # a frame and at -S3 three times -- the player's rate only at -S1. Each
+        # half would need a delay entry beside it and the five-entry layout has
+        # no room, so this one stays at the call rate. Named here rather than
+        # left to be re-found.
         left[3] = tail
         right[3] = (0x80 - arp_note) & 0xFF
         right[4] = third
     elif effects and det.effect_rise and (arp_style & 2) == 2:
-        index = _rise_speed_index(fmt, speed_table)
+        index = _rise_speed_index(fmt, speed_table, multiplier)
         if index:
             left[2] = WAVECMD_PORTAUP
             right[2] = index
             right[3] = third
 
+    # The attack entry holds for one play call, which is one frame only at
+    # -S1; under -S{m} it needs m. A delay entry ($01-$0F, held for N calls --
+    # gcommon.h:56-57, gplay.c:698-704) buys those calls without spending a
+    # waveform slot, and entry 1 is where it fits: in the plain and arpeggio
+    # shapes entry 1 merely repeats entry 2's `tail`, and in the arpeggio's
+    # case the loop runs over entries 2 and 3, so entry 1 is passed once.
+    #
+    # The rise shape is the exception -- its entry 2 is a command, so entry 1
+    # is the only place the tail waveform is written, and the delay may take it
+    # only where the tail *is* the attack byte and writing it changes nothing.
+    hold = _wave_delay(multiplier)
+    if hold and not drum and (left[2] == tail or tail == wave):
+        left[1] = hold
+
     return left, right
 
 
-def _drum_entries(wave: int, fmt: str, speed_table: List[tuple]) -> tuple:
+def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
+                  multiplier: int = 1) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -561,7 +624,10 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple]) -> tuple:
     Emitted here: attack, the gate-off waveform, one step of the sweep, stop.
     The sweep is one entry rather than a loop because the player's is bounded
     by a runtime counter and the table has three free slots (the fifth is the
-    stop); the step size is literal (see DRUM_SPEED) and the depth is not. The
+    stop); the step size is literal (see _drum_speed, which divides the
+    player's per-frame step by the -S multiplier) and the depth is not. All
+    five entries are in use, so unlike the plain shape this one has no slot for
+    a delay: its attack entry lasts one play call at every -S value. The
     wave metric cannot see it either way -- it compares waveform class, and the
     class does not change while the frequency falls.
 
@@ -578,13 +644,14 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple]) -> tuple:
     """
     left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF, 0xFF, 0xFF, 0xFF]
     right = [0x00, 0x00, 0x00, 0x00, 0x00]
-    index = _drum_speed_index(fmt, speed_table)
+    index = _drum_speed_index(fmt, speed_table, multiplier)
     if index:
         left[2], right[2] = WAVECMD_PORTADOWN, index
     return left, right
 
 
-def _drum_speed_index(fmt: str, speed_table: List[tuple]) -> int:
+def _drum_speed_index(fmt: str, speed_table: List[tuple],
+                      multiplier: int = 1) -> int:
     """1-based speed-table index for the drum's downward sweep, or 0.
 
     Zero for a GTS2 file for the same reason as _rise_speed_index: it stores no
@@ -593,14 +660,16 @@ def _drum_speed_index(fmt: str, speed_table: List[tuple]) -> int:
     """
     if fmt != FORMAT_GTS5:
         return 0
-    if DRUM_SPEED not in speed_table:
+    entry = _drum_speed(multiplier)
+    if entry not in speed_table:
         if len(speed_table) >= GT_MAX_TABLELEN:
             return 0
-        speed_table.append(DRUM_SPEED)
-    return speed_table.index(DRUM_SPEED) + 1
+        speed_table.append(entry)
+    return speed_table.index(entry) + 1
 
 
-def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:
+def _rise_speed_index(fmt: str, speed_table: List[tuple],
+                      multiplier: int = 1) -> int:
     """1-based speed-table index for the effect byte's chromatic rise, or 0.
 
     Effect bit $02 makes the player raise the note by one semitone every four
@@ -620,6 +689,14 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:
     continuous glide rather than four-frame steps. That approximation is
     deliberate and is the only part of this mapping that is not literal.
 
+    "Per frame" holds only at -S1: the shift is applied once per play call, so
+    each doubling of the call rate needs one more shift to keep the same rate
+    per frame. The multipliers this converter emits are 2 and 3 (ceil(3/f),
+    f in 1..2), and 3 is not a power of two -- shift 4 divides by four where
+    three is wanted, which is the closest either neighbouring shift gets.
+    Recorded rather than hidden: at -S3 the rise glides 3/4 of the player's
+    rate, where before this it glided three times it.
+
     Returns 0 for a GTS2 file, which has no stored speed table: its loader
     builds one from instrument vibrato bytes and *pattern* command columns
     only (gsong.c:285, :311-321) and reads the wavetable verbatim, so an index
@@ -627,7 +704,7 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:
     """
     if fmt != FORMAT_GTS5:
         return 0
-    entry = (SPEED_NOTE_RELATIVE, RISE_SHIFT)
+    entry = (SPEED_NOTE_RELATIVE, RISE_SHIFT + _rate_shift(multiplier))
     if entry not in speed_table:
         if len(speed_table) >= GT_MAX_TABLELEN:
             return 0
@@ -638,10 +715,11 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple]) -> int:
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      instr_used: int, effects: bool = False,
                      fmt: str = DEFAULT_FORMAT,
-                     speed_table: List[tuple] | None = None) -> None:
+                     speed_table: List[tuple] | None = None,
+                     multiplier: int = 1) -> None:
     n = max(instr_used - 1, 0)
     table = speed_table if speed_table is not None else []
-    entries = [_wavetable_entries(sid, det, i, effects, fmt, table)
+    entries = [_wavetable_entries(sid, det, i, effects, fmt, table, multiplier)
                for i in range(n)]
 
     out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
@@ -939,7 +1017,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                 multiplier, log)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs)
-    _write_wavetable(out, sid, det, instr_used, effects, fmt, table)
+    _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier)
     _write_pulsetable(out, pulse_entries)
 
     if log:

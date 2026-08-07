@@ -861,6 +861,20 @@ the number of `SHIFT+F6` presses the editor needs, which is the same setting
 reached a different way. A `.sng` packed without it plays uniformly
 `multiplier` times too slow.
 
+**The multiplier changes more than the tempo.** Everything this converter
+reads out of a player is a rate *per frame* — a slide's step, the drum's
+sweep, the chromatic rise, the length of an instrument's attack waveform —
+and everything Goattracker applies them with runs *per play call*
+(`gplay.c:707/748/758`). At `-S2` those are not the same unit, so until
+v0.5.82 every one of them ran at twice the player's rate in exactly the 33
+songs that pack at `-S2`. Since v0.5.82 the converter divides each rate by
+the multiplier it wrote the tempo for, so the file is correct at the `-S`
+value `presets.json` records — and only at that value. Packing a
+`multiplier: 2` song at `-S1` was always wrong (it plays half speed); it is
+now wrong in the slides as well. Three rates keep a stated residual — the
+arpeggio alternation, the drum's own attack, and the rise at a non-power-of-two
+multiplier — see H2G-CONVERSION-METHOD.md § 7.bb.
+
 **siddump cannot check this** — it ignores the PSID speed field and calls the
 play routine 50 times a second regardless (`siddump.c:309/325`), so `-S`
 changes the packed bytes and not the trace. Measured A/B on `Chain_Reaction`:

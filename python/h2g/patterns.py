@@ -756,7 +756,8 @@ def phantom_patterns(sid: SidFile, det: Detection,
     return out
 
 
-def build_speed_table(patterns: List[List[int]]) -> List[tuple]:
+def build_speed_table(patterns: List[List[int]],
+                      multiplier: int = 1) -> List[tuple]:
     """Encode every portamento parameter as a speed table, in place.
 
     Rewrites each speedtable-requiring command's data column to a 1-based
@@ -765,12 +766,20 @@ def build_speed_table(patterns: List[List[int]]) -> List[tuple]:
     The encoding is Goattracker's own, so a GTS5 file plays identically to the
     GTS2 file it was written from: `makespeedtable(v, MST_PORTAMENTO)` is
     `l = (v << 2) >> 8, r = (v << 2) & 0xff` (gtable.c:881-884), i.e. the
-    16-bit per-frame frequency step is four times the stored value. gplay.c
-    reassembles it as `(l << 8) | r`.
+    16-bit frequency step is four times the stored value. gplay.c reassembles
+    it as `(l << 8) | r`.
+
+    `multiplier` is the gt2reloc -S factor the file will be packed at. The step
+    the pattern decoder read is the *player's*, applied once per frame; a
+    speed-table step is applied once per play call (gplay.c:748/758), so at -S2
+    the same number slides twice as far per frame. Dividing here is what makes
+    the emitted slide the player's slide -- and it is exact, because the table
+    stores the 16-bit step rather than the pattern column's eighth of it.
 
     The table cannot overflow: a data byte has 255 non-zero values and each
     distinct one costs one entry, which is exactly MAX_TABLELEN.
     """
+    m = max(1, multiplier)
     index: dict = {}
     table: List[tuple] = []
     for pattern in patterns:
@@ -783,9 +792,39 @@ def build_speed_table(patterns: List[List[int]]) -> List[tuple]:
                 continue
             if value not in index:
                 index[value] = len(table)
-                table.append(((value * 4) >> 8 & 0xFF, (value * 4) & 0xFF))
+                # Never round down to zero: a step of nothing is a slide that
+                # does not move, which is further from the player than the
+                # slowest step the table can hold.
+                step = max(1, round(value * 4 / m))
+                table.append((step >> 8 & 0xFF, step & 0xFF))
             pattern[k + 3] = index[value] + 1
     return table
+
+
+def scale_portamento_data(patterns: List[List[int]], multiplier: int) -> int:
+    """Divide every portamento parameter by `multiplier`, in place.
+
+    The GTS2 counterpart of build_speed_table's division, for the same reason:
+    a GTS2 file stores no speed table, and its loader rebuilds one from the
+    pattern data column (gsong.c:311-321) as `value * 4`. So the column is the
+    only place the rate can be scaled -- and unlike the speed table it holds an
+    eighth of the step, which is why this rounds where build_speed_table does
+    not. Returns the number of columns changed.
+
+    Not called at -S1, where it would be the identity.
+    """
+    m = max(1, multiplier)
+    changed = 0
+    for pattern in patterns:
+        for k in range(0, len(pattern), 4):
+            cmd, value = pattern[k + 2], pattern[k + 3]
+            if cmd not in GT_SPEEDTABLE_COMMANDS or not value:
+                continue
+            scaled = max(1, round(value / m))
+            if scaled != value:
+                pattern[k + 3] = scaled
+                changed += 1
+    return changed
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,

@@ -7,7 +7,8 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
-                       ConversionAbort, build_speed_table, command_floor,
+                       ConversionAbort, build_speed_table,
+                       scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, cmdtable_frames_per_row,
                        pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks)
@@ -306,9 +307,24 @@ def convert(sid_path: str, log: Logger = print,
 
     # Last, so it sees every command any earlier stage emitted. It rewrites the
     # data column in place, so nothing downstream may read it as a value again.
-    speed_table = build_speed_table(new_patterns) if fmt != FORMAT_GTS2 else []
+    scaled = 0
+    if fmt != FORMAT_GTS2:
+        speed_table = build_speed_table(new_patterns, multiplier)
+        # Every stored step is the divided one, so at -S2 and above the count
+        # of scaled slides is the count of entries.
+        scaled = len(speed_table) if multiplier > 1 else 0
+    else:
+        speed_table = []
+        if multiplier > 1:
+            # A GTS2 file has no table: the pattern column is the parameter, so
+            # the count is of columns rather than of distinct steps.
+            scaled = scale_portamento_data(new_patterns, multiplier)
     if log and speed_table:
         log(f"Speed table entries.....: {len(speed_table)}")
+    if log and multiplier > 1:
+        log(f"Per-call rates..........: {scaled} slide step(s), the drum sweep "
+            f"and the rise divided by {multiplier} for the -S{multiplier} call "
+            f"rate (siddump cannot see this, siddump.c:309/325)")
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
                      pulse=pulse, multiplier=multiplier,

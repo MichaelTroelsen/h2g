@@ -139,6 +139,18 @@ test dependency).
   Off by default because it changes the bytes and the fixture carries three
   such tracks; `presets.json`'s `always` block sets it. See README.md
   § `--legal-restart`.
+- **A rate read out of the player is per *frame*; every table Goattracker
+  applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
+  and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a
+  rate — a slide step, a sweep, a table delay, a transient length — must be
+  divided by `multiplier` at the point it is encoded, the way
+  `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_delay` and
+  the pulse programs now are. **No number in `FIDELITY.md` can move on such a
+  change**: siddump calls the play routine `seconds × 50` times whatever the
+  PSID speed field says (`siddump.c:309/325`), so the trace sees every file as
+  multiplier 1. Prove reach with a differential hash over the corpus instead —
+  the multiplier-2 songs must change and the multiplier-1 songs must not. See
+  H2G-CONVERSION-METHOD.md § 7.bb and `tests/test_call_rate.py`.
 - **`--max-rows` defaults to 94 — do not change the default.** It is what the
   byte-exact `Commando.sng` fixture encodes, and that fixture is the project's only
   fidelity anchor. See README.md § `--max-rows`.
