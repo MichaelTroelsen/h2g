@@ -2011,6 +2011,77 @@ vibrato is a fixed triangle, so this can only ever be approximated: the table's
 peak gives the excursion and its length the period. That approximation is
 **not** implemented, and Hollywood or Bust's `bend` of 0.00x is still open.
 
+### 7.hh The overshoot: three quarters of it was the metric
+
+Going after the files that bent *too far* — Bump_Set_Spike 11.8x,
+Delta_Mix-E-Load 10.8x, Zoolook 9.7x, Confuzion 9.0x — found the fourth defect
+in `bend` before it found anything in the converter.
+
+`bend` was differencing siddump's frequency column between frames and excluding
+the frames siddump marked as a note. That is not the same set as "frames that
+are not a note change". **A Goattracker wavetable entry whose right side is a
+relative note rewrites the frequency without touching the gate**, and siddump
+prints that as a frequency with an empty note field — so every note onset in
+our output contributed its whole interval as "bending". Zoolook scored 121,107
+units where its *printed* bends total about 3,400.
+
+The fix is to stop re-deriving the quantity. siddump prints `(+ xxxx)` /
+`(- xxxx)` exactly when the frequency moved and it judged the voice to be on
+the same note — which is the definition. `bend` now sums those magnitudes, so
+it and `slides` are a count and a sum of the same lines, the way `filt` and
+`cut` are.
+
+| | before | after |
+|---|---:|---:|
+| Delta_Mix-E-Load_loader | 10.80x | **0.96x** |
+| Zoolook | 9.65x | **0.26x** |
+| Confuzion | 8.96x | **0.00x** |
+| Thing_on_a_Spring | 3.36x | **0.35x** |
+| Chain_Reaction | 2.19x | **0.26x** |
+| Knucklebusters | 1.64x | **0.00x** |
+
+That is four corrections to one dimension in six versions — excluding only
+attacks, then ties as well, then bare frequency writes, and finally not
+computing it here at all. The through-line: **every version that re-derived the
+quantity from raw registers was wrong, and the one that takes the tool's own
+answer is not.**
+
+#### What survived, and the drum sweep's second measurement
+
+Three files still overshoot for a reason in the converter, and it is the same
+one: **the drum sweep fires where the player's does not.** `_drum_entries`
+writes one 256-unit downward step for any instrument whose effect bit `$01` is
+set in a player that has the routine — but the player's block also needs its
+per-voice length and counter cells armed (`$1372 LDA $1576,X / BEQ out`), which
+is runtime state no static read can see. Bump_Set_Spike's original plays **no**
+256-unit step at all in the traced window; ours plays 64.
+
+So the sweep was re-measured, this time against pitch rather than waveform:
+
+| | with the sweep | without |
+|---|---:|---:|
+| Bump_Set_Spike | 11.79x | **0.34x** |
+| Phantoms_of_the_Asteroid | 4.40x | 0.00x |
+| Gerry_the_Germ | 2.29x | 0.00x |
+| Game_Killer | **1.08x** | 0.00x |
+| Crazy_Comets | **1.03x** | 0.00x |
+| corpus median `bend` | **0.25x** | 0.15x |
+| mean `wave` | 61.7% | 61.7% |
+
+**Removing it is right for one file and wrong for eight.** Game_Killer and
+Crazy_Comets sit at 1.08x and 1.03x *because* of it and drop to zero without
+it. So the sweep stays, and the three overshooting files are a gating problem —
+the bit says the instrument can drum, not that this note does. Recorded and not
+acted on, because the discriminator is runtime state.
+
+`Thrust` is the one overshoot neither explanation covers: 43x, with melody and
+pitch both 100% and both sides playing the same notes, emitting `±$01BD` where
+the original plays `±$0034`. Goattracker's note-relative vibrato computes the
+semitone interval at `cptr->lastnote`, and a step that size corresponds to a
+note about two octaves above the one that sounds. `--fold-transpose` was the
+obvious suspect and is refuted: Thrust converts to identical bytes with it on
+and off. Open.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

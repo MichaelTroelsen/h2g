@@ -924,26 +924,34 @@ def test_a_run_is_labelled_or_unlabelled_but_never_mislabelled(monkeypatch):
 # step is the player's or ten times it -- which is exactly the reading that had
 # to be settled when v0.5.83 corrected the slide dialect's byte order.
 
-def test_bend_travel_sums_movement_within_notes():
+def test_bend_sums_the_magnitudes_siddump_printed():
     v = fidelity.Voice()
-    v.freq_events = [(0, 1000), (1, 1010), (2, 1000)]
+    v.bend = 20
     assert fidelity._bend_travel(v) == 20
 
 
-def test_bend_travel_ignores_the_jump_into_a_new_note():
-    # The frame a note is struck on is a note change, not a bend. Counting it
-    # would swamp the thing being measured -- an octave jump dwarfs any sweep.
-    v = fidelity.Voice()
-    v.freq_events = [(0, 1000), (1, 8000), (2, 8010)]
-    v.attack_frames = [1]
-    assert fidelity._bend_travel(v) == 10
+def test_bend_is_parsed_from_the_bend_lines_not_the_frequency_column():
+    # Two frames of movement and one note change. Differencing the frequency
+    # column would score the note change too; taking siddump's own `(+ xxxx)`
+    # cannot, because it does not print one there.
+    dump = chr(10).join([
+        "|     0 | 1000  C-4 41  41 0000 800 | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+        "|     1 | 100A (+ 000A) .. .... ... | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+        "|     2 | 1014 (+ 000A) .. .... ... | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+        "|     3 | 2000  G-5 41  41 .... ... | ....  ... ..  .. .... ... "
+        "| ....  ... ..  .. .... ... | .... .. ... . |",
+    ])
+    got = fidelity.parse_dump(dump)
+    voices = got[0] if isinstance(got, tuple) else got
+    assert fidelity._bend_travel(voices[0]) == 20, "the two bends, not the jump"
+    assert voices[0].slides == 2
 
 
 def test_a_held_note_contributes_no_travel():
-    # siddump prints the frequency only when it changed, so a held note emits
-    # no events at all and needs no carry-forward.
     v = fidelity.Voice()
-    v.freq_events = [(0, 1000)]
     assert fidelity._bend_travel(v) == 0
 
 
@@ -952,8 +960,8 @@ def test_bend_sees_a_step_size_change_that_slides_cannot():
     # equal; `bend` is 10x. This is the case the dimension exists for.
     def voice(step):
         v = fidelity.Voice()
-        v.freq_events = [(f, 1000 + f * step) for f in range(5)]
         v.slides = 4
+        v.bend = 4 * step
         return v
     orig = [voice(10), fidelity.Voice(), fidelity.Voice()]
     ours = [voice(100), fidelity.Voice(), fidelity.Voice()]
@@ -962,12 +970,11 @@ def test_bend_sees_a_step_size_change_that_slides_cannot():
     assert out["bend_ratio"] == 10.0
 
 
-def test_bend_travel_ignores_a_tie_as_well_as_an_attack():
-    # A tie is a note change the player did not re-gate. Its frequency jump is
-    # a note change, not a bend -- and excluding only attacks reported
-    # Pygmies_Revenge, which ties 493 times in ten seconds, as travelling 21.7
-    # million units against about 32 thousand of actual bending.
-    v = fidelity.Voice()
-    v.freq_events = [(0, 1000), (1, 9000), (2, 9010)]
-    v.tie_frames = [1]
-    assert fidelity._bend_travel(v) == 10
+def test_a_tie_is_not_a_bend():
+    # A tie is a note change the player did not re-gate, and siddump prints it
+    # in its own form -- so it never reaches the bend total.
+    dump = ("|     0 | 1000 (C-4 41) .. .... ... | ....  ... ..  .. .... ... "
+            "| ....  ... ..  .. .... ... | .... .. ... . |")
+    got = fidelity.parse_dump(dump)
+    voices = got[0] if isinstance(got, tuple) else got
+    assert voices[0].ties == 1 and fidelity._bend_travel(voices[0]) == 0

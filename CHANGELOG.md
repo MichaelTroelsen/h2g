@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.88 — 2026-08-07
+
+- take bend from siddump's own delta, not the frequency column
+
 ## 0.5.87 — 2026-08-07
 
 - read the command-table engine's pitch slide

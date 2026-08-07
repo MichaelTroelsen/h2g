@@ -181,10 +181,10 @@ class Voice:
     attack_frames: list[int] = field(default_factory=list)
     ties: int = 0
     # Frames on which siddump printed a *tie* -- a note change with no gate
-    # retrigger. Recorded, not just counted, because `bend` has to exclude
-    # them: a legato note change is a jump between notes, not movement within
-    # one, and counting it swamps the thing being measured.
+    # retrigger.
     tie_frames: list[int] = field(default_factory=list)
+    # Summed magnitude of every frequency move siddump printed as a bend.
+    bend: int = 0
     slides: int = 0
     # (frame, value) for every frame siddump shows the register written.
     # siddump prints a value only when it changed, so between events the
@@ -301,8 +301,13 @@ def parse_dump(text: str) -> Trace:
                 voices[v].ties += 1
                 voices[v].tie_frames.append(frame)
                 continue
-            if _SLIDE.match(rest):
+            m = _SLIDE.match(rest)
+            if m:
                 voices[v].slides += 1
+                # siddump has already decided this frame is pitch movement
+                # rather than a note, and printed how far. Summing its own
+                # number is what `bend` is; see _bend_travel.
+                voices[v].bend += int(m.group(2), 16)
 
         glob = cells[5]  # ' FCut RC Typ V ', or dots for the unwritten fields
         for text_slice, width, events in (
@@ -510,30 +515,32 @@ def _bend_travel(v: Voice) -> int:
     """How far this voice's frequency moves *within* notes, in SID units.
 
     The pitch counterpart of `cutoff_travel`, and it exists for the same
-    reason: `slides` counts the frames on which the frequency moved and a
-    count cannot judge a step size. Two conversions that bend the same note
-    over the same frames score identically there whether each step is the
-    player's or ten times it.
+    reason: `slides` counts the frames on which the frequency moved and a count
+    cannot judge a step size. Two conversions that bend the same note over the
+    same frames score identically there whether each step is the player's or
+    ten times it. `slides` counts siddump's bend lines; this sums them.
 
-    Frames on which the voice changed note are excluded on both sides -- and
-    that means **ties as well as attacks**. A tie is a note change the player
-    did not re-gate, so its frequency jump is a note change like any other; the
-    first cut of this dimension excluded only attacks and reported
-    Pygmies_Revenge, which ties 493 times in ten seconds, as travelling 21.7
-    million units where its actual bends total about 32 thousand.
+    **It is siddump's own number, not a difference of the frequency column,**
+    and both earlier attempts to compute it here were wrong in the same
+    direction:
 
-    siddump prints the frequency only when it changed, so consecutive events
-    are the moves themselves; no carry-forward is needed and a held note
-    contributes nothing.
+    * differencing every frame counted a *tie* -- a note change with no
+      re-gate -- as a bend, and reported Pygmies_Revenge (493 ties in ten
+      seconds) as travelling 21.7 million units against about 12 thousand of
+      real bending;
+    * excluding attacks and ties still counted the **bare frequency writes** a
+      note start makes on a frame of its own. A Goattracker wavetable entry
+      whose right side is a relative note rewrites the frequency without
+      touching the gate, and siddump prints that as a frequency with an empty
+      note field -- so a jump between two notes was scored as a bend. That put
+      Zoolook at 121,107 units where its printed bends total about 3,400.
+
+    siddump prints `(+ xxxx)` / `(- xxxx)` exactly when the frequency moved and
+    it judged the voice to be on the same note, which is the definition this
+    dimension wants. Taking its number instead of re-deriving one removes both
+    failures and the whole class they belong to.
     """
-    struck = set(v.attack_frames) | set(v.tie_frames)
-    travel = 0
-    prev = None
-    for frame, value in v.freq_events:
-        if frame not in struck and prev is not None:
-            travel += abs(value - prev)
-        prev = value
-    return travel
+    return v.bend
 
 
 def compare(orig: list[Voice], ours: list[Voice]) -> dict:
@@ -1499,9 +1506,9 @@ def report(rows: list[dict], args) -> str:
         "original's. Every other column is blind to these: they happen "
         "*within* a note, so a change that only adds or removes pitch "
         "movement leaves melody, seq and retrig identical.",
-        "* **bend** -- our pitch *travel* -- the summed frame-to-frame "
-        "movement of $D400/$D401, excluding every frame the voice changes "
-        "note on, tie as well as attack -- "
+        "* **bend** -- our pitch *travel*: the summed magnitude of every "
+        "frequency move siddump printed as a bend (`(+ xxxx)` / `(- xxxx)`, "
+        "the frames **slides** counts) -- "
         "over the original's. The other half of **slides**, and the half a "
         "count cannot answer: a bend taken in steps ten times too large moves "
         "the same frames and goes ten times as far. It is also the half that "
@@ -1509,7 +1516,11 @@ def report(rows: list[dict], args) -> str:
         "because it prints a bare delta or a parenthesised note depending on "
         "where the new frequency lands, so a change in step size shifts "
         "frames between the two forms and **slides** counts only one of them. "
-        "`-` is an original whose pitch never moves within a note.",
+        "It is siddump's own number rather than a difference of the frequency "
+        "column: differencing counted note changes as bends, both the tie form "
+        "and the bare frequency write a note start makes on a frame of its own "
+        "-- which put Zoolook at 121,107 units against about 3,400 of printed "
+        "bending. `-` is an original whose pitch never moves within a note.",
         "* **wave** -- per-frame agreement of the waveform *class* (the "
         "waveform-select nibble of $D404: triangle/saw/pulse/noise, with a "
         "combined waveform its own class and the gate/sync/ring/test bits "
@@ -1762,14 +1773,10 @@ def report(rows: list[dict], args) -> str:
         "- **bend** cannot tell a pitch bend from a voice being used as a "
         "*sample channel*. The nine digi-engine files play their samples "
         "through a SID voice by rewriting its frequency every frame, and that "
-        "movement is counted: `Off_the_Cuff`'s three voices travel 3,032, "
-        "8,855 and **5,426,086** units in ten seconds, so 99.8% of its "
-        "original's `bend` is the digi channel and the ratio for that row is "
-        "not a score of the conversion. An octave guard was tried and "
-        "rejected -- it removed only a sixth of the sample movement and cost "
-        "real signal elsewhere (Delta 56,531 to 40,429, two voices zeroed). "
-        "The affected rows are the files SURVEY.md marks as the digi "
-        "dialect.",
+        "movement is counted wherever siddump prints it as a bend rather than "
+        "as a note. The affected rows are the files SURVEY.md marks as the "
+        "digi dialect; taking siddump's own classification bounds the damage "
+        "but does not remove it.",
         "- **adsr**, **pul**, **filt** and **cut** are register comparisons, "
         "not sound comparisons. `adsr` scores the envelope pair frame by "
         "frame, so it sees a wrong sustain or an invented hard restart, and "

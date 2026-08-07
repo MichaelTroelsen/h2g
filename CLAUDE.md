@@ -97,7 +97,13 @@ test dependency).
   change is to a step *size*** — `slides` reported v0.5.83's slide-dialect fix
   as a regression because siddump splits pitch movement between two printed
   forms and it counts one; `bend` (travel) reads the same fix as 0.30x → 0.66x.
-  `cut` exists next to `filt` for the identical reason. v0.5.46 fixed a
+  `cut` exists next to `filt` for the identical reason. **And take the
+  measurement from the tool rather than re-deriving it**: `bend` needed four
+  corrections in six versions, and the three wrong ones all re-computed pitch
+  travel by differencing siddump's frequency column (counting first attacks,
+  then ties, then the bare frequency write a note onset makes on its own
+  frame). The version that sums siddump's own `(+ xxxx)` lines needed none.
+  v0.5.46 fixed a
   real defect that rewrote 66 rows of one file and moved the report by zero
   percent. A flat report is not evidence a change did nothing — when a fix is
   invisible to the metric, say so in the doc beside the fix.

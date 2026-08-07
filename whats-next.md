@@ -349,11 +349,27 @@ byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
   octave guard was tried and rejected (see § 7.ff). Documented in the report;
   the real fix would be identifying which SID voice carries the sample per
   file, which needs the player's digi routine read.
-- **The overshoot is now the visible defect.** Six files bend far *too much*
-  (Bump_Set_Spike 11.8x, Delta_Mix-E-Load 10.8x, Zoolook 9.7x, Thrust 7.5x),
-  and vibrato only added to an error that was already there. `bend` says it is
-  the slide step: § 1b corrected which *byte* is which half, not whether the
-  resulting step is applied for the right number of frames.
+- **The overshoot was three quarters metric** (v0.5.88). `bend` was
+  differencing siddump's frequency column, which counts the bare frequency
+  write a Goattracker wavetable note-onset makes on a frame of its own.
+  Delta_Mix-E-Load 10.80x -> 0.96x, Zoolook 9.65x -> 0.26x, Confuzion 8.96x ->
+  0.00x, Thing_on_a_Spring 3.36x -> 0.35x, Chain_Reaction 2.19x -> 0.26x,
+  Knucklebusters 1.64x -> 0.00x. It now sums siddump's own `(+ xxxx)` lines.
+  Fourth correction to one dimension in six versions; the three wrong ones all
+  re-derived the quantity, the right one does not.
+- **What survived: the drum sweep fires where the player's does not.**
+  Bump_Set_Spike 11.79x, Phantoms 4.40x, Gerry_the_Germ 2.29x are all its 256
+  units a frame. The player's block also needs its per-voice length and
+  counter armed (`$1372 LDA $1576,X / BEQ out`) -- runtime state no static read
+  sees. Re-measured against pitch: removing the sweep is right for **one** file
+  and wrong for **eight** (Game_Killer 1.08x and Crazy_Comets 1.03x drop to
+  0.00x), at zero cost in `wave`. It stays; the gate is the open question.
+- **`Thrust` is the one overshoot neither covers**: 43x with melody and pitch
+  both 100% and both sides on the same notes, emitting +-$01BD where the
+  original plays +-$0034. Goattracker computes a note-relative vibrato from the
+  interval at `cptr->lastnote`, and a step that size belongs to a note about
+  two octaves higher. `--fold-transpose` refuted -- identical bytes with it on
+  and off.
 - The 7 files whose vibrato byte is reached by addressing `_find_vibrato` does
   not recognise (Go_Go_Dash, I_Ball, Lakers_vs_Celtics, Lion_Heart,
   Pacific_Coast, Radio_ACE, Sun_Never_Shines). An under-read; only I_Ball
