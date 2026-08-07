@@ -162,6 +162,14 @@ the corpus's portamento parameters were doing. In a `gts5` file the column now
 carries a speed-table index and the step keeps its full width; a `gts2` file
 keeps the packed byte, because its loader reads that column as the value.
 
+The flag now covers all three pattern grammars. The **digi** engine's slide is
+effect `$82`, a signed 16-bit per-frame step with the first operand as the high
+half (v0.5.86) — present in all nine digi players, used by five of them, 128
+columns in total. The **command-table** engine's is command 1, low half first
+with the high half masked and the direction in bit 7 (v0.5.87) — present in
+both players and used by **neither**, so it changes no corpus byte. Both are
+complete readings; only the classic one moves numbers.
+
 - The fastest steady row is **three calls** (`gplay.c:325` reads tempo 0/1 as
   funktempo, and `gplay.c:334` stops the song outright if an instrument's
   gatetimer — always 2 here — exceeds the tick). A tune ticking every 1-2

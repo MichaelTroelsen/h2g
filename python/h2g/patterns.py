@@ -550,19 +550,31 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 operands, instr_cmd: int,
                                 frames_per_row: int = 1,
                                 collect: Optional[Set[int]] = None,
-                                note_base: int = 0
+                                note_base: int = 0,
+                                slides: bool = False,
+                                slide_cmd: int = -1,
+                                slide_mask: int = 0x3F,
+                                steps: Optional[List[int]] = None
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
 
     With `collect` given, the durations the pattern uses are added to it and
     the returned stream is ignored -- that pre-pass is how frames_per_row is
     derived (see cmdtable_frames_per_row).
+
+    With `slides` and a `slide_cmd` from detection, that command becomes a
+    portamento: its first operand is the step's low half, its second carries
+    the high half under `slide_mask` and the direction in bit 7. Its third
+    operand is a per-voice onset delay in frames, which Goattracker has no way
+    to express and which is therefore read and dropped -- the one
+    approximation here. See detect.CMDTABLE_SLIDE_SHAPE.
     """
     if addr <= 1 or addr >= len(data):
         return None
 
     events: List[int] = []
     instrument = 0
+    pending: Optional[tuple] = None
 
     for _ in range(20000):
         if addr <= 1 or addr >= len(data):
@@ -585,6 +597,11 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                 # +2 for the same reason every other decoder here adds it:
                 # Goattracker instrument 1 is the empty "Clear Voice" slot.
                 instrument = data[addr + 1] + 2
+            elif c == slide_cmd and slides and operands[c] >= 2:
+                lo, d2 = data[addr + 1], data[addr + 2]
+                step = ((d2 & slide_mask) << 8) | lo
+                # `LDA dir,X / BPL up`: bit 7 clear adds, set subtracts.
+                pending = ((2 if d2 & 0x80 else 1), step)
             addr += 1 + operands[c]
             continue
 
@@ -607,6 +624,9 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                               CMDTABLE_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
             addr += 2
+        if pending is not None:
+            events[-2], events[-1] = _digi_command(pending, steps)
+            pending = None
         events += [GT_NO_NOTE, 0x00, 0x00, 0x00] * (rows - 1)
 
         if addr < len(data) and data[addr] == GT_END_PATTERN:
@@ -690,7 +710,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
             det.cmd_instrument, det.frames_per_row,
-            note_base=det.note_base)
+            note_base=det.note_base, slides=slides,
+            slide_cmd=det.cmd_slide, slide_mask=det.cmd_slide_mask or 0x3F,
+            steps=steps)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               note_base=det.note_base,
@@ -865,7 +887,9 @@ def phantom_patterns(sid: SidFile, det: Detection,
         elif det.pattern_dialect == "cmdtable":
             events = _build_raw_pattern_cmdtable(
                 data, addr, det.duration_table, det.cmd_operands,
-                det.cmd_instrument, det.frames_per_row)
+                det.cmd_instrument, det.frames_per_row, slides=slides,
+                slide_cmd=det.cmd_slide,
+                slide_mask=det.cmd_slide_mask or 0x3F)
         else:
             events = _build_raw_pattern(data, addr,
                                         slides and det.slide_operand,

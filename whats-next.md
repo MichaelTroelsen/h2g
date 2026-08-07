@@ -328,8 +328,21 @@ byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
   handler and the consumer, but the music uses it in only 5 of them and 128
   columns in total, so no report number moved. `$83` turned out to be a
   vibrato in the same format § 7.ee reads from the instrument, left
-  untranslated. **`_build_raw_pattern_cmdtable` still has no slide path**;
-  Hollywood_or_Bust is the one file that needs it (0/425 slide frames).
+  untranslated.
+- **The cmdtable slide landed in v0.5.87 and reaches nothing.** Both cmdtable
+  players have one (command 1: low half, high half under `$3F` with bit 7 the
+  direction, plus an onset delay Goattracker cannot express), and **neither
+  tune uses the command** — Hollywood_or_Bust's patterns reach commands 0, 2,
+  4, 5, 6 and Chicken_Song's 0, 2, 4, 5. All 83 preset songs convert
+  byte-identically. The grammar is now read completely; the corpus does not
+  exercise this part of it.
+- **Hollywood_or_Bust's missing bend is a table-driven vibrato**, a third form
+  again: `(interval >> 4) × table[i]` with the table walked one entry per frame
+  and `$FF` wrapping (`$05F3`, `$0630`). Neither the `$78`/`$07` pair
+  `--vibrato` reads nor anything Goattracker has — its vibrato is a fixed
+  triangle, so this can only be approximated from the table's peak (the
+  excursion) and its length (the period). **Not implemented**; it is the one
+  thing that would move that file's 0.00x, and it affects exactly two files.
 - **`bend` on a digi file is not a conversion score.** The engine plays
   samples by rewriting a voice's frequency every frame and the metric counts
   it: Off_the_Cuff's three voices travel 3,032 / 8,855 / **5,426,086**. An

@@ -328,3 +328,91 @@ def test_the_vibrato_effect_is_still_only_measured_for_length():
     rows = _rows(_build_raw_pattern_digi(bytes(ev), 2, slides=True))
     assert len(rows) == 2, "three bytes consumed, then the note, then the end"
     assert rows[0][2] == 0 and DIGI_VIBRATO == 0x83 and DIGI_SLIDE == 0x82
+
+
+# --- the command-table engine's slide ---------------------------------------
+#
+# Hollywood or Bust $071B / Chicken Song $1301, byte for byte the same routine:
+# operand 1 is the step's low half, operand 2 carries the high half under a
+# mask and the direction in bit 7, operand 3 is an onset delay in frames that
+# Goattracker cannot express and this drops.
+#
+# **Neither cmdtable file uses the command.** Hollywood or Bust's patterns
+# reach commands 0, 2, 4, 5 and 6; Chicken Song's 0, 2, 4 and 5. The slide is
+# command 1 in both. So this is a complete reading of a grammar the corpus
+# does not exercise -- worth having because an unread command byte
+# desynchronises nothing here (its operand count was always honoured) but a
+# *misread* one would, and because the next Hubbard file to turn up may use it.
+
+from h2g.detect import CMDTABLE_SLIDE_SHAPE
+from h2g.patterns import _build_raw_pattern_cmdtable
+from h2g.sidfile import load_sid
+
+# durations table at offset 2 (one entry, 1 frame); pattern at offset 4:
+# $81 = command 1 with operands (lo=$40, dir/hi=$01, delay=$00), then a note
+# event (duration index 0, bit 6 clear) with note $20, then $FF.
+CMD_OPERANDS = (1, 3, 2, 2, 0, 1, 0)
+CMDTABLE_DATA = bytes([0x00, 0x00, 0x01, 0x00,
+                       0x81, 0x40, 0x01, 0x00,
+                       0x00, 0x20,
+                       0xFF])
+
+
+def _cmd_rows(**kw):
+    ev = _build_raw_pattern_cmdtable(CMDTABLE_DATA, 4, 2, CMD_OPERANDS, 0,
+                                     **kw)
+    return _rows(ev)
+
+
+def test_the_cmdtable_slide_is_dropped_by_default():
+    assert _cmd_rows()[0][2] == 0
+
+
+def test_the_second_operand_carries_the_high_half():
+    rows = _cmd_rows(slides=True, slide_cmd=1, slide_mask=0x3F)
+    # $0140 // 4 == $50.
+    assert rows[0][2] == 1 and rows[0][3] == 0x50
+
+
+def test_bit_seven_of_the_second_operand_is_the_direction():
+    data = bytearray(CMDTABLE_DATA)
+    data[6] |= 0x80                      # `LDA dir,X / BPL up` -> set = down
+    rows = _rows(_build_raw_pattern_cmdtable(bytes(data), 4, 2, CMD_OPERANDS,
+                                             0, slides=True, slide_cmd=1,
+                                             slide_mask=0x3F))
+    assert rows[0][2] == 2, "CMD_PORTADOWN"
+    assert rows[0][3] == 0x50, "and the mask keeps the high half at $01"
+
+
+def test_the_mask_is_applied_to_the_high_half():
+    data = bytearray(CMDTABLE_DATA)
+    data[6] = 0x41                       # bit 6 set, above the $3F mask
+    rows = _rows(_build_raw_pattern_cmdtable(bytes(data), 4, 2, CMD_OPERANDS,
+                                             0, slides=True, slide_cmd=1,
+                                             slide_mask=0x3F))
+    assert rows[0][3] == 0x50, "$41 & $3F == $01, not $41"
+
+
+def test_without_a_detected_command_nothing_changes():
+    # slide_cmd -1 is what a player without the shape gets: the command keeps
+    # being consumed for its operand count and dropped.
+    assert _cmd_rows(slides=True, slide_cmd=-1)[0][2] == 0
+
+
+def test_both_cmdtable_files_name_command_one():
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import detect
+    for name in ("Hollywood_or_Bust", "Chicken_Song"):
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        det = detect(sid, log=lambda m: None)
+        assert det.pattern_dialect == "cmdtable"
+        assert (det.cmd_slide, det.cmd_slide_mask) == (1, 0x3F), name
+
+
+def test_a_player_without_the_shape_reports_no_slide_command():
+    if not CORPUS.is_dir():
+        return
+    from h2g.search import search_file
+    data = load_sid(str(CORPUS / "Commando.sid")).data
+    assert search_file(data, CMDTABLE_SLIDE_SHAPE) < 1

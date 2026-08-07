@@ -110,6 +110,11 @@ class Detection:
     duration_table: int = -1
     cmd_operands: tuple = ()
     cmd_instrument: int = -1
+    # "cmdtable" dialect: which $8x command is the pitch slide, and the mask
+    # its handler applies to the second operand to get the step's high half.
+    # -1 when the shape is absent. See _cmdtable_slide().
+    cmd_slide: int = -1
+    cmd_slide_mask: int = 0
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
@@ -361,6 +366,32 @@ CMDTABLE_DURATION = "9D ?? ?? 8D ?? ?? 29 1F AA BD ?? ??"
 CMDTABLE_INSTR_CELL = "BD ?? ?? 0A 0A 0A"
 CMDTABLE_MAX_COMMANDS = 16      # the dispatch masks with AND #$0F
 
+# The command-table engine's pitch slide, which its decoder consumed for length
+# and dropped. Hollywood or Bust $071B, Chicken Song $1301 -- byte for byte the
+# same routine:
+#
+#     071B  BD 9A 09  LDA dir,X          ; operand 2, raw
+#     071E  10 1C     BPL up             ; bit 7 clear -> add, set -> subtract
+#     0720  38        SEC
+#     0721  BD 97 09  LDA freqlo,X
+#     0724  FD A5 09  SBC steplo,X       ; operand 1 is the step's LOW half
+#     0727  9D 97 09  STA freqlo,X / STA $D400,Y
+#     072D  BD 94 09  LDA freqhi,X
+#     0730  FD 9D 09  SBC stephi,X       ; operand 2 AND #$3F is the HIGH half
+#     0733  9D 94 09  STA freqhi,X / STA $D401,Y
+#
+# and its handler ($084D / $1430) stores the three operands in one order in
+# both files: step low, direction-and-high raw, then a per-voice delay counter
+# ($09A8,X) that holds the slide off for that many frames. Goattracker has no
+# per-command onset delay, so that third operand is read and dropped -- an
+# approximation, and the only one in this mapping.
+#
+# Note the shape is the *high-first* dialect again (SLIDE_HIGH_FIRST_SHAPE):
+# `AND #$3F` for the high half. The direction is bit 7 here rather than a CMP
+# threshold, because the two bytes are separate pattern operands.
+CMDTABLE_SLIDE_SHAPE = ("BD ?? ?? 10 ?? 38 BD ?? ?? FD ?? ?? 9D ?? ?? 99 00 D4 "
+                        "BD ?? ?? FD ?? ?? 9D ?? ?? 99 01 D4")
+
 
 def _handler_operands(data: bytes, off: int, instr_cell: int):
     """(operand count, sets-the-instrument) for one command handler.
@@ -390,6 +421,40 @@ def _handler_operands(data: bytes, off: int, instr_cell: int):
     else:
         return None, False
     return max(0, iny - 1), sets_instr
+
+
+def _cmdtable_slide(sid: SidFile, data: bytes, cmd_lo: int, cmd_hi: int,
+                    count: int) -> Tuple[int, int]:
+    """(command index, high-half mask) of the cmdtable pitch slide, or (-1, 0).
+
+    The consumer names the cells; the handler that fills them names the
+    command. Requiring both, and requiring the handler to store them in the
+    order the consumer reads them, is what makes this a reading rather than a
+    guess -- a file whose handler differs returns -1 and keeps the old
+    behaviour of dropping the command, which is an under-read.
+    """
+    at = search_file(data, CMDTABLE_SLIDE_SHAPE)
+    if at < 1:
+        return -1, 0
+    dir_cell = data[at + 1] | data[at + 2] << 8
+    lo_cell = data[at + 10] | data[at + 11] << 8
+    for c in range(count):
+        if cmd_hi + c >= len(data):
+            break
+        handler = sid.to_offset(data[cmd_lo + c] | data[cmd_hi + c] << 8)
+        if not 0 < handler < len(data):
+            continue
+        stores, mask = [], 0
+        for k in range(handler, min(handler + 30, len(data) - 2)):
+            if data[k] == 0x9D:
+                stores.append(data[k + 1] | data[k + 2] << 8)
+            elif data[k] == 0x29 and len(stores) == 2:
+                mask = data[k + 1]
+            elif data[k] == 0x4C:
+                break
+        if stores[:2] == [lo_cell, dir_cell] and mask:
+            return c, mask
+    return -1, 0
 
 
 def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
@@ -431,6 +496,11 @@ def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     det.duration_table = duration
     det.cmd_operands = tuple(operands)
     det.cmd_instrument = instrument
+    det.cmd_slide, det.cmd_slide_mask = _cmdtable_slide(
+        sid, data, cmd_lo, cmd_hi, count)
+    if det.cmd_slide >= 0:
+        log(f"Pattern slide command...: ${0x80 + det.cmd_slide:02X} "
+            f"(low, high & ${det.cmd_slide_mask:02X} + bit 7 direction, delay)")
     log(f"Pattern grammar.........: command-table ({count} commands, "
         f"${0x80 + instrument:02X} sets the instrument)")
     log("Note durations..........: " + " ".join(

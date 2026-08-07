@@ -1947,6 +1947,70 @@ vibrato and drops sample playback is two orders of magnitude wide and would be
 a number chosen to fit, so the limit is documented instead — in the report's
 own *What this does not say*.
 
+### 7.gg The command-table engine's slide, which nothing in the corpus uses
+
+The third grammar has one too. Hollywood or Bust `$071B` and Chicken Song
+`$1301` are byte for byte the same routine:
+
+```
+071B  BD 9A 09  LDA dir,X           ; operand 2, raw
+071E  10 1C     BPL up              ; bit 7 clear -> add, set -> subtract
+0720  38        SEC
+0721  BD 97 09  LDA freqlo,X
+0724  FD A5 09  SBC steplo,X        ; operand 1 is the step's LOW half
+0727  9D 97 09  STA freqlo,X / STA $D400,Y
+072D  BD 94 09  LDA freqhi,X
+0730  FD 9D 09  SBC stephi,X        ; operand 2 AND #$3F is the HIGH half
+0733  9D 94 09  STA freqhi,X / STA $D401,Y
+```
+
+with a handler (`$084D` / `$1430`) that stores the three operands in the same
+order in both files: step low, direction-and-high raw, then a per-voice onset
+delay in frames. Goattracker has no per-command delay, so that third operand is
+read and dropped — the one approximation in the mapping.
+
+It is the **high-first dialect** again (§ 7.cc): `AND #$3F` for the high half.
+The direction is bit 7 rather than a `CMP` threshold because the two bytes are
+separate operands rather than a command byte and a fetched one.
+
+The command index is not assumed. The consumer names the cells, the handler
+that fills them names the command, and `_cmdtable_slide` accepts it only if the
+handler stores them in the order the consumer reads them. Both files answer
+command 1.
+
+**And neither file uses it.** Walking their patterns, Hollywood or Bust reaches
+commands 0, 2, 4, 5 and 6 and Chicken Song 0, 2, 4 and 5 — never 1. The
+converted output is byte-identical on all 83 preset songs, which the A/B mode
+reports as *"this change reaches nothing"*, and that is the correct reading:
+the grammar is now read completely and the corpus does not exercise this part
+of it.
+
+Worth having anyway, for a reason specific to this engine: an unread command
+here desynchronises nothing (its operand count was always honoured), but a
+*misread* one would, and the reading is now pinned by tests rather than left to
+be re-derived by the next person who sees `$81` in a pattern.
+
+#### What Hollywood or Bust's missing bend actually is
+
+Not the slide. Its pitch movement is **vibrato driven by a table**, which is a
+third form again — neither the classic `$78`/`$07` pair nor anything
+Goattracker has:
+
+```
+05F3  BC B1 09  LDY lfo_index,X / INC lfo_index,X   ; one entry per frame
+05F9  B9 DF 09  LDA $09DF,Y / CMP #$FF              ; $FF wraps to 0
+060E  BD 7A 09  LDA note,X / ASL / TAY
+0613  38 B9 A7 08 F9 A5 08   SEC / LDA freq+2,Y / SBC freq,Y   ; the interval
+0622  4A 66 4D  LSR / ROR x4                        ; >> 4
+0630  AC 86 09  LDY count / ... ADC ... DEY / BNE   ; x the table entry
+```
+
+so the frequency offset each frame is `(interval >> 4) × table[i]` — an
+arbitrary LFO shape, where `--vibrato` reads a bound and a shift. Goattracker's
+vibrato is a fixed triangle, so this can only ever be approximated: the table's
+peak gives the excursion and its length the period. That approximation is
+**not** implemented, and Hollywood or Bust's `bend` of 0.00x is still open.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

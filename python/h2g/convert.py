@@ -252,7 +252,8 @@ def convert(sid_path: str, log: Logger = print,
     slide_steps: list | None = None
     if fmt != FORMAT_GTS2 and slides and (
             (det.slide_operand and det.pattern_dialect == "classic")
-            or det.pattern_dialect == "digi"):
+            or det.pattern_dialect == "digi"
+            or (det.pattern_dialect == "cmdtable" and det.cmd_slide >= 0)):
         slide_steps = []
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
