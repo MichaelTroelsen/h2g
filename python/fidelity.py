@@ -93,6 +93,19 @@ from h2g.sidfile import find_freq_table, load_sid
 # its README. Preferred when built, because a tune packed at gt2reloc -S2 is
 # traced at half speed without it. Stock siddump still works for everything at
 # multiplier 1 -- and run_siddump refuses to pretend otherwise for the rest.
+# $02A6 is the KERNAL's PAL/NTSC flag and siddump starts it at 0, which is
+# NTSC. Three corpus players branch on it and skip a frame periodically to
+# compensate for a 60Hz machine, so tracing without setting it measures
+# behaviour a PAL C64 never has -- and Goattracker targets PAL. 1 is PAL;
+# --ntsc sets this to None and reproduces every measurement taken before
+# v0.5.110.
+PAL_FLAG: int | None = 1
+
+# A default argument is bound when the function is defined, so a parameter
+# defaulting to PAL_FLAG would ignore --ntsc entirely -- which it did, silently,
+# until the A/B printed identical columns.
+_USE_DEFAULT = object()
+
 SIDDUMP_RT = Path(__file__).resolve().parent / "tools" / "siddump-rt" / "siddump.exe"
 SIDDUMP = os.environ.get(
     "H2G_SIDDUMP",
@@ -374,25 +387,67 @@ def calibration(detune: float) -> int:
 
 
 @functools.lru_cache(maxsize=None)
+def _usage(exe: str) -> str:
+    """siddump's own usage text, which it prints when given no filename."""
+    try:
+        proc = subprocess.run([exe], capture_output=True, text=True, timeout=30,
+                              stdin=subprocess.DEVNULL)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return proc.stdout + proc.stderr
+
+
 def supports_calls_per_frame(exe: str) -> bool:
     """Does this siddump build take -m (playroutine calls per frame)?
 
     Worth asking because siddump's option switch has no default case: an
     unknown letter is dropped without a word, so a stock binary handed -m2
     prints a trace that looks entirely normal and is half the tune. The usage
-    text is the only thing that distinguishes the two builds, and siddump
-    prints it whenever it is given no filename.
+    text is the only thing that distinguishes the two builds.
+    """
+    return "-m<value>" in _usage(exe)
+
+
+@functools.lru_cache(maxsize=None)
+def reads_video_flag(sid: str) -> bool:
+    """Does this file's code read $02A6, the KERNAL PAL/NTSC flag?
+
+    Four of the 95 corpus files do, so demanding a -v-capable siddump for
+    every trace would retire the stock binary for no gain. Demanding it for
+    exactly these files removes the silent-NTSC hazard where it exists and
+    nowhere else. Any absolute read counts: three of the four branch on the
+    cell to skip frames, the fourth indexes tuning constants with it.
     """
     try:
-        proc = subprocess.run([exe], capture_output=True, text=True, timeout=30,
-                              stdin=subprocess.DEVNULL)
-    except (OSError, subprocess.SubprocessError):
+        data = Path(sid).read_bytes()
+    except OSError:
         return False
-    return "-m<value>" in (proc.stdout + proc.stderr)
+    FLAG_BYTES = bytes((0xA6, 0x02))
+    reads = {0xAD, 0xAE, 0xAC, 0x2C, 0xCD, 0xEC, 0xCC,
+             0x0D, 0x2D, 0x4D, 0x6D, 0xED}
+    i = data.find(FLAG_BYTES)
+    while i > 0:
+        if data[i - 1] in reads:
+            return True
+        i = data.find(FLAG_BYTES, i + 1)
+    return False
+
+
+def supports_video_flag(exe: str) -> bool:
+    """Does this build take -v (the value for $02A6, PAL/NTSC)?
+
+    Same silent-drop hazard as -m and a worse failure: a dropped -v1 leaves
+    the flag at 0, which is NTSC, and three corpus players branch on it to
+    skip frames. The trace then looks entirely normal and is the wrong
+    machine -- which is exactly how Phantoms_of_the_Asteroid was carried as a
+    converter defect for several versions.
+    """
+    return "-v<value>" in _usage(exe)
 
 
 def run_siddump(sid: Path, seconds: int, subtune: int,
-                exe: str = SIDDUMP, calibrate: int = 0, calls: int = 1) -> Trace:
+                exe: str = SIDDUMP, calibrate: int = 0, calls: int = 1,
+                video=_USE_DEFAULT) -> Trace:
     """Trace `seconds` of real time, `calls` playroutine calls per frame.
 
     `calls` is the tune's call rate over 50Hz -- gt2reloc's -S multiplier for
@@ -403,6 +458,8 @@ def run_siddump(sid: Path, seconds: int, subtune: int,
     (siddump.c:309/325), and a tune written to tick at 100Hz plays at half
     speed for the whole trace.
     """
+    if video is _USE_DEFAULT:
+        video = PAL_FLAG
     cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}"]
     if calibrate:
         cmd.append(f"-c{calibrate:X}")
@@ -414,6 +471,19 @@ def run_siddump(sid: Path, seconds: int, subtune: int,
                 f"python/tools/siddump-rt (see its README), or pass "
                 f"--multiplier 1 to measure the whole corpus at 50Hz.")
         cmd.append(f"-m{calls}")
+    if video is not None:
+        if supports_video_flag(exe):
+            cmd.append(f"-v{video}")
+        elif reads_video_flag(str(sid)):
+            # Only these files can be traced as the wrong machine, and for
+            # them a silently dropped -v is a plausible, normal-looking,
+            # wrong dump -- which is how Phantoms_of_the_Asteroid was carried
+            # as a converter defect for several versions.
+            raise RuntimeError(
+                f"{Path(sid).name} reads $02A6 and {exe} does not support "
+                f"-v, so the trace would be NTSC. Build "
+                f"python/tools/siddump-rt (see its README), or pass --ntsc "
+                f"to accept it.")
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
                           stdin=subprocess.DEVNULL)
     return parse_dump(proc.stdout)
@@ -2258,6 +2328,8 @@ def cycle_series(sid: Path, seconds: int, subtune: int, exe: str = SIDDUMP,
                  calls: int = 1) -> list[int]:
     """Play-routine cycles per frame, from siddump -z."""
     cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}", "-z"]
+    if PAL_FLAG is not None and supports_video_flag(exe):
+        cmd.append(f"-v{PAL_FLAG}")
     if calls > 1:
         if not supports_calls_per_frame(exe):
             raise RuntimeError(f"{exe} does not support -m")
@@ -2858,6 +2930,13 @@ def main(argv=None) -> int:
                         "per run: the files in it have fixed names, so two "
                         "harnesses sharing one directory silently measure each "
                         "other's files. Name one only to keep the intermediates")
+    p.add_argument("--ntsc", action="store_true",
+                   help="leave $02A6 at 0 when tracing, which is NTSC and is "
+                        "what a bare emulated machine looks like. Three corpus "
+                        "players branch on that cell and skip frames to "
+                        "compensate for a 60Hz machine, so this measures "
+                        "behaviour a PAL C64 never has -- it exists to "
+                        "reproduce measurements taken before v0.5.110")
     p.add_argument("--calls-per-frame", type=int, metavar="N",
                    help="playroutine calls per frame when tracing our "
                         "conversion. Defaults to the song's gt2reloc -S "
@@ -2871,6 +2950,8 @@ def main(argv=None) -> int:
     p.add_argument("--audio", action="store_true",
                    help="also run SIDM2's onset-aligned audio comparison")
     args = p.parse_args(argv)
+    if getattr(args, "ntsc", False):
+        globals()["PAL_FLAG"] = None
 
     if not Path(args.siddump).exists():
         print(f"error: siddump not found: {args.siddump}", file=sys.stderr)

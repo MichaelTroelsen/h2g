@@ -38,7 +38,7 @@ needs_rt = pytest.mark.skipif(
 
 def test_a_binary_without_m_is_not_taken_at_its_word(tmp_path):
     """An exe that cannot be run at all supports nothing."""
-    fidelity.supports_calls_per_frame.cache_clear()
+    fidelity._usage.cache_clear()
     assert not fidelity.supports_calls_per_frame(str(tmp_path / "nothing.exe"))
 
 
@@ -54,7 +54,11 @@ def test_tracing_faster_than_50hz_refuses_a_binary_that_cannot(tmp_path):
 
 
 def test_one_call_per_frame_never_needs_the_patched_build(tmp_path):
-    """Everything at multiplier 1 still runs on a stock siddump."""
+    """Everything at multiplier 1 still runs on a stock siddump.
+
+    Including the $02A6 requirement, which is scoped to the four corpus files
+    that actually read the cell -- Commando is not one of them.
+    """
     fake = tmp_path / "nothing.exe"
     # No -m argument is added, so this gets as far as trying to run the exe
     # rather than refusing on the capability check.
@@ -64,7 +68,7 @@ def test_one_call_per_frame_never_needs_the_patched_build(tmp_path):
 
 @needs_rt
 def test_the_built_tool_advertises_m(tmp_path):
-    fidelity.supports_calls_per_frame.cache_clear()
+    fidelity._usage.cache_clear()
     assert fidelity.supports_calls_per_frame(str(RT))
 
 

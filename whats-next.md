@@ -646,10 +646,32 @@ So the unexplained set is down to **Spellbound** (period 11 predicts 2.20,
 than a return). Everything else timed is either explained by the skip
 arithmetic or was the harness.
 
-**Not yet done:** `fidelity.py` does not pass `-v1`. Doing so is correct —
-these are PAL tunes and Goattracker targets PAL — but it changes what `--pace`
-and `--ticks` report for at least two files, so it wants its own commit and a
-re-measurement rather than riding along here.
+### v0.5.110 — `-v1` is now the default, and the re-measurement
+
+`fidelity.py` sets `$02A6` to 1 for every trace; `--ntsc` reverts. Setting a
+cell nobody reads changes nothing, so **only the four files move** (verified:
+`-v1` output on Commando is byte-identical). The requirement for a `-v`-capable
+siddump is scoped by `reads_video_flag()` to exactly those four, so the stock
+binary still serves the other 91.
+
+| file | PAL | NTSC | gate | reading |
+|---|---:|---:|---:|---|
+| `Phantoms_of_the_Asteroid` | **2.00** | 2.44 | 2 | **not a defect** — the gate was right all along |
+| `Las_Vegas_Video_Poker` | **3.75** | 4.50 | 3 | skip period 5 on PAL, 3 on NTSC |
+| `Bump_Set_Spike` | 3.33 | 3.33 | 3 | unmoved, as predicted: its `$02A6` block is past the play address |
+| `Skate_or_Die_intro` | 2.50 | 3.00 | 3 | **moved the wrong way, and it is a `--pace` artefact** |
+
+Skate or Die's flag selects *tuning constants*, not a rate. Tracing it as PAL
+changes its pitches, which changes which notes difflib matches, which moves
+`--pace`'s row estimate — so its 2.50 says nothing about the row and its
+NTSC 3.00 was not evidence either. Note this file is also the one carrying a
+known frequency-table shift; the two are probably the same fact.
+
+**A bug this A/B caught, worth remembering.** `run_siddump(video=PAL_FLAG)`
+bound the default at definition time, so `--ntsc` did nothing and the two
+columns printed identically. The A/B was what exposed it — had the
+re-measurement been run one way only, the numbers would have been right by
+accident and the flag silently dead.
 
 ## 8. Four players have no expressible rate
 

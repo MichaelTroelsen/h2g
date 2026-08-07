@@ -1141,6 +1141,14 @@ option switch has no `default:` case, so an unknown letter is dropped without a
 word. `--calls-per-frame N` overrides the rate; `1` reproduces every number
 taken before v0.5.99.
 
+Traces set **`$02A6` to 1 (PAL)** since v0.5.110. siddump starts that cell at
+0, which is NTSC, and three corpus players branch on it to skip frames in
+compensation — tracing without it measures behaviour a PAL C64 never has, and
+carried `Phantoms_of_the_Asteroid` as a converter defect for several versions
+when its row is simply what its gate says. `--ntsc` reverts. Only four files
+read the cell and only they can move; the `-v`-capable build is required for
+those four alone.
+
 `--ticks` asks the same question of the **original alone**. `siddump -z` prints
 the cycles the play routine burned on each frame; a Hubbard player does
 markedly more work on the frame its sequencer steps, so the gaps between those

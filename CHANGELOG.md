@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.110 — 2026-08-07
+
+- trace as PAL by default; re-measure the four $02A6 files
+
 ## 0.5.109 — 2026-08-07
 
 - scan for $02A6 readers; siddump-rt -v traces as PAL
