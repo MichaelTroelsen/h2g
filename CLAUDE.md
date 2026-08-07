@@ -126,16 +126,25 @@ test dependency).
   `tests/test_fidelity.py` fails if the registry and the printed header
   disagree. See README.md § *A/B against a previous run*.
 - **A low score in `FIDELITY.md` is a claim about the harness until it is a
-  claim about the converter.** Three separate defects have now been *in the
+  claim about the converter.** Four separate defects have now been *in the
   measurement*: NTSC originals named in the wrong key (v0.5.63), subtune 0
-  traced where the header names another default (v0.5.64), and a 10 s window
-  shorter than a file's opening rest. Before treating a row as a conversion
-  bug, check what the original itself plays in that window and at that
-  subtune. The per-voice modal semitone delta is the tool: a constant non-zero
-  mode at a high share is one wrong number, a flat distribution is different
-  music. Its share degrades when either side drops notes, so a *low* share is
-  not evidence of scrambling — sweep a constant transposition through a
-  difflib alignment instead and see whether any shift peaks.
+  traced where the header names another default (v0.5.64), a 10 s window
+  shorter than a file's opening rest, and (v0.5.97) **rows whose two sides are
+  not the same piece of music**, because the `.sid`'s own init routine
+  renumbers the subtune before the player sees it. **Run `fidelity.py
+  <file> --diagnose` before calling any row a conversion bug.** It asks the
+  questions in the order they have to be asked: the subtune correspondence
+  matrix first, then a per-voice cause. Three of the four files the handoff
+  filed under "plays something else" were the harness — Dragons_Lair_Part_II
+  is 7% on the diagonal and 94/98/97% at its real counterparts, and
+  Flash_Gordon's traced subtune is its worst of nine.
+  `--search-subtunes` cannot substitute: it varies *our* index while holding
+  the original's fixed, and in these files the original's is the one that
+  moved. On the per-voice question, a modal semitone delta's share degrades
+  when either side drops notes, so a *low* share is not evidence of
+  scrambling — `--diagnose` sweeps a constant transposition through a difflib
+  alignment instead and reports the peak, signed as ours against the
+  original's.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and
   `H2G-CONVERSION-METHOD.md` are not — if a change alters behaviour those

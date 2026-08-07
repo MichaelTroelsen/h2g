@@ -2142,6 +2142,226 @@ def _dim(key: str) -> Dimension:
     return next(d for d in DIMENSIONS if d.key == key)
 
 
+# --------------------------------------------------------------------------
+# --diagnose: why one file scores low
+# --------------------------------------------------------------------------
+# A low melody score names no cause. Four different defects present as one
+# number -- a whole voice missing, a constant transposition, under-production
+# with the pitches exact, and genuinely different music -- and a fifth, which
+# turns out to be the commonest of them, is that the two sides are not the same
+# piece of music at all because the subtunes do not correspond.
+#
+# That last one is invisible to every other mode here. `--search-subtunes`
+# varies *our* index while holding the original's at its startSong, so it finds
+# a counterpart displaced by a dropped subtune and nothing else. It cannot find
+# a file whose .sid carries an init wrapper that renumbers the subtune before
+# the player sees it, because there the original's own index has moved. Two
+# corpus files do exactly that (SUBTUNE_REMAP below) and both sat in the
+# report's "plays something else" bucket for as long as it has existed.
+#
+# The order below is the order the questions have to be asked in: a per-voice
+# analysis of two different pieces of music is noise.
+
+# How many subtunes a side may contribute to the matrix. One trace per row and
+# per column, one comparison per cell, so it is quadratic in the claim -- and
+# the claim is not always honest (Rasputin's header says 18 and 15 of them play
+# two notes in forty-five seconds). Never capped silently: the header says what
+# was left out.
+MATRIX_CAP = 24
+
+_NOTE_STEP = {"C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11}
+
+
+def _semitone(name: str) -> int:
+    """siddump's note name ('C-4', 'F#3') as an absolute semitone number."""
+    return _NOTE_STEP[name[0]] + (1 if name[1] == "#" else 0) + 12 * int(name[2])
+
+
+def shift_sweep(orig: Voice, ours: Voice, span: int = 24):
+    """(best shift, its ratio, the ratio at zero) over +/- `span` semitones.
+
+    The shift is signed the way a reader wants to hear it: *ours* relative to
+    the original, so -7 means we play the tune a fifth low. The sweep
+    therefore subtracts the candidate from our notes rather than adding it --
+    the other convention returns the correction rather than the defect, and
+    reports a voice played seven semitones flat as "+7".
+
+    A position-aligned modal delta proves a transposition when its share is
+    high but proves nothing when it is low, because the alignment slips
+    whenever either side drops notes -- which is the regime every low-scoring
+    file is in. Sweeping a constant shift and taking the sequence ratio at each
+    does not depend on the alignment surviving: a transposed file peaks sharply
+    away from zero, a scrambled one is flat.
+    """
+    a = [_semitone(n) for n in orig.collapsed]
+    b = [_semitone(n) for n in ours.collapsed]
+    if not a or not b:
+        return 0, 0.0, 0.0
+    at_zero = difflib.SequenceMatcher(None, a, b, autojunk=False).ratio()
+    best_k, best = 0, at_zero
+    for k in range(-span, span + 1):
+        if k == 0:
+            continue
+        r = difflib.SequenceMatcher(None, a, [x - k for x in b],
+                                    autojunk=False).ratio()
+        if r > best:
+            best_k, best = k, r
+    return best_k, best, at_zero
+
+
+def classify_voice(orig: Voice, ours: Voice) -> str:
+    """Which defect this voice's share of the score is.
+
+    Ordered most-specific first, because each test is only meaningful once the
+    earlier ones have been excluded -- a transposition sweep over a voice we
+    never played reports a spurious peak off two or three notes.
+    """
+    oa, ua = len(orig.attacks), len(ours.attacks)
+    if not oa and not ua:
+        return "silent in both"
+    if not oa:
+        return f"invented: we play {ua} attacks where the original plays none"
+    if not ua:
+        return f"absent: the original plays {oa} attacks, we play none"
+    k, best, at_zero = shift_sweep(orig, ours)
+    op, up = set(orig.attacks), set(ours.attacks)
+    exact = len(op & up) / len(op | up) if (op | up) else 0.0
+    # Asked before any defect, because this function is also run at the *right*
+    # counterpart -- and a voice that agrees must not be described as one of
+    # the four ways of disagreeing.
+    if at_zero >= 0.5 and best - at_zero < 0.15:
+        return (f"matches: ratio {at_zero:.2f}, "
+                f"pitches {exact:.0%} the same")
+    # A peak has to beat zero by a real margin *and* be worth something in
+    # absolute terms; any two sequences peak somewhere.
+    if k and best >= 0.5 and best - at_zero >= 0.15:
+        return (f"transposed {k:+d} semitones "
+                f"(ratio {at_zero:.2f} at 0, {best:.2f} at {k:+d})")
+    if ua < oa * 0.6 and exact >= 0.5:
+        return (f"under-produced: {ua} attacks against {oa}, "
+                f"pitches {exact:.0%} the same")
+    if ua > oa * 1.6 and exact >= 0.5:
+        return (f"over-produced: {ua} attacks against {oa}, "
+                f"pitches {exact:.0%} the same")
+    return (f"different music: no shift beats {at_zero:.2f} "
+            f"(best {best:.2f} at {k:+d}), pitches {exact:.0%} the same")
+
+
+# Files whose .sid init is a wrapper renumbering the subtune before the player
+# sees it. Established by reading the init routine, not inferred from the
+# matrix -- the matrix is only what made it worth reading. Recorded so the
+# diagnosis prints the reason beside the evidence; the converter never consults
+# it, because the remap is in the .sid's own glue code and not in the music.
+SUBTUNE_REMAP = {
+    "Dragons_Lair_Part_II.sid":
+        "init $AF00 maps PSID 0 to song 9, 1 to song 7 and 9 to song 8, and "
+        "sends 2..8 through a table at $AF88 while copying a 512-byte pattern "
+        "bank into $BE00 that a static rip cannot see",
+    "Rasputin.sid":
+        "init $CFB5 sends PSID 0 and 1 to a different entry ($C000, with "
+        "$C54C set to $FF) and maps PSID n>=2 to song n-2",
+}
+
+
+def subtune_matrix(orig: Path, packed: Path, args, cal: int,
+                   norig: int, nours: int):
+    """melody[i][j] for the original's subtune i against ours j.
+
+    The whole point is that the diagonal is not the answer. A file whose best
+    match per row sits off the diagonal is a numbering question, and until that
+    is settled every other number about the file compares two different pieces
+    of music.
+    """
+    ni, nj = min(norig, MATRIX_CAP), min(nours, MATRIX_CAP)
+    ours = [run_siddump(packed, args.seconds, j, args.siddump) for j in range(nj)]
+    grid = []
+    for i in range(ni):
+        a = run_siddump(orig, args.seconds, i, args.siddump, cal)
+        grid.append([compare(a, b)["melody"] for b in ours])
+    return grid, ni, nj
+
+
+def diagnose(sid: Path, workdir: Path, opts: dict, args,
+             multiplier: int = 1) -> str:
+    """What `--diagnose` prints for one file: correspondence, then cause."""
+    out: list[str] = []
+    hdr = load_sid(str(sid))
+    traced = resolve_subtune(sid, args.subtune)
+    try:
+        sng = convert(str(sid), log=lambda m: None, **opts)
+    except Exception as exc:                       # noqa: BLE001
+        return f"{sid.name}: will not convert -- {type(exc).__name__}: {exc}\n"
+    lengths = song_lengths(sng)
+    sng, patched = legalise_restarts(sng)
+    packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
+    if packed is None:
+        return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
+    local = workdir / "o.sid"
+    shutil.copyfile(sid, local)
+    ft = find_freq_table(hdr)
+    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+
+    on = " ".join(k for k, v in sorted(opts.items()) if v is True)
+    out.append(f"{sid.name}: header claims {hdr.subtunes} subtune(s), "
+               f"startSong {hdr.start_song} (traced as {traced}); "
+               f"our .sng carries {len(lengths)}")
+    out.append(f"  {args.seconds}s per trace, gt2reloc -S{multiplier}, "
+               f"{patched} restart(s) legalised, calibration {cal or 'none'}")
+    out.append(f"  options: {on or '(none)'}")
+    remap = SUBTUNE_REMAP.get(sid.name)
+    if remap:
+        out.append(f"  known subtune remap: {remap}")
+    out.append("")
+
+    grid, ni, nj = subtune_matrix(local, packed, args, cal,
+                                  hdr.subtunes, len(lengths))
+    if ni < hdr.subtunes or nj < len(lengths):
+        out.append(f"  matrix capped at {MATRIX_CAP} a side: showing {ni} of "
+                   f"{hdr.subtunes} original and {nj} of {len(lengths)} ours")
+    out.append("  melody %, rows = the original's subtune, columns = ours:")
+    out.append("       " + "".join(f"  o{j:<3}" for j in range(nj)))
+    for i, row in enumerate(grid):
+        mark = "*" if i == traced else " "
+        out.append(f"  {mark}s{i:<3}" + "".join(f" {100 * m:4.0f}" for m in row))
+    out.append("  (* is the subtune every other number for this file is taken at)")
+    out.append("")
+
+    # The correspondence, stated rather than left to be read off the grid.
+    best_j = [max(range(nj), key=lambda j: row[j]) for row in grid]
+    strong = [(i, j, grid[i][j]) for i, j in enumerate(best_j)
+              if grid[i][j] >= 0.5]
+    if strong:
+        out.append("  matches at 50% or better: "
+                   + ", ".join(f"s{i}->o{j} {100 * m:.0f}%" for i, j, m in strong))
+    else:
+        out.append("  no original subtune matches any of ours at 50% or better")
+    off = [(i, j) for i, j, _ in strong if i != j]
+    if off:
+        out.append("  ** the correspondence is not the identity: "
+                   + ", ".join(f"s{i} is our o{j}" for i, j in off))
+        out.append(f"     Every other number for this .sid is taken at s{traced}"
+                   f" against o{traced}, so it compares two different pieces of"
+                   " music until this is accounted for.")
+    elif strong:
+        out.append("  the correspondence is the identity where it is legible")
+    out.append("")
+
+    # Per-voice cause, at the traced subtune and again at its real counterpart.
+    pairs = [("as measured", traced, traced)]
+    if traced < len(best_j) and best_j[traced] != traced:
+        pairs.append(("at the best counterpart", traced, best_j[traced]))
+    for label, i, j in pairs:
+        if i >= ni or j >= nj:
+            continue
+        a = run_siddump(local, args.seconds, i, args.siddump, cal)
+        b = run_siddump(packed, args.seconds, j, args.siddump)
+        out.append(f"  s{i} against o{j} ({label}), melody "
+                   f"{100 * compare(a, b)['melody']:.0f}%:")
+        for v, (ov, nv) in enumerate(zip(a, b)):
+            out.append(f"    voice {v}: {classify_voice(ov, nv)}")
+    return "\n".join(out) + "\n"
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="fidelity", description=__doc__.splitlines()[0])
     p.add_argument("target", nargs="?", help=".sid file or directory of them")
@@ -2187,6 +2407,13 @@ def main(argv=None) -> int:
                    help="convert with --fold-transpose (orderlist transposes "
                         "over Goattracker's +14 folded into the notes) "
                         "regardless of what the presets say")
+    p.add_argument("--diagnose", action="store_true",
+                   help="one file, explained instead of scored: the subtune "
+                        "correspondence matrix (the original's subtunes "
+                        "against ours -- the question --search-subtunes "
+                        "cannot ask, because it varies our index and not the "
+                        "original's), then a per-voice cause for the low "
+                        "score. Prints text; writes no report")
     p.add_argument("--search-subtunes", type=int, default=3, metavar="N",
                    help="try a window of N of our subtunes centred on the "
                         "traced one and keep the best match; our numbering "
@@ -2260,6 +2487,22 @@ def _run(p, args, workdir: Path) -> int:
         target = Path(args.target)
         sids = sorted(target.rglob("*.sid"), key=lambda q: q.name.lower()) \
             if target.is_dir() else [target]
+        if args.diagnose:
+            # Deliberately not a row: the output is an argument about one
+            # file, and folding it into the report would put a paragraph in a
+            # table cell. --baseline, -o and --json are all about the corpus
+            # sweep and do not apply.
+            for sid in sids:
+                opts = _preset_opts(doc, sid.name)
+                if args.slides:
+                    opts["slides"] = True
+                if args.effects:
+                    opts["effects"] = True
+                if args.fold_transpose:
+                    opts["fold_transpose"] = True
+                print(diagnose(sid, workdir, opts, args,
+                               _preset_multiplier(doc, sid.name)))
+            return 0
         rows = []
         for sid in sids:
             opts = _preset_opts(doc, sid.name)

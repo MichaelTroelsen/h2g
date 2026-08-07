@@ -277,7 +277,7 @@ excluded-subset figure, and the report is right to print both.
 
 ---
 
-## 7. Fold the diagnostics in
+## 7. Fold the diagnostics in — **built, v0.5.97**
 
 Two analyses have now been re-derived from scratch by separate forks because
 they live in nobody's file:
@@ -295,10 +295,32 @@ they live in nobody's file:
   are four different defects that all present as a low melody score. The
   partition has been done by hand twice and is stale both times.
 
-`fidelity.py --diagnose <file>` should print both. The cost of not having it
-is that the same twenty minutes of analysis is spent repeatedly, and its
-conclusions decay into handoff prose that later turns out to be wrong — the
-`<50%` partition has already been quoted after it stopped being true.
+`fidelity.py --diagnose <file>` prints both, and a third thing that turned out
+to matter more than either: **the subtune correspondence matrix**, melody % for
+every one of the original's subtunes against every one of ours.
+
+That third one is why the section was worth building. The two analyses above
+both assume the two sides are the same piece of music, and for three of the
+four files this section was written about they were not:
+
+| file | on the diagonal | at its real counterpart |
+|---|---:|---|
+| Dragons_Lair_Part_II | 7% | **94%** (s0→o9), 98% (s1→o7), 97% (s9→o8) |
+| Commodore_64_Music_Examples | 15% | **89%** (s1→o0) |
+| Flash_Gordon | 30% | identity holds — but s0 is its *worst* subtune of nine (s7 99%, s8 100%) |
+| Rasputin | 25% | no counterpart; voice 2 absent, voice 1 under-produced — a real defect |
+
+Two of them are the `.sid`'s own init wrapper renumbering the subtune before
+the player sees it (`Dragons_Lair_Part_II` at `$AF00`, `Rasputin` at `$CFB5`),
+which `--search-subtunes` is structurally unable to find: it varies *our* index
+and holds the original's fixed, and here it is the original's that moved.
+
+The cost of not having had it is exactly what was predicted here — the same
+analysis was spent repeatedly and its conclusions decayed into handoff prose
+that turned out to be wrong. "Both peak at 18–25% at a different constant shift
+per voice, therefore genuinely scrambled" was a reading of the constant-shift
+sweep applied to two subtunes that are not the same music. The sweep was right;
+the pairing it was run on was not.
 
 ---
 

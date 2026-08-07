@@ -1083,6 +1083,49 @@ corpus files and widening it moves none, so it identifies the counterpart
 rather than trawling for a flattering score; the report names the files it
 moved.
 
+That option varies **our** index and holds the original's at its `startSong`,
+which fixes a displacement on our side and nothing else. It cannot fix a
+displacement on the original's side, and two corpus files have one: their
+`.sid` carries an init wrapper that renumbers the subtune before the player
+sees it. *Dragon's Lair Part II* (`init $AF00`) sends PSID subtune 0 to song
+9, 1 to song 7 and 9 to song 8; *Rasputin* (`init $CFB5`) sends 0 and 1 to a
+different entry point altogether and maps n to song n-2 above that. No window
+size reaches those, because the number that moved is the one the search holds
+fixed. `--diagnose` is what finds them.
+
+### Diagnosing one file
+
+```sh
+python fidelity.py <one.sid> --diagnose -t 10
+```
+
+One file, explained instead of scored. It prints, in the order the questions
+have to be asked in:
+
+* **the subtune correspondence matrix** — melody % for every one of the
+  original's subtunes against every one of ours, with the traced row marked,
+  followed by the correspondence stated in words. Until this is settled, every
+  other number about the file may be comparing two different pieces of music,
+  and for three of the four files the report used to file under *plays
+  something else* that is exactly what it was doing. Dragon's Lair Part II
+  scores 7% on the diagonal and **94%, 98% and 97%** at its real counterparts.
+* **a per-voice cause** for the traced pairing, and again at the best
+  counterpart when that is a different subtune. Each voice comes back as one
+  of: *matches*, *silent in both*, *absent*, *invented*, *transposed k
+  semitones*, *under-produced*, *over-produced*, or *different music*. The
+  transposition test is a constant-shift sweep over ±24 semitones taking the
+  sequence ratio at each — robust where a position-aligned modal delta is not,
+  because the alignment slips as soon as either side drops a note, which is
+  the regime every low-scoring file is in. A peak must beat the unshifted
+  ratio by a margin *and* be worth something absolutely, so unrelated music
+  comes back as unrelated rather than as a transposition that is not there.
+
+The shift is signed as **ours against the original's**: `-7` means we play the
+tune a fifth low, not that adding seven would fix it.
+
+It writes no report and takes no `-o`/`--json`/`--baseline`; the output is an
+argument about one file, not a row.
+
 A short trace is its own hazard in the same family. `BMX_Kidz.sid` opens with
 about thirteen seconds of rest, so at `-t 10` neither side has played a note
 and the file scored 0% — at `-t 60` it scores 95%. Rows where **both** sides
