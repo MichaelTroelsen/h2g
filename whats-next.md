@@ -617,8 +617,21 @@ Warhawk 8, Spellbound 11, Las_Vegas 3.
 - **Las_Vegas closes exactly**: period 3 with a gate of 3 gives 4.50, the
   measured value.
 - **Warhawk closes to 1.6%**: period 8, gate 2, 2.29 against 2.25.
-- **Spellbound does not.** Its period is 11, which predicts 2.20 where `--pace`
-  says 2.97. The skip is real and the arithmetic is not enough. Unexplained.
+- **Spellbound does close — `--pace` was wrong about it (v0.5.111).** Its
+  skip period is 11, measured exactly: 90 skip frames over 20 s, every gap 11
+  without exception. Within each 10-frame running block ~4.8 frames cost more
+  than the block's mean, i.e. about 5 ticks per 11 frames, giving a row of
+  **2.2–2.3 frames** — which is what `(reload + 1) x 11/10 = 2.20` predicts.
+  `--pace`'s 2.97 is 1.35x that, close to 4/3.
+
+  **The reason is a limit of `--pace` worth more than the file.** It measures
+  note-to-note timing, which is `rows per note` x `row length`, and it cannot
+  separate them: a conversion giving every note 4 rows where the player gives
+  3 units reads exactly like one whose rows are 4/3 too long, with a tight IQR
+  either way. So Spellbound's defect is most likely **rows per note**, which
+  is a pattern-decoding question and not a tempo one. Where `--pace` and the
+  cycle profile disagree, the profile wins: it measures the original alone and
+  owes nothing to what we emitted.
 - **Action_Biker is a different shape** and unresolved: it branches `BMI` and
   jumps to a lighter routine instead of returning, so "skipped" and "run" are
   not the two states the others have.
@@ -641,9 +654,8 @@ moves until something asks for `-v1`.
 | `Bump_Set_Spike` | same idiom at `$B006` — but the PSID play address is `$B016`, **past it** | never executed from a play call. Its real skip has period 10, and 3 x 10/9 = **3.33**, its measured value exactly. **Closes.** |
 | `Skate_or_Die_intro` | `LDX $02A6` indexes tuning constants into three self-modified sites | affects pitch, not rate. Worth remembering next to its known frequency-table shift |
 
-So the unexplained set is down to **Spellbound** (period 11 predicts 2.20,
-`--pace` says 2.97) and **Action_Biker** (`BMI` to a lighter routine rather
-than a return). Everything else timed is either explained by the skip
+So the unexplained set is down to **Action_Biker** alone (`BMI` to a lighter
+routine rather than a return, so "skipped" and "run" are not its two states). Everything else timed is either explained by the skip
 arithmetic or was the harness.
 
 ### v0.5.110 — `-v1` is now the default, and the re-measurement

@@ -2533,6 +2533,15 @@ def pace(orig: Trace, ours: Trace) -> dict:
     about which side is faster. `slope` is kept beside it because the two
     parting company is itself a signal that the material diverges.
 
+    **What this measures is note-to-note timing, which is `rows per note` x
+    `row length` -- and it cannot separate the two.** A conversion that gives
+    every note 4 rows where the player gives it 3 units reads exactly like one
+    whose rows are 4/3 too long, and the IQR is tight in both cases. Spellbound
+    is the file where they diverge: `--pace` says 2.97 frames where the
+    player's own cycle profile says 2.2, and the missing factor is rows per
+    note. Where the two disagree, the cycle profile wins -- it measures the
+    original alone and owes nothing to what we emitted.
+
     `spread` is the interquartile range of those ratios. A row of the wrong
     length compresses every gap by the same factor and reads tight; a spread
     one means the pacing is *irregular*, which is a gate whose interval
