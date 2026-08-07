@@ -2501,6 +2501,14 @@ def ticks_report(sid: Path, args) -> str:
 # --------------------------------------------------------------------------
 # --pace: does the conversion play at the tune's speed?
 # --------------------------------------------------------------------------
+# Below this many matched gaps, or above this relative interquartile range,
+# the ratio is not a measurement. Calibrated against the corpus: the files
+# whose row length is independently confirmed carry 100-400 gaps at an IQR of
+# 0-3%, while the two that produced §7c carried 7 and 19.
+MIN_PACE_GAPS = 40
+MAX_PACE_IQR = 0.10
+
+
 def matched_gaps(orig: Voice, ours: Voice,
                  floor: int = 4) -> list[tuple[int, int]]:
     """(their frames, our frames) for consecutive notes both sides play.
@@ -2551,15 +2559,27 @@ def pace(orig: Trace, ours: Trace) -> dict:
     do not move, and the median still correctly says the row length is right.
     """
     g = [x for v in range(3) for x in matched_gaps(orig[v], ours[v])]
-    if len(g) < 6:
+    # 6 was far too low. A file the conversion largely misses leaves difflib a
+    # handful of matched notes, and a ratio over 7 gaps with an interquartile
+    # range spanning a factor of three was reported in bold as "their row is
+    # 3.75 frames" -- which is what §7c was built on, and it was noise. The
+    # files where this measure is worth anything carry hundreds of gaps
+    # (Ricochet 359 at an IQR of zero, Tarzan 418 the same).
+    if len(g) < MIN_PACE_GAPS:
         return {"n": len(g)}
     num = sum(a * b for a, b in g)
     den = sum(a * a for a, _ in g)
     ratios = sorted(b / a for a, b in g)
     q1, q3 = ratios[len(ratios) // 4], ratios[3 * len(ratios) // 4]
-    return {"n": len(g), "slope": num / den if den else None,
-            "median": ratios[len(ratios) // 2], "q1": q1, "q3": q3,
-            "spread": q3 - q1}
+    median = ratios[len(ratios) // 2]
+    out = {"n": len(g), "slope": num / den if den else None,
+           "median": median, "q1": q1, "q3": q3, "spread": q3 - q1}
+    # A wide IQR means the matched notes do not agree with each other about
+    # the ratio, so their median is not a row length whatever its value.
+    if median and (q3 - q1) / median > MAX_PACE_IQR:
+        out["unreliable"] = (f"IQR spans {(q3 - q1) / median:.0%} of the "
+                             f"median -- the matched notes disagree")
+    return out
 
 
 def pace_report(sid: Path, workdir: Path, opts: dict, args,
@@ -2621,6 +2641,10 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     if seen:
         trues = [t for _, _, t in seen if t]
         spread = min(g["spread"] for _, g, _ in seen)
+        bad = [g.get("unreliable") for _, g, _ in seen if g.get("unreliable")]
+        if bad:
+            out.append(f"  **no row length**: {bad[0]}")
+            trues = []
         if trues:
             out.append(
                 f"  **their row is {sum(trues) / len(trues):.2f} frames**, "

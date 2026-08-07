@@ -697,46 +697,39 @@ columns printed identically. The A/B was what exposed it — had the
 re-measurement been run one way only, the numbers would have been right by
 accident and the flag silently dead.
 
-## 7c. Rows per note — and §7c's own first draft was backwards
+## 7c. Withdrawn — it was built on two numbers that were not measurements
 
-Two files' note-to-note timing does not follow from their row length, which is
-now measured and correct in both:
+§7c claimed our conversion emits the wrong number of rows per note, from
+`--pace` ratios on Action_Biker and Spellbound. Checking those ratios instead
+of building on them retired the section.
 
-| file | their row (cycle profile) | our row (emitted tempo) | `--pace` ratio | expected |
-|---|---:|---:|---:|---:|
-| `Action_Biker` | 3.00 | 3.00 | 0.80 | 1.00 |
-| `Spellbound` | 2.20 | 2.00 | 0.68 | 0.91 |
+**Action_Biker's rested on 7 matched gaps with an IQR of 0.333–1.000** — a
+threefold spread, one gap above the old minimum of 6 — and `--pace` printed
+*"their row is 3.75 frames"* in bold anyway. For contrast, the files whose row
+length is independently confirmed carry 100–400 gaps at an IQR of 0–3%
+(Ricochet 359 at zero, Tarzan 418 at zero). Its 3.75 was noise. Its row is
+3.00, exactly its gate, from 331 of 331 local maxima three frames apart.
 
-Both rows agree with the speed gate once the skip counter is accounted for, so
-`find_song_speeds` is not at fault. What is left is **rows per note**, and the
-ratios say our conversion emits **fewer** rows than the player holds units —
-about 4 where it holds 5 (Action_Biker), 3 where it holds 4 (Spellbound).
+**Spellbound's rested on 19.** With the gate below it now refuses that rate and
+falls back to the 100-gap `-m1` figure, which says 3.00 — and its own cycle
+profile said 2.20 under a block analysis and ~3.2 under a local-maxima one.
+**Spellbound is not resolved**, and v0.5.111's claim that it "closes" at 2.20
+was one detector's answer stated as a fact. It is back open, with the honest
+summary being that three methods disagree on a file whose melody agreement is
+11% — which is itself the likeliest reason they disagree.
 
-**v0.5.112 wrote this as "more rows than the player gives", which is the wrong
-direction.** The ratio is ours over theirs and it is below 1, so our gaps are
-*shorter*. Anyone hunting an over-count would have found nothing.
+**The tool now refuses rather than states.** `pace()` requires
+`MIN_PACE_GAPS = 40` matched gaps and an interquartile range within
+`MAX_PACE_IQR = 10%` of the median, both calibrated against the corpus. Over
+the 95 files, 60 still report a row and 23 refuse with a reason. Every number
+§7b and §7c were built on came from this measure, and it had no notion of its
+own confidence.
 
-What is already known and does *not* explain it: `patterns.py` emits
-`wait + 1` rows, matching the players' `DEC`/`BMI`, and Spellbound's own
-duration counter is `DEC $E4CA,X / BMI $E08C` — `wait + 1`, the same. So the
-main rule is right and something narrower is losing rows.
-
-Where to look, in order:
-
-- The **sticky duration** dialect (`patterns.py:360`, bit 6 set = duration
-  prefix, the wait persisting across events). A prefix consumed where the
-  player would have kept applying it loses exactly this way.
-- Events that carry no duration and inherit the previous one.
-- Whether either file uses the `cmdtable` engine, whose duration is documented
-  as `D` frames rather than `D + 1` (`patterns.py:542`) — if a file of that
-  dialect is decoded with the main rule, or the reverse, the error is one row
-  per note.
-
-**Do not measure a fix with `--pace`.** It reports rows-per-note times row
-length as a single number, which is what produced both the original
-misattribution and the reversed direction above. Compare the player's `wait`
-bytes against our emitted rows directly; both are readable without running
-anything.
+**What this leaves.** Rows per note is not a known defect any more — the
+decoder emits `wait + 1`, both players' counters are `DEC`/`BMI`, and the two
+files that suggested otherwise are one noise and one contested. If it is ever
+to be checked, do it statically: the player's `wait` bytes against our emitted
+rows, with no timing in the loop.
 
 ## 8. Four players have no expressible rate
 

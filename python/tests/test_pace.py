@@ -54,7 +54,7 @@ def test_short_gaps_are_not_timed():
 
 
 def test_a_row_of_the_right_length_reads_1_0():
-    a = voice([f"C-{i%8}" for i in range(12)], [8 * i for i in range(12)])
+    a = voice([f"C-{i%8}" for i in range(60)], [8 * i for i in range(60)])
     got = pace(trace(a, voice([], []), voice([], [])),
                trace(a, voice([], []), voice([], [])))
     assert got["median"] == pytest.approx(1.0)
@@ -63,9 +63,9 @@ def test_a_row_of_the_right_length_reads_1_0():
 
 def test_a_row_two_thirds_too_short_reads_two_thirds_and_tight():
     """Tarzan's shape: every gap compressed by the same factor."""
-    names = [f"C-{i%8}" for i in range(12)]
-    a = voice(names, [6 * i for i in range(12)])
-    b = voice(names, [4 * i for i in range(12)])
+    names = [f"C-{i%8}" for i in range(60)]
+    a = voice(names, [6 * i for i in range(60)])
+    b = voice(names, [4 * i for i in range(60)])
     got = pace(trace(a, voice([], []), voice([], [])),
                trace(b, voice([], []), voice([], [])))
     assert got["median"] == pytest.approx(2 / 3)
@@ -79,10 +79,10 @@ def test_one_dropped_section_does_not_read_as_a_short_row():
     long jump. The row length *is* right, and that is what gets reported --
     a single omission moves neither the median nor the quartiles.
     """
-    names = [f"C-{i%8}" for i in range(12)]
-    a = voice(names, [8 * i for i in range(12)])
-    ours = [8 * i for i in range(12)]
-    ours[6:] = [f - 40 for f in ours[6:]]        # five rows' worth never played
+    names = [f"C-{i%8}" for i in range(60)]
+    a = voice(names, [8 * i for i in range(60)])
+    ours = [8 * i for i in range(60)]
+    ours[30:] = [f - 40 for f in ours[30:]]      # five rows' worth never played
     b = voice(names, ours)
     got = pace(trace(a, voice([], []), voice([], [])),
                trace(b, voice([], []), voice([], [])))
@@ -93,45 +93,45 @@ def test_one_dropped_section_does_not_read_as_a_short_row():
 def test_an_alternating_gate_reads_as_spread():
     """ACE II's shape: the player runs 5 frames then 6, and we run a flat 4.
 
-    No single row length describes this, so the number `--pace` prints is an
-    average and has to say so.
+    No single row length describes this, so the ratio alternates between 4/5
+    and 4/6 and the spread has to say so.
     """
-    names = [f"C-{i%8}" for i in range(13)]
     at, bt, ta, tb = [0], [0], 0, 0
-    for k in range(12):
+    for k in range(60):
         ta += 5 if k % 2 else 6
         tb += 4
         at.append(ta)
         bt.append(tb)
+    names = [f"C-{i%8}" for i in range(len(at))]
     got = pace(trace(voice(names, at), voice([], []), voice([], [])),
                trace(voice(names, bt), voice([], []), voice([], [])))
-    assert 0.72 < got["median"] < 0.81
+    assert 0.66 <= got["median"] <= 0.81
     assert got["spread"] > 0.12
 
 
 def test_the_reported_ratio_is_the_median_not_the_fit():
     """One resting voice must not decide the file's tempo.
 
-    Eleven gaps compressed to 3/4 and one very long gap stretched: the
+    Fifty gaps compressed to 3/4 and one very long gap stretched: the
     least-squares fit follows the long one because it is weighted by its own
     length, the median does not. Reporting the fit here would say the
-    conversion plays *slower* than the original when eleven twelfths of it
-    plays faster.
+    conversion plays *slower* than the original when almost all of it plays
+    faster.
     """
-    names = [f"C-{i%8}" for i in range(13)]
     at, bt, ta, tb = [0], [0], 0, 0
-    for _ in range(11):
+    for _ in range(50):
         ta += 8
         tb += 6
         at.append(ta)
         bt.append(tb)
-    at.append(ta + 400)
-    bt.append(tb + 800)
+    at.append(ta + 4000)
+    bt.append(tb + 8000)
+    names = [f"C-{i%8}" for i in range(len(at))]
     got = pace(trace(voice(names, at), voice([], []), voice([], [])),
                trace(voice(names, bt), voice([], []), voice([], [])))
     assert got["median"] == pytest.approx(0.75)
-    # The fit says the conversion plays *slower* than the original when eleven
-    # twelfths of it plays faster. That disagreement is why the median leads.
+    # The fit says the conversion plays *slower* than the original when almost
+    # all of it plays faster. That disagreement is why the median leads.
     assert got["slope"] > 1.0
 
 
@@ -140,4 +140,4 @@ def test_too_little_shared_material_is_not_timed():
     b = voice(["C-4", "D-4"], [0, 10])
     got = pace(trace(a, voice([], []), voice([], [])),
                trace(b, voice([], []), voice([], [])))
-    assert "median" not in got and got["n"] < 6
+    assert "median" not in got and got["n"] < fidelity.MIN_PACE_GAPS
