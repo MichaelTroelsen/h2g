@@ -517,7 +517,17 @@ is Deep_Strike's measured value and its observed 3,3,2 tick pattern; O = 4
 gives 2.50, which is Delta's.
 
 **Validated against 15 files whose row length was timed independently: within
-5% on all 15, within 1% on 10.** The two measurements owe each other nothing —
+5% on all 15, within 1% on 10** — and **re-checked under v0.5.114's confidence
+gate**, which is the thing that retired §7c. 13 of the 15 still report a row;
+all 13 agree, 10 of them within 1%, and **none disagrees**. Chain_Reaction and
+Zoolook now refuse, both on the IQR gate at exactly 10%, so the evidence is
+13/13 rather than 15/15 and no conclusion moves.
+
+The later findings were re-checked the same way and all stand: Warhawk 2.25
+(predicted 2.29), Las_Vegas 3.75 on PAL (3.75), Bump_Set_Spike 3.33 (3.33),
+Phantoms 2.00 against a gate of 2, Ricochet 2.00. `Human_Race` now refuses at
+38 matched gaps, one short of the floor — its conclusion came from `--ticks`
+rather than `--pace`, so it is unaffected. The two measurements owe each other nothing —
 `--pace` times our conversion against the original over difflib-matched notes,
 `--ticks` reads the period out of the original's cycle profile — and the
 formula lands on both.

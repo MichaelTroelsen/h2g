@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.115 — 2026-08-07
+
+- re-check 7b's conclusions under the confidence gate; none moves
+
 ## 0.5.114 — 2026-08-07
 
 - gate --pace on sample size and spread; withdraw 7c
