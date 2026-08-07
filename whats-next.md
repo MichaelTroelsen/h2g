@@ -585,31 +585,53 @@ loosen `OUTER_GATE` to chase them — there is nothing there to match, and a
 looser shape would only manufacture false positives on the 44 files it
 currently, correctly, ignores.
 
-**`--ticks` cannot adjudicate the remaining four**, which was the cheap check
-and it failed: Warhawk, Spellbound and Las_Vegas_Video_Poker all come back
-*"no quiet class -- every frame does similar work"*, and Action_Biker *"only
-68% of gaps are a whole number of the modal 3"*. None of the four declares CIA
-timing, so unlike Human_Race they are not measuring in the wrong units. A
-claim in v0.5.106 that `--ticks` reaches Spellbound was wrong: Spellbound's
-2.97 is a `--pace` figure.
+### v0.5.108 — the same idiom, at a second site and in four dialects
 
-Action_Biker's 68% is the one positive signal in that refusal — busy frames
-that are *not* one period is what an irregular sequencer looks like, and it is
-the same shape the outer counter produces elsewhere.
+Warhawk's cycle series has a **20-cycle frame every 8 frames**. Its play
+*entry* is the counter again, but it leaves by `RTS` rather than jumping past
+the gate:
 
-Hypotheses not yet tested, in the order worth trying: that the note-duration
-decrement is skipped on some frames further down the voice loop; that these
-players run the sequencer for a *subset* of voices per frame; or that the
-`--ticks` refusal itself is the evidence — "every frame does similar work"
-means the play routine has no cheap path, which is what you would see if the
-sequencer step were spread across frames rather than gated into one.
+```
+$1012  DEC $15AE
+$1015  BPL $101D
+$1017  LDA #$07
+$1019  STA $15AE
+$101C  RTS          <- the whole play call is skipped
+$101D  ... the play routine proper
+```
 
-`true_frames` returns the plain gate value when nothing matched, so these five
-read as "no skip" when they are really "not explained".
-- Whether encoding this is worth it at all is unmeasured: `FIDELITY.md` cannot
-  see a tempo change (siddump plays every file at the trace's own rate), so
-  the evidence would have to come from `--pace` before and after.
+Same arithmetic, second site. And the reason one regex found none of these is
+that the idiom has at least four dialects:
 
+| file | shape | site |
+|---|---|---|
+| Tarzan etc. | `DEC abs / BPL +8 / LDA #O / STA abs / JMP` | above the gate |
+| Warhawk | `DEC abs / BPL +6 / LDA #O / STA abs / RTS` | play entry |
+| Spellbound | `DEC zp / BPL +5 / LDA #O / STA zp / RTS` | play entry, **zero page** |
+| Las_Vegas | reload chosen by `$02A6`, then `STY / RTS` | play entry |
+| Action_Biker | `DEC abs / BMI / JMP light-path` | play entry, inverted |
+
+Skip periods measured from the cycle series rather than read off the reload:
+Warhawk 8, Spellbound 11, Las_Vegas 3.
+
+- **Las_Vegas closes exactly**: period 3 with a gate of 3 gives 4.50, the
+  measured value.
+- **Warhawk closes to 1.6%**: period 8, gate 2, 2.29 against 2.25.
+- **Spellbound does not.** Its period is 11, which predicts 2.20 where `--pace`
+  says 2.97. The skip is real and the arithmetic is not enough. Unexplained.
+- **Action_Biker is a different shape** and unresolved: it branches `BMI` and
+  jumps to a lighter routine instead of returning, so "skipped" and "run" are
+  not the two states the others have.
+
+### `$02A6` — a measurement caveat with teeth
+
+Las_Vegas picks its reload from **`$02A6`, the KERNAL's PAL/NTSC flag**: 4 on
+PAL, 2 on NTSC. siddump starts with that cell at 0, so **every measurement
+this project has taken of that file is its NTSC behaviour**. Its PAL row is
+3 x 5/4 = 3.75, not the 4.50 measured — and the agreement between prediction
+and measurement above is therefore agreement about the wrong machine. Any file
+whose player reads `$02A6` has the same problem, and nothing currently checks
+for it.
 
 ## 8. Four players have no expressible rate
 

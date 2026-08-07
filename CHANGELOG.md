@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.108 — 2026-08-07
+
+- the frame-skip idiom has a second site and four dialects; $02A6 makes one measurement NTSC
+
 ## 0.5.107 — 2026-08-07
 
 - ticks clears Human_Race and declines the other four
