@@ -81,6 +81,13 @@ class Detection:
     # within a record that holds the per-frame step.
     pulse_bounds: int = -1
     pulse_rate_field: int = -1
+    # The *other* pulse engine, selected by effect bit $08 and mutually
+    # exclusive with the sweep above: 34 corpus files sweep, 21 accumulate,
+    # none do both. `pulse_lo_base` is the file offset of a second
+    # per-instrument record array, strided like the instrument table, whose
+    # +0/+1 seed the 12-bit width at note start and whose +6 is added to the
+    # low byte every frame. -1 when the block is absent or unreadable.
+    pulse_lo_base: int = -1
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -745,6 +752,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         log(f"Pulse-width sweep.......: bounds at file +0x{det.pulse_bounds:04X}, "
             f"rate at record +{det.pulse_rate_field}")
 
+    if det.effect_pulse_lo:
+        det.pulse_lo_base = _find_pulse_lo(sid, det)
+        if det.pulse_lo_base >= 0:
+            log(f"Pulse-width accumulate..: state array at file "
+                f"+0x{det.pulse_lo_base:04X} (+0 lo, +1 hi, +6 rate)")
+
     (det.effect_two_stage, det.two_stage_wave,
      det.two_stage_frames) = _find_two_stage(sid, det)
     if det.effect_two_stage:
@@ -1110,16 +1123,75 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # what Warhawk means.
     drum = search_file(
         sid.data, f"{load} 29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0") >= 1
-    # Warhawk $12A3. Selects a variant of the +6 pulse-width sweep: instead of
-    # the triangle into $D403 (pulse HI), it ADCs +6 into the instrument's own
-    # +0 byte and writes that to $D402 (pulse LO) -- and stores the running
-    # total back into the record, so a static read of +0 sees only its initial
-    # value.
+    # Warhawk $12A3, Commando $52AC. The other pulse engine: it adds a rate to
+    # a running accumulator and writes that to $D402 (pulse LO) alone, never
+    # touching $D403, so the width wraps inside one 256-wide band instead of
+    # travelling the 12-bit range.
+    #
+    # `LDY` loads a *byte offset* (instrument index times stride) and
+    # `LDA base,Y` reads the instrument records themselves -- Commando's block
+    # names $5591, which is where its instrument table starts. See
+    # `_find_pulse_lo` for the field layout and the corpus evidence.
     pulse_lo = search_file(
         sid.data,
         f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
         f"99 ?? ?? AC ?? ?? 99 02 D4") >= 1
     return rise, arp, drum, pulse_lo
+
+
+def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
+    """File offset of the pulse-lo state array, or -1.
+
+    The block matched by `_find_effect_routines` names the array in its own
+    operands:
+
+        LDA base,Y  /  ADC ratecell  /  STA base,Y  /  LDY voice  /  STA $D402,Y
+
+    `base` is the instrument table itself -- the block indexes it by the same
+    stride the records use. The field layout is read out of two further sites
+    rather than assumed:
+
+    * the rate is not in that block -- `ratecell` is absolute, self-modified at
+      note fetch from `base + 6` (Commando $5232). Across the 21 corpus files
+      carrying this engine the rate is loaded from **base + 6 in 21 of 21**,
+      which is what establishes +6 as the rate field. It agrees with the
+      independent SF2 reading recorded in SIDM2-HUBBARD-KNOWLEDGE.md.
+    * the width is seeded per note by `PLA / STA base+1,Y / STA $D403,X /
+      PLA / STA base,Y / STA $D402,X` (Commando $5326), giving +0 = low and
+      +1 = high -- the same two bytes the static path has always written as a
+      fixed width. That site is findable in 12 of the 21, and in all 12 the
+      high byte is at base+1; the other nine take it by that rule.
+
+    The seeding matters beyond the layout: because the accumulator is reloaded
+    at every note fetch, Goattracker's pulse table -- which restarts with the
+    note -- models this engine faithfully. A free-running accumulator could not
+    have been expressed at all.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    off = search_file(
+        sid.data,
+        f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
+        f"99 ?? ?? AC ?? ?? 99 02 D4")
+    if off < 0:
+        return -1
+    d = sid.data
+    base = d[off + 11] | (d[off + 12] << 8)
+    # The store must name the same array the load read, or this is not the
+    # accumulate-in-place shape and nothing here is trustworthy.
+    if (d[off + 17] | (d[off + 18] << 8)) != base:
+        return -1
+    at = sid.to_offset(base)
+    if at < 0 or at + 6 >= len(d):
+        return -1
+    # The block must be reading the instrument records. Anything else means the
+    # signature matched a shape whose field offsets are not the ones above.
+    if at != det.instr_start:
+        return -1
+    return at
 
 
 # --- The same byte, a second format ----------------------------------------

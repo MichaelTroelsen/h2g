@@ -17,6 +17,8 @@ from pathlib import Path
 import pytest
 
 from h2g.convert import convert
+from h2g.detect import detect
+from h2g.sidfile import load_sid
 from h2g.detect import Detection, _find_pulse_sweep, detect
 from h2g.goatwriter import (GT_MAX_PULSE_SPEED, GT_MAX_PULSE_TICKS,
                             GT_MAX_TABLELEN, _pulse_layout, _pulse_program,
@@ -232,10 +234,32 @@ def test_both_halves_of_the_signature_are_required():
     assert _find_pulse_sweep(sid, det) == (-1, -1)
 
 
-def test_commando_is_untouched_with_the_flag_on_and_off():
-    """The fixture's player has no sweep block, so the option cannot reach it
-    -- the byte-exactness invariant holds either way."""
+def test_commando_is_byte_exact_with_the_flag_off():
+    """The invariant: `--pulse` is opt-in, so defaults still write 15193 B.
+
+    This test used to assert the flag could not reach Commando *at all*, which
+    was true only while the accumulate engine was unimplemented -- the fixture's
+    player has no sweep block, but it does have bit $08. Now that the engine is
+    read, the flag changes Commando by design; what must not change is the
+    default output.
+    """
     plain = convert(str(COMMANDO), log=lambda m: None)
-    swept = convert(str(COMMANDO), log=lambda m: None, pulse=True)
-    assert plain == swept
     assert len(plain) == 15193
+
+
+def test_commando_accumulates_under_the_flag():
+    """And the flag reaches it, through the accumulate engine rather than the
+    sweep: the file gains pulse-table entries and nothing else about it moves."""
+    plain = convert(str(COMMANDO), log=lambda m: None)
+    pulsed = convert(str(COMMANDO), log=lambda m: None, pulse=True)
+    assert pulsed != plain
+    assert len(pulsed) > len(plain)
+
+    sid = load_sid(str(COMMANDO))
+    det = detect(sid, log=lambda m: None)
+    assert det.pulse_bounds < 0, "Commando has no sweep block"
+    assert det.pulse_lo_base == det.instr_start
+    # Every record the engine reaches carries bit $08 and a nonzero rate.
+    reached = [i for i in range(det.instr_used)
+               if sid.data[det.pulse_lo_base + i * det.instr_stride + 7] & 0x08]
+    assert reached, "the fixture should exercise the engine"

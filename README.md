@@ -624,6 +624,11 @@ Off by default: it changes the output bytes of the 15 files it reaches, and
 
 ### `--pulse` (the duty cycle that never moved)
 
+Hubbard has **two** pulse engines and no file uses both: 34 corpus files sweep
+the width between two bounds, 21 accumulate into its low byte, and the flag now
+reads both. The sweep is described first; the accumulate engine follows under
+*The other engine* below.
+
 Hubbard sweeps the pulse width every frame in **43 of the 95 corpus files**,
 and until this flag every one of them came out with the duty cycle frozen at
 its starting value. `goatwriter.py` wrote one "set pulse width" per instrument
@@ -690,6 +695,60 @@ is a *frozen* width rather than a wrong one.
 Off by default: it changes the output bytes of the 37 files it reaches.
 `Commando.sng` -- whose player has no sweep block -- is byte-identical either
 way.
+
+#### The other engine (effect bit `$08`)
+
+The sweep block is absent from 21 files that nonetheless move the duty cycle.
+They select a second engine with bit `$08` of the instrument's effect byte, and
+it is simpler: add record `+6` to the width's **low byte** every frame and write
+`$D402` alone, never `$D403`. The duty cycle races around one 256-wide band
+while the high nibble stays where the note put it. Commando `$52AC`:
+
+```
+52AC  AD 23 55  LDA $5523        ; the effect byte
+52AF  29 08     AND #$08
+52B1  F0 15     BEQ skip
+52B3  AC 18 55  LDY $5518        ; instrument index * stride
+52B6  B9 91 55  LDA rec+0,Y      ; the accumulator: the record's own low byte
+52B9  6D 07 55  ADC $5507        ; the rate, self-modified at note fetch
+52BC  99 91 55  STA rec+0,Y      ; written back, so a static read sees the seed
+52BF  AC EB 54  LDY $54EB        ; voice
+52C2  99 02 D4  STA $D402,Y      ; LOW byte only
+```
+
+Three facts establish the field layout rather than assuming it. The rate is not
+in that block -- `$5507` is absolute and self-modified at note fetch from
+record `+6`, which holds in **21 of 21** files and agrees with the independent
+SF2 reading in `SIDM2-HUBBARD-KNOWLEDGE.md`. The width is seeded per note by
+`PLA / STA rec+1,Y / STA $D403,X / PLA / STA rec+0,Y / STA $D402,X`, giving
+`+0` low and `+1` high -- the same two bytes the static path has always written
+as a fixed width. And the block indexes the instrument table itself, which the
+finder requires: a match naming any other array is rejected.
+
+In a Goattracker pulse table this is a set to the seeded width, one ascending
+leg long enough to cross the low byte, and a jump back to **the set** rather
+than to the leg. Jumping to the set is what pins the high nibble: Goattracker's
+modulation carries into it (`gplay.c:888-900`) and the player never does. The
+approximation is the phase -- the player's accumulator wraps mod 256 and carries
+its position into the next cycle, where restarting at the seed does not. The
+band and the period are right.
+
+**Bit `$08` is per instrument, not per file**, and it is sparse: 5 of the 21
+files carry the routine with no instrument using it at all (Bump Set Spike,
+Formula 1 Simulator, Las Vegas Video Poker, Mozart, Thrust), so their flat duty
+cycle has some other cause. Measured against the previous release, five files
+move the `pul` column and nothing else moves anywhere:
+
+| file | before | after | original |
+|---|---:|---:|---:|
+| One Man and his Droid | 18 | **724** | 991 |
+| Geoff Capes Strongman Challenge | 27 | **771** | -- |
+| Zoids | 23 | **343** | -- |
+| Commando | 29 | **397** | 376 |
+| Gerry the Germ | 25 | **196** | -- |
+
+Sixteen files change bytes; eleven of them move no number, because the records
+the engine reaches do not play inside the traced ten seconds.
 
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 

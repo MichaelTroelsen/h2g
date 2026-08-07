@@ -705,7 +705,13 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     data = sid.data
     base = det.instr_start + i * det.instr_stride
     static = [((data[base + 1] | 0x80) & 0xFF, data[base]), (0xFF, 0x00)]
-    if not pulse or det.pulse_bounds < 0:
+    if not pulse:
+        return static, None
+    if det.pulse_bounds < 0:
+        if det.pulse_lo_base >= 0:
+            program = _pulse_lo_program(sid, det, i, multiplier)
+            if program is not None:
+                return program
         return static, None
     bounds_at = det.pulse_bounds + i * det.instr_stride
     rate_at = base + det.pulse_rate_field
@@ -725,6 +731,49 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     entries += [(t, speed) for t in steps]
     entries += [(t, (0x100 - speed) & 0xFF) for t in steps]
     return entries, 1
+
+
+def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
+                      multiplier: int) -> tuple[List[tuple], int | None] | None:
+    """The accumulate engine's entries, or None if this record does not use it.
+
+    The other pulse engine, selected per *instrument* by effect-byte bit $08 and
+    mutually exclusive with the sweep: 34 corpus files sweep, 21 accumulate, and
+    none do both. It adds record +6 to the width's low byte every frame and
+    writes only $D402, never $D403 -- so the duty cycle races around one
+    256-wide band while the high nibble stays where the note put it.
+
+    In a Goattracker pulse table that is a set to the seeded width, one
+    ascending leg long enough to cross the low byte, and a jump back to the
+    *set* rather than to the leg. Jumping to the set is what pins the high
+    nibble: Goattracker's modulation carries into it (gplay.c:888-900) and the
+    player never does, so a leg allowed to run on would climb out of the band
+    the player stays inside.
+
+    The approximation, stated rather than hidden: the player's accumulator wraps
+    mod 256 and carries its phase into the next cycle, so a rate that does not
+    divide 256 exactly starts each cycle a little further along. Restarting at
+    the seed keeps the period and the band right and loses that drift. It also
+    restarts with the note, which is correct here -- $D402/$D403 are reseeded at
+    every note fetch (see `_find_pulse_lo`), so the engine has no state to carry
+    across a note anyway.
+    """
+    data = sid.data
+    rec = det.pulse_lo_base + i * det.instr_stride
+    if rec + 7 >= len(data):
+        return None
+    # The player gates the block on the instrument's own bit $08. A record
+    # without it keeps the static width, which is exactly what it plays.
+    if not data[rec + 7] & 0x08:
+        return None
+    rate = data[rec + 6]
+    if rate == 0:
+        return None
+    lo, hi = data[rec], data[rec + 1]
+    speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
+    entries = [((0x80 | (hi & 0x0F)) & 0xFF, lo)]
+    entries += [(t, speed) for t in _split_ticks(max(1, 0x100 // speed))]
+    return entries, 0
 
 
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
