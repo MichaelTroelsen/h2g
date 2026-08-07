@@ -94,6 +94,21 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **Do not conclude a change did nothing from a flat table — make the tool
+  say it.** Since v0.5.77 every dimension declares the SID registers it reads,
+  every row records which dimensions it actually compared, and the report ends
+  with *What this run compared* naming the registers nothing in it reads
+  (`$D402/$D403`, `$D405/$D406`, `$D415/$D416`, `$D417`, `$D418` — pulse
+  width, envelope, filter, volume). `fidelity.py --baseline old.json` A/Bs a
+  saved `--json` run against the current tree and hashes the converter's
+  output per row, so it distinguishes **"no dimension this report measures can
+  see this change"** from **"this change reaches nothing"** — the two readings
+  of one flat table, and this repo has shipped the second believing the first
+  twice. It refuses (exit 2) across different `-t` or subtunes, and *names*
+  rather than refuses a conversion-option difference, because an option A/B is
+  the mode's main use. Adding a report column means adding a `Dimension` entry;
+  `tests/test_fidelity.py` fails if the registry and the printed header
+  disagree. See README.md § *A/B against a previous run*.
 - **A low score in `FIDELITY.md` is a claim about the harness until it is a
   claim about the converter.** Three separate defects have now been *in the
   measurement*: NTSC originals named in the wrong key (v0.5.63), subtune 0

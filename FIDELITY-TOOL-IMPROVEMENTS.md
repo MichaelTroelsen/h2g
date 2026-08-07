@@ -13,10 +13,9 @@ another file is named.
 
 ---
 
-## 0. A live defect, not an improvement: `--filter` reaches nothing
+## 0. A live defect, not an improvement: `--filter` reaches nothing — **fixed, v0.5.74**
 
-Fix this before the next artefact regeneration, because a regeneration will
-bake it in.
+Kept because the fix is the interesting part, not the defect. `_preset_opts` now derives its keys from `inspect.signature(convert)` and `presets.FIXED` carries `filters`; `tests/test_preset_passthrough.py` fails if any option escapes, with `presets.EXCLUDED_FROM_ALWAYS` naming the deliberate omissions. The paragraphs below are the reasoning that produced that, and they are why a hand-maintained list is not an option here.
 
 v0.5.72 added the filter reader. `convert()` accepts it (`convert.py:117`,
 `filters: bool = False`), README documents it (`README.md:537`), and
@@ -131,26 +130,32 @@ already earned its keep: it is what flags `Kings_of_the_Beach_ingame` playing
 
 ---
 
-## 3. Make blindness structural instead of remembered
+## 3. Make blindness structural instead of remembered — **built, v0.5.77**
 
 The repo's standing rule is: *a metric that cannot see a change is not
 evidence the change did nothing — say so in the doc, beside the fix.* That
-rule has been applied correctly at least six times, and it is enforced
+rule had been applied correctly at least seven times, and it was enforced
 entirely by authors remembering it.
 
-It should be enforced by the tool. Once a row knows which dimensions it
-actually compared, the harness can state, per run, which of them moved and
-which are structurally incapable of moving for the change under test. A
-`--baseline old.json` mode (see §4) can then print **"no dimension this report
-measures can see this change"** as a result rather than leaving a flat table
-to be misread as a null result.
+It is now enforced by the tool. Each dimension declares the SID registers it
+is computed from (`fidelity.DIMENSIONS`), each row records which dimensions it
+actually compared (`row["dimensions"]`), and every report ends with a
+generated *What this run compared* section naming those registers and, under
+them, the registers **no** dimension in that run reads. §4's `--baseline`
+mode turns that into a verdict.
 
-This is not cosmetic. The single most repeated failure mode in this project's
-history is a real fix reading as a no-op.
+One thing this section did not anticipate, and which turned out to be the
+whole of it: *no number moved* has two readings — the change is invisible to
+everything measured, or the change reached nothing — and this repo has
+shipped the second believing the first twice (`--slides`, `--filter`). Naming
+the unread registers does not separate them. Hashing the converter's own
+output per row does, so each row carries `output_sha` and the verdict says
+which of the two it is. Without that half, §3 states a possibility rather
+than a result.
 
 ---
 
-## 4. A first-class A/B mode
+## 4. A first-class A/B mode — **built, v0.5.77**
 
 Every fork this session that changed conversion behaviour rebuilt the same
 apparatus by hand: convert twice, pack twice, trace twice, diff per file,
@@ -158,20 +163,36 @@ attribute the delta. At least five did it, at least one did it against a
 contaminated shared workdir, and at least one did it against a stale tree and
 had to re-run.
 
-`--baseline <json>` should be built in: take a previous `--json` output, run
-the current tree, and emit a per-file delta table plus a summary of which
-files moved and by how much. Sort by absolute movement, because the useful
-output is nearly always "which three files did this touch", not the mean.
+`--baseline <json>` is built in: it takes a previous `--json` output, runs the
+current tree, and emits a per-file delta table sorted by the largest movement
+on any one dimension, plus a per-dimension summary. `--ab-output` writes it to
+a file; the report itself still goes to `-o`.
 
-Two properties the hand-rolled versions kept getting wrong, worth building in:
+Two properties the hand-rolled versions kept getting wrong:
 
-- **Refuse to compare across different settings.** The JSON already records
-  `options` and `multiplier` per row; a baseline taken at other settings is
-  not a baseline. Compare and fail loudly.
-- **Record the tree, not just the version.** `--label` is free text and
-  optional. It should default to `git rev-parse --short HEAD` plus a `-dirty`
-  marker. A measurement from a dirty tree is the exact failure that cost this
-  session two re-runs, and the report currently has no way to say it happened.
+- **Refuse to compare across different settings.** Built, but *split*, and
+  this is where the paragraph it replaces was wrong. A baseline traced at
+  other **measurement** settings (`-t`, subtune) is not a baseline and is
+  refused with exit 2. A baseline converted with other **conversion options**
+  is the opposite case: an option A/B is the commonest thing anyone wants this
+  mode for — it is how the corpus figure below was produced — and refusing
+  it would leave the apparatus being rebuilt by hand for exactly the change
+  the mode exists to measure. So those are named at the head of the output as
+  the change under test instead. The hazard the original text was guarding
+  against — presets drifting between two runs unnoticed — is answered by
+  printing it, which is what refusing would have achieved and nothing else
+  did. A field missing from an older baseline is treated as old, not as a
+  mismatch.
+- **Record the tree, not just the version.** Built: `--label` defaults to
+  `git rev-parse --short HEAD` plus `-dirty`, scoped to this project's files
+  rather than the whole checkout (the repo carries unrelated siblings), and it
+  is recorded in every row.
+
+Measured on the corpus — the v0.5.71–73 options off against on, which is
+the envelope, filter and pulse-width work of that release, 95 files at 10 s:
+83 files convert to different bytes, **3** move any number at all, and the
+mode reports that *80 of the 83 whose output changed moved no number*. That is
+the release's honest result, and until now it was a flat table.
 
 ---
 

@@ -498,3 +498,213 @@ def test_the_default_is_unset_so_nothing_inherits_one_path():
     """listen.py takes its default from this constant too. If it named a
     directory, both scripts would default to the same one again."""
     assert fidelity.WORKDIR is None or os.environ.get("H2G_FIDELITY_WORK")
+
+
+# --- what the run says it compared -----------------------------------------
+#
+# The repo's standing rule -- a metric that cannot see a change is not
+# evidence the change did nothing -- has been applied correctly at least seven
+# times and every one of them depended on an author remembering it. These
+# tests are what makes it structural: a run states which dimensions it
+# computed, and therefore which registers no dimension of it reads.
+
+
+def test_every_printed_column_has_a_dimension_declaring_its_registers():
+    """The registry is only useful if it is complete. A column that exists in
+    the table and not in DIMENSIONS is invisible to --baseline, which is the
+    exact failure the registry is here to prevent."""
+    header = next(line for line in fidelity.report([_row("A.sid", "measured", 1.0)],
+                                                   _Args()).splitlines()
+                  if line.startswith("| File |"))
+    cells = {c.strip() for c in header.split("|")}
+    for d in fidelity.DIMENSIONS:
+        assert d.column in cells, f"{d.column} is declared but not printed"
+    # ... and nothing is printed that no dimension claims, bar the four
+    # non-measurements: the file, the two raw attack counts, and the status.
+    assert cells - {d.column for d in fidelity.DIMENSIONS} == {
+        "", "File", "orig", "ours", "status"}
+
+
+def test_a_row_records_only_the_dimensions_it_actually_compared():
+    full = _row("A.sid", "measured", 0.5)
+    assert fidelity.dimensions_present(full) == [d.key for d in fidelity.DIMENSIONS]
+    # A file whose voices never select a waveform has no wave score, and a row
+    # claiming one it did not compute is the misreading in miniature.
+    no_wave = dict(full, wave=None)
+    assert "wave" not in fidelity.dimensions_present(no_wave)
+    assert "melody" in fidelity.dimensions_present(no_wave)
+    # A file that would not convert compared nothing at all: its row carries
+    # none of the metric keys, as _measure's first exit leaves it.
+    assert fidelity.dimensions_present(
+        {"file": "B.sid", "status": "not converted"}) == []
+
+
+def test_the_registers_no_dimension_reads_are_named():
+    """Every dimension is computed from the frequency registers or from $D404.
+    Those are the two the report can see; the rest is where v0.5.71's
+    envelope, v0.5.72's filter and v0.5.73's pulse width all landed."""
+    unread = dict(fidelity.registers_unread({d.key for d in fidelity.DIMENSIONS}))
+    assert set(unread) == {"$D402/$D403", "$D405/$D406",
+                           "$D415/$D416", "$D417", "$D418"}
+    # Losing a dimension widens the blind spot rather than leaving it fixed:
+    # a run that scored no notes cannot claim to have compared pitch. ($D404
+    # stays read either way -- the attack metrics need its gate bit as an
+    # edge, which is why note *length* is in NOT_MEASURED rather than here.)
+    assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
+    assert len(fidelity.registers_unread(set())) == len(fidelity.SID_REGISTERS)
+
+
+def test_the_report_states_its_own_reach():
+    text = fidelity.report([_row("A.sid", "measured", 1.0, 50, 50)], _Args())
+    assert "## What this run compared" in text
+    assert "$D405/$D406" in text and "$D415/$D416" in text
+    assert "note length" in text
+
+
+# --- A/B against a previous run --------------------------------------------
+
+
+def _ab(name, sha="aaa", **kw):
+    r = {"file": name, "status": "measured", "seconds": 10, "subtune": 0,
+         "options": {"filters": True}, "multiplier": 1, "output_sha": sha,
+         "melody": 0.80, "sequence": 0.80, "pitch_jaccard": 0.80,
+         "retrigger_ratio": 1.0, "our_slides": 5, "wave": 0.60,
+         "our_noise_frames": 0}
+    r.update(kw)
+    r["dimensions"] = fidelity.dimensions_present(r)
+    return r
+
+
+def test_an_invisible_change_is_printed_as_a_result():
+    """The whole point. The converter's output changed and no dimension
+    moved, which is a finding -- not the flat table that has been read as a
+    null result more often than anything else in this project."""
+    text, code = fidelity.compare_runs([_ab("A.sid", "old")], [_ab("A.sid", "new")])
+    assert code == 0
+    assert "No dimension this report measures can see this change" in text
+    # ... and it says where the change can have gone instead.
+    assert "$D405/$D406" in text and "$D402/$D403" in text
+
+
+def test_an_inert_change_is_told_apart_from_an_invisible_one():
+    """Two readings of one flat table, and this repo has shipped the second
+    believing the first twice. Identical bytes mean the change reached
+    nothing; changed bytes mean it reached the output and was not measured."""
+    text, code = fidelity.compare_runs([_ab("A.sid", "same")], [_ab("A.sid", "same")])
+    assert code == 0
+    assert "This change reaches nothing" in text
+    assert "No dimension this report measures can see" not in text
+
+
+def test_a_baseline_without_hashes_refuses_to_guess_which_it_was():
+    old = _ab("A.sid")
+    del old["output_sha"]
+    text, code = fidelity.compare_runs([old], [_ab("A.sid", "new")])
+    assert "cannot say whether" in text
+    assert "reaches nothing" not in text
+
+
+def test_movement_below_the_printed_precision_is_not_silence():
+    """A report that prints 50% either way looks like a no-op to a reader
+    diffing two tables. The raw values moved, and the mode says so."""
+    text, code = fidelity.compare_runs(
+        [_ab("A.sid", "old", melody=0.5000)],
+        [_ab("A.sid", "new", melody=0.5004)])
+    assert code == 0
+    assert "below the precision the report prints" in text
+    assert "50% -> 50% !" in text          # marked as invisible in the table
+
+
+def test_a_baseline_traced_at_other_settings_is_refused():
+    """A 10 s run against a 20 s one is two statements about different music.
+    Nothing about the delta between them is meaningful."""
+    text, code = fidelity.compare_runs([_ab("A.sid", seconds=10)],
+                                       [_ab("A.sid", "new", seconds=20)])
+    assert code == 2
+    assert "## Refused" in text and "seconds 10 -> 20" in text
+    # A different subtune is the same class of mismatch.
+    _, code2 = fidelity.compare_runs([_ab("A.sid", subtune=0)],
+                                     [_ab("A.sid", "new", subtune=3)])
+    assert code2 == 2
+
+
+def test_a_baseline_missing_a_field_is_old_rather_than_incomparable():
+    """Refusing every saved run the first time a field is added would make
+    the mode useless exactly when a baseline is most valuable."""
+    old = _ab("A.sid", "old")
+    del old["seconds"]
+    _, code = fidelity.compare_runs([old], [_ab("A.sid", "new")])
+    assert code == 0
+
+
+def test_an_option_difference_is_named_as_the_change_under_test():
+    """FIDELITY-TOOL-IMPROVEMENTS.md §4 asks for a hard failure on any
+    settings difference. Conversion options are the deliberate exception: an
+    option A/B is what the mode is mostly for, and naming the difference
+    answers the hazard that refusing it would have answered."""
+    base = _ab("A.sid", "old")
+    base["options"] = dict(base["options"], filters=False)
+    text, code = fidelity.compare_runs([base], [_ab("A.sid", "new")])
+    assert code == 0
+    assert "`filters` False -> True on 1 file(s)" in text
+
+
+def test_identical_bytes_that_measure_differently_are_the_harness_moving():
+    text, _ = fidelity.compare_runs([_ab("A.sid", "same", melody=0.80)],
+                                    [_ab("A.sid", "same", melody=0.60)])
+    assert "convert to identical bytes and still moved" in text
+
+
+def test_a_partly_blind_change_says_how_many_files_it_could_not_see():
+    """The case that actually occurs. Reporting only the file that moved
+    reproduces the misreading at a smaller scale: two files could not be
+    seen at all."""
+    base = [_ab("A.sid", "old"), _ab("B.sid", "old"), _ab("C.sid", "old")]
+    new = [_ab("A.sid", "new", melody=0.90), _ab("B.sid", "new"),
+           _ab("C.sid", "new")]
+    text, code = fidelity.compare_runs(base, new)
+    assert code == 0
+    assert "2 of the 3 file(s) whose converted output changed moved no number" in text
+
+
+def test_a_file_that_stops_converting_is_movement():
+    """A change that costs three files their conversion must not read as
+    quiet just because a row with no numbers has no numbers to move."""
+    gone = {"file": "A.sid", "status": "not converted", "seconds": 10,
+            "subtune": 0, "options": {}, "multiplier": 1, "dimensions": []}
+    text, code = fidelity.compare_runs([_ab("A.sid", "old")], [gone])
+    assert code == 0
+    assert "## Status changes" in text
+    assert "reaches nothing" not in text
+
+
+def test_files_present_in_only_one_run_are_reported():
+    text, _ = fidelity.compare_runs([_ab("A.sid", "old"), _ab("Gone.sid", "old")],
+                                    [_ab("A.sid", "old"), _ab("New.sid", "old")])
+    assert "only in the current run (1): New.sid" in text
+    assert "only in the baseline (1): Gone.sid" in text
+
+
+# --- provenance ------------------------------------------------------------
+
+
+def test_the_label_names_the_commit_the_measurement_was_taken_from():
+    """--label was free text and optional, so a run could not say which tree
+    it came from. Several commits share one version during a branch's life,
+    and a dirty tree shares its version with the commit it is not."""
+    got = fidelity.git_label()
+    head = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "--short",
+                           "HEAD"], capture_output=True, text=True)
+    if head.returncode != 0:
+        pytest.skip("not a git checkout")
+    assert got.split("-dirty")[0] == head.stdout.strip()
+    assert got in (head.stdout.strip(), head.stdout.strip() + "-dirty")
+
+
+def test_a_run_is_labelled_or_unlabelled_but_never_mislabelled(monkeypatch):
+    """git not answering is not a reason to fail a measurement, and it is
+    also not a reason to invent a provenance for one."""
+    def boom(*a, **kw):
+        raise OSError("no git here")
+    monkeypatch.setattr(fidelity.subprocess, "run", boom)
+    assert fidelity.git_label() is None

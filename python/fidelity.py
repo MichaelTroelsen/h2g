@@ -53,11 +53,23 @@ writes a noise-tick/arpeggio wavetable for every instrument whether or not
 the source player had those semantics, and no attack-based metric can see
 the difference between a pulse note and the same note opening on a frame of
 noise.
+
+What a run says about its own reach
+-----------------------------------
+Every dimension above declares the SID registers it is computed from (see
+DIMENSIONS), every row records which of them it actually compared, and the
+report prints both -- plus the registers no dimension reads, which is where a
+change has to land to be invisible here. `--baseline old.json` turns that into
+a verdict: it hashes the converter's output per row, so it can tell "no
+dimension this report measures can see this change" apart from "this change
+reaches nothing", which are the two readings of one flat table and this
+project has shipped the second believing the first twice.
 """
 from __future__ import annotations
 
 import argparse
 import difflib
+import hashlib
 import inspect
 import json
 import os
@@ -598,6 +610,144 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
 
 
 # --------------------------------------------------------------------------
+# what this run can see, and what it structurally cannot
+# --------------------------------------------------------------------------
+# The repo's standing rule is: *a metric that cannot see a change is not
+# evidence the change did nothing -- say so beside the fix.* It has been
+# applied correctly at least seven times and every one of them depended on an
+# author remembering it. v0.5.71-74 shipped three separate correct fixes --
+# envelope, filter, pulse width -- and moved no column of FIDELITY.md to the
+# decimal, because not one dimension below reads a register any of them
+# writes. A flat table read as a null result is the most repeated failure mode
+# in this project's history.
+#
+# So each dimension declares the SID registers it is computed from, and the
+# harness derives from that which registers nothing here reads. A run can then
+# print its own blindness as a *result* instead of leaving it to be
+# remembered.
+#
+# Adding a column means adding an entry here. A column missing from this table
+# is invisible to --baseline and absent from the report's own account of what
+# it compared, which is the failure the table exists to prevent;
+# test_fidelity.py asserts the report header and this registry name the same
+# columns.
+SID_REGISTERS = (
+    ("$D400/$D401", "voice frequency"),
+    ("$D402/$D403", "pulse width"),
+    ("$D404", "control: waveform select, gate, sync, ring, test"),
+    ("$D405/$D406", "envelope: attack/decay, sustain/release"),
+    ("$D415/$D416", "filter cutoff"),
+    ("$D417", "filter resonance and per-voice routing"),
+    ("$D418", "filter mode and master volume"),
+)
+
+# Blindness that is not a register: naming a register nobody reads is only
+# half the account, and these three have each already been mistaken for a
+# result.
+NOT_MEASURED = (
+    "**note length** -- `$D404`'s gate bit is read as an *edge* (which is what "
+    "makes an attack an attack) and never as a duration, so a note held twice "
+    "as long with the right waveform scores the same",
+    "**tempo and row rate** -- siddump calls the play routine `seconds x 50` "
+    "times whatever the PSID speed field says (siddump.c:309/325), so "
+    "`gt2reloc -S` changes the packed bytes and not one number here",
+    "**anything outside the traced window or subtune** -- one subtune per "
+    "file, its first few seconds",
+)
+
+
+@dataclass(frozen=True)
+class Dimension:
+    """One number the report prints, and the registers it is derived from.
+
+    `source` is the row key holding the value when it differs from `key` --
+    the two count columns report our side only, because the original's count
+    is a property of the original and cannot move between two runs.
+    """
+    key: str
+    column: str
+    reads: tuple[str, ...]
+    kind: str            # fraction | ratio | count
+    of: str              # what it compares, in prose
+    source: str = ""
+
+    def value(self, row: dict):
+        return row.get(self.source or self.key)
+
+    def fmt(self, v) -> str:
+        """Exactly how the report prints it -- so `fmt(a) == fmt(b)` is the
+        question "would the table have looked any different"."""
+        if v is None:
+            return "-"
+        if self.kind == "fraction":
+            return _fmt_pct(v)
+        if self.kind == "ratio":
+            return f"{v:.2f}"
+        return str(int(v))
+
+    def movement(self, a, b) -> float:
+        """Magnitude used to rank files, comparable across kinds.
+
+        Fractions and ratios move on their own scale; counts are relativised,
+        because 5 pulse writes becoming 2823 and 0.94 becoming 0.95 are not
+        the same size of finding.
+        """
+        if a is None or b is None:
+            return 0.0 if a is None and b is None else 1.0
+        if self.kind == "count":
+            return abs(a - b) / max(abs(a), abs(b), 1)
+        return abs(a - b)
+
+
+_PITCH_REGS = ("$D400/$D401", "$D404")
+
+DIMENSIONS = (
+    Dimension("melody", "melody", _PITCH_REGS, "fraction",
+              "the attack-note sequence with consecutive repeats collapsed"),
+    Dimension("sequence", "seq", _PITCH_REGS, "fraction",
+              "the same sequence uncollapsed"),
+    Dimension("pitch_jaccard", "pitch", _PITCH_REGS, "fraction",
+              "the set of distinct pitches struck"),
+    Dimension("retrigger_ratio", "retrig", _PITCH_REGS, "ratio",
+              "how many times as often we strike a note"),
+    Dimension("slides", "slides", _PITCH_REGS, "count",
+              "frames on which a voice's pitch moved without a retrigger",
+              source="our_slides"),
+    Dimension("wave", "wave", ("$D404",), "fraction",
+              "per-frame agreement of the waveform-select nibble"),
+    Dimension("noise", "noise", ("$D404",), "count",
+              "frames whose waveform included noise", source="our_noise_frames"),
+)
+
+
+def dimensions_present(row: dict) -> list[str]:
+    """The dimensions this row actually compared.
+
+    Not every measured row compares every dimension: a file whose voices never
+    select a waveform has `wave` None, and a row that did not convert compares
+    nothing at all. Recorded per row so a run can say what it covered rather
+    than what it intended to cover.
+    """
+    return [d.key for d in DIMENSIONS if d.value(row) is not None]
+
+
+def registers_read(keys) -> set[str]:
+    got = set(keys)
+    return {r for d in DIMENSIONS if d.key in got for r in d.reads}
+
+
+def registers_unread(keys) -> list[tuple[str, str]]:
+    """The SID registers no dimension in `keys` is computed from.
+
+    This is the list a change has to land in to be invisible here, and it is
+    where v0.5.71's envelope fix, v0.5.72's filter and v0.5.73's pulse-width
+    sweep all landed.
+    """
+    seen = registers_read(keys)
+    return [(reg, what) for reg, what in SID_REGISTERS if reg not in seen]
+
+
+# --------------------------------------------------------------------------
 # optional SIDM2 stages
 # --------------------------------------------------------------------------
 def sidm2_register(orig: Path, ours: Path, seconds: int,
@@ -721,6 +871,35 @@ def _preset_multiplier(doc: dict, name: str) -> int:
         return 1
 
 
+def git_label(root: Path | None = None) -> str | None:
+    """`git rev-parse --short HEAD`, with `-dirty` when the tree is modified.
+
+    The version alone does not identify a measurement: several commits share
+    one version during a branch's life, and a dirty tree shares its version
+    with the commit it is not. A run taken from a half-applied edit has cost
+    this project two re-runs and the report had no way to say it happened.
+
+    Scoped to the directory holding this project rather than the whole
+    checkout: this repo carries unrelated siblings, and their edits say
+    nothing about a conversion. Returns None wherever git does not answer --
+    an unlabelled report is worse than this, but not by enough to fail a run.
+    """
+    root = root or Path(__file__).resolve().parent.parent
+    try:
+        head = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=15, stdin=subprocess.DEVNULL)
+        rev = head.stdout.strip()
+        if head.returncode != 0 or not rev:
+            return None
+        st = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", "."],
+            capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+        return rev + ("-dirty" if st.stdout.strip() else "")
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
 def resolve_subtune(sid: Path, requested) -> int:
     """Which subtune of the original to trace.
 
@@ -744,6 +923,21 @@ def resolve_subtune(sid: Path, requested) -> int:
 
 def measure(sid: Path, workdir: Path, opts: dict, args,
             multiplier: int = 1) -> dict:
+    """One file, end to end, plus the record of which dimensions it compared.
+
+    The dimension list is stamped here rather than inside `_measure` because
+    every one of that function's exits is a different amount of measurement --
+    none at all for a file that would not convert, all but `wave` for one
+    whose voices never select a waveform -- and a row that claims a dimension
+    it did not compute is exactly the misreading this is here to stop.
+    """
+    row = _measure(sid, workdir, opts, args, multiplier)
+    row["dimensions"] = dimensions_present(row)
+    return row
+
+
+def _measure(sid: Path, workdir: Path, opts: dict, args,
+             multiplier: int = 1) -> dict:
     """One file, end to end: convert -> pack -> trace both -> compare.
 
     `multiplier` is the song's gt2reloc -S value, a property of its player
@@ -752,14 +946,25 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
     siddump cannot honour it (see pack_sid).
     """
     sub = resolve_subtune(sid, args.subtune)
+    # Every row carries the settings it was taken at, so a saved run is
+    # self-describing: --baseline refuses to compare two runs traced at
+    # different seconds or subtunes, and it can only do that if the file says.
     row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier,
-                 "subtune": sub}
+                 "subtune": sub, "seconds": args.seconds,
+                 "version": __version__, "label": getattr(args, "label", None)}
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:  # noqa: BLE001 -- a file that will not convert is a result
         row["status"] = "not converted"
         row["detail"] = f"{type(exc).__name__}: {exc}"
         return row
+
+    # The converter's own output, hashed before the harness touches it. This
+    # is what separates "the change is invisible to every dimension measured"
+    # from "the change reached nothing" -- two readings of the same flat
+    # table, and the second one has shipped here twice (--slides for four
+    # versions, --filter for two). Without it an A/B cannot tell them apart.
+    row["output_sha"] = hashlib.sha1(sng).hexdigest()[:12]
 
     sng, patched = legalise_restarts(sng)
     row["restarts_patched"] = patched
@@ -832,6 +1037,68 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
 
 def _fmt_pct(x) -> str:
     return "-" if x is None else f"{100 * x:.0f}%"
+
+
+def blindness_section(rows: list[dict]) -> list[str]:
+    """What this run compared, and therefore what it cannot have seen.
+
+    Derived from the rows themselves, not from intent: a dimension appears
+    with the number of files it was actually computed on, and the register
+    list underneath is whatever no computed dimension reads. So a run that
+    loses `wave` on every file says so, and a change landing in a register
+    named below is reported as unseeable rather than as unmoved.
+    """
+    computed: dict[str, int] = {}
+    for r in rows:
+        for key in r.get("dimensions", dimensions_present(r)):
+            computed[key] = computed.get(key, 0) + 1
+    live = [d for d in DIMENSIONS if computed.get(d.key)]
+    out = [
+        "",
+        "## What this run compared",
+        "",
+        "Every number above comes from one of these, and each is computed "
+        "from the SID registers named beside it. This section is generated "
+        "from the rows, so it describes the run that happened rather than the "
+        "one intended.",
+        "",
+        "| dimension | files | compares | from |",
+        "|---|---:|---|---|",
+    ]
+    for d in DIMENSIONS:
+        n = computed.get(d.key, 0)
+        out.append(f"| **{d.column}** | {n} of {len(rows)} | {d.of} | "
+                   f"{', '.join(d.reads)} |")
+    unread = registers_unread(computed)
+    out += ["", "**Registers no dimension above reads.** A change confined to "
+            "these cannot move a single number in this report, whatever it "
+            "does to the sound:", ""]
+    if unread:
+        out += [f"- `{reg}` -- {what}" for reg, what in unread]
+        out += ["", "`parse_dump` reads all of these (v0.5.76); what is "
+                "missing is a *comparison*, not the data. A register being "
+                "parsed is not a register being scored, and only the second "
+                "one can move a number here."]
+    else:
+        out.append("- none: every SID register is read by some dimension above.")
+    out += ["", "Not registers, and equally unseen here:", ""]
+    out += [f"- {item}" for item in NOT_MEASURED]
+    out += [
+        "",
+        "This is not a caveat, it is the report's own account of its reach. "
+        "v0.5.71's envelope fix, v0.5.72's filter and v0.5.73's pulse-width "
+        "sweep each landed entirely in the registers listed above and each "
+        "moved no column here to the decimal. `fidelity.py --baseline "
+        "old.json` states that as a result -- \"no dimension this report "
+        "measures can see this change\" -- rather than leaving a flat table "
+        "to be misread as a null result.",
+    ]
+    if live and len(live) < len(DIMENSIONS):
+        missing = ", ".join(f"`{d.column}`" for d in DIMENSIONS
+                            if not computed.get(d.key))
+        out += ["", f"No row in this run computed {missing}, so it is blind "
+                "on that too."]
+    return out
 
 
 def report(rows: list[dict], args) -> str:
@@ -1051,6 +1318,8 @@ def report(rows: list[dict], args) -> str:
                 out.append(f"| {i} | {_fmt_pct(v['wave'])} | {v['frames']} | "
                            f"{v['our_noise_frames']}/{v['orig_noise_frames']} |")
 
+    out += blindness_section(rows)
+
     out += [
         "",
         "## What this does not say",
@@ -1089,6 +1358,339 @@ def report(rows: list[dict], args) -> str:
     return "\n".join(out)
 
 
+# --------------------------------------------------------------------------
+# A/B against a previous run
+# --------------------------------------------------------------------------
+# Every fork in this repo that changed conversion behaviour rebuilt this by
+# hand -- convert twice, pack twice, trace twice, diff per file. At least five
+# did; one did it against a contaminated shared workdir and one against a
+# stale tree and had to re-run.
+#
+# Two settings hazards, and they are not the same hazard:
+#
+#  * A baseline traced at other **measurement** settings is not a baseline. A
+#    10 s run against a 30 s one, or two different subtunes, are numbers about
+#    different music. That refuses, loudly.
+#  * A baseline converted with other **conversion** options is the opposite
+#    case. FIDELITY-TOOL-IMPROVEMENTS.md §4 asks for a hard failure on any
+#    settings difference, including these -- but an option A/B (`filters` off
+#    against `filters` on) is the commonest thing anyone wants this mode for,
+#    and refusing it would leave the apparatus being rebuilt by hand for
+#    exactly the change it exists to measure. So an option difference is named
+#    at the head of the output as the change under test rather than treated as
+#    contamination. The hazard §4 is really guarding against -- presets
+#    drifting between two runs without anyone noticing -- is answered by
+#    printing it, which refusing would also have done and nothing else does.
+_FATAL_SETTINGS = ("seconds", "subtune")
+
+
+def settings_mismatch(base: dict, new: dict) -> list[str]:
+    """Measurement settings that differ between two runs, per file.
+
+    A field absent on one side is not a mismatch: a baseline taken before the
+    field was recorded is old, not wrong, and refusing it would make every
+    saved run useless the first time a field is added.
+    """
+    bad = []
+    for name in sorted(base):
+        b, n = base[name], new.get(name)
+        if n is None:
+            continue
+        for k in _FATAL_SETTINGS:
+            bv, nv = b.get(k), n.get(k)
+            if bv is not None and nv is not None and bv != nv:
+                bad.append(f"{name}: {k} {bv!r} -> {nv!r}")
+    return bad
+
+
+def option_drift(base: dict, new: dict) -> list[str]:
+    """Conversion settings that differ, aggregated over the files they differ on."""
+    diffs: dict[tuple, set] = {}
+    for name in base:
+        n = new.get(name)
+        if n is None:
+            continue
+        bo = base[name].get("options") or {}
+        no = n.get("options") or {}
+        for k in set(bo) | set(no):
+            if bo.get(k) != no.get(k):
+                diffs.setdefault((k, repr(bo.get(k)), repr(no.get(k))), set()).add(name)
+        if base[name].get("multiplier") != n.get("multiplier"):
+            diffs.setdefault(("multiplier", repr(base[name].get("multiplier")),
+                              repr(n.get("multiplier"))), set()).add(name)
+    return [f"`{k}` {a} -> {c} on {len(f)} file(s)"
+            for (k, a, c), f in sorted(diffs.items())]
+
+
+def _run_label(rows: list[dict], fallback: str) -> str:
+    for r in rows:
+        bits = [b for b in (r.get("label"), r.get("version")) if b]
+        if bits:
+            return " / ".join(bits)
+    return fallback
+
+
+def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]:
+    """A/B two runs. Returns (markdown, exit code); 2 means it refused.
+
+    The verdict is the point of the mode, and it needs both halves to be
+    honest. "No number moved" alone has two readings -- the change is
+    invisible to everything measured, or the change reached nothing -- and
+    this project has shipped the second one twice believing the first
+    (`--slides` dead for four versions, `--filter` for two). The converted
+    bytes tell them apart, so a run records their hash and the verdict names
+    which of the two it is.
+    """
+    base = {r["file"]: r for r in base_rows if r.get("file")}
+    new = {r["file"]: r for r in new_rows if r.get("file")}
+    both = [f for f in new if f in base]
+
+    head = [
+        "# Fidelity A/B",
+        "",
+        f"`{_run_label(base_rows, 'baseline')}` -> "
+        f"`{_run_label(new_rows, 'current')}`, "
+        f"{len(both)} file(s) measured in both runs.",
+        "",
+    ]
+
+    mismatch = settings_mismatch(base, new)
+    if mismatch:
+        shown = mismatch[:10]
+        return "\n".join(head + [
+            "## Refused",
+            "",
+            f"These two runs were traced at different measurement settings on "
+            f"{len(mismatch)} file(s), so their numbers are about different "
+            "music and a delta between them means nothing:",
+            "",
+        ] + [f"- {m}" for m in shown]
+            + ([f"- ... and {len(mismatch) - len(shown)} more"]
+               if len(mismatch) > len(shown) else [])
+            + ["", "Re-take the baseline at the settings you are measuring at.",
+               ""]), 2
+
+    if not both:
+        return "\n".join(head + ["No file appears in both runs.", ""]), 2
+
+    # What differs before any number is compared: the options, and whether the
+    # converter's output moved at all.
+    drift = option_drift(base, new)
+    sha_pairs = [(f, base[f].get("output_sha"), new[f].get("output_sha"))
+                 for f in both]
+    hashed = [(f, a, b) for f, a, b in sha_pairs if a and b]
+    bytes_changed = sorted(f for f, a, b in hashed if a != b)
+
+    out = head + ["## The change under test", ""]
+    out += ([f"- conversion settings that differ: {d}" for d in drift]
+            or ["- conversion settings: identical on every file in both runs"])
+    if not hashed:
+        out.append("- converted bytes: **unknown** -- one of these runs "
+                   "predates the per-row output hash, so this comparison "
+                   "cannot say whether the change reached the converter's "
+                   "output at all")
+    elif bytes_changed:
+        out.append(f"- converted bytes differ on **{len(bytes_changed)}** of "
+                   f"{len(hashed)} file(s)")
+    else:
+        out.append(f"- converted bytes are **identical on all {len(hashed)} "
+                   "file(s)**")
+
+    # Movement, per file per dimension. Exact inequality, because two runs of
+    # the same code produce the same floats; anything looser would hide the
+    # case this mode exists to name.
+    moved: dict[str, dict[str, tuple]] = {}
+    status_changed = []
+    for f in both:
+        b, n = base[f], new[f]
+        deltas = {}
+        for d in DIMENSIONS:
+            x, y = d.value(b), d.value(n)
+            if x != y:
+                deltas[d.key] = (x, y)
+        if b.get("status") != n.get("status"):
+            status_changed.append((f, b.get("status"), n.get("status")))
+        if deltas:
+            moved[f] = deltas
+    printed = {f: {k: v for k, v in ds.items()
+                   if _dim(k).fmt(v[0]) != _dim(k).fmt(v[1])}
+               for f, ds in moved.items()}
+    printed = {f: ds for f, ds in printed.items() if ds}
+
+    out += ["", "## Verdict", ""]
+    # Derived from what this run actually computed, not from the registry:
+    # a run that lost `wave` on every file is blind to $D404 as well, and
+    # saying otherwise would overstate the reach of the comparison.
+    present = {k for r in new_rows
+               for k in r.get("dimensions", dimensions_present(r))}
+    unread = registers_unread(present)
+    if not moved and not status_changed:
+        if bytes_changed:
+            out += [
+                "**No dimension this report measures can see this change.**",
+                "",
+                f"The converter's output changed on {len(bytes_changed)} of "
+                f"{len(hashed)} file(s) and not one number moved -- not by a "
+                "rounding, by nothing. That is a result, not a null result: "
+                "the change reached the output and every dimension here is "
+                "structurally incapable of registering it. It can only have "
+                "landed in:",
+                "",
+            ] + [f"- `{reg}` -- {what}" for reg, what in unread] + [
+                "",
+                "or in note length, tempo, or a part of the file outside the "
+                "traced window (see the report's *What this run compared*). "
+                "Judge it by ear or by a dimension this harness does not have "
+                "-- `listen.py` is the only check that spans the rest.",
+            ]
+        elif hashed:
+            out += [
+                "**This change reaches nothing.**",
+                "",
+                f"All {len(hashed)} file(s) convert to byte-identical output "
+                "and no number moved. Either the change genuinely is a no-op, "
+                "or it is wired up somewhere that never runs -- the shape of "
+                "`--slides`, dead for four versions, and of `--filter`, which "
+                "v0.5.72 wired into `convert()` and README and into neither "
+                "the presets nor this harness. Check the option reaches "
+                "`presets.py`'s `FIXED` and `_preset_opts` before concluding "
+                "the first.",
+            ]
+        else:
+            out += [
+                "**No number moved**, and this comparison cannot say whether "
+                "the converter's output did: one of the two runs predates the "
+                "output hash. Re-take the baseline with this version to tell "
+                "an invisible change from an inert one.",
+            ]
+    elif not printed and not status_changed:
+        out += [
+            "**Every movement here is below the precision the report prints.**",
+            "",
+            f"{len(moved)} file(s) moved on some dimension, and "
+            "`FIDELITY.md` would have looked identical either way. A reader "
+            "comparing the two tables would have called this a no-op; the "
+            "raw deltas are below.",
+        ]
+    else:
+        out += [
+            f"**{len(printed)} of {len(both)} file(s) move the printed "
+            f"report**"
+            + (f", {len(moved) - len(printed)} more move only below its "
+               "precision" if len(moved) > len(printed) else "")
+            + (f", and {len(status_changed)} change status" if status_changed
+               else "") + ".",
+        ]
+        # The partial case, and the one that actually occurs: most of the
+        # corpus changed and said nothing. A verdict that reports only the
+        # files that moved reproduces the misreading at a smaller scale --
+        # "three files moved, so the report saw it" -- when what happened is
+        # that eighty files could not.
+        touched = set(f for f, _, _ in status_changed) | set(moved)
+        blind = [f for f in bytes_changed if f not in touched]
+        if blind:
+            out += [
+                "",
+                f"**{len(blind)} of the {len(bytes_changed)} file(s) whose "
+                "converted output changed moved no number at all.** On those "
+                "this report cannot tell the change from a no-op: it can only "
+                "have landed in "
+                + ", ".join(f"`{reg}`" for reg, _ in unread)
+                + ", in note length, in tempo, or outside the traced window.",
+            ]
+
+    # The integrity check that falls out of having both halves: identical
+    # bytes that measure differently is the harness moving, not the converter.
+    if hashed:
+        same_bytes_moved = sorted(set(moved) - set(bytes_changed))
+        same_bytes_moved = [f for f in same_bytes_moved
+                            if base[f].get("output_sha") and new[f].get("output_sha")]
+        if same_bytes_moved:
+            out += [
+                "",
+                f"**{len(same_bytes_moved)} file(s) convert to identical bytes "
+                "and still moved.** The movement is in the harness or its "
+                "tools, not in the conversion: "
+                + ", ".join(same_bytes_moved[:8])
+                + (", ..." if len(same_bytes_moved) > 8 else "") + ".",
+            ]
+
+    if status_changed:
+        out += ["", "## Status changes", "", "| File | was | is |", "|---|---|---|"]
+        out += [f"| {f} | {a} | {b} |" for f, a, b in sorted(status_changed)]
+
+    if moved:
+        ranked = sorted(
+            moved,
+            key=lambda f: max(_dim(k).movement(*moved[f][k]) for k in moved[f]),
+            reverse=True)
+        cap = 40
+        out += [
+            "",
+            "## What moved",
+            "",
+            "Sorted by the largest movement on any one dimension, because the "
+            "useful reading is nearly always *which files did this touch* "
+            "rather than the mean. A `.` is a dimension that did not move; "
+            "`!` marks a movement the printed report would not have shown.",
+            "",
+            "| File | bytes | " + " | ".join(d.column for d in DIMENSIONS) + " |",
+            "|---|:-:|" + "---|" * len(DIMENSIONS),
+        ]
+        for f in ranked[:cap]:
+            cells = []
+            for d in DIMENSIONS:
+                if d.key not in moved[f]:
+                    cells.append(".")
+                    continue
+                x, y = moved[f][d.key]
+                mark = "" if d.fmt(x) != d.fmt(y) else " !"
+                cells.append(f"{d.fmt(x)} -> {d.fmt(y)}{mark}")
+            sha_a, sha_b = base[f].get("output_sha"), new[f].get("output_sha")
+            byt = "?" if not (sha_a and sha_b) else ("!=" if sha_a != sha_b else "==")
+            out.append(f"| {f} | {byt} | " + " | ".join(cells) + " |")
+        if len(ranked) > cap:
+            out.append(f"| ... {len(ranked) - cap} more | | "
+                       + " | ".join("" for _ in DIMENSIONS) + " |")
+
+        out += ["", "### Per dimension", "",
+                "| dimension | files moved | mean delta | largest |",
+                "|---|---:|---:|---|"]
+        for d in DIMENSIONS:
+            hits = [moved[f][d.key] for f in moved if d.key in moved[f]]
+            if not hits:
+                out.append(f"| **{d.column}** | 0 | - | - |")
+                continue
+            reals = [(x, y) for x, y in hits if x is not None and y is not None]
+            mean = (sum(y - x for x, y in reals) / len(reals)) if reals else None
+            worst = max(hits, key=lambda p: d.movement(*p))
+            wf = max((f for f in moved if moved[f].get(d.key) == worst), default="")
+            mean_s = "-" if mean is None else (
+                f"{100 * mean:+.1f} pp" if d.kind == "fraction"
+                else f"{mean:+.2f}" if d.kind == "ratio" else f"{mean:+.1f}")
+            out.append(f"| **{d.column}** | {len(hits)} | {mean_s} | "
+                       f"{d.fmt(worst[0])} -> {d.fmt(worst[1])} ({wf}) |")
+
+    only_new = sorted(set(new) - set(base))
+    only_base = sorted(set(base) - set(new))
+    if only_new or only_base:
+        out += ["", "## Not in both runs", ""]
+        if only_new:
+            out.append(f"- only in the current run ({len(only_new)}): "
+                       + ", ".join(only_new[:12])
+                       + (", ..." if len(only_new) > 12 else ""))
+        if only_base:
+            out.append(f"- only in the baseline ({len(only_base)}): "
+                       + ", ".join(only_base[:12])
+                       + (", ..." if len(only_base) > 12 else ""))
+    out.append("")
+    return "\n".join(out), 0
+
+
+def _dim(key: str) -> Dimension:
+    return next(d for d in DIMENSIONS if d.key == key)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="fidelity", description=__doc__.splitlines()[0])
     p.add_argument("target", nargs="?", help=".sid file or directory of them")
@@ -1096,8 +1698,24 @@ def main(argv=None) -> int:
                    help="compare two existing .sid files, skipping conversion")
     p.add_argument("-o", "--output", help="write a Markdown report here")
     p.add_argument("--json", help="write the raw measurements here")
-    p.add_argument("--label", help="provenance note for the report header, e.g. "
-                                   "the commit the measurement was taken from")
+    p.add_argument("--label", help="provenance note for the report header. "
+                                   "Defaults to `git rev-parse --short HEAD` "
+                                   "plus `-dirty` if this project's files are "
+                                   "modified -- a measurement from a "
+                                   "half-applied tree has cost this repo two "
+                                   "re-runs and had no way to say so. Pass an "
+                                   "empty string to suppress it")
+    p.add_argument("--baseline", metavar="OLD.json",
+                   help="a previous --json run to A/B this one against. Emits "
+                        "a per-file delta table, and states which dimensions "
+                        "moved -- or that none of them can see the change, "
+                        "which is a result rather than a flat table. Refuses "
+                        "if the two runs were traced at different seconds or "
+                        "subtunes; a difference in conversion options is "
+                        "reported as the change under test, not refused")
+    p.add_argument("--ab-output", metavar="PATH",
+                   help="write the --baseline comparison here instead of "
+                        "stdout (the report still goes to -o)")
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
@@ -1143,6 +1761,9 @@ def main(argv=None) -> int:
         print(f"error: siddump not found: {args.siddump}", file=sys.stderr)
         return 1
 
+    if args.label is None:
+        args.label = git_label()
+
     workdir, owned = make_workdir(args.workdir)
     try:
         return _run(p, args, workdir)
@@ -1156,7 +1777,8 @@ def _run(p, args, workdir: Path) -> int:
         a, b = (Path(x) for x in args.pair)
         sub = resolve_subtune(a, args.subtune)
         row = {"file": f"{a.name} vs {b.name}", "status": "measured",
-               "subtune": sub}
+               "subtune": sub, "seconds": args.seconds,
+               "version": __version__, "label": args.label}
         da = run_siddump(a, args.seconds, sub, args.siddump)
         db = run_siddump(b, args.seconds, sub, args.siddump)
         row.update(compare(da, db))
@@ -1165,6 +1787,10 @@ def _run(p, args, workdir: Path) -> int:
             row["register"] = sidm2_register(a, b, args.seconds)
         if args.audio:
             row["audio"] = sidm2_audio(a, b, args.seconds)
+        # No conversion happened, so there is no converter output to hash: an
+        # A/B of --pair runs can say what moved but not whether the change
+        # reached the .sng.
+        row["dimensions"] = dimensions_present(row)
         rows = [row]
     else:
         if not args.target:
@@ -1210,6 +1836,22 @@ def _run(p, args, workdir: Path) -> int:
         print(text)
     if args.json:
         Path(args.json).write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+
+    if args.baseline:
+        try:
+            base = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        except OSError as exc:
+            print(f"error: cannot read baseline: {exc}", file=sys.stderr)
+            return 2
+        if isinstance(base, dict):        # tolerate a wrapped form
+            base = base.get("rows", [])
+        ab, code = compare_runs(base, rows)
+        if args.ab_output:
+            Path(args.ab_output).write_text(ab, encoding="utf-8")
+            print(f"wrote {args.ab_output}", file=sys.stderr)
+        else:
+            print(ab)
+        return code
     return 0
 
 

@@ -945,6 +945,56 @@ Goattracker-tuned, so nothing on our side moves. A row that needed it says so.
 This is a naming correction, not an allowance: a table whose *index* is shifted
 rather than its tuning is a converter defect and is fixed in the converter.
 
+### What a run says it compared
+
+Every report ends with a **What this run compared** section, generated from the
+rows rather than written by hand: each dimension, the number of files it was
+actually computed on, and the SID registers it is derived from. Underneath it
+are the registers *no* dimension in that run reads — currently `$D402/$D403`
+(pulse width), `$D405/$D406` (envelope), `$D415/$D416`, `$D417` and `$D418`
+(filter and volume) — plus the three things that are not registers and equally
+unseen: note length, tempo, and anything outside the traced window.
+
+That list is the report stating its own reach. A change confined to it cannot
+move a single number here whatever it does to the sound, so a flat table is not
+evidence the change did nothing. This has been the most repeated misreading in
+the project's history and it was previously prevented only by authors
+remembering to write the caveat.
+
+### A/B against a previous run
+
+```sh
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json --json before.json
+# ... change something ...
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json \
+    --baseline before.json --ab-output ../build/AB.md
+```
+
+`--baseline` compares a saved `--json` run against the one just taken and
+prints, sorted by the largest movement on any one dimension, which files moved
+and by how much. It is deliberately not only a delta table: each row also
+carries a hash of the converter's own output, which is what separates the two
+readings of a table that did not move.
+
+| verdict | what it means |
+|---|---|
+| **no dimension this report measures can see this change** | the converted bytes changed and no number moved — the change is real and landed in a register named above |
+| **this change reaches nothing** | the converted bytes are identical too, which is the shape of `--slides` (dead for four versions) and `--filter` (wired into `convert()` and README and into neither the presets nor the harness) |
+| **every movement is below the precision the report prints** | the numbers moved and `FIDELITY.md` would have looked identical |
+| *n* **files move the printed report** | plus, always, how many of the files whose output changed moved *nothing* |
+
+A comparison **refuses** (exit 2) when the two runs were traced at different
+`-t` seconds or different subtunes: those are numbers about different music. A
+difference in *conversion options* is not refused — an option A/B is what the
+mode is mostly for — but it is named at the head of the output as the change
+under test, which is the same protection against presets silently drifting
+between two runs.
+
+`--label` now defaults to `git rev-parse --short HEAD` plus `-dirty` when this
+project's files are modified, and is recorded in every row. A measurement taken
+from a half-applied tree has cost this repo two re-runs and the report had no
+way to say it happened.
+
 Two further comparisons are wired up behind flags, both shelling out to
 [SIDM2](SIDM2-FIDELITY-TESTER.md)'s tools and inheriting their dependencies:
 `--audio` (onset-aligned audio, tolerates our tempo offset) and `--register`
