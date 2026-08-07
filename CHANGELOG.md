@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.103 — 2026-08-07
+
+- read the player's own tick period out of its cycle count (--ticks)
+
 ## 0.5.102 — 2026-08-07
 
 - locate the second counter above the speed gate

@@ -2227,6 +2227,206 @@ def _dim(key: str) -> Dimension:
 
 
 # --------------------------------------------------------------------------
+# --ticks: the player's own sequencer period, read out of its cycle count
+# --------------------------------------------------------------------------
+# siddump -z prints the cycles the play routine burned on each frame
+# (siddump.c:470-478). A Hubbard player does markedly more work on the frame
+# its sequencer steps -- it fetches the next pattern byte, reloads durations
+# and rewrites the SID -- than on a frame where it only runs its envelopes.
+# So the frames on which the cycle count jumps *are* the tick frames, and the
+# gaps between them are the tune's row period in frames.
+#
+# This measures the ORIGINAL alone. It needs no conversion, no gt2reloc and no
+# note matching, which is what makes it a check on `find_song_speeds` rather
+# than on the conversion: --pace can only say our row disagrees with theirs,
+# and this says what theirs is. It also reaches the files --pace cannot time
+# at all, the ones where the two sides share too little material.
+CYCLE_COLUMN = re.compile(r"\|\s+(\d+)\s+[0-9A-F]{2}\s+[0-9A-F]{2}\s*\|\s*$")
+
+# The first frames are the player's init settling: frame 0 runs no playroutine
+# work worth comparing and the first real frame sets up every voice at once,
+# which is a spike belonging to no period. Four is enough on this corpus and
+# small enough to leave a 10s window 496 frames to work with.
+TICK_SKIP = 4
+
+# Share of gaps that must be a whole multiple of the modal gap before a period
+# is reported at all. See tick_period for how this was calibrated.
+TICK_MIN_REGULAR = 0.90
+
+
+def cycle_series(sid: Path, seconds: int, subtune: int, exe: str = SIDDUMP,
+                 calls: int = 1) -> list[int]:
+    """Play-routine cycles per frame, from siddump -z."""
+    cmd = [exe, str(sid), f"-a{subtune}", f"-t{seconds}", "-z"]
+    if calls > 1:
+        if not supports_calls_per_frame(exe):
+            raise RuntimeError(f"{exe} does not support -m")
+        cmd.append(f"-m{calls}")
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                          stdin=subprocess.DEVNULL)
+    out = []
+    for line in proc.stdout.splitlines():
+        m = CYCLE_COLUMN.search(line)
+        if m:
+            out.append(int(m.group(1)))
+    return out
+
+
+def otsu(values: list[int]) -> int:
+    """Threshold splitting `values` into two classes, maximising the variance
+    between them.
+
+    Otsu's method, and it is here so that nothing in this file carries a
+    hand-set cycle threshold: what counts as "more work" differs by an order
+    of magnitude between a three-voice player and a digi engine, and a
+    constant tuned on one file is exactly the sort of thing that reads
+    plausibly on the rest.
+    """
+    lo, hi = min(values), max(values)
+    if lo == hi:
+        return lo
+    best, best_var = lo, -1.0
+    for t in range(lo, hi):
+        under = [v for v in values if v <= t]
+        over = [v for v in values if v > t]
+        if not under or not over:
+            continue
+        w0, w1 = len(under) / len(values), len(over) / len(values)
+        m0, m1 = sum(under) / len(under), sum(over) / len(over)
+        var = w0 * w1 * (m0 - m1) ** 2
+        if var > best_var:
+            best, best_var = t, var
+    return best
+
+
+def local_ratio(cycles: list[int], half: int = 12) -> list[float]:
+    """Each frame's cycles over the median of its neighbourhood.
+
+    A global threshold cannot find the tick frames, because the baseline
+    itself moves with the music: Deep_Strike spends its first seconds around
+    700 cycles a frame and its later ones around 1300, and Otsu over the whole
+    series splits those two *sections* and calls 328 consecutive frames busy.
+    Dividing by a local median removes the section and leaves the spike.
+    """
+    out = []
+    for i in range(len(cycles)):
+        window = sorted(cycles[max(0, i - half):i + half + 1])
+        med = window[len(window) // 2] or 1
+        out.append(cycles[i] / med)
+    return out
+
+
+def tick_period(cycles: list[int], skip: int = TICK_SKIP) -> dict:
+    """Frames between the play routine's busy frames.
+
+    Returns `period` only when the busy frames are distinguishable and
+    periodic. Both refusals matter: a player doing the same work every frame
+    has no visible tick, and spikes that are a filter sweep rather than a
+    sequencer step would give a number with no meaning.
+
+    Missed detections are inferred rather than averaged over. A tick whose
+    frame happens not to clear the threshold turns one gap of `b` into one of
+    `2b`, and taking the mean of the gaps would then report a period half
+    again too long -- Tarzan's gaps are 3 (x89) and 6 (x37), and its mean gap
+    is 3.88 where its period is 3.0. Counting each gap as `round(gap / modal)`
+    ticks recovers it, and it leaves a genuinely alternating player alone:
+    Deep_Strike's 3, 3, 2 all round to one tick each, so its period comes out
+    as the 2.67 it really is rather than being forced to an integer.
+    """
+    body = cycles[skip:]
+    if len(body) < 32:
+        return {"frames": len(body), "why": "too few frames"}
+    ratio = local_ratio(body)
+    scaled = [int(r * 1000) for r in ratio]
+    t = otsu(scaled)
+    busy = [i for i, v in enumerate(scaled) if v > t]
+    quiet = [v for v in scaled if v <= t]
+    if len(busy) < 8:
+        return {"frames": len(body), "why": "fewer than 8 busy frames"}
+    share = len(busy) / len(body)
+    if share > 0.6:
+        return {"frames": len(body), "share": share,
+                "why": "no quiet class -- every frame does similar work"}
+    hi = [scaled[i] for i in busy]
+    lift = (sum(hi) / len(hi)) / (sum(quiet) / len(quiet)) if quiet else 0.0
+    if lift < 1.05:
+        return {"frames": len(body), "lift": lift,
+                "why": "busy and quiet frames differ by under 5%"}
+    gaps = [b - a for a, b in zip(busy, busy[1:])]
+    modal = max(set(gaps), key=gaps.count)
+    ticks = sum(max(1, round(g / modal)) for g in gaps)
+    span = busy[-1] - busy[0]
+    # An exact multiple, not a near one. A tolerance of +-1 frame sounds
+    # harmless and is not: at a modal gap of 3 it accepts 2, 4, 5, 7 and 8 as
+    # well, which is nearly every gap, and the field stops discriminating
+    # exactly where it is needed.
+    fit = sum(1 for g in gaps if g % modal == 0)
+    regular = fit / len(gaps)
+    common = {"frames": len(body), "busy": len(busy), "threshold": t / 1000,
+              "lift": lift, "share": share, "modal": modal, "regular": regular}
+    # Calibrated, not chosen: ungated this agrees with --pace on 53% of the
+    # files both can measure, and gated on these two it agrees on 27 of 27.
+    # `regular` is the field that carries the information -- when the gaps are
+    # whole multiples of one base the busy frames really are the sequencer,
+    # and when they are not, the spikes are something else with its own
+    # rhythm (an envelope, a filter sweep, a digi channel) and the period
+    # would be a confident wrong number. See tests/test_ticks.py.
+    if modal < 2:
+        return {**common, "why": "modal gap of 1 frame -- no period visible "
+                                 "above the per-frame work"}
+    if regular < TICK_MIN_REGULAR:
+        return {**common,
+                "why": f"only {regular:.0%} of gaps are a whole number of the "
+                       f"modal {modal} -- the busy frames are not one period"}
+    return {**common, "gaps": gaps,
+            "period": span / ticks if ticks else None}
+
+
+def ticks_report(sid: Path, args) -> str:
+    """What `--ticks` prints for one file."""
+    traced = resolve_subtune(sid, args.subtune)
+    try:
+        cyc = cycle_series(sid, args.seconds, traced, args.siddump)
+    except (OSError, subprocess.SubprocessError) as exc:      # noqa: BLE001
+        return f"{sid.name}: siddump failed -- {exc}\n"
+    got = tick_period(cyc)
+    try:
+        hdr = load_sid(str(sid))
+        speeds = find_song_speeds(hdr)
+        read = speeds.frames_for(traced) if speeds is not None else None
+    except Exception:                                          # noqa: BLE001
+        read = None
+    head = (f"{sid.name}: subtune {traced}, {args.seconds}s, "
+            f"speed gate reads {read if read is not None else 'nothing'}")
+    # A CIA-timed original is not called 50 times a second on hardware, and
+    # siddump calls it 50 times a second regardless. The period below is then
+    # per *call* and not per frame, so it cannot be compared with a row length
+    # measured in real time -- Human_Race reads 4.00 here and 5.33 under
+    # --pace for exactly this reason.
+    try:
+        cia = load_sid(str(sid)).is_cia_timed(traced)
+    except Exception:                                          # noqa: BLE001
+        cia = False
+    if cia:
+        head += ("\n  !! this subtune's PSID speed bit says CIA, so its real "
+                 "call rate is not 50Hz and the period below is per call")
+    if "period" not in got:
+        return f"{head}\n  no tick period: {got['why']}\n"
+    lines = [head,
+             f"  {got['busy']} busy frames in {got['frames']}, "
+             f"{got['lift']:.2f}x their neighbours; gaps modal "
+             f"{got['modal']}, {got['regular']:.0%} of them a whole number "
+             f"of those",
+             f"  **player ticks every {got['period']:.2f} frames**"]
+    if read:
+        err = abs(got["period"] - read) / read
+        lines.append(f"  the gate is {'right' if err <= 0.05 else 'wrong'}: "
+                     f"read {read}, measured {got['period']:.2f} "
+                     f"({err:.0%} out)")
+    return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------------
 # --pace: does the conversion play at the tune's speed?
 # --------------------------------------------------------------------------
 def matched_gaps(orig: Voice, ours: Voice,
@@ -2622,6 +2822,14 @@ def main(argv=None) -> int:
                    help="convert with --fold-transpose (orderlist transposes "
                         "over Goattracker's +14 folded into the notes) "
                         "regardless of what the presets say")
+    p.add_argument("--ticks", action="store_true",
+                   help="the ORIGINAL alone, timed: the frames on which its "
+                        "play routine does markedly more work are its "
+                        "sequencer steps, so siddump -z gives its row period "
+                        "directly. Checks goatwriter.find_song_speeds against "
+                        "the player rather than against our conversion, and "
+                        "unlike --pace needs no conversion at all. Prints "
+                        "text; writes no report")
     p.add_argument("--pace", action="store_true",
                    help="one file, timed instead of scored: our row length "
                         "against the original's at each candidate call rate, "
@@ -2716,6 +2924,11 @@ def _run(p, args, workdir: Path) -> int:
         target = Path(args.target)
         sids = sorted(target.rglob("*.sid"), key=lambda q: q.name.lower()) \
             if target.is_dir() else [target]
+        if args.ticks:
+            # No conversion, no packing, no presets: this reads the original.
+            for sid in sids:
+                print(ticks_report(sid, args))
+            return 0
         if args.pace:
             for sid in sids:
                 opts = _preset_opts(doc, sid.name)

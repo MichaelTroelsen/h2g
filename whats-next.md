@@ -556,6 +556,39 @@ So this is the missing mechanism, or contains it. Two things checked since:
 - Each file writes the counter at exactly one site — the reload itself — so
   it is a fixed constant per player, not per subtune.
 
+**v0.5.103 — a second instrument, and it disagrees with the v0.5.102 story.**
+`fidelity.py <file> --ticks` reads the period out of the *original alone*:
+`siddump -z` gives the cycles the play routine burned each frame, a Hubbard
+player does markedly more work on the frame its sequencer steps, and the gaps
+between those frames are the row period. No conversion, no `gt2reloc`, no note
+matching — so it checks `find_song_speeds` against the player rather than
+against our output.
+
+It is gated, and the gate is the point. Ungated it agreed with `--pace` on
+**53%** of the files both can measure, inventing periods of 1.00, 12.97 and
+28.00 with nothing in the output to mark them wrong. Gated on `modal >= 2 and
+regular >= 0.90` it **speaks on 31 of 95 and agrees on 18 of 18** that `--pace`
+can check. The other 64 are refused with a reason: 28 have no single period,
+23 do equal work every frame, 11 have a modal gap of 1, 2 are too sparse.
+
+What it says about the gate on those 31: **19 right, 3 wrong** —
+`Tarzan` (reads 2, ticks every 3.00), `Pacific_Coast` (2 → 6.00) and
+`Sun_Never_Shines` (4 → 10.00). The last two are new; neither is in the table
+above, because `--pace` cannot time either of them. It reaches 11 such files
+in all, including `Hollywood_or_Bust` (6.00), `Chicken_Song` (5.79) and
+`Mega_Apocalypse` (3.00).
+
+**Its blind spot is the interesting class.** The regularity guard cannot
+distinguish an alternating sequencer (Deep_Strike's 3, 3, 2) from spikes that
+are not the sequencer at all, so it refuses both — and the non-integer files
+are precisely what §7b is about. `--pace` still measures those. The two tools
+are complements: `--ticks` is exact and narrow, `--pace` is broad and needs a
+conversion to compare against.
+
+**Do not read the v0.5.102 counter as settled.** Tarzan's flat 3.00 and
+Deep_Strike's alternating 2.66 are different shapes, and a single skipped
+frame in twelve explains neither.
+
 **The arithmetic still does not close.** Two frames lost in twelve stretches 2
 frames per tick to 2.4, and Tarzan measures 3.00. Something else is still
 unaccounted for. The most likely remaining candidate is the tick test itself:

@@ -1118,6 +1118,17 @@ option switch has no `default:` case, so an unknown letter is dropped without a
 word. `--calls-per-frame N` overrides the rate; `1` reproduces every number
 taken before v0.5.99.
 
+`--ticks` asks the same question of the **original alone**. `siddump -z` prints
+the cycles the play routine burned on each frame; a Hubbard player does
+markedly more work on the frame its sequencer steps, so the gaps between those
+frames are its row period — no conversion, no packing, no note matching. That
+makes it a check on `goatwriter.find_song_speeds` against the player itself,
+where `--pace` can only say our row and theirs disagree. It **refuses** rather
+than guess: ungated it agreed with `--pace` on 53% of the files both can
+measure, and gated on gap regularity it speaks on 31 of 95 and agrees on 18 of
+the 18 `--pace` can check. It cannot see a player whose row alternates (3, 3, 2
+frames), which is what `--pace` is for.
+
 What it counts is **note attacks** — the notes `siddump` prints bare, which it
 does only after a gate rising edge (`siddump.c:376-380`). A note in parentheses
 is the same voice moving to another pitch *without* re-triggering, and
