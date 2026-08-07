@@ -480,146 +480,95 @@ cd python/tools/siddump-rt && make && cd ../..
 python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
 ```
 
-## 7b. The speed gate is under-read, corpus-wide — the largest open item
+## 7b. The speed gate is under-read — **mechanism found, v0.5.105**
 
-Found by `--pace` (v0.5.101) while attributing §7's 17, and it is not confined
-to them. `goatwriter.find_song_speeds` reads the gate's reload byte and
-reports `frames = reload + 1` frames per duration unit. Timed against the
-original, that number is **too small on a large minority of the corpus, in
-both multiplier groups**:
+`goatwriter.find_song_speeds` reads the gate's reload byte and reports
+`frames = reload + 1` frames per duration unit. Timed against the original by
+`--pace` (v0.5.101) and independently by `--ticks` (v0.5.103), that number is
+too small on a large minority of the corpus in both multiplier groups, by a
+tune-specific factor between 1.1 and 1.5 — never 2, which is what made it hard
+to attribute for four versions.
 
-| gate reads | measured row | files |
-|---|---|---|
-| 2 | 2.50 – 3.00 | Tarzan (3.00), Spellbound (2.97), Chain_Reaction (2.75), Deep_Strike (2.67), Food_Feud (2.68), Zoolook (2.71), ACE_II (2.65), Saboteur_II (2.65), Thundercats (2.65), Delta (2.50) |
-| 3 | 3.50 – 4.50 | Las_Vegas_Video_Poker (4.50), Pygmies_Revenge (4.00), Thanatos (3.75), Action_Biker (3.75), Kings_of_the_Beach_intro (3.50), Lightforce (3.50) |
-| 4 | 4.50 – 5.33 | Human_Race (5.33), Mr_Meaner (4.50) |
-| 5 | 6.00 | Rock_Tells_the_Tale (6.00) |
-
-**It is not a constant to correct.** The reader is right for 26 of 43
-multiplier-1 files and 10 of 32 multiplier-2 files — Ricochet, Monty,
-Master_of_Magic, Star_Paws, Thing_on_a_Spring, Last_V8 and others come out at
-2.00 against a gate of 2, within 1%. Where it is wrong the factor is
-tune-specific and between 1.1 and 1.5, never 2. So something in *those*
-players consumes frames the gate does not describe, and the mechanism has to
-be found in the 6502 rather than fitted.
-
-Ruled out already, by measurement:
-
-- **Not our tempo.** Ricochet's gaps land on exactly 8 and 16 frames against
-  an emitted tempo of 4 calls at `-S2`, so Goattracker honours the tempo as
-  written and our row really is `tempo / multiplier` frames.
-- **Not dropped rows.** The gap ratios are *tight* (Tarzan's IQR is 0.000 at
-  0.667 over 418 gaps): every gap is compressed by the same factor, which is
-  a row length and not material we fail to play. `--pace` reports the IQR for
-  exactly this distinction.
-- **Not the table-vs-static split.** Both sources appear on both sides of the
-  correct/incorrect divide.
-- **Not an off-by-one in the per-subtune table.** Tarzan's table is
-  `(2, 3, 2, 2)` and its measured 3.00 is tempting, but the static-byte files
-  fail the same way and have no table to be off by one in.
-
-**Started, v0.5.102 — the locus is found, the arithmetic is not.** There is a
-**second counter immediately above the gate**, and `SPEED_GATE` cannot see it:
-the pattern matches the `DEC ctr / BPL +6 / LDA reload / STA ctr` at the
-bottom, and this sits three instructions earlier.
+**The factor is a second counter three instructions above the gate.** Tarzan's
+play routine begins:
 
 ```
-Tarzan  $5558  LDX $59F7        Ricochet  $9067  LDX $96DC
-        $555B  DEC $59F6                  $906A  DEC $96DB
-        $555E  BPL $5568   -+             $906D  BPL $9077   -+
-        $5560  LDA #$0B     |             $906F  LDA #$7F     |
-        $5562  STA $59F6    |  skips      $9071  STA $96DB    |  skips
-        $5565  JMP $5573    |  the gate   $9074  JMP $9082    |  the gate
-        $5568  DEC $59DE   <+             $9077  DEC $9689   <+
+$5558  LDX $59F7
+$555B  DEC $59F6        outer counter
+$555E  BPL $5568        still >= 0 -> run the gate
+$5560  LDA #$0B         <- $5561 is written by the init, see below
+$5562  STA $59F6
+$5565  JMP $5573        underflowed -> reload, and SKIP THE GATE
+$5568  DEC $59DE        the speed gate itself
+$556B  BPL $5573
+$556D  LDA $59F5
+$5570  STA $59DE
 ```
 
-On the frame this counter underflows, the speed-gate counter is **not**
-decremented and the reload is jumped over. And it discriminates the two
-cases exactly:
+On the frame the outer counter underflows, the gate's own `DEC` is jumped
+over. So the gate advances on `O` of every `O+1` frames, and
 
-- **Ricochet** reloads it with `$7F` — one skipped frame in 128, negligible —
-  and measures **2.00** against a gate of 2. It is the control, and it is
-  correct for a reason.
-- **Tarzan** reloads it with `$0B` — one in 12 — and measures **3.00**.
+> **frames per row = (reload + 1) × (O + 1) / O**
 
-So this is the missing mechanism, or contains it. Two things checked since:
+`(O+1)/O` is exactly the `N/(N−1)` family the measurements kept landing on:
+9/8, 5/4, 4/3 and 3/2 are O = 8, 4, 3, 2. It also produces the *non-integer*
+rows that no whole-number skip count could explain — O = 3 gives 2.67, which
+is Deep_Strike's measured value and its observed 3,3,2 tick pattern; O = 4
+gives 2.50, which is Delta's.
 
-- **It runs once per frame, not once per voice.** Nothing in either file
-  jumps to `$5558`/`$9067`; the block is the play routine's own head, and the
-  `LDX voices` on its first line sets up the voice loop that comes *after*
-  the gate.
-- **The same counter is read a second time, as a flag.** Three instructions
-  below the gate Tarzan has `$557A LDA $59F6 / BEQ $5599`, which skips the
-  voice work outright on the frame the counter reads zero. So a 12-frame
-  cycle loses **two** frames of sequencing, not one: the frame it reads zero
-  and the frame it underflows and reloads.
-- Each file writes the counter at exactly one site — the reload itself — so
-  it is a fixed constant per player, not per subtune.
+**Validated against 15 files whose row length was timed independently: within
+5% on all 15, within 1% on 10.** The two measurements owe each other nothing —
+`--pace` times our conversion against the original over difflib-matched notes,
+`--ticks` reads the period out of the original's cycle profile — and the
+formula lands on both.
 
-**v0.5.103 — a second instrument, and it disagrees with the v0.5.102 story.**
-`fidelity.py <file> --ticks` reads the period out of the *original alone*:
-`siddump -z` gives the cycles the play routine burned each frame, a Hubbard
-player does markedly more work on the frame its sequencer steps, and the gaps
-between those frames are the row period. No conversion, no `gt2reloc`, no note
-matching — so it checks `find_song_speeds` against the player rather than
-against our output.
+### The correction to v0.5.102
 
-It is gated, and the gate is the point. Ungated it agreed with `--pace` on
-**53%** of the files both can measure, inventing periods of 1.00, 12.97 and
-28.00 with nothing in the output to mark them wrong. Gated on `modal >= 2 and
-regular >= 0.90` it **speaks on 31 of 95 and agrees on 18 of 18** that `--pace`
-can check. The other 64 are refused with a reason: 28 have no single period,
-23 do equal work every frame, 11 have a modal gap of 1, 2 are too sparse.
+That version found this counter and concluded its reload was *"a fixed
+constant per player, not per subtune"*, because each file writes it at exactly
+one site. **That was reading a decoy.** The reload is an *immediate operand*,
+and the init routine self-modifies it:
 
-What it says about the gate on those 31: **19 right, 3 wrong** —
-`Tarzan` (reads 2, ticks every 3.00), `Pacific_Coast` (2 → 6.00) and
-`Sun_Never_Shines` (4 → 10.00). The last two are new; neither is in the table
-above, because `--pace` cannot time either of them. It reaches 11 such files
-in all, including `Hollywood_or_Bust` (6.00), `Chicken_Song` (5.79) and
-`Mega_Apocalypse` (3.00).
+```
+$60AF  LDY #$00
+$60B1  TAX              X = subtune
+$60B7  LDA $59DF,X      per-subtune gate reload  -> $59F5   (what we already read)
+$60BD  LDA $59EA,X      a SECOND per-subtune table
+$60C0  STA $5561        <- the operand of the LDA #$0B above
+```
 
-**Its blind spot is the interesting class.** The regularity guard cannot
-distinguish an alternating sequencer (Deep_Strike's 3, 3, 2) from spikes that
-are not the sequencer at all, so it refuses both — and the non-integer files
-are precisely what §7b is about. `--pace` still measures those. The two tools
-are complements: `--ticks` is exact and narrow, `--pace` is broad and needs a
-conversion to compare against.
+So the byte in the file image is whatever the last init left there. Tarzan's
+image byte is 11 and its subtune 0 actually runs **2** — 2.18 frames against a
+measured 3.00. **32 of the 51 files that carry the counter take it from a
+table.** `tests/test_outer_gate.py` holds that shut.
 
-**Do not read the v0.5.102 counter as settled.** Tarzan's flat 3.00 and
-Deep_Strike's alternating 2.66 are different shapes, and a single skipped
-frame in twelve explains neither.
+That also disposes of v0.5.102's arithmetic problem (one frame in twelve
+predicting 2.4 where Tarzan measures 3.00): twelve was the decoy.
 
-**The arithmetic still does not close.** Two frames lost in twelve stretches 2
-frames per tick to 2.4, and Tarzan measures 3.00. Something else is still
-unaccounted for. The most likely remaining candidate is the tick test itself:
-`LDA ctr / CMP reload / BNE` holds only on the frame after a reload, so on a
-frame where the gate's `DEC` is skipped `ctr` is unchanged and the test can
-hold twice — the skip may *repeat* a tick rather than only losing one, which
-changes the sign of part of this. Work it out before touching
-`find_song_speeds`.
+### Read, not encoded — deliberately
 
-Next concrete steps: settle that repeat question by hand-simulating twelve
-frames of Tarzan's head; then confirm against a third file with a known
-target — Delta (2.50) and Deep_Strike (2.67) are the non-integer cases and
-will not be explained by a skip count alone.
+`SongSpeeds.skip`, `skip_for()` and `true_frames()` are new; `frames_for()` is
+unchanged, so **no conversion byte moves** (differential hash over all 95
+files: zero changes). Encoding it is a separate job with a real obstacle:
+`true_frames` is usually non-integer, and Goattracker's tempo is a count of
+play calls. Deep_Strike's 2.67 needs rows of 3, 3 and 2 frames, which is
+§8's problem — a re-gridding decision, not a number to round.
 
-**Where to start.** Two files with a clean 3:2 target and a control:
+### Still open
 
-| file | gate | measured | note |
-|---|---|---|---|
-| `Tarzan.sid` | 2 | **3.00** | tight, per-subtune table at `$59DF` |
-| `Delta.sid` | 2 | **2.50** | tight, per-subtune table at `$C311` |
-| `Ricochet.sid` | 2 | **2.00** | the control — reads correctly |
+- **Four timed files have no outer counter** the shape finds: `Action_Biker`
+  (3.75), `Human_Race` (5.33), `Las_Vegas_Video_Poker` (4.50) and `Spellbound`
+  (2.97). Warhawk measures 2.25 — the 9/8 of O = 8 — with no match either. A
+  different idiom, or a second mechanism. **Absence of a match is not evidence
+  of absence**, and `true_frames` returns the plain gate value when nothing
+  matched, so those files read as "no skip" when they are really "not looked
+  at properly".
+- The shape requires the `DEC`/`STA` to name the same cell and the branch to
+  clear exactly 8 bytes. Both were read off one file.
+- Whether encoding this is worth it at all is unmeasured: `FIDELITY.md` cannot
+  see a tempo change (siddump plays every file at the trace's own rate), so
+  the evidence would have to come from `--pace` before and after.
 
-Disassemble the row advance in each and find what the gate shape
-(`SPEED_GATE`, `DEC ctr / BPL +6 / LDA reload / STA ctr`) is missing: a second
-counter, a conditional skip, or a sequencer that steps on some ticks only.
-Per-file targets for the whole corpus are in `build/pace.txt` (regenerate with
-`python fidelity.py <sid_dir> --pace -t 30 --presets ../presets.json`).
-
-`tests/test_pace.py` pins the estimator, including the two ways it has already
-been read wrong: a least-squares fit that one resting voice can drag, and the
-difference between a short row and dropped material.
 
 ## 8. Four players have no expressible rate
 

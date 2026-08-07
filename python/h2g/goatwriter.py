@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Optional, Tuple
 
 from .detect import (Detection, FILTER_ENABLE_BIT,
@@ -240,6 +240,20 @@ SPEED_GATE = re.compile(rb"\xce(..)\x10\x06\xad(..)\x8d(..)", re.DOTALL)
 SPEED_TABLE_LOAD = b"\xbd"       # LDA abs,X -- X is the subtune number
 SPEED_RELOAD_STORE = b"\x8d"     # STA abs
 
+# The gate is not the only thing counting frames. Immediately above it sits a
+# second counter of the same shape but with an *immediate* reload, and on the
+# frame it underflows the gate's DEC is jumped over entirely:
+#
+#     DEC outer / BPL +8 / LDA #O / STA outer / JMP past-the-gate
+#     DEC gate  / BPL +6 / LDA reload / STA gate
+#
+# So the gate is decremented on O of every O+1 frames, and a row that should
+# last `frames` frames lasts `frames * (O+1)/O`. That factor is why
+# find_song_speeds reads low on a large minority of the corpus -- measured
+# against 15 files whose row length was timed independently, the corrected
+# number is within 5% on all 15 and within 1% on 10 (see whats-next.md 7b).
+OUTER_GATE = re.compile(rb"\xce(..)\x10\x08\xa9(.)\x8d(..)\x4c(..)", re.DOTALL)
+
 # A reload byte above this is not a song speed. Real corpus values are 0-8
 # (f = 1..9); per-subtune tables are read past their end for files whose
 # header over-counts subtunes (Commando claims 19), and the bytes that follow
@@ -257,11 +271,37 @@ class SongSpeeds:
     frames: Tuple[Optional[int], ...]
     reload_addr: int
     table_addr: Optional[int]    # None = static reload byte, one speed for all
+    # Reload of the outer counter that skips the gate, per subtune. Empty when
+    # the player has no such counter -- which is most of the corpus.
+    skip: Tuple[Optional[int], ...] = ()
+    skip_table_addr: Optional[int] = None
 
     def frames_for(self, subtune: int) -> Optional[int]:
         if 0 <= subtune < len(self.frames):
             return self.frames[subtune]
         return None
+
+    def skip_for(self, subtune: int) -> Optional[int]:
+        if 0 <= subtune < len(self.skip):
+            return self.skip[subtune]
+        return None
+
+    def true_frames(self, subtune: int = 0) -> Optional[float]:
+        """Frames per duration unit *including* the outer counter's skips.
+
+        Non-integer by nature: a gate of 2 frames skipping one frame in four
+        gives rows of 3, 3 and 2 frames, an average of 2.67. Nothing in
+        Goattracker can express that, which is why this is reported rather
+        than encoded -- `frames_for` is still what the writer uses. See
+        whats-next.md 7b and 8.
+        """
+        f = self.frames_for(subtune)
+        o = self.skip_for(subtune)
+        if f is None:
+            return None
+        if not o:
+            return float(f)
+        return f * (o + 1) / o
 
     @property
     def source(self) -> str:
@@ -305,6 +345,38 @@ def _speeds_for_reload(sid: SidFile, rel_addr: int) -> Optional[SongSpeeds]:
     return None
 
 
+def _find_outer_gate(sid: SidFile, subtunes: int):
+    """(per-subtune reloads, table address) for the counter above the gate.
+
+    The reload is an *immediate*, so the byte sitting in the file image is
+    whatever the last init left there -- Tarzan's reads 11 while its subtune 0
+    actually runs 2. Where the init writes that operand from a table
+    (`LDA table,X / STA <the immediate's own address>`, the same self-modifying
+    idiom the players use elsewhere) the table is the answer and the image byte
+    is a decoy. v0.5.102 read the image byte and concluded the value was a
+    per-player constant; it is per subtune in 32 of the 51 files that have it.
+    """
+    m = OUTER_GATE.search(sid.data)
+    if not m:
+        return (), None
+    ctr = m.group(1)[0] | (m.group(1)[1] << 8)
+    if ctr != (m.group(3)[0] | (m.group(3)[1] << 8)):
+        return (), None                     # decrements one cell, reloads another
+    imm_off = m.start() + 6
+    imm_addr = sid.load_addr + imm_off - sid.to_offset(sid.load_addr)
+    store = bytes([0x8D, imm_addr & 0xFF, imm_addr >> 8])
+    i = sid.data.find(store)
+    while i >= 0:
+        if i >= 3 and sid.data[i - 3] == SPEED_TABLE_LOAD[0]:
+            table = sid.data[i - 2] | (sid.data[i - 1] << 8)
+            off = sid.to_offset(table)
+            if 0 <= off < len(sid.data):
+                vals = sid.data[off:off + max(subtunes, 1)]
+                return tuple(v or None for v in vals), table
+        i = sid.data.find(store, i + 1)
+    return (sid.data[imm_off] or None,) * max(subtunes, 1), None
+
+
 def find_song_speeds(sid: SidFile,
                      det: Detection | None = None) -> Optional[SongSpeeds]:
     """The tune's frames-per-duration-unit, or None where it cannot be read.
@@ -323,6 +395,9 @@ def find_song_speeds(sid: SidFile,
             candidates.append((pos, speeds))
     if not candidates:
         return None
+    skip, skip_table = _find_outer_gate(sid, max(sid.subtunes, 1))
+    candidates = [(pos, replace(sp, skip=skip, skip_table_addr=skip_table))
+                  for pos, sp in candidates]
     if len(candidates) == 1:
         return candidates[0][1]
     if det is not None and det.instr_start >= 0:

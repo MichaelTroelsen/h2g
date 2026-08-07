@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.105 — 2026-08-07
+
+- find the counter above the speed gate, and the per-subtune table that fills it
+
 ## 0.5.104 — 2026-08-07
 
 - point the corpus tests at H2G_CORPUS instead of one machine's path
