@@ -61,7 +61,22 @@ TOGGLES = ("pack", "prune", "dedup")
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "slides": True, "effects": True, "status_bit6": True,
          "reject_phantoms": True, "fold_transpose": True,
-         "sustain_exact": True, "no_hard_restart": True}
+         "sustain_exact": True, "no_hard_restart": True,
+         "filters": True, "pulse": True}
+
+# convert() options deliberately NOT in the `always` block, and why. Every
+# other option must appear there: one left out silently measures as doing
+# nothing, which is how --slides and --filter each shipped dead.
+# test_preset_passthrough.py checks this set covers the difference.
+EXCLUDED_FROM_ALWAYS = {
+    # Changes the bytes of every file and the byte-exact Commando fixture
+    # encodes the original tool's unterminated patterns.
+    "terminate_patterns",
+    # Correct only for a rip of a single tune: the per-voice instrument
+    # array is mutable player state, and a snapshot of a multi-subtune file
+    # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
+    "initial_instrument",
+}
 
 
 def _parse(blob: bytes, ntables: int = 4):
@@ -245,6 +260,24 @@ def main(argv=None) -> int:
                    # what makes a re-struck note retrigger reliably.
                    "sustain_exact": FIXED["sustain_exact"],
                    "no_hard_restart": FIXED["no_hard_restart"],
+                   # The player sweeps the pulse width every frame in
+                   # 43 files; the tool wrote the starting width and
+                   # stopped, so those leads played a static duty
+                   # cycle. Gated on finding the routine, so a no-op
+                   # in the other 52, and on a zero rate within a file
+                   # that has it. Fixed rather than searched: it is the
+                   # player's own arithmetic, not a per-song taste.
+                   # Takes siddump's Pul column from 1% of the
+                   # original's movement to 60%; every column in
+                   # FIDELITY.md is unchanged to the decimal.
+                   # v0.5.72 read the filter and wired it into convert()
+                   # and README, but not into this block or into
+                   # fidelity._preset_opts -- so every measurement ran
+                   # with it off and a regeneration would have shipped
+                   # the feature dead, exactly as --slides once was
+                   # (AUDIT.md, first verified defect).
+                   "filters": FIXED["filters"],
+                   "pulse": FIXED["pulse"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

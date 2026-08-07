@@ -115,6 +115,7 @@ def convert(sid_path: str, log: Logger = print,
             sustain_exact: bool = False,
             no_hard_restart: bool = False,
             filters: bool = False,
+            pulse: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -157,6 +158,12 @@ def convert(sid_path: str, log: Logger = print,
     an octave-up arpeggio the player never plays. Both live in the wavetable.
     Off by default: the Commando fixture has six instruments in the second
     case and one in the first. See goatwriter._wavetable_entries.
+
+    pulse writes the player's per-frame pulse-width sweep into the pulse
+    table instead of freezing each instrument's duty cycle at its starting
+    value. 414 records across 43 corpus files sweep; the rest have a zero rate
+    and are unaffected. Off by default because it changes the bytes of those
+    43 files. See goatwriter._pulse_program and detect._find_pulse_sweep.
 
     status_bit6 honours the player's bit-6-first status test (`BIT status /
     BVS`, detect.STATUS_BIT6_SHAPE): a $C0-$FE status byte consumes only
@@ -258,6 +265,10 @@ def convert(sid_path: str, log: Logger = print,
         raise UnsupportedSidError(
             "EVERY SUBTUNE'S ORDERLIST EXCEEDS GOATTRACKER'S LIMIT, CAN'T CONVERT")
 
+    # The gt2reloc -S factor this tune needs, where it is derivable. The pulse
+    # table is stepped per play call, so a sweep written for one call a frame
+    # runs at twice its rate under -S2; only the auto path knows the factor.
+    multiplier = 1
     if tempo != "auto":
         resolved_tempo = tempo
     elif det.frames_per_row > 1:
@@ -274,6 +285,7 @@ def convert(sid_path: str, log: Logger = print,
         resolved_tempo = None
         groups = len(tracks) // 3
         values, mult, note = derived_group_tempos(sid, det, groups)
+        multiplier = mult
         if groups != subtunes_before:
             # A split subtune shifted the numbering, so per-subtune
             # attribution is unsafe; every group gets subtune 0's timebase.
@@ -299,6 +311,7 @@ def convert(sid_path: str, log: Logger = print,
         log(f"Speed table entries.....: {len(speed_table)}")
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
+                     pulse=pulse, multiplier=multiplier,
                      sustain_exact=sustain_exact,
                      no_hard_restart=no_hard_restart,
                      filters=filters)

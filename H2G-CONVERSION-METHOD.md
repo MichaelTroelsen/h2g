@@ -1479,6 +1479,60 @@ The cost is one file: hard restart exists for a reason, and Confuzion drops
 above comes from a separate comparison of siddump's `ADSR` column written for
 this change, not from the report.
 
+### 7.aa The pulse width: a sweep written as a constant
+
+The third defect the first listening pass raised, alongside the two envelope
+ones in 7.z and the filter in 7.y. All four are the same shape: the notes were
+right, the *sound* was not, and no column in `FIDELITY.md` could report any of
+them.
+
+H2G wrote each instrument's pulse width once and stopped -- two pulse-table
+entries, "set `$XYY`" then "stop". That is exactly right for the **328**
+corpus instrument records whose sweep rate is zero, and wrong for the **414**
+that sweep, across **43 of 95 files**.
+
+The player's routine is self-modifying, which is what makes it readable
+without ambiguity. It loads one byte from an array parallel to the instrument
+records, splits it into nibbles, and **patches each nibble into the operand of
+one of its own compares**:
+
+```
+LDA bounds,Y / AND #$0F / STA <operand of the descending CMP>
+LDA bounds,Y / LSR x4   / STA <operand of the ascending CMP>
+```
+
+so both turning points are provably the two nibbles of that one byte. It then
+adds or subtracts instrument byte `+6` -- the rate -- to a 12-bit per-voice
+accumulator and flips direction when the high nibble reaches a bound, writing
+`$D402`/`$D403` every frame. A triangle wave on the duty cycle.
+
+The signature requires **both** halves: the sweep block gives the bounds array
+but not which record byte holds the rate, and the note-start block that copies
+the rate proves nothing about what it is for. What ties them is the `8D`
+naming the same cell the sweep reads. 43 files match both; the rate is record
+`+6` in all 43, and the bounds array's distance from the records varies from
++12 to +348 bytes, so its address is read from the instruction rather than
+assumed.
+
+Goattracker expresses this natively (`readme.txt:887-891`, `gplay.c:872-902`):
+set, ascend, descend, jump. The encoding carries two stated approximations --
+the turnaround lands a fraction of a step early, and the table steps per play
+*call* where the player steps per *frame*, so `-S2` halves the speed and
+doubles the ticks. A leg longer than 127 ticks becomes consecutive steps of the
+same speed, which `gplay.c:902` executes identically.
+
+| | pulse-width changes in 20 s, 37 files |
+|---|---:|
+| the original tunes | 60056 |
+| inherited | 757 (**1%**) |
+| `--pulse` | 35892 (**60%**) |
+
+Mean melody and mean waveform agreement are **identical to the decimal** with
+and without it. `wave` compares the waveform *class*; pulse is pulse whatever
+its width. This is the seventh change in the project's history that is real,
+verified against the 6502, and completely invisible to the report -- which is
+the argument for building the `Pul` metric rather than a reason to doubt it.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

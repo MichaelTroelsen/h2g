@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import difflib
+import inspect
 import json
 import os
 import re
@@ -565,25 +566,45 @@ def sidm2_audio(orig: Path, ours: Path, seconds: int,
 # --------------------------------------------------------------------------
 # driver
 # --------------------------------------------------------------------------
+# Options convert() takes that are not booleans read from the `always` block:
+# three per-song shaping values, the two named differently in the JSON, and the
+# packing factor, which belongs to gt2reloc rather than to the conversion.
+_PER_SONG_OPTS = ("max_rows", "pack", "prune", "dedup")
+_RENAMED_OPTS = {"fmt": "format"}
+_NOT_CONVERT_OPTS = ("gt2reloc", "multiplier")
+
+
+def _convert_options() -> tuple:
+    """Every keyword convert() accepts, minus the inputs that are not options.
+
+    Derived rather than listed. The hand-maintained version shipped two
+    features dead -- `--slides` (AUDIT.md's first verified defect) and
+    `--filter`, which v0.5.72 wired into convert() and README while every
+    measurement still ran with it off. A list in a third place is a third place
+    to forget. test_preset_passthrough.py fails if this stops covering
+    convert().
+    """
+    params = inspect.signature(convert).parameters
+    return tuple(n for n in params if n not in ("sid_path", "log"))
+
+
 def _preset_opts(doc: dict, name: str) -> dict:
     entry = (doc.get("songs") or {}).get(name, {})
     always = doc.get("always", {})
-    return {
+    opts: dict = {
         "max_rows": entry.get("max_rows", 94),
         "pack": bool(entry.get("pack")),
         "prune": bool(entry.get("prune")),
         "dedup": bool(entry.get("dedup")),
         "fmt": always.get("format", FORMAT_GTS5),
         "tempo": always.get("tempo", "auto"),
-        "slides": bool(always.get("slides")),
-        "effects": bool(always.get("effects")),
-        "status_bit6": bool(always.get("status_bit6")),
-        "reject_phantoms": bool(always.get("reject_phantoms")),
-        "fold_transpose": bool(always.get("fold_transpose")),
-        "initial_instrument": bool(always.get("initial_instrument")),
-        "sustain_exact": bool(always.get("sustain_exact")),
-        "no_hard_restart": bool(always.get("no_hard_restart")),
     }
+    for opt in _convert_options():
+        if opt in opts or opt in _PER_SONG_OPTS:
+            continue
+        key = _RENAMED_OPTS.get(opt, opt)
+        opts[opt] = bool(always.get(key))
+    return opts
 
 
 def _preset_multiplier(doc: dict, name: str) -> int:

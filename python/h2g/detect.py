@@ -74,6 +74,13 @@ class Detection:
     effect_two_stage: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
+    # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
+    # together or neither is. `pulse_bounds` is the file offset of an array
+    # indexed by the same i * instr_stride the records are, holding the two
+    # nibbles the sweep turns around at; `pulse_rate_field` is the byte offset
+    # within a record that holds the per-frame step.
+    pulse_bounds: int = -1
+    pulse_rate_field: int = -1
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -733,6 +740,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                           if ok)
         log(f"Instrument effect byte..: {found}")
 
+    det.pulse_bounds, det.pulse_rate_field = _find_pulse_sweep(sid, det)
+    if det.pulse_bounds >= 0:
+        log(f"Pulse-width sweep.......: bounds at file +0x{det.pulse_bounds:04X}, "
+            f"rate at record +{det.pulse_rate_field}")
+
     (det.effect_two_stage, det.two_stage_wave,
      det.two_stage_frames) = _find_two_stage(sid, det)
     if det.effect_two_stage:
@@ -988,6 +1000,86 @@ def _effect_byte_address(sid: SidFile, det: Detection):
     if store == EFFECT_STORE_ZP:
         return (sid.data[i + 4], True)
     return None
+
+
+# Flash Gordon $128F. The pulse-width sweep, and the only routine in this
+# family that writes $D402/$D403 every frame rather than once at note start:
+#
+#   LDY $1535        ; instrument index * 8, saved by the note-start code
+#   LDA bounds,Y     ; one byte holding both turning points
+#   AND #$0F         ; low nibble  -> lower bound
+#   STA $12D4        ; self-modifies the CMP in the descending branch
+#   LDA bounds,Y
+#   LSR LSR LSR LSR  ; high nibble -> upper bound
+#   STA $12BA        ; self-modifies the CMP in the ascending branch
+#
+# The two self-modified compares are what make the shape unambiguous: the
+# routine writes its own bounds into its own operands, so both nibbles of one
+# byte are provably the turning points and nothing else. The block then adds or
+# subtracts a rate to a 12-bit per-voice accumulator and flips direction when
+# the HIGH nibble reaches a bound -- a triangle wave on the duty cycle, which
+# is the sound the aggregate "waveform class agrees" metric cannot see at all.
+PULSE_SWEEP = ("AC ?? ?? B9 ?? ?? 29 0F 8D ?? ?? "
+               "B9 ?? ?? 4A 4A 4A 4A 8D ?? ??")
+# The note-start code that feeds it: instrument index * 8 into Y, then two
+# record bytes copied into fixed cells. The second is the sweep rate -- the
+# cell the block above reads with `LDA rate / ADC accumulator`.
+PULSE_SETUP = "0A 0A 0A A8 8C ?? ?? B9 ?? ?? 8D ?? ?? B9 ?? ?? 8D ?? ??"
+# The adding branch sits 26 bytes past the block start in every corpus file
+# that carries it; the window is generous enough for a reordered variant and
+# short enough not to reach the next routine.
+PULSE_SWEEP_WINDOW = 64
+
+
+def _find_pulse_sweep(sid: SidFile, det: Detection):
+    """(bounds_offset, rate_field): the per-frame pulse sweep, or (-1, -1).
+
+    Both halves are required. The sweep block alone gives the bounds array but
+    not which record byte sets the rate, and the setup block alone proves
+    nothing about what the rate is used for -- it is the `8D` naming the same
+    cell the sweep reads that ties them together.
+
+    The bounds array sits outside the instrument records, at a file-dependent
+    distance (corpus range: +12 to +348 bytes from `instr_start`), so its
+    address is read from the instruction rather than assumed. The rate field is
+    +5 in 42 of the 43 corpus files that carry the block; the 43rd resolves
+    outside the file and is rejected here rather than trusted.
+    """
+    i = search_file(sid.data, PULSE_SWEEP)
+    j = search_file(sid.data, PULSE_SETUP)
+    if i < 1 or j < 1:
+        return -1, -1
+    bounds_addr = sid.data[i + 4] | sid.data[i + 5] << 8
+    rate_addr = sid.data[j + 14] | sid.data[j + 15] << 8
+    # The sweep must read the cell the setup writes, or the two blocks belong
+    # to different routines and the rate is not this rate.
+    if (sid.data[j + 17] | sid.data[j + 18] << 8) != _sweep_rate_cell(sid, i):
+        return -1, -1
+    try:
+        bounds = sid.to_offset(bounds_addr)
+        rate_field = sid.to_offset(rate_addr) - det.instr_start
+    except Exception:                                    # noqa: BLE001
+        return -1, -1
+    if not 0 <= bounds < len(sid.data):
+        return -1, -1
+    if not 0 <= rate_field < det.instr_stride:
+        return -1, -1
+    return bounds, rate_field
+
+
+def _sweep_rate_cell(sid: SidFile, sweep: int) -> int:
+    """Address the sweep block loads its per-frame step from.
+
+    Immediately past the bounds read, one branch is `LDA rate / CLC / ADC acc`
+    and the other `SEC / LDA acc / SBC rate`. The absolute load in the adding
+    branch is the cell. Searched in a window starting at the matched block so
+    it stays tied to that routine rather than to any `LDA/CLC/ADC` in the file.
+    """
+    window = sid.data[sweep:sweep + PULSE_SWEEP_WINDOW]
+    i = search_file(window, "AD ?? ?? 18 7D ?? ?? 48")
+    if i < 1:
+        return -1
+    return window[i + 1] | window[i + 2] << 8
 
 
 def _find_effect_routines(sid: SidFile, det: Detection):

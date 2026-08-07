@@ -5,10 +5,11 @@ Each instrument costs WAVE_ENTRIES_PER_INSTR wavetable entries and the
 wavetable's stored length is one byte bounded by MAX_TABLELEN (255), so only
 255//5 == 51 instruments are representable at all.
 
-Hubbard instrument tables legitimately hold 56-58 records (players carry a
-shared drum/noise bank whose entries recur byte-identically across games), so
-the clamp really does discard real instruments -- it should say so rather than
-drop them silently.
+A raw walk of the records used to run past their end into the parallel attack
+array and report tables of 56-58, which is what made the clamp look reachable;
+detect bounds the count at the records now, and no corpus file counts over the
+ceiling. The clamp remains a real limit for a file that genuinely carries more
+than 51 records, and it should say so rather than drop them silently.
 """
 import pytest
 
@@ -16,7 +17,8 @@ from h2g.detect import Detection
 from h2g.goatwriter import (GT_MAX_INSTR, GT_MAX_TABLELEN, MAX_INSTRUMENTS,
                             MAX_REPRESENTABLE_INSTRUMENTS,
                             PULSE_ENTRIES_PER_INSTR, WAVE_ENTRIES_PER_INSTR,
-                            _highest_instrument_referenced, _table_length_byte,
+                            _highest_instrument_referenced, _instruments_used,
+                            _pulse_layout, _table_length_byte,
                             _write_instruments, build_sng)
 from h2g.sidfile import SidFile
 
@@ -62,11 +64,20 @@ def test_clamped_tables_still_fit():
     assert _table_length_byte(pulse, "pulse") <= GT_MAX_TABLELEN
 
 
-def test_oversized_table_is_clamped_and_reported():
-    n = 58  # a real Hubbard table size
+def _write(n, log=None):
+    """Instruments for a fake table of n records, at the static pulse layout."""
+    sid, det = _fake_sid(n), _fake_det(n)
     out = bytearray()
+    instr_used = _instruments_used(det, log)
+    _, starts = _pulse_layout(sid, det, instr_used, False, 1)
+    _write_instruments(out, sid, det, instr_used, starts)
+    return out, instr_used
+
+
+def test_oversized_table_is_clamped_and_reported():
+    n = 58  # more records than the wavetable can address
     messages = []
-    written = _write_instruments(out, _fake_sid(n), _fake_det(n), messages.append)
+    out, written = _write(n, messages.append)
 
     assert written == MAX_INSTRUMENTS
     assert out[0] == MAX_INSTRUMENTS, "count byte must match what was written"
@@ -75,15 +86,14 @@ def test_oversized_table_is_clamped_and_reported():
 
 
 def test_table_within_limit_is_not_reported():
-    out, messages = bytearray(), []
-    written = _write_instruments(out, _fake_sid(13), _fake_det(13), messages.append)
+    messages = []
+    _, written = _write(13, messages.append)
     assert written == 13
     assert messages == []
 
 
 def test_no_log_means_no_crash():
-    out = bytearray()
-    assert _write_instruments(out, _fake_sid(58), _fake_det(58)) == MAX_INSTRUMENTS
+    assert _write(58)[1] == MAX_INSTRUMENTS
 
 
 def test_highest_instrument_referenced_reads_column_1():

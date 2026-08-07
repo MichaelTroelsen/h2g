@@ -48,6 +48,11 @@ GT_MAX_TABLELEN = 255  # MAX_TABLELEN -- ltable/rtable are this many bytes each
 # Wave/pulse table entries emitted per instrument.
 WAVE_ENTRIES_PER_INSTR = 5
 PULSE_ENTRIES_PER_INSTR = 2
+# A pulse-table left side is a tick count only in 01-7F; 80 and above are read
+# as "set pulse width" and FF as a jump (readme.txt:887-891). The right side is
+# a signed 8-bit speed (gplay.c:888-900), so a positive step tops out at 7F too.
+GT_MAX_PULSE_TICKS = 0x7F
+GT_MAX_PULSE_SPEED = 0x7F
 
 # The binding constraint is NOT MAX_INSTR. Each instrument costs 5 wavetable
 # entries, and the wavetable's stored length is a single byte bounded by
@@ -376,20 +381,24 @@ def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
     return header
 
 
-def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
-                       log=None, sustain_exact: bool = False,
-                       no_hard_restart: bool = False,
-                       filter_ptrs: dict | None = None) -> int:
+def _instruments_used(det: Detection, log=None) -> int:
+    """How many instrument slots the file will carry, Clear Voice included."""
     available = det.instr_used + 1
     instr_used = min(available, MAX_INSTRUMENTS)
     if log and available > instr_used:
-        # Not an over-read: Hubbard players carry a shared instrument bank
-        # (drum/noise entries recur byte-identically across games), so tables of
-        # 56-58 real records are normal even when a tune plays a dozen. The
-        # wavetable simply cannot address more than MAX_REPRESENTABLE_INSTRUMENTS.
+        # The count itself is bounded at the records (see detect's
+        # `_bound_instruments`); what remains here is Goattracker's own
+        # ceiling, which the wavetable's one-byte length imposes.
         log(f"*** INSTRUMENT TABLE HAS {available} ENTRIES, ONLY {instr_used} FIT "
             f"(GOATTRACKER WAVETABLE LIMIT) -- {available - instr_used} DROPPED ***")
+    return instr_used
 
+
+def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
+                       instr_used: int, pulse_starts: List[int],
+                       sustain_exact: bool = False,
+                       no_hard_restart: bool = False,
+                       filter_ptrs: dict | None = None) -> int:
     out.append(instr_used)
 
     # Instrument 1: always the empty "Clear Voice" slot.
@@ -400,7 +409,6 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
     # here -- pulse +0/+1, waveform +2, attack/decay +3, sustain/release +4 --
     # sit at the same offsets in both layouts, so only the stride differs.
     wtable_start = 6
-    ptable_start = 3
     data = sid.data
     n = max(instr_used - 1, 0)  # number of real (non-empty) instruments
 
@@ -419,7 +427,9 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # encodes it; --sustain-exact reads the register as the SID does.
             sr &= 0xEF
         wave_ptr = (i * 5 + wtable_start) & 0xFF
-        pulse_ptr = (i * 2 + ptable_start) & 0xFF
+        # Not a stride: a swept instrument's pulse program is longer than a
+        # static one's, so the start positions come from the built table.
+        pulse_ptr = (pulse_starts[i + 1] if i + 1 < len(pulse_starts) else 0) & 0xFF
         # gatetimer bit $80 is Goattracker's "no hard restart" flag
         # (gsong.c:381). Without it, gplay.c:930-937 writes `adparam` -- the
         # editor's HR value, default $0F00 (goattrk2.c:49), baked into the
@@ -644,22 +654,119 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
         out += bytes(right)
 
 
-def _write_pulsetable(out: bytearray, sid: SidFile, det: Detection, instr_used: int) -> None:
+def _split_ticks(ticks: int) -> List[int]:
+    """`ticks` as steps of at most GT_MAX_PULSE_TICKS, longest first.
+
+    A pulse-table left side is a tick count in 01-7F -- 80 and above mean "set
+    pulse width" instead -- so a leg longer than 127 calls has to be spelled as
+    consecutive steps carrying the same speed. gplay.c:902 advances to the next
+    entry when a step's counter reaches zero and the modulation simply
+    continues, so N steps of the same speed and a single step of their total
+    are the same sweep.
+    """
+    full, rest = divmod(ticks, GT_MAX_PULSE_TICKS)
+    steps = [GT_MAX_PULSE_TICKS] * full
+    if rest:
+        steps.append(rest)
+    return steps or [1]
+
+
+def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
+                   multiplier: int) -> tuple[List[tuple], int | None]:
+    """The pulse-table entries for instrument `i`, and where a jump loops back.
+
+    Without `pulse`, or where the player has no sweep, this is what H2G has
+    always written: one "set pulse width" from record bytes +0/+1, then stop.
+    That is correct for the 328 corpus records whose sweep rate is zero and
+    wrong for the 414 that sweep, which came out with a duty cycle frozen at
+    its starting value -- audible as a flat, static timbre under notes that are
+    otherwise right, and invisible to every metric in the repo (`wave` compares
+    the waveform *class*, so pulse is pulse whatever its width).
+
+    The player's sweep is a triangle: add `rate` to a 12-bit accumulator each
+    frame, flip direction when the high nibble reaches either bound. In a
+    Goattracker pulse table that is a "set" to the lower bound, an ascending
+    step, a descending step, and a jump -- readme.txt:887-891 for the encoding
+    and gplay.c:872-902 for the execution.
+
+    Two places this is an approximation, both stated rather than hidden:
+
+    * the player turns around when the high nibble *equals* a bound, so a rate
+      that does not divide the span exactly overshoots by up to one step before
+      flipping; the tick count here is the span divided by the speed, which
+      turns around a fraction of a step early instead.
+    * `multiplier` is the gt2reloc -S factor. Goattracker steps the pulse table
+      once per play *call* (gplay.c:872, inside the per-call block) where the
+      player steps once per *frame*, so at -S2 an unscaled speed would sweep at
+      twice the player's rate. Dividing rounds, and an odd rate at -S2 cannot
+      be expressed exactly; the tick count is recomputed from the speed that
+      was actually emitted so the sweep still covers the right span.
+    """
     data = sid.data
-    n = max(instr_used - 1, 0)
+    base = det.instr_start + i * det.instr_stride
+    static = [((data[base + 1] | 0x80) & 0xFF, data[base]), (0xFF, 0x00)]
+    if not pulse or det.pulse_bounds < 0:
+        return static, None
+    bounds_at = det.pulse_bounds + i * det.instr_stride
+    rate_at = base + det.pulse_rate_field
+    if bounds_at >= len(data) or rate_at >= len(data):
+        return static, None
+    rate = data[rate_at]
+    bounds = data[bounds_at]
+    low, high = bounds & 0x0F, bounds >> 4
+    # rate 0 is the player's own "do not sweep"; high <= low leaves it no band
+    # to travel, and what it does then depends on 12-bit wrap-around. Both keep
+    # the static width -- an under-read never invents movement.
+    if rate == 0 or high <= low:
+        return static, None
+    speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
+    steps = _split_ticks(max(1, ((high - low) << 8) // speed))
+    entries = [((0x80 | low) & 0xFF, 0x00)]
+    entries += [(t, speed) for t in steps]
+    entries += [(t, (0x100 - speed) & 0xFF) for t in steps]
+    return entries, 1
 
-    out.append(_table_length_byte(instr_used * PULSE_ENTRIES_PER_INSTR, "pulse"))
-    out += bytes([0x80, 0xFF])
-    for i in range(n):
-        base = det.instr_start + i * det.instr_stride
-        out.append((data[base + 1] | 0x80) & 0xFF)
-        out.append(0xFF)
 
-    out += bytes([0x00, 0x00])
-    for i in range(n):
-        base = det.instr_start + i * det.instr_stride
-        out.append(data[base])
-        out.append(0x00)
+def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
+                  pulse: bool, multiplier: int,
+                  log=None) -> tuple[List[tuple], List[int]]:
+    """The whole pulse table, plus each instrument's 1-based start entry.
+
+    Entries were a fixed two per instrument until the sweep gave some of them
+    four or more, so the start positions are returned rather than computed from
+    a stride -- `_write_instruments` writes them into the records.
+    """
+    entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
+    starts = [1]                       # instrument 1, the empty Clear Voice
+    dropped = silent = 0
+    for i in range(max(instr_used - 1, 0)):
+        program, loop = _pulse_program(sid, det, i, pulse, multiplier)
+        start = len(entries) + 1
+        block = program if loop is None else program + [(0xFF, start + loop)]
+        if len(entries) + len(block) > GT_MAX_TABLELEN:
+            # Out of table: keep the instrument, lose only its movement.
+            block, _ = _pulse_program(sid, det, i, False, multiplier)
+            dropped += 1
+        if len(entries) + len(block) > GT_MAX_TABLELEN:
+            # Not even the static pair fits. Pointer 0 leaves the pulse width
+            # alone (readme.txt:714) -- the record must still get one, or every
+            # instrument after it reads another instrument's program.
+            starts.append(0)
+            silent += 1
+            continue
+        starts.append(start)
+        entries += block
+    if log and dropped:
+        log(f"*** PULSE TABLE FULL -- {dropped} INSTRUMENT(S) KEEP A STATIC "
+            f"WIDTH INSTEAD OF THEIR SWEEP"
+            + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
+    return entries, starts
+
+
+def _write_pulsetable(out: bytearray, entries: List[tuple]) -> None:
+    out.append(_table_length_byte(len(entries), "pulse"))
+    out += bytes(left for left, _ in entries)
+    out += bytes(right for _, right in entries)
 
 
 # Goattracker's filter table is bounded by MAX_FILT, not MAX_TABLELEN
@@ -747,7 +854,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
               speed_table: List[tuple] | None = None,
-              effects: bool = False,
+              effects: bool = False, pulse: bool = False,
+              multiplier: int = 1,
               sustain_exact: bool = False,
               no_hard_restart: bool = False,
               filters: bool = False) -> bytes:
@@ -768,19 +876,22 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
-    # The filter table has to be built before the instruments, because each
-    # instrument record carries the table step it starts on -- but it is
-    # written after them, with the other tables.
+    instr_used = _instruments_used(det, log)
+    # The filter and pulse tables are both built before the instruments,
+    # because each instrument record carries the table step it starts on --
+    # but both are written after them, with the other tables. A swept
+    # instrument's pulse program is longer than a static one's, so that start
+    # position is not a stride either.
     if filters:
-        filter_entries, filter_ptrs = _filter_entries(
-            sid, det, min(det.instr_used + 1, MAX_INSTRUMENTS))
+        filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used)
     else:
         filter_entries, filter_ptrs = [], {}
-
-    instr_used = _write_instruments(out, sid, det, log, sustain_exact,
-                                    no_hard_restart, filter_ptrs)
+    pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
+                                                multiplier, log)
+    _write_instruments(out, sid, det, instr_used, pulse_starts,
+                       sustain_exact, no_hard_restart, filter_ptrs)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table)
-    _write_pulsetable(out, sid, det, instr_used)
+    _write_pulsetable(out, pulse_entries)
 
     if log:
         # Instruments are written as 1..instr_used, so anything above that is a

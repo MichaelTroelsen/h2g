@@ -186,6 +186,17 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--pulse", action="store_true",
+        help="write the player's pulse-width sweep instead of a frozen duty "
+             "cycle. Hubbard's players step a 12-bit pulse accumulator every "
+             "frame and turn it around at two bounds held in one byte, which "
+             "is the movement under a lead sound; H2G wrote the starting "
+             "width and stopped, so 414 records across 43 corpus files played "
+             "a static timbre under otherwise correct notes. No metric in the "
+             "repo can see it -- `wave` compares the waveform class, and "
+             "pulse is pulse whatever its width. Off by default: it changes "
+             "the output bytes of the 43 corpus files it reaches")
+    parser.add_argument(
         "--presets", metavar="FILE",
         help="JSON file of per-song options (see presets.py). The entry "
              "matching this .sid's filename supplies --max-rows, "
@@ -229,7 +240,8 @@ def main(argv=None) -> int:
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
-                          ("--filter", "filters")):
+                          ("--filter", "filters"),
+                          ("--pulse", "pulse")):
             if not _given(flag) and always.get(key):
                 setattr(args, key, True)
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
@@ -281,7 +293,8 @@ def main(argv=None) -> int:
                       initial_instrument=args.initial_instrument,
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
-                      filters=args.filters)
+                      filters=args.filters,
+                      pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

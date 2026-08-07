@@ -616,6 +616,70 @@ it works is the cutoff-write table above and the disassembly, not the report.
 Off by default: it changes the output bytes of the 15 files it reaches, and
 `Commando.sng` -- which has no filter routine -- is byte-identical either way.
 
+### `--pulse` (the duty cycle that never moved)
+
+Hubbard sweeps the pulse width every frame in **43 of the 95 corpus files**,
+and until this flag every one of them came out with the duty cycle frozen at
+its starting value. `goatwriter.py` wrote one "set pulse width" per instrument
+and stopped -- correct for the 328 records whose sweep rate is zero, wrong for
+the 414 that sweep. A static duty cycle under otherwise correct notes is a
+flat, lifeless lead; it is the second half of the same defect `--filter`
+covers, and it was reported by ear before any metric showed it.
+
+The routine is one block, self-modifying, and identical in all 43 files apart
+from operands -- Flash Gordon `$128F`:
+
+```
+128F  AC 35 15  LDY $1535         ; instrument index * 8, saved at note start
+1292  B9 F4 15  LDA bounds,Y      ; ONE byte holding both turning points
+1295  29 0F     AND #$0F          ; low nibble  -> lower bound
+1297  8D D4 12  STA $12D4         ; self-modifies the CMP below
+129A  B9 F4 15  LDA bounds,Y
+129D  4A 4A 4A 4A  LSR x4         ; high nibble -> upper bound
+12A1  8D BA 12  STA $12BA         ; self-modifies the other CMP
+12A4  BD 07 15  LDA dir,X         ; per-voice direction flag
+12A7  D0 1A     BNE $12C3         ; set -> descend
+12A9  AD 03 15  LDA rate          ; instrument byte +6, copied here at note start
+12AC  18        CLC
+12AD  7D 47 15  ADC pulse_lo,X    ; 12-bit per-voice accumulator
+...
+12B9  C9 04     CMP #$04          ; <- upper bound, patched at $12A1
+12BB  D0 1D     BNE $12DA
+12BD  FE 07 15  INC dir,X         ; hit the top: turn around
+```
+
+That the routine **writes its own bounds into its own operands** is what makes
+the reading unambiguous: both nibbles of one byte are provably the turning
+points and nothing else. The accumulator is written to `$D402`/`$D403` every
+frame -- a triangle wave on the duty cycle.
+
+Goattracker's pulse table says exactly this (`readme.txt:887-891`): a "set
+pulse width", an ascending step, a descending step, and a jump back. Two
+things are approximations, and both are stated in `_pulse_program`:
+
+* the player turns around when the high nibble *equals* a bound, so a rate
+  that does not divide the span overshoots by up to one step; the tick count
+  here turns around a fraction of a step early instead.
+* Goattracker steps the pulse table once per play **call** (`gplay.c:872`)
+  where the player steps once per **frame**, so at `-S2` the speed is halved
+  and the tick count doubled. An odd rate at `-S2` cannot be halved exactly;
+  the ticks are recomputed from the speed actually emitted, so the sweep still
+  covers the right band.
+
+Where the rate is zero, or the bounds leave no band to travel, the static
+width is kept -- an under-read never invents movement.
+
+**No metric in this repo can see this flag**, for the same reason as
+`--filter`: `wave` compares the waveform *class*, and pulse is pulse whatever
+its width. Measured on the 37 files it reaches, mean melody and mean wave
+agreement are **identical to the decimal** before and after. The evidence that
+it works is siddump's `Pul` column, which goes from **757 changes to 35892**
+against the originals' 60056 -- **1% of the original's pulse movement to 60%**.
+
+Off by default: it changes the output bytes of the 37 files it reaches.
+`Commando.sng` -- whose player has no sweep block -- is byte-identical either
+way.
+
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
 The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`
