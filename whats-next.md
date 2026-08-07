@@ -697,21 +697,46 @@ columns printed identically. The A/B was what exposed it — had the
 re-measurement been run one way only, the numbers would have been right by
 accident and the flag silently dead.
 
-## 7c. Rows per note — the item §7b turned into
+## 7c. Rows per note — and §7c's own first draft was backwards
 
-Two files are now known to give a note **more rows than the player gives it
-duration units**: Spellbound by about 4/3, Action_Biker by 5/4. Both were
-misread as row-length defects because `--pace` measures the product of the two
-and the tight IQR made it look settled.
+Two files' note-to-note timing does not follow from their row length, which is
+now measured and correct in both:
 
-This is a pattern-decoding question, and it is testable without `--pace`: the
-player's units per note are in its pattern data, and our rows per note are in
-the `.sng`. Compare them directly rather than inferring from timing. The gate
-values for both files are **correct**, so nothing in `find_song_speeds` is at
-fault here.
+| file | their row (cycle profile) | our row (emitted tempo) | `--pace` ratio | expected |
+|---|---:|---:|---:|---:|
+| `Action_Biker` | 3.00 | 3.00 | 0.80 | 1.00 |
+| `Spellbound` | 2.20 | 2.00 | 0.68 | 0.91 |
 
-Do not reach for `--pace` to measure a fix. It cannot see the difference
-between the two factors, which is what caused the misattribution.
+Both rows agree with the speed gate once the skip counter is accounted for, so
+`find_song_speeds` is not at fault. What is left is **rows per note**, and the
+ratios say our conversion emits **fewer** rows than the player holds units —
+about 4 where it holds 5 (Action_Biker), 3 where it holds 4 (Spellbound).
+
+**v0.5.112 wrote this as "more rows than the player gives", which is the wrong
+direction.** The ratio is ours over theirs and it is below 1, so our gaps are
+*shorter*. Anyone hunting an over-count would have found nothing.
+
+What is already known and does *not* explain it: `patterns.py` emits
+`wait + 1` rows, matching the players' `DEC`/`BMI`, and Spellbound's own
+duration counter is `DEC $E4CA,X / BMI $E08C` — `wait + 1`, the same. So the
+main rule is right and something narrower is losing rows.
+
+Where to look, in order:
+
+- The **sticky duration** dialect (`patterns.py:360`, bit 6 set = duration
+  prefix, the wait persisting across events). A prefix consumed where the
+  player would have kept applying it loses exactly this way.
+- Events that carry no duration and inherit the previous one.
+- Whether either file uses the `cmdtable` engine, whose duration is documented
+  as `D` frames rather than `D + 1` (`patterns.py:542`) — if a file of that
+  dialect is decoded with the main rule, or the reverse, the error is one row
+  per note.
+
+**Do not measure a fix with `--pace`.** It reports rows-per-note times row
+length as a single number, which is what produced both the original
+misattribution and the reversed direction above. Compare the player's `wait`
+bytes against our emitted rows directly; both are readable without running
+anything.
 
 ## 8. Four players have no expressible rate
 

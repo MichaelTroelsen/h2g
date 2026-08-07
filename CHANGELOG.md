@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.113 — 2026-08-07
+
+- correct 7c: we emit fewer rows per note, not more
+
 ## 0.5.112 — 2026-08-07
 
 - Action_Biker closes: its skip counter reloads 0 and is inert
