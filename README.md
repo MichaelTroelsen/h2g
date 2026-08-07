@@ -608,10 +608,16 @@ passband is also fixed per file here, so the files that alternate lowpass and
 bandpass per note (I_Ball, IK+, Pandora, Star_Paws, Thundercats,
 Trans-Atlantic, Nineteen) keep whichever the mode register was set to.
 
-**`FIDELITY.md` cannot see any of this.** Its `wave` column compares the
-waveform *class* and explicitly ignores the filter; melody, sequence and pitch
-compare note attacks. Every column is unchanged by this flag. The evidence that
-it works is the cutoff-write table above and the disassembly, not the report.
+**What `FIDELITY.md` can see of this.** Nothing, until v0.5.78: `wave`
+compares the waveform *class* and ignores the filter, and melody, sequence and
+pitch compare note attacks, so the evidence this flag worked was the
+cutoff-write table above and the disassembly rather than the report. The
+report now carries a `filt` column — frames on which a voice is routed into
+the filter *and* a passband is selected, ours over the original's, in the
+one-sided form that catches an invented filter — and a *Filter* section
+comparing how far the cutoff travels on each side, which is the question a
+write count cannot answer. What it still cannot see is the two limits named
+above: the per-voice cutoff collapsed into one, and the fixed passband.
 
 Off by default: it changes the output bytes of the 15 files it reaches, and
 `Commando.sng` -- which has no filter routine -- is byte-identical either way.
@@ -669,12 +675,17 @@ things are approximations, and both are stated in `_pulse_program`:
 Where the rate is zero, or the bounds leave no band to travel, the static
 width is kept -- an under-read never invents movement.
 
-**No metric in this repo can see this flag**, for the same reason as
-`--filter`: `wave` compares the waveform *class*, and pulse is pulse whatever
-its width. Measured on the 37 files it reaches, mean melody and mean wave
-agreement are **identical to the decimal** before and after. The evidence that
-it works is siddump's `Pul` column, which goes from **757 changes to 35892**
-against the originals' 60056 -- **1% of the original's pulse movement to 60%**.
+**No metric in this repo could see this flag** when it shipped, for the same
+reason as `--filter`: `wave` compares the waveform *class*, and pulse is pulse
+whatever its width. Measured on the 37 files it reaches, mean melody and mean
+wave agreement are **identical to the decimal** before and after. The evidence
+that it worked was siddump's `Pul` column, read by a script written for the
+occasion: **757 changes to 35892** against the originals' 60056 — **1% of the
+original's pulse movement to 60%**. That reading is now the report's `pul`
+column, ours over the original's, and it is a movement count rather than an
+agreement percentage on purpose: two players sweeping the same duty cycle from
+different phases share almost no frame values, and the defect this flag fixes
+is a *frozen* width rather than a wrong one.
 
 Off by default: it changes the output bytes of the 37 files it reaches.
 `Commando.sng` -- whose player has no sweep block -- is byte-identical either
@@ -718,13 +729,16 @@ generator does not always retrigger cleanly without it, and Confuzion goes
 from 82% to 78% melody similarity with `--no-hard-restart` on. Nothing else
 in the corpus moves on melody, sequence, pitch or waveform.
 
-**No column in `FIDELITY.md` can see either change.** `wave` compares the
-waveform class and ignores ADSR entirely; melody, sequence and pitch are
-attack comparisons. The 54.2% → 66.2% figure comes from a separate
-per-frame comparison of siddump's `ADSR` column, not from the report. Both
-options were prompted by a listening pass -- "the notes sound correct, but
-the sounds are not correct" -- which is the only check in the project that
-could have raised them.
+**No column in `FIDELITY.md` could see either change when they shipped.**
+`wave` compares the waveform class and ignores ADSR entirely; melody, sequence
+and pitch are attack comparisons. The 54.2% → 66.2% figure above comes from a
+separate per-frame comparison of siddump's `ADSR` column written for the
+occasion, not from the report. Since v0.5.78 that comparison **is** a column —
+`adsr`, per frame and per voice, built the same way `wave` is — so the two
+options are measurable in place; the historical figures here are kept as
+measured and are not restated from the report. Both options were prompted by a
+listening pass -- "the notes sound correct, but the sounds are not correct" --
+which is still the only check in the project that could have raised them.
 
 ### Per-song presets — `presets.json`
 
@@ -905,6 +919,21 @@ one vibrato cycle for a re-struck note.
 | **retrig** | our attacks over the original's; 1.0 is right |
 | **pitch** | overlap of the distinct pitches played |
 
+Attacks are not all of it. Six further columns compare the registers
+themselves, each frame-by-frame with the last written value carried forward,
+because siddump prints a register only when it changes: **wave** (the
+waveform-select nibble), **noise** (frames of noise, ours over the
+original's), **adsr** (the envelope pair `$D405`/`$D406`), **pul** (how often
+the duty cycle moved, ours over the original's), **filt** (frames with a voice
+routed into the filter and a passband selected, ours over the original's) and
+**cut** (how far the cutoff travels, over the original's travel). The three
+counted ones are one-sided on purpose: they answer "did we invent this" or
+"did we drop it", which no agreement percentage can say — and `cut` is a
+ratio rather than a count because a sweep taken in finer steps writes twice as
+often and goes exactly as far. `FIDELITY.md`'s own legend defines each, a
+*Filter* section there carries both sides' raw figures, and *What this run
+compared* names the registers no column reads (with these six, none).
+
 [`FIDELITY.md`](FIDELITY.md) is the committed report, and the single place
 fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
 elsewhere. Regenerate it after any commit that changes conversion.
@@ -950,10 +979,15 @@ rather than its tuning is a converter defect and is fixed in the converter.
 Every report ends with a **What this run compared** section, generated from the
 rows rather than written by hand: each dimension, the number of files it was
 actually computed on, and the SID registers it is derived from. Underneath it
-are the registers *no* dimension in that run reads — currently `$D402/$D403`
-(pulse width), `$D405/$D406` (envelope), `$D415/$D416`, `$D417` and `$D418`
-(filter and volume) — plus the three things that are not registers and equally
-unseen: note length, tempo, and anything outside the traced window.
+are the registers *no* dimension in that run reads. When the section was built
+that was five of the seven — `$D402/$D403` (pulse width), `$D405/$D406`
+(envelope), `$D415/$D416`, `$D417` and `$D418` (filter and volume) — and
+v0.5.78's `adsr`, `pul`, `filt` and `cut` columns are those five becoming
+dimensions, so a full run now lists none. A run that loses a dimension still
+lists its registers, which is the point of generating the section rather than
+writing it. Register coverage is not total coverage: note length, tempo,
+master volume and anything outside the traced window are listed beside it as
+unseen, and none of them is a register nobody reads.
 
 That list is the report stating its own reach. A change confined to it cannot
 move a single number here whatever it does to the sound, so a flat table is not

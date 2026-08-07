@@ -97,6 +97,11 @@ writes it once.
 
 ## 2. The three columns that should exist once §1 lands
 
+**Landed in v0.5.78.** `FIDELITY.md` gained `adsr`, `pul`, `filt` and `cut`,
+plus a *Filter* section carrying both sides' raw figures. With those four,
+every SID register is read by some dimension of §3's registry. What follows is
+the design as it was proposed, with what was built noted against each.
+
 Each of these has already been measured once by hand, which is the evidence
 they are worth having permanently.
 
@@ -104,6 +109,10 @@ they are worth having permanently.
 hand measurement is the baseline: 54.2% inherited, 66.2% after the sustain
 and hard-restart fixes. Two known instrument-level defects were found the week
 this was first measured; the report should not need a fork to see the third.
+— *Built as `adsr_compare`, whole 16-bit pair, frames neither side has ever
+written left out of the denominator. It lands within about a point and a half
+of the hand figure; the residual is the denominator rule and the file set,
+neither of which the hand script recorded.*
 
 **Pulse-width agreement.** *In flight — a sibling fork is building this
 now, so treat this paragraph as context, not a task.* The gap it is chasing:
@@ -111,6 +120,12 @@ Flash_Gordon's original changes pulse width 2823 times in 20 s and ours 5;
 Deep_Strike 1820 against 3. `FIDELITY.md`'s own "What this does not say"
 already names the `Pul` column as the fix for this, so the doc has been
 carrying the TODO longer than the code has.
+— *This paragraph was wrong: no fork built it. v0.5.73 shipped the pulse
+**conversion** and measured it with a throwaway script, leaving the column to
+this work. Built as `pulse_compare`, and deliberately a movement count rather
+than an agreement percentage — two players sweeping the same duty cycle from
+different phases share almost no frame values, so a per-frame equality score
+would read near zero for a conversion that sounds right.*
 
 **Filter agreement.** Global, not per voice: cutoff writes, resonance, and
 passband type. Two distinct questions, and both matter, because v0.5.72's
@@ -127,6 +142,20 @@ Design the filter columns the way `noise` is designed — `ours/original`, with
 a marker when we produce something the original never does. That format
 already earned its keep: it is what flags `Kings_of_the_Beach_ingame` playing
 138 noise frames against an original that plays none.
+
+— *Built as two columns and one section, because the two questions are
+different shapes. `filt` counts frames on which a voice is routed into the
+filter **and** a passband is selected — both halves, because a routed voice
+with no passband is not filtered but inaudible — in the one-sided
+`ours/original` form with the `!` marker. `cut` is our summed frame-to-frame
+cutoff movement over the original's, which separates a sweep taken in finer
+steps (same travel, more writes) from one that runs further than the player's
+counter allows. It is a column rather than only a section because §3's
+registry made that the difference between `$D415/$D416` being read and being
+named as a blind spot. The section carries both sides' raw frames, writes and
+travel for the files where either side filters at all. Resonance is not scored
+on its own: it shares the `$D417` byte with the routing and siddump never
+separates them.*
 
 ---
 
@@ -319,9 +348,12 @@ Recorded so it is not proposed again. Each was tried and measured.
 ## The shape of the argument
 
 The tool measures notes well. It measures **which notes, in what order, at
-what pitch, with what waveform class** — and after §1 and §2 it would also
-measure the envelope, the duty cycle and the filter, which is the whole of
-what "the sounds are not correct" means.
+what pitch, with what waveform class** — and since §1 and §2 landed
+(v0.5.76, v0.5.78) it also measures the envelope, the duty cycle and the
+filter, which is the whole of what "the sounds are not correct" means. What
+it measures there is registers, not sound: a movement count is not a judgement
+of a sweep, and an envelope compared frame by frame still says nothing about
+when it arrives.
 
 What it will still not measure afterwards is **rate**, and rate is not a
 gap in the tool but a property of siddump. That boundary should be stated

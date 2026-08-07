@@ -315,6 +315,200 @@ def test_wave_nframes_defaults_to_the_last_write_seen():
     assert got["wave"] == 0.9
 
 
+# --- envelope, duty cycle and filter ---------------------------------------
+#
+# The three dimensions the report gained once parse_dump stopped discarding
+# them. Each answers a differently shaped question, and the shape is the
+# design: ADSR is an agreement percentage because both sides always have an
+# envelope; pulse and filter are one-sided counts because the failures they
+# watch are a dimension one side moves and the other does not.
+
+
+def _adsr_voices(*event_lists):
+    vs = [fidelity.Voice(adsr_events=list(e)) for e in event_lists]
+    return vs + [fidelity.Voice()] * (3 - len(vs))
+
+
+def test_adsr_agreement_carries_the_register_forward():
+    # One write each, held for the whole window: agreement is total, and the
+    # frames between writes are counted rather than skipped.
+    same = fidelity.adsr_compare(_adsr_voices([(0, 0x0F00)]),
+                                 _adsr_voices([(0, 0x0F00)]), 10)
+    assert same["adsr"] == 1.0 and same["adsr_frames"] == 10
+
+
+def test_a_wrong_sustain_nibble_costs_every_frame_it_is_held():
+    """The v0.5.71 defect, in miniature: $0FFE against $0FFF is one nibble,
+    and it is the level the note holds at for its whole length."""
+    got = fidelity.adsr_compare(_adsr_voices([(0, 0x0FFF)]),
+                                _adsr_voices([(0, 0x0FFE)]), 20)
+    assert got["adsr"] == 0.0
+    assert got["adsr_frames"] == 20
+
+
+def test_a_hard_restart_frame_costs_only_that_frame():
+    # Goattracker writes $0F00 for one frame before each note; the original
+    # never does. That is a single frame of disagreement, not a whole note's.
+    orig = _adsr_voices([(0, 0x1234)])
+    ours = _adsr_voices([(0, 0x1234), (4, 0x0F00), (5, 0x1234)])
+    assert fidelity.adsr_compare(orig, ours, 10)["adsr"] == 0.9
+
+
+def test_a_voice_with_no_envelope_on_either_side_is_not_counted():
+    # The same rule wave_compare uses for class 0: a voice no player ever
+    # gave an envelope is not evidence either way...
+    got = fidelity.adsr_compare(_adsr_voices([(0, 0x0F00)]),
+                                _adsr_voices([(0, 0x0F00)]), 8)
+    assert got["adsr_frames"] == 8          # one voice, not three
+    # ...but one side having an envelope against the other's silence is a
+    # disagreement, not an exemption.
+    half = fidelity.adsr_compare(_adsr_voices([(2, 0x0F00)]),
+                                 _adsr_voices([]), 4)
+    assert half["adsr_frames"] == 2 and half["adsr"] == 0.0
+
+
+def test_adsr_is_none_when_neither_side_ever_set_an_envelope():
+    assert fidelity.adsr_compare(_adsr_voices(), _adsr_voices(), 50)["adsr"] is None
+
+
+def _pulse_voices(*event_lists):
+    vs = [fidelity.Voice(pulse_events=list(e)) for e in event_lists]
+    return vs + [fidelity.Voice()] * (3 - len(vs))
+
+
+def test_a_frozen_duty_cycle_reads_as_no_movement():
+    """The v0.5.73 defect: one 'set pulse width' per instrument and stop,
+    against a player writing $D402/$D403 every frame."""
+    orig = _pulse_voices([(f, 0x800 + f * 0x10) for f in range(10)])
+    ours = _pulse_voices([(0, 0x800)])
+    got = fidelity.pulse_compare(orig, ours, 10)
+    assert got["orig_pulse_changes"] == 9
+    assert got["our_pulse_changes"] == 0
+
+
+def test_rewriting_the_same_width_is_not_a_sweep():
+    # Counted off the expanded timeline, not the event list: a player that
+    # writes the same value every frame has not moved the duty cycle.
+    ours = _pulse_voices([(f, 0x800) for f in range(10)])
+    assert fidelity.pulse_compare(_pulse_voices([(0, 0x800)]), ours,
+                                  10)["our_pulse_changes"] == 0
+
+
+def test_pulse_movement_is_counted_per_voice():
+    got = fidelity.pulse_compare(
+        _pulse_voices([(0, 0x100), (1, 0x200)], [(0, 0x100)]),
+        _pulse_voices([(0, 0x100)], [(0, 0x100), (2, 0x300), (3, 0x400)]), 5)
+    assert [v["orig_pulse_changes"] for v in got["pulse_voices"]] == [1, 0, 0]
+    assert [v["our_pulse_changes"] for v in got["pulse_voices"]] == [0, 2, 0]
+
+
+def _filt(cutoff=(), ctrl=(), passband=(), volume=()):
+    return fidelity.FilterState(cutoff_events=list(cutoff),
+                                ctrl_events=list(ctrl),
+                                passband_events=list(passband),
+                                volume_events=list(volume))
+
+
+def test_a_filter_needs_both_a_routed_voice_and_a_passband():
+    """$D417's low nibble routes voices in; $D418's bits 4-6 pick which
+    output reaches the mixer. A voice routed with the passband Off is not
+    filtered, it is inaudible -- so neither half alone counts as filtering."""
+    routed_only = _filt(ctrl=[(0, 0xF1)])
+    band_only = _filt(passband=[(0, 1)])
+    both = _filt(ctrl=[(0, 0xF1)], passband=[(0, 1)])
+    n = 10
+    assert fidelity.filter_compare(routed_only, routed_only, n)["orig_filtered_frames"] == 0
+    assert fidelity.filter_compare(band_only, band_only, n)["orig_filtered_frames"] == 0
+    assert fidelity.filter_compare(both, both, n)["orig_filtered_frames"] == 10
+
+
+def test_resonance_alone_does_not_count_as_routing():
+    # $F0 is full resonance with no voice routed: the high nibble of $D417 is
+    # not routing, and siddump prints both halves as one byte.
+    res = _filt(ctrl=[(0, 0xF0)], passband=[(0, 1)])
+    assert fidelity.filter_compare(res, res, 5)["orig_filtered_frames"] == 0
+
+
+def test_an_invented_filter_is_one_sided():
+    """v0.5.72's rejected reader: 497 cutoff writes against an original that
+    writes the cutoff once. Nothing on the original's side can disagree with
+    that, which is why it is a count and not a percentage."""
+    orig = _filt(cutoff=[(0, 0x0800)])
+    ours = _filt(cutoff=[(f, 0x400 + f * 8) for f in range(50)],
+                 ctrl=[(0, 0xF1)], passband=[(0, 1)])
+    got = fidelity.filter_compare(orig, ours, 50)
+    assert got["orig_filtered_frames"] == 0 and got["our_filtered_frames"] == 50
+    assert got["orig_cutoff_changes"] == 0 and got["our_cutoff_changes"] == 49
+    assert got["cutoff_sweep"] is None      # nothing to be a ratio of
+
+
+def test_the_same_sweep_in_finer_steps_is_the_same_sweep():
+    """Why travel exists beside the write count. Both sides run the cutoff
+    from $0400 to $0800; ours takes twice as many steps, so it writes twice
+    as often and goes exactly as far."""
+    orig = _filt(cutoff=[(2 * i, 0x400 + i * 0x80) for i in range(9)])
+    ours = _filt(cutoff=[(i, 0x400 + i * 0x40) for i in range(17)])
+    got = fidelity.filter_compare(orig, ours, 20)
+    assert got["our_cutoff_changes"] == 2 * got["orig_cutoff_changes"]
+    assert got["cutoff_sweep"] == 1.0
+    assert got["our_cutoff_range"] == got["orig_cutoff_range"] == 0x400
+
+
+def test_an_overshooting_sweep_shows_up_as_travel_not_as_writes():
+    """Deep_Strike's shape: Goattracker's filter table steps for a fixed tick
+    count where the player's sweep is bounded by its own counter, so ours
+    covers three times the ground in the same number of writes."""
+    orig = _filt(cutoff=[(f, 0x400 + f * 0x10) for f in range(10)])
+    ours = _filt(cutoff=[(f, 0x400 + f * 0x30) for f in range(10)])
+    got = fidelity.filter_compare(orig, ours, 10)
+    assert got["our_cutoff_changes"] == got["orig_cutoff_changes"]
+    assert got["cutoff_sweep"] == 3.0
+
+
+def test_a_held_cutoff_travels_nowhere():
+    held = _filt(cutoff=[(0, 0x0800)], ctrl=[(0, 0xF1)], passband=[(0, 1)])
+    got = fidelity.filter_compare(held, held, 100)
+    assert got["our_cutoff_travel"] == 0 and got["our_filtered_frames"] == 100
+    assert got["cutoff_sweep"] is None
+
+
+# --- how the three reach the report ----------------------------------------
+
+
+def test_the_new_columns_are_in_the_table_and_the_summary():
+    rows = [_row("Good.sid", "measured", 1.0, 50, 50)]
+    rows[0].update(adsr=0.5, adsr_frames=100,
+                   orig_pulse_changes=100, our_pulse_changes=60,
+                   orig_filtered_frames=0, our_filtered_frames=40,
+                   orig_cutoff_changes=10, our_cutoff_changes=30,
+                   orig_cutoff_travel=450, our_cutoff_travel=900,
+                   cutoff_sweep=2.0)
+    text = fidelity.report(rows, _Args())
+    assert "| adsr | pul | filt | cut | status |" in text
+    assert "| 50% | 60/100 | 40/0 ! | 2.00x |" in text
+    assert "mean ADSR agreement: **50%**" in text
+    assert "pulse-width changes, ours/original: **60/100**" in text
+    assert "filtered frames, ours/original: **40/0**" in text
+    assert "1** file(s) filter where the original never does" in text
+    # ... and both sides of the two filter columns get a table of their own,
+    # because the raw travel figures are two numbers and concern only the
+    # files where either side filters at all.
+    assert "## Filter: does the cutoff move like the original's?" in text
+    assert "| 900/450 |" in text
+
+
+def test_a_row_without_the_register_metrics_still_renders():
+    """Rows predating these columns, and rows that never got as far as a
+    trace, must not take the report down with them."""
+    bare = _row("Old.sid", "measured", 1.0, 10, 10)
+    for key in list(bare):
+        if "pulse" in key or "filter" in key or "cutoff" in key or key == "adsr":
+            del bare[key]
+    text = fidelity.report([bare, _row("Bad.sid", "not converted")], _Args())
+    assert "| Old.sid |" in text and "| Bad.sid |" in text
+    assert "## Filter:" not in text         # nothing filtered, no section
+
+
 def test_legalise_restarts_only_touches_out_of_range_positions():
     """greloc.c:244 refuses to pack a song whose restart position is >= the
     track's length, which is exactly what tracks.py emits for a `$FE` byte."""
@@ -431,7 +625,13 @@ def _row(name, status, melody=None, orig=0, ours=0):
     if melody is not None:
         r.update(melody=melody, sequence=melody, pitch_jaccard=melody,
                  retrigger_ratio=1.0, wave=melody, wave_frames=100,
-                 orig_noise_frames=0, our_noise_frames=0)
+                 orig_noise_frames=0, our_noise_frames=0,
+                 adsr=melody, adsr_frames=100,
+                 orig_pulse_changes=0, our_pulse_changes=0,
+                 orig_filtered_frames=0, our_filtered_frames=0,
+                 orig_cutoff_changes=0, our_cutoff_changes=0,
+                 orig_cutoff_travel=0, our_cutoff_travel=0,
+                 cutoff_sweep=1.0)
     return r
 
 
@@ -540,17 +740,23 @@ def test_a_row_records_only_the_dimensions_it_actually_compared():
 
 
 def test_the_registers_no_dimension_reads_are_named():
-    """Every dimension is computed from the frequency registers or from $D404.
-    Those are the two the report can see; the rest is where v0.5.71's
-    envelope, v0.5.72's filter and v0.5.73's pulse width all landed."""
-    unread = dict(fidelity.registers_unread({d.key for d in fidelity.DIMENSIONS}))
-    assert set(unread) == {"$D402/$D403", "$D405/$D406",
-                           "$D415/$D416", "$D417", "$D418"}
-    # Losing a dimension widens the blind spot rather than leaving it fixed:
-    # a run that scored no notes cannot claim to have compared pitch. ($D404
-    # stays read either way -- the attack metrics need its gate bit as an
-    # edge, which is why note *length* is in NOT_MEASURED rather than here.)
+    """Since v0.5.78 every SID register is read by some dimension: $D402/$D403
+    by `pul`, $D405/$D406 by `adsr`, $D415/$D416 by `cut`, $D417 and $D418 by
+    `filt`. Those were the five where v0.5.71's envelope, v0.5.72's filter and
+    v0.5.73's pulse width landed unseen, which is what the columns were built
+    from. Register coverage is not total coverage -- NOT_MEASURED carries what
+    is left, including the volume nibble of a register `filt` reads."""
+    assert fidelity.registers_unread({d.key for d in fidelity.DIMENSIONS}) == []
+    assert any("master volume" in item for item in fidelity.NOT_MEASURED)
+    # Losing a dimension re-opens exactly its own registers rather than
+    # leaving the account fixed: a run that scored no notes cannot claim to
+    # have compared pitch, and one that scored no envelope is blind to
+    # $D405/$D406 again. ($D404 stays read either way -- the attack metrics
+    # need its gate bit as an edge, which is why note *length* is in
+    # NOT_MEASURED rather than here.)
     assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
+    assert "$D405/$D406" in dict(fidelity.registers_unread(
+        {d.key for d in fidelity.DIMENSIONS if d.key != "adsr"}))
     assert len(fidelity.registers_unread(set())) == len(fidelity.SID_REGISTERS)
 
 

@@ -609,6 +609,161 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def adsr_compare(orig: list[Voice], ours: list[Voice],
+                 nframes: int) -> dict:
+    """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
+
+    Built exactly like wave_compare: the ADSR pair is sparse, so each side's
+    last written value is carried forward and the two per-frame views are
+    compared value for value. The whole 16-bit pair is compared -- attack,
+    decay, sustain and release are one envelope and a conversion that gets
+    three of the four right is not playing the same sound.
+
+    Frames where *both* sides read $0000 are left out of the denominator, the
+    same rule wave_compare uses for class 0: a voice no player has ever given
+    an envelope is not evidence either way. A frame where one side has an
+    envelope and the other still reads zero counts as a disagreement.
+
+    Gating is deliberately not consulted. The register holds its value while
+    the voice is released, so the envelope of a silent frame is still the
+    envelope the next note will open with, and folding the gate in here would
+    re-measure the note lengths the attack columns already measure.
+
+    Baseline: v0.5.71 measured this by hand at 54.2% before its sustain-nibble
+    and hard-restart fixes and 66.2% after, over the 83 convertible files.
+    Both fixes are shipped and in `presets.json`'s `always` block, so this
+    column reproducing the post-fix figure is the check that it measures the
+    same thing.
+    """
+    agree = total = 0
+    per_voice = []
+    for a, b in zip(orig, ours):
+        ta = register_timeline(a.adsr_events, nframes)
+        tb = register_timeline(b.adsr_events, nframes)
+        va = vt = 0
+        for x, y in zip(ta, tb):
+            if x == 0 and y == 0:
+                continue
+            vt += 1
+            if x == y:
+                va += 1
+        per_voice.append({"adsr": (va / vt) if vt else None, "frames": vt})
+        agree += va
+        total += vt
+    return {
+        "adsr": (agree / total) if total else None,
+        "adsr_frames": total,
+        "adsr_voices": per_voice,
+    }
+
+
+def _changes(timeline: list[int]) -> int:
+    """How many times a register's value moved across a per-frame timeline.
+
+    Counted from the expanded timeline rather than from the event list so it
+    means the same thing on both sides: siddump prints a register on the frame
+    it is *written*, and a player that rewrites the same value every frame
+    would otherwise be scored as sweeping it.
+    """
+    return sum(1 for i in range(1, len(timeline)) if timeline[i] != timeline[i - 1])
+
+
+def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
+    """How often each side moves the duty cycle, per voice and in total.
+
+    Not an agreement percentage, and deliberately. Two players sweeping the
+    same duty cycle at the same rate from different starting phases share
+    almost no frame values, so a per-frame equality score would read as near
+    zero for a conversion that sounds right; and the defect this exists to
+    watch is not a wrong width but a **frozen** one. H2G wrote one pulse-table
+    entry per instrument and stopped, which is right for the 328 corpus
+    records whose sweep rate is zero and wrong for the 414 that sweep
+    (v0.5.73). A one-sided movement count is what shows that, in the same
+    ours/original form as `noise`.
+
+    Calibration from v0.5.73's throwaway script, 37 files at 20 s with the
+    filter off on both sides: the originals move the pulse width 60056 times,
+    ours moved it 757 (1%) before that change and 35892 (60%) after. The
+    report runs 10 s at the current `always` block, so the digits differ from
+    those and the shape should not.
+    """
+    o_ch = u_ch = 0
+    per_voice = []
+    for a, b in zip(orig, ours):
+        vo = _changes(register_timeline(a.pulse_events, nframes))
+        vu = _changes(register_timeline(b.pulse_events, nframes))
+        per_voice.append({"orig_pulse_changes": vo, "our_pulse_changes": vu})
+        o_ch += vo
+        u_ch += vu
+    return {
+        "orig_pulse_changes": o_ch,
+        "our_pulse_changes": u_ch,
+        "pulse_voices": per_voice,
+    }
+
+
+# $D417's low nibble routes voices into the filter: bits 0-2 are voices 1-3
+# and bit 3 is the external input, which no SID file has. The high nibble is
+# resonance, which siddump prints in the same byte and never separates.
+FILTER_ROUTE = 0x07
+
+
+def _filter_side(f: FilterState, nframes: int) -> dict:
+    cut = register_timeline(f.cutoff_events, nframes)
+    ctrl = register_timeline(f.ctrl_events, nframes)
+    band = register_timeline(f.passband_events, nframes)
+    # "Filtering" needs both halves: a voice routed into the filter with no
+    # passband selected is not filtered, it is inaudible ($D418 bits 4-6 pick
+    # which of the three outputs reaches the mixer, and Off picks none).
+    circuit = sum(1 for r, p in zip(ctrl, band) if (r & FILTER_ROUTE) and p)
+    return {
+        "filtered_frames": circuit,
+        "cutoff_changes": _changes(cut),
+        # Total distance the cutoff actually travels, and the width of the
+        # band it covers. Both are needed: a sweep taken in twice as many
+        # steps doubles the travel without going anywhere new, and one taken
+        # in two steps over the whole register covers the range without
+        # sounding like a sweep.
+        "cutoff_travel": sum(abs(cut[i] - cut[i - 1]) for i in range(1, len(cut))),
+        "cutoff_range": (max(cut) - min(cut)) if cut else 0,
+    }
+
+
+def filter_compare(orig: FilterState, ours: FilterState, nframes: int) -> dict:
+    """The global filter: whether we filter where the original does, and how far.
+
+    Two questions, and a count answers only the first:
+
+    * *Do we filter where the original filters?* One-sided, like `noise`:
+      frames on which a voice is routed through the filter and a passband is
+      selected, ours over the original's. A nonzero ours against a zero
+      original is a filter the conversion invented -- the failure v0.5.72's
+      first attempt shipped, where Powerplay Hockey gained 497 cutoff writes
+      against an original that writes the cutoff once.
+    * *Does the cutoff move like the original's?* Deep_Strike went 481 -> 1515
+      and that is an overshoot, not an absence; no count tells the two apart
+      from a side that simply does more. `sweep` is our cutoff travel over the
+      original's -- the summed frame-to-frame movement -- so a sweep sampled
+      more finely than the original's scores near 1.0 where its write count
+      would read as three times too much, and a sweep that runs further than
+      the player's own counter allows scores high whatever its write count.
+      Goattracker's filter table steps for a fixed tick count where the
+      player's sweep is bounded by its own counter, which is the shape of
+      overshoot to expect.
+
+    Volume ($D418's low nibble) is parsed and not compared here: it is a
+    master level, one write per file in nearly every original, and nothing the
+    converter emits can move it.
+    """
+    o = _filter_side(orig, nframes)
+    u = _filter_side(ours, nframes)
+    out = {f"orig_{k}": v for k, v in o.items()}
+    out.update({f"our_{k}": v for k, v in u.items()})
+    out["cutoff_sweep"] = (u["cutoff_travel"] / o["cutoff_travel"]
+                           if o["cutoff_travel"] else None)
+    return out
+
+
 # --------------------------------------------------------------------------
 # what this run can see, and what it structurally cannot
 # --------------------------------------------------------------------------
@@ -653,6 +808,10 @@ NOT_MEASURED = (
     "`gt2reloc -S` changes the packed bytes and not one number here",
     "**anything outside the traced window or subtune** -- one subtune per "
     "file, its first few seconds",
+    "**master volume** -- `$D418`'s low nibble. The register is listed as "
+    "read because `filt` reads the passband bits of the same byte, which is "
+    "as fine as a per-register account can be; nothing compares the volume "
+    "nibble, and nothing the converter emits can move it",
 )
 
 
@@ -717,6 +876,21 @@ DIMENSIONS = (
               "per-frame agreement of the waveform-select nibble"),
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
+    Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
+              "per-frame agreement of the envelope pair"),
+    Dimension("pulse", "pul", ("$D402/$D403",), "count",
+              "frames on which the duty cycle moved",
+              source="our_pulse_changes"),
+    # The filter is two dimensions because it is two questions, and one of
+    # them is not a count: `filt` is whether we filter at all, `cut` is
+    # whether the cutoff then moves as far as the original's. A count reads
+    # the same for a sweep taken in finer steps and one that runs three times
+    # too far, which is exactly the pair v0.5.72's first reader confused.
+    Dimension("filtered", "filt", ("$D417", "$D418"), "count",
+              "frames with a voice routed into the filter and a passband "
+              "selected", source="our_filtered_frames"),
+    Dimension("cutoff_sweep", "cut", ("$D415/$D416",), "ratio",
+              "how far the cutoff travels, over the original's travel"),
 )
 
 
@@ -1020,7 +1194,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 best, best_at, row = cand["melody"], st, {**row, **cand}
                 best_dump = cand_dump
         row["matched_subtune"] = best_at
-    row.update(wave_compare(a, best_dump, nframes=args.seconds * 50))
+    nframes = args.seconds * 50
+    row.update(wave_compare(a, best_dump, nframes=nframes))
+    row.update(adsr_compare(a, best_dump, nframes))
+    row.update(pulse_compare(a, best_dump, nframes))
+    row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
         # neither side plays anything is not, and calling both "silent" put
@@ -1087,17 +1265,140 @@ def blindness_section(rows: list[dict]) -> list[str]:
         "",
         "This is not a caveat, it is the report's own account of its reach. "
         "v0.5.71's envelope fix, v0.5.72's filter and v0.5.73's pulse-width "
-        "sweep each landed entirely in the registers listed above and each "
-        "moved no column here to the decimal. `fidelity.py --baseline "
-        "old.json` states that as a result -- \"no dimension this report "
-        "measures can see this change\" -- rather than leaving a flat table "
-        "to be misread as a null result.",
+        "sweep each landed in a register no dimension then read, and each "
+        "moved no column of the report to the decimal; `adsr`, `pul`, `filt` "
+        "and `cut` (v0.5.78) are those three registers becoming dimensions. "
+        "The list above is what the *next* such change would land in. "
+        "`fidelity.py --baseline old.json` states that case as a result -- "
+        "\"no dimension this report measures can see this change\" -- rather "
+        "than leaving a flat table to be misread as a null result.",
     ]
     if live and len(live) < len(DIMENSIONS):
         missing = ", ".join(f"`{d.column}`" for d in DIMENSIONS
                             if not computed.get(d.key))
         out += ["", f"No row in this run computed {missing}, so it is blind "
                 "on that too."]
+    return out
+
+
+def _fmt_sweep(row: dict) -> str:
+    """The cutoff-travel ratio, or `-` where the original never moves it.
+
+    A ratio and not a count, because the filter's two questions are different
+    shapes: `filt` is one-sided (did we invent a filter, did we drop one) and
+    this is comparative (having filtered, did the cutoff go as far).
+    """
+    v = row.get("cutoff_sweep")
+    return "-" if v is None else f"{v:.2f}x"
+
+
+def _one_sided(row: dict, key: str) -> str:
+    """`ours/original`, with `!` for something the original never does.
+
+    The format the `noise` column established, and the reason it earned its
+    keep: `138/0 !` says a conversion invented drum ticks, which no agreement
+    percentage can say because there is nothing on the other side to disagree
+    with. Every count in this report that answers a one-sided question --
+    noise frames, pulse-width movement, filtered frames -- is written this way
+    so that invention reads the same wherever it appears.
+    """
+    o, u = row.get(f"orig_{key}", 0), row.get(f"our_{key}", 0)
+    return f"{u}/{o}" + (" !" if u and not o else "")
+
+
+def _register_summary(measured: list[dict]) -> list[str]:
+    """Corpus totals for the two counted register columns, `pul` and `filt`.
+
+    Both are one-sided counts, so both have two failure directions worth
+    naming separately: a dimension the original moves and we do not (a frozen
+    duty cycle, an unfiltered tune), and one we move and it never does
+    (invention). A mean would hide both -- the totals are dominated by a few
+    heavily swept files, and the files that matter are the ones on either
+    edge.
+    """
+    out: list[str] = []
+    pulsed = [r for r in measured if "our_pulse_changes" in r]
+    if pulsed:
+        frozen = [r for r in pulsed
+                  if r["orig_pulse_changes"] and not r["our_pulse_changes"]]
+        invented = [r for r in pulsed
+                    if r["our_pulse_changes"] and not r["orig_pulse_changes"]]
+        out.append(
+            "- pulse-width changes, ours/original: "
+            f"**{sum(r['our_pulse_changes'] for r in pulsed)}/"
+            f"{sum(r['orig_pulse_changes'] for r in pulsed)}**"
+            + (f"; **{len(frozen)}** file(s) hold the duty cycle still where "
+               "the original sweeps it" if frozen else "")
+            + (f"; **{len(invented)}** move it where the original never does "
+               "(marked `!` above)" if invented else ""))
+    filtered = [r for r in measured if "our_filtered_frames" in r]
+    if filtered:
+        invented = [r for r in filtered
+                    if r["our_filtered_frames"] and not r["orig_filtered_frames"]]
+        missing = [r for r in filtered
+                   if r["orig_filtered_frames"] and not r["our_filtered_frames"]]
+        out.append(
+            "- filtered frames, ours/original: "
+            f"**{sum(r['our_filtered_frames'] for r in filtered)}/"
+            f"{sum(r['orig_filtered_frames'] for r in filtered)}**"
+            + (f"; **{len(invented)}** file(s) filter where the original "
+               "never does (marked `!` above)" if invented else "")
+            + (f"; **{len(missing)}** play unfiltered where the original "
+               "filters" if missing else ""))
+    return out
+
+
+def _filter_section(rows: list[dict]) -> list[str]:
+    """The second filter question: not whether we filter, but how far.
+
+    Kept out of the main table on purpose. It concerns only the files where
+    one side or the other actually filters -- a minority -- and it needs two
+    numbers rather than one, so as a column it would be mostly `-` and still
+    unreadable where it was not. `filt` in the table answers the one-sided
+    question for every file; this answers the shape question for the files it
+    applies to.
+    """
+    got = [r for r in rows
+           if r.get("our_filtered_frames") or r.get("orig_filtered_frames")
+           or r.get("our_cutoff_changes") or r.get("orig_cutoff_changes")]
+    if not got:
+        return []
+    out = [
+        "",
+        "## Filter: does the cutoff move like the original's?",
+        "",
+        "Both sides of the two filter columns, for the files where either "
+        "side filters at all. `filt` is the one-sided question -- do we "
+        "filter where the original filters -- and `cut` is the other one, "
+        "which no count answers: Deep_Strike went 481 cutoff writes to 1515 "
+        "under an earlier filter reader, an overshoot rather than an "
+        "absence, and a write count reads the same whether we sweep the same "
+        "band in finer steps or sweep three times as far.",
+        "",
+        "* **frames** -- a voice routed into the filter with a passband "
+        "selected, ours/original (the `filt` column).",
+        "* **writes** -- frames on which the cutoff value changed.",
+        "* **travel** -- summed frame-to-frame movement of the cutoff: how "
+        "far it actually goes, independent of how many steps it takes.",
+        "* **sweep** -- our travel over the original's (the `cut` column). "
+        "Near 1.0 is the "
+        "right answer even when the write counts differ, because the same "
+        "sweep sampled twice as finely is the same sweep. Well over 1.0 is "
+        "the overshoot to expect from Goattracker's filter table, which "
+        "steps for a fixed tick count where the player's sweep is bounded by "
+        "its own counter.",
+        "",
+        "| File | frames | writes | travel | sweep |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for r in sorted(got, key=lambda r: r["file"].lower()):
+        sweep = r.get("cutoff_sweep")
+        out.append(
+            f"| {r['file']} | {_one_sided(r, 'filtered_frames')} | "
+            f"{_one_sided(r, 'cutoff_changes')} | "
+            f"{r.get('our_cutoff_travel', 0):,}/"
+            f"{r.get('orig_cutoff_travel', 0):,} | "
+            f"{'-' if sweep is None else f'{sweep:.2f}x'} |")
     return out
 
 
@@ -1145,28 +1446,47 @@ def report(rows: list[dict], args) -> str:
         "* **noise** -- frames on which the voice's waveform included noise "
         "(bit 7), ours over the original's. A nonzero left of a zero right "
         "is a drum tick the conversion invented.",
+        "* **adsr** -- per-frame agreement of the envelope registers "
+        "($D405/$D406, the whole 16-bit pair), carried forward between "
+        "writes exactly as **wave** is. Frames where neither side has ever "
+        "set an envelope are not counted.",
+        "* **pul** -- how many times the duty cycle moved, ours over the "
+        "original's. A count rather than an agreement: two players sweeping "
+        "the same pulse from different phases share almost no frame values, "
+        "and the defect this watches is a *frozen* width, not a wrong one.",
+        "* **filt** -- frames on which a voice is routed into the filter "
+        "*and* a passband is selected, ours over the original's. One-sided "
+        "like **noise**: a nonzero left of a zero right is a filter the "
+        "conversion invented.",
+        "* **cut** -- our cutoff *travel* -- its summed frame-to-frame "
+        "movement -- over the original's. The second filter question, and "
+        "the one no count answers: the same sweep taken in finer steps "
+        "doubles the write count and travels exactly as far, while a sweep "
+        "that runs past the player's own counter travels further at the same "
+        "count. `-` is an original that never moves it. Both sides' raw "
+        "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | wave | noise | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | wave | noise | adsr | pul | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} | - | - | - | - | - | - | - | - | - | {r['status']} |")
+                f"| {r['file']} |" + " - |" * 13 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
         if r.get("traced_subtune_dropped"):
             status += " -- **not comparable**"
-        noise = f"{r.get('our_noise_frames', 0)}/{r.get('orig_noise_frames', 0)}"
-        if r.get("our_noise_frames") and not r.get("orig_noise_frames"):
-            noise += " !"
+        noise = _one_sided(r, "noise_frames")
         out.append(
             f"| {r['file']} | {r['orig_attacks']} | {r['our_attacks']} | "
             f"{'-' if rr is None else f'{rr:.2f}'} | {_fmt_pct(r['melody'])} | "
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
+            f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
+            f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
             f"{status} |")
 
     if measured:
@@ -1196,6 +1516,13 @@ def report(rows: list[dict], args) -> str:
                 + (f"; **{len(invented)}** file(s) play noise where the "
                    "original never does (marked `!` above)" if invented else ""),
             ]
+        adsred = [r for r in measured if r.get("adsr") is not None]
+        if adsred:
+            out.append(
+                f"- mean ADSR agreement: "
+                f"**{_fmt_pct(sum(r['adsr'] for r in adsred) / len(adsred))}**"
+                f" ({len(adsred)} file(s))")
+        out += _register_summary(measured)
         ratios = [r["retrigger_ratio"] for r in measured if r["retrigger_ratio"]]
         if ratios:
             out.append(f"- median retrigger ratio: **{sorted(ratios)[len(ratios) // 2]:.2f}**")
@@ -1307,16 +1634,25 @@ def report(rows: list[dict], args) -> str:
             out.append(f"| {r['file']} | {e['subtunes']} | {e['exported']} | "
                        f"{fmt(e['stub'])} | {fmt(e['lost'])} |")
 
+    out += _filter_section(rows)
+
     if getattr(args, "pair", None):
         for r in rows:
             if not r.get("wave_voices"):
                 continue
-            out += ["", "## Wave detail (per voice)", "",
-                    "| voice | wave | frames counted | noise ours/orig |",
-                    "|---|---:|---:|---:|"]
+            out += ["", "## Per-voice detail", "",
+                    "| voice | wave | frames counted | noise ours/orig "
+                    "| adsr | pulse moves ours/orig |",
+                    "|---|---:|---:|---:|---:|---:|"]
+            adsr_v = r.get("adsr_voices") or [{}] * len(r["wave_voices"])
+            pulse_v = r.get("pulse_voices") or [{}] * len(r["wave_voices"])
             for i, v in enumerate(r["wave_voices"]):
+                p = pulse_v[i]
                 out.append(f"| {i} | {_fmt_pct(v['wave'])} | {v['frames']} | "
-                           f"{v['our_noise_frames']}/{v['orig_noise_frames']} |")
+                           f"{v['our_noise_frames']}/{v['orig_noise_frames']} | "
+                           f"{_fmt_pct(adsr_v[i].get('adsr'))} | "
+                           f"{p.get('our_pulse_changes', 0)}/"
+                           f"{p.get('orig_pulse_changes', 0)} |")
 
     out += blindness_section(rows)
 
@@ -1346,13 +1682,24 @@ def report(rows: list[dict], args) -> str:
         "are for.",
         "- **wave** compares the waveform class only. It cannot see pitch, "
         "so a noise class agreeing on both sides says nothing about which "
-        "notes are under it; pulse-width differences within the pulse class "
-        "are invisible (tracking siddump's Pul column would fix that -- "
-        "future work, not built); ADSR and volume are not compared; and "
-        "because it ignores the gate bit, a note held twice as long with the "
-        "right waveform still scores 100% here. A gated-off voice keeps its "
-        "last waveform latched, so silence between notes inherits the "
-        "previous note's class on both sides.",
+        "notes are under it; and because it ignores the gate bit, a note held "
+        "twice as long with the right waveform still scores 100% here. A "
+        "gated-off voice keeps its last waveform latched, so silence between "
+        "notes inherits the previous note's class on both sides.",
+        "- **adsr**, **pul**, **filt** and **cut** are register comparisons, "
+        "not sound comparisons. `adsr` scores the envelope pair frame by "
+        "frame, so it sees a wrong sustain or an invented hard restart, and "
+        "it cannot see an envelope that is right but reached a few frames "
+        "late; `pul` counts duty-cycle movement and says nothing about the "
+        "width, the direction or the phase of the sweep -- a pulse swept the "
+        "wrong way at the right rate scores the same as one swept correctly; "
+        "`filt` counts frames in circuit and `cut` how far the cutoff "
+        "travels, neither of which says the sweep runs in the same direction "
+        "or at the same moment. Resonance is inside the same $D417 byte as "
+        "the routing and siddump never separates them, so resonance is not "
+        "scored on its own, and master volume ($D418's low nibble) is parsed "
+        "and never compared even though `filt` reads the passband bits of "
+        "that same byte.",
     ]
     out.append("")
     return "\n".join(out)
@@ -1782,7 +2129,11 @@ def _run(p, args, workdir: Path) -> int:
         da = run_siddump(a, args.seconds, sub, args.siddump)
         db = run_siddump(b, args.seconds, sub, args.siddump)
         row.update(compare(da, db))
-        row.update(wave_compare(da, db, nframes=args.seconds * 50))
+        nframes = args.seconds * 50
+        row.update(wave_compare(da, db, nframes=nframes))
+        row.update(adsr_compare(da, db, nframes))
+        row.update(pulse_compare(da, db, nframes))
+        row.update(filter_compare(da.filter, db.filter, nframes))
         if args.register:
             row["register"] = sidm2_register(a, b, args.seconds)
         if args.audio:

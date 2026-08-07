@@ -87,7 +87,12 @@ test dependency).
   files — plausible numbers about the wrong tune. Pass `--workdir` only to
   keep the intermediates, and never pass the same one twice concurrently.
 - **Do not treat `FIDELITY.md` as the last word on fidelity.** It compares note
-  *attacks*; it cannot see an envelope, filter, tempo or timbre. v0.5.46 fixed a
+  *attacks* and, since v0.5.78, every SID register beside them — waveform
+  class, noise frames, the envelope pair, duty-cycle movement, filtered
+  frames and cutoff travel. It still cannot see tempo, note length or the
+  volume nibble, and none of the register columns is a listening test: `pul`
+  counts movement without judging the sweep, `adsr` scores a register value
+  and not when it arrives. v0.5.46 fixed a
   real defect that rewrote 66 rows of one file and moved the report by zero
   percent. A flat report is not evidence a change did nothing — when a fix is
   invisible to the metric, say so in the doc beside the fix.

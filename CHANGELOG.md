@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.78 — 2026-08-07
+
+- the report spends the registers: adsr, pul, filt and cut columns
+
 ## 0.5.77 — 2026-08-07
 
 - state which dimensions a run compared, and A/B against a baseline

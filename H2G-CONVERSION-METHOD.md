@@ -1231,9 +1231,11 @@ evidence it did nothing, and this is the fourth time in this project that a
 correct fix has been invisible to the harness that was built to see it.
 
 What remains of the census's four blocks: bit `$08`'s pulse-width variant is
-still unwritten, because the pulse table has two entries per instrument and no
-metric here can see a duty cycle — tracking siddump's `Pul` column comes
-first. The drum's sweep is one entry deep rather than the counter's length,
+still unwritten, because the pulse table has two entries per instrument and,
+when this was written, no metric here could see a duty cycle. Tracking
+siddump's `Pul` column was named as the prerequisite; it is the report's `pul`
+column as of v0.5.78, so the blocker on that block is now the encoding rather
+than the measurement. The drum's sweep is one entry deep rather than the counter's length,
 since the counter is a runtime value and the wavetable has three free slots.
 
 **Bit `$08` — a pulse-width variant** (Warhawk `$12A3`). It selects between
@@ -1475,16 +1477,23 @@ voice's last written value carried forward between writes:
 
 The cost is one file: hard restart exists for a reason, and Confuzion drops
 82% → 78% melody. Nothing else moves on melody, sequence, pitch or waveform
--- because **no column in `FIDELITY.md` compares ADSR at all**. The table
-above comes from a separate comparison of siddump's `ADSR` column written for
-this change, not from the report.
+-- because when this shipped, **no column in `FIDELITY.md` compared ADSR at
+all**. The table above comes from a separate comparison of siddump's `ADSR`
+column written for this change, not from the report. Since v0.5.78 the report
+has an `adsr` column that makes exactly this comparison per frame and per
+voice, so the next change to the envelope will be visible where the last one
+was not; the numbers above are left as they were measured rather than
+restated from it.
 
 ### 7.aa The pulse width: a sweep written as a constant
 
 The third defect the first listening pass raised, alongside the two envelope
 ones in 7.z and the filter in 7.y. All four are the same shape: the notes were
 right, the *sound* was not, and no column in `FIDELITY.md` could report any of
-them.
+them at the time. All four are reportable now — v0.5.78 spent the registers
+`parse_dump` had started reading on an `adsr` column, a `pul` column and a
+`filt` column — which is why the sections below still quote the hand
+measurements that were the only evidence when each change landed.
 
 H2G wrote each instrument's pulse width once and stopped -- two pulse-table
 entries, "set `$XYY`" then "stop". That is exactly right for the **328**
@@ -1529,9 +1538,11 @@ same speed, which `gplay.c:902` executes identically.
 
 Mean melody and mean waveform agreement are **identical to the decimal** with
 and without it. `wave` compares the waveform *class*; pulse is pulse whatever
-its width. This is the seventh change in the project's history that is real,
-verified against the 6502, and completely invisible to the report -- which is
+its width. This was the seventh change in the project's history that is real,
+verified against the 6502, and completely invisible to the report -- which was
 the argument for building the `Pul` metric rather than a reason to doubt it.
+That metric exists as of v0.5.78: the `pul` column counts duty-cycle movement
+on each side, in the same ours/original form the table above uses.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 
