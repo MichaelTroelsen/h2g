@@ -718,7 +718,11 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     still counting down from `W`, so `BCC` -- taken on `A < M` -- fires while
     the counter is large, which is the beginning of the note, not its end. The
     sweep then runs for the rest of it: `W - 1` steps per note against the one
-    this writes. See H2G-CONVERSION-METHOD.md section 7.ii. H2G's version was a single noise tick *first* and then the waveform,
+    this writes -- confirmed in VICE at v0.5.91, where Bump_Set_Spike's voice-2
+    frequency-high shadow walks `0D 0C 0B 0A 09 08 07`, one per play call. The
+    single step here is an under-render, and `bend` reports it as an overshoot
+    only because siddump names the player's 256-unit steps as notes rather than
+    bends. See H2G-CONVERSION-METHOD.md section 7.ii. H2G's version was a single noise tick *first* and then the waveform,
     with no sweep at all.
 
     Emitted here: attack, the gate-off waveform, one step of the sweep, stop.

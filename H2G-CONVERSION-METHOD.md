@@ -2167,16 +2167,57 @@ Rasputin, Last_V8, Thing_on_a_Spring benefiting) and **all three are refuted**:
 
 And the probe is not a false positive: Bump_Set_Spike's block is Warhawk's
 byte for byte, its instruments do set bit `$01` (27 of 60 records), and its
-notes are long enough. Its original nevertheless plays **no** 256-unit step in
-ten seconds — its largest frequency delta is `$000D`. The player has the
-routine, the data to trigger it, and does not trigger it, for a reason that is
-not in any byte a ripper reads.
+notes are long enough.
 
-So the sweep stays as measured, and this is the residual: not "the gate is
-unknown" but "the gate is known, and it is cross-voice runtime state". The only
-thing that would settle the three files is running the player — RetroDebugger
-with a watch on the effect cell — which is the same tool §1 wants for the
-`-S2` rates.
+#### Running it settles it — and the answer is the metric again
+
+The three refutations above left one hypothesis standing, that the player never
+triggers the drum. **v0.5.91 ran the player and it is false.** Bump_Set_Spike's
+body was extracted to a PRG at `$B000`, driven by a nine-instruction harness
+(`SEI / LDA #$35 / STA $01 / JSR $B000 / loop: JSR $B016 / JMP loop`) under
+VICE's remote monitor, with breakpoints on the block entry and both branches:
+
+| over 400 breakpoint stops | |
+|---|---:|
+| `$B34B` block entry | 261 |
+| `$B36C` **the sweep** | **78** |
+| `$B37C` the noise path | 61 |
+| effect cell `$B504` with bit `$01` set, at entry | **226 of 261** |
+
+and watching the frequency-high shadows at the end of each play call shows the
+sweep working exactly as read — voice 2 walking `0D 0C 0B 0A 09 08 07`, one per
+call, with `$D401` following it:
+
+```
+call  shadows $B4F8-FA        $D401 $D408 $D40F
+   4  ['75', '0C', '03']      ['75', '0D', '03']
+   5  ['75', '0B', '03']      ['75', '0C', '03']
+   6  ['75', '0A', '03']      ['75', '0B', '03']
+   7  ['75', '09', '03']      ['75', '0A', '03']
+```
+
+So the drum fires, reaches the SID, and sweeps. **What it does not do is
+register as a bend.** A step of 256 units at those frequencies is more than a
+semitone, so siddump names each one a *note* — the original's trace is full of
+`0D09 (G-3 AB)`, `1F04 (A#4 BA)`, `0DD0 (G#3 AC)` on consecutive frames — and
+`bend` excludes ties by construction.
+
+**Bump_Set_Spike's 11.79x is therefore the same artefact as Thrust's 43x**
+(§ 7.hh): a stepped sweep on the player's side that the dimension cannot see,
+against a conversion whose single 256-unit step lands close enough to be called
+a bend. The converter is not inventing a drum. It is *under*-rendering one —
+one step where the player takes six or more — and the metric shows the
+under-render as an overshoot.
+
+That also re-reads the sweep's re-measurement: "right for one file and wrong
+for eight" was scored on a dimension blind to the original's drum on **every**
+one of those files. The sweep stays, and the reason is now the 6502 and the
+emulator rather than a number.
+
+The residual is real but smaller than § 7.ii first claimed: the gate is
+cross-voice runtime state (`LDA effect` is `AD`, absolute, written once in the
+note-start path), so a per-instrument wavetable cannot reproduce *when* the
+player drums — only that it does.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.91 — 2026-08-07
+
+- run the player: the drum does fire, and bend cannot see it
+
 ## 0.5.90 — 2026-08-07
 
 - read the drum gate in full: cross-voice state, and the noise is the attack

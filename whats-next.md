@@ -357,13 +357,31 @@ byte-exact either way. Full working in H2G-CONVERSION-METHOD.md § 7.ee.
   Knucklebusters 1.64x -> 0.00x. It now sums siddump's own `(+ xxxx)` lines.
   Fourth correction to one dimension in six versions; the three wrong ones all
   re-derived the quantity, the right one does not.
-- **What survived: the drum sweep fires where the player's does not.**
-  Bump_Set_Spike 11.79x, Phantoms 4.40x, Gerry_the_Germ 2.29x are all its 256
-  units a frame. The player's block also needs its per-voice length and
-  counter armed (`$1372 LDA $1576,X / BEQ out`) -- runtime state no static read
-  sees. Re-measured against pitch: removing the sweep is right for **one** file
-  and wrong for **eight** (Game_Killer 1.08x and Crazy_Comets 1.03x drop to
-  0.00x), at zero cost in `wave`. It stays; the gate is the open question.
+- **CLOSED (v0.5.90/91): the drum gate, and the drum does fire.** The block is
+  byte-identical in every file that has it, and its condition is: bit `$01` on
+  the effect cell, nonzero frequency-hi, nonzero remaining duration, then a
+  `CMP`/`BCC` that puts **noise on the note's first frames and the 256-unit
+  sweep on the rest** — `W-1` steps per note against the one this writer emits.
+  The `BCC` direction had been recorded backwards since v0.5.62.
+- **The gate is cross-voice runtime state.** `LDA effect` is `AD` — absolute,
+  not `,X` — and the cell is written in exactly one place in the player, the
+  note-start path, as `STA abs`. All three voices share it. No per-instrument
+  wavetable can reproduce *when* the player drums.
+- **Running it settled the rest** (VICE remote monitor; RetroDebugger had
+  crashed and its MCP server dropped with it). Bump_Set_Spike's drum **fires**:
+  78 sweep-branch hits against 61 noise in 400 stops, bit `$01` set at 226 of
+  261 entries, and the voice-2 frequency-hi shadow walking `0D 0C 0B 0A 09 08
+  07` one per play call with `$D401` following. Three static proxies for "which
+  files overshoot" were refuted first: note duration (no drum note lasts 1
+  tick), drum share of note-starts (30/14/39% vs 14/34/23/32/19% — overlapping)
+  and the `freqhi` guard (`$02B9` and above).
+- **So Bump_Set_Spike's 11.79x is Thrust's artefact again.** 256 units at those
+  frequencies is more than a semitone, so siddump names each of the player's
+  steps a *note*, and `bend` excludes ties. The converter under-renders the
+  drum and the metric reports it as an overshoot. "Removing the sweep is right
+  for one file and wrong for eight" was scored on a dimension blind to the
+  original's drum in every one of them; the sweep stays, on the 6502 and the
+  emulator rather than on a number.
 - **`Thrust` at 43x is explained and is not an overshoot** (v0.5.89). Its tune
   *is* the chromatic rise, and both sides play it. The player **steps** on
   exact semitones (`INC noteindex,X` + a table re-read), so siddump names every
