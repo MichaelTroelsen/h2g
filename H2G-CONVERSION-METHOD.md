@@ -3403,6 +3403,25 @@ suite (665 tests) passes unchanged, including the byte-exact `Commando.sng`
 fixture, which uses `max_rows=94` and is untouched by a change gated on
 `max_rows==128`.
 
+**A second file, and an honest miss.** `W_A_R.sid` had the corpus's worst
+count (77 of 156 patterns) and its default subtune references 65 of them,
+several within the first few orderlist entries — the strongest candidate
+in the corpus for reproducing Commando's before/after gap a second time.
+Traced 30s (subtune 0, its own `multiplier=4`) against the pre-fix
+`patterns.py` (restored from git for the comparison, then put back) and
+the fixed one: **the two traces are frame-for-frame identical** —
+29/25/58 attacks either way, tracking the original's 28/20/58 closely with
+no silent stretch on *either* side. So on this file's default subtune, the
+structural defect (confirmed present, 65 hits) did not translate into an
+audible difference within 30 real seconds. Read together with Commando,
+this says the defect's audible cost is not uniform: whatever byte a
+runaway read lands on next differs file to file and pattern to pattern,
+and evidently was already harmless enough here, at least within the traced
+window, that the fix's value on this file rests on the structural
+guarantee (no read ever runs past a known-safe boundary again) rather than
+on a second demonstrated collapse. The other 7 subtunes' 12 remaining
+hits, and W_A_R's own subtune 0 past 30s, were not traced.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
