@@ -746,42 +746,56 @@ Unlike §7c's Action_Biker half — which was 7 gaps and whose row is exactly it
 gate — this one is worth the static check: the player's `wait` bytes against
 our emitted rows, no timing involved.
 
-**The static check was started in v0.5.117 and is not finished.** What it
-established, from Spellbound's own fetch:
+**The static check was completed in v0.5.118, and it refutes the
+rows-per-note hypothesis outright.**
 
-| | |
+The blocker in v0.5.117 was my own misreading. Only one instruction reaches
+`$E11C` — the `BVS` at `$E0E0` — and `$E132 BPL $E164` runs straight into
+`$E16B`, so **both paths converge on the index advance**. There is no loop.
+The consumption rules are:
+
+| status byte | bytes consumed |
 |---|---|
-| `$E0C2` | status byte read; `AND #$1F` is the wait, stored to the duration counter at `$E0CB` |
-| `$E0CB` + `DEC $E4CA,X / BMI` | the note lasts **wait + 1** ticks — the same rule `patterns.py` implements |
-| `$E0E2` | index advances past the status byte, **only when bit 6 is clear** |
-| `$E0EF` | index advances past an operand, when bit 7 is set |
-| `$E16B` | index advances past the note byte, on the note path |
+| bit 6 set (no note) | 1 — the status alone, advanced at `$E16B` |
+| bit 6 clear | 2, or 3 with bit 7 set (status + operand + note) |
 
-**What blocks it:** bit 6 set sends the fetch to `$E11C`, and nothing in that
-path advances the pattern index — which cannot be right, since the player
-would re-read the same byte forever. `$E11C` is therefore reached from more
-than one context, and which increments apply needs the control flow traced
-properly rather than by reading forward from each site.
+with `wait = b & $1F` and a `DEC`/`BMI` counter, so an event lasts `wait + 1`.
+Decoding every pattern from those rules and comparing against what the
+converter emits:
 
-Do not write the independent decoder until that is resolved. A decoder built
-on this model would produce a byte count that looks authoritative and is
-wrong, and this section has already produced three numbers that had to be
-retracted — 3.75 (7 gaps), Spellbound's first 2.20 (circular method), and
-§7c's direction (backwards). The value of the static check is that it owes
-nothing to timing; that value is lost if the decode itself is guessed.
+| file | patterns | player units | our rows | ratio | exact |
+|---|---:|---:|---:|---:|---:|
+| Spellbound | 41 | 8080 | 8080 | 1.0000 | **41/41** |
+| Warhawk | 49 | 3775 | 3775 | 1.0000 | 49/49 |
+| Commando | 44 | 3392 | 3392 | 1.0000 | 44/44 |
 
-**The tool now refuses rather than states.** `pace()` requires
-`MIN_PACE_GAPS = 40` matched gaps and an interquartile range within
-`MAX_PACE_IQR = 10%` of the median, both calibrated against the corpus. Over
-the 95 files, 60 still report a row and 23 refuse with a reason. Every number
-§7b and §7c were built on came from this measure, and it had no notion of its
-own confidence.
+**Our rows equal the player's units, pattern for pattern.** There is no
+rows-per-note defect in Spellbound or anywhere else these rules apply, and
+§7c is dead on both halves.
 
-**What this leaves.** Rows per note is not a known defect any more — the
-decoder emits `wait + 1`, both players' counters are `DEC`/`BMI`, and the two
-files that suggested otherwise are one noise and one contested. If it is ever
-to be checked, do it statically: the player's `wait` bytes against our emitted
-rows, with no timing in the loop.
+### What that says about `--pace`, which matters more
+
+Spellbound's `-m1` ratio of 1.333 is wrong, and it passes **every** confidence
+gate: 100 matched gaps, an IQR of 5.9%, and 59% coverage of the original's
+notes. Warhawk's coverage is 58% and its ratio is right, so no threshold
+separates them — tuning one to catch Spellbound would reject a good file.
+
+v0.5.118 adds the coverage measure anyway, because a sliver-sized sample is a
+real hazard, but records honestly that **on this corpus it rejects nothing the
+count gate did not already reject, and it does not catch the known-wrong
+figure**. A confidence gate cannot substitute for a measurement of a different
+kind. The static count owed nothing to timing, and that is the only reason it
+settled this.
+
+Also fixed in passing: an unreliable rate used to discard the whole estimate,
+so Warhawk — correct at 2.25 — refused because its *other* rate was thin. Only
+the offending rate is dropped now.
+
+**Spellbound is left with one genuine open question**: its row is 2.20
+(v0.5.116, unbiased mod-N), its rows per note are exact, and yet `--pace` sees
+1.333 where 1.82 follows. With the two factors it conflates both now measured
+and correct, what is left is that its matched notes are unrepresentative in
+some way coverage does not capture — its melody agreement is 11%.
 
 ## 8. Four players have no expressible rate
 

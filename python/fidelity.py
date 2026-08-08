@@ -2507,6 +2507,9 @@ def ticks_report(sid: Path, args) -> str:
 # 0-3%, while the two that produced §7c carried 7 and 19.
 MIN_PACE_GAPS = 40
 MAX_PACE_IQR = 0.10
+# ...and the matched notes must cover enough of the original to be a sample of
+# it rather than of whichever fragment happened to survive the conversion.
+MIN_PACE_COVERAGE = 0.30
 
 
 def matched_gaps(orig: Voice, ours: Voice,
@@ -2572,8 +2575,25 @@ def pace(orig: Trace, ours: Trace) -> dict:
     ratios = sorted(b / a for a, b in g)
     q1, q3 = ratios[len(ratios) // 4], ratios[3 * len(ratios) // 4]
     median = ratios[len(ratios) // 2]
+    # How much of the original the matched notes cover. This guards a real
+    # hazard -- a tight IQR over many gaps is still a biased sample if
+    # difflib matched a sliver of the tune -- but be clear about what it does
+    # NOT do: on this corpus it rejects nothing the count gate did not already
+    # reject, and it does not catch the one figure known to be wrong.
+    # Spellbound's -m1 ratio passes all three gates (100 gaps, 5.9% IQR, 59%
+    # coverage) and is still wrong; a direct count of its pattern data settled
+    # that (v0.5.118), and no threshold here would have. Lowering the bar to
+    # catch it would reject Warhawk, whose coverage is 58% and whose ratio is
+    # right. A confidence gate cannot substitute for a measurement of a
+    # different kind.
+    total = sum(len(v.attacks) for v in orig)
     out = {"n": len(g), "slope": num / den if den else None,
-           "median": median, "q1": q1, "q3": q3, "spread": q3 - q1}
+           "median": median, "q1": q1, "q3": q3, "spread": q3 - q1,
+           "coverage": (len(g) + 1) / total if total else 0.0}
+    if out["coverage"] < MIN_PACE_COVERAGE:
+        out["unreliable"] = (f"only {out['coverage']:.0%} of the original's "
+                             f"notes were matched -- too little of the tune "
+                             f"to time")
     # A wide IQR means the matched notes do not agree with each other about
     # the ratio, so their median is not a row length whatever its value.
     if median and (q3 - q1) / median > MAX_PACE_IQR:
@@ -2632,6 +2652,9 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
         # original's row in frames -- the same number whichever rate it is
         # taken at, which is what makes it worth reporting over a slope.
         ours = tempo / m if tempo else None
+        if got.get("unreliable"):
+            out.append(f"       ({got['unreliable']})")
+            continue
         seen.append((m, got, (ours / got["median"]) if ours else None))
         out.append(
             f"  -m{m}: our row {'' if ours is None else f'{ours:.2f} frames, '}"
@@ -2641,10 +2664,6 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     if seen:
         trues = [t for _, _, t in seen if t]
         spread = min(g["spread"] for _, g, _ in seen)
-        bad = [g.get("unreliable") for _, g, _ in seen if g.get("unreliable")]
-        if bad:
-            out.append(f"  **no row length**: {bad[0]}")
-            trues = []
         if trues:
             out.append(
                 f"  **their row is {sum(trues) / len(trues):.2f} frames**, "
