@@ -2898,12 +2898,16 @@ row at about 1.3x real time, against siddump's fraction of a second.
 
 #### The corpus run, and the premise it half-refuted
 
-95 rows, **0 failed traces**. The corpus means barely move — but the figures
-v0.5.132 published for them (`wave` 63.9% → 64.7%) came from the run with the
-denominator defect below and are superseded; the corrected corpus figures are
-in the table at the end of this section. Either way the mean is the least
-informative number here, because it averages per-file disagreements of up to
-±12.6 points that cancel.
+95 rows, **0 failed traces**, re-run after the denominator fix below.
+Corrected: `wave` 63.9% → **64.3%**, `adsr` 69.3% → **69.0%** — both essentially
+flat, where the defective run had reported 64.7% and had folded a real
+resolution effect together with an inflation bug into one number. Corpus-wide
+mean absolute delta on `wave` is **1.09 pp** over 82 files: most files move by
+less than a point, and the mean is still the least informative number here
+because a handful carry the whole effect. Six files move by more than 4 pp,
+`Human_Race` (+11.1) far out ahead of the rest — the one entry from the
+original six-file sample that survives as a genuine anomaly rather than an
+artefact of the denominator or the reduction rule.
 
 Because `--vice` changes two things at once (a finer trace *and* a graded
 rule), the per-file movement was decomposed by re-running the same files at
