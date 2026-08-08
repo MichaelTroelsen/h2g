@@ -3131,16 +3131,14 @@ this to rest — s0→o0 matches at **89%**, clean on the diagonal, s1→o1 at
 100%, s2→o2 at 95%. Same piece, same subtune index, both sides. The
 divergence is real, not a bookkeeping artifact.
 
-**What the real player does at that boundary is not confirmed.** The
-detector finds `track_selector: True` for Commando's player — a genuine
-mechanism, but (contrary to the first hypothesis here) not a *chaining*
-primitive: `detect.py:634-660` shows it **rewrites `track_lo`/`track_hi`** to
-locate a subtune's own track table through an extra indirection, the same
-pointers any player uses afterward. It explains how the *right* table gets
-found (consistent with `--diagnose`'s clean match), not what happens when
-that table runs out. Reading the 6502 at the point the real player consumes
-`$FF` — does it loop, freeze, or jump — is the only way to close this, and it
-was not undertaken here.
+**What the real player does at that boundary was not confirmed here — see
+§7.qq, where it was.** The detector finds `track_selector: True` for
+Commando's player — a genuine mechanism, but (contrary to the first
+hypothesis here) not a *chaining* primitive: `detect.py:634-660` shows it
+**rewrites `track_lo`/`track_hi`** to locate a subtune's own track table
+through an extra indirection, the same pointers any player uses afterward.
+It explains how the *right* table gets found (consistent with
+`--diagnose`'s clean match), not what happens when that table runs out.
 
 #### A wrong turn worth keeping in the record
 
@@ -3223,6 +3221,66 @@ by-hand check, not as evidence on its own.
 > for. **Validate a screen against the one case you already understand before
 > trusting it on the other ninety-four.**
 
+
+### 7.qq The `$FF`/`$FE` boundary, read live: it loops, and h2g already had it right
+
+§7.pp left one thing unconfirmed: what Commando's real player does when a
+voice's track hits Hubbard's own end marker — loop, freeze, or chain to
+another table. Running `Commando.sid` live (RetroDebugger, C64 core, PSID
+loaded directly) and reading the 6502 at the point each voice's track byte is
+fetched settles it. The read/dispatch, per voice (`X` = voice index), sits at
+`$5086`-`$50AA`:
+
+```
+$5086  LDY $54EC,X        ; Y = this voice's own order-read position
+$5089  LDA ($5D),Y        ; fetch the track byte at that position
+$508B  CMP #$FF
+$508D  BEQ $5099          ; -> LDA #$00 / STA $54EC,X (and two companions) / JMP $5086
+$508F  CMP #$FE
+$5091  BNE $50AA           ; (ordinary pattern number: fall through to $50AA)
+$5093  JSR $5003          ; -> JMP $5F42 -> LDA #$C0 / STA $5519 / RTS
+$5096  JMP $53A5
+```
+
+**`$FF` is a per-voice loop, nothing else.** `$5099` zeroes `$54EC,X` — this
+voice's own read position — and jumps straight back to `$5086` to re-fetch
+entry 0 of the *same* track. No other table is consulted, no pointer is
+reloaded (`$5D`/`$5E`, this voice's track pointer, is untouched), no other
+voice is involved. `--legal-restart`'s restart-to-0 marker is not a
+Goattracker-side workaround for a gap in the source format — it is a literal
+transcription of what the 6502 does.
+
+**`$FE` is a different, non-looping event.** It does not touch `$54EC,X` at
+all; it calls `$5F42`, which sets `$5519` to `$C0` (bit 7, tested by the
+`BMI $5038` a few instructions earlier at `$5018` — a whole-tune "ended" flag,
+not a per-voice one) and returns. `tracks.py:222-228`'s version 0/1/3 case
+already encodes exactly this distinction — `$FF` → `[0xFF, 0x00]` (loop to
+row 0), `$FE` → `[0xFF, 0xFD]` (the sentinel `legalise_restarts` treats as
+"ended," not "loop") — decoded from the static byte patterns, before any of
+this was run live. The dynamic read confirms the static one; there was
+nothing to fix here.
+
+**This also confirms the converted track data itself is faithful.**
+`convert_tracks` on Commando's subtune 0 produces voice orderlists of 64, 63,
+and 123 entries (matching §7.pp exactly), each independently ending in its
+own `[0xFF, 0x00]` — i.e. each voice loops back to its *own* row 0 on its
+*own* schedule, not a shared song-level restart. That independence is not an
+artifact of the conversion; it is what `$54EC,X` being per-voice state (`X`
+indexes voice 0/1/2 throughout the fetch/dispatch code above) makes true of
+the original player as well.
+
+**What this leaves unexplained.** The mechanism and the lengths both check
+out, which narrows §7.pp's open question rather than closing it: if each
+voice already loops independently at the length the source encodes, 64 and
+63 (voices 0/1) drift by one entry per lap against each other while voice
+2's 123-entry lap is roughly two of theirs — the kind of near-but-not-quite
+relationship that keeps recombining audibly for several laps before any
+short cycle repeats exactly. That is a plausible source of "the original
+keeps introducing content" on its own, independent of any converter defect,
+*if* Goattracker's own playback actually advances three orderlists at their
+individually-encoded lengths without forcing them back into lockstep at some
+shared point. Whether it does is a `goatwriter.py`/pattern-length question,
+not a 6502 one, and was not checked this pass.
 
 ## 9. The `.sng` output layout
 
