@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.121 presets.py",
+  "generator": "h2g 0.5.125 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -395,10 +395,10 @@
       "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 11723,
+      "bytes": 11739,
       "subtunes": 1,
       "rows": 8522,
-      "multiplier": 1
+      "multiplier": 5
     },
     "Knucklebusters.sid": {
       "max_rows": 128,
@@ -495,10 +495,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20577,
+      "bytes": 20777,
       "subtunes": 1,
       "rows": 9083,
-      "multiplier": 1
+      "multiplier": 5
     },
     "Nemesis_the_Warlock.sid": {
       "max_rows": 94,
@@ -535,10 +535,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23326,
+      "bytes": 23390,
       "subtunes": 1,
       "rows": 12339,
-      "multiplier": 2
+      "multiplier": 5
     },
     "One_Man_and_his_Droid.sid": {
       "max_rows": 128,
@@ -645,10 +645,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21700,
+      "bytes": 21948,
       "subtunes": 1,
       "rows": 9973,
-      "multiplier": 1
+      "multiplier": 6
     },
     "Saboteur_II.sid": {
       "max_rows": 128,

@@ -439,12 +439,22 @@ def find_song_speeds(sid: SidFile,
     return None
 
 
-# How far the -S factor may be raised to make a fractional row exact. Six
-# puts the play routine at ~300 calls a second, which still fits a PAL frame
-# (a call is 1-2k cycles against 19656); beyond that the rate stops being
-# playable and the near-integer rows it would buy are within ~1% of a whole
-# number anyway, so they round instead.
-MAX_ROW_DENOMINATOR = 4
+# How far the -S factor may be raised to make a fractional row exact.
+#
+# The bound is playability, not fidelity. Six calls a frame is ~300 a second
+# and about 9k cycles of a PAL frame's 19656 at 1.5k a call -- heavy but
+# real. Ten would be three quarters of the frame and twenty impossible, and
+# the rows those would buy are within ~1.3% of a whole number anyway (3.02,
+# 3.03, 4.04), so they round.
+#
+# v0.5.121 capped this at 4 because -S5 appeared to regress three files. It
+# did not: siddump samples once per frame whatever the call rate, so tracing
+# a multiplier-5 file at -m5 discards four calls in five along with the gate
+# edges inside them (v0.5.124). Measured at equal sampling with
+# `fidelity.py --equal-calls`, nothing regresses and three files gain --
+# Kings_of_the_Beach_intro, the supposed worst case at 96% -> 61%, is 96% at
+# -S5.
+MAX_ROW_DENOMINATOR = 6
 
 
 def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,

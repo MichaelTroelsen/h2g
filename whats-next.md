@@ -941,11 +941,40 @@ are not powers of two either. **Do not raise the cap without re-measuring.**
   entries 2-5 run `m` times faster per row — but that is a separate question
   from the attack count and is not what these numbers show.
 
-  **Next, in order:** give `fidelity.py` an equal-calls comparison mode
-  (trace ours at `-m1` over `multiplier x seconds` against the original's
-  `seconds`, compare sequences only), re-measure all three files including
-  Kings_of_the_Beach_intro, and only then decide the cap. Do not raise it on
-  the two files above.
+  **Built in v0.5.125: `fidelity.py --equal-calls`.** It traces our conversion
+  at one call per frame over `multiplier x seconds` — the same music and the
+  same play calls, sampled as finely as the original. Note sequences are
+  time-independent so melody, sequence and pitch survive; every frame-aligned
+  dimension (wave, adsr, pul, filt, cut, bend) is **dropped, not
+  approximated**, because our frames then cover `multiplier` times the real
+  time the original's do.
+
+  With it, the cap question settles the other way:
+
+  | file | cap 4 | cap 5 | cap 6 |
+  |---|---:|---:|---:|
+  | Kings_of_the_Beach_intro | 96% (`-S1`) | 96% (`-S5`) | 96% |
+  | Mr_Meaner | 91% (`-S1`) | **96%** (`-S5`) | 96% |
+  | Off_the_Cuff | 89% (`-S2`) | **100%** (`-S5`) | 100% |
+  | Rock_Tells_the_Tale | 61% (`-S1`) | 61% | **74%** (`-S6`) |
+
+  **Kings_of_the_Beach_intro, the supposed worst case at 96% → 61%, is 96%.**
+  It never regressed. Corpus-wide under equal sampling, cap 6 beats cap 4
+  (86.68% against 86.31%) with three files up and none down, so
+  `MAX_ROW_DENOMINATOR` is **6** and the bound is now playability rather than
+  an artefact: six calls a frame is ~9k cycles of a PAL frame's 19656, ten
+  would be three quarters of it, and the rows beyond six are within ~1.3% of
+  a whole number and round.
+
+  ### The gap this opens, which is larger than the cap
+
+  Under equal sampling the corpus mean melody is **86.3%**; as `FIDELITY.md`
+  traces it, **78.3%**. That eight-point gap is not the conversions — it is
+  every multiplier > 1 file losing gate edges to the once-per-frame sample.
+  The report is a lower bound, and the more the converter uses the multiplier
+  the further below the truth it sits. `--equal-calls` is the honest number
+  for the sequence dimensions; there is no equivalent yet for the register
+  ones, which need a per-call trace the VICE harness could give.
 
   **This matters beyond `-S5`.** If per-call structures degrade with the
   multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just

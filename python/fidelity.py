@@ -981,6 +981,16 @@ NOT_MEASURED = (
     "**note length** -- `$D404`'s gate bit is read as an *edge* (which is what "
     "makes an attack an attack) and never as a duration, so a note held twice "
     "as long with the right waveform scores the same",
+    "**a conversion packed above `-S4`** -- siddump samples the SID registers "
+    "once per frame whatever the call rate, so a multiplier-5 file has four "
+    "calls in five discarded and every gate edge inside them with it. Those "
+    "rows read far below the truth: Kings_of_the_Beach_intro scores 61% here "
+    "and **96%** under `--equal-calls`, which traces the same play calls at "
+    "the original's sampling; Off_the_Cuff 76% against **100%**. Corpus-wide "
+    "the gap is about eight points, and it widens as the converter uses the "
+    "multiplier more. Read `--equal-calls` for the sequence dimensions of any "
+    "row whose multiplier exceeds 4; the register dimensions have no "
+    "equivalent yet and need a per-call trace",
     "**tempo and row rate** -- no column here scores how long a row "
     "lasts. `--pace` is the mode that does, and on this corpus it finds "
     "row-length errors of 10-33% that every column below is blind to. "
@@ -1364,8 +1374,24 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
     # that is the rate its tempo values were written for. Tracing each at its
     # own rate is what puts both on one time axis -- see run_siddump.
-    b = run_siddump(packed, args.seconds, sub, args.siddump,
-                    calls=getattr(args, "calls_per_frame", None) or multiplier)
+    # siddump samples the registers once per frame whatever the call rate, so
+    # tracing a multiplier-m file at -m{m} throws away m-1 of every m calls.
+    # A gate that rises and falls inside one frame leaves no edge, and the
+    # attack count falls with m for reasons that have nothing to do with the
+    # conversion: Kings_of_the_Beach_intro reads 52 attacks at -m5 and 87 at
+    # -m1 over the identical 2500 calls (v0.5.124).
+    #
+    # --equal-calls trades the time axis for the resolution: one call per
+    # frame over m times the window is the same music at the original's
+    # sampling. Only the sequence dimensions survive it -- see below.
+    equal = bool(getattr(args, "equal_calls", False)) and multiplier > 1
+    if equal:
+        b = run_siddump(packed, args.seconds * multiplier, sub, args.siddump,
+                        calls=1)
+        row["equal_calls"] = multiplier
+    else:
+        b = run_siddump(packed, args.seconds, sub, args.siddump,
+                        calls=getattr(args, "calls_per_frame", None) or multiplier)
     if multiplier > 1:
         calls = getattr(args, "calls_per_frame", None) or multiplier
         row["traced_calls_per_frame"] = calls
@@ -1379,6 +1405,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 packed, args.seconds, sub, args.siddump, calls=1))["melody"]
     row["status"] = "measured"
     row.update(compare(a, b))
+    if row.get("equal_calls"):
+        # Our frames now cover `multiplier` times the real time the
+        # original's do, so anything compared frame against frame is
+        # meaningless here. Dropping them is what keeps the mode honest: the
+        # row reports what it measured and `dimensions_present` reports the
+        # rest as absent rather than as agreement.
+        for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides"):
+            row.pop(k, None)
     best_dump = b
     if args.search_subtunes > 1:
         # Our subtune numbering does not have to line up with the original's:
@@ -1401,10 +1435,17 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 best_dump = cand_dump
         row["matched_subtune"] = best_at
     nframes = args.seconds * 50
-    row.update(wave_compare(a, best_dump, nframes=nframes))
-    row.update(adsr_compare(a, best_dump, nframes))
-    row.update(pulse_compare(a, best_dump, nframes))
-    row.update(filter_compare(a.filter, best_dump.filter, nframes))
+    if not row.get("equal_calls"):
+        # Every one of these walks the two traces frame against frame, so a
+        # stretched time axis makes them compare our frame k to the original's
+        # frame k when ours covers `multiplier` times the real time. They are
+        # not approximated here, they are omitted -- dimensions_present then
+        # reports them absent, which is the difference between "not measured"
+        # and "measured as disagreeing".
+        row.update(wave_compare(a, best_dump, nframes=nframes))
+        row.update(adsr_compare(a, best_dump, nframes))
+        row.update(pulse_compare(a, best_dump, nframes))
+        row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
         # neither side plays anything is not, and calling both "silent" put
@@ -2998,6 +3039,17 @@ def main(argv=None) -> int:
                         "per run: the files in it have fixed names, so two "
                         "harnesses sharing one directory silently measure each "
                         "other's files. Name one only to keep the intermediates")
+    p.add_argument("--equal-calls", action="store_true",
+                   help="trace our conversion at one call per frame over "
+                        "`multiplier x seconds` instead of at its own call "
+                        "rate over `seconds`. Same music, same number of play "
+                        "calls, but sampled as finely as the original -- "
+                        "siddump reads the registers once per frame whatever "
+                        "the rate, so a multiplier-5 file loses four calls in "
+                        "five and its gate edges with them. Note sequences "
+                        "are time-independent so melody, sequence and pitch "
+                        "survive; every frame-aligned dimension (wave, adsr, "
+                        "pul, filt, cut, bend) does not and is dropped")
     p.add_argument("--skip-gate", action="store_true",
                    help="convert with --skip-gate: take the counter above the "
                         "speed gate into account when deriving the row, "

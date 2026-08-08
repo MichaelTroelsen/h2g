@@ -131,20 +131,27 @@ def test_a_fractional_row_is_exact_at_the_right_multiplier():
     assert Fraction(int(f * m), m) == sp.exact_row(0)   # exact, not rounded
 
 
-def test_the_denominator_is_capped():
-    """Beyond 4 the multiplier stops paying for itself on this corpus.
+def test_the_denominator_is_capped_by_playability():
+    """Six calls a frame is ~9k cycles of a PAL frame's 19656 -- heavy but
+    real. Ten would be three quarters of the frame, and the rows beyond six
+    are within ~1.3% of a whole number anyway, so they round.
 
-    -S5 regressed all three files it reached (Kings_of_the_Beach_intro
-    96% -> 61%, Mr_Meaner 91% -> 76%, Off_the_Cuff 89% -> 76%) while -S2..-S4
-    gained on fourteen. Corpus mean melody is 78.25% at a cap of 4 against
-    77.64% at 6, so the bound is empirical and recorded as such.
+    The cap was 4 for three versions on a measurement artefact: siddump
+    samples once per frame whatever the call rate, so a -m5 trace of a
+    multiplier-5 file drops four calls in five. At equal sampling nothing
+    regresses -- Kings_of_the_Beach_intro, read as 96% -> 61%, is 96%.
     """
     from fractions import Fraction
     import h2g.goatwriter as gw
-    assert gw.MAX_ROW_DENOMINATOR == 4
-    sp = _speeds((3,), (5,))                     # 18/5 -- needs -S5
+    assert gw.MAX_ROW_DENOMINATOR == 6
+    sp = _speeds((3,), (5,))                     # 18/5 -- reachable at -S5
     assert sp.exact_row(0) == Fraction(18, 5)
-    assert effective_frames(sp, 0, skip_gate=True) == 3   # falls back to the gate
+    assert effective_frames(sp, 0, skip_gate=True) == Fraction(18, 5)
+    assert recommended_multiplier(sp, 0, skip_gate=True) == 5
+    # ...and 33/10 is not: that would be 500 calls a second.
+    sp10 = _speeds((3,), (10,))
+    assert sp10.exact_row(0) == Fraction(33, 10)
+    assert effective_frames(sp10, 0, skip_gate=True) == 3
 
 
 def test_an_integer_row_still_takes_no_multiplier():
