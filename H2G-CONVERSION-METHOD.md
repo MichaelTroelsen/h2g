@@ -2898,38 +2898,77 @@ row at about 1.3x real time, against siddump's fraction of a second.
 
 #### The corpus run, and the premise it half-refuted
 
-95 rows, **0 failed traces**. The corpus means barely move — `wave` 63.9% →
-64.7%, `adsr` 69.3% → 69.2% — but that is an average over disagreements of up
-to ±12.6 points per file, cancelling.
+95 rows, **0 failed traces**. The corpus means barely move — but the figures
+v0.5.132 published for them (`wave` 63.9% → 64.7%) came from the run with the
+denominator defect below and are superseded; the corrected corpus figures are
+in the table at the end of this section. Either way the mean is the least
+informative number here, because it averages per-file disagreements of up to
+±12.6 points that cancel.
 
 Because `--vice` changes two things at once (a finer trace *and* a graded
 rule), the per-file movement was decomposed by re-running the same files at
-`--vice-reduce last`, which is the finer trace under siddump's own rule:
+`--vice-reduce last`, which is the finer trace under siddump's own rule. **The
+first version of that decomposition, published in v0.5.132, was wrong**, and
+what it was wrong about is worth more than the table it produced.
 
-| file | siddump | vice/`last` | vice/`overlap` | resolution | rule |
-|---|---:|---:|---:|---:|---:|
-| Bangkok_Knights (`-S1`) | 2.3% | 14.8% | 14.9% | **+12.5** | +0.1 |
-| Human_Race (`-S1`) | 70.1% | 81.1% | 81.2% | **+11.0** | +0.1 |
-| IK_plus (`-S1`) | 40.0% | 46.8% | 46.9% | +6.7 | +0.2 |
-| Kings_of_the_Beach_intro (`-S5`) | 85.2% | 78.8% | 78.9% | −6.4 | +0.1 |
-| Lightforce (`-S2`) | 72.3% | 84.9% | 78.5% | **+12.6** | −6.4 |
-| Thing_on_a_Spring (`-S2`) | 81.1% | 92.2% | 86.7% | +11.1 | −5.6 |
-| **mean abs** | | | | **10.1 pp** | **2.1 pp** |
+#### A third effect was hiding inside the first: the denominator
 
-**The resolution does about five times the work of the reduction rule.** That
-is worth knowing before anyone tunes the rule further: it is the second-order
-term.
+`wave_compare` drops a frame where both sides select no waveform, so that a
+voice silent in both cannot inflate the score. v0.5.131's `--vice` translated
+that as "drop the frame when both whole histograms are silent" — which is not
+the same rule. A frame in which one side flickered for a few rasterlines and
+**both sides were silent at the boundary** then counted as a *full agreement*
+rather than being dropped. That is exactly the inflation the original rule
+exists to prevent.
 
-And the premise this was built on is half wrong. `--vice` was motivated by
-multispeed files, where siddump discards `m − 1` of every `m` play calls — so
-the disagreement should have concentrated at high multipliers. It does not.
-The three largest movers are **`-S1` files**, where both instruments see every
-play call, and the mean shift by multiplier has no monotone trend at all
-(+0.73 pp at `-S1`, +1.97 at `-S2`, −0.06 at `-S3`, −3.10 at `-S5`). So
-siddump's per-frame register view differs from the chip's actual state for a
-reason *other* than call-rate undersampling, and that reason is not yet
-identified. It is the next thing to find out about the harness, and it is
-named here rather than left inside a mean that shows +0.8 points.
+Chasing it down began as a hunt for a fault in the harness — two instruments
+disagreeing by ten points at `-S1`, where neither is undersampling, is a claim
+about every register number this project has published. Traced on the same
+file, siddump and VICE agree **100%** on the original and 99.8% on the packed
+conversion, at a constant one-frame offset that cancels because `--vice`
+compares VICE against VICE. The instruments were never in disagreement. The
+gap was in `vice_register_compare`.
+
+The fix is the graded form of the same rule: what leaves the denominator is
+the **overlapping silent share**, `min(share_a(0), share_b(0))`, not the whole
+frame. A frame both sides spend silent contributes weight 0; a frame one side
+flickers through contributes 12/312 of a frame and agrees on none of it.
+
+#### The decomposition, with all three separated
+
+| file | siddump | resolution only | + rule | resolution | rule | denominator (defect) |
+|---|---:|---:|---:|---:|---:|---:|
+| Bangkok_Knights (`-S1`) | 2.3% | 2.3% | 2.3% | 0.0 | 0.0 | **+12.5** |
+| Human_Race (`-S1`) | 70.1% | 81.1% | 81.2% | **+11.0** | +0.1 | 0.0 |
+| IK_plus (`-S1`) | 40.0% | 40.1% | 40.2% | +0.1 | +0.1 | **+6.7** |
+| Kings_of_the_Beach_intro (`-S5`) | 85.2% | 78.8% | 78.9% | −6.4 | +0.1 | 0.0 |
+| Lightforce (`-S2`) | 72.3% | 84.9% | 78.5% | **+12.6** | −6.4 | 0.0 |
+| Thing_on_a_Spring (`-S2`) | 81.1% | 92.2% | 86.7% | +11.1 | −5.6 | 0.0 |
+| **mean abs** | | | | **6.9 pp** | **2.1 pp** | **3.2 pp** |
+
+Resolution is still the largest term and the rule is still the smallest, so
+the ordering v0.5.132 reported survives — but resolution was overstated at
+10.1 pp because a defect worth 3.2 pp was being counted as part of it, and on
+the two files where the defect dominated (Bangkok_Knights, IK_plus) the
+resolution effect is **zero**. The two largest entries in the original table
+were not measuring what the table said they were.
+
+The premise this was built on still comes out only half right. `--vice` was
+motivated by multispeed files, where siddump discards `m − 1` of every `m`
+play calls, so the disagreement should have concentrated at high multipliers.
+It does not: Human_Race and Bangkok_Knights are `-S1` files and the multiplier
+trend is not monotone. But two of the three largest `-S1` movers turned out to
+be the denominator defect rather than the trace, so the anomaly is smaller
+than v0.5.132 claimed — Human_Race, at `-S1` and +11.0 pp of genuine
+resolution, is what is left of it, and it is one file rather than a pattern.
+
+> **The second transferable lesson, and the more expensive one:** v0.5.132
+> published a decomposition that separated two effects and never asked whether
+> there was a third. The check that found it was not subtle — run the new
+> instrument under the old instrument's *rule* and see whether it reproduces
+> the old number. It did not, on two files out of six. **When a new
+> measurement disagrees with an old one, make the new one imitate the old one
+> exactly before believing the difference is real.**
 
 > **The transferable lesson:** the instrument's resolution and the
 > instrument's *stability* are different properties, and this repo had been

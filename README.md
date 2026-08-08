@@ -1392,7 +1392,15 @@ moves each candidate rule by:
 
 So the rule the report has always used is the least stable of the four. The
 counting dimensions still take the duration-weighted majority, because a count
-needs one definite value per frame. See H2G-CONVERSION-METHOD.md § 7.nn.
+needs one definite value per frame.
+
+**Shared silence leaves both numerator and denominator.** `wave_compare` drops
+a frame both sides spend silent so that a silent voice cannot inflate the
+score; at 312 samples a frame the graded form of that rule is to remove the
+*overlapping silent share*, `min(share_a(0), share_b(0))`. v0.5.131 removed
+the frame only when both whole histograms were silent, which scored a frame
+one side flickered through as a full agreement — fixed in v0.5.133. See
+H2G-CONVERSION-METHOD.md § 7.nn.
 
 Not the default: two emulator runs a row, at about 1.3x real time each. `vsid`
 is found at `--vice-exe` or `H2G_VSID`; a row whose trace fails is marked

@@ -978,3 +978,53 @@ def test_a_tie_is_not_a_bend():
     got = fidelity.parse_dump(dump)
     voices = got[0] if isinstance(got, tuple) else got
     assert voices[0].ties == 1 and fidelity._bend_travel(voices[0]) == 0
+
+
+# --- --vice: shared silence must not inflate the score ----------------------
+
+def test_shared_silence_leaves_both_numerator_and_denominator():
+    """The graded form of `wave_compare`'s "skip frames silent in both".
+
+    v0.5.131 dropped a frame only when both whole histograms were silent, so
+    a frame in which one side flickered for a few rasterlines -- both sides
+    silent at the boundary -- was scored as a *full agreement* instead of
+    being dropped. That is the inflation the original rule exists to prevent;
+    it lifted Bangkok_Knights from 2.3% to 14.8% and was most of what was
+    first attributed to the finer trace.
+    """
+    from collections import Counter
+    # both sides silent all frame: nothing to compare
+    num, w = fidelity._graded_agreement(
+        Counter({0: 312}), Counter({0: 312}), 0, 0, "overlap")
+    assert (num, w) == (0.0, 0.0)
+
+    # one side flickers for 12 lines; 300 lines of silence are shared and must
+    # not be credited. The frame is worth 12/312 of a frame, agreeing on none.
+    num, w = fidelity._graded_agreement(
+        Counter({0: 300, 0x40: 12}), Counter({0: 312}), 0, 0, "overlap")
+    assert w == pytest.approx(12 / 312)
+    assert num == pytest.approx(0.0)
+
+    # a genuinely shared waveform still scores its share
+    num, w = fidelity._graded_agreement(
+        Counter({0x40: 312}), Counter({0x40: 200, 0x10: 112}), 0x40, 0x10,
+        "overlap")
+    assert w == pytest.approx(1.0)
+    assert num == pytest.approx(200 / 312)
+
+
+def test_the_non_graded_rules_reproduce_siddumps_own_arithmetic():
+    """`--vice-reduce last` must equal siddump's rule on the same values.
+
+    This is what makes the trace resolution and the reduction rule separable:
+    run the finer trace under the coarser rule and the difference is the
+    resolution alone. Without it the two effects were reported as one.
+    """
+    from collections import Counter
+    # both silent at the boundary -> dropped, whatever happened mid-frame
+    assert fidelity._graded_agreement(
+        Counter({0: 300, 0x40: 12}), Counter({0: 312}), 0, 0, "last") == (0.0, 0.0)
+    # differing at the boundary -> counted, scored 0
+    assert fidelity._graded_agreement(
+        Counter({0x40: 312}), Counter({0x10: 312}), 0x40, 0x10,
+        "last") == (0.0, 1.0)

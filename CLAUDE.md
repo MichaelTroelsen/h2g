@@ -120,7 +120,17 @@ test dependency).
   reports -- moves up to 2.64pp and `overlap` 0.13pp, so the default is
   `overlap` and `any` is disqualified for saturating. Resolution and stability
   are different properties; do not assume the coarser instrument is the
-  steadier one. See H2G-CONVERSION-METHOD.md section 7.nn.
+  steadier one.
+  **And translate the old rule exactly before believing a difference.**
+  `wave_compare` drops a frame both sides spend silent; v0.5.131's `--vice`
+  translated that as "both whole histograms silent", which scored a frame one
+  side flickered through as a full agreement and inflated Bangkok_Knights from
+  2.3% to 14.8%. v0.5.132 then published that inflation as evidence of the
+  finer trace. The graded rule is that the *overlapping silent share* leaves
+  numerator and denominator alike (`_graded_agreement`), and the check that
+  catches this class is: run the new instrument under the old instrument's
+  rule and confirm it reproduces the old number first. See
+  H2G-CONVERSION-METHOD.md section 7.nn.
 - **Do not conclude a change did nothing from a flat table — make the tool
   say it.** Since v0.5.77 every dimension declares the SID registers it reads,
   every row records which dimensions it actually compared, and the report ends

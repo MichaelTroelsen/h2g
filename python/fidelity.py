@@ -783,7 +783,7 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         u_noise += vu_n
     return {
         "wave": (agree / total) if total else None,
-        "wave_frames": total,
+        "wave_frames": round(total),
         "orig_noise_frames": o_noise,
         "our_noise_frames": u_noise,
         "wave_voices": per_voice,
@@ -945,6 +945,50 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int) -> dict:
     return out
 
 
+def _shared_silence(a, b, silent=0) -> float:
+    """The share of a frame on which BOTH sides hold the silent value.
+
+    `wave_compare` drops a frame where both sides select no waveform, so that
+    a voice silent in both cannot inflate the score. At 312 samples a frame
+    the same rule has to be graded rather than all-or-nothing: what leaves the
+    denominator is the *overlapping silent share*, not the whole frame.
+
+    Getting this wrong was a real defect in v0.5.131. The first version
+    dropped a frame only when both whole histograms were silent, so a frame in
+    which one side flickered for five rasterlines and both sides were silent
+    at the boundary was scored as a full agreement. That is precisely the
+    inflation `wave_compare`'s rule exists to prevent, and it lifted
+    Bangkok_Knights from 2.3% to 14.8% -- most of what v0.5.132 first
+    attributed to the finer trace.
+    """
+    na, nb = sum(a.values()), sum(b.values())
+    if not na or not nb:
+        return 0.0
+    return min(a.get(silent, 0) / na, b.get(silent, 0) / nb)
+
+
+def _graded_agreement(ha, hb, la, lb, mode: str, silent=0):
+    """(numerator, weight) for one frame, with shared silence removed.
+
+    Returns a weight of 0 for a frame both sides spend entirely silent, which
+    is the graded form of `continue`. For the non-graded rules the weight is
+    0 or 1 so that `--vice-reduce last` reproduces siddump's own arithmetic
+    exactly -- which is what makes the resolution and the rule separable.
+    """
+    if mode != "overlap":
+        if la == silent and lb == silent:
+            return 0.0, 0.0
+        cell_a = vicetrace.FrameCell(hist=ha, last=la)
+        cell_b = vicetrace.FrameCell(hist=hb, last=lb)
+        return vicetrace.agreement(cell_a, cell_b, mode), 1.0
+    quiet = _shared_silence(ha, hb, silent)
+    if quiet >= 1.0:
+        return 0.0, 0.0
+    na, nb = sum(ha.values()), sum(hb.values())
+    total = sum(min(ha[v] / na, hb.get(v, 0) / nb) for v in ha)
+    return total - quiet, 1.0 - quiet
+
+
 def vice_register_compare(orig_samples: list, our_samples: list,
                           mode: str = "overlap") -> dict:
     """The register dimensions from two per-rasterline VICE traces.
@@ -982,11 +1026,11 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     out: dict = {}
 
     # --- wave: class agreement, and noise frames per side -------------------
-    agree, total = 0.0, 0
+    agree, total = 0.0, 0.0
     o_noise = u_noise = 0
     wave_voices = []
     for vi in range(3):
-        va, vt, vo_n, vu_n = 0.0, 0, 0, 0
+        va, vt, vo_n, vu_n = 0.0, 0.0, 0, 0
         for f in range(nframes):
             a, b = wave_cells_o[f][vi], wave_cells_u[f][vi]
             # The class is the waveform-select nibble; the gate and the other
@@ -999,12 +1043,11 @@ def vice_register_compare(orig_samples: list, our_samples: list,
                 vo_n += 1
             if b.representative() & WF_NOISE:
                 vu_n += 1
-            if set(ca.hist) == {0} and set(cb.hist) == {0}:
-                continue
-            vt += 1
-            va += vicetrace.agreement(ca, cb, mode)
+            num, w = _graded_agreement(ca.hist, cb.hist, ca.last, cb.last, mode)
+            va += num
+            vt += w
         wave_voices.append({
-            "wave": (va / vt) if vt else None, "frames": vt,
+            "wave": (va / vt) if vt else None, "frames": round(vt),
             "orig_noise_frames": vo_n, "our_noise_frames": vu_n,
         })
         agree += va
@@ -1020,22 +1063,22 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     })
 
     # --- adsr: the envelope pair, compared whole ----------------------------
-    agree, total = 0.0, 0
+    agree, total = 0.0, 0.0
     adsr_voices = []
     for vi in range(3):
-        va, vt = 0.0, 0
+        va, vt = 0.0, 0.0
         for f in range(nframes):
             a, b = adsr_cells_o[f][vi], adsr_cells_u[f][vi]
-            if set(a.hist) == {0} and set(b.hist) == {0}:
-                continue
-            vt += 1
-            va += vicetrace.agreement(a, b, mode)
-        adsr_voices.append({"adsr": (va / vt) if vt else None, "frames": vt})
+            num, w = _graded_agreement(a.hist, b.hist, a.last, b.last, mode)
+            va += num
+            vt += w
+        adsr_voices.append({"adsr": (va / vt) if vt else None,
+                            "frames": round(vt)})
         agree += va
         total += vt
     out.update({
         "adsr": (agree / total) if total else None,
-        "adsr_frames": total,
+        "adsr_frames": round(total),
         "adsr_voices": adsr_voices,
     })
 
