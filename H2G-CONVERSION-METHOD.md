@@ -3288,20 +3288,66 @@ is therefore preserved all the way through — from the source player, through
 `convert_tracks`, through Goattracker's own playback — not collapsed at any
 point in between.
 
-**What this leaves unexplained.** Ruling out "the lengths are wrong" and
-"Goattracker resyncs them" was the goal here, and both are ruled out — but
-neither one actually predicts the specific defect §7.pp opened with, which
-is a **silence gap** (all three voices quiet, ~7.8–7.9s and every ~5.2s
-after — almost exactly voice 0's 64-entry lap), not "the same riff forever."
-An exact repeat of voice 0 every lap is *correct* given a 64-entry loop on
-both sides; three voices going simultaneously silent at that boundary, on
-h2g's side only, is a different claim that this pass did not test — it
-needs the original's own trace at the same 16–20s window (busy, per §7.pp's
-intro) checked against h2g's (quiet) to see whether the gap is a note/gate
-encoding defect at the loop seam, or something upstream of the orderlist
-mechanism entirely (a dynamic mid-song `track_lo`/`track_hi` swap the static
-dispatch-point reading above would not see, for instance). Not attempted
-this pass.
+**Traced next: the original at the same 16–20s window, against h2g's own
+packed output.** Bucketing attacks per second over a 26s trace (both sides
+packed/traced identically, `presets.json`'s own Commando options) settles
+it immediately — the original stays in the 7–17 attacks/second range for
+the entire 26s; h2g's own conversion matches that for the first ~8 seconds
+(8–17/s) and then **collapses to 0–2/s for the remaining 18** — not a
+different loop, not "the same riff forever," an actual near-total stop.
+This is neither the mechanism (§7.qq) nor the pacing (this section) —
+both check out faithful — so it is a third, independent defect, and it
+was found by isolating it: §7.qq/this section's checks used `--legal-restart`
+alone; the collapse only reproduces with `presets.json`'s full Commando
+options, so an option, not the orderlist or the engine, was next.
+
+#### The actual cause: `max_rows=128` has no headroom for an unterminated pattern
+
+Bisecting `presets.json`'s option set against a healthy `max_rows=94`
+baseline (every other flag on or off, one at a time, then in combination)
+narrows the trigger to one setting: **`max_rows=128` alone**, together with
+a trace window long enough to actually reach the affected pattern (`tempo`
+`auto` gets there in 26s at Commando's real speed; the untuned default
+tempo is slow enough that a 26s trace never reaches it, which is why an
+earlier, narrower bisection pass missed it — an option can be *necessary to
+observe* the defect without being its cause). A sweep of `max_rows` from 94
+to 128 in single steps is unambiguous: 94, 100, 110, 120, 126, 127 all
+produce the identical, fully healthy 100/105/108-attack trace; **128 alone**
+produces the 36/32/36 collapse. Nothing about Commando's music changes
+between 127 and 128 — the boundary is Goattracker's own.
+
+`patterns._slice_pattern`'s docstring already named the mechanism, written
+before this defect was ever observed: Goattracker's own loader
+(`gsong.c`'s `clearpattern()`) pre-fills every pattern buffer with ENDPATT
+from row 64 onward, and its length reader (`countpatternlengths()`)
+**re-scans for that byte rather than trusting the file's stored length** —
+so an unterminated slice's *true* length, at runtime, is wherever that
+pre-fill starts. The docstring calls slicing at 94 safe "by luck: 94 > 64"
+— there are 34 untouched, pre-cleared rows behind every 94-row slice for
+the scan to land on. **`max_rows=128` is `MAX_PATTROWS` itself: a 128-row
+slice fills the entire buffer, leaving zero pre-cleared rows behind it.**
+The scan that would have safely stopped one row later at 94 instead runs
+into whatever memory follows — which is why the trace stays musical for
+~8 seconds (while patterns are comfortably under 128 rows) and only
+collapses once playback reaches the one pattern in Commando's data long
+enough to need a genuine 128-row slice (confirmed structurally: a 256-row
+source pattern splits as `94+94+68` real rows at `max_rows=94`, safe on
+both slices, but as `128+128+0` at `max_rows=128` — *two* zero-headroom
+slices back to back, decoded via a temporary debug dump of `convert()`'s
+own `tracks`/`patterns` and reverted, not inferred).
+
+**This is not Commando-specific, and it is not about an exact multiple of
+128 either** — any pattern anywhere in the corpus that reaches a full,
+unterminated 128-row slice is exposed the same way, regardless of what
+follows it, because the buffer overrun happens at that slice's own
+boundary. `terminate_patterns=True` sidesteps it entirely (it bakes the
+marker inside the declared length, which the buffer overrun then finds
+immediately), but is off by default for the same byte-exactness reason
+every other option here is. **`max_rows=128` is presets.json's own choice
+for Commando** — picked by the optimizer precisely because it shortens
+orderlists, on a metric that has never traced past ten seconds. Whether
+other corpus files sharing that choice hit the same 128-row slice was not
+checked this pass — see *work remaining*.
 
 ## 9. The `.sng` output layout
 
