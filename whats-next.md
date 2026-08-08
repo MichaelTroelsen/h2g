@@ -868,8 +868,34 @@ are not powers of two either. **Do not raise the cap without re-measuring.**
 - Seventeen files have rows within ~1.3% of a whole number whose exact
   fraction has a large denominator (3.02, 3.03, 4.04, 4.05). They round, and
   the error is under two percent.
-- Why `-S5` regresses is unexplained and is the first thing to look at if the
-  cap is ever to move.
+- **Why `-S5` regresses — investigated in v0.5.122, not solved.** What is
+  established:
+
+  - The regression is **attack loss, not mistiming**. At `-S5` our attack
+    counts are 52, 58 and 63 against originals of 90, 84 and 101; at the cap
+    the same files are 87, 100 and 120. The retrigger ratio falls to ~0.6.
+  - **The row is more accurate, not less.** Kings_of_the_Beach_intro emits
+    3.60 frames at `-S5` where §7b measured its true row at **3.50**; the cap
+    gives it 3.00. So the file that scores 96% is the one with the *worse*
+    row, and the tempo is not what is wrong.
+  - The slower row accounts for only part of the loss: at 3.0/3.6 of the rows
+    in a fixed window we would expect ~72 attacks, and we get 52. **About 28%
+    of the notes vanish beyond the rate effect.**
+  - Per-subtune tempos are correct at both caps, including the `3 x
+    multiplier` fallback for subtunes with no readable gate (15 at `-S5`,
+    3 at `-S1` — the same 3 frames).
+
+  So the fault is in something measured in **play calls** that does not scale
+  with the multiplier, not in the row. Candidates, none eliminated: the
+  `gatetimer` of 2 calls every instrument carries (2 frames at `-S1`, 0.4 at
+  `-S5`), the fixed five-entry wavetable running five times faster per row,
+  and v0.5.82's integer divisions (`step // 5`, `256 // 5`) losing a
+  small step to zero.
+
+  **This matters beyond `-S5`.** If per-call structures degrade with the
+  multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just
+  outweighs it. Finding this would likely improve the twenty files v0.5.121
+  already moved.
 
 ## 8b. Original §8 — four players have no expressible rate
 

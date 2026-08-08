@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.122 — 2026-08-08
+
+- investigate -S5: attack loss, not mistiming
+
 ## 0.5.121 — 2026-08-08
 
 - a fractional row is exact at the right multiplier; corpus melody 74.8% -> 78.3%
