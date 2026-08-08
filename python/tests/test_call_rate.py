@@ -33,11 +33,63 @@ from h2g.detect import Detection
 from h2g.goatwriter import (DRUM_SPEED, DRUM_SPEED_PER_FRAME, FORMAT_GTS5,
                             RISE_SHIFT, SPEED_NOTE_RELATIVE, WAVE_MAX_DELAY,
                             _drum_speed, _rate_shift, _rise_speed_index,
-                            _wave_delay, _wavetable_entries)
+                            _wave_hold_byte, _wavetable_entries)
 from h2g.patterns import (GT_NO_NOTE, build_speed_table,
                           scale_portamento_data)
 
 DRUM, RISE, ARP = 0x01, 0x02, 0x04
+WAVELASTDELAY = 0x0F
+
+
+def wave_timeline(left, right, first=6, calls=24):
+    """Which table entry, waveform and note each play call sees.
+
+    A transcription of gplay.c's WAVEEXEC (:516-717), kept here so the shapes
+    are pinned against the loop that consumes them rather than against the
+    constant someone read out of gcommon.h. The two disagreed for eleven
+    versions: a delay entry is current for `value + 1` calls, not `value`,
+    because the advance happens on the call where `wavetime == value` and
+    `wavetime` was incremented on each call before it.
+
+    Note also that a delay's right side *is* read -- on that final call the
+    code falls through to the note block with the `note` it loaded at the top.
+    """
+    ltable = {first + k: left[k] for k in range(len(left))}
+    rtable = {first + k: right[k] for k in range(len(right))}
+    ptr, wavetime, cur_wave, cur_note = first, 0, None, None
+    out = []
+    for _ in range(calls):
+        if not ptr or ptr not in ltable:
+            out.append((None, cur_wave, cur_note))
+            continue
+        wave, note = ltable[ptr], rtable[ptr]
+        here = ptr
+        if wave > WAVELASTDELAY:
+            if wave < 0xE0:
+                cur_wave = wave
+        elif wavetime != wave:
+            wavetime += 1
+            out.append((here, cur_wave, cur_note))
+            continue
+        wavetime = 0
+        ptr += 1
+        if ltable.get(ptr) == 0xFF:
+            ptr = rtable[ptr]
+        if note != 0x80:
+            cur_note = note
+        out.append((here, cur_wave, cur_note))
+    return out
+
+
+def attack_calls(left, right, wave):
+    """How many play calls the attack waveform is current for."""
+    tl = wave_timeline(left, right, calls=40)
+    n = 0
+    for _, w, _ in tl:
+        if w != wave:
+            break
+        n += 1
+    return n
 
 
 class _FakeSid:
@@ -107,36 +159,86 @@ def test_the_rise_entry_carries_the_scaled_shift():
 
 # --- the attack transient ---------------------------------------------------
 
-def test_no_delay_entry_is_spent_at_1x():
+def test_no_hold_entry_is_spent_at_1x():
     # A call already is a frame, so the entry would only cost a slot.
-    assert _wave_delay(1) == 0
+    assert _wave_hold_byte(1, 0x41) is None
 
 
-def test_the_delay_buys_back_the_frame():
-    # $01-$0F hold the waveform already set for N calls (gcommon.h:56-57), so
-    # the attack entry plus a delay of m-1 lasts m calls == one frame.
-    assert _wave_delay(2) == 1
-    assert _wave_delay(3) == 2
-    assert _wave_delay(64) == WAVE_MAX_DELAY
+def test_the_hold_is_the_delay_less_one_because_a_delay_holds_one_call_more():
+    # A delay of D is current for D + 1 calls (gplay.c:697-704), and entry 0
+    # is itself one call, so a frame of m calls asks entry 1 for m - 2.
+    assert _wave_hold_byte(3, 0x41) == 1
+    assert _wave_hold_byte(4, 0x41) == 2
+    assert _wave_hold_byte(64, 0x41) == WAVE_MAX_DELAY
 
 
-def test_the_plain_shape_spends_its_repeated_entry_on_the_delay():
+def test_one_extra_call_is_the_waveform_again_not_a_delay_of_zero():
+    # $00 is the editor's empty marker, and 0 is not a delay value. Repeating
+    # the attack byte buys the same single call with an unambiguous byte.
+    assert _wave_hold_byte(2, 0x41) == 0x41
+    assert _wave_hold_byte(2, 0x80) == 0x80
+
+
+def test_the_attack_lasts_exactly_one_frame_at_every_multiplier():
+    # The whole point of the hold entry, checked against gplay's own loop
+    # rather than against the byte. Until v0.5.130 every one of these was
+    # m + 1 -- 1.5 frames at -S2, where 22 of the 37 multispeed files sit.
+    # wave $40 has the gate bit clear and tail $41 sets it, so the two are
+    # distinguishable -- with `tail == wave` there is no attack to time.
+    for m in (1, 2, 3, 4, 6):
+        left, right = _entries(0x00, wave=0x40, multiplier=m)
+        assert attack_calls(left, right, 0x40) == m, f"-S{m}"
+
+
+def test_the_plain_shape_spends_its_repeated_entry_on_the_hold():
     # [wave, tail, tail, stop] -- entries 1 and 2 are the same waveform, so
     # entry 1 is free and the attack keeps its frame at no cost.
     at1 = _entries(0x00)
-    at2 = _entries(0x00, multiplier=2)
+    at3 = _entries(0x00, multiplier=3)
     assert at1[0][1] == at1[0][2], "entry 1 only repeats entry 2 at 1x"
-    assert at2[0][1] == 1 and at2[0][2] == at1[0][2]
-    assert at2[1][1] == 0, "a delay's right side is unread (gplay.c:698-704)"
+    assert at3[0][1] == 1 and at3[0][2] == at1[0][2]
 
 
-def test_the_arpeggio_keeps_its_loop_and_still_gets_the_delay():
-    # The alternation runs over entries 2 and 3, so entry 1 is passed once on
-    # the way in and can carry the delay without touching the loop.
-    at1 = _entries(ARP | 0x30, effects=True, arp=True)
-    at2 = _entries(ARP | 0x30, effects=True, arp=True, multiplier=2)
-    assert at2[0][1] == 1
-    assert at2[0][2:] == at1[0][2:] and at2[1][2:] == at1[1][2:]
+def test_the_arpeggio_alternates_once_a_frame_not_once_a_call():
+    # The player swaps the note every frame ($13CD). Five entries cannot hold
+    # attack + 2x(note, hold) + jump, so the jump loops to entry 0 and the
+    # attack entry doubles as the note half's first call -- sound only because
+    # `tail` and the attack byte are equal here, as they are in all 45 corpus
+    # records that reach this branch.
+    for m in (1, 2, 3):
+        left, right = _entries(ARP | 0x30, effects=True, arp=True,
+                               multiplier=m)
+        notes = [n for _, _, n in wave_timeline(left, right, calls=12 * m)]
+        runs, prev, length = [], object(), 0
+        for n in notes:
+            if n == prev:
+                length += 1
+            else:
+                if length:
+                    runs.append(length)
+                prev, length = n, 1
+        runs.append(length)
+        # the first run is the entries walked before the loop settles and the
+        # last is cut off by the call budget; between them every hold is m
+        assert set(runs[1:-1]) == {m}, f"-S{m}: note runs {runs}"
+
+
+def test_the_arpeggio_holds_the_note_across_its_hold_entry():
+    # A delay's right side is read on its final call, so the second hold
+    # carries $80 -- "no note change" -- or it drags the arpeggio note back
+    # to the base note one call early.
+    left, right = _entries(ARP | 0x30, effects=True, arp=True, multiplier=3)
+    assert right[3] == 0x80
+
+
+def test_an_arpeggio_whose_attack_differs_from_its_tail_stays_at_1x_shape():
+    # Looping through entry 0 rewrites the attack byte once per cycle. That is
+    # a no-op only where it equals `tail`; wave $40 has the gate bit clear and
+    # tail $41 sets it, so re-entering would retrigger every cycle.
+    at1 = _entries(ARP | 0x30, effects=True, arp=True, wave=0x40)
+    at2 = _entries(ARP | 0x30, effects=True, arp=True, wave=0x40,
+                   multiplier=2)
+    assert at2 == at1
 
 
 def test_the_rise_shape_keeps_its_tail_rather_than_the_delay():
@@ -147,10 +249,12 @@ def test_the_rise_shape_keeps_its_tail_rather_than_the_delay():
     assert at2[0][1] == 0x41, "the tail, not a delay"
 
 
-def test_the_rise_shape_takes_the_delay_when_the_tail_writes_nothing():
+def test_the_rise_shape_takes_the_hold_when_the_tail_writes_nothing():
     # wave $41 already has the gate bit, so tail == wave and entry 1 is inert.
+    at3 = _entries(RISE, effects=True, rise=True, wave=0x41, multiplier=3)
+    assert at3[0][1] == 1
     at2 = _entries(RISE, effects=True, rise=True, wave=0x41, multiplier=2)
-    assert at2[0][1] == 1
+    assert at2[0][1] == 0x41, "one extra call is the waveform, not a delay"
 
 
 def test_the_drum_shape_has_no_slot_and_says_so():

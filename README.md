@@ -1013,9 +1013,13 @@ songs that pack at `-S2`. Since v0.5.82 the converter divides each rate by
 the multiplier it wrote the tempo for, so the file is correct at the `-S`
 value `presets.json` records — and only at that value. Packing a
 `multiplier: 2` song at `-S1` was always wrong (it plays half speed); it is
-now wrong in the slides as well. Three rates keep a stated residual — the
-arpeggio alternation, the drum's own attack, and the rise at a non-power-of-two
-multiplier — see H2G-CONVERSION-METHOD.md § 7.bb.
+now wrong in the slides as well. Two rates keep a stated residual — the
+drum's own attack, and the rise at a non-power-of-two multiplier — see
+H2G-CONVERSION-METHOD.md § 7.bb. The arpeggio alternation was the third until
+v0.5.130 (§ 7.mm), which also corrected the attack transient: a wavetable
+delay entry is current for `value + 1` calls, not `value`, so the attack had
+been running a call long in every multispeed file since the rates were first
+divided.
 
 **Stock siddump cannot check this** — it ignores the PSID speed field and
 calls the play routine 50 times a second regardless (`siddump.c:309/325`), so

@@ -180,8 +180,13 @@ test dependency).
   and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
-  `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_delay` and
-  the pulse programs now are. Until v0.5.99 **no number in `FIDELITY.md` could
+  `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_hold_byte`
+  and the pulse programs now are. **Encode the rate against the loop that
+  consumes it, not the constant that names it**: a wavetable delay entry is
+  current for `value + 1` calls, not `value` (gplay.c:697-704), and reading
+  the range out of `gcommon.h` instead left every multispeed file's attack a
+  call too long from v0.5.82 to v0.5.130. `tests/test_call_rate.py` now
+  transcribes that loop and times the shapes against it. Until v0.5.99 **no number in `FIDELITY.md` could
   move on such a change**: stock siddump calls the play routine `seconds × 50`
   times whatever the PSID speed field says (`siddump.c:309/325`), so the trace
   saw every file as multiplier 1. `python/tools/siddump-rt` (vendored siddump

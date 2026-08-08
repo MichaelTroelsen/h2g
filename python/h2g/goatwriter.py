@@ -136,12 +136,32 @@ DRUM_SPEED = _drum_speed(1)
 WAVE_MAX_DELAY = 0x0F
 
 
-def _wave_delay(multiplier: int = 1) -> int:
-    """Delay entry that stretches one play call to `multiplier` calls, or 0.
+def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
+    """Entry-1 byte that makes the attack last one frame, or None at -S1.
 
-    Zero at -S1, where a call already is a frame and no entry is needed.
+    **A delay entry holds for `value + 1` play calls, not `value`.**
+    gplay.c:697-704 advances only on the call where `wavetime == value`,
+    having incremented it on each of the `value` calls before, so the entry
+    is current for `value + 1` calls in total. Entry 0 is itself one call, so
+    a frame of `m` calls needs `m - 1` more from entry 1, which is a delay of
+    `m - 2`.
+
+    Until v0.5.130 this returned `m - 1` and the attack ran for `m + 1` calls
+    -- 1.5 frames at -S2, where 22 of the corpus's 37 multispeed files sit.
+    The reading came from gcommon.h's `WAVEDELAY .. WAVELASTDELAY` range
+    rather than from the loop that consumes it.
+
+    One extra call has no delay encoding: 0 is not a delay value and `$00` in
+    a wavetable is the editor's empty marker. At -S2 the attack waveform is
+    written again instead -- the same one call, an unambiguous byte, and a
+    no-op wherever `tail == wave` already put it there.
     """
-    return min(max(0, max(1, multiplier) - 1), WAVE_MAX_DELAY)
+    extra = max(1, multiplier) - 1
+    if extra <= 0:
+        return None
+    if extra == 1:
+        return wave
+    return min(extra - 1, WAVE_MAX_DELAY)
 
 
 def _rate_shift(multiplier: int = 1) -> int:
@@ -945,21 +965,40 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
     # The instrument's own entries are 1-based indices i*5+6 .. i*5+10, so its
     # third is i*5+8 -- the loop target for both the arpeggio and the rise.
+    first = (i * WAVE_ENTRIES_PER_INSTR + 6) & 0xFF
     third = (i * WAVE_ENTRIES_PER_INSTR + 8) & 0xFF
 
     if arp:
         # $13CD: alternate between the note and the note minus the high
         # nibble, one frame each. Readme p.794: right side $60-$7F is a
         # negative relative note, so $80-N is -N semitones.
-        #
-        # The alternation is one entry per play call, so at -S2 it swaps twice
-        # a frame and at -S3 three times -- the player's rate only at -S1. Each
-        # half would need a delay entry beside it and the five-entry layout has
-        # no room, so this one stays at the call rate. Named here rather than
-        # left to be re-found.
-        left[3] = tail
-        right[3] = (0x80 - arp_note) & 0xFF
-        right[4] = third
+        hold = _wave_hold_byte(multiplier, wave)
+        if hold is None or tail != wave:
+            # -S1: a call is a frame, so the plain two-entry loop is already
+            # at the player's rate.
+            left[3] = tail
+            right[3] = (0x80 - arp_note) & 0xFF
+            right[4] = third
+        else:
+            # At -S{m} each half must last m calls, which needs a hold entry
+            # beside each -- five slots for attack + 2x(note, hold) + jump,
+            # one too many. The jump target buys the slot back: it loops to
+            # entry 0 rather than to `third`, so the attack entry doubles as
+            # the first call of the note half. That is only sound because the
+            # attack byte and `tail` differ at most in the gate bit and are
+            # equal in all 45 corpus records reaching this branch -- re-entering
+            # entry 0 rewrites the same waveform. `tail != wave` above keeps
+            # anything else on the -S1 shape rather than emitting a retrigger
+            # once per arpeggio cycle.
+            #
+            # A hold entry's right side is read on its final call
+            # (gplay.c:705-717 falls through to the note code), so entry 3
+            # carries $80 -- "no note change" -- or it would drag the
+            # arpeggio note back to the base note one call early.
+            left[1], right[1] = hold, 0x00
+            left[2], right[2] = tail, (0x80 - arp_note) & 0xFF
+            left[3], right[3] = hold, 0x80
+            right[4] = first
     elif effects and det.effect_rise and (arp_style & 2) == 2:
         index = _rise_speed_index(fmt, speed_table, multiplier)
         if index:
@@ -977,8 +1016,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # The rise shape is the exception -- its entry 2 is a command, so entry 1
     # is the only place the tail waveform is written, and the delay may take it
     # only where the tail *is* the attack byte and writing it changes nothing.
-    hold = _wave_delay(multiplier)
-    if hold and not drum and (left[2] == tail or tail == wave):
+    hold = _wave_hold_byte(multiplier, wave)
+    if hold is not None and not arp and not drum and (
+            left[2] == tail or tail == wave):
         left[1] = hold
 
     return left, right

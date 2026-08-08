@@ -1594,7 +1594,7 @@ be packed at, which `convert()` already derives for the tempo:
 | pattern slide, GTS2 | the pattern data column | ÷ m rounded — the column holds an eighth of the step and the loader multiplies (`gsong.c:311-321`) |
 | drum sweep | `_drum_speed` | 256 ÷ m, floored, never 0 |
 | chromatic rise | `_rise_speed_index` | one more right-shift per doubling |
-| attack transient | a wavetable delay entry `$01-$0F` | held m calls instead of 1 |
+| attack transient | a wavetable delay entry `$01-$0F`, or the waveform again | held m calls instead of 1 — off by one until v0.5.130, § 7.mm |
 
 **3023 of the corpus's 5566 portamento commands (54%) are in a file that packs
 at `-S2`.** The differential is clean: exactly the 33 multiplier-2 songs change
@@ -1602,17 +1602,17 @@ bytes and not one of the 50 multiplier-1 songs does.
 
 Three residuals, named rather than left to be re-found:
 
-- **The arpeggio alternation stays at the call rate.** It swaps note on
-  consecutive wavetable entries and each half would need a delay beside it;
-  the five-entry-per-instrument layout has no room.
+- ~~**The arpeggio alternation stays at the call rate.**~~ Closed in
+  v0.5.130: the jump target buys the missing slot by looping through entry 0.
+  See § 7.mm.
 - **The drum shape has no slot for the transient delay** either — all five
   entries are the attack, the gate-off waveform, the sweep and two stops — so
   its attack still lasts one call. Spending the sweep to buy the frame would
   give back more than it bought.
-- **The rise's shift is exact only for powers of two.** The multipliers this
-  converter emits are `ceil(3/f)` for `f` in 1..2, i.e. 2 and 3, and 3 is not
-  one: at `-S3` the rise glides ¾ of the player's rate where before it glided
-  three times it. No corpus file asks for `-S3` today.
+- **The rise's shift is exact only for powers of two.** At `-S3` the rise
+  glides ¾ of the player's rate where before it glided three times it. This
+  was written when no corpus file asked for `-S3`; since § 7.kk's fractional
+  rows, 15 files pack at 3, 4, 5 or 6 and the residual is live.
 
 **One column moved anyway, and it is worth understanding why.** `slides`
 counts frames on which siddump printed a bare frequency delta, and it moved on
@@ -2695,6 +2695,114 @@ on it.
 > reach at 49 files; the dimension registry names the registers each column
 > reads, which settled visibility. Neither number came from looking at the
 > means.
+
+
+
+### 7.mm The wavetable's own clock: an off-by-one and the arpeggio's missing slot
+
+§ 7.bb divided every per-frame rate by the `-S` multiplier and left three
+residuals. Two of them were the same mistake seen from different sides, and
+both are closed here: the converter was encoding wavetable *time* against the
+constant that names a delay entry rather than against the loop that consumes
+one.
+
+#### A delay entry is current for `value + 1` calls, not `value`
+
+`gcommon.h:56-57` names the range (`WAVEDELAY $01 .. WAVELASTDELAY $0F`) and
+says nothing about duration. `gplay.c:697-704` is where the duration lives:
+
+```c
+else {                                  // wave <= WAVELASTDELAY: a delay
+  if (cptr->wavetime != wave) { cptr->wavetime++; goto TICKNEFFECTS; }
+}
+cptr->wavetime = 0;
+cptr->ptr[WTBL]++;
+```
+
+The entry is left on the call where `wavetime == wave`, and `wavetime` was
+incremented on each of the `wave` calls before it — so the entry is current
+for `wave + 1` calls. Entry 0 is itself one call, so a frame of `m` calls asks
+entry 1 for a delay of `m - 2`, not `m - 1`.
+
+`_wave_delay` returned `m - 1` from v0.5.82 to v0.5.130, so **every multispeed
+file's attack transient lasted `m + 1` calls** — 1.5 frames at `-S2`, where 22
+of the corpus's 37 multispeed files sit, and 1.33 at `-S3`. The helper is now
+`_wave_hold_byte`, and one extra call is written as the attack waveform again
+rather than a delay of zero: `$00` is the editor's empty marker and 0 is not a
+delay value. Where `tail == wave` that byte is already what entry 1 held, so
+at `-S2` the correction is often the *removal* of a delay rather than a
+different one.
+
+There is a second consequence worth stating because it bit the fix: **a delay
+entry's right side is read**, on its final call — `note` is loaded at the top
+of `WAVEEXEC` and the fall-through reaches the note block. A hold entry placed
+after a relative note therefore has to carry `$80` ("no note change") or it
+drags the note back.
+
+#### The arpeggio: five slots for six, until the jump target paid
+
+The player alternates the note every frame (`$13CD`). Goattracker's wavetable
+advances one entry per call, so the two-entry alternation § 7.ee emits swaps
+twice a frame at `-S2` and three times at `-S3`. § 7.bb recorded this as
+unfixable: attack + 2 × (note, hold) + jump is six entries and an instrument
+has five.
+
+The jump entry is the way out. `ptr[WTBL]++` happens first and the `$FF` test
+is applied to the *new* entry, so **a jump costs no call** — and it can target
+entry 0 as easily as entry 2. Looping through entry 0 makes the attack entry
+double as the note half's first call:
+
+```
+entry 0   wave      right $00        the attack, and the base note
+entry 1   hold      right $00        base note held to m calls
+entry 2   tail      right $80-N      the arpeggio note
+entry 3   hold      right $80        held to m calls, note unchanged
+entry 4   $FF       right -> entry 0
+```
+
+`2m` calls a cycle, `m` per half, at every multiplier. It is sound only
+because re-entering entry 0 rewrites the attack byte, which is a no-op exactly
+when `tail == wave` — the two differ at most in the gate bit, and they are
+equal in **all 45 corpus records that reach this branch**. Anything else stays
+on the `-S1` shape rather than emitting a retrigger once per cycle.
+
+#### Reach, and an instrument gap this made unmissable
+
+The differential hash is exactly as it should be: **37 files change bytes, all
+of them multiplier > 1; no multiplier-1 file changes and no multiplier > 1
+file is missed.**
+
+**Neither instrument in this repo can see the attack correction, and the two
+fail for opposite reasons.** That is worth recording precisely, because a
+reader looking only at the tables would conclude the change reaches nothing:
+
+- **siddump samples the registers once per frame.** At `-S2` the removed call
+  is the *interior* call of a frame; the value latched at the frame boundary
+  is the same before and after. `wave` moved on **0 of 82** files.
+- **`--equal-calls` resamples our side per call, but then drops the
+  frame-aligned dimensions** — it compared `wave` on 45 files, and *none* of
+  them has multiplier > 1. The 37 files the change touches are precisely the
+  ones it cannot compare.
+
+So the register dimensions are blind here by frame quantisation on one side
+and by omission on the other. What would close it is one trace at a resolution
+finer than a frame *on both sides* — `vicetrace.py`'s 312 samples per
+rasterline-frame, still unwired.
+
+What the report did show: 20 files move at frame sampling, almost all in
+`slides`/`bend`; under `--equal-calls` **one** file moves. Corpus mean melody
+76.70% → 76.68%, pitch 82.58% → 82.63%, `wave` and `adsr` identical to four
+decimals. The single file the finer instrument can see —
+Battle_of_Britain, melody 75% → 73%, pitch 50% → 43% — moved the *wrong* way,
+and it is one file of 37 against a correction that both sides' source agrees
+on. It is named here rather than averaged away.
+
+> **The transferable lesson:** § 7.kk's was that the side you did not write is
+> the one you read rather than measured. This is the same lesson one level
+> down — the constant that *names* a mechanism and the loop that *runs* it are
+> different sources, and only one of them is authoritative. Four lines of C
+> moved the vibrato period by 4x; three lines moved every multispeed file's
+> attack by a call.
 
 
 ## 9. The `.sng` output layout
