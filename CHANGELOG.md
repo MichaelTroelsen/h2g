@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.145 — 2026-08-08
+
+- update whats-next.md with the closed Commando investigation
+
 ## 0.5.144 — 2026-08-08
 
 - close the Commando investigation: the melodic divergence is gone, only the known drum limitation remains
