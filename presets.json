@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.133 presets.py",
+  "generator": "h2g 0.5.141 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -25,7 +25,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 8777,
+      "bytes": 8757,
       "subtunes": 1,
       "rows": 2346,
       "multiplier": 1
@@ -35,7 +35,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 13314,
+      "bytes": 13552,
       "subtunes": 1,
       "rows": 18009,
       "multiplier": 3
@@ -45,7 +45,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 15791,
+      "bytes": 15743,
       "subtunes": 3,
       "rows": 13180,
       "multiplier": 1
@@ -65,17 +65,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16419,
+      "bytes": 16386,
       "subtunes": 1,
       "rows": 19816,
       "multiplier": 1
     },
     "Auf_Wiedersehen_Monty.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 39696,
+      "bytes": 39707,
       "subtunes": 13,
       "rows": 24151,
       "multiplier": 1
@@ -85,7 +85,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 14535,
+      "bytes": 14511,
       "subtunes": 1,
       "rows": 19334,
       "multiplier": 1
@@ -95,7 +95,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 34388,
+      "bytes": 35290,
       "subtunes": 1,
       "rows": 20903,
       "multiplier": 2
@@ -105,7 +105,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 3592,
+      "bytes": 3588,
       "subtunes": 1,
       "rows": 9176,
       "multiplier": 1
@@ -125,7 +125,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10769,
+      "bytes": 10742,
       "subtunes": 1,
       "rows": 15169,
       "multiplier": 3
@@ -155,7 +155,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15579,
+      "bytes": 15553,
       "subtunes": 14,
       "rows": 35636,
       "multiplier": 1
@@ -175,7 +175,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14565,
+      "bytes": 14526,
       "subtunes": 1,
       "rows": 15886,
       "multiplier": 1
@@ -185,7 +185,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 19482,
+      "bytes": 19956,
       "subtunes": 11,
       "rows": 46713,
       "multiplier": 1
@@ -225,7 +225,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 22110,
+      "bytes": 23586,
       "subtunes": 1,
       "rows": 16023,
       "multiplier": 2
@@ -235,17 +235,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20369,
+      "bytes": 20359,
       "subtunes": 10,
       "rows": 28723,
       "multiplier": 2
     },
     "Flash_Gordon.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 44418,
+      "bytes": 45872,
       "subtunes": 9,
       "rows": 31074,
       "multiplier": 4
@@ -255,7 +255,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15403,
+      "bytes": 15390,
       "subtunes": 1,
       "rows": 14212,
       "multiplier": 3
@@ -265,7 +265,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10612,
+      "bytes": 10609,
       "subtunes": 1,
       "rows": 12912,
       "multiplier": 2
@@ -275,7 +275,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 9319,
+      "bytes": 9315,
       "subtunes": 1,
       "rows": 8113,
       "multiplier": 2
@@ -285,7 +285,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 11119,
+      "bytes": 11107,
       "subtunes": 16,
       "rows": 18534,
       "multiplier": 1
@@ -295,7 +295,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 41491,
+      "bytes": 41495,
       "subtunes": 7,
       "rows": 32302,
       "multiplier": 1
@@ -315,17 +315,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 13628,
+      "bytes": 13620,
       "subtunes": 3,
       "rows": 7778,
       "multiplier": 1
     },
     "Human_Race.sid": {
-      "max_rows": 94,
+      "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 22941,
+      "bytes": 22890,
       "subtunes": 5,
       "rows": 21036,
       "multiplier": 1
@@ -335,7 +335,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21136,
+      "bytes": 21112,
       "subtunes": 1,
       "rows": 10942,
       "multiplier": 1
@@ -345,7 +345,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 13023,
+      "bytes": 12996,
       "subtunes": 1,
       "rows": 15077,
       "multiplier": 1
@@ -361,11 +361,11 @@
       "multiplier": 1
     },
     "International_Karate.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18619,
+      "bytes": 18660,
       "subtunes": 1,
       "rows": 30754,
       "multiplier": 1
@@ -385,7 +385,7 @@
       "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 9658,
+      "bytes": 9634,
       "subtunes": 7,
       "rows": 2769,
       "multiplier": 1
@@ -395,7 +395,7 @@
       "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 11739,
+      "bytes": 11685,
       "subtunes": 1,
       "rows": 8522,
       "multiplier": 5
@@ -405,7 +405,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 42446,
+      "bytes": 42301,
       "subtunes": 3,
       "rows": 66780,
       "multiplier": 1
@@ -465,7 +465,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 25565,
+      "bytes": 27558,
       "subtunes": 8,
       "rows": 77476,
       "multiplier": 1
@@ -485,7 +485,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 35206,
+      "bytes": 35608,
       "subtunes": 1,
       "rows": 12698,
       "multiplier": 1
@@ -515,7 +515,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10520,
+      "bytes": 10521,
       "subtunes": 1,
       "rows": 11455,
       "multiplier": 1
@@ -525,17 +525,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 5502,
+      "bytes": 5494,
       "subtunes": 1,
       "rows": 4715,
       "multiplier": 1
     },
     "Off_the_Cuff.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 23390,
+      "bytes": 23796,
       "subtunes": 1,
       "rows": 12339,
       "multiplier": 5
@@ -545,7 +545,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 21052,
+      "bytes": 21490,
       "subtunes": 7,
       "rows": 44246,
       "multiplier": 2
@@ -555,17 +555,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 11661,
+      "bytes": 11646,
       "subtunes": 1,
       "rows": 5584,
       "multiplier": 1
     },
     "Pandora.sid": {
-      "max_rows": 94,
+      "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10978,
+      "bytes": 10976,
       "subtunes": 1,
       "rows": 5695,
       "multiplier": 1
@@ -595,17 +595,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 11907,
+      "bytes": 11905,
       "subtunes": 1,
       "rows": 16038,
       "multiplier": 2
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
-      "pack": true,
+      "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 26012,
+      "bytes": 29499,
       "subtunes": 1,
       "rows": 11189,
       "multiplier": 1
@@ -615,7 +615,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14095,
+      "bytes": 14089,
       "subtunes": 10,
       "rows": 30848,
       "multiplier": 2
@@ -625,17 +625,17 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 12001,
+      "bytes": 11954,
       "subtunes": 1,
       "rows": 10207,
       "multiplier": 2
     },
     "Rikky.sid": {
       "max_rows": 128,
-      "pack": true,
+      "pack": false,
       "prune": true,
       "dedup": true,
-      "bytes": 29276,
+      "bytes": 38341,
       "subtunes": 1,
       "rows": 14874,
       "multiplier": 1
@@ -645,7 +645,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21948,
+      "bytes": 22406,
       "subtunes": 1,
       "rows": 9973,
       "multiplier": 6
@@ -655,7 +655,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 13048,
+      "bytes": 13042,
       "subtunes": 1,
       "rows": 14821,
       "multiplier": 3
@@ -685,17 +685,17 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 17389,
+      "bytes": 17372,
       "subtunes": 1,
       "rows": 19978,
       "multiplier": 2
     },
     "Sigma_Seven.sid": {
-      "max_rows": 94,
+      "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 6491,
+      "bytes": 6487,
       "subtunes": 1,
       "rows": 3593,
       "multiplier": 1
@@ -725,7 +725,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 13517,
+      "bytes": 13511,
       "subtunes": 3,
       "rows": 12550,
       "multiplier": 2
@@ -735,7 +735,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12363,
+      "bytes": 12364,
       "subtunes": 11,
       "rows": 9422,
       "multiplier": 1
@@ -745,7 +745,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 6855,
+      "bytes": 6823,
       "subtunes": 1,
       "rows": 2321,
       "multiplier": 4
@@ -775,7 +775,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15670,
+      "bytes": 15649,
       "subtunes": 9,
       "rows": 47471,
       "multiplier": 3
@@ -795,7 +795,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 56676,
+      "bytes": 58127,
       "subtunes": 8,
       "rows": 45650,
       "multiplier": 4
@@ -804,8 +804,8 @@
       "max_rows": 128,
       "pack": true,
       "prune": true,
-      "dedup": true,
-      "bytes": 12668,
+      "dedup": false,
+      "bytes": 13186,
       "subtunes": 1,
       "rows": 12130,
       "multiplier": 4
@@ -835,7 +835,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 16954,
+      "bytes": 18488,
       "subtunes": 3,
       "rows": 18087,
       "multiplier": 1
@@ -845,7 +845,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10769,
+      "bytes": 10742,
       "subtunes": 1,
       "rows": 15169,
       "multiplier": 3

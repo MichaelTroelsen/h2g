@@ -123,3 +123,33 @@ def test_terminated_patterns_stay_within_goattracker_limits(tmp_path):
         rows = len(p) // 4
         assert rows <= GT_MAX_PATTROWS + 1, f"{rows} rows exceeds the pattern array"
         assert _loaded_length(p) <= GT_MAX_PATTROWS
+
+
+def test_max_rows_128_never_leaves_a_full_unterminated_slice():
+    """The concrete collapse --max-rows 128 caused before this fix.
+
+    A real, unterminated 128-row slice measured as several seconds of
+    silent/near-silent playback under the actual gt2reloc + siddump
+    toolchain (H2G-CONVERSION-METHOD.md section 7, "The fix: never emit a
+    real, unterminated 128-row slice") -- the interactive-editor model
+    _loaded_length simulates predicts row 128 is safely pre-filled with
+    ENDPATT, but the standalone player gt2reloc packs measurably was not
+    finding it there. _slice_pattern now shaves one row off any
+    unterminated chunk at max_rows == GT_MAX_ROWS, so a stream long enough
+    to need multiple full chunks never produces one that is exactly
+    GT_MAX_PATTROWS rows.
+    """
+    from h2g.patterns import _slice_pattern
+
+    events = list(range(4 * 3 * GT_MAX_PATTROWS))  # 3 full max_rows chunks' worth
+    slices = _slice_pattern(events, max_len=GT_MAX_PATTROWS * 4, terminate=False)
+    assert any(len(s) // 4 == GT_MAX_PATTROWS - 1 for s in slices), \
+        "expected the shaved (127-row) chunk length to actually be used"
+    for s in slices:
+        assert len(s) // 4 != GT_MAX_PATTROWS, \
+            "a real, unterminated slice must never be exactly GT_MAX_PATTROWS rows"
+
+    # max_rows values below GT_MAX_ROWS are unaffected: same chunking as ever.
+    unaffected = _slice_pattern(events, max_len=(GT_MAX_PATTROWS - 1) * 4,
+                                terminate=False)
+    assert any(len(s) // 4 == GT_MAX_PATTROWS - 1 for s in unaffected)

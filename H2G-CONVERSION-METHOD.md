@@ -3345,6 +3345,24 @@ marker inside the declared length, which the buffer overrun then finds
 immediately), but is off by default for the same byte-exactness reason
 every other option here is.
 
+**One honest gap in this account.** `tests/test_terminate_patterns.py`'s
+own `_loaded_length` — a model of `gsong.c`'s `clearpattern()`, trusted by
+this project since before this defect was found — pre-fills ENDPATT up to
+row `MAX_PATTROWS` (128) *inclusive*, which predicts a 128-row unterminated
+slice should be safe (the scan lands on row 128, still inside that model's
+129-row buffer) — the opposite of what real `gt2reloc` + `siddump` measures.
+The two are not necessarily describing the same code: `clearpattern()` is
+the *interactive editor's* loader, and `gt2reloc` packs patterns through its
+own RLE packer (`greloc.c`'s `packpattern()`) into a standalone player,
+which is not shown here to share the editor's flat, pre-filled array at
+all. **Which buffer the real defect lives in was not re-derived from
+`greloc.c` this pass** — what stands in its place is a live measurement
+against the actual shipped toolchain (`gt2reloc` + `siddump`, the same
+pair `fidelity.py` traces every file with), which is the pair that has to
+agree for a fix to matter here regardless of which C struct explains it:
+the option sweep (94-127 healthy, 128 alone collapses) and the corpus scan
+below are both taken from that toolchain directly, not from the model.
+
 #### The corpus-wide check: every file that picked `max_rows=128` is exposed
 
 `presets.json` picked `max_rows=128` for **52 of the 95 corpus files** —
@@ -3363,6 +3381,27 @@ liable to the same silent, several-second-scale playback collapse
 Commando's was — at an unknown point in each file, wherever its own first
 full 128-row slice falls, which the ≤10s fidelity metric that chose the
 option would never have seen either.
+
+#### The fix: never emit a real, unterminated 128-row slice
+
+`_slice_pattern` now shaves one row off its chunk length specifically when
+`terminate` is false and the caller's `max_len` is exactly `GT_MAX_ROWS * 4`
+— i.e. only reachable at `max_rows == 128`, since both CLI and
+`convert_patterns` already clamp `max_rows` to `1..GT_MAX_ROWS`. Every slice
+this produces is now ≤127 real rows unless explicitly terminated, matching
+the one case the sweep above already showed was safe. No other `max_rows`
+value's chunking changes: the shave is gated on hitting 128 specifically,
+not on being close to it.
+
+**Validated against the real toolchain, not the model this pass could not
+reconcile.** Re-running the exact 52-file corpus scan finds **zero**
+exposed patterns (was 52 of 52). Commando's own live trace — the same
+`gt2reloc` + `siddump` pair used throughout this section — goes from
+36/32/36 attacks over 26s to **100/105/108**, against the original's
+101/106/109: the collapse is gone, not merely relocated. The full test
+suite (665 tests) passes unchanged, including the byte-exact `Commando.sng`
+fixture, which uses `max_rows=94` and is untouched by a change gated on
+`max_rows==128`.
 
 ## 9. The `.sng` output layout
 

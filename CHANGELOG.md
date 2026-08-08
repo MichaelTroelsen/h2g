@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.141 — 2026-08-08
+
+- fix _slice_pattern's unterminated 128-row slice, which caused several-second playback collapses
+
 ## 0.5.140 — 2026-08-08
 
 - confirm the max_rows=128 defect exposes all 52 corpus files that picked it

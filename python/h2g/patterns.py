@@ -762,7 +762,23 @@ def _slice_pattern(events: List[int], max_len: int = GT_MAX_PATTERN_LEN,
     gsong.c:116) and makes the output self-describing. It is opt-in because it
     changes the bytes, and the byte-exact Commando fixture encodes the
     original tool's unterminated output.
+
+    The "94 > 64" luck above runs out at `max_rows == GT_MAX_ROWS`: a real,
+    unterminated slice that is exactly GT_MAX_ROWS (128) rows fills
+    Goattracker's own pattern buffer to its declared capacity, leaving no
+    row behind it for clearpattern()'s pre-fill to have survived on -- the
+    rescan runs straight past the buffer into whatever memory follows,
+    which on real hardware/VICE is several seconds of near-silence before it
+    happens to find a byte that reads as ENDPATT (H2G-CONVERSION-METHOD.md
+    §7.rr). Only reachable when `terminate` is false, since a terminated
+    128-row slice gets its marker as row 129 -- still inside the buffer
+    (MAX_PATTROWS*4+4 bytes, see the .sng layout section of the method doc).
+    Shaving one row off keeps every *other* max_rows value's chunking
+    unchanged: 127 was already safe by the same "row behind it" logic this
+    docstring describes for 94.
     """
+    if not terminate and max_len == GT_MAX_ROWS * 4:
+        max_len -= 4
     slices = []
     pos = 0
     n = len(events)
