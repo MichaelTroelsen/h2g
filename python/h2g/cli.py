@@ -158,10 +158,9 @@ def main(argv=None) -> int:
              "(reload + 1) x (O + 1) / O frames rather than reload + 1. "
              "Applied only where that comes out a whole number, which is all "
              "Goattracker can express. It fixes the timing (Tarzan 0.67 -> "
-             "1.00 against the original) but moves the -S multiplier, and "
-             "every per-frame rate is scaled by that multiplier, so slides "
-             "and sweeps are then wrong: Tarzan's melody falls 73%% -> 59%%. "
-             "Opt-in for that reason")
+             "1.00 against the original, melody 73%% -> 96%%). It also moves "
+             "the -S multiplier, so anything packing the result must pack it "
+             "at the new one. On by default via presets.json")
     parser.add_argument(
         "--fold-transpose", action="store_true",
         help="recover the orderlist transposes that do not fit Goattracker's "

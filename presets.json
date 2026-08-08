@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.110 presets.py",
+  "generator": "h2g 0.5.120 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -12,6 +12,7 @@
     "fold_transpose": true,
     "sustain_exact": true,
     "no_hard_restart": true,
+    "skip_gate": true,
     "filters": true,
     "pulse": true,
     "vibrato": true,
@@ -734,10 +735,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12367,
+      "bytes": 12363,
       "subtunes": 11,
       "rows": 9422,
-      "multiplier": 2
+      "multiplier": 1
     },
     "Thanatos.sid": {
       "max_rows": 128,

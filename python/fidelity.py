@@ -3127,8 +3127,14 @@ def _run(p, args, workdir: Path) -> int:
             # but siddump calls the play routine seconds x 50 times whatever
             # the PSID speed field says, so a file needing -S2 still traces
             # at half its real row rate here and its scores understate.
-            row = measure(sid, workdir, opts, args,
-                          _preset_multiplier(doc, sid.name))
+            mult = _preset_multiplier(doc, sid.name)
+            if opts.get("skip_gate"):
+                # The tempo was written for a different -S factor, and packing
+                # at the preset's would play the file at the wrong speed --
+                # which is exactly what made --skip-gate look like a
+                # regression in v0.5.119.
+                mult = _skip_gate_multiplier(sid) or mult
+            row = measure(sid, workdir, opts, args, mult)
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
                     f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"

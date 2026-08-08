@@ -59,6 +59,7 @@ TOGGLES = ("pack", "prune", "dedup")
 
 # Not searched; see the module docstring.
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
+         "skip_gate": True,
          "slides": True, "effects": True, "status_bit6": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
@@ -76,17 +77,6 @@ EXCLUDED_FROM_ALWAYS = {
     # array is mutable player state, and a snapshot of a multi-subtune file
     # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
     "initial_instrument",
-    # Right about the row and wrong about everything downstream of it.
-    # Correcting the row moves the -S multiplier (Tarzan 2 -> 1), and v0.5.82
-    # divides every per-frame rate -- slide steps, the drum sweep, wavetable
-    # delays -- by that multiplier. So the fix un-does its own compensation:
-    # Tarzan's timing goes from 0.667 to a perfect 1.000 while its melody
-    # falls 73% -> 59%, and that is not the traced window (it holds at 10, 20,
-    # 40 and 60 seconds). Two files gain (Tarzan and Pygmies_Revenge reach
-    # 1.000 timing; Pygmies' melody rises 80% -> 93%), one loses, six do not
-    # move at the traced subtune. Opt-in until the multiplier coupling is
-    # handled -- see whats-next.md 7b.
-    "skip_gate",
 }
 
 
@@ -170,7 +160,8 @@ def pack_multiplier(sid_path: Path) -> int:
         sid = load_sid(str(sid_path))
         sid, det = _detect_tables(sid, lambda m: None)
         speeds = find_song_speeds(sid, det if det.can_convert else None)
-        return recommended_multiplier(speeds)
+        return recommended_multiplier(speeds, 0,
+                                      FIXED.get("skip_gate", False))
     except Exception:  # noqa: BLE001 - an unreadable song just packs plainly
         return 1
 
@@ -271,6 +262,18 @@ def main(argv=None) -> int:
                    # what makes a re-struck note retrigger reliably.
                    "sustain_exact": FIXED["sustain_exact"],
                    "no_hard_restart": FIXED["no_hard_restart"],
+                   # Most Hubbard players decrement the speed gate on only
+                   # some frames -- a counter above it jumps past the gate, or
+                   # returns from the play call outright -- so a row lasts
+                   # (reload + 1) x (O + 1) / O frames. Applied only where
+                   # that is a whole number, which Goattracker can express;
+                   # the fractional majority is untouched. Nine files move,
+                   # Tarzan's timing from 0.667 to 1.000 against the original
+                   # (melody 73% -> 96%) and Pygmies_Revenge 0.750 -> 1.000
+                   # (80% -> 93%), none worse. It also changes the -S factor,
+                   # so `multiplier` below moves with it -- pack_multiplier
+                   # passes skip_gate for exactly that reason.
+                   "skip_gate": FIXED["skip_gate"],
                    # The player sweeps the pulse width every frame in
                    # 43 files; the tool wrote the starting width and
                    # stopped, so those leads played a static duty

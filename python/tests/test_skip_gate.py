@@ -1,17 +1,16 @@
-"""Encoding the counter above the speed gate -- and why it is opt-in.
+"""Encoding the counter above the speed gate.
 
 §7b established that most Hubbard players decrement their speed gate on only
 some frames: a second counter jumps past it, or returns from the play call
 outright, so a row lasts `(reload + 1) x (O + 1) / O` frames rather than
 `reload + 1`. `--skip-gate` writes that corrected row.
 
-It is off by default, and the reason is the interesting part. Correcting the
-row changes the `-S` multiplier -- Tarzan goes from 2 to 1 -- and v0.5.82
-divides every per-frame rate the converter emits (slide steps, the drum sweep,
-wavetable delays) by that same multiplier. So the fix un-does its own
-compensation: Tarzan's timing goes from 0.667 to a perfect 1.000 against the
-original while its melody agreement falls 73% -> 59%, and that is not the
-traced window, since it holds at 10, 20, 40 and 60 seconds.
+Correcting the row also changes the `-S` multiplier -- Tarzan goes from 2 to 1
+-- so anything that packs the result has to pack it at the new one. v0.5.119
+did not: the harness used the multiplier recorded in presets.json while the
+tempo had been written for another, played the file at the wrong speed, read
+Tarzan's melody as 73% -> 59% and concluded the option was harmful. With the
+two matched it is 73% -> 96%, and Pygmies_Revenge 80% -> 93%.
 """
 import pathlib
 import sys
@@ -68,25 +67,25 @@ def test_no_skip_means_the_option_changes_nothing():
 
 
 def test_correcting_the_row_moves_the_multiplier():
-    """The coupling that keeps this opt-in.
-
-    A gate of 2 needs -S2 to be expressible at all; corrected to 3 it does
-    not, and every per-frame rate the writer scales by the multiplier moves
-    with it.
+    """A gate of 2 needs -S2 to be expressible at all; corrected to 3 it
+    does not. Anything that packs the output must follow -- getting this
+    wrong is what made the option look harmful for one version.
     """
     sp = _speeds((2,), (2,))
     assert recommended_multiplier(sp, 0, skip_gate=False) == 2
     assert recommended_multiplier(sp, 0, skip_gate=True) == 1
 
 
-def test_it_is_deliberately_excluded_from_the_always_block():
-    """A guard against someone enabling it by default without the coupling.
+def test_it_is_on_by_default():
+    """It was excluded for one version on a measurement that was my own bug.
 
-    tests/test_preset_passthrough.py requires every convert() option to be in
-    presets' `always` block unless it is named here, so this is the record
-    that the omission is a decision.
+    v0.5.119 read Tarzan's melody as 73% -> 59% and blamed a coupling between
+    the corrected row and the -S multiplier. The harness was packing the file
+    at the preset's multiplier while the tempo had been written for another,
+    so it played at the wrong speed. With the two matched it is 73% -> 96%.
     """
-    assert "skip_gate" in presets.EXCLUDED_FROM_ALWAYS
+    assert "skip_gate" not in presets.EXCLUDED_FROM_ALWAYS
+    assert presets.FIXED.get("skip_gate") is True
 
 
 @needs_corpus

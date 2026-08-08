@@ -555,38 +555,36 @@ table.** `tests/test_outer_gate.py` holds that shut.
 That also disposes of v0.5.102's arithmetic problem (one frame in twelve
 predicting 2.4 where Tarzan measures 3.00): twelve was the decoy.
 
-### v0.5.119 — encoded behind `--skip-gate`, and why it stays opt-in
+### v0.5.119/v0.5.120 — encoded, and on by default
 
-`convert(skip_gate=True)` / `--skip-gate` writes the corrected row wherever it
-comes out a whole number (`SongSpeeds.encodable_frames`), which is the only
-form Goattracker's tempo can express. Nine files change bytes.
+`convert(skip_gate=True)` writes the corrected row wherever it comes out a
+whole number (`SongSpeeds.encodable_frames`), which is all Goattracker's tempo
+can express. Nine files change bytes; the other 42 under-read files are
+fractional and remain §8's re-gridding problem.
 
-**It works, and it is not an improvement.** Measured on all nine:
-
-| | timing (`--pace` ours/theirs) | melody |
+| | timing (`--pace`) | melody |
 |---|---|---|
-| Tarzan | 0.667 → **1.000** | 73% → **59%** |
+| Tarzan | 0.667 → **1.000** | 73% → **96%** |
 | Pygmies_Revenge | 0.750 → **1.000** | 80% → **93%** |
-| six others | unchanged at the traced subtune | unchanged |
-| Knucklebusters | 1.333 → refused | unchanged |
+| seven others | unchanged | unchanged |
 
-Tarzan's timing becomes exact — 1.000 with a zero IQR over 417 gaps — and its
-melody falls ten points. That is **not** the traced window: it holds at 10, 20,
-40 and 60 seconds.
+Corpus mean melody **74.3% → 74.8%**, nothing worse. Tarzan's timing is exact
+— 1.000 with a zero IQR over 417 matched gaps.
 
-**The cause is a coupling I should have seen coming.** Correcting the row moves
-the `-S` multiplier (Tarzan 2 → 1), and v0.5.82 divides every per-frame rate
-the writer emits — slide steps, the drum sweep, wavetable delays — by that
-same multiplier. So the fix un-does its own compensation. The row is right and
-everything downstream of it is then wrong.
+**v0.5.119 shipped this as opt-in on a conclusion that was my own harness
+bug**, and it is worth recording because the bug was invisible and the story
+built on it was plausible. Correcting the row moves the `-S` multiplier
+(Tarzan 2 → 1), and `fidelity.py` packed the result at the multiplier recorded
+in `presets.json` — the old one. The file therefore played at the wrong speed,
+Tarzan's melody read 73% → **59%**, and I explained it with a coupling between
+the corrected row and v0.5.82's per-frame rate scaling. That explanation was
+coherent, mechanistic, and entirely fictional. The give-away was in the row
+all along: `multiplier=2` on both sides of an A/B where one side was tempo'd
+for 1.
 
-**What it would take to make this the default:** the per-frame rates need to
-be scaled by the *player's* actual frames-per-row rather than by the `-S`
-factor. Those are the same number today, which is why nothing separated them
-until the row was corrected. Until then `skip_gate` is in
-`presets.EXCLUDED_FROM_ALWAYS` with that reason, and `tests/test_skip_gate.py`
-records the multiplier coupling so it cannot be enabled by default without
-someone reading why it was not.
+**Any measurement of a tempo change must pack at the multiplier that tempo was
+written for.** `_skip_gate_multiplier` now does that in both the `--pace` and
+the row-measuring paths.
 
 ### Read, not encoded — deliberately
 
