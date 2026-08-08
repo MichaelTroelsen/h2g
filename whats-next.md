@@ -886,11 +886,34 @@ are not powers of two either. **Do not raise the cap without re-measuring.**
     3 at `-S1` — the same 3 frames).
 
   So the fault is in something measured in **play calls** that does not scale
-  with the multiplier, not in the row. Candidates, none eliminated: the
-  `gatetimer` of 2 calls every instrument carries (2 frames at `-S1`, 0.4 at
-  `-S5`), the fixed five-entry wavetable running five times faster per row,
-  and v0.5.82's integer divisions (`step // 5`, `256 // 5`) losing a
-  small step to zero.
+  with the multiplier, not in the row.
+
+  **`gatetimer` is eliminated (v0.5.123), by reading and by measurement.**
+  `gplay.c:905` fetches new notes on the single call where
+  `tick == gatetimer`; `tick` reloads to `tempo` each row and counts down, so
+  the fetch happens once per row for any tempo above the gatetimer, exactly
+  as at tempo 3. It positions the fetch inside the row and cannot drop notes,
+  and the `stopsong()` guard at `:334` needs `gatetimer > tick`, i.e. 2 > 18.
+  Forcing the gatetimer to 10 calls — the same 2 frames at `-S5` that 2 calls
+  buys at `-S1` — gives **52 attacks, identical to 2**.
+
+  **The remaining candidate is the wavetable, and it may be partly the
+  measurement.** The wavetable advances one entry per *call* (`gplay.c:707`),
+  so at `-S5` a five-entry instrument program completes inside a single frame.
+  Two consequences, and they are hard to tell apart:
+
+  - the program reaches its gate-off or loop entry five times sooner relative
+    to the row, which is a real conversion defect;
+  - **siddump samples the registers once per frame whatever `-m` says**, so
+    within-frame gate transitions are invisible and the last call of the frame
+    wins. A note that re-gates and is then pulled low by a later call in the
+    same frame shows no rising edge at all — which is exactly what "attacks
+    vanish" looks like.
+
+  The second is a resolution limit that grows with the multiplier, and it
+  bounds what any `-m` trace can say about `-S5`. It also means the `-S3` and
+  `-S4` gains are measured slightly pessimistically. Separating the two needs
+  a per-call trace, which `-m` does not provide — the VICE harness would.
 
   **This matters beyond `-S5`.** If per-call structures degrade with the
   multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just
