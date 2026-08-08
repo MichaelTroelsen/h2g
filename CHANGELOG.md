@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.138 — 2026-08-08
+
+- check whether goatwriter/GoatTracker forces channel lockstep
+
 ## 0.5.137 — 2026-08-08
 
 - confirm Commando's FF/FE track-end mechanism via live 6502 disassembly

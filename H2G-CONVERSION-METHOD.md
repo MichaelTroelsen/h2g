@@ -3269,18 +3269,39 @@ artifact of the conversion; it is what `$54EC,X` being per-voice state (`X`
 indexes voice 0/1/2 throughout the fetch/dispatch code above) makes true of
 the original player as well.
 
-**What this leaves unexplained.** The mechanism and the lengths both check
-out, which narrows §7.pp's open question rather than closing it: if each
-voice already loops independently at the length the source encodes, 64 and
-63 (voices 0/1) drift by one entry per lap against each other while voice
-2's 123-entry lap is roughly two of theirs — the kind of near-but-not-quite
-relationship that keeps recombining audibly for several laps before any
-short cycle repeats exactly. That is a plausible source of "the original
-keeps introducing content" on its own, independent of any converter defect,
-*if* Goattracker's own playback actually advances three orderlists at their
-individually-encoded lengths without forcing them back into lockstep at some
-shared point. Whether it does is a `goatwriter.py`/pattern-length question,
-not a 6502 one, and was not checked this pass.
+**Checked next: does Goattracker's own engine force the three channels back
+into lockstep, or let them drift the way the mechanism above implies it
+should?** Reading `gplay.c`'s player loop settles this too.
+`playroutine()`'s per-row loop (`gplay.c:304-342`) calls `sequencer(c, cptr)`
+once per channel, `cptr` a distinct `CHN*` per channel with its own
+`songptr`/`pattptr`/`pattnum`. `sequencer()` (`gplay.c:959-1007`) only
+touches `cptr->songptr` — advancing to the next orderlist entry, or looping
+it via the same `LOOPSONG` marker Goattracker's own export uses for
+`--legal-restart` — when *that channel's own* `pattptr` has just hit
+`ENDPATT` (`gplay.c:918-919`, set when the channel's current pattern runs
+out). Nothing here reads or waits on another channel's state. **Goattracker
+does not force the three orderlists into lockstep**; each channel's advance
+is gated purely by that channel's own pattern length, exactly like the 6502
+routine above gates each voice's advance purely by that voice's own
+`$54EC,X`. The 64/63/123-entry independence confirmed structurally in §7.pp
+is therefore preserved all the way through — from the source player, through
+`convert_tracks`, through Goattracker's own playback — not collapsed at any
+point in between.
+
+**What this leaves unexplained.** Ruling out "the lengths are wrong" and
+"Goattracker resyncs them" was the goal here, and both are ruled out — but
+neither one actually predicts the specific defect §7.pp opened with, which
+is a **silence gap** (all three voices quiet, ~7.8–7.9s and every ~5.2s
+after — almost exactly voice 0's 64-entry lap), not "the same riff forever."
+An exact repeat of voice 0 every lap is *correct* given a 64-entry loop on
+both sides; three voices going simultaneously silent at that boundary, on
+h2g's side only, is a different claim that this pass did not test — it
+needs the original's own trace at the same 16–20s window (busy, per §7.pp's
+intro) checked against h2g's (quiet) to see whether the gap is a note/gate
+encoding defect at the loop seam, or something upstream of the orderlist
+mechanism entirely (a dynamic mid-song `track_lo`/`track_hi` swap the static
+dispatch-point reading above would not see, for instance). Not attempted
+this pass.
 
 ## 9. The `.sng` output layout
 
