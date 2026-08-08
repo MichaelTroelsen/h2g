@@ -1866,11 +1866,16 @@ carry the note-relative depth**. Unlike `+7`, this is a shared format.
 
 The mapping, derived rather than fitted:
 
-* the player's peak excursion is `(bound >> 1) × depth` and Goattracker's is
-  `(cmp / 2) × speed`; the player's half-period is `bound` frames and
-  Goattracker's `cmp / 2` **calls**.
-* Match the period: `cmp = 2 × bound × multiplier`. Match the excursion under
-  that: `rshift = shift + 1 + log2(multiplier)`.
+* the player's counter steps once per frame between 0 and `bound`, so its
+  half-period is `bound` frames; Goattracker's is `cmp + 2` **calls**
+  (§ 7.kk). Match the period: `cmp = bound × multiplier − 2`.
+* the player's apply loop only ever *subtracts*, so `(bound >> 1) × depth` is
+  a peak-to-peak, not an amplitude; Goattracker's peak-to-peak is
+  `(cmp + 2) × speed`. Match the excursion under the period above:
+  `rshift = shift + 1 + log2(multiplier)`.
+* Both numbers here are the **corrected** ones (v0.5.129). This section
+  originally read Goattracker's half-period as `cmp / 2` and emitted
+  `cmp = 2 × bound × multiplier`; see § 7.ll.
 * So the entry is `($80 | cmp, rshift)`, the instrument's `ptr[STBL]` is its
   1-based index, and `vibdelay` is 1 — none of these players delays the onset.
 
@@ -2026,7 +2031,7 @@ so the frequency offset each frame is `(interval >> 4) × table[i]` — an
 arbitrary LFO shape, where `--vibrato` reads a bound and a shift. Goattracker's
 vibrato is a fixed triangle, so this can only ever be approximated: the table's
 peak gives the excursion and its length the period. That approximation
-**is** implemented -- see § 7.jj, which also corrects what § 7.ee
+**is** implemented -- see § 7.kk, which also corrects what § 7.ee
 assumed Goattracker's half-period to be.
 
 ### 7.hh The overshoot: three quarters of it was the metric
@@ -2431,7 +2436,7 @@ for b in track:
 
 ---
 
-### 7.jj The LFO-table vibrato, and what Goattracker's half-period really is
+### 7.kk The LFO-table vibrato, and what Goattracker's half-period really is
 
 § 7.gg ends by naming Hollywood or Bust's missing movement — a vibrato driven
 by an arbitrary table rather than by the `$78`/`$07` pair § 7.ee reads — and
@@ -2518,15 +2523,12 @@ full period  = 2 * (cmpvalue + 2) calls
 The **half-period is `cmp + 2` calls, not `cmp / 2`** — a factor of about four
 at the small values both engines produce, and at `cmpvalue` 0 the `+ 2` is the
 entire period. § 7.ee's `cmp = 2 × bound × multiplier` therefore emits an
-oscillation at roughly half the player's rate for all 56 files that carry the
-classic form. Its *excursion* is unaffected: `(cmp + 2) / 2 × speed` against
-the `(cmp / 2) × speed` it assumed differ by one part in `cmp`, and the `+ 1`
-in `rshift = shift + 1 + log2(multiplier)` was chosen to cancel the doubled
-`cmp`, so the two errors meet in the middle. Correcting it is
-`cmp = bound × multiplier − 2` with `rshift = shift + log2(multiplier)`; it
-moves 56 files' output and belongs to a measured commit of its own, not to
-this one. `tests/test_table_vibrato.py` pins the simulation so the next
-derivation starts from the fact rather than the constant.
+oscillation at roughly half the player's rate for all 49 files that carry the
+classic form *and* expose the byte to the reader. Its *excursion* is
+unaffected, and § 7.ll works out exactly why the two errors cancelled there.
+The correction is `cmp = bound × multiplier − 2`, made in v0.5.129;
+`rshift` is unchanged. `tests/test_table_vibrato.py` pins the simulation so the
+next derivation starts from the fact rather than the constant.
 
 > **The transferable lesson:** a mapping has two sides, and the side you did
 > not write is the one you are most likely to have read rather than measured.
@@ -2601,6 +2603,98 @@ already reads. Across all 95 corpus files exactly two match, which a test
 asserts by sweeping the corpus rather than by naming the two.
 
 ---
+
+
+
+### 7.ll The vibrato half-period, corrected — and a fix its own report cannot judge
+
+§ 7.kk found that Goattracker's vibrato half-period is `cmp + 2` calls and left
+the classic mapping alone, on the grounds that changing it moves every file
+carrying the format and so deserves its own measured commit. This is it.
+
+#### What changed, and what deliberately did not
+
+The player's counter steps by one per frame between 0 and `bound`
+(Warhawk `$11FE-$121E`: `DEC ctr,X / BNE out` walking down, `INC ctr,X /
+LDA bound,X / CMP ctr,X / BCS out` walking up), so its half-period is `bound`
+frames. Goattracker's is `cmp + 2` calls, i.e. `(cmp + 2) / multiplier` frames.
+Hence
+
+```
+cmp = bound × multiplier − 2          (was: 2 × bound × multiplier)
+```
+
+**`rshift` is unchanged, and the reason is worth recording.** The old
+derivation equated the player's `(bound >> 1) × depth` with a Goattracker
+*amplitude* of `(cmp / 2) × speed`. But the player's apply loop only ever
+subtracts —
+
+```
+1251  BD C3 15  LDA ctr,X / 4A LSR / A8 TAY / 88 DEY / 30 16 BMI out
+1257  38 AD 8E 15 ED 8C 15 ...        ; freq -= depth, counter/2 times
+```
+
+— so the note is the *top* of the swing and `(bound >> 1) × depth` is a
+peak-to-peak, not an amplitude. Matching peak-to-peak against Goattracker's
+`(cmp + 2) × speed`, with `cmp + 2 = bound × multiplier` from the period,
+cancels `bound` entirely and leaves `speed = depth / (2 × multiplier)` — which
+is `rshift = shift + 1 + log2(multiplier)`, the shipped value. **A period twice
+too long and an excursion convention off by two had cancelled in the shift
+exactly.** Only `cmp` was ever wrong, and a fitted correction that "fixed" both
+would have doubled every file's vibrato depth.
+
+#### Reach
+
+49 of 95 files change bytes — every file whose vibrato-byte addressing the
+reader recognises (56 carry the format; 7 reach the byte by an idiom
+`_find_vibrato` does not match). Verified by holding everything else fixed and
+hashing each conversion under the old and new mapping; the A/B's independently
+computed set is the same 49. The speed-table *indices* are identical on both
+sides, so nothing else in the file shifted.
+
+#### What the report said, and why it is not the evidence
+
+`FIDELITY.md` moved on 30 files, in `slides` and `bend` only. Every other
+dimension is flat, and that is expected rather than a null result:
+`melody`/`seq`/`pitch`/`retrig` read *which* notes are struck, and
+`wave`/`adsr`/`pul`/`filt`/`cut` read registers vibrato never touches. **No
+dimension in the report measures an oscillation rate at all**, so none of them
+can adjudicate a period fix. The direction confirms it: 15 files moved toward
+the original and 15 away, corpus mean `melody` unchanged at 76.7%, median
+`bend` 0.505 → 0.488.
+
+The movement that *did* appear is second-order, and identifying it is what
+makes the flat table readable. At `-S1` Goattracker adds or subtracts `speed`
+on **every** call, so total pitch travel is `speed × calls` and is
+structurally independent of the period — `bend` should not have moved on a
+multiplier-1 file at all. Eleven did, by a clean ×1.5. The dump says why
+(One_on_One, voice 3):
+
+| frame | old | new |
+|---|---|---|
+| 100 | `2354 (+ 0084)` | `2354 (+ 0084)` |
+| 101 | `23D8 (+ 0084)` | `23D8 (+ 0084)` |
+| 102 | `245C (C#5 BD)` | `2354 (- 0084)` |
+
+The old half-period was long enough that the pitch drifted **past a semitone**
+before reversing, and siddump then re-read the movement as a *note change*
+rather than a bend. `_bend_travel` takes siddump's own `(+ xxxx)` lines by
+design (§ 7.hh), so those frames vanished from both `slides` and `bend`. The
+correction turns the oscillation around sooner, siddump keeps calling it a
+bend, and the counts rise — which is evidence the change *landed*, not evidence
+it is *right*.
+
+What makes it right is the derivation above plus the four lines of `gplay.c`
+run rather than read. That is the whole of the case, and the report is silent
+on it.
+
+> **The transferable lesson**, and this repo has now paid for it twice: a flat
+> or noisy table has two readings — "this change reaches nothing" and "nothing
+> here can see this change". Distinguishing them is not optional and it is not
+> a judgement call. `--baseline` hashes the converted bytes, which settled
+> reach at 49 files; the dimension registry names the registers each column
+> reads, which settled visibility. Neither number came from looking at the
+> means.
 
 
 ## 9. The `.sng` output layout

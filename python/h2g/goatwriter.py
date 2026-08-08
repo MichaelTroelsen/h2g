@@ -694,26 +694,40 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
 
         entry = ($80 | cmp, rshift)
 
-    with the two derived from the excursion and the half-period:
+    with the two derived from the half-period and the excursion, both taken
+    from the *simulated* gplay.c semantics (see VIBRATO_CMP_BIAS) rather than
+    from its constants:
 
-    * The player's peak excursion is `(bound >> 1) * depth` and its half-period
-      is `bound` frames. Matching the period against a Goattracker half-period
-      read as `cmp / 2` *calls* gives `cmp = 2 * bound * multiplier`, and
-      matching the excursion then gives `rshift = shift + 1 + log2(multiplier)`.
-    * `multiplier` is there because Goattracker's counter advances per play
+    * **Period.** The player's counter steps by one per frame between 0 and
+      `bound` (Warhawk $11FE-$121E: `DEC ctr,X / BNE out` walking down,
+      `INC ctr,X / LDA bound,X / CMP ctr,X / BCS out` walking up), so its
+      half-period is `bound` frames. Goattracker's is `cmp + 2` *calls*, which
+      is `(cmp + 2) / multiplier` frames. Hence
+
+          cmp = bound * multiplier - VIBRATO_CMP_BIAS
+
+    * **Excursion.** The player's apply loop only ever subtracts
+      (Warhawk $1245: `LDA ctr,X / LSR / TAY / DEY / BMI out / freq -= depth`),
+      so the note is the top of the swing and `(bound >> 1) * depth` is a
+      **peak-to-peak**, not an amplitude. Goattracker's peak-to-peak is
+      `(cmp + 2) * speed`. Equating the two, with `cmp + 2 = bound *
+      multiplier` from the period, cancels `bound` and leaves
+      `speed = depth / (2 * multiplier)`, i.e.
+
+          rshift = shift + 1 + log2(multiplier)
+
+    * `multiplier` is in both because Goattracker's counter advances per play
       call and the player's per frame -- the same per-frame/per-call division
       every other rate in this file takes (see _drum_speed).
 
-    **The half-period this assumes is wrong, and these numbers are kept
-    anyway.** Simulating gplay.c (see VIBRATO_CMP_BIAS) puts it at
-    `cmp + 2` calls, not `cmp / 2`, so the emitted oscillation runs at about
-    half the player's rate; the excursion, which the `+1` in the shift was
-    chosen to match, comes out right regardless. Correcting it is
-    `cmp = bound * multiplier - VIBRATO_CMP_BIAS` with
-    `rshift = shift + log2(multiplier)`, and it moves the output of all 56
-    files that carry this format -- a measured change of its own, not a
-    silent rider on the table-vibrato commit that found it.
-    _table_vibrato_entry below is derived from the simulated semantics.
+    Until v0.5.129 `cmp` was `2 * bound * multiplier`, from reading
+    Goattracker's half-period as `cmp / 2` calls instead of `cmp + 2`. That
+    made the emitted oscillation run at close to **half** the player's rate for
+    all 56 files carrying this format. `rshift` is unchanged by the correction
+    and that is not a coincidence: the old derivation equated the player's
+    peak-to-peak with a Goattracker *amplitude*, and the two errors -- a period
+    twice too long and an excursion convention off by two -- cancelled in the
+    shift exactly. Only `cmp` was ever wrong.
 
     Two deliberate approximations besides, neither hidden: the player applies
     its counter as a *position* (an absolute offset from the note) where
@@ -728,7 +742,9 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
         # silence reached one step later.
         return None
     shift = byte & VIBRATO_SHIFT_MASK
-    cmp_value = min(0x7F, 2 * bound * multiplier)
+    # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
+    # shortest is two calls (cmp 0), which is what the clamp gives.
+    cmp_value = min(0x7F, max(0, bound * multiplier - VIBRATO_CMP_BIAS))
     rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 

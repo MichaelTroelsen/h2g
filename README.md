@@ -666,7 +666,7 @@ their movement returns rather than travels.
 amplitude bound, bits 0-2 a right-shift applied to the semitone interval at the
 current note. Goattracker's note-relative speed form is the same arithmetic
 (`gplay.c:786-792`), so the mapping is close to literal — the period gives
-`cmp = 2 × bound × multiplier` and the excursion then gives
+`cmp = bound × multiplier − 2` and the excursion then gives
 `rshift = shift + 1 + log2(multiplier)`. Detection is gated on finding both the
 parameter split and the depth derivation, which the corpus never separates (all
 56, no exceptions), so the flag is a no-op in the other 39 files.
@@ -736,18 +736,33 @@ so it can rescue a file that vibrates not at all and can never disturb one that
 already reads. No other corpus file matches the shape (`tests/
 test_table_vibrato.py` checks all 95).
 
-#### A note on the half-period both forms are matched against
+#### The half-period both forms are matched against (corrected in v0.5.129)
 
 Simulating `gplay.c:795-801` rather than reading its constants gives a
 peak-to-peak of `(cmpvalue + 2) × speed` over a period of `2 × (cmpvalue + 2)`
-calls — so the **half-period is `cmp + 2` calls, not `cmp / 2`**. The classic
-mapping above was derived from the `cmp / 2` reading, which means the 56 files
-it covers oscillate at about half the player's rate; their *excursion*, which
-the `+ 1` in the shift was chosen to match, is right regardless. Correcting it
-is `cmp = bound × multiplier − 2` with `rshift = shift + log2(multiplier)`, and
-it moves the output of all 56 — a measured change of its own rather than a
-silent rider on the commit that found it. The LFO-table form is derived from
-the simulated semantics.
+calls — so the **half-period is `cmp + 2` calls, not `cmp / 2`**. Until
+v0.5.129 the classic mapping used the `cmp / 2` reading and emitted
+`cmp = 2 × bound × multiplier`, which oscillated at roughly **half** the
+player's rate in all 49 files it reaches.
+
+`rshift` did **not** change with the correction, and that is not a coincidence.
+The old derivation equated the player's `(bound >> 1) × depth` — which the
+player's apply loop only ever *subtracts*, so it is a peak-to-peak — with a
+Goattracker *amplitude*. A period twice too long and an excursion convention
+off by two cancelled in the shift exactly. Only `cmp` was ever wrong.
+
+**`FIDELITY.md` cannot adjudicate the correction, and it is worth being precise
+about why.** No dimension it prints measures an oscillation *rate*:
+`melody`/`seq`/`pitch`/`retrig` read which notes are struck, and
+`wave`/`adsr`/`pul`/`filt`/`cut` read registers vibrato never touches. It moved
+`slides` and `bend` on 30 files — 15 toward the original and 15 away, with
+corpus mean `melody` unchanged — and even that movement is second-order rather
+than a verdict: the old oscillation drifted more than a semitone before
+reversing, so **siddump re-read it as a note change rather than a bend** and
+dropped those frames from both counts. One_on_One frame 102 is the site (old
+`245C (C#5 BD)`, new `2354 (- 0084)`). What makes the correction right is the
+derivation and the gplay simulation, not the table. The LFO-table form was
+derived from the simulated semantics from the start and is unchanged.
 
 ### `--pulse` (the duty cycle that never moved)
 

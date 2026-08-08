@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.129 — 2026-08-08
+
+- correct the classic vibrato half-period: cmp = bound*multiplier - 2
+
 ## 0.5.128 — 2026-08-08
 
 - rewrite the handoff for the split repository

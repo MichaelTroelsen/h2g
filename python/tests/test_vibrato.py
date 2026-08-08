@@ -27,8 +27,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from h2g.detect import (Detection, VIBRATO_BOUND_MASK, VIBRATO_DEPTH_SHAPES,
                         VIBRATO_SHAPE, VIBRATO_SHIFT_MASK, _find_vibrato)
 from h2g.goatwriter import (FORMAT_GTS2, FORMAT_GTS5, GT_MAX_VIB_SHIFT,
-                            SPEED_NOTE_RELATIVE, VIBRATO_DELAY,
-                            _vibrato_layout)
+                            SPEED_NOTE_RELATIVE, VIBRATO_CMP_BIAS,
+                            VIBRATO_DELAY, _vibrato_layout)
 from h2g.search import search_file
 from h2g.sidfile import load_sid
 
@@ -60,8 +60,8 @@ def test_the_byte_splits_into_a_bound_and_a_shift():
     assert (0x2B & VIBRATO_BOUND_MASK) >> 3 == 5
     assert 0x2B & VIBRATO_SHIFT_MASK == 3
     got, table = _layout(0x2B)
-    # cmp = 2 * bound * multiplier; rshift = shift + 1 + log2(multiplier).
-    assert table == [(SPEED_NOTE_RELATIVE | 10, 4)]
+    # cmp = bound * multiplier - 2; rshift = shift + 1 + log2(multiplier).
+    assert table == [(SPEED_NOTE_RELATIVE | 3, 4)]
     assert got == {0: (1, VIBRATO_DELAY)}
 
 
@@ -96,17 +96,32 @@ def test_identical_parameters_share_one_entry():
 
 def test_the_period_and_depth_both_scale_with_the_multiplier():
     # Goattracker's counter advances per play *call*, the player's per frame.
-    # At -S2 the half-period needs twice the compare value, and the depth one
-    # more right-shift so the excursion stays where the player puts it.
+    # At -S2 twice as many calls fit in the player's half-period, and each
+    # step must be half the size so the excursion stays where the player
+    # puts it: cmp 5*1-2 = 3 -> 5*2-2 = 8, rshift 4 -> 5.
     _, at1 = _layout(0x2B, multiplier=1)
     _, at2 = _layout(0x2B, multiplier=2)
-    assert at1 == [(SPEED_NOTE_RELATIVE | 10, 4)]
-    assert at2 == [(SPEED_NOTE_RELATIVE | 20, 5)]
+    assert at1 == [(SPEED_NOTE_RELATIVE | 3, 4)]
+    assert at2 == [(SPEED_NOTE_RELATIVE | 8, 5)]
+
+
+def test_the_half_period_is_the_bound_in_frames_not_twice_it():
+    # gplay.c:795-801 flips direction after `cmp + 2` calls, not `cmp / 2`.
+    # A bound of 5 is 5 frames, so at -S1 the entry must ask for 5 calls.
+    _, table = _layout(0x2B, multiplier=1)
+    assert (table[0][0] & 0x7F) + VIBRATO_CMP_BIAS == 5
+
+
+def test_a_bound_shorter_than_goattrackers_shortest_clamps_to_it():
+    # bound 1 at -S1 wants a one-frame half-period; cmp 0 is two calls, the
+    # fastest Goattracker has, and cmp cannot go negative.
+    _, table = _layout(0x08, multiplier=1)      # bound 1, shift 0
+    assert table == [(SPEED_NOTE_RELATIVE | 0, 1)]
 
 
 def test_the_compare_value_cannot_run_into_the_note_relative_bit():
     # cmp is stored in the same byte as the $80 flag, so it has 7 bits.
-    _, table = _layout(0x78, multiplier=3)      # bound 15 -> 2*15*3 = 90
+    _, table = _layout(0x78, multiplier=3)      # bound 15 -> 15*3-2 = 43
     left = table[0][0]
     assert left & 0x7F <= 0x7F and left & SPEED_NOTE_RELATIVE
 

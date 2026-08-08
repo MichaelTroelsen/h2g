@@ -242,11 +242,18 @@ test dependency).
     shares, so it is consulted only where `_find_vibrato` returned None.
     Note what finding it turned up about the target: Goattracker's vibrato
     half-period is `cmp + 2` play calls, **not** `cmp / 2` -- simulated from
-    `gplay.c:795-801` rather than read off it -- so the classic mapping in
-    `_classic_vibrato_entry` oscillates at about half the player's rate for
-    all 56 files it covers. Its excursion is right, the correction is one
-    line, and it moves 56 files' output: a measured commit of its own. See
-    H2G-CONVERSION-METHOD.md section 7.jj.
+    `gplay.c:795-801` rather than read off it. `_classic_vibrato_entry` was
+    built on the `cmp / 2` reading and oscillated at about half the player's
+    rate until **v0.5.129**, which corrected `cmp` to
+    `bound * multiplier - VIBRATO_CMP_BIAS` across 49 files. `rshift` was
+    *not* touched: the old derivation equated the player's peak-to-peak with
+    a Goattracker amplitude, and that error cancelled the doubled period
+    exactly -- correcting both would have doubled every file's depth. **No
+    dimension of `FIDELITY.md` measures an oscillation rate**, so the report
+    could not adjudicate the fix (15 files toward the original, 15 away, mean
+    melody unchanged); `--baseline` byte-hashing settled its reach instead.
+    See H2G-CONVERSION-METHOD.md sections 7.kk and 7.ll -- and note that the
+    two sections formerly both numbered 7.jj are now 7.jj and 7.kk.
   - `tracks.py` — `convert_tracks`, port of `GoatConvertTracks`. Also
     `apply_initial_instruments` (behind `--initial-instrument`), which gives a
     voice the instrument the player starts it on where no pattern names one.
