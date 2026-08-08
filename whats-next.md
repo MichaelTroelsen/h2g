@@ -1,1051 +1,316 @@
 <original_task>
-Continuation of work on `C:\Users\mit\claude\c64server\hubbard` — **H2G**, a
-converter from Rob Hubbard `.sid` files to Goattracker `.sng`. This session
-began at **v0.5.81** (HEAD `46ba1f8`) from the previous handoff and ran to
-**v0.5.94**.
+Continuation of work on **H2G**, a converter from Rob Hubbard `.sid` files to
+GoatTracker `.sng`. The session opened with `read what next` against the
+previous handoff (then at v0.5.95, in `c64server/hubbard/`) and was driven as a
+sequence of single-item directives, each answered before the next was given:
 
-The user drove it as a sequence of single-item directives, each answered before
-the next was given:
-
-1. `continue` → pick up the largest open item (§1, the per-call/per-frame
-   multiplier defect)
-2. `what next` → recommend and start §1b (the slide-step clamp)
-3. `start on 1b with the 6502 check`
-4. `do the digi decoder next`
-5. `do the cmdtable slide next`
-6. `now do the overshoot`
-7. `now do the drum gate`
-8. `now do the retrodebugger run on bump_set_spike`
-9. `continue` → (RetroDebugger dead) the listening pass / RSID rendering
-10. `/subtask` → add LoadTracker to a linked comparison of GoatTracker clones
+1. `read what next` → summarise the open items and recommend
+2. `do 7` → §7, measuring the `-S2` group at its real call rate
+3. `/subtask do 4`, `do 5`, `do 6` → three forks in parallel
+4. `merge them all and regenerate`
+5. `commit and push`
+6. `what about the improvements you did to the fidelity tools?`
+7. `do both PRs` → upstream siddump, and SIDM2conv
+8. `we should work on H2G` → drop the SIDM2 thread
+9. `what github` / `why can this repo be its own repo?` / `prepare the split` /
+   `make it public and do the cutover` / `delete the hubbard folder` /
+   `rm -rf hubbard and clean up the worktrees`
+10. `work on 7b in the new repo`, then `loosen the shape`, `run --ticks on
+    those five`, `do spellbound next`, `do action_biker next`, `check the
+    sticky duration dialect`, `do the static check`, `go on`
+11. `do 1, start with tarzan` → encode the skip counter
+12. `do 8` → the fractional-row problem
+13. `why does -S5 regress?` → `check the gatetimer` → `check the wavetable` →
+    `do the equal-calls mode` → `do the vice per-call trace`
 
 Standing rules from `CLAUDE.md` that shaped every commit: bump the version on
-every commit, regenerate `SURVEY.md`/`presets.json`/`FIDELITY.md` on a settled
-tree, never ship a fake success, keep `Commando.sng` byte-exact, stage only
-`hubbard/` paths by pathspec.
+every commit; regenerate `SURVEY.md`/`presets.json`/`FIDELITY.md` on a settled
+tree, once; never ship a fake success; keep `Commando.sng` byte-exact; stage
+only project paths by pathspec.
 </original_task>
 
 <work_completed>
 
 ## Headline
 
-| | start (v0.5.81) | now (v0.5.94) |
+| | start (v0.5.95) | now (v0.5.127) |
 |---|---:|---:|
-| corpus at defaults | 80/95 | 80/95 |
-| best per-song options | 83/95 | 83/95 |
-| tests | 520 | **547 pass, 3 skipped** |
-| mean melody / wave (82 measured) | 78% / 62% | 78% / 62% |
-| **corpus median `bend`** | — (did not exist) | **0.25x** |
-| **files bending nothing** | 33 (once measurable) | **18** |
+| corpus mean melody | 78% | **78%** as traced, **86.3%** at equal sampling |
+| files "playing the same music" (95-100%) | 27 | **34** |
+| files "playing something else" (0-50%) | 17 | **14** |
+| tests | 547 pass / 3 skip | **651 pass / 3 skip** |
+| home | `c64server/hubbard/` subdirectory | **its own public repo** |
 
 `Commando.sid` → `Commando.sng` **byte-exact** throughout.
 
-## Commits (all pushed to origin/master)
+## The repository moved — this is the most structural change
+
+H2G now lives at **https://github.com/MichaelTroelsen/h2g** (public, `master`
+at `fe79a92`, v0.5.127, 121 commits). It was extracted from
+`SIDDetector2/hubbard/` with `git subtree split --prefix=hubbard`, so the whole
+history came with it.
+
+- Local clone: **`C:\Users\mit\claude\h2g`** — this is where work happens now.
+- `SIDDetector2` `master` (`4ebf6ca`) has `hubbard/` **deleted**. Verified
+  before removal: all 106 tracked files present in the new repo, a fresh clone
+  green, no tracked file elsewhere referencing it.
+- An **empty `C:\Users\mit\claude\c64server\hubbard` directory** remains only
+  because this session's shell is parked in it. `rmdir` it from any other
+  shell.
+- Three stale worktrees removed (`c64server-s7`, `c64server-corpus`,
+  `scratchpad/wt-vibrato`).
+
+**The corpus did not move.** It is HVSC-derived and belongs to the SIDM2
+submodule. `H2G_CORPUS` points at it; default
+`C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob` (95 files, 832 KB).
+Before v0.5.103 fourteen test files hard-coded that absolute path and five had
+no existence check, so a corpus-less clone **failed**; now it skips (579 pass,
+32 skip on a corpus-less checkout).
+
+## Upstream PR
+
+**https://github.com/cadaver/siddump/pull/9 — OPEN.** Adds `-m<n>`,
+playroutine calls per displayed frame. Rebased onto upstream **V1.10** (the
+vendored copy was 1.08; the main loop was unchanged so it applied cleanly),
+rebuilt and verified there: default *and* `-m1` byte-identical to stock 1.10.
+Head branch `calls-per-frame` on the `MichaelTroelsen/siddump` fork.
+
+A second PR against `SIDM2conv` was **investigated and deliberately not
+opened** — see attempted_approaches.
+
+## §7 — the `-S2` group, measured at its real rate (v0.5.98/0.5.99)
+
+`python/tools/siddump-rt/` is siddump 1.08 vendored (BSD, notice retained)
+plus `-m<n>`. A dump row stays one PAL frame of real time whatever the call
+rate. `fidelity.py` passes each song its multiplier and **refuses** a
+multiplier > 1 song on a binary without `-m`.
+
+Verified rather than assumed: `-m1` byte-identical to stock; the `-S` stub is
+at the packed file's **init** address, writes `0x4cc7/multiplier` to timer A
+and falls through to the player, with the play address being the player itself
+(`greloc.c:140`, `:1616`, `:1636`); the same `.sng` packed at `-S1` and `-S2`
+traces identically at a given `-m`.
+
+## §7b — the speed gate is under-read, and why (v0.5.105 onward)
+
+**The mechanism.** Three instructions above the speed gate sits a second
+counter of the same shape:
 
 ```
-03df994 v0.5.82  divide every per-frame rate by the -S multiplier
-b87db99 v0.5.83  read the second slide dialect, and index the step at full width
-a506c27 v0.5.84  exclude ties from bend, and name the vibrato as the missing movement
-e0db4b0 v0.5.85  emit the vibrato every player runs and no output ever had
-baf7e5a v0.5.86  read the digi engine's own pitch slide, effect $82
-4c8d428 v0.5.87  read the command-table engine's pitch slide
-f7011c3 v0.5.88  take bend from siddump's own delta, not the frequency column
-76a49c2 v0.5.89  explain Thrust -- bend cannot compare a stepped sweep to a glided one
-1776474 v0.5.90  read the drum gate in full -- cross-voice state, noise is the attack
-bea3feb v0.5.91  run the player -- the drum does fire, and bend cannot see it
-185b38d v0.5.92  render RSID originals through VICE, both sides of the pair
-5fd1cbd v0.5.93  compare GoatTracker's forks; the GTS2 overrun is in all of them
-cfbc941 v0.5.94  the forks LoadTracker merged -- gt2fork, leafo, Langner's GTUltra
+DEC outer / BPL +8 / LDA #O / STA outer / JMP past-the-gate
+DEC gate  / BPL +6 / LDA reload / STA gate
 ```
 
-Conversion output changed in v0.5.82, .83, .85, .86 only. v0.5.87 changed no
-bytes (see below). v0.5.84, .88–.94 are harness or documentation.
+On the frame the outer counter underflows the gate's own `DEC` is jumped over,
+so **frames per row = (reload + 1) × (O + 1) / O**. `(O+1)/O` is exactly the
+`N/(N−1)` family the measurements kept producing (9/8, 5/4, 4/3, 3/2 are
+O = 8, 4, 3, 2) and it yields the non-integer rows no whole skip count
+explained. **Validated on 15 independently timed files: within 5% on all 15,
+within 1% on 10** — and re-checked under v0.5.114's confidence gate, where 13
+still report and all 13 agree.
 
-## v0.5.82 — every per-frame rate divided by the `-S` multiplier
+**The decoy that broke v0.5.102.** `O` is an *immediate operand* and the init
+self-modifies it from a second per-subtune table (Tarzan `LDA $59EA,X /
+STA $5561`). The byte in the file image is whatever the last init left — 11 for
+Tarzan against a real 2. **32 of the 51 files carrying the counter take it from
+a table.**
 
-Every rate read out of a Hubbard player is **per frame**; every table
-Goattracker applies them with steps **per play call** (`gplay.c:707` wavetable,
-`:748/758` speed-table deltas inside per-call `TICKNEFFECTS`). Identical only at
-`gt2reloc -S1`, and **33 of 83 preset songs pack at -S2**.
+**Four dialects, two sites** (v0.5.108): above the gate with a `JMP`; at the
+play entry with an `RTS` (Warhawk `$1012`); zero-page at the play entry
+(Spellbound, `C6`/`85` not `CE`/`8D`); a runtime-chosen reload then `STY/RTS`
+(Las_Vegas); `BMI` to a lighter routine (Action_Biker). `OUTER_GATE` still
+matches only the first — widening it is unfinished work.
 
-| rate | site | at `-S{m}` |
-|---|---|---|
-| slide, GTS5 | `patterns.build_speed_table` | 16-bit step ÷ m — exact |
-| slide, GTS2 | `patterns.scale_portamento_data` | ÷ m rounded, never 0 |
-| drum sweep | `goatwriter._drum_speed` | 256 ÷ m floored, never 0 |
-| chromatic rise | `goatwriter._rise_speed_index` | +1 shift per doubling (`_rate_shift`) |
-| attack transient | wavetable delay `$01-$0F` | `_wave_delay`, held m calls |
+**`$02A6`, the PAL/NTSC flag** (v0.5.109/0.5.110). Four corpus files read it;
+three branch on it to skip frames in NTSC compensation. siddump starts it at 0
+(NTSC), so those were traced on the wrong machine. `siddump-rt` gained
+`-v<0|1>`; `fidelity.py` sets 1 by default, `--ntsc` reverts, and the
+requirement is scoped by `reads_video_flag()` to just those four files.
+**Phantoms_of_the_Asteroid left the defect list entirely** — its row is 2.00,
+exactly its gate. Skate_or_Die_intro selects *tuning constants* by machine, so
+its 100% was scored against the wrong machine and is now 90%.
 
-Differential over the corpus: **exactly the 33 multiplier-2 songs changed
-bytes; none of the 50 multiplier-1 songs did.** New file
-`python/tests/test_call_rate.py` (21 tests).
+## §7b tooling — three instruments, each catching the one before
 
-Residuals recorded, not fixed: the arpeggio alternation and the drum's own
-attack have no free wavetable slot; the rise's shift is exact only for
-power-of-two multipliers (nothing asks for `-S3`).
+- **`--pace`** (v0.5.101): times the conversion against the original over
+  difflib-matched notes; reports the **median** ratio (a least-squares fit
+  follows one resting voice — 0.727 against a true 1.509 on ACE_II).
+- **`--ticks`** (v0.5.103, by a fork): reads the sequencer period out of the
+  *original alone* via `siddump -z` cycles per frame. Gated hard; speaks on 31
+  of 95 and agrees with `--pace` on 18 of 18.
+- **`--equal-calls`** (v0.5.125): traces our conversion at one call per frame
+  over `multiplier × seconds` — same music, same play calls, sampled as finely
+  as the original. Frame-aligned dimensions are **dropped, not approximated**.
+- **`python/vicetrace.py`** (v0.5.126): VICE's `dump` sound device writes the
+  whole SID state **on every rasterline**, 312 samples a PAL frame, no monitor
+  scripting. Block index ÷ 312 is the frame.
 
-## v0.5.83 — the second slide dialect, and a 16-bit step index
+**Confidence gating** (v0.5.114): `pace()` requires `MIN_PACE_GAPS = 40`
+matched gaps, `MAX_PACE_IQR = 0.10`, and `MIN_PACE_COVERAGE = 0.30`. 59-60 of
+95 files report a row; the rest refuse with a reason.
 
-The two-byte slide fetch (`SLIDE_OPERAND_SHAPE`, 41 files) says a second byte
-exists, not which half of the step it is. **Two players disagree behind the
-same fetch shape:**
+## §7b/§7c — what the measurements actually settled
 
-```
-Warhawk $1320       operand & $7E = LOW half, bit 0 = direction,
-                    fetched byte = HIGH half
-Flash Gordon $12EB  operand & $3F = HIGH half (self-modified into an
-                    immediate), fetched byte = LOW half,
-                    direction = CMP #$BF / BCC
-```
-
-Verified byte-for-byte in Flash Gordon `$12EB`, Sanxion `$B2E1`, Delta `$C0D6`.
-Census partitions cleanly: **25 Warhawk, 22 this, none both**; `CMP` immediate
-`$BF` and mask `$3F` in all 22. Read the wrong way round the step is ~256×
-too large — which is why **2189 of 5566 portamento parameters (39%, 15 files)**
-sat on the `min(step // 4, 0xFF)` clamp. All 15 are in the swapped dialect.
-
-Correcting the dialect alone pushed 250 columns *under* 4, which `gplay.c`
-reads as no parameter — the same mistake from the other end. So the column now
-carries a **1-based index** into a per-file list of full-width 16-bit steps
-(`patterns._step_index`, `MAX_SLIDE_STEPS = 255`; worst corpus file uses 40).
-GTS2 keeps the packed byte (its loader reads the column as the value,
-`gsong.c:311-321`).
-
-New: `detect.SLIDE_HIGH_FIRST_SHAPE`, `Detection.slide_high_first`,
-`patterns._scaled_step`. Tests appended to `tests/test_slides.py`.
-
-## v0.5.84 — `bend` excludes ties; the vibrato named
-
-`bend` (added v0.5.83) excluded only *attack* frames, so a **tie** — a note
-change with no re-gate — counted its whole pitch jump. Pygmies_Revenge (493
-ties in 10 s) read **21.7 million** units against ~12 thousand of real bending.
-Corrected: `Voice.tie_frames` recorded and excluded.
-
-The v0.5.83 verdict survived, its magnitude did not: Flash_Gordon's dialect fix
-reads **1.67x → 1.51x**, not 0.30x → 0.66x. Both docs corrected in place.
-
-Then the diagnosis: **33 of 95 files move the pitch not at all** where the
-original does. Splitting those originals by net÷total movement (a sweep
-travels, a vibrato returns) gives **20 vibrato, 11 mixed, 2 sweep**.
-
-## v0.5.85 — vibrato emitted for the first time
-
-`gplay.c:352-354` loads `cptr->vibdelay = iptr->vibdelay` and
-`cptr->cmddata = iptr->ptr[STBL]` on every new note; a channel with no command
-falls through `CMD_DONOTHING` into `CMD_VIBRATO`. Those are instrument-record
-bytes 5 and 6 in a GTS5 file (`gsong.c:224-225`) and
-`_write_instruments` had written `0x00, 0x00` since the port began. **No `.sng`
-this project ever produced vibrated.**
-
-The parameter is one instrument-record byte at **+5**: bits 3-6 an amplitude
-bound, bits 0-2 a right-shift on the semitone interval at the current note
-(Warhawk `$11EF` splits it; `$1221` derives the depth as
-`freq(note) − freq(note−1) >> shift` — which is `gplay.c:786-792` in 6502).
-
-**Census with no exceptions**: 56 of 95 files match the split, masks `$78`/`$07`
-in all 56, record `+5` in 49 (7 use addressing the reader doesn't recognise and
-are skipped), and **all 56 also carry the note-relative depth**.
-
-Mapping derived, not fitted: match the half-period → `cmp = 2·bound·multiplier`;
-match the excursion under it → `rshift = shift + 1 + log2(multiplier)`. Entry
-`($80 | cmp, rshift)`, `vibdelay = 1`.
-
-| | before | after |
-|---|---:|---:|
-| corpus median `bend` (old metric) | 0.06x | **0.33x** |
-| files bending nothing | 33 | **11** |
-| moved toward original / away | — | **29 / 6** |
-
-No other dimension moved. All six that moved away were already overshooting.
-GTS5 only. New: `detect.VIBRATO_SHAPE`, `_find_vibrato`,
-`Detection.vibrato_offset`, `goatwriter._vibrato_layout`, `--vibrato` CLI flag,
-`presets.FIXED["vibrato"]`, `tests/test_vibrato.py` (13 tests).
-
-## v0.5.86 — the digi engine's `$82` slide
-
-Effect `$82` is a **signed 16-bit per-frame step**, first operand HIGH, second
-LOW (Off the Cuff handler `$1133`, consumer `$134C`, one `CLC/ADC` and no
-direction test). Gate cleared at note start (`$10F4`), which is what
-`gplay.c:351` does with a channel's command.
-
-Effect `$83` turned out to be a **vibrato** in the identical `$78`/`$07` format
-(`$1229`, falling back to the instrument byte at `$1704,Y`) — left untranslated.
-
-All nine digi files carry both shapes; **the music uses `$82` in only five, 128
-columns total**, and no report number moved.
-
-**The better finding from that chase:** `bend` cannot tell a pitch bend from a
-voice used as a **sample channel**. Off_the_Cuff's three voices travel 3,032 /
-8,855 / **5,426,086** units in 10 s — 99.8% is digi playback. An octave guard
-(reject a frame whose frequency ratio exceeds 2) was **tried and rejected**: it
-removed a sixth of the sample movement and cost real signal (Delta 56,531 →
-40,429, two voices zeroed). Documented in the report instead.
-
-## v0.5.87 — the cmdtable slide, which reaches nothing
-
-Command 1 in both cmdtable players (Hollywood or Bust `$071B`, Chicken Song
-`$1301`, byte for byte identical): operand 1 = step LOW, operand 2 = HIGH under
-`$3F` with **bit 7 the direction**, operand 3 = an onset delay Goattracker
-cannot express (read and dropped). The command index is derived by linking the
-consumer's cells to the handler that fills them, in order — not assumed.
-
-**Neither tune uses it.** Hollywood or Bust reaches commands 0, 2, 4, 5, 6;
-Chicken Song 0, 2, 4, 5. All 83 preset songs byte-identical; the A/B mode
-reported *"this change reaches nothing"*, which is the correct reading. Kept
-because a *misread* command byte would desynchronise where an unread one does
-not, and the reading is now pinned by tests.
-
-Hollywood or Bust's missing bend is a **table-driven vibrato** —
-`(interval >> 4) × table[i]`, the table walked one entry per frame with `$FF`
-wrapping (`$05F3`, `$0630`) — a third form, not implementable as GT's fixed
-triangle. Not attempted.
-
-## v0.5.88 — `bend` taken from siddump's own delta
-
-Chasing the overshoot found the **fourth** defect in `bend` before it found
-anything in the converter. It was differencing the frequency column and
-excluding frames siddump marked as a note — but **a Goattracker wavetable entry
-whose right side is a relative note rewrites the frequency without touching the
-gate**, and siddump prints that as a frequency with an empty note field. Every
-note onset in our own output counted as bending. Zoolook: 121,107 units against
-~3,400 of printed bends.
-
-Fixed by not re-deriving it. `bend` now sums the magnitudes of siddump's own
-`(+ xxxx)` / `(- xxxx)` lines, so `bend` and `slides` are a sum and a count of
-the same lines, as `cut` is to `filt`.
-
-| | before | after |
-|---|---:|---:|
-| Delta_Mix-E-Load_loader | 10.80x | **0.96x** |
-| Zoolook | 9.65x | **0.26x** |
-| Confuzion | 8.96x | **0.00x** |
-| Thing_on_a_Spring | 3.36x | **0.35x** |
-| Chain_Reaction | 2.19x | **0.26x** |
-| Knucklebusters | 1.64x | **0.00x** |
-
-Rule added to `CLAUDE.md`: **take the measurement from the tool rather than
-re-deriving it.** Four corrections in six versions; the three wrong ones all
-re-computed pitch travel from raw registers.
-
-The drum sweep was also re-measured against pitch (not waveform): removing it
-is **right for one file and wrong for eight** (Game_Killer 1.08x and
-Crazy_Comets 1.03x drop to 0.00x), at zero cost in `wave`. Kept.
-
-## v0.5.89 — Thrust explained
-
-Thrust's tune **is** the chromatic rise; both sides play it. The player *steps*
-on exact semitones (`INC noteindex,X` + a table re-read) so siddump names every
-frame — **443 tie lines against 25 bends**. We *glide* (a note-relative
-portamento; GT cannot step a note from the wavetable without one entry per
-semitone) — **125 ties against 89**. `bend` counts only bend-labelled frames, so
-the original's sweep is invisible and ours is fully visible: 43x, while both
-travel comparable distances over the same notes.
-
-No converter change. `--fold-transpose` refuted as a cause (identical bytes with
-it on and off). This file's `pitch = 100%` rests on **4 attacks against 2**.
-
-## v0.5.90 / v0.5.91 — the drum gate, read and then run
-
-The block is byte-identical in Warhawk `$1366`, Bump_Set_Spike `$B34B`,
-Gerry_the_Germ `$E2FA`. Condition: bit `$01` on the effect cell, nonzero
-frequency-hi, nonzero remaining duration, then `CMP`/`BCC` where `A = W−1` and
-`M` counts down from `W` — so the branch fires while the counter is **large**:
-**the noise is the attack, and the sweep runs after it for `W−1` frames**
-against the one this writer emits. *That direction had been recorded backwards
-since v0.5.62.*
-
-**The gate is not a property of the instrument.** `LDA effect` is `AD` —
-absolute, not `,X` — and the cell (`$15BD` Warhawk, `$B504` Bump_Set_Spike) is
-written in exactly one place, the note-start path, as `STA abs`. All three
-voices share it.
-
-Three static proxies tried and **all refuted**: note duration (no drum note
-lasts 1 tick; lengths 2–9), drum share of note-starts (30/14/39% overshooting
-vs 14/34/23/32/19% benefiting — overlapping), the `freqhi` guard
-(Bump_Set_Spike sits at `$02B9`+).
-
-**v0.5.91 ran the player** (VICE; RetroDebugger had crashed). Bump_Set_Spike's
-drum **fires**: 78 sweep-branch hits vs 61 noise in 400 stops, bit `$01` set at
-226 of 261 block entries, and the voice-2 frequency-hi shadow walking
-`0D 0C 0B 0A 09 08 07` one per play call with `$D401` following. **What it does
-not do is register as a bend** — 256 units at those frequencies is more than a
-semitone, so siddump names each step a note and `bend` excludes ties. So
-Bump_Set_Spike's 11.79x is Thrust's artefact again, and the converter
-*under*-renders the drum. The earlier "right for one file, wrong for eight" was
-scored on a dimension blind to the original's drum in every one of them.
-
-## v0.5.92 — RSID originals render
-
-`SID2WAV` is v1.8 (1997) and predates RSID; it refused **18 of 95 corpus
-files**, a set including all four NTSC files and Skate_or_Die_intro. **The
-blocker was `-warp`**, which suppresses VICE's sound device output entirely —
-the 44-byte header-only file from three earlier attempts. `-soundwarpmode 1`
-does *not* rescue it (tested, refuted). Without warp it renders, in realtime.
-
-`listen.py` gains `render_vsid` + `_sid2wav_can_read` (decides from the magic,
-not a trial render). **Both sides of a pair go through one renderer**, because
-gt2reloc always writes PSID and two emulations differ enough in level and
-filter to colour a listening judgement. Verified on Last_V8 and Off_the_Cuff
-(both sides 959,788 bytes).
-
-**The listening pass is staged** in `build/listen/` (gitignored), one tune per
-band at 20 s, with `LISTENING.md`:
-
-| band | tune |
+| file | outcome |
 |---|---|
-| plays something else | Flash_Gordon |
-| recognisable | Formula_1_Simulator |
-| close | International_Karate |
-| plays the same music | Crazy_Comets |
+| Tarzan | row 3.00 (three methods agree); gate reads 2 |
+| Deep_Strike | 2.67, alternating 3,3,2 tick pattern |
+| Ricochet | 2.00, the control — O=127, one skip in 128 |
+| Warhawk | play-entry `RTS`, period 8 → 2.29 vs measured 2.25 |
+| Las_Vegas | PAL period 5 → 3.75 (the 4.50 was NTSC) |
+| Bump_Set_Spike | `$02A6` block sits *past* the play address; period 10 → 3.33 exactly |
+| Human_Race | CIA-timed; `--ticks` says 3.98 against a gate of 4 — **gate right** |
+| Spellbound | row **2.20**, by mod-N over running frames |
+| Action_Biker | no skip at all (`$C000` reloads 0); ticks every 3 = its gate |
 
-plus Last_V8 and Off_the_Cuff staged separately at 10 s as the RSID proof.
-20 WAV files present.
+**§7c (rows per note) is dead.** The static check decoded every pattern from
+Spellbound's own fetch rules and compared against what the converter emits:
+**41/41 patterns exact, ratio 1.0000**, with Warhawk 49/49 and Commando 44/44
+as controls. Our rows equal the player's units.
 
-## v0.5.93 / v0.5.94 — `GOATTRACKER-FORKS.md`
+## §1 (of the old numbering) — the skip counter encoded (v0.5.119/0.5.120)
 
-New file comparing GoatTracker 2 and seven relatives, with links, base version,
-licence, platform and what each adds — every claim checked against the linked
-repository. Pointer added from `GOATTRACKER.md`.
+`convert(skip_gate=True)` / `--skip-gate` writes the corrected row.
+`SongSpeeds` gained `exact_row()`, `encodable_frames()`, `skip`,
+`skip_table_addr`; `goatwriter` gained `effective_frames()` and
+`MAX_ROW_DENOMINATOR`. **On by default** via `presets.json`'s `always` block.
 
-**The finding that earns it a place:** `GOATTRACKER.md` issue #1, the GTS2
-importer overrun (`length` is a byte count, `d` indexes rows), is present in
-**six of six** forks checked:
+- Tarzan melody 73% → **96%**, timing 0.667 → **1.000**
+- Pygmies_Revenge 80% → **93%**
 
-```
-GoatTracker 2.77   src/gsong.c:306        LoadTracker   src/song.cpp:607
-gt2fork            src/song.c:359         leafo         src/gsong.c:306
-GTUltra            src/gsong.c            Silver Fork   src/gsong.c
-```
+## §8 — solved by discarding its own premise (v0.5.121)
 
-So `--format gts5` holds against all of them.
+§8 framed a fractional row as needing *re-gridding*. It does not: a row lasts
+`tempo / multiplier` frames, so **a row of `p/q` frames is exact at `-Sq` with
+a tempo of `p`**. 8/3 frames is `-S3` at tempo 8, with the note count
+untouched.
 
-v0.5.94 corrected an attribution gap: LoadTracker's README credits its headline
-features to *other* forks — dual SID from **gt2fork** (SpiderJ / Jan
-Wassermann), JACK+MIDI from **leafo**, instrument view from **Daniel Langner's
-GTUltra fork**. Three rows added. **`2bt` is Daniel Langner**, who also
-maintains GTMobile — so two rows are one person. LoadTracker's real
-contribution is the *integration* (CMake, SDL3, C++ port, reSIDfp/exSID, 2.77
-sync). Also recorded: CSDb credits Silver Fork to RaveGuru, the repo to Joel
-Ricci, with identical change lists.
+Twenty files changed. Deep_Strike **14% → 100%**, Saboteur_II **25% → 98%**,
+Chain_Reaction/Thundercats/W_A_R/W_A_R_Preview/Shockway_Rider/Lightforce to
+100%, Zoolook 43% → 77%. Corpus mean melody **74.8% → 78.3%**; files playing
+the same music 27 → 35.
+
+`MAX_ROW_DENOMINATOR = 6`, bounded by **playability**: six calls a frame is
+~9k cycles of a PAL frame's 19656; ten would be three quarters of it, and rows
+beyond six are within ~1.3% of a whole number and round.
+
+## Merges, artefacts and the other forks
+
+Three `/subtask` forks ran in isolated worktrees and were merged:
+
+- **§4** (`d558474`, v0.5.96) — effect bit `$80` is three blocks, not one:
+  nine files' is the game's sound effect (dead in a rip), two a per-instrument
+  wave program (ACE II `$E357`, Auf Wiedersehen Monty `$E743`), one a stepped
+  frequency table. Read, not encoded.
+- **§5** (v0.5.97) — Hollywood or Bust's LFO-table vibrato, and a correction:
+  gplay's vibrato half-period is `cmp + 2` calls, not `cmp / 2`, so the
+  shipped classic mapping oscillates at ~half the player's rate for all 56
+  files it covers. **Flagged, not fixed.**
+- **§6** (v0.5.97 → renumbered) — three of four "plays something else" files
+  are the harness: `fidelity.py --diagnose` was built, and two files carry
+  subtune-remapping wrappers in their own init.
+
+Version collisions were resolved at merge time (§6 kept 0.5.97, §5 became
+0.5.98, §7 became 0.5.99, regeneration 0.5.100).
+
 </work_completed>
 
 <work_remaining>
 
-## 1. The listening pass — staged, never performed
+## 1. The listening pass — still never performed
 
-**The one item that requires a human and cannot be delegated.** Four pairs at
-20 s in `build/listen/`, `LISTENING.md` says what to decide in each. About
-three minutes of listening. In ~30 versions of fidelity work, exactly one file
-has ever been listened to.
+**The one item that requires a human.** Staged WAV pairs were in the deleted
+`hubbard/build/listen/` and must be re-staged:
 
-The most informative is **Crazy_Comets** (band: plays the same music): its
-`bend` sits at 1.03x *because* of the drum sweep, and it is the first chance to
-hear whether one 256-unit step where the player takes six or more is audible.
+```sh
+cd python
+python fidelity.py <corpus> --from-json ../build/fidelity.json -n 1 -t 20   # listen.py
+```
 
-Re-stage after any conversion-changing commit:
-`python listen.py <sid_dir> --from-json ../build/fidelity.json -n 1 -t 20`
+In ~45 versions of fidelity work, exactly one file has ever been listened to.
+Every instrument built this session measures registers; none hears anything.
+Blocks §2 and §3 below.
 
 ## 2. The drum is under-rendered — `W−1` steps, we emit one
 
-Now that the gate is understood (v0.5.90/91), the open question is not *when*
-but *how much*. The player sweeps for the note's duration less one; the
-wavetable emits a single step. All five wavetable entries are in use, so
-lengthening it costs the gate-off waveform or the sweep itself — a trade never
-tried. **`bend` cannot adjudicate it** (it does not see the player's stepped
-sweep at all), so this needs the listening pass or a VICE A/B.
-
-## 3. The drum's noise is its attack — two shelved results are now suspect
-
-The `BCC` direction was backwards since v0.5.62, so:
-- the shelved "noise ending" measurement (58.1% vs 60.6%) was testing noise at
-  the **wrong end** and is not evidence about the player's shape;
-- the *inherited* leading noise tick, which method-doc §7 dismissed as "not in
-  the player at all", is **back in question**.
-
-Neither re-measured. Five wavetable entries are full, so an attack tick costs
-something else.
-
-## 4. Wavetable Phase 2 — what is left
-
-- ~~**Bit `$08`'s pulse-width variant.**~~ **Shipped in v0.5.80**, one version
-  before this session began; the bullet below it was carried stale for five
-  handoffs. `goatwriter._pulse_lo_program` fires on **294 records across 21
-  files**, and **no file** carries both it and the triangle sweep. The
-  two-entries-per-instrument layout it needed changed in the same version
-  (`_pulse_layout` returns start positions, not a stride).
-- ~~**Bit `$80`** … which no per-instrument wavetable can express.~~ **That
-  sentence was true of 9 of the 12 files and false of 3.** All twelve blocks
-  are now disassembled — method-doc § 7.jj, `detect._find_effect_bit80`,
-  `tests/test_effect_bit80.py`:
-  - **9 files — the *game's* sound effect, not the tune's.** A global counter
-    cell driving fixed writes to `$D40F`/`$D412`/`$D416`/`$D418` (voice-3
-    noise + filter + master volume). Nothing in a rip ever writes that cell,
-    so the block is dead code, and converting it would be wrong even if the
-    format allowed it. **Closed: the right encoding is no encoding.**
-  - **2 files — a real per-instrument byte-code wave program** (ACE II
-    `$E357`, Auf Wiedersehen Monty `$E743`). 16-bit pointer per record, per-
-    voice PC, one entry per frame: `$85` holds, `>= $80` is (waveform →
-    `$D404`, next → `$D401`), `< $80` is (waveform, 16-bit `SBC` off the
-    frequency). **This is the one open piece of Phase 2.** The waveform column
-    maps to a Goattracker wavetable exactly; the pitch column is a raw
-    frequency delta against a note-named right side, so it can only be
-    approximated. Encode it behind `--effects`, A/B the two files with
-    `fidelity.py --baseline`, ship only if it wins. Do not ship it unmeasured.
-  - **1 file — a stepped frequency table** (Delta `$C1EC`): per-voice counter,
-    on expiry reload duration from `$C43E,Y` and add `$C43F,Y` to the voice's
-    frequency high. Same family as § 7.ee's vibrato. One file; low priority.
-- **Do not re-derive and re-ship the shelved encodings** — but see §3: one of
-  the two measurements is now known to have tested the wrong thing.
-
-## 5. Hollywood or Bust's table-driven vibrato
-
-`(interval >> 4) × table[i]`, the table walked one entry per frame with `$FF`
-wrapping (`$05F3`, `$0630`). Goattracker's vibrato is a fixed triangle, so this
-can only be approximated: the table's **peak** gives the excursion and its
-**length** the period. Derivation is in method-doc § 7.gg. Affects two files
-(Hollywood_or_Bust at 0.00x, Chicken_Song whose original has zero slide
-frames), so the payoff is one file.
-
-## 6. Files that still play something else
-
-`Commodore_64_Music_Examples` and `Dragons_Lair_Part_II` are **genuinely
-scrambled** — both peak at 18–25% at a *different* constant shift per voice.
-`Flash_Gordon` and `Rasputin` are severe under-production with pitches exact
-(peak at `k=0`). `Delta_Mix-E-Load_loader` scores low at presets because
-`--initial-instrument` is deliberately opt-in.
-
-Method note: the position-aligned modal delta degrades when either side drops
-notes. A *high* share is sufficient evidence of a transposition; a *low* share
-is **not** evidence of scrambling. Sweep a constant shift k over ±24 and take
-the difflib ratio at each.
-
-## 7. ~~Measuring the `-S2` group needs a cycle-accurate trace~~ — done in v0.5.99, and it found something
-
-The 33 `-S2` files are now traced at the rate they are packed for.
-**`python/tools/siddump-rt`** is siddump 1.08 vendored plus one option,
-`-m<n>` = playroutine calls per displayed frame; a dump row stays one PAL
-frame of real time, so both sides share a time axis whatever the call rate.
-`fidelity.py` passes each song its own multiplier and **refuses** a
-multiplier > 1 song on a binary without `-m` — siddump's option switch has no
-`default:`, so a stock binary handed `-m2` drops it silently and returns half
-the tune.
-
-The VICE harness was not needed. Verified rather than assumed:
-
-- `-m1` output is **byte-identical** to the shipped `siddump.exe`.
-- The `-S` stub is at the packed file's **init** address, writes
-  `0x4cc7/multiplier` to timer A and falls through to the player; the play
-  address is the player itself (`greloc.c:140`, `:1616`, `:1636`). So entering
-  play *n* times a frame is what the CIA does, not a model of it.
-- The same `.sng` packed at `-S1` and `-S2` traces identically at a given
-  `-m`, on three files. `-S` really is invisible to siddump; `-m` is the knob.
-
-**What it found is not the uniform lift this item expected.** Of the 33:
-**15 score better at the packed rate** — Ricochet 70% → 100%, Flash_Gordon
-30% → 75%, Warhawk 68% → 96%, W_A_R_Preview 73% → 95%, Star_Paws 62% → 91% —
-and **17 score better at 50 Hz**, some steeply (Deep_Strike 100% → 14%,
-Game_Killer 71% → 5%, Spellbound 78% → 11%). One is flat. Corpus mean melody
-78% → 74% because the report now scores the file that ships.
-
-Those *scores* stand; the conclusion drawn from them in v0.5.99 does not —
-see below.
-
-Ricochet is the confirmation §7 was after: at 100 Hz its attacks land within
-0.4% of the original's frames, per voice. v0.5.82's multiplier fix does reach
-real time — for that half of the group.
-
-**~~The other 17 are a factor of two out~~ — wrong, and refuted in v0.5.101
-by `--pace`.** They are not a factor of two out and they do not want `-S1`.
-Timed against the original over difflib-matched notes, **32 of the 33 are
-closest to the original's speed at the rate they are packed for**; the errors
-are 1–33%. `melody` preferred 50 Hz for 17 of them because it is a sequence
-ratio inside a fixed window and the two errors are not symmetric there — a
-conversion playing too fast reaches past the window and is charged for the
-surplus, one playing too slow returns a prefix. **A score is not a clock**;
-that inference should not have been made from one, and `--pace` is now the
-mode that answers it. See §7b for what the timing found instead.
-
-Still not cycle-accurate: calls inside a frame run back to back rather than at
-timer intervals, registers are sampled at end of frame, and the 0.25% between
-100.25 Hz and 2 × 50 Hz is ignored. The VICE harness remains the tool if any
-of that starts to matter.
-
-**`FIDELITY.md` is deliberately not in this commit** (the concurrency rule:
-generated files are regenerated once on `master`, after the merges). The
-numbers above were taken from a run of this branch. Regenerate on the merged
-tree — **and build the tool first, or the run will refuse the 33 files**:
-
-```sh
-cd python/tools/siddump-rt && make && cd ../..
-python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
-```
-
-## 7b. The speed gate is under-read — **mechanism found, v0.5.105**
-
-`goatwriter.find_song_speeds` reads the gate's reload byte and reports
-`frames = reload + 1` frames per duration unit. Timed against the original by
-`--pace` (v0.5.101) and independently by `--ticks` (v0.5.103), that number is
-too small on a large minority of the corpus in both multiplier groups, by a
-tune-specific factor between 1.1 and 1.5 — never 2, which is what made it hard
-to attribute for four versions.
-
-**The factor is a second counter three instructions above the gate.** Tarzan's
-play routine begins:
-
-```
-$5558  LDX $59F7
-$555B  DEC $59F6        outer counter
-$555E  BPL $5568        still >= 0 -> run the gate
-$5560  LDA #$0B         <- $5561 is written by the init, see below
-$5562  STA $59F6
-$5565  JMP $5573        underflowed -> reload, and SKIP THE GATE
-$5568  DEC $59DE        the speed gate itself
-$556B  BPL $5573
-$556D  LDA $59F5
-$5570  STA $59DE
-```
-
-On the frame the outer counter underflows, the gate's own `DEC` is jumped
-over. So the gate advances on `O` of every `O+1` frames, and
-
-> **frames per row = (reload + 1) × (O + 1) / O**
-
-`(O+1)/O` is exactly the `N/(N−1)` family the measurements kept landing on:
-9/8, 5/4, 4/3 and 3/2 are O = 8, 4, 3, 2. It also produces the *non-integer*
-rows that no whole-number skip count could explain — O = 3 gives 2.67, which
-is Deep_Strike's measured value and its observed 3,3,2 tick pattern; O = 4
-gives 2.50, which is Delta's.
-
-**Validated against 15 files whose row length was timed independently: within
-5% on all 15, within 1% on 10** — and **re-checked under v0.5.114's confidence
-gate**, which is the thing that retired §7c. 13 of the 15 still report a row;
-all 13 agree, 10 of them within 1%, and **none disagrees**. Chain_Reaction and
-Zoolook now refuse, both on the IQR gate at exactly 10%, so the evidence is
-13/13 rather than 15/15 and no conclusion moves.
-
-The later findings were re-checked the same way and all stand: Warhawk 2.25
-(predicted 2.29), Las_Vegas 3.75 on PAL (3.75), Bump_Set_Spike 3.33 (3.33),
-Phantoms 2.00 against a gate of 2, Ricochet 2.00. `Human_Race` now refuses at
-38 matched gaps, one short of the floor — its conclusion came from `--ticks`
-rather than `--pace`, so it is unaffected. The two measurements owe each other nothing —
-`--pace` times our conversion against the original over difflib-matched notes,
-`--ticks` reads the period out of the original's cycle profile — and the
-formula lands on both.
-
-### The correction to v0.5.102
-
-That version found this counter and concluded its reload was *"a fixed
-constant per player, not per subtune"*, because each file writes it at exactly
-one site. **That was reading a decoy.** The reload is an *immediate operand*,
-and the init routine self-modifies it:
-
-```
-$60AF  LDY #$00
-$60B1  TAX              X = subtune
-$60B7  LDA $59DF,X      per-subtune gate reload  -> $59F5   (what we already read)
-$60BD  LDA $59EA,X      a SECOND per-subtune table
-$60C0  STA $5561        <- the operand of the LDA #$0B above
-```
-
-So the byte in the file image is whatever the last init left there. Tarzan's
-image byte is 11 and its subtune 0 actually runs **2** — 2.18 frames against a
-measured 3.00. **32 of the 51 files that carry the counter take it from a
-table.** `tests/test_outer_gate.py` holds that shut.
-
-That also disposes of v0.5.102's arithmetic problem (one frame in twelve
-predicting 2.4 where Tarzan measures 3.00): twelve was the decoy.
-
-### v0.5.119/v0.5.120 — encoded, and on by default
-
-`convert(skip_gate=True)` writes the corrected row wherever it comes out a
-whole number (`SongSpeeds.encodable_frames`), which is all Goattracker's tempo
-can express. Nine files change bytes; the other 42 under-read files are
-fractional and remain §8's re-gridding problem.
-
-| | timing (`--pace`) | melody |
-|---|---|---|
-| Tarzan | 0.667 → **1.000** | 73% → **96%** |
-| Pygmies_Revenge | 0.750 → **1.000** | 80% → **93%** |
-| seven others | unchanged | unchanged |
-
-Corpus mean melody **74.3% → 74.8%**, nothing worse. Tarzan's timing is exact
-— 1.000 with a zero IQR over 417 matched gaps.
-
-**v0.5.119 shipped this as opt-in on a conclusion that was my own harness
-bug**, and it is worth recording because the bug was invisible and the story
-built on it was plausible. Correcting the row moves the `-S` multiplier
-(Tarzan 2 → 1), and `fidelity.py` packed the result at the multiplier recorded
-in `presets.json` — the old one. The file therefore played at the wrong speed,
-Tarzan's melody read 73% → **59%**, and I explained it with a coupling between
-the corrected row and v0.5.82's per-frame rate scaling. That explanation was
-coherent, mechanistic, and entirely fictional. The give-away was in the row
-all along: `multiplier=2` on both sides of an A/B where one side was tempo'd
-for 1.
-
-**Any measurement of a tempo change must pack at the multiplier that tempo was
-written for.** `_skip_gate_multiplier` now does that in both the `--pace` and
-the row-measuring paths.
-
-### Read, not encoded — deliberately
-
-`SongSpeeds.skip`, `skip_for()` and `true_frames()` are new; `frames_for()` is
-unchanged, so **no conversion byte moves** (differential hash over all 95
-files: zero changes). Encoding it is a separate job with a real obstacle:
-`true_frames` is usually non-integer, and Goattracker's tempo is a count of
-play calls. Deep_Strike's 2.67 needs rows of 3, 3 and 2 frames, which is
-§8's problem — a re-gridding decision, not a number to round.
-
-### Still open — and it is a *second* mechanism, not a strict regex
-
-Four timed files show the same symptom with no match: `Action_Biker` (3.75 vs
-a gate of 3), `Las_Vegas_Video_Poker` (4.50 vs 3), `Spellbound` (2.97 vs 2)
-and `Warhawk` (2.25 vs 2). **`Human_Race` was a fifth and is now out of the
-set** — `--ticks` (v0.5.106) measures its player ticking every **3.98 frames**
-against a gate of 4, i.e. *the gate is right*. It is one of the five corpus
-files whose PSID header declares CIA timing, so its play routine is not called
-at 50 Hz and `--pace`'s 5.33 is in different units from `--ticks`'s 3.98. Its
-row was never a converter defect. v0.5.105 guessed the shape
-was too strict — it requires the `DEC`/`STA` to name one cell and the branch to
-clear exactly 8 bytes, both read off a single file. **Checked in v0.5.106 by
-disassembly rather than by widening the pattern, and the guess was wrong.**
-
-- **None of the five has an outer counter at all.** In every one the gate is
-  the *first* thing the play routine does, preceded only by the voice-count
-  `LDX` (`$1062 LDX #$02 / $1064 DEC $1599` in Warhawk; the same in Human_Race,
-  Las_Vegas and Spellbound; Action_Biker loads X from a cell instead). There is
-  nothing above the gate to loosen the shape onto.
-- **Their gate reload is not a decoy either.** The image byte matches the init
-  table's entry 0 in all five, so the one trap that explained Tarzan does not
-  apply here.
-- What follows the gate is the canonical structure with nothing extra:
-  `LDA gate / CMP reload / BNE skip` then `DEC duration,X / BMI next-note`.
-  Warhawk and Spellbound are byte-for-byte the same idiom.
-
-So a *different* mechanism eats their frames, and it is unattributed. Do not
-loosen `OUTER_GATE` to chase them — there is nothing there to match, and a
-looser shape would only manufacture false positives on the 44 files it
-currently, correctly, ignores.
-
-### v0.5.108 — the same idiom, at a second site and in four dialects
-
-Warhawk's cycle series has a **20-cycle frame every 8 frames**. Its play
-*entry* is the counter again, but it leaves by `RTS` rather than jumping past
-the gate:
-
-```
-$1012  DEC $15AE
-$1015  BPL $101D
-$1017  LDA #$07
-$1019  STA $15AE
-$101C  RTS          <- the whole play call is skipped
-$101D  ... the play routine proper
-```
-
-Same arithmetic, second site. And the reason one regex found none of these is
-that the idiom has at least four dialects:
-
-| file | shape | site |
-|---|---|---|
-| Tarzan etc. | `DEC abs / BPL +8 / LDA #O / STA abs / JMP` | above the gate |
-| Warhawk | `DEC abs / BPL +6 / LDA #O / STA abs / RTS` | play entry |
-| Spellbound | `DEC zp / BPL +5 / LDA #O / STA zp / RTS` | play entry, **zero page** |
-| Las_Vegas | reload chosen by `$02A6`, then `STY / RTS` | play entry |
-| Action_Biker | `DEC abs / BMI / JMP light-path` | play entry, inverted |
-
-Skip periods measured from the cycle series rather than read off the reload:
-Warhawk 8, Spellbound 11, Las_Vegas 3.
-
-- **Las_Vegas closes exactly**: period 3 with a gate of 3 gives 4.50, the
-  measured value.
-- **Warhawk closes to 1.6%**: period 8, gate 2, 2.29 against 2.25.
-- **Spellbound does close — `--pace` was wrong about it (v0.5.111).** Its
-  skip period is 11, measured exactly: 90 skip frames over 20 s, every gap 11
-  without exception. Within each 10-frame running block ~4.8 frames cost more
-  than the block's mean, i.e. about 5 ticks per 11 frames, giving a row of
-  **2.2–2.3 frames** — which is what `(reload + 1) x 11/10 = 2.20` predicts.
-  `--pace`'s 2.97 is 1.35x that, close to 4/3.
-
-  **The reason is a limit of `--pace` worth more than the file.** It measures
-  note-to-note timing, which is `rows per note` x `row length`, and it cannot
-  separate them: a conversion giving every note 4 rows where the player gives
-  3 units reads exactly like one whose rows are 4/3 too long, with a tight IQR
-  either way. So Spellbound's defect is most likely **rows per note**, which
-  is a pattern-decoding question and not a tempo one. Where `--pace` and the
-  cycle profile disagree, the profile wins: it measures the original alone and
-  owes nothing to what we emitted.
-- **Action_Biker closes too, and it has no skip at all (v0.5.112).** Its
-  `JMP $C28D` lands on a bare `RTS`, so the "light path" is the same
-  return-immediately skip the others use — but its reload comes from `$C000`,
-  which **holds 0**. A counter reloaded with 0 underflows every frame, so the
-  heavy path runs every frame and the counter is inert. `$C000` is a game
-  variable at the load address; nothing in a PSID rip writes it.
-
-  Measured, its tick period is exactly its gate: local maxima in the cycle
-  profile are **331 of 331 gaps of 3**, and grouping frame cost by index mod N
-  gives a 21% spread at N=3 and a flat profile at 2, 4 and 5. The gate reads 3.
-  `--pace`'s 3.75 is 1.25x that — the same rows-per-note confound as
-  Spellbound.
-
-### `$02A6` — the corpus scanned, and two more files leave the set
-
-**Four files read `$02A6`, the KERNAL PAL/NTSC flag.** Three branch on it to
-compensate for NTSC — on a 60 Hz machine they skip a frame periodically so the
-music keeps PAL's tempo — and one uses it to pick tuning constants.
-
-siddump starts that cell at **0**, which is NTSC, so every trace this project
-has taken of those files ran their compensation code. `tools/siddump-rt` now
-takes **`-v<0|1>`** to set it; the default is unchanged, so no existing number
-moves until something asks for `-v1`.
-
-| file | what it does with `$02A6` | consequence |
-|---|---|---|
-| `Phantoms_of_the_Asteroid` | `LDA $02A6 / BNE play`, else a 1-in-6 skip | **not a defect.** Its 2.44 is NTSC-only; under `-v1` the skip disappears and its row is 2.00, which *is* the gate |
-| `Las_Vegas_Video_Poker` | reload 4 on PAL, 2 on NTSC | its PAL row is **3.75**, not the 4.50 measured. Verified: skip period goes 3 → 5 under `-v1`. v0.5.108's "closes exactly" was about the wrong machine |
-| `Bump_Set_Spike` | same idiom at `$B006` — but the PSID play address is `$B016`, **past it** | never executed from a play call. Its real skip has period 10, and 3 x 10/9 = **3.33**, its measured value exactly. **Closes.** |
-| `Skate_or_Die_intro` | `LDX $02A6` indexes tuning constants into three self-modified sites | affects pitch, not rate. Worth remembering next to its known frequency-table shift |
-
-**The unexplained set is now empty.** Every timed discrepancy is accounted
-for: the skip mechanism above the gate or at the play entry (Tarzan,
-Deep_Strike, Delta, ACE_II, Warhawk, Las_Vegas, Bump_Set_Spike and the rest),
-an NTSC artefact (Phantoms), or `--pace`'s rows-per-note confound (Spellbound,
-Action_Biker). Everything else timed is either explained by the skip
-arithmetic or was the harness.
-
-### v0.5.110 — `-v1` is now the default, and the re-measurement
-
-`fidelity.py` sets `$02A6` to 1 for every trace; `--ntsc` reverts. Setting a
-cell nobody reads changes nothing, so **only the four files move** (verified:
-`-v1` output on Commando is byte-identical). The requirement for a `-v`-capable
-siddump is scoped by `reads_video_flag()` to exactly those four, so the stock
-binary still serves the other 91.
-
-| file | PAL | NTSC | gate | reading |
-|---|---:|---:|---:|---|
-| `Phantoms_of_the_Asteroid` | **2.00** | 2.44 | 2 | **not a defect** — the gate was right all along |
-| `Las_Vegas_Video_Poker` | **3.75** | 4.50 | 3 | skip period 5 on PAL, 3 on NTSC |
-| `Bump_Set_Spike` | 3.33 | 3.33 | 3 | unmoved, as predicted: its `$02A6` block is past the play address |
-| `Skate_or_Die_intro` | 2.50 | 3.00 | 3 | **moved the wrong way, and it is a `--pace` artefact** |
-
-Skate or Die's flag selects *tuning constants*, not a rate. Tracing it as PAL
-changes its pitches, which changes which notes difflib matches, which moves
-`--pace`'s row estimate — so its 2.50 says nothing about the row and its
-NTSC 3.00 was not evidence either. Note this file is also the one carrying a
-known frequency-table shift; the two are probably the same fact.
-
-**A bug this A/B caught, worth remembering.** `run_siddump(video=PAL_FLAG)`
-bound the default at definition time, so `--ntsc` did nothing and the two
-columns printed identically. The A/B was what exposed it — had the
-re-measurement been run one way only, the numbers would have been right by
-accident and the flag silently dead.
-
-## 7c. Withdrawn — it was built on two numbers that were not measurements
-
-§7c claimed our conversion emits the wrong number of rows per note, from
-`--pace` ratios on Action_Biker and Spellbound. Checking those ratios instead
-of building on them retired the section.
-
-**Action_Biker's rested on 7 matched gaps with an IQR of 0.333–1.000** — a
-threefold spread, one gap above the old minimum of 6 — and `--pace` printed
-*"their row is 3.75 frames"* in bold anyway. For contrast, the files whose row
-length is independently confirmed carry 100–400 gaps at an IQR of 0–3%
-(Ricochet 359 at zero, Tarzan 418 at zero). Its 3.75 was noise. Its row is
-3.00, exactly its gate, from 331 of 331 local maxima three frames apart.
-
-**Spellbound's rested on 19**, and it took three attempts to measure properly
-(v0.5.116). Its row **is 2.20 frames**, but not for the reason v0.5.111 gave:
-
-- The block analysis that produced 2.20 counted *frames above the block mean*,
-  and about half of any series sits above its own mean by construction. It
-  would have returned ~5 ticks per 10 frames whatever the truth. **Right
-  answer, invalid method** — and it was stated as a close.
-- The local-maxima detector gave ~3.2, aliased by the 11-frame skip rhythm.
-- The unbiased test is the one that settled Action_Biker: mean frame cost by
-  index mod N, over the *running* frames with the 136 skip frames removed.
-  **mod 2 spreads 15.4%; mod 3 and mod 5 are flat at 0.0% and 0.1%**, and mod
-  4 and 6 spread only as multiples of 2. It ticks every 2 running frames —
-  exactly its gate — and one frame in 11 is skipped, so 2 x 11/10 = 2.20.
-
-**That revives the rows-per-note question for this one file.** Our row at
-`-m1` is 4.00 frames and their row is 2.20, so the gap ratio should be 1.82;
-`--pace` measures 1.333 over 100 gaps at an IQR of 5.9%, which passes the
-gate. The discrepancy is 0.73, near 3/4 — our conversion appears to emit 3
-rows where the player holds 4 units.
-
-Held loosely, for one reason: Spellbound's melody agreement is **11%**, so
-difflib's 100 matched notes may be a biased subset of a badly-converted file.
-Unlike §7c's Action_Biker half — which was 7 gaps and whose row is exactly its
-gate — this one is worth the static check: the player's `wait` bytes against
-our emitted rows, no timing involved.
-
-**The static check was completed in v0.5.118, and it refutes the
-rows-per-note hypothesis outright.**
-
-The blocker in v0.5.117 was my own misreading. Only one instruction reaches
-`$E11C` — the `BVS` at `$E0E0` — and `$E132 BPL $E164` runs straight into
-`$E16B`, so **both paths converge on the index advance**. There is no loop.
-The consumption rules are:
-
-| status byte | bytes consumed |
-|---|---|
-| bit 6 set (no note) | 1 — the status alone, advanced at `$E16B` |
-| bit 6 clear | 2, or 3 with bit 7 set (status + operand + note) |
-
-with `wait = b & $1F` and a `DEC`/`BMI` counter, so an event lasts `wait + 1`.
-Decoding every pattern from those rules and comparing against what the
-converter emits:
-
-| file | patterns | player units | our rows | ratio | exact |
-|---|---:|---:|---:|---:|---:|
-| Spellbound | 41 | 8080 | 8080 | 1.0000 | **41/41** |
-| Warhawk | 49 | 3775 | 3775 | 1.0000 | 49/49 |
-| Commando | 44 | 3392 | 3392 | 1.0000 | 44/44 |
-
-**Our rows equal the player's units, pattern for pattern.** There is no
-rows-per-note defect in Spellbound or anywhere else these rules apply, and
-§7c is dead on both halves.
-
-### What that says about `--pace`, which matters more
-
-Spellbound's `-m1` ratio of 1.333 is wrong, and it passes **every** confidence
-gate: 100 matched gaps, an IQR of 5.9%, and 59% coverage of the original's
-notes. Warhawk's coverage is 58% and its ratio is right, so no threshold
-separates them — tuning one to catch Spellbound would reject a good file.
-
-v0.5.118 adds the coverage measure anyway, because a sliver-sized sample is a
-real hazard, but records honestly that **on this corpus it rejects nothing the
-count gate did not already reject, and it does not catch the known-wrong
-figure**. A confidence gate cannot substitute for a measurement of a different
-kind. The static count owed nothing to timing, and that is the only reason it
-settled this.
-
-Also fixed in passing: an unreliable rate used to discard the whole estimate,
-so Warhawk — correct at 2.25 — refused because its *other* rate was thin. Only
-the offending rate is dropped now.
-
-**Spellbound is left with one genuine open question**: its row is 2.20
-(v0.5.116, unbiased mod-N), its rows per note are exact, and yet `--pace` sees
-1.333 where 1.82 follows. With the two factors it conflates both now measured
-and correct, what is left is that its matched notes are unrepresentative in
-some way coverage does not capture — its melody agreement is 11%.
-
-## 8. ~~Four players have no expressible rate~~ — mostly solved, v0.5.121
-
-§8 framed a fractional row as needing *re-gridding*: giving a note a different
-number of rows so the product lands right. It does not. **A row lasts
-`tempo / multiplier` frames, so a row of `p/q` frames is exact at `-Sq` with a
-tempo of `p`.** 8/3 frames is not a rounding problem; it is `-S3` at tempo 8.
-No change to rows per note, and the note count stays what the player's `wait`
-bytes say.
-
-`SongSpeeds.exact_row` returns the row as a `Fraction`, and the multiplier
-clears its denominator. Twenty files change:
-
-| | melody |
-|---|---|
-| Deep_Strike | 14% → **100%** |
-| Saboteur_II | 25% → **98%** |
-| Zoolook | 43% → 77% |
-| Chain_Reaction, Thundercats, W_A_R, W_A_R_Preview, Shockway_Rider, Lightforce | → **100%** |
-| ACE_II, Delta, Thanatos, Flash_Gordon, Food_Feud | up 5–11 points |
-
-**Corpus mean melody 74.8% → 78.3%**, the largest single move this work has
-produced.
-
-**The denominator is capped at 4, and the bound is empirical.** `-S5` reached
-three files and regressed all three (Kings_of_the_Beach_intro 96% → 61%,
-Mr_Meaner 91% → 76%, Off_the_Cuff 89% → 76%), which is why the corpus mean is
-78.25% at a cap of 4 against 77.64% at 6. A plausible reason is that v0.5.82's
-per-frame rates are divided by the multiplier and `_rate_shift` is exact only
-for powers of two — but that is a hypothesis, not a measurement, and 3 and 6
-are not powers of two either. **Do not raise the cap without re-measuring.**
-
-### What is left of §8
-
-- The three files whose player runs *v* of every *v+1* calls (Mozart, Ninja,
-  Mega Apocalypse) are untouched by this: their rate is not a fixed fraction
-  of a frame.
-- Two files need `-S10` (a row of 3.30) and stay unencoded.
-- Seventeen files have rows within ~1.3% of a whole number whose exact
-  fraction has a large denominator (3.02, 3.03, 4.04, 4.05). They round, and
-  the error is under two percent.
-- **Why `-S5` regresses — investigated in v0.5.122, not solved.** What is
-  established:
-
-  - The regression is **attack loss, not mistiming**. At `-S5` our attack
-    counts are 52, 58 and 63 against originals of 90, 84 and 101; at the cap
-    the same files are 87, 100 and 120. The retrigger ratio falls to ~0.6.
-  - **The row is more accurate, not less.** Kings_of_the_Beach_intro emits
-    3.60 frames at `-S5` where §7b measured its true row at **3.50**; the cap
-    gives it 3.00. So the file that scores 96% is the one with the *worse*
-    row, and the tempo is not what is wrong.
-  - The slower row accounts for only part of the loss: at 3.0/3.6 of the rows
-    in a fixed window we would expect ~72 attacks, and we get 52. **About 28%
-    of the notes vanish beyond the rate effect.**
-  - Per-subtune tempos are correct at both caps, including the `3 x
-    multiplier` fallback for subtunes with no readable gate (15 at `-S5`,
-    3 at `-S1` — the same 3 frames).
-
-  So the fault is in something measured in **play calls** that does not scale
-  with the multiplier, not in the row.
-
-  **`gatetimer` is eliminated (v0.5.123), by reading and by measurement.**
-  `gplay.c:905` fetches new notes on the single call where
-  `tick == gatetimer`; `tick` reloads to `tempo` each row and counts down, so
-  the fetch happens once per row for any tempo above the gatetimer, exactly
-  as at tempo 3. It positions the fetch inside the row and cannot drop notes,
-  and the `stopsong()` guard at `:334` needs `gatetimer > tick`, i.e. 2 > 18.
-  Forcing the gatetimer to 10 calls — the same 2 frames at `-S5` that 2 calls
-  buys at `-S1` — gives **52 attacks, identical to 2**.
-
-  **The remaining candidate is the wavetable, and it may be partly the
-  measurement.** The wavetable advances one entry per *call* (`gplay.c:707`),
-  so at `-S5` a five-entry instrument program completes inside a single frame.
-  Two consequences, and they are hard to tell apart:
-
-  - the program reaches its gate-off or loop entry five times sooner relative
-    to the row, which is a real conversion defect;
-  - **siddump samples the registers once per frame whatever `-m` says**, so
-    within-frame gate transitions are invisible and the last call of the frame
-    wins. A note that re-gates and is then pulled low by a later call in the
-    same frame shows no rising edge at all — which is exactly what "attacks
-    vanish" looks like.
-
-  **v0.5.124 separated them, and it is the sampling.** The same packed file
-  and the same 2500 play calls, sampled two ways:
-
-  | sampling | attacks |
-  |---|---:|
-  | once per 5 calls (`-m5`, 10 s) | **52** |
-  | once per call (`-m1`, 50 s) | **87** |
-  | the original | 90 |
-
-  The conversion emits 87 attacks against the original's 90. **`-S5` does not
-  lose notes; siddump's per-frame sample loses them**, because it takes the
-  last call of each frame and a gate that rises and falls inside one frame
-  leaves no edge. Note sequences are time-independent, so comparing our
-  `-m1` long trace against the original's 10 s is a fair test, and on it
-  `-S5` beats the cap:
-
-  | | cap 4 | `-S5` as traced | `-S5` fairly |
-  |---|---:|---:|---:|
-  | Mr_Meaner | 91% | 76% | **96%** |
-  | Off_the_Cuff | 89% | 76% | **100%** |
-
-  (Kings_of_the_Beach_intro is missing because a throwaway script derived its
-  multiplier wrongly — that row was not measured, and it was the largest
-  apparent regression, so the cap cannot move on two files.)
-
-  **So `MAX_ROW_DENOMINATOR = 4` rests on an artefact, and the `-S2`/`-S3`/
-  `-S4` gains in v0.5.121 are understated for the same reason.** The
-  wavetable body is still unscaled — `_wave_delay` holds only entry 1, so
-  entries 2-5 run `m` times faster per row — but that is a separate question
-  from the attack count and is not what these numbers show.
-
-  **Built in v0.5.125: `fidelity.py --equal-calls`.** It traces our conversion
-  at one call per frame over `multiplier x seconds` — the same music and the
-  same play calls, sampled as finely as the original. Note sequences are
-  time-independent so melody, sequence and pitch survive; every frame-aligned
-  dimension (wave, adsr, pul, filt, cut, bend) is **dropped, not
-  approximated**, because our frames then cover `multiplier` times the real
-  time the original's do.
-
-  With it, the cap question settles the other way:
-
-  | file | cap 4 | cap 5 | cap 6 |
-  |---|---:|---:|---:|
-  | Kings_of_the_Beach_intro | 96% (`-S1`) | 96% (`-S5`) | 96% |
-  | Mr_Meaner | 91% (`-S1`) | **96%** (`-S5`) | 96% |
-  | Off_the_Cuff | 89% (`-S2`) | **100%** (`-S5`) | 100% |
-  | Rock_Tells_the_Tale | 61% (`-S1`) | 61% | **74%** (`-S6`) |
-
-  **Kings_of_the_Beach_intro, the supposed worst case at 96% → 61%, is 96%.**
-  It never regressed. Corpus-wide under equal sampling, cap 6 beats cap 4
-  (86.68% against 86.31%) with three files up and none down, so
-  `MAX_ROW_DENOMINATOR` is **6** and the bound is now playability rather than
-  an artefact: six calls a frame is ~9k cycles of a PAL frame's 19656, ten
-  would be three quarters of it, and the rows beyond six are within ~1.3% of
-  a whole number and round.
-
-  ### The gap this opens, which is larger than the cap
-
-  Under equal sampling the corpus mean melody is **86.3%**; as `FIDELITY.md`
-  traces it, **78.3%**. That eight-point gap is not the conversions — it is
-  every multiplier > 1 file losing gate edges to the once-per-frame sample.
-  The report is a lower bound, and the more the converter uses the multiplier
-  the further below the truth it sits. `--equal-calls` is the honest number
-  for the sequence dimensions.
-
-  ### v0.5.126 — the per-rasterline trace the register dimensions need
-
-  `python/vicetrace.py`. VICE's `dump` sound device writes the whole SID state
-  **on every rasterline** — 312 samples a PAL frame against siddump's one —
-  and needs no monitor scripting:
-
-  ```
-  vsid -console -sounddev dump -soundarg out.txt -limitcycles N -tune T f.sid
-  ```
-
-  Seven lines a block, no timestamps and none needed: PAL has 312 rasterlines
-  a frame, so a block's index over 312 is its frame.
-
-  **Validated on a control before being believed.** Commando is multiplier 1,
-  where siddump's frame sample loses nothing, and the two agree exactly:
-  **126 gate edges against 126 attacks**, over exactly 500 frames of samples.
-
-  **And it recovers what siddump loses.** Kings_of_the_Beach_intro at `-S5`:
-
-  | | |
-  |---|---:|
-  | siddump, once per frame | 52 attacks |
-  | VICE, once per rasterline | **87 gate edges** |
-  | the original, the same way | 102 |
-
-  87 is what `--equal-calls` predicted from a different direction, so two
-  methods sharing nothing agree.
-
-  **Not built: the wiring.** `wave_compare`, `adsr_compare`, `pulse_compare`
-  and `filter_compare` walk two frame-indexed timelines, and feeding them a
-  312x finer one means choosing how to reduce it — last-sample-in-frame is
-  what siddump does and is exactly the lossy step, while any-sample-in-frame
-  and majority are both defensible and different. That choice wants measuring.
-
-  And the original reads more edges under VICE than under siddump (102 against
-  90), so any such comparison must trace **both** sides this way or it trades
-  one bias for another.
-
-  **This matters beyond `-S5`.** If per-call structures degrade with the
-  multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just
-  outweighs it. Finding this would likely improve the twenty files v0.5.121
-  already moved.
-
-## 8b. Original §8 — four players have no expressible rate
-
-Mozart, Ninja and Mega Apocalypse run the player *v* of every *v+1* calls.
-Chain_Reaction needs 5.5 calls per row — tractable, since a different
-rows-per-note reaches it exactly (2 rows at tempo 11, or 11 rows at tempo 2, at
-`-S1`): a re-gridding decision rather than an impossibility.
+The gate is understood (v0.5.90/91); the open question is *how much*. All five
+wavetable entries are in use, so lengthening the sweep costs the gate-off
+waveform or the sweep itself. `bend` cannot adjudicate it.
+
+## 3. The drum's noise is its attack — two shelved results are suspect
+
+The `BCC` direction was backwards until v0.5.90, so the shelved "noise ending"
+measurement tested the wrong end, and the inherited leading noise tick is back
+in question. Neither re-measured.
+
+## 4. Wavetable Phase 2
+
+- Bit `$08`'s pulse-width variant shipped in v0.5.80 (§4's fork verified this;
+  the handoff had carried it as open for five handoffs).
+- **The only open piece**: the two per-instrument wave programs §4 found
+  (ACE II `$E357`, Auf Wiedersehen Monty `$E743`) — 16-bit pointer per record,
+  per-voice PC, one entry per frame. `detect._find_effect_bit80` reads them;
+  nothing encodes them. Wants a `--baseline` A/B on those two files.
+
+## 5. §7b's remaining mechanism work
+
+- **Widen `OUTER_GATE` to the other three dialects.** It matches only
+  `DEC abs / BPL +8 / LDA #O / STA abs / JMP`. The zero-page, `STY/RTS` and
+  `BMI`-to-light-path forms are documented with addresses in §7b's history
+  (`git log -p --follow whats-next.md`). Test cases exist: Warhawk period 8,
+  Spellbound 11, Las_Vegas 3 (NTSC) / 5 (PAL).
+- **`_rate_shift` is exact only for powers of two** and now matters more, since
+  the multiplier can be 3, 5 or 6.
+- **The wavetable body is unscaled.** `_wave_delay` holds only entry 1, so
+  entries 2-5 advance one per call and run `m` times faster per row at `-Sm`.
+  A real defect; not what the attack counts were showing.
+
+## 6. Wire `vicetrace.py` into the register dimensions
+
+The trace exists and is validated; the wiring is not done. `wave_compare`,
+`adsr_compare`, `pulse_compare` and `filter_compare` walk two **frame-indexed**
+timelines, so feeding them a 312× finer one requires choosing the reduction:
+
+- last-sample-in-frame is what siddump does and is **precisely the lossy step**;
+- any-sample-in-frame and majority are both defensible and different.
+
+**Measure the choice, do not pick one.** And trace **both** sides this way —
+the original reads 102 gate edges under VICE against siddump's 90, so a
+one-sided change trades one bias for another.
+
+## 7. Spellbound's residual
+
+Row 2.20 (solid), rows-per-note exact (solid), yet `--pace` reads 1.333 where
+1.82 follows. Both factors it conflates are measured and correct, so whatever
+is left is in *which* notes difflib matches at 11% melody agreement. It is the
+only known case where a figure passing every confidence gate is still wrong,
+which makes it the best available test of any future gate.
+
+## 8. The `-S5` question is closed but its consequence is not
+
+The regression was siddump's frame sampling (v0.5.124), not the conversion.
+**The report is a lower bound**: corpus mean melody is 78.3% as traced and
+**86.3%** under `--equal-calls`, and the gap widens as the converter uses the
+multiplier more. Item 6 above is what would close it for the register
+dimensions.
 
 ## 9. Smaller items
 
-- **`Kings_of_the_Beach_ingame` plays 138 noise frames where the original plays
-  none** — the report's `!` marker, the only file flagged. Uninvestigated.
-- **The 7 files whose vibrato byte is reached by unrecognised addressing**
-  (Go_Go_Dash, I_Ball, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE,
-  Sun_Never_Shines). An under-read; only I_Ball converts today.
-- **Six players index their frequency table through an idiom
-  `find_freq_table` does not recognise** (Casio_Extended, Dont_Step_on_My_Wire,
-  Era_of_Eidolon, Robs_Life, Task_Force, Up_up_and_Away). Under-read only.
-- **The cmdtable grammar's slide is read but unused by both tunes** — nothing
-  to do unless a new file turns up.
-- `find_init_writes` steps over `JSR`s, so a helper's writes are missed.
-- `SURVEY.md`'s `Ver` column shows the *orderlist* family for digi files, so
-  the digi engine is invisible there. Cosmetic; has cost a fork a detour.
+- **§5's vibrato half-period fix** — one line (`cmp = bound × multiplier − 2`,
+  `rshift = shift + log2(multiplier)`), moves 56 files, wants its own measured
+  commit.
+- `Kings_of_the_Beach_ingame` plays 138 noise frames where the original plays
+  none. Uninvestigated.
+- Seven files whose vibrato byte is reached by unrecognised addressing; six
+  whose frequency table is indexed by an idiom `find_freq_table` misses.
+- Two files need `-S10` (a row of 3.30) and stay unencoded; three players run
+  *v* of every *v+1* calls (Mozart, Ninja, Mega Apocalypse) and are untouched.
+- **Report the GTS2 pattern-array overrun upstream** — LoadTracker is the fork
+  most likely to take it.
+- `SURVEY.md`'s `Ver` column shows the orderlist family for digi files, so the
+  digi engine is invisible there.
 - 3 files still fail at survey defaults (`Delta`, `Dragons_Lair_Part_II`,
-  `W_A_R`, all `TOO MANY NEW PATTERN CREATED`) but convert under presets.
-- **Report the GTS2 overrun upstream** — LoadTracker is the fork most likely to
-  take the fix (actively maintained, 2.77-synced).
-- Two `MTEngine-crash-*.dmp/.txt` files sit **untracked in the repo root** from
-  the RetroDebugger crash. Delete or keep; not mine to remove.
+  `W_A_R`) but convert under presets.
 
 </work_remaining>
 
@@ -1053,236 +318,175 @@ rows-per-note reaches it exactly (2 rows at tempo 11, or 11 rows at tempo 2, at
 
 ## Refuted this session — do not resurrect
 
-1. **"`-soundwarpmode 1` is why VICE renders no audio."** Tested first; still
-   44 bytes. It is `-warp` itself that suppresses the sound device.
-2. **"An octave guard fixes `bend` on the digi files."** Rejecting frames whose
-   frequency ratio exceeds 2 removed only a sixth of Off_the_Cuff's sample
-   movement (5.43M → 901k) and cost real signal elsewhere (Delta 56,531 →
-   40,429, two voices zeroed). A threshold separating vibrato from sample
-   playback is two orders of magnitude wide.
-3. **"The drum overshoot is a false-positive probe."** Bump_Set_Spike's block
-   is Warhawk's byte for byte, 27 of 60 records set bit `$01`.
-4. **"The drum fires only on notes longer than 1 tick."** No drum-instrument
-   note in any of the three overshooting files lasts 1 tick (lengths 2–9).
-5. **"Files overshoot when drum instruments make a large share of
-   note-starts."** 30/14/39% overshooting against 14/34/23/32/19% benefiting —
-   overlapping.
-6. **"The `freqhi` guard rejects the sweep on low notes."** Bump_Set_Spike's
-   originals sit at `$02B9` and above.
-7. **"Bump_Set_Spike's player never triggers its drum."** Ran it: 78 sweep
-   hits, and the frequency shadow walks down one per call. It fires.
-8. **"Thrust's vibrato is computed at a note two octaves too high."** Its
-   movement is monotonic, not oscillating — it is the rise, not vibrato.
-9. **"`--fold-transpose` causes Thrust's overshoot."** Identical bytes with it
-   on and off.
-10. **"The digi files bend nothing because the decoder has no slide path."**
-    They bend nothing because there was no vibrato; v0.5.85 fixed it before the
-    digi slide was written, and `$82` turned out to be used by only five files.
-11. **"Removing the drum sweep is right because it overshoots."** Right for one
-    file, wrong for eight — and that measurement was itself taken on a
-    dimension blind to the original's drum.
-12. **"`bend` can be computed by differencing siddump's frequency column."**
-    Three attempts, three failures: attacks, then ties, then bare frequency
-    writes at note onset. Take siddump's own `(+ xxxx)` instead.
-13. **"Daniel Langner's GTUltra fork could not be located."** (A sibling agent's
-    conclusion.) LoadTracker's README links it directly:
-    `github.com/2bt/GTUltra`, and `2bt` resolves to Daniel Langner.
+1. **"17 files score better at 50 Hz, so something is a factor of two out."**
+   (v0.5.99) `--pace` refuted it: 32 of 33 are closest to the original at the
+   rate they are packed for. `melody` is a sequence ratio in a fixed window and
+   the two errors are not symmetric — too fast overruns the window and is
+   charged for the surplus.
+2. **"The outer counter's reload is a per-player constant."** (v0.5.102) It is
+   an immediate operand the init self-modifies from a per-subtune table.
+   Reading the file image gave Tarzan 11 against a real 2.
+3. **"`OUTER_GATE` is too strict; loosen it."** (v0.5.105) Disassembly showed
+   the five files that missed have **no outer counter at all** — the gate is
+   the first thing their play routine does.
+4. **"§7c: we emit more rows per note than the player."** Backwards — the ratio
+   is below 1. Then the whole hypothesis died: the static count is 41/41 exact.
+5. **"Spellbound closes at 2.20."** (v0.5.111) Right answer, **circular
+   method** — it counted frames above the block mean, and half of any series
+   sits above its own mean by construction. Re-established properly in
+   v0.5.116 by mod-N over running frames.
+6. **"`--skip-gate` is harmful (Tarzan 73% → 59%)."** (v0.5.119) My own harness:
+   correcting the row moves the `-S` multiplier and `fidelity.py` packed at the
+   multiplier still in `presets.json`. I then invented a coherent, mechanistic
+   and entirely fictional coupling to explain it. The give-away was
+   `multiplier=2` on both sides of an A/B where one side was tempo'd for 1.
+7. **"`-S5` regresses; cap the denominator at 4."** (v0.5.121) The regression
+   was siddump's once-per-frame sampling. Kings_of_the_Beach_intro, the
+   "worst case" at 96% → 61%, is **96%**.
+8. **"gatetimer is why `-S5` loses notes."** Eliminated by reading
+   (`gplay.c:905` fetches on the one call where `tick == gatetimer`, once per
+   row for any tempo above it) *and* by measurement (forcing it to 10 calls
+   gives 52 attacks, identical to 2).
+9. **A PR against `SIDM2conv`.** My claim was that
+   `bin/batch_validate_galway.py` picks multispeed by score-argmax, the same
+   mistake `melody` made. Reading `bin/sf2ii_vs_real.py` first killed it: its
+   freq metric is a per-frame register comparison with a ±8 alignment search
+   and a 0-400 global offset, not a windowed sequence ratio, so argmax is
+   legitimate there. Not opened.
 
-## Carried forward, still refuted
+## Tooling failures to avoid repeating
 
-The "~7× re-triggers" miscount; `$BD` as a re-trigger (a no-op,
-`gplay.c:908-941`); `gatetimer` as a note length; "the fabricated wavetable
-invents noise"; "Devils Galop needs a table-copy reader"; "GT's gate mask is
-sticky"; "the tempo scatter is per-file variance"; "wiring `-S` will unblock
-the 33 mis-scored files"; "the slide gap explains the low melody scores";
-"instrument +6 is vibrato"; "3 calls per row is a corpus-wide constant";
-"gt2reloc renumbers subtunes"; "Delta has a pattern-table undercount"; "the
-instrument tables over 50 records are genuine"; "a low modal-delta share means
-the music is scrambled"; "the `$04` bit is an arpeggio in every player".
+- **`\n` inside a quoted heredoc does not survive**, so a Python patch script
+  written that way silently edits nothing. Hit at least four times this
+  session, and once it made a fork report a calibration from a build that did
+  not contain the change. Write patch scripts to a **file** and run them.
+- **An asserting patch script is only a guard if the commit waits for it.**
+  v0.5.126's doc edit asserted and aborted while the commit went through
+  anyway, so the message described a section that did not exist (fixed in
+  v0.5.127).
+- **`FIXED` is not what `presets.json` emits.** The `always` block is a
+  hand-written dict, so `skip_gate` sat in `FIXED`, the suite passed, and the
+  regenerated presets did not carry it — reaching nothing, exactly as
+  `--filter` did in v0.5.72. `test_the_shipped_always_block_carries_every_gated_option`
+  catches it but only against the *shipped* file, so it stays green until
+  someone regenerates.
+- **`presets.pack_multiplier` must pass the same options as the conversion**,
+  or `presets.json` records a multiplier that disagrees with the tempo.
+- `vsid -sounddev help` hangs (GUI app). Probe capabilities another way.
+- Windows will not unlink a directory that is a live shell's cwd.
 
-## Tooling failures
-
-- **RetroDebugger crashed** and its window became an `MTEngine Crash` dialog,
-  which is why every `mcp__retrodebugger__*` call hung past 120 s and queued
-  behind `retro_start_platform`. Killing and relaunching the app fixed the app
-  but **the MCP server disconnected and could not be reloaded in-session**.
-  Diagnose with `Get-Process -Id <pid> | Select MainWindowTitle`.
-- Two silent-failure edits: a Python `str.replace` that did not match wrote
-  nothing to `whats-next.md` in v0.5.90 and shipped an empty change. **Use the
-  Edit tool, which errors on a miss**, not a non-verifying replace.
-- Writing a file with `pathlib.write_text()` on Windows encodes cp1252 and
-  corrupts UTF-8 em dashes. Always pass `encoding="utf-8"`, and validate with
-  `read_bytes().decode("utf-8")` before committing.
 </attempted_approaches>
 
 <critical_context>
 
-## Invariants
-
-- **`Commando.sng` byte-exact.** Every output-changing option opt-in;
-  `--max-rows` 94 and `--format` gts2 stay the defaults.
-- **Bump the version every commit** (`python python/bump_version.py "…"`);
-  regenerate `SURVEY.md` (with `--legal-restart --gt2reloc`), `presets.json`
-  and `FIDELITY.md` on a **settled** tree, once, from `python/`.
-- A new `convert()` option is inert until it is in **three** places: the
-  signature, `presets.py`'s `FIXED`, and the emitted `always` block.
-  `tests/test_preset_passthrough.py` fails otherwise.
-- Stage `hubbard/` paths only, by pathspec.
-
-## The VICE harness (built v0.5.91 — the session's most reusable artefact)
-
-RetroDebugger is unavailable; VICE does the same job over its text monitor.
-
-```
-x64sc.exe -remotemonitor -remotemonitoraddress ip4://127.0.0.1:PORT
-          -warp -sounddev dummy -console
-```
-
-Connect a socket, read until the `(C:$xxxx)` prompt, then `l "file.prg" 0`,
-`> ADDR bytes`, `break ADDR`, `g ADDR`, `m a b`, `quit`. Working scripts are in
-the scratchpad (`vice_drum.py`, `vice_drum2.py`, `vice_drum3.py`) and the
-protocol is also used by `siddetector2/scripts/vice_monitor.py`.
-
-To run a `.sid` player: strip the PSID header (`dataOffset` at `0x06`), prepend
-the load address, write `C:\t\bss.prg`, and poke a driver at `$0810`:
-
-```
-78 A9 35 85 01 A9 00 AA A8 20 00 B0 20 16 B0 4C 1C 08
-SEI / LDA #$35 / STA $01 / LDA #$00 / TAX / TAY / JSR init / loop: JSR play / JMP loop
-```
-
-`$35` keeps CHAREN set so the SID stays visible — the ZP `$01` hazard is about
-*clearing* it. A tight `JSR play` loop advances the player's counters per call,
-which is what the logic keys on, so reachability is faithful; only real raster
-timing would need an IRQ driver.
-
-**Audio rendering:** `vsid.exe -console -sounddev wav -soundarg out.wav
--limitcycles N -tune T file.sid`, **no `-warp`**. PAL is 985248 cycles/s;
-`-tune` is 1-based.
-
-## What `bend` is, and is not
-
-`bend` = the summed magnitude of siddump's `(+ xxxx)` / `(- xxxx)` lines, ours
-over the original's; `slides` is the count of the same lines. **It cannot:**
-
-- tell a pitch bend from a **sample channel** (the nine digi files rewrite a
-  voice's frequency every frame; Off_the_Cuff is 99.8% digi);
-- compare a **stepped** sweep against a **glided** one — the player lands on
-  exact semitones and siddump names those frames, so the player's rise and its
-  drum sweep are both nearly invisible to it while ours are fully visible.
-  Thrust (43x) and Bump_Set_Spike (11.79x) are both this, not overshoots.
-
-Both limits are in the report's *What this does not say*.
-
-## Verified Goattracker facts (from source)
-
-```
-MAX_PATT 208  MAX_PATTROWS 128  MAX_SONGLEN 254  MAX_INSTR 64  MAX_TABLELEN 255
-FIRSTNOTE $60 LASTNOTE $BC  REST $BD (no-op)  KEYOFF $BE  KEYON $BF
-REPEAT $D0    TRANSDOWN $E0  TRANSUP $F0  LOOPSONG $FF
-```
-- Instrument record (GTS5, `gsong.c:224-225`): ad, sr, WTBL, PTBL, FTBL,
-  **STBL**, **vibdelay**, gatetimer, firstwave. **GTS2 swaps bytes 5 and 6**
-  and packs the vibrato (`gsong.c:284-285`).
-- The wavetable advances one entry per play **call** (`gplay.c:707`); speed-table
-  deltas apply per call (`:748/758`). Values `$01`–`$0F` are delays.
-- A wavetable command entry applies **once** (`gplay.c:528+`), it does not set
-  `cptr->command`.
-- Note-relative speed: left side `>= $80` → speed = semitone interval at
-  `lastnote` shifted right by the right byte (`gplay.c:786-792`).
-- Per-instrument vibrato: `gplay.c:352-354` + `CMD_DONOTHING` fallthrough at
-  `:769-780`.
-- greloc.c: restart ≥ songlen rejected (`:244`); `-S` sets a CIA stub (`:1595`)
-  and DEFAULTTEMPO = 6×multiplier−1 (`:1143`).
-- siddump calls play `seconds × 50` times regardless of the PSID speed field
-  (`siddump.c:309/325`).
-
-## Player facts established this session
-
-- **Slide dialects**: Warhawk-style (operand = low half, bit 0 direction) in 25
-  files; high-first (operand & `$3F` = high half, `CMP #$BF` direction) in 22;
-  none both. 13 files have the fetch but neither consumer and default to
-  Warhawk's reading — **an unverified default, worth revisiting**.
-- **Vibrato**: instrument record `+5`, bits 3-6 bound, bits 0-2 shift, 56 files,
-  no exceptions.
-- **Drum**: noise on the note's first frames, sweep for `W−1` after; gated on a
-  **single global effect cell** written only at note start.
-- **Digi engine**: `$82` = signed 16-bit slide (first operand high), `$83` =
-  vibrato in the standard format; instrument stride 16, vibrato at `+5`.
-- **cmdtable engine**: command 1 = slide (low, high|dir, delay), unused by both
-  tunes; its vibrato is a table-driven LFO.
-
-## Key paths
+## Where things are
 
 | | |
 |---|---|
-| Corpus (95 files) | `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob` |
-| GoatTracker 2.77 + source | `C:\Users\mit\Downloads\GoatTracker_2.77` |
-| `gt2reloc.exe` / `siddump.exe` | `…\GoatTracker_2.77\win32\`, `SIDM2\tools\` |
-| VICE 3.9 (`x64sc`, `vsid`) | `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\` |
-| RetroDebugger | `C:\Users\mit\Downloads\RetroDebugger-v1.0.0\…\RetroDebugger-notsigned.exe` |
-| Short scratch for gt2reloc | `C:\t\` |
-| `dis6502.py` | scratchpad; `python dis6502.py <sid> <hex addr> <count>` |
+| **Repo (work here)** | `C:\Users\mit\claude\h2g` → github.com/MichaelTroelsen/h2g |
+| Corpus (95 files) | `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`, or `H2G_CORPUS` |
+| `gt2reloc.exe` | `C:\Users\mit\Downloads\GoatTracker_2.77\win32\`, or `H2G_GT2RELOC` |
+| GoatTracker source | `C:\Users\mit\Downloads\GoatTracker_2.77\src\` (`gplay.c`, `greloc.c`) |
+| VICE 3.9 (`vsid`) | `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\` |
+| `siddump-rt` | `python/tools/siddump-rt/` — **must be built**, `make` with w64devkit gcc |
+| Short scratch | `C:\t\` (gt2reloc's 60-byte filename buffer) |
+| gcc | `C:\Users\mit\Downloads\w64devkit\bin\` |
 
-## Concurrency
+## Invariants
 
-`/subtask` forks share this working tree. During v0.5.93 a sibling bumped the
-version and regenerated artefacts, then reverted — my own bump and regeneration
-vanished mid-flight, and its `git checkout --` on `GOATTRACKER.md` discarded my
-uncommitted pointer (it restored it verbatim and said so). **Give concurrent
-agents their own worktree** (`isolation: "worktree"`), and verify
-`git status --porcelain` immediately before staging.
+- **`Commando.sng` byte-exact.** `--max-rows` 94 and `--format` gts2 stay the
+  defaults.
+- **Bump the version every commit**; regenerate all three artefacts on a
+  **settled** tree, once, in the order survey → presets → fidelity.
+- A new `convert()` option is inert until it is in **four** places: the
+  signature, `presets.FIXED`, the hand-written `always` dict, and (if it moves
+  the rate) `pack_multiplier`.
+- **Build `tools/siddump-rt` before taking any fidelity number.** The harness
+  refuses a multiplier > 1 song without `-m` rather than trace it at half
+  speed.
+
+## Instrument limits — the hard-won part
+
+- **siddump samples the registers once per frame whatever the call rate.** A
+  multiplier-`m` file loses `m−1` of every `m` calls and the gate edges inside
+  them. This produced three separate wrong conclusions.
+- **`--pace` measures `rows per note` × `row length` and cannot separate
+  them.** A uniform rows-per-note error looks exactly like a row-length error,
+  with a tight IQR either way.
+- **A confidence gate cannot substitute for a measurement of a different
+  kind.** Spellbound's wrong figure passes all three gates (100 gaps, 5.9%
+  IQR, 59% coverage). Only the static count settled it.
+- **Where `--pace` and a cycle profile disagree, the profile wins** — it
+  measures the original alone.
+- **Audit the method even when the answer looks right.** Spellbound's 2.20 was
+  correct from a circular measure that could not have been wrong.
+
+## Verified facts
+
+- `greloc.c:140` speedcode `{a2,00,8e,04,dc,a2,00,8e,05,dc}` at the **init**
+  address; `:1616` latch `0x4cc7/multiplier` (PAL); `:1636` play address is
+  `playeradr+3`.
+- `gplay.c:905` new notes fetched on the one call where `tick == gatetimer`;
+  `:334` `stopsong()` when `gatetimer > tick`; `:707` wavetable advances one
+  entry per call.
+- `siddump.c:309/325` calls play `seconds × 50` times regardless of the PSID
+  speed field. The string "speed" does not appear in the file.
+- PAL: 985248 cycles/s, 19656 cycles/frame, **312 rasterlines/frame**.
+- `$02A6` is the KERNAL PAL/NTSC flag; VICE/siddump start it at 0 = NTSC.
+
+## Commands
+
+```sh
+cd python
+python -m pytest tests/ -q                                    # 651 pass, 3 skip
+python fidelity.py <corpus> -t 10 --presets ../presets.json -o ../FIDELITY.md
+python fidelity.py <file> --pace|--ticks|--diagnose -t 30 --presets ../presets.json
+python fidelity.py <corpus> --equal-calls ...                 # sequence dims only
+python survey.py <corpus> -o ../SURVEY.md --legal-restart --gt2reloc
+python presets.py <corpus> -o ../presets.json
+cd tools/siddump-rt && make                                   # needs w64devkit gcc
+```
+
 </critical_context>
 
 <current_state>
 
-## Status: all work committed and pushed; tree clean but for crash dumps
+## Everything is committed and pushed; tree clean
 
-- **v0.5.94** on `origin/master` (`cfbc941`).
-- **547 tests pass, 3 skipped** from `python/`. (The third skip is
-  corpus/`H2G_GT2RELOC`-dependent and varies run to run; 548/2 is the same
-  tree.) `Commando.sng` byte-exact.
-- Working tree has **only** two untracked `MTEngine-crash-*` files in
-  `hubbard/`. Nothing else modified.
+- **`h2g` `master` = `fe79a92`, v0.5.127**, public, 121 commits. Working tree
+  clean.
+- **651 tests pass, 3 skipped.** `Commando.sng` byte-exact.
+- All three artefacts regenerated at **v0.5.125** on a settled tree
+  (`SURVEY.md`, `presets.json`, `FIDELITY.md`). v0.5.126 and v0.5.127 changed
+  no converter byte, so they are current.
+- `SIDDetector2` `master` = `4ebf6ca`, `hubbard/` deleted.
+- **cadaver/siddump#9 open**, awaiting the maintainer.
 
-## Artefacts
+## Current numbers (FIDELITY.md, v0.5.125)
 
-`SURVEY.md`, `presets.json` and `FIDELITY.md` were last regenerated at
-**v0.5.92** and are current: the converter has not changed since v0.5.87 —
-v0.5.88–.94 touched the harness and documentation only. `FIDELITY.md`'s header
-therefore reads `h2g 0.5.92, bea3feb-dirty`, which is correct rather than
-stale. **v0.5.93 and v0.5.94 deliberately did not regenerate**, both because
-nothing about conversion changed and because a sibling agent was active in the
-tree.
+- measured **82** of 95; mean melody **78%**, sequence 76%, pitch 82%,
+  wave 64%, ADSR 69%; median retrigger **0.98**
+- 34 files play the same music (95-100%); 14 play something else (0-50%)
+- **37** of the 82 are packed above `-S1` and traced at their packed rate
+- under `--equal-calls` the mean melody is **86.3%** — the report is a lower
+  bound
 
-Current report: 82 measured rows, mean melody 78%, mean wave 62%, **median
-`bend` 0.25x over 63 rows, 18 files bending nothing**.
+## Two things a fresh session must know first
 
-## Deliverables
+1. **The old working directory is gone.** `C:\Users\mit\claude\c64server\hubbard`
+   is an empty shell (literally — this session's shell is parked in it). Work
+   in `C:\Users\mit\claude\h2g`.
+2. **`tools/siddump-rt` is not built in a fresh clone** (its `.exe` is
+   gitignored). `make` it before any fidelity run, or the 37 multiplier > 1
+   files refuse.
 
-| | state |
-|---|---|
-| per-call rate scaling (v0.5.82) | complete, shipped, in `always` by construction |
-| slide dialect + 16-bit index (v0.5.83) | complete, shipped |
-| `--vibrato` (v0.5.85) | complete, shipped, in `presets.json`'s `always` |
-| digi `$82` slide (v0.5.86) | complete, shipped (small footprint) |
-| cmdtable slide (v0.5.87) | complete, shipped, **reaches no corpus file** |
-| `bend` dimension | complete after four corrections; limits documented |
-| RSID rendering (v0.5.92) | complete, verified end to end |
-| **listening pass** | **staged and waiting for a human** |
-| `GOATTRACKER-FORKS.md` | complete |
+## Open questions carried forward
 
-## Open questions
+- The reduction choice for wiring `vicetrace.py` into the register dimensions
+  (item 6) — **measure it, do not pick one**.
+- Why Spellbound's `--pace` figure is wrong despite passing every gate.
+- Whether `MAX_ROW_DENOMINATOR` could exceed 6 — bounded by playability now,
+  not by evidence; `-S10` would be three quarters of a PAL frame.
+- §5's vibrato half-period fix, which moves 56 files and is unmeasured.
 
-1. **Does the under-rendered drum sound wrong?** Not answerable by any metric
-   here — `bend` cannot see the player's stepped sweep. Crazy_Comets is staged
-   for exactly this.
-2. **Is v0.5.82's multiplier fix audible/correct at the real CIA rate?** No
-   number in `FIDELITY.md` can move on it. The VICE harness can now answer it.
-3. **The 13 files with the two-byte fetch and neither known slide consumer**
-   default to Warhawk's reading with no positive identification. Zoolook
-   (0.26x) and Chain_Reaction (0.26x) are among them.
-4. Whether to spend the drum's fifth wavetable entry on a longer sweep or an
-   attack tick — a trade never measured, and §3 makes the prior evidence
-   suspect.
 </current_state>
