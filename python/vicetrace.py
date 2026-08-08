@@ -30,12 +30,16 @@ exactly one rasterline, which is finer than any play call.
 """
 from __future__ import annotations
 
+import os
 import re
 import subprocess
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VSID = r"C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\vsid.exe"
+VSID = os.environ.get(
+    "H2G_VSID",
+    r"C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\vsid.exe")
 PAL_CYCLES_PER_FRAME = 19656
 PAL_LINES_PER_FRAME = 312
 
@@ -137,3 +141,115 @@ def gate_edges(samples: list[Sample], voice: int) -> list[int]:
 
 def frame_of(index: int) -> int:
     return index // PAL_LINES_PER_FRAME
+
+
+# --- Per-frame reduction ----------------------------------------------------
+#
+# The compare functions in fidelity.py walk two *frame-indexed* timelines, so a
+# 312-samples-a-frame trace has to be reduced before it can feed them. The
+# reduction is not a detail: the two sides write at different rasterlines
+# within the frame -- Warhawk's player at lines 8-19, our -S2 conversion at
+# 119-126 and 274-284 -- so a rasterline-against-rasterline comparison would be
+# reporting that offset rather than the music, and every candidate reduction
+# has to be judged on how little it moves when that offset changes.
+#
+# Measured on eight corpus files spanning multipliers 1-6, shifting our side by
+# an inaudible 0-48 rasterlines (H2G-CONVERSION-METHOD.md section 7.nn):
+#
+#     reduction   mean sd   worst range   verdict
+#     last         0.18       2.64 pp     what siddump does -- point sampling
+#                                         at the frame edge aliases
+#     any          0.09       1.67 pp     saturates: 98.8% on Deep_Strike
+#                                         where every other rule reads ~75%
+#     majority     0.02       0.09 pp     stable, but a hard vote
+#     overlap      0.02       0.13 pp     stable and graded -- the default
+#
+# `overlap` is the share of the frame on which the two sides hold the same
+# value, sum_v min(share_a(v), share_b(v)). It is a comparison of two
+# distributions rather than of two instants, which is why moving either side
+# within the frame barely touches it.
+
+AGREEMENT_MODES = ("overlap", "majority", "last", "any")
+
+
+@dataclass
+class FrameCell:
+    """One register's behaviour over one frame, for one voice.
+
+    `hist` maps value -> rasterlines held, so it sums to PAL_LINES_PER_FRAME;
+    `last` is the value in force at the frame boundary, which is what a
+    once-per-frame sampler reports.
+    """
+    hist: Counter = field(default_factory=Counter)
+    last: int = 0
+
+    @property
+    def majority(self) -> int:
+        # Ties break on the value, not on Counter order, so the reduction is
+        # deterministic across runs and platforms.
+        return max(self.hist, key=lambda v: (self.hist[v], v)) if self.hist else 0
+
+    def representative(self, mode: str = "majority") -> int:
+        """One value standing for the frame, for the counting dimensions.
+
+        A count -- noise frames, duty-cycle moves, filtered frames, cutoff
+        travel -- needs a definite value per frame, so it cannot use the
+        graded rule. `majority` is the stable choice; `last` is the one that
+        aliases.
+        """
+        return self.last if mode == "last" else self.majority
+
+
+def frame_cells(samples: list, pick, voices: int = 3) -> list:
+    """[frame][voice] -> FrameCell, for the register `pick` reads off a voice.
+
+    Whole frames only: a trailing partial frame is dropped rather than scored
+    against a full one.
+    """
+    out = []
+    for start in range(0, len(samples) - PAL_LINES_PER_FRAME + 1,
+                       PAL_LINES_PER_FRAME):
+        block = samples[start:start + PAL_LINES_PER_FRAME]
+        row = []
+        for vi in range(voices):
+            h = Counter()
+            for smp in block:
+                if vi < len(smp.voices):
+                    h[pick(smp.voices[vi])] += 1
+            lastsmp = block[-1]
+            row.append(FrameCell(
+                hist=h,
+                last=pick(lastsmp.voices[vi]) if vi < len(lastsmp.voices) else 0))
+        out.append(row)
+    return out
+
+
+def frame_cells_global(samples: list, pick) -> list:
+    """[frame] -> FrameCell for a register that is not per voice ($D415-$D418)."""
+    out = []
+    for start in range(0, len(samples) - PAL_LINES_PER_FRAME + 1,
+                       PAL_LINES_PER_FRAME):
+        block = samples[start:start + PAL_LINES_PER_FRAME]
+        h = Counter()
+        for smp in block:
+            h[pick(smp)] += 1
+        out.append(FrameCell(hist=h, last=pick(block[-1])))
+    return out
+
+
+def agreement(a: FrameCell, b: FrameCell, mode: str = "overlap") -> float:
+    """How much the two sides agree over one frame, in [0, 1].
+
+    `overlap` is graded; the other three return 0.0 or 1.0 and exist so the
+    choice can be measured rather than asserted.
+    """
+    if mode == "last":
+        return float(a.last == b.last)
+    if mode == "any":
+        return float(bool(set(a.hist) & set(b.hist)))
+    if mode == "majority":
+        return float(a.majority == b.majority)
+    na, nb = sum(a.hist.values()), sum(b.hist.values())
+    if not na or not nb:
+        return 0.0
+    return sum(min(a.hist[v] / na, b.hist.get(v, 0) / nb) for v in a.hist)

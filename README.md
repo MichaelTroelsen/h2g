@@ -1362,6 +1362,42 @@ evidence the change did nothing. This has been the most repeated misreading in
 the project's history and it was previously prevented only by authors
 remembering to write the caveat.
 
+### `--vice` (the register dimensions at 312 samples a frame)
+
+siddump reads the SID **once per frame**, so a value written and overwritten
+inside a frame is not in its trace, and on a multiplier-`m` file the `m - 1`
+intermediate play calls leave no mark. `--vice` computes `wave`, `adsr`,
+`pul`, `filt` and `cut` from VICE's `dump` sound device instead, which writes
+the whole chip state on **every rasterline** — 312 samples a PAL frame. Both
+sides are traced that way; tracing only ours would trade one bias for another.
+
+```sh
+python fidelity.py <sid_dir> -t 10 --presets ../presets.json --vice
+python fidelity.py <file> --vice --vice-reduce last   # what siddump reports
+```
+
+**The reduction back to a frame is forced, and it was measured rather than
+chosen.** The two sides write at different rasterlines within the frame — an
+original's player near the top of the screen, our packed file wherever
+`gt2reloc`'s CIA stub lands — so a rasterline-against-rasterline comparison
+would report that offset. Shifting one side by an inaudible 0–48 rasterlines
+moves each candidate rule by:
+
+| rule | mean sd | worst range | |
+|---|---:|---:|---|
+| `last` | 0.18 | 2.64 pp | what siddump reports — samples one instant, so a write crossing the frame edge flips it |
+| `any` | 0.09 | 1.67 pp | disqualified: reads Deep_Strike at 98.8% where every other rule reads ~75% |
+| `majority` | 0.02 | 0.09 pp | stable, but a hard vote |
+| **`overlap`** | **0.02** | **0.13 pp** | stable and graded — **the default** |
+
+So the rule the report has always used is the least stable of the four. The
+counting dimensions still take the duration-weighted majority, because a count
+needs one definite value per frame. See H2G-CONVERSION-METHOD.md § 7.nn.
+
+Not the default: two emulator runs a row, at about 1.3x real time each. `vsid`
+is found at `--vice-exe` or `H2G_VSID`; a row whose trace fails is marked
+`vice_failed` rather than quietly falling back to the coarser one.
+
 ### A/B against a previous run
 
 ```sh

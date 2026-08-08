@@ -2805,6 +2805,105 @@ on. It is named here rather than averaged away.
 > attack by a call.
 
 
+
+### 7.nn A trace 312x finer, and the reduction that had to be measured first
+
+Every register dimension in `FIDELITY.md` — `wave`, `adsr`, `pul`, `filt`,
+`cut` — is computed from siddump, which samples the SID **once per frame**. A
+value written and overwritten inside a frame is not in that trace at all, and
+on a multiplier-`m` file the `m − 1` intermediate play calls leave no mark.
+§ 7.mm's attack correction is the sharp case: it moves a waveform boundary by
+one call, and `wave` moved on **0 of 82** files.
+
+VICE's `dump` sound device writes the whole SID state on every rasterline —
+**312 samples a PAL frame**. `vicetrace.py` has read it since v0.5.126. What
+stopped it being wired in was not the parsing but a question nobody had
+answered: the compare functions walk *frame-indexed* timelines, so the finer
+trace has to be reduced, and the reduction is where the information is thrown
+away.
+
+#### The measurement that had to come first: the two sides are out of phase
+
+Tracing Warhawk's original and our `-S2` conversion and asking, per rasterline,
+where in the frame each side changes a register:
+
+| side | busiest rasterlines |
+|---|---|
+| original | 9, 10, 18, 19, 8, 11 |
+| ours (`-S2`, two calls) | 274, 279, 283, 126, 119, 284 |
+
+The original's player runs near the top of the screen; our packed file runs
+wherever `gt2reloc`'s CIA stub puts it. **So a rasterline-against-rasterline
+comparison is impossible** — it would compare the original's post-write state
+against our pre-write state for most of every frame and report the offset
+rather than the music. A per-frame reduction is not a convenience here, it is
+forced.
+
+#### Four rules, and the property that decides between them
+
+The offset above is inaudible: it is where in a frame the writes land, not
+what is written. So the test is **stability under a shift of that offset**.
+Shifting our side by 0–48 rasterlines and re-scoring, over eight files spanning
+multipliers 1 to 6:
+
+| rule | what it does | mean sd | worst range |
+|---|---|---:|---:|
+| `last` | the value at the frame boundary — **what siddump reports** | 0.18 | **2.64 pp** |
+| `any` | agree if the two sides' value sets intersect | 0.09 | 1.67 pp |
+| `majority` | the duration-weighted modal value | 0.02 | 0.09 pp |
+| **`overlap`** | `sum_v min(share_a(v), share_b(v))` | **0.02** | **0.13 pp** |
+
+Two results, and the first one was a surprise:
+
+- **`last` — the rule the report has always used — is the least stable of the
+  four.** It samples one instant, so a write that crosses the frame edge flips
+  it outright. The expectation going in was the opposite: that `last` would be
+  phase-free because both sides have written by the boundary. That is only
+  true when nothing else moves afterwards, and on a multispeed file something
+  usually does.
+- **`any` is disqualified on level rather than on stability.** It reads
+  Deep_Strike at **98.8%** where every other rule reads about 75%: with a
+  carry-in slice from the previous frame in every histogram, two sides nearly
+  always share *some* value.
+
+`overlap` is stable *and* graded — a frame in which the two sides agree for
+200 of 312 rasterlines scores 0.64, where `majority` scores 1.0 and `last`
+scores 0. Delta shows the gap: `majority` 99.0% against `overlap` 89.2%, which
+is a real minority disagreement that a hard vote discards. It is the default.
+
+The counting dimensions cannot use a graded rule — a count needs one definite
+value per frame — so they take the duration-weighted majority, which is the
+stable one.
+
+#### What is wired, and what it agrees with
+
+`fidelity.py --vice` traces **both** sides with VICE and computes `wave`,
+`adsr`, `pul`, `filt` and `cut` from the pair. Both sides, deliberately: the
+original reads more gate edges under VICE than under siddump too, so tracing
+only our side would trade one bias for another and make the two columns of
+every count incomparable.
+
+Validated against the siddump path on files that exercise each register:
+
+| | siddump | `--vice` |
+|---|---|---|
+| Warhawk `wave` / `adsr` | 92.9% / 72.6% | 95% / 73% |
+| Star_Paws `filt` | 493/498 | 491/496 |
+| Star_Paws `cut` travel | 4026112/2079232 | 4016896/2074624 |
+| Star_Paws `pul` | 42/1022 | 42/1018 |
+
+Close enough to show the same music is being measured, different enough to
+show the resolution is real. It is **not** the default: two emulator runs a
+row at about 1.3x real time, against siddump's fraction of a second.
+
+> **The transferable lesson:** the instrument's resolution and the
+> instrument's *stability* are different properties, and this repo had been
+> assuming the coarser one was at least the steadier. It is not. Before
+> replacing a measurement, shift something that should not matter and check
+> that the number does not move — the old rule failed that test and the
+> replacement was chosen by it, not by argument.
+
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:

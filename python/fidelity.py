@@ -79,6 +79,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -87,6 +88,8 @@ from h2g.convert import convert
 from h2g.goatwriter import (FORMAT_GTS5, effective_frames,
                             find_song_speeds)
 from h2g.sidfile import find_freq_table, load_sid
+
+import vicetrace
 
 # Defaults are the tools as they sit on this machine; every one is overridable
 # so the harness is not pinned to one install.
@@ -942,6 +945,153 @@ def filter_compare(orig: FilterState, ours: FilterState, nframes: int) -> dict:
     return out
 
 
+def vice_register_compare(orig_samples: list, our_samples: list,
+                          mode: str = "overlap") -> dict:
+    """The register dimensions from two per-rasterline VICE traces.
+
+    Same keys as wave_compare + adsr_compare + pulse_compare + filter_compare,
+    so a row built here is a drop-in for one built from siddump and
+    `--baseline` can A/B the two. What differs is the resolution underneath:
+    siddump reports one sample a frame, so a value written and overwritten
+    inside a frame is not in its trace at all, and on a multiplier-m file
+    `m - 1` of every `m` play calls leave no mark.
+
+    **The reduction to a frame is unavoidable, and it is measured rather than
+    chosen.** The two sides write at different rasterlines within the frame --
+    an original's player near the top of the screen, our packed conversion
+    wherever gt2reloc's CIA stub lands -- so comparing rasterline against
+    rasterline would report that offset. `vicetrace.agreement` implements four
+    per-frame rules; shifting one side by an inaudible 0-48 rasterlines moves
+    `last` by up to 2.64 points and `overlap` by 0.13, which is why `overlap`
+    is the default and `last` -- what siddump gives -- is the one to distrust.
+    See H2G-CONVERSION-METHOD.md section 7.nn.
+
+    The counting dimensions cannot use a graded rule: a count needs a definite
+    value per frame. They take `FrameCell.representative`, which is the
+    duration-weighted majority -- stable under the same shift where `last`
+    aliases.
+    """
+    wave_cells_o = vicetrace.frame_cells(orig_samples, lambda v: v.ctrl)
+    wave_cells_u = vicetrace.frame_cells(our_samples, lambda v: v.ctrl)
+    adsr_cells_o = vicetrace.frame_cells(orig_samples, lambda v: v.adsr)
+    adsr_cells_u = vicetrace.frame_cells(our_samples, lambda v: v.adsr)
+    puls_cells_o = vicetrace.frame_cells(orig_samples, lambda v: v.pulse)
+    puls_cells_u = vicetrace.frame_cells(our_samples, lambda v: v.pulse)
+
+    nframes = min(len(wave_cells_o), len(wave_cells_u))
+    out: dict = {}
+
+    # --- wave: class agreement, and noise frames per side -------------------
+    agree, total = 0.0, 0
+    o_noise = u_noise = 0
+    wave_voices = []
+    for vi in range(3):
+        va, vt, vo_n, vu_n = 0.0, 0, 0, 0
+        for f in range(nframes):
+            a, b = wave_cells_o[f][vi], wave_cells_u[f][vi]
+            # The class is the waveform-select nibble; the gate and the other
+            # control bits are excluded here exactly as in wave_compare.
+            ca = vicetrace.FrameCell(
+                hist=_nibble_hist(a.hist), last=a.last & 0xF0)
+            cb = vicetrace.FrameCell(
+                hist=_nibble_hist(b.hist), last=b.last & 0xF0)
+            if a.representative() & WF_NOISE:
+                vo_n += 1
+            if b.representative() & WF_NOISE:
+                vu_n += 1
+            if set(ca.hist) == {0} and set(cb.hist) == {0}:
+                continue
+            vt += 1
+            va += vicetrace.agreement(ca, cb, mode)
+        wave_voices.append({
+            "wave": (va / vt) if vt else None, "frames": vt,
+            "orig_noise_frames": vo_n, "our_noise_frames": vu_n,
+        })
+        agree += va
+        total += vt
+        o_noise += vo_n
+        u_noise += vu_n
+    out.update({
+        "wave": (agree / total) if total else None,
+        "wave_frames": total,
+        "orig_noise_frames": o_noise,
+        "our_noise_frames": u_noise,
+        "wave_voices": wave_voices,
+    })
+
+    # --- adsr: the envelope pair, compared whole ----------------------------
+    agree, total = 0.0, 0
+    adsr_voices = []
+    for vi in range(3):
+        va, vt = 0.0, 0
+        for f in range(nframes):
+            a, b = adsr_cells_o[f][vi], adsr_cells_u[f][vi]
+            if set(a.hist) == {0} and set(b.hist) == {0}:
+                continue
+            vt += 1
+            va += vicetrace.agreement(a, b, mode)
+        adsr_voices.append({"adsr": (va / vt) if vt else None, "frames": vt})
+        agree += va
+        total += vt
+    out.update({
+        "adsr": (agree / total) if total else None,
+        "adsr_frames": total,
+        "adsr_voices": adsr_voices,
+    })
+
+    # --- pulse: how often the duty cycle moves, per side --------------------
+    o_ch = u_ch = 0
+    pulse_voices = []
+    for vi in range(3):
+        ta = [puls_cells_o[f][vi].representative() for f in range(nframes)]
+        tb = [puls_cells_u[f][vi].representative() for f in range(nframes)]
+        a_ch, b_ch = _changes(ta), _changes(tb)
+        pulse_voices.append({"orig_pulse_changes": a_ch,
+                             "our_pulse_changes": b_ch})
+        o_ch += a_ch
+        u_ch += b_ch
+    out.update({"orig_pulse_changes": o_ch, "our_pulse_changes": u_ch,
+                "pulse_voices": pulse_voices})
+
+    # --- filter: the one global cell ----------------------------------------
+    def side(samples):
+        def col(pick, post=lambda v: v):
+            cells = vicetrace.frame_cells_global(samples, pick)
+            return [post(c.representative()) for c in cells][:nframes]
+        cut = col(lambda s: s.cutoff)
+        ctrl = col(lambda s: s.res)
+        band = col(lambda s: s.modevol, lambda v: (v >> 4) & 0x07)
+        return {
+            "filtered_frames": sum(1 for r, b in zip(ctrl, band)
+                                   if (r & FILTER_ROUTE) and b),
+            "cutoff_changes": _changes(cut),
+            "cutoff_travel": sum(abs(cut[i] - cut[i - 1])
+                                 for i in range(1, len(cut))),
+            "cutoff_range": (max(cut) - min(cut)) if cut else 0,
+        }
+    o, u = side(orig_samples), side(our_samples)
+    out.update({f"orig_{k}": v for k, v in o.items()})
+    out.update({f"our_{k}": v for k, v in u.items()})
+    out["cutoff_sweep"] = (u["cutoff_travel"] / o["cutoff_travel"]
+                           if o["cutoff_travel"] else None)
+    out["vice_frames"] = nframes
+    out["vice_reduce"] = mode
+    return out
+
+
+def _nibble_hist(hist):
+    """A $D404 histogram folded to waveform classes.
+
+    Two control bytes differing only in the gate bit are the same timbre, so
+    they must collapse to one bin before the shares are compared -- otherwise
+    a voice whose gate falls mid-frame would read as two disagreeing classes.
+    """
+    out = Counter()
+    for value, lines in hist.items():
+        out[value & 0xF0] += lines
+    return out
+
+
 # --------------------------------------------------------------------------
 # what this run can see, and what it structurally cannot
 # --------------------------------------------------------------------------
@@ -989,8 +1139,11 @@ NOT_MEASURED = (
     "the original's sampling; Off_the_Cuff 76% against **100%**. Corpus-wide "
     "the gap is about eight points, and it widens as the converter uses the "
     "multiplier more. Read `--equal-calls` for the sequence dimensions of any "
-    "row whose multiplier exceeds 4; the register dimensions have no "
-    "equivalent yet and need a per-call trace",
+    "row whose multiplier exceeds 4, and `--vice` for the register ones -- it "
+    "traces both sides at 312 samples a frame instead of one, so a value "
+    "written and overwritten inside a frame is visible. Neither is the "
+    "default: `--equal-calls` drops the frame-aligned dimensions, and "
+    "`--vice` costs two emulator runs a row",
     "**tempo and row rate** -- no column here scores how long a row "
     "lasts. `--pace` is the mode that does, and on this corpus it finds "
     "row-length errors of 10-33% that every column below is blind to. "
@@ -1442,10 +1595,30 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # not approximated here, they are omitted -- dimensions_present then
         # reports them absent, which is the difference between "not measured"
         # and "measured as disagreeing".
-        row.update(wave_compare(a, best_dump, nframes=nframes))
-        row.update(adsr_compare(a, best_dump, nframes))
-        row.update(pulse_compare(a, best_dump, nframes))
-        row.update(filter_compare(a.filter, best_dump.filter, nframes))
+        if getattr(args, "vice", False):
+            # Both sides at 312 samples a frame. Tracing only ours would trade
+            # one bias for another: the original reads more gate edges under
+            # VICE than under siddump too, so a one-sided change would make
+            # the two columns of every count incomparable.
+            vo = vicetrace.run(local_orig, args.seconds, sub,
+                               exe=args.vice_exe,
+                               out=workdir / "vice_orig.txt")
+            vu = vicetrace.run(packed, args.seconds,
+                               row.get("matched_subtune", sub),
+                               exe=args.vice_exe,
+                               out=workdir / "vice_ours.txt")
+            if vo and vu:
+                row.update(vice_register_compare(vo, vu, args.vice_reduce))
+            else:
+                # Never silently fall back to the coarser trace under a flag
+                # that promises the finer one -- the row would claim a
+                # resolution it does not have.
+                row["vice_failed"] = True
+        else:
+            row.update(wave_compare(a, best_dump, nframes=nframes))
+            row.update(adsr_compare(a, best_dump, nframes))
+            row.update(pulse_compare(a, best_dump, nframes))
+            row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
         # neither side plays anything is not, and calling both "silent" put
@@ -3050,6 +3223,24 @@ def main(argv=None) -> int:
                         "are time-independent so melody, sequence and pitch "
                         "survive; every frame-aligned dimension (wave, adsr, "
                         "pul, filt, cut, bend) does not and is dropped")
+    p.add_argument("--vice", action="store_true",
+                   help="compute the register dimensions (wave, adsr, pul, "
+                        "filt, cut) from VICE per-rasterline traces of BOTH "
+                        "sides -- 312 samples a frame against siddump's one, "
+                        "so a value written and overwritten inside a frame is "
+                        "visible. The sequence dimensions still come from "
+                        "siddump. Slower: vsid runs at about 1.3x real time "
+                        "and each row needs two traces")
+    p.add_argument("--vice-reduce", default="overlap",
+                   choices=list(vicetrace.AGREEMENT_MODES),
+                   help="per-frame agreement rule for --vice. The two sides "
+                        "write at different rasterlines within a frame, so "
+                        "the reduction is unavoidable; these are measured "
+                        "against an inaudible 0-48 rasterline shift, which "
+                        "moves `last` by up to 2.64pp and `overlap` by 0.13. "
+                        "`any` saturates. Default overlap")
+    p.add_argument("--vice-exe", default=vicetrace.VSID,
+                   help="path to vsid.exe (VICE), or set H2G_VSID")
     p.add_argument("--skip-gate", action="store_true",
                    help="convert with --skip-gate: take the counter above the "
                         "speed gate into account when deriving the row, "

@@ -110,6 +110,17 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **`--vice` is the register dimensions at 312 samples a frame** (v0.5.131),
+  from VICE's per-rasterline `dump` device, both sides. Use it for any change
+  that moves a register *within* a frame -- siddump samples once per frame, so
+  v0.5.130's attack fix moved `wave` on 0 of 82 files. The per-frame reduction
+  is forced (the two sides write at different rasterlines, so rasterline
+  against rasterline would report that offset) and was **measured, not
+  chosen**: under an inaudible 0-48 rasterline shift `last` -- what siddump
+  reports -- moves up to 2.64pp and `overlap` 0.13pp, so the default is
+  `overlap` and `any` is disqualified for saturating. Resolution and stability
+  are different properties; do not assume the coarser instrument is the
+  steadier one. See H2G-CONVERSION-METHOD.md section 7.nn.
 - **Do not conclude a change did nothing from a flat table — make the tool
   say it.** Since v0.5.77 every dimension declares the SID registers it reads,
   every row records which dimensions it actually compared, and the report ends
