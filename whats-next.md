@@ -1,428 +1,335 @@
 <original_task>
 Continuation of work on **H2G**, a converter from Rob Hubbard `.sid` files to
 GoatTracker `.sng`. The session opened with `read what next` against the
-previous handoff (then at v0.5.128, in `C:\Users\mit\claude\h2g`) and was
+previous handoff (then at v0.5.135, in `C:\Users\mit\claude\h2g`) and was
 driven as a sequence of single-item directives, each answered before the
 next was given:
 
-1. `read what next` → summarised the open items and recommended the vibrato
-   half-period fix
-2. `do the vibrato fix` → §7.ee's derivation had a real error; found and
-   fixed it
-3. `push it`
-4. `what next` → recommended the wavetable-body scaling fix
-5. `do the wavetable scaling fix next` → turned out to be a different pair
-   of defects than the note described
-6. `push it`
-7. `do the vicetrace wiring next`
-8. `push it`
-9. `check progress` (×3, across a long-running corpus `--vice` job)
-10. `what next` → the corpus run landed with a result that contradicted its
-    own premise; reported that
-11. `push it`
-12. `please continue` → found and fixed a bug in the *previous* commit's own
-    code
-13. `push it`
-14. `do the drum sweep next` → implemented, verified, then reverted on
-    finding a real correctness risk
-15. `push it`
-16. `play the wavs and report back` → no audio playback exists in this
-    environment; explained why, several times, as the user probed *why not*
-    and *how could that be fixed*
-17. `[/subtask use model fable] create a plan for the three suggestions` →
-    a forked agent produced a plan (native audio: not actionable; a real
-    listening tool via an external API: possible, gated on cost/privacy
-    consent; spectrograms via Read: buildable immediately)
-18. `build spectrograms now, decide on the AI listener after` (via
-    AskUserQuestion)
-19. `stage the drum-effect files instead` → re-staged the listening pass
-    for Bump_Set_Spike/Commando/Warhawk/Gerry_the_Germ
-20. (spectrograms built and read) → found real issues, one on the project's
-    own byte-exact fixture
-21. `yes, dig into Commando's rest-section first`
-22. `check how many other corpus files hit this pattern first`
-23. `do the stratified sample`
-24. `write it up in the method doc`
-25. `push it`
-26. `write the whats-next.md handoff` → this document
+1. `read what next` → summarised the previous session's open items;
+   flagged that `mcp__retrodebugger__*` tools had just become available
+   and recommended using them to close work_remaining §1 (what the real
+   6502 player does at Commando's `$FF` track-end marker), which the prior
+   session had explicitly left open for lack of a disassembler
+2. `continue` → loaded `Commando.sid` directly into RetroDebugger's C64
+   core and read the live 6502 dispatch at the track-end boundary
+3. `yes, do the goatwriter pacing check next` → read `gplay.c`'s player
+   loop to check whether Goattracker forces its three channels back into
+   lockstep
+4. `yes, run that trace next` → traced the *original* against *h2g's own
+   packed Commando output* over 26s, real time, both sides — found a
+   defect neither of the first two checks explained
+5. (root-cause investigation, no directive needed — same thread) →
+   bisected the defect to one option (`max_rows=128`), found the
+   mechanism, then scanned the whole corpus and found all 52 files that
+   picked that option in `presets.json` are exposed
+6. (asked via `AskUserQuestion`) `first check how many other corpus files
+   are exposed` → the scan above
+7. (asked again) `yes, implement and validate the fix` → fixed
+   `patterns._slice_pattern`, added a regression test, regenerated all
+   three generated artefacts, committed, pushed
+8. `push it` (implicit in the same turn — the fix commit was pushed
+   immediately after validation, then a further explicit `push it` after
+   the W_A_R spot-check)
+9. `do the W_A_R trace next` → spot-checked the fix on the corpus's
+   worst-exposed file; the before/after comparison did not reproduce a
+   second collapse, and that miss was recorded rather than smoothed over
+10. `push it`
+11. `write the whats-next.md handoff` → this document
 
-Standing rules from `CLAUDE.md` that shaped every commit: bump the version on
-every commit; regenerate `SURVEY.md`/`presets.json`/`FIDELITY.md` on a settled
-tree, once, only when converter behaviour changed; never ship a fake success;
-keep `Commando.sng` byte-exact; stage only project paths by pathspec.
+Standing rules from `CLAUDE.md` that shaped every commit: bump the version
+on every commit; regenerate `SURVEY.md`/`presets.json`/`FIDELITY.md` on a
+settled tree, once, only when converter behaviour changed; never ship a
+fake success; keep `Commando.sng` byte-exact; stage only project paths by
+pathspec; verify a claim against a real source before stating it, and say
+so explicitly when it can't be fully verified.
 </original_task>
 
 <work_completed>
 
 ## Headline
 
-| | start (v0.5.128) | now (v0.5.135) |
+| | start (v0.5.135) | now (v0.5.142) |
 |---|---:|---:|
-| tests | 666 pass / 2 skip | **665 pass / 3 skip** (the +1 skip is a version-gate on `presets.json`, not a regression — see *Current state*) |
-| corpus mean melody (siddump, `-t10`) | 76.7% | **76.7%** (unchanged — see why below) |
-| register dimensions | siddump only, once/frame | **`--vice`**, 312 samples/frame, both sides |
-| listening pass | never performed | **performed** (via spectrograms, not audio — see below) |
+| tests | 665 pass / 3 skip | **666 pass / 3 skip** (the skip is the same version-gate as last session — see *Current state*) |
+| Commando's `$FF`/`$FE` mechanism | unconfirmed (no disassembler) | **confirmed live**, 6502 dispatch read directly |
+| Goattracker channel pacing | unchecked | **confirmed independent**, from `gplay.c` |
+| Commando's silence gap | described, cause unknown | **root-caused and fixed** |
+| corpus files exposed to that defect | unknown it existed | **52 of 95 found exposed, then fixed to 0** |
 
 `Commando.sid` → `Commando.sng` **byte-exact** throughout. Seven commits,
-`0d24318`→`c0da211` (v0.5.128 was the tip at session start, already
-committed; this session's own commits start at v0.5.129).
+`b3c6feb`→`5e9f5ce` (v0.5.136 was the tip at session start, already
+committed and pushed; this session's own commits start at v0.5.137). All
+pushed to `origin/master`.
 
-## v0.5.129 — the vibrato half-period, corrected
+## v0.5.137 — Commando's `$FF`/`$FE` boundary, read live: it loops, and h2g already had it right
 
-`_classic_vibrato_entry`'s `cmp` was `2 × bound × multiplier`, derived from
-reading Goattracker's half-period as `cmp / 2` calls. Simulating
-`gplay.c:795-801` rather than reading its constants gives `cmp + 2` calls —
-the shipped mapping ran the oscillation at roughly **half** the player's
-rate, for all 49 files whose vibrato-byte addressing the reader recognises.
+The prior session's central open question — does the real 6502 player
+loop, freeze, or chain to another table when a voice's track hits
+Hubbard's own end marker — needed a disassembler, which this session had
+and the last one didn't (`mcp__retrodebugger__*` connected for the first
+time). Loaded `Commando.sid` directly into RetroDebugger's C64 core
+(`retro_load` accepts a PSID directly; no manual init/play wiring needed)
+and read the per-voice track-byte dispatch at `$5086`-`$50AA`:
 
-Corrected: `cmp = bound × multiplier − VIBRATO_CMP_BIAS`. **`rshift` is
-deliberately unchanged** — the old derivation equated the player's
-peak-to-peak (`(bound>>1)×depth`; the apply loop only ever subtracts) with a
-Goattracker *amplitude*, and that error happened to cancel the doubled
-period exactly. Correcting both, as the standing note in the code proposed,
-would have doubled every file's depth.
+```
+LDA ($5D),Y        ; fetch this voice's own track byte
+CMP #$FF
+BEQ $5099          ; -> LDA #$00 / STA $54EC,X (this voice's own read
+                   ;    position) / JMP $5086 -- loop to row 0
+CMP #$FE
+BNE $50AA
+JSR $5003 -> $5F42 ; -> LDA #$C0 / STA $5519 (a whole-tune "ended" flag,
+                   ;    tested by BMI $5038) / RTS -- no loop
+```
 
-**No dimension in `FIDELITY.md` measures an oscillation rate**, so the
-report could not adjudicate this. It moved `slides`/`bend` on 30 files — 15
-toward the original, 15 away, mean melody unchanged — and even that
-movement is second-order: the old, too-slow oscillation drifted past a
-semitone before reversing, so siddump re-read it as a *note change* rather
-than a bend, dropping those frames from both counts (One_on_One frame 102).
-`--baseline` byte-hashing settled reach (49 files) where the printed report
-couldn't.
+**`$FF` is a per-voice loop, nothing else** — no other table, no other
+voice, no pointer reload. **`$FE` is a genuinely different, non-looping
+event.** `tracks.py:222-228`'s existing version 0/1/3 encoding already
+distinguished exactly this (`$FF`→loop-to-0, `$FE`→the sentinel
+`legalise_restarts` treats as "ended") from the static byte patterns,
+before this was ever run live — the dynamic read confirmed the static one,
+there was nothing to fix. Also confirmed: the converted track lengths
+(64/63/123 per voice, independently restarting) are faithful to what
+`$54EC,X` being per-voice state makes true of the source.
 
-## v0.5.130 — the wavetable's own clock: two defects, not the one the note named
+## v0.5.138 — Goattracker paces channels independently, no forced lockstep
 
-The handoff's carried-forward note said "the wavetable body is unscaled."
-Reading the shapes against `gplay.c` found something narrower and different:
+Next question: does Goattracker's own engine re-sync the three channels,
+which would make the per-voice independence above moot in practice?
+`gplay.c:304-342`'s `playroutine()` calls `sequencer(c, cptr)` once per
+channel, each with its own `CHN*`; `sequencer()` (`gplay.c:959-1007`) only
+advances *that* channel's `songptr` when *that* channel's `pattptr` has
+just hit `ENDPATT`. No shared row/song-position variable. **Confirmed: no
+lockstep.** This ruled out one candidate explanation for "the original
+keeps introducing content the conversion doesn't" (per-channel drift is a
+real, available mechanism) — but a per-channel-independent loop predicts
+an *exact repeat* each lap, not the *silence* §7.pp had actually measured,
+so it narrowed the mystery rather than closing it.
 
-1. **The attack transient was a call too long, in all 37 multispeed
-   files.** A wavetable delay entry is current for `value + 1` calls, not
-   `value` (`gplay.c:697-704` advances on the call where `wavetime ==
-   value`, having incremented it on each call before). `_wave_delay`
-   returned `m − 1` since v0.5.82; the attack ran `m + 1` calls — 1.5 frames
-   at `-S2`, where 22 of the 37 multispeed files sit. Renamed
-   `_wave_hold_byte`; one extra call is now the attack waveform written
-   again (`$00` is the editor's empty marker, not a delay of zero).
-2. **The arpeggio alternated once per call, not once per frame.** The
-   five-entry-per-instrument layout was recorded as having no room for a
-   delay beside each half. A jump costs no call and can target entry 0, so
-   the attack entry now doubles as the note half's first call — `2m` calls a
-   cycle at every multiplier. Safe only where `tail == wave`, checked (holds
-   in all 45 corpus records reaching the branch).
+## v0.5.139 — root cause: `max_rows=128` has no headroom for an unterminated pattern
 
-Also found: a delay entry's right side **is** read, on its final call, so a
-hold placed after a relative note must carry `$80` or it drags the note
-back.
+Traced the *original* against *h2g's own packed Commando output*
+(`presets.json`'s options, both sides through the same `gt2reloc` +
+`siddump` pair `fidelity.py` uses) over 26 real seconds, bucketed by
+attacks/second. The original stays busy (7-17/s) the whole time; h2g's
+own conversion matches that for ~8 seconds, then **collapses to 0-2/s for
+the rest** — an actual near-total stop, not a different loop.
 
-**Neither instrument can see the attack fix, for opposite reasons** — the
-first time this session's own new tooling became the subject rather than
-the tool: siddump samples once per frame and the removed call is a frame's
-*interior* call (`wave` moved on 0 of 82 files); `--equal-calls` resamples
-per call but drops the frame-aligned dimensions entirely, comparing `wave`
-on 45 files of which none has multiplier > 1. This is the argument that
-motivated v0.5.131.
+Bisected `presets.json`'s option set against a healthy `max_rows=94`
+baseline: **`max_rows=128` alone** reproduces it (a single-step sweep from
+94 to 128 is unambiguous — 94 through 127 identical and healthy, 128 alone
+collapses). `patterns._slice_pattern`'s own docstring had already named
+the mechanism, written before this defect was ever observed: Goattracker's
+loader pre-fills a pattern buffer with an end marker from row 64 onward
+and *rescans* for that byte at runtime rather than trusting the file's
+declared length. Slicing at 94 is safe "by luck" (94 > 64, leaving
+untouched pre-filled rows behind it); **128 is Goattracker's own
+MAX_PATTROWS**, so a 128-row slice fills the whole declared buffer and
+(empirically, under the real toolchain) leaves nothing safe for the rescan
+to land on nearby. Confirmed structurally via a temporary debug dump of
+`convert()`'s own `tracks`/`patterns` (added and reverted, not left in the
+tree): Commando's 256-row source pattern splits as `94+94+68` (safe) at
+`max_rows=94` but `128+128+0` (two zero-headroom slices back to back) at
+128.
 
-## v0.5.131 — `--vice`: the register dimensions at 312 samples a frame
+## v0.5.140 — confirmed the defect exposes all 52 corpus files that picked it
 
-`vicetrace.py` (built the *previous* session) had never been wired into
-`fidelity.py`. It is now, via `--vice` / `--vice-reduce` / `--vice-exe`.
+`presets.json` picked `max_rows=128` for **52 of the 95 corpus files** —
+the optimizer's own preference (shorter orderlists), not a corner case.
+Converting each with its own preset options and counting patterns that are
+exactly 128 rows with a non-`ENDPATT` final byte: **all 52 exposed, zero
+exceptions** — 2 to 77 affected patterns per file. Every one of those 52
+`presets.json` entries was liable to the same class of collapse Commando's
+was, at an unknown point in each file, invisible to a fidelity metric that
+has never traced past ten seconds.
 
-**The reduction had to be measured, and the result was a surprise.** The two
-sides write at different rasterlines within the frame (Warhawk's player near
-line 8-19; our `-S2` conversion at 119-126 and 274-284), so a
-rasterline-against-rasterline comparison is impossible — it would report the
-offset, not the music. Shifting one side by an inaudible 0-48 rasterlines
-and re-scoring four candidate rules:
+## v0.5.141 — the fix, validated against the real toolchain
 
-| rule | mean sd | worst range | |
-|---|---:|---:|---|
-| `last` (what siddump reports) | 0.18 | **2.64 pp** | samples one instant — the *least* stable |
-| `any` | 0.09 | 1.67 pp | disqualified: saturates (98.8% on Deep_Strike vs ~75% everywhere else) |
-| `majority` | 0.02 | 0.09 pp | stable, hard vote |
-| **`overlap`** | **0.02** | **0.13 pp** | stable and graded — **default** |
+`_slice_pattern` now shaves one row off any unterminated chunk specifically
+when `max_len == GT_MAX_ROWS * 4` (i.e. only reachable at `max_rows==128`,
+since both the CLI and `convert_patterns` already clamp `max_rows` to
+`1..GT_MAX_ROWS`). No other `max_rows` value's chunking changes. Re-running
+the 52-file scan finds **zero** exposed patterns. Commando's own live trace
+goes from 36/32/36 attacks over 26s to **100/105/108**, against the
+original's 101/106/109 — the collapse is gone, not relocated. Added a
+direct unit test on `_slice_pattern` (`test_max_rows_128_never_leaves_a_
+full_unterminated_slice`); full suite passed (667/2 at the time, before the
+next commit's version bump re-armed the unrelated skip — see *Current
+state*). `Commando.sng` (`max_rows=94`) is untouched. Regenerated
+`SURVEY.md`, `presets.json` and `FIDELITY.md` — `FIDELITY.md`'s own numbers
+barely moved, expectedly, since 10 seconds isn't enough trace to reach most
+files' first affected pattern; recorded that explicitly rather than reading
+the flat report as "the fix reached nothing."
 
-The rule the report has always used turned out to be the *least* phase-stable
-of the four — the opposite of the expectation going in.
+**One honest gap, recorded rather than papered over:** `tests/
+test_terminate_patterns.py`'s own `_loaded_length` — a model of the
+*interactive editor's* `clearpattern()`, trusted by this project since
+before this defect was found — predicts row 128 should already be safely
+pre-filled with ENDPATT, the opposite of what `gt2reloc`'s packed player
+measurably does. `gt2reloc` packs patterns through its own RLE packer
+(`greloc.c`'s `packpattern()`) into a standalone player, which is not shown
+in this session's work to share the interactive editor's flat, pre-filled
+array at all — that packer's own player-side memory layout was not
+re-derived. The fix is validated against the actual shipped toolchain
+(`gt2reloc` + `siddump`), which is the pair that has to agree for it to
+matter regardless of which C struct explains the gap — but *why* the
+model and reality disagree is still open.
 
-## v0.5.132 → v0.5.133 — a corpus run, and a bug found in the tool that ran it
+## v0.5.142 — spot-checked the fix on W_A_R, an honest miss
 
-The corpus `--vice` pass reported ~10.1pp mean absolute resolution effect,
-concentrated (unexpectedly, since `--vice` was motivated by multispeed
-undersampling) at **`-S1`** files. Investigating that anomaly — rather than
-confirming a real harness-vs-converter gap — found a defect in `--vice`
-itself, shipped one commit earlier: `wave_compare`'s "drop a frame silent on
-both sides" rule was translated as "drop only if the whole 312-line
-histogram is silent," so a frame where one side flickered briefly and both
-were silent *at the boundary* scored as a **full agreement** instead of
-being dropped. Fixed as the graded form of the same rule
-(`_graded_agreement`, `min(share_a(0), share_b(0))` leaves both numerator
-and denominator). Corrected corpus figures: resolution **6.9pp** (not
-10.1), denominator defect **3.2pp** (pure inflation), rule **2.1pp**.
-Two of the six files in the original six-file sample owed their entire
-"resolution" reading to this bug; the true effect on them was zero.
-
-`--vice-reduce last` (the non-graded path, which reproduces siddump's own
-arithmetic exactly) is what made this separable at all — run the new
-instrument under the old instrument's rule before trusting a difference is
-real.
-
-## v0.5.134 — the drum sweep: investigated, implemented, reverted
-
-§7.ii's under-render (one static step where the player takes `W − 1`) had
-an obvious next move: loop `WAVECMD_PORTADOWN` back onto itself, the same
-jump-target trick that gave the arpeggio its missing slot in v0.5.130.
-Implemented, differential-hashed to exactly the 44 files that reach
-`_drum_entries`, and directly verified on Bump_Set_Spike — VICE traces
-showed genuine, repeated, self-terminating falls matching the player's
-rate.
-
-**Reverted before commit.** `CMD_PORTADOWN` has no floor
-(`gplay.c:557-572` is `cptr->freq -= speed` on an unsigned 16-bit value,
-nothing clamps it), where the player's own guard freezes at zero. A
-corpus-wide underflow scan with `--vice` (921 hits on 20 of 44 files, after
-one methodology bug — see *Tooling failures* — was caught and fixed) found
-it on **Commando**, the project's byte-exact fixture: an ordinary,
-mid-range, three-second-held note wrapped through zero after 175
-consecutive falling frames. Goattracker's own frequency table bottoms out
-at 279; the drum step is 256 — **one step is the largest number of
-repetitions provably safe for any note**, which is exactly what already
-ships. Documented as a negative result, §7.oo, so the idea (which looks
-structurally identical to the arpeggio fix that *did* ship) is not
-re-attempted blind: the arpeggio's relative-note entry resets `cptr->freq`
-from the table every visit and never drifts; `CMD_PORTADOWN` never resets
-anything.
-
-## v0.5.135 — the listening pass, performed without ears, and a real defect found
-
-**I have no audio playback in this environment** — established firmly this
-session after several rounds of the user probing why, and whether it could
-be fixed (VB-Cable, a live Claude-voice bridge — neither gets audio *into*
-this session; see *Attempted approaches*). What was actually buildable:
-real spectrograms (`numpy` STFT + `PIL`, no new project dependency — a
-one-off scratch script, not committed) read via the `Read` tool, which does
-give genuine visual perception.
-
-Staged the four files whose drum block is byte-identical per §7.ii
-(Bump_Set_Spike, Commando, Warhawk, Gerry_the_Germ) and looked at them:
-
-- **Bump_Set_Spike / Gerry_the_Germ**: visually confirmed dynamic-range
-  compression already suspected from a numeric envelope check (σ 26.7→8.5dB
-  and 19.0→8.3dB) — the low band fills in continuously where the original
-  shows sharp, separated strikes.
-- **Gerry_the_Germ**: the original's opening ~4s shows four clear diagonal
-  rising-pitch sweeps; h2g's opening shows none. Consistent with (not
-  proven — not checked further) the documented drum+rise conflict, where a
-  record setting both bits sacrifices the rise entirely.
-- **Warhawk**: a multi-second total-silence block, roughly where the
-  original has a sustained section after its vibrato-heavy opening.
-- **Commando**: investigated in full — see next section. The most
-  significant finding of the four, on the project's own reference fixture.
-
-## Commando's rest section — investigated, confirmed, and correctly scoped down
-
-Full writeup: **H2G-CONVERSION-METHOD.md §7.pp.**
-
-**Confirmed at three independent levels**: register-level (all three voices
-pause in near-lockstep at 7.8-7.9s, recurring every ~5.2s; a 250/250 exact
-match one cycle apart), structural (subtune 0's orderlist is 64/63/123
-entries, ending on Hubbard's own `$FF` "tune ended" byte, which
-`--legal-restart` correctly loops per its documented behaviour), and ruled
-out the project's most common false-alarm class (`--diagnose` shows an
-89-100% clean diagonal — not a scrambled subtune).
-
-**A wrong turn is in the record on purpose**: an early riff match (h2g's
-first ~8s matches the original's own restated riff) was first read as "not
-a bug." Extending the same comparison to 15-22s reversed that — the
-original introduces notes never in the early riff, while h2g just keeps
-looping it. The lesson stated in the doc: a note-sequence match over one
-window is evidence about that window, not what follows it.
-
-**What is *not* confirmed**: the exact 6502 mechanism the real player uses
-when it hits `$FF`. `track_selector: True` is detected for Commando but
-shown (by reading `detect.py:634-660`) to be a subtune→track-table lookup
-indirection, not a chaining primitive — it explains how the *right* table
-is found, not what happens when it runs out. This needs disassembly-level
-reading, not undertaken.
-
-**The corpus-wide screen — and why its headline number doesn't survive
-verification**: a structural check (does any subtune-0 voice end in a
-restart under ~150 entries) flagged **55 of 95 files (58%)**. Five,
-stratified across the range, were checked by hand the same way Commando
-was. **Zero repeated Commando's failure.** Two were caught by the
-screening heuristic's *own* blind spots — BMX_Kidz's documented ~13s intro
-silence and Human_Race's natural four-chord cycle length both produce the
-same "new pitches after a fixed split" signature as a genuine truncation,
-for reasons unrelated to any defect. `track_selector` was checked as a
-candidate explanation for the pattern and refuted (49% of candidates have
-it vs a 39% corpus base rate — too weak to be the mechanism).
-
-**Net scope**: this reads as Commando-specific, not a corpus-wide defect
-worth a fix campaign — though five of fifty-five is not enough to clear the
-rest, only to lower the prior substantially.
+`W_A_R.sid` has the corpus's worst exposure (77 of 156 patterns) and its
+default subtune references 65 of them, several within the first few
+orderlist entries — the strongest candidate for a second dramatic
+before/after. Traced 30s against both the pre-fix `patterns.py`
+(temporarily restored from git for the comparison, then put back — see
+*Attempted approaches* for the exact technique and its one hazard) and the
+fixed one: **the two traces are frame-for-frame identical** — 29/25/58
+attacks either way, tracking the original's 28/20/58 closely with no
+silent stretch on *either* side. Recorded as a genuine miss, not
+disconfirming: the runaway read's audible cost is evidently not uniform
+across files, and this fix's value on W_A_R rests on the structural
+guarantee (no read ever runs past a known-unsafe boundary again) rather
+than a second demonstrated collapse. The other 7 subtunes' 12 remaining
+hits, and this subtune past 30s, were not traced.
 
 </work_completed>
 
 <work_remaining>
 
-## 1. Commando's rest section — the mechanism, not just the symptom
+## 1. Why does the loader model disagree with `gt2reloc`'s real behaviour?
 
-What's confirmed (§7.pp) is *that* the conversion diverges and *why the
-converter's own reading is correct* (the source orderlist really is short
-and really does end on `$FF`). What's still open is what the **real
-player** does instead of looping when it hits that marker — chain to
-another orderlist via some mechanism `track_selector` doesn't cover, jump
-via a different table, or something else entirely. Needs 6502 disassembly
-around the point the version-0/1/3 track reader consumes `$FF`
-(`tracks.py:222-228` names the byte; the *player's* handling of it, not
-h2g's, is what's missing). Warhawk's own spectrogram silence gap is a
-plausible second instance worth checking once the mechanism is understood.
+v0.5.141's honest gap. `test_terminate_patterns.py`'s `_loaded_length`
+models `gsong.c`'s `clearpattern()` (the *interactive editor's* pattern
+loader) and predicts a 128-row unterminated slice is safe; live
+measurement through `gt2reloc` + `siddump` says otherwise. `gt2reloc`
+packs through `greloc.c`'s `packpattern()` (an RLE packer, `greloc.c:715,
+749`) into a standalone player whose own runtime memory layout was not
+read this session. Reading that packer and the standalone player it
+builds — not the interactive editor's `gplay.c`/`gsong.c`, which is what
+every citation so far in this defect's writeup actually comes from — is
+the direct way to close this. Low priority: the fix doesn't depend on it,
+but the method doc currently states the mechanism with a caveat instead
+of confidence.
 
-## 2. The drum sweep under-render is still open, and the obvious fix is now known-unsafe
+## 2. Broader audible validation of the max_rows=128 fix
 
-§7.ii's `W − 1` vs `1` gap stands. The looping fix is closed off (§7.oo) —
-not because it's hard, but because `CMD_PORTADOWN` has no floor and one
-step is provably the safe ceiling. A real fix needs either per-note
-information threaded into the wavetable build (which `_wavetable_entries`
-structurally doesn't have — one wavetable is shared across every pitch and
-duration the instrument is used at) or a pattern-level `CMD_TONEPORTA`
-encoding (which does clamp, but is reachable only from a pattern's own
-effect column, not the wavetable's one-shot command dispatch — a
-materially bigger change touching `patterns.py`, not just
-`goatwriter.py`).
+Only 2 of the 52 previously-exposed files got a live before/after trace
+(Commando: dramatic collapse, fixed; W_A_R: structural exposure confirmed,
+no audible before/after difference in the traced window). The structural
+guarantee (no unterminated 128-row slice, ever) is proven corpus-wide; the
+*audible* stakes on the other 50 files are unknown — could be anywhere
+from "as dramatic as Commando" to "as invisible as W_A_R's traced window."
+Not urgent (the fix is unconditionally safe either way), but worth knowing
+before citing this as having "fixed 52 files' worth of real defects" versus
+"fixed 52 files' worth of latent risk."
 
-## 3. Gerry_the_Germ's apparent missing rise effect — flagged, not verified
+## 3. Carried forward from last session, untouched this one
 
-The spectrogram showed no rising-sweep shape in h2g's opening where the
-original has four clear ones. Plausible mechanism named (drum+rise
-conflict) but not checked against this file's actual detected bits, and not
-fixed either way.
-
-## 4. Bump_Set_Spike / Gerry_the_Germ's compressed dynamics — flagged, not diagnosed
-
-Visually and numerically confirmed (σ dB collapse), root cause not
-investigated. Candidates: an ADSR release/sustain difference, a gate-hold
-difference, or a legato/note-length effect the register dimensions are
-documented as unable to see (`wave` ignores the gate bit; `NOT_MEASURED`
-names note length explicitly).
-
-## 5. The listening pass tooling built this session is scratch, not shipped
-
-The spectrogram script (`numpy` STFT + hand-rolled colormap + `PIL`) lives
-in the session's temp scratchpad directory, which does **not** persist
-across sessions. If spectrograms are wanted as an ongoing check, they need
-to be written into the actual repo (a `python/spectrogram.py` alongside
-`listen.py`, or folded into `listen.py` itself) — nothing here survives to
-next session on its own.
-
-## 6. A real listening tool was planned, not built
-
-A forked "fable" agent produced a plan for an actual audio-capable second
-opinion: `OPENAI_API_KEY` is already set in this environment, and a
-standalone script sending the staged WAV pairs to an audio-capable OpenAI
-model would give a genuine second ear, not a proxy. **Gated on explicit
-user consent** — it installs a new dependency, sends audio files to a
-third party, and costs money per call — none of which happened this
-session (the user chose spectrograms first). Live option if wanted.
-
-## 7. The ~50 unverified restart-screen candidates
-
-Zero of five verified as real defects. Not proof the rest are clean — just
-grounds to expect a low yield. Full list is in the session's log output,
-not currently saved anywhere in the repo (see *Where things are* if
-re-deriving it).
-
-## 8. Carried forward, untouched this session
-
-- **`_rate_shift` is exact only for powers of two.** Now matters more:
-  §8 (prior session) means 15 files pack at multiplier 3/4/5/6, not just
-  1/2.
-- **Widen `OUTER_GATE`** to the zero-page, `STY/RTS` and `BMI` dialects.
-  Known test cases: Warhawk period 8, Spellbound 11, Las_Vegas 5.
-- **Encode the two per-instrument wave programs** (ACE II `$E357`, Auf
-  Wiedersehen Monty `$E743`) — read by `detect`, encoded by nothing.
-- **Spellbound's `--pace` residual** — reads 1.333 where 1.82 follows,
-  passing every confidence gate. Still the only known case of a
-  fully-gated figure being wrong.
+- **Commando's `.frm` player is confirmed to loop, not chain — but the
+  original composition's own audible "keeps introducing content" behaviour
+  is still not tied to a specific mechanism.** Both v0.5.137 (mechanism)
+  and v0.5.138 (pacing) came back "faithful, no bug here," and v0.5.139-141
+  found and fixed a real but *different* defect (the silence gap) instead.
+  Whether Commando's audible divergence, once the silence gap is fixed, is
+  now fully explained or whether something is still left over needs a
+  fresh listening/spectrogram pass against the *current* (fixed) build —
+  not attempted this session.
+- **The drum sweep under-render** (§7.ii) — the obvious fix (loop
+  `CMD_PORTADOWN` back onto itself) is closed off (§7.oo): it has no floor
+  and Commando's own ordinary content underflows it after 175 frames. A
+  real fix needs either per-note info threaded into the wavetable build, or
+  a pattern-level `CMD_TONEPORTA` encoding (bigger, touches `patterns.py`).
+- **Gerry_the_Germ's apparent missing rise effect** — flagged from last
+  session's spectrogram pass (four clear rising sweeps in the original's
+  opening, none in h2g's), not verified against this file's actual
+  detected bits, not fixed either way.
+- **Bump_Set_Spike/Gerry_the_Germ's compressed dynamics** — σ dB collapse
+  confirmed numerically and visually, root cause not investigated.
+  Candidates: ADSR release/sustain difference, gate-hold difference, or a
+  legato/note-length effect the register dimensions can't see.
+- **The listening-pass tooling** (spectrogram script) from two sessions
+  ago was scratch and is gone; a real audio-capable second opinion (the
+  OpenAI-pilot plan) is still just a plan, gated on explicit consent.
+- **The ~50 unverified restart-screen candidates** from §7.pp — 0 of 5
+  verified as real defects, not proof the rest are clean.
+- **`_rate_shift` exact only for powers of two**, **`OUTER_GATE`'s
+  narrower dialects**, **ACE II/Auf Wiedersehen Monty's two unencoded
+  per-instrument wave programs**, **Spellbound's `--pace` residual** — all
+  named in the prior handoff, none touched.
 
 </work_remaining>
 
 <attempted_approaches>
 
-## Refuted this session — do not resurrect
+## What worked this session — reusable techniques
 
-1. **Looping the drum sweep via jump-to-self (v0.5.134).** Structurally
-   sound, reach- and trajectory-verified, and still wrong: `CMD_PORTADOWN`
-   has no floor, and Commando's own ordinary content underflowed it. See
-   §7.oo for the full case, including the exact number (279 vs 256) that
-   makes one step the provable ceiling.
-2. **"Commando's riff match means there's no bug."** Reversed by extending
-   the same comparison window from ~8s to ~22s. A partial-window match is
-   evidence about that window only.
-3. **A naive signal-processing periodicity detector** for the corpus-wide
-   loop scan (autocorrelation over a fixed formula-derived window). Kept
-   returning noise-floor values (50-70 frames) instead of Commando's
-   confirmed 260-frame period; validating it against the one *known* case
-   before trusting it on 95 files is what caught this. Pivoted to reading
-   the converted track data structurally instead — deterministic, fast,
-   and directly grounded in the confirmed mechanism.
-4. **The "new pitches after a fixed split" acoustic heuristic**, and by
-   extension the raw 55/95 corpus screen number. Both produce false
-   positives from ordinary properties of the music (an intro silence, a
-   chord-cycle length exceeding the split point) that have nothing to do
-   with a truncated track. Treat the 55 as *candidates needing the
-   Commando-style by-hand check*, never as a defect count.
-5. **`track_selector` as the mechanism** behind either Commando's specific
-   failure or the corpus-wide restart pattern. Checked directly by reading
-   `detect.py` (it's a lookup indirection, not a chaining primitive) and
-   by correlation (49% of screen candidates have it vs 39% corpus-wide —
-   too weak).
-6. **VB-Audio Cable, or any OS-level audio routing, as a fix for "give
-   Claude ears."** It moves audio between applications that already have
-   audio I/O; it does not create a channel into this session's perception.
-   The bottleneck was never *getting* audio data (the WAV files already
-   have sample-accurate PCM) — it's that no tool here decodes audio into
-   something readable. A separate Claude endpoint with live voice/audio
-   input might genuinely hear a file routed to it, but that's a different
-   conversation entirely; nothing relays back into this one automatically.
+1. **Live 6502 disassembly via RetroDebugger, on a `.sid` loaded directly.**
+   `retro_load` accepts a PSID file with no manual init/play wiring; the
+   emulator starts running it immediately. `retro_search_pattern` (mnemonic
+   patterns like `"CMP #$FF"`, `executedOnly` toggle) found the exact
+   dispatch point in two calls rather than a manual disassembly crawl. This
+   was unavailable last session and directly unblocked work_remaining §1.
+2. **A temporary debug-dump hook in `convert.py`, added and reverted every
+   time.** `os.environ.get("H2G_DEBUG_DUMP")` gated a one-line pickle dump
+   of `tracks`/`new_patterns` right after the point of interest, run via a
+   throwaway script, then `git checkout -- convert.py` immediately after.
+   Used three separate times this session (single-file structural compare,
+   corpus-wide scan, post-fix corpus re-scan) with zero leakage into the
+   tree — confirmed clean each time before moving on. Faster and more
+   reliable than reimplementing convert()'s internal pipeline by hand.
+3. **Restoring a file's pre-fix content from `git show <rev>~1:path` for a
+   live before/after, then restoring the fix from a session-local backup
+   copy.** Used for the W_A_R comparison. **The hazard**: this edits a
+   tracked file on disk without `git add`/commit, so `git status` shows a
+   real (if temporary) modification the whole time the comparison runs —
+   check status immediately after restoring, and keep the "restore the fix
+   back" step as its own explicit command, not folded into a longer chain
+   that could be interrupted mid-way (the same class of risk this repo's
+   own `CLAUDE.md` already flags for `git stash` + a killed background job).
+4. **Bisecting an option set against a known-healthy baseline, one flag at
+   a time then in combination, before trusting a correlation.** The first
+   pass (individual `presets.json` flags against a `max_rows=94` baseline)
+   found nothing; only leave-one-out *from the full broken combination*
+   isolated `max_rows`. Both were needed — the first ruled out simple
+   single-flag causes, the second found the real one.
+5. **A single-step parameter sweep (94, 100, 110, 120, 126, 127, 128) as
+   the actual proof**, not the leave-one-out result. Leave-one-out said
+   "removing max_rows fixes it"; the sweep is what showed the boundary is
+   *exactly* 128, ruling out "any high max_rows" or "specifically 128 as an
+   exact multiple of something in this file" as alternate explanations.
 
-## Tooling failures to avoid repeating
+## A wrong turn worth keeping in the record
 
-- **Rasterline-level vs frame-level confusion, again** — the first
-  wraparound-detection script for the drum-sweep investigation compared
-  raw consecutive VICE *rasterlines* instead of reducing to one value per
-  frame first, producing 10486 spurious "wraparound" hits (a normal
-  once-per-frame register write, straddling a sample boundary, looks like
-  a huge one-sample jump at 312-samples-a-frame resolution). Fixed by
-  reducing through `vicetrace.frame_cells` first, the same discipline
-  §7.nn had already established.
-- **A killed background command can leave a `git stash` unpaired.** A
-  `git stash -q && <long job> ; git stash pop -q` command was stopped via
-  `TaskStop` before reaching the `pop` — the stash sat live while
-  `git status` showed a clean tree. No tool surfaced this; only checking
-  `git status`/`git stash list` before trusting "clean" caught it. **Never
-  chain a stash-pop after a command you might kill mid-run**; stash,
-  run the job as a separate step, pop as a separate step.
-- **`../build/listen` resolves relative to `python/`, landing at
-  repo-root `build/listen/`, not `python/build/listen/`.** Checked the
-  wrong absolute path twice this session and raised a false "the whole
-  build/ directory vanished" alarm before finding the actual off-by-one
-  path bug (an extra `python\` segment in a scratch script).
-- **Python fully buffers stdout when piped to a file** (not
-  line-buffered, as it would be to a terminal). Background job progress
-  looked stalled twice this session for this reason alone; fixed with
-  `python -u` and explicit `flush=True` on every progress print.
-- **`listen.py --files` is `nargs='+'`, greedy.** Passing the positional
-  `sid_dir` *after* `--files <name> <name>...` makes argparse swallow the
-  directory path as another filename. `sid_dir` must come first.
-- **A workdir/output-path reused sequentially across a loop of many files
-  risks stale-file contamination even without concurrency** — a lesson
-  this repo already had (CLAUDE.md's own history), re-triggered when a
-  manual one-off check collided with a still-running background scan
-  sharing the same `C:\t\...` path. Rewriting the scan to give every file
-  its own subdirectory (`root / stem`) was the fix, at the cost of not
-  being able to trivially re-inspect one file's trace without re-running
-  it — traded off deliberately since correctness mattered more here.
+**Asserting a specific C-level memory mechanism ("the buffer has zero
+headroom, contiguous pattern arrays, the overrun lands in the next
+pattern's slot") as settled fact, before checking it against the project's
+own existing model.** `test_terminate_patterns.py`'s `_loaded_length`
+(already in the repo, trusted, and now known to have been written before
+this defect existed) predicts the opposite of what was about to be
+written up as confirmed. Caught by re-reading that test file before
+finalizing the doc — not by anticipating the conflict. The fix and its
+empirical validation stand regardless (they don't depend on the
+mechanism's exact micro-detail), but the writeup was corrected to say "the
+real toolchain measures X; here is a documented, trusted model that
+disagrees; the discrepancy is open" instead of asserting the confident
+wrong story. **Lesson**: when a plausible mechanism explains a measured
+result, check whether anything already in the repo has modeled the
+adjacent case before treating the plausible explanation as the verified
+one — the same "validate against a case you already understand" discipline
+this repo has already learned twice before (the periodicity detector, the
+`--vice` denominator), applied here to a written explanation rather than
+a new tool.
+
+## Tooling notes
+
+- `fidelity.py`'s internal helpers (`F._preset_opts`, `F._preset_multiplier`,
+  `F.convert`, `F.legalise_restarts`, `F.pack_sid`, `F.run_siddump`,
+  `F.resolve_subtune`) are directly importable and reusable for one-off
+  traces without going through the CLI — `resolve_subtune(sid, "auto")`,
+  not `resolve_subtune(sid, None)` (the latter throws; `"auto"` is the
+  sentinel the function actually checks for).
+- `Trace` is a `list` subclass, not an object with a `.voices` attribute —
+  index it directly (`trace[0]`, `trace[1]`, `trace[2]`) or iterate it.
 
 </attempted_approaches>
 
@@ -435,140 +342,134 @@ re-deriving it).
 | **Repo (work here)** | `C:\Users\mit\claude\h2g` → github.com/MichaelTroelsen/h2g |
 | Corpus (95 files) | `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`, or `H2G_CORPUS` |
 | `gt2reloc.exe` | `C:\Users\mit\Downloads\GoatTracker_2.77\win32\`, or `H2G_GT2RELOC` |
-| GoatTracker source | `C:\Users\mit\Downloads\GoatTracker_2.77\src\` (`gplay.c`, `greloc.c`) |
-| VICE 3.9 (`vsid`) | `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\`, or **`H2G_VSID`** (wired this session) |
-| `siddump-rt` | `python/tools/siddump-rt/` — must be built, `make` with w64devkit gcc |
+| GoatTracker source | `C:\Users\mit\Downloads\GoatTracker_2.77\src\` (`gplay.c`, `greloc.c`, `gsong.c` referenced but not read this session) |
+| VICE 3.9 (`vsid`) | `C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\`, or `H2G_VSID` |
+| **RetroDebugger MCP** | `mcp__retrodebugger__*` — connected this session for the first time; loads a `.sid` directly via `retro_load`, no manual PSID wiring. Stopped cleanly at session end (`retro_stop_platform`, platform `c64`). |
+| `siddump-rt` | `python/tools/siddump-rt/` — already built (`siddump.exe` present); needed for any multiplier > 1 trace |
 | Short scratch | `C:\t\` (gt2reloc's 60-byte filename buffer) |
 | gcc | `C:\Users\mit\Downloads\w64devkit\bin\` |
-| Session scratchpad (does **not** persist) | `C:\Users\mit\AppData\Local\Temp\claude\...\scratchpad` — this session's spectrogram/scan scripts live only here |
+| Session scratchpad (does **not** persist) | `C:\Users\mit\AppData\Local\Temp\claude\...\scratchpad` — this session's trace scripts (`trace_commando.py`, `trace_war.py`) live only here |
 
 ## Invariants
 
 - **`Commando.sng` byte-exact.** `--max-rows` 94 and `--format` gts2 stay
-  the defaults.
+  the defaults, and this session's fix is gated on `max_rows==128`
+  specifically, so it cannot touch the fixture.
 - **Bump the version every commit**; regenerate all three artefacts on a
   **settled** tree, once, in the order survey → presets → fidelity —
-  **only when converter behaviour actually changed**. v0.5.134 and
-  v0.5.135 are doc/investigation-only and correctly did not regenerate;
-  don't regenerate reflexively.
+  **only when converter behaviour actually changed**. v0.5.137, .138,
+  .139, .140 and .142 are investigation/doc-only and correctly did not
+  regenerate; v0.5.141 (the actual fix) did.
 - A new `convert()` option is inert until it is in **four** places: the
   signature, `presets.FIXED`, the hand-written `always` dict, and (if it
-  moves the rate) `pack_multiplier`.
-- **Validate any new automated check against a case you already understand
-  before trusting it on the rest of the corpus** — this session's own
-  central, twice-repeated lesson (the periodicity detector, the acoustic
-  heuristic, and last session's `--vice` denominator).
-
-## Instrument limits — extended this session
-
-- **`--vice` exists now, but is still not the default** (two emulator runs
-  a row, ~1.3x real time each). It sees within-frame register changes
-  neither siddump nor `--equal-calls` can. Use it for any change that
-  moves a register *within* a frame, not just across one.
-- **`--vice`'s own reduction rule matters and was measured, not assumed**:
-  `overlap` (duration-weighted share agreement) is both the most stable
-  *and* the most graded of four candidates. `last` — what siddump
-  effectively does — is the least phase-stable, which was the opposite of
-  the going-in expectation.
-- **Shared silence must leave both numerator and denominator, gradedly,
-  not as an all-or-nothing frame-level skip** — v0.5.131's own bug, fixed
-  in v0.5.133. `_graded_agreement` is the reference implementation.
-- **Orderlist entry count is not a real-time duration**, and treating it
-  as one overcounts badly (55/95 → 0/5 confirmed). Pattern length varies
-  enormously across the corpus; the same entry count can span 5 seconds
-  or well over 30 depending on the file.
-- **A fixed time-split acoustic heuristic ("new content after t seconds")
-  is blind to a piece's own natural structure** (an intro silence, a
-  chord-cycle length) and will flag both as if they were a truncation
-  defect. There is no known way to fix this cheaply; it needs the full
-  by-hand attack-sequence comparison every time.
-- **This environment has no audio perception, and no known way to add one
-  from inside a session.** `Read` gives genuine visual perception
-  (spectrograms are a real, if partial, substitute); nothing gives
-  auditory perception. An external audio-capable API is the only
-  identified path to a *real* second opinion, and it needs explicit
-  consent (third-party data, cost) every time.
+  moves the rate) `pack_multiplier`. Not touched this session — the fix
+  changed `_slice_pattern`'s internal chunking, not any option's surface.
+- **Validate any new automated check, or any newly-written mechanism
+  explanation, against a case you already understand (or a model the
+  repo already trusts) before treating it as settled** — this session's
+  own version of a lesson the repo has now learned three times (the
+  periodicity detector, the `--vice` denominator, and now the
+  `clearpattern()`/`gt2reloc` mismatch above).
 
 ## Verified facts (new this session)
 
-- `gplay.c:697-704`: a wavetable delay entry is current for `value + 1`
-  calls, not `value`.
-- `gplay.c:9-21`: Goattracker's own frequency table's lowest legal note is
-  `0x0117` = 279.
-- `gplay.c:557-572`: `CMD_PORTADOWN`/`CMD_PORTAUP` (the wavetable's
-  one-shot command form) have no floor or ceiling — `cptr->freq -= speed`
-  on a bare unsigned 16-bit value.
-- `gplay.c:795-801`, simulated: vibrato half-period is `cmp + 2` calls.
-- `tracks.py:222-228`: version 0/1/3's track reader treats both `$FE` →
-  `[0xFF, 0xFD]` and `$FF` → `[0xFF, 0x00]` as "restart this track" —
-  different codes, same practical effect once `--legal-restart` runs.
-- `detect.py:634-660`: `track_selector` rewrites `track_lo`/`track_hi` to
-  a lookup table's address; it is *not* a chaining mechanism between
-  subtunes.
-- Commando subtune 0 (the header's own default, confirmed via
-  `--diagnose` at 89-100% clean correspondence): voice 0/1/2 orderlists
-  are 64/63/123 entries.
+- `gplay.c:5086`-`50AA` (Commando's own relocated address space, read via
+  RetroDebugger): `$FF` in a voice's track resets *that voice's own*
+  `$54EC,X` to 0 and loops; `$FE` sets a whole-tune flag at `$5519` and
+  does not loop. (Note: these are addresses inside `Commando.sid`'s own
+  memory image, not `gplay.c`'s line numbers — the player code here is
+  Rob Hubbard's original, not Goattracker's.)
+- `gplay.c:304-342`, `959-1007`: `playroutine()`/`sequencer()` advance each
+  channel's `songptr` independently; no shared position variable.
+- `gplay.c:918-919`, and the two other `pattlen[]` references at lines 231
+  and 1001 (the *only* three in the file): Goattracker's row-tick hot path
+  never consults a pattern's declared length, only the ENDPATT byte.
+- `patterns.py`'s `GT_MAX_ROWS` (128) is the only value `max_rows` can take
+  that is unsafe when unterminated, confirmed by a single-step sweep
+  94-128; every other value in that range chunks identically to before
+  this session.
+- All 52 `presets.json` entries with `max_rows: 128` had at least one
+  affected pattern before the fix (2 to 77 each); zero after.
 
 ## Commands
 
 ```sh
 cd python
-python -m pytest tests/ -q                                    # 665 pass, 3 skip
+python -m pytest tests/ -q                                    # 666 pass, 3 skip (see Current state)
 python fidelity.py <corpus> -t 10 --presets ../presets.json -o ../FIDELITY.md
-python fidelity.py <file> --vice --vice-reduce overlap|majority|last|any
-python fidelity.py <corpus> --baseline old.json --ab-output ab.md --json new.json
-python listen.py <sid_dir> --files A.sid B.sid -o ../build/listen   # sid_dir FIRST
 python survey.py <corpus> -o ../SURVEY.md --legal-restart --gt2reloc
 python presets.py <corpus> -o ../presets.json
-cd tools/siddump-rt && make                                   # needs w64devkit gcc
+python bump_version.py "description"                          # before staging any commit
 ```
 
-</work_completed>
+For a one-off live trace (pattern used three times this session):
+```python
+import sys; sys.path.insert(0, r"C:\Users\mit\claude\h2g\python")
+import fidelity as F, json, shutil
+from pathlib import Path
+doc = json.load(open(r"C:\Users\mit\claude\h2g\presets.json"))
+opts = F._preset_opts(doc, "<Name>.sid"); mult = F._preset_multiplier(doc, "<Name>.sid")
+sng = F.convert(str(sid_path), log=lambda m: None, **opts)
+sng, _ = F.legalise_restarts(sng)
+packed = F.pack_sid(sng, workdir, F.GT2RELOC, mult)
+shutil.copyfile(sid_path, workdir / "o.sid")
+a = F.run_siddump(workdir / "o.sid", seconds, F.resolve_subtune(sid_path, "auto"), F.SIDDUMP, 0)
+b = F.run_siddump(packed, seconds, F.resolve_subtune(sid_path, "auto"), F.SIDDUMP, calls=mult)
+```
+
+</critical_context>
 
 <current_state>
 
 ## Everything is committed and pushed; tree clean
 
-- **`h2g` `master` = `c0da211`, v0.5.135**, public, pushed. Working tree
+- **`h2g` `master` = `5e9f5ce`, v0.5.142**, public, pushed. Working tree
   clean.
-- **665 tests pass, 3 skipped.** `Commando.sng` byte-exact. The third skip
-  (`test_preset_passthrough`) is a version-gate, not a regression:
-  `presets.json` is still correct for the running converter's actual
-  behaviour (v0.5.134/v0.5.135 changed no converter byte), it just
-  predates the version string. Will clear itself the next time artefacts
-  are regenerated for a real reason.
-- `SURVEY.md`/`presets.json`/`FIDELITY.md` are current as of **v0.5.133**
-  (the last commit that changed converter behaviour) — not v0.5.135.
-- No scratch/investigation files leaked into the repo tree; everything
-  from the drum-sweep and Commando investigations stayed in the session
-  scratchpad and is gone now (see *work_remaining* §5 if any of it is
-  wanted as a permanent tool).
+- **666 tests pass, 3 skipped.** `Commando.sng` byte-exact. The skip count
+  matches last session's handoff exactly (`test_preset_passthrough`'s
+  version-gate) — it briefly cleared to 2 right after v0.5.141 regenerated
+  `presets.json`, then re-armed itself at v0.5.142's version bump, exactly
+  as documented: it clears whenever artefacts are regenerated for a real
+  reason and re-arms on every version bump in between. Not a regression.
+- `SURVEY.md`/`presets.json`/`FIDELITY.md` are current as of **v0.5.141**
+  (the fix commit) — not v0.5.142 (doc-only).
+- No scratch/investigation files leaked into the repo tree. Three separate
+  temporary debug-dump hooks in `convert.py`, and one temporary
+  git-restore of `patterns.py`, were each added/used/reverted within a
+  handful of commands and confirmed clean via `git status`/`git diff
+  --stat` before moving on every time.
 
 ## Two things a fresh session must know first
 
-1. **This environment cannot play or hear audio, at all, and there is no
-   known way to add that from inside a session.** If a "do the listening
-   pass" request comes in again, the honest options are: (a) build fresh
-   spectrograms (the scratchpad ones are gone), (b) the OpenAI-pilot plan
-   from this session (needs explicit consent — third-party data, cost),
-   or (c) hand it to the user directly. Don't rediscover this the slow
-   way; it was established firmly and at some length this session.
-2. **A corpus-wide screening result is not a defect count until verified
-   against ground truth on a sample.** This session's 55/95 → 0/5 is the
-   concrete cautionary example; cite it rather than re-deriving the
-   lesson from scratch if a similar situation comes up.
+1. **RetroDebugger (`mcp__retrodebugger__*`) is connected and works well
+   for this project.** `retro_load` takes a `.sid` directly; no PSID
+   header parsing or manual init/play wiring needed. If a future
+   work_remaining item needs "what does the real 6502 player actually do
+   here," reach for this before assuming it's unanswerable — that
+   assumption held for at least one prior session and was wrong.
+2. **A structural defect confirmed present is not the same as an audible
+   defect confirmed present** (v0.5.142's W_A_R result). The `max_rows=128`
+   fix is unconditionally correct and provably closes a real hole, but
+   only 2 of the 52 previously-exposed files have an actual before/after
+   audio-adjacent trace, and they disagree on how audible the bug was.
+   Don't cite "fixed 52 files" as "52 files now sound different" without
+   checking — cite it as "52 files no longer carry a proven-unsafe read."
 
 ## Open questions carried forward
 
-- What does Commando's real player do at the `$FF` boundary, if not loop?
-  (work_remaining §1 — needs 6502 disassembly)
-- Is Warhawk's silence gap the same mechanism as Commando's? (untested)
-- Does Gerry_the_Germ's missing rise effect trace to the documented
-  drum+rise conflict, or something else? (untested)
-- What's actually behind Bump_Set_Spike/Gerry_the_Germ's dynamic-range
-  compression? (undiagnosed)
-- Is the drum sweep's `W − 1` gap closable at all within Goattracker's
-  primitives, given the floor problem rules out the obvious fix?
-  (work_remaining §2 — two harder alternatives named, neither attempted)
+- Why does `test_terminate_patterns.py`'s `clearpattern()` model disagree
+  with `gt2reloc`'s real behaviour at exactly `max_rows==128`? (work
+  remaining §1 — needs `greloc.c`'s `packpattern()` and whatever standalone
+  player it builds, not `gplay.c`/`gsong.c`)
+- Is the `max_rows=128` fix audible on the other 50 previously-exposed
+  files, or structural-but-silent like W_A_R? (§2)
+- With the silence gap now fixed, does Commando's conversion still
+  audibly diverge from the original past ~8s, or was the silence gap the
+  whole story? (§3, needs a fresh listening/spectrogram pass against the
+  current build — the last spectrogram tooling was scratch and is gone)
+- All the smaller carried-forward items from two sessions ago, still
+  untouched: drum sweep, Gerry_the_Germ's rise effect and dynamics
+  compression, `_rate_shift`, `OUTER_GATE` dialects, the two unencoded wave
+  programs, Spellbound's `--pace` residual.
 
 </current_state>
