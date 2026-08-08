@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.135 — 2026-08-08
+
+- write up Commando's rest section and the corpus screen that overcounted it
+
 ## 0.5.134 — 2026-08-08
 
 - investigate looping the drum sweep, revert: no floor, corpus underflow

@@ -3089,6 +3089,140 @@ level `CMD_TONEPORTA` encoding, neither undertaken here.
 > difference between the two cases and the reason one ships and the other
 > does not.
 
+### 7.pp Commando's rest section: a real defect on the flagship fixture, and a screen that overcounted it
+
+None of the tooling in this project measures past the first ten seconds by
+default. `--vice`, `--equal-calls`, `--diagnose` — every instrument built this
+session inherits `fidelity.py`'s `-t 10`. The listening pass renders 30, and a
+spectrogram of `Commando.h2g.wav` (§ *listen.py*, `python listen.py --files`)
+showed why that gap matters: the original stays continuously busy for the
+full 30 seconds, and the conversion turns into isolated sustained blocks with
+an unmistakable silence gap around 16–20s. This is the project's own
+byte-exact reference fixture, so it earned a full investigation rather than a
+note.
+
+#### The mechanism, confirmed at three independent levels
+
+**Register-level, VICE-independent.** `run_siddump` on the packed `.sid`
+shows all three voices going quiet in near-lockstep from **7.8–7.9s**,
+recurring every **~5.2s** after — three voices pausing together is a
+whole-song event, not three instruments each coincidentally sustaining a
+note. Comparing frames 850–1100 against 1110–1360 (exactly one 260-frame
+cycle apart) gives a **250/250 exact match** on voice 0's combined
+frequency/waveform state — the strongest form of confirmation this project's
+tooling can produce for a claim of "this is looping."
+
+**Structural, from the converted track data itself.** Instrumenting
+`h2g.convert.convert_tracks` for subtune 0 shows exactly why: voice 0's
+orderlist is **64 entries**, voice 1's **63**, voice 2's **123**, each ending
+in a `GT_ORDER_RESTART` marker. Reading the raw bytes at the track's own file
+offset confirms it — the byte at voice 0's restart position is `0xFF`
+(Hubbard's own "tune ended," version 0/1/3 dialect, `tracks.py:222-228`).
+`--legal-restart` reads this correctly and does exactly what it is documented
+to do: writes the restart-to-row-0 marker Goattracker's format requires,
+because the format has no "stop." **The converter is not misreading
+anything.** The orderlist really is 64–123 entries, and it really does end on
+Hubbard's own marker.
+
+**Ruled out: subtune mismatch.** This project's most common false-alarm class
+(§ *fidelity.py --diagnose*, four prior corpus files) is the `.sid`'s own
+init routine renumbering which subtune plays. `--diagnose` on Commando puts
+this to rest — s0→o0 matches at **89%**, clean on the diagonal, s1→o1 at
+100%, s2→o2 at 95%. Same piece, same subtune index, both sides. The
+divergence is real, not a bookkeeping artifact.
+
+**What the real player does at that boundary is not confirmed.** The
+detector finds `track_selector: True` for Commando's player — a genuine
+mechanism, but (contrary to the first hypothesis here) not a *chaining*
+primitive: `detect.py:634-660` shows it **rewrites `track_lo`/`track_hi`** to
+locate a subtune's own track table through an extra indirection, the same
+pointers any player uses afterward. It explains how the *right* table gets
+found (consistent with `--diagnose`'s clean match), not what happens when
+that table runs out. Reading the 6502 at the point the real player consumes
+`$FF` — does it loop, freeze, or jump — is the only way to close this, and it
+was not undertaken here.
+
+#### A wrong turn worth keeping in the record
+
+Comparing h2g's early voice-0 output against the original's content at
+7.2–14.88s found the *same riff* — `E-7, A-6, A-4×4, G-4, A-4×3, G-4, A-4,
+E-7, A-6...` on both sides — and the first conclusion drawn from that was
+**"not a bug, this is a legitimately repeating hook."** That conclusion was
+wrong, caught only by extending the same comparison to the 15–22s window,
+where the original introduces notes (E-5, F-5, B-4, G#3) absent from the
+early riff entirely, while every voice keeps attacking continuously. The
+riff match was real — the original does restate it early — but the
+conclusion drawn from a partial window was premature. **A note-sequence
+match over one section is evidence about that section, not about what comes
+after it.**
+
+#### The corpus-wide screen, and why its headline number does not survive verification
+
+The structural check — every subtune-0 voice's orderlist length and whether
+it ends in a restart — was run across all 95 corpus files. Reused directly
+(not re-derived) because it had just been validated against Commando's own
+confirmed 63/64/123:
+
+| | |
+|---|---:|
+| files with *any* subtune-0 voice ending in a restart | 83 of 95 |
+| files where *every* restarting voice is ≤150 entries (Commando's own ceiling was 123) | 55 of 95 |
+
+55 of 95 sounds like a corpus-wide problem. **It is not one**, and the reason
+is itself worth recording: orderlist entries measure the wrong thing.
+Commando's patterns happen to be short, so 64 entries packs into ~5.2
+seconds; nothing in the entry count says anything about how long each
+referenced *pattern* runs, and that varies enormously across the corpus.
+
+A candidate `track_selector` explanation was checked and did not hold:
+27 of the 55 candidates have `track_selector: True` against a corpus-wide
+base rate of 37/95 (39%) — 49% vs 39%, a weak enrichment, not a mechanism.
+Most of the 55 have no track selector at all, so whatever produces the
+*precondition* corpus-wide is not specifically tied to it.
+
+#### Five files, stratified across the candidate range, verified by hand — zero repeats Commando
+
+| file | restart pos | verdict |
+|---|---:|---|
+| Thanatos | 8 | Benign — stable pitch set on both sides |
+| 5_Title_Tunes | 18 | **False positive** — h2g's own 30s trace never loops at all; its patterns run far longer than Commando's, so 18 entries covers well over 30 seconds |
+| One_on_One_Jordan_vs_Bird | 47 | Benign — modest movement in one voice; the other two are stable bass/percussive parts, which is normal |
+| BMX_Kidz | 60 | **False positive** — zero attacks in the first half is this file's own documented ~13s intro silence, not a loop artefact |
+| Human_Race | 95 | **Correctly converted** — both sides cycle the same four-chord progression (G→F→D#→D→G); a fixed split point landed mid-cycle and flagged normal progression as new material. Voice 2 empty on both sides, confirming the detected 2-voice player |
+
+Two of the five were caught by the *screening heuristic* being wrong, not the
+conversion: BMX_Kidz's known intro silence and Human_Race's cycle length both
+produce the same "new pitches after the split" signature Commando has,
+for reasons that have nothing to do with a truncated track. **A screen
+built to catch one confirmed case will re-find that case's own incidental
+properties (a fixed time split, in both instances here) as if they were the
+defect.** Distinguishing "the original has content the conversion can't
+reach" from "my split point fell somewhere musically ordinary" needed the
+full attack-sequence read every time; the heuristic only ever narrowed which
+five got that read.
+
+#### Where this leaves the corpus
+
+Zero of five confirms nothing about the other fifty candidates — that is not
+a large enough sample to clear them. It does mean the true rate is very
+likely far below 55/95: the two mechanisms that would make a short orderlist
+audible (a genuinely short pattern set, or an intro/cycle long enough to
+outrun the trace window) both cut the *wrong* way for most of this corpus,
+and the one file confirmed to have the problem was found by ear (or its
+visual proxy), not by the structural screen. **This reads as Commando-
+specific rather than a corpus-wide defect worth a structural fix campaign.**
+Treat any other file's short orderlist as a candidate needing the same
+by-hand check, not as evidence on its own.
+
+> **The transferable lesson:** a cheap structural proxy (orderlist entries)
+> and a cheap acoustic proxy (new pitches after a fixed split) each produced
+> a large, alarming number, and each number was wrong for a knowable reason
+> once checked against ground truth — the first because it does not know
+> pattern length, the second because a fixed split point is blind to a
+> piece's own natural cycle length. Neither failure was subtle once looked
+> for. **Validate a screen against the one case you already understand before
+> trusting it on the other ninety-four.**
+
 
 ## 9. The `.sng` output layout
 
