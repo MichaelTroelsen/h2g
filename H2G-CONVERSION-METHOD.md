@@ -3288,6 +3288,8 @@ is therefore preserved all the way through — from the source player, through
 `convert_tracks`, through Goattracker's own playback — not collapsed at any
 point in between.
 
+### 7.rr Commando's silence gap, traced to source: `max_rows=128`, and the fix
+
 **Traced next: the original at the same 16–20s window, against h2g's own
 packed output.** Bucketing attacks per second over a 26s trace (both sides
 packed/traced identically, `presets.json`'s own Commando options) settles
@@ -3295,11 +3297,11 @@ it immediately — the original stays in the 7–17 attacks/second range for
 the entire 26s; h2g's own conversion matches that for the first ~8 seconds
 (8–17/s) and then **collapses to 0–2/s for the remaining 18** — not a
 different loop, not "the same riff forever," an actual near-total stop.
-This is neither the mechanism (§7.qq) nor the pacing (this section) —
-both check out faithful — so it is a third, independent defect, and it
-was found by isolating it: §7.qq/this section's checks used `--legal-restart`
-alone; the collapse only reproduces with `presets.json`'s full Commando
-options, so an option, not the orderlist or the engine, was next.
+This is neither §7.qq's mechanism nor its pacing check — both checked out
+faithful — so it is a third, independent defect, and it was found by
+isolating it: §7.qq's own checks used `--legal-restart` alone; the
+collapse only reproduces with `presets.json`'s full Commando options, so
+an option, not the orderlist or the engine, was next.
 
 #### The actual cause: `max_rows=128` has no headroom for an unterminated pattern
 
@@ -3421,6 +3423,50 @@ window, that the fix's value on this file rests on the structural
 guarantee (no read ever runs past a known-safe boundary again) rather than
 on a second demonstrated collapse. The other 7 subtunes' 12 remaining
 hits, and W_A_R's own subtune 0 past 30s, were not traced.
+
+### 7.ss Closing the loop: with the silence gap fixed, does Commando still diverge?
+
+§7.pp opened on a spectrogram showing the original "continuously busy for
+the full 30 seconds" against h2g's conversion turning into "isolated
+sustained blocks with an unmistakable silence gap." §7.rr found and fixed
+the silence gap's cause. What it did not check is whether that was the
+*whole* story — §7.pp's own "wrong turn" section had flagged that past
+15–22s the original plays notes (`E-5`, `F-5`, `B-4`, `G#3`) absent from
+h2g's early riff, which read at the time as a second, separate, unresolved
+question about content, not just about the silence.
+
+Re-tracing both sides 30s against the fixed build and diffing each
+voice's full note sequence (not just counts, which already matched
+exactly — 111/120/125 both sides) settles it: **voice 0 and voice 2 are a
+perfect `difflib` match, ratio 1.000, across the entire 30 seconds** —
+every one of §7.pp's "new" notes is there, in the same order, at
+essentially the same frames. The melodic divergence that opened this
+whole investigation is gone; it was never a second defect, it was this
+one, seen from a different angle (the spectrogram and the note-window
+comparison were both looking straight at the same underlying content that
+the silence gap had truncated or displaced).
+
+**Voice 1 is not a perfect match (ratio 0.600), and does not need to be.**
+The mismatch is one recurring shape — the original plays four retriggered
+`B-5`s where h2g plays four retriggered `G#7`s, at a fixed, regular
+interval throughout the piece, both sides always four hits — and the
+waveform events around each block show the original briefly reaching
+Goattracker's noise waveform (`128`) where h2g's does not. This is voice
+1's drum part, and this exact shape is §7.ii/§7.oo's already-documented,
+already-investigated, deliberately-unfixed limitation (the drum sweep's
+under-render, whose only known safe fix was reverted for lacking a floor)
+— not a new defect this pass found. What changed the note value read
+here rather than the timbre is a detail neither §7.ii nor §7.oo needed to
+resolve, since both already treat this instrument class as a documented,
+bounded gap rather than a bug to chase.
+
+**Net result: the investigation that opened at §7.pp is closed.** The
+silence gap is fixed and validated (§7.rr); the melodic content that
+motivated the "wrong turn" write-up now matches the original exactly on
+both unaffected voices; the one remaining voice-1 difference is not new
+information, it is this file's existing, named, out-of-scope drum
+limitation showing up in a finer-grained comparison than the one that
+first found it.
 
 ## 9. The `.sng` output layout
 
