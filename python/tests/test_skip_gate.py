@@ -111,3 +111,42 @@ def test_the_option_reaches_only_files_with_an_encodable_skip():
         b = convert(str(CORPUS / name), log=lambda m: None, tempo="auto",
                     skip_gate=True)
         assert hashlib.sha1(a).digest() == hashlib.sha1(b).digest(), name
+
+
+def test_a_fractional_row_is_exact_at_the_right_multiplier():
+    """A row of p/q frames is expressible: pack at -Sq with a tempo of p.
+
+    A row lasts tempo/multiplier frames, so 8/3 is not a rounding problem --
+    it is -S3 at tempo 8. This is what §8 called re-gridding, and it needs no
+    change to how many rows a note gets.
+    """
+    from fractions import Fraction
+    sp = _speeds((2,), (3,))                     # gate 2, one frame in four
+    assert sp.exact_row(0) == Fraction(8, 3)
+    assert sp.encodable_frames(0) is None        # not a whole number
+    f = effective_frames(sp, 0, skip_gate=True)
+    m = recommended_multiplier(sp, 0, skip_gate=True)
+    assert f == Fraction(8, 3) and m == 3
+    assert int(f * m) == 8                       # the tempo written
+    assert Fraction(int(f * m), m) == sp.exact_row(0)   # exact, not rounded
+
+
+def test_the_denominator_is_capped():
+    """Beyond 4 the multiplier stops paying for itself on this corpus.
+
+    -S5 regressed all three files it reached (Kings_of_the_Beach_intro
+    96% -> 61%, Mr_Meaner 91% -> 76%, Off_the_Cuff 89% -> 76%) while -S2..-S4
+    gained on fourteen. Corpus mean melody is 78.25% at a cap of 4 against
+    77.64% at 6, so the bound is empirical and recorded as such.
+    """
+    from fractions import Fraction
+    import h2g.goatwriter as gw
+    assert gw.MAX_ROW_DENOMINATOR == 4
+    sp = _speeds((3,), (5,))                     # 18/5 -- needs -S5
+    assert sp.exact_row(0) == Fraction(18, 5)
+    assert effective_frames(sp, 0, skip_gate=True) == 3   # falls back to the gate
+
+
+def test_an_integer_row_still_takes_no_multiplier():
+    sp = _speeds((2,), (2,))
+    assert recommended_multiplier(sp, 0, skip_gate=True) == 1

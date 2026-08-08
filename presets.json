@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.120 presets.py",
+  "generator": "h2g 0.5.121 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -35,10 +35,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 13306,
+      "bytes": 13314,
       "subtunes": 1,
       "rows": 18009,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -128,7 +128,7 @@
       "bytes": 10769,
       "subtunes": 1,
       "rows": 15169,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -198,7 +198,7 @@
       "bytes": 13406,
       "subtunes": 1,
       "rows": 12328,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -245,20 +245,20 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 44382,
+      "bytes": 44418,
       "subtunes": 9,
       "rows": 31074,
-      "multiplier": 2
+      "multiplier": 4
     },
     "Food_Feud.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15395,
+      "bytes": 15403,
       "subtunes": 1,
       "rows": 14212,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Formula_1_Simulator.sid": {
       "max_rows": 128,
@@ -445,10 +445,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 19369,
+      "bytes": 19373,
       "subtunes": 1,
       "rows": 19006,
-      "multiplier": 1
+      "multiplier": 2
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -655,10 +655,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 13032,
+      "bytes": 13048,
       "subtunes": 1,
       "rows": 14821,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -748,7 +748,7 @@
       "bytes": 6855,
       "subtunes": 1,
       "rows": 2321,
-      "multiplier": 1
+      "multiplier": 4
     },
     "Thing_on_a_Spring.sid": {
       "max_rows": 128,
@@ -778,7 +778,7 @@
       "bytes": 15670,
       "subtunes": 9,
       "rows": 47471,
-      "multiplier": 2
+      "multiplier": 3
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -795,20 +795,20 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 56644,
+      "bytes": 56676,
       "subtunes": 8,
       "rows": 45650,
-      "multiplier": 2
+      "multiplier": 4
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 12636,
+      "bytes": 12668,
       "subtunes": 1,
       "rows": 12130,
-      "multiplier": 2
+      "multiplier": 4
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -848,7 +848,7 @@
       "bytes": 10769,
       "subtunes": 1,
       "rows": 15169,
-      "multiplier": 2
+      "multiplier": 3
     }
   }
 }

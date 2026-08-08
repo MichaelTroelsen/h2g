@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass, replace
+from fractions import Fraction
 from typing import List, Optional, Tuple
 
 from .detect import (Detection, FILTER_ENABLE_BIT,
@@ -286,6 +287,21 @@ class SongSpeeds:
             return self.skip[subtune]
         return None
 
+    def exact_row(self, subtune: int = 0):
+        """The corrected row as an exact Fraction of frames, or None.
+
+        `(reload + 1) * (O + 1) / O` is rational, and a row of p/q frames is
+        expressible exactly by packing at `-Sq` with a tempo of p: a row lasts
+        tempo/multiplier frames. That is what MAX_ROW_DENOMINATOR bounds --
+        the multiplier is a real call rate on real hardware, and q of 127
+        would ask the player to run 6350 times a second.
+        """
+        f = self.frames_for(subtune)
+        o = self.skip_for(subtune)
+        if f is None:
+            return None
+        return Fraction(f * (o + 1), o) if o else Fraction(f)
+
     def encodable_frames(self, subtune: int = 0) -> Optional[int]:
         """`true_frames` when Goattracker can express it exactly, else None.
 
@@ -423,8 +439,16 @@ def find_song_speeds(sid: SidFile,
     return None
 
 
+# How far the -S factor may be raised to make a fractional row exact. Six
+# puts the play routine at ~300 calls a second, which still fits a PAL frame
+# (a call is 1-2k cycles against 19656); beyond that the rate stops being
+# playable and the near-integer rows it would buy are within ~1% of a whole
+# number anyway, so they round instead.
+MAX_ROW_DENOMINATOR = 4
+
+
 def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,
-                     skip_gate: bool = False) -> Optional[int]:
+                     skip_gate: bool = False):
     """Frames per unit as the tempo should encode it.
 
     Without `skip_gate` this is the speed gate's own reload+1, which is what
@@ -438,6 +462,9 @@ def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,
         got = speeds.encodable_frames(subtune)
         if got is not None:
             return got
+        exact = speeds.exact_row(subtune)
+        if exact is not None and exact.denominator <= MAX_ROW_DENOMINATOR:
+            return exact
     return speeds.frames_for(subtune)
 
 
@@ -452,9 +479,18 @@ def recommended_multiplier(speeds: Optional[SongSpeeds],
     times. greloc.c:1595 arms a CIA stub for exactly this.
     """
     f = effective_frames(speeds, subtune, skip_gate)
-    if f is None or f >= GT_MIN_TEMPO + 1:
+    if f is None:
         return 1
-    return -(-(GT_MIN_TEMPO + 1) // f)     # ceil(3 / f)
+    q = getattr(f, "denominator", 1)
+    if q > 1:
+        # A row of p/q frames is exact at -Sq, and stays exact at any multiple
+        # of q -- so clear the denominator first, then raise it further if the
+        # row is still too short to express.
+        return q * max(1, -(-(GT_MIN_TEMPO + 1) // int(f * q // 1 or 1)) if
+                       f * q < GT_MIN_TEMPO + 1 else 1)
+    if f >= GT_MIN_TEMPO + 1:
+        return 1
+    return -(-(GT_MIN_TEMPO + 1) // int(f))
 
 
 def tempo_command_value(sid: SidFile, subtune: int = 0,
@@ -485,7 +521,7 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     # stops the song outright when gatetimer exceeds the channel's tick. A
     # command value of 3 lands as effective tempo 2 -- exactly at that
     # boundary -- so nothing below 3 may ever be emitted here.
-    return min(max(f * multiplier, TEMPO_FASTEST_STEADY), 0x7F)
+    return min(max(int(f * multiplier), TEMPO_FASTEST_STEADY), 0x7F)
 
 
 def derived_group_tempos(sid: SidFile, det: Detection, groups: int,

@@ -828,7 +828,50 @@ the offending rate is dropped now.
 and correct, what is left is that its matched notes are unrepresentative in
 some way coverage does not capture — its melody agreement is 11%.
 
-## 8. Four players have no expressible rate
+## 8. ~~Four players have no expressible rate~~ — mostly solved, v0.5.121
+
+§8 framed a fractional row as needing *re-gridding*: giving a note a different
+number of rows so the product lands right. It does not. **A row lasts
+`tempo / multiplier` frames, so a row of `p/q` frames is exact at `-Sq` with a
+tempo of `p`.** 8/3 frames is not a rounding problem; it is `-S3` at tempo 8.
+No change to rows per note, and the note count stays what the player's `wait`
+bytes say.
+
+`SongSpeeds.exact_row` returns the row as a `Fraction`, and the multiplier
+clears its denominator. Twenty files change:
+
+| | melody |
+|---|---|
+| Deep_Strike | 14% → **100%** |
+| Saboteur_II | 25% → **98%** |
+| Zoolook | 43% → 77% |
+| Chain_Reaction, Thundercats, W_A_R, W_A_R_Preview, Shockway_Rider, Lightforce | → **100%** |
+| ACE_II, Delta, Thanatos, Flash_Gordon, Food_Feud | up 5–11 points |
+
+**Corpus mean melody 74.8% → 78.3%**, the largest single move this work has
+produced.
+
+**The denominator is capped at 4, and the bound is empirical.** `-S5` reached
+three files and regressed all three (Kings_of_the_Beach_intro 96% → 61%,
+Mr_Meaner 91% → 76%, Off_the_Cuff 89% → 76%), which is why the corpus mean is
+78.25% at a cap of 4 against 77.64% at 6. A plausible reason is that v0.5.82's
+per-frame rates are divided by the multiplier and `_rate_shift` is exact only
+for powers of two — but that is a hypothesis, not a measurement, and 3 and 6
+are not powers of two either. **Do not raise the cap without re-measuring.**
+
+### What is left of §8
+
+- The three files whose player runs *v* of every *v+1* calls (Mozart, Ninja,
+  Mega Apocalypse) are untouched by this: their rate is not a fixed fraction
+  of a frame.
+- Two files need `-S10` (a row of 3.30) and stay unencoded.
+- Seventeen files have rows within ~1.3% of a whole number whose exact
+  fraction has a large denominator (3.02, 3.03, 4.04, 4.05). They round, and
+  the error is under two percent.
+- Why `-S5` regresses is unexplained and is the first thing to look at if the
+  cap is ever to move.
+
+## 8b. Original §8 — four players have no expressible rate
 
 Mozart, Ninja and Mega Apocalypse run the player *v* of every *v+1* calls.
 Chain_Reaction needs 5.5 calls per row — tractable, since a different
