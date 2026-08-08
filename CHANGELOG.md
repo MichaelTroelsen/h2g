@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.132 — 2026-08-08
+
+- record the corpus --vice run and decompose resolution from rule
+
 ## 0.5.131 — 2026-08-08
 
 - wire VICE per-rasterline traces into the register dimensions

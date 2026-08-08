@@ -2896,6 +2896,41 @@ Close enough to show the same music is being measured, different enough to
 show the resolution is real. It is **not** the default: two emulator runs a
 row at about 1.3x real time, against siddump's fraction of a second.
 
+#### The corpus run, and the premise it half-refuted
+
+95 rows, **0 failed traces**. The corpus means barely move — `wave` 63.9% →
+64.7%, `adsr` 69.3% → 69.2% — but that is an average over disagreements of up
+to ±12.6 points per file, cancelling.
+
+Because `--vice` changes two things at once (a finer trace *and* a graded
+rule), the per-file movement was decomposed by re-running the same files at
+`--vice-reduce last`, which is the finer trace under siddump's own rule:
+
+| file | siddump | vice/`last` | vice/`overlap` | resolution | rule |
+|---|---:|---:|---:|---:|---:|
+| Bangkok_Knights (`-S1`) | 2.3% | 14.8% | 14.9% | **+12.5** | +0.1 |
+| Human_Race (`-S1`) | 70.1% | 81.1% | 81.2% | **+11.0** | +0.1 |
+| IK_plus (`-S1`) | 40.0% | 46.8% | 46.9% | +6.7 | +0.2 |
+| Kings_of_the_Beach_intro (`-S5`) | 85.2% | 78.8% | 78.9% | −6.4 | +0.1 |
+| Lightforce (`-S2`) | 72.3% | 84.9% | 78.5% | **+12.6** | −6.4 |
+| Thing_on_a_Spring (`-S2`) | 81.1% | 92.2% | 86.7% | +11.1 | −5.6 |
+| **mean abs** | | | | **10.1 pp** | **2.1 pp** |
+
+**The resolution does about five times the work of the reduction rule.** That
+is worth knowing before anyone tunes the rule further: it is the second-order
+term.
+
+And the premise this was built on is half wrong. `--vice` was motivated by
+multispeed files, where siddump discards `m − 1` of every `m` play calls — so
+the disagreement should have concentrated at high multipliers. It does not.
+The three largest movers are **`-S1` files**, where both instruments see every
+play call, and the mean shift by multiplier has no monotone trend at all
+(+0.73 pp at `-S1`, +1.97 at `-S2`, −0.06 at `-S3`, −3.10 at `-S5`). So
+siddump's per-frame register view differs from the chip's actual state for a
+reason *other* than call-rate undersampling, and that reason is not yet
+identified. It is the next thing to find out about the harness, and it is
+named here rather than left inside a mean that shows +0.8 points.
+
 > **The transferable lesson:** the instrument's resolution and the
 > instrument's *stability* are different properties, and this repo had been
 > assuming the coarser one was at least the steadier. It is not. Before
