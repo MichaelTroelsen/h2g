@@ -973,8 +973,45 @@ are not powers of two either. **Do not raise the cap without re-measuring.**
   every multiplier > 1 file losing gate edges to the once-per-frame sample.
   The report is a lower bound, and the more the converter uses the multiplier
   the further below the truth it sits. `--equal-calls` is the honest number
-  for the sequence dimensions; there is no equivalent yet for the register
-  ones, which need a per-call trace the VICE harness could give.
+  for the sequence dimensions.
+
+  ### v0.5.126 — the per-rasterline trace the register dimensions need
+
+  `python/vicetrace.py`. VICE's `dump` sound device writes the whole SID state
+  **on every rasterline** — 312 samples a PAL frame against siddump's one —
+  and needs no monitor scripting:
+
+  ```
+  vsid -console -sounddev dump -soundarg out.txt -limitcycles N -tune T f.sid
+  ```
+
+  Seven lines a block, no timestamps and none needed: PAL has 312 rasterlines
+  a frame, so a block's index over 312 is its frame.
+
+  **Validated on a control before being believed.** Commando is multiplier 1,
+  where siddump's frame sample loses nothing, and the two agree exactly:
+  **126 gate edges against 126 attacks**, over exactly 500 frames of samples.
+
+  **And it recovers what siddump loses.** Kings_of_the_Beach_intro at `-S5`:
+
+  | | |
+  |---|---:|
+  | siddump, once per frame | 52 attacks |
+  | VICE, once per rasterline | **87 gate edges** |
+  | the original, the same way | 102 |
+
+  87 is what `--equal-calls` predicted from a different direction, so two
+  methods sharing nothing agree.
+
+  **Not built: the wiring.** `wave_compare`, `adsr_compare`, `pulse_compare`
+  and `filter_compare` walk two frame-indexed timelines, and feeding them a
+  312x finer one means choosing how to reduce it — last-sample-in-frame is
+  what siddump does and is exactly the lossy step, while any-sample-in-frame
+  and majority are both defensible and different. That choice wants measuring.
+
+  And the original reads more edges under VICE than under siddump (102 against
+  90), so any such comparison must trace **both** sides this way or it trades
+  one bias for another.
 
   **This matters beyond `-S5`.** If per-call structures degrade with the
   multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just
