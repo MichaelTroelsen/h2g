@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.126 — 2026-08-08
+
+- per-rasterline SID trace from VICE; 312 samples a frame
+
 ## 0.5.125 — 2026-08-08
 
 - equal-calls mode; the cap was an artefact, raise it to 6
