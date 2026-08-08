@@ -3343,11 +3343,26 @@ follows it, because the buffer overrun happens at that slice's own
 boundary. `terminate_patterns=True` sidesteps it entirely (it bakes the
 marker inside the declared length, which the buffer overrun then finds
 immediately), but is off by default for the same byte-exactness reason
-every other option here is. **`max_rows=128` is presets.json's own choice
-for Commando** — picked by the optimizer precisely because it shortens
-orderlists, on a metric that has never traced past ten seconds. Whether
-other corpus files sharing that choice hit the same 128-row slice was not
-checked this pass — see *work remaining*.
+every other option here is.
+
+#### The corpus-wide check: every file that picked `max_rows=128` is exposed
+
+`presets.json` picked `max_rows=128` for **52 of the 95 corpus files** —
+the optimizer's own preference, not an edge case, presumably because a
+shorter orderlist scores well on a metric that has never traced past ten
+seconds. Converting each of those 52 with its own preset options (a
+temporary debug dump of `convert()`'s `new_patterns`, added and reverted
+the same way as the single-file check above) and counting patterns that
+are exactly 128 rows with a non-`ENDPATT` final byte finds **all 52
+exposed, zero exceptions** — from 2 affected patterns (BMX_Kidz, of 13
+total) to 77 (`W_A_R`, of 156). This is not a rare corner this converter
+occasionally hits; it is the **default outcome** of picking `max_rows=128`
+on real Hubbard pattern lengths, which apparently reach or exceed 128 rows
+routinely. Every one of these 52 files' current `presets.json` entry is
+liable to the same silent, several-second-scale playback collapse
+Commando's was — at an unknown point in each file, wherever its own first
+full 128-row slice falls, which the ≤10s fidelity metric that chose the
+option would never have seen either.
 
 ## 9. The `.sng` output layout
 
