@@ -2982,6 +2982,114 @@ resolution, is what is left of it, and it is one file rather than a pattern.
 > replacement was chosen by it, not by argument.
 
 
+
+### 7.oo The drum sweep: a structural dead end, not a bug — investigated and reverted
+
+§ 7.ii read the drum's downward sweep as `W - 1` steps per note against the
+one this converter emits, and called that a measured under-render. The
+obvious next move is the jump-target trick § 7.mm gave the arpeggio: loop the
+`WAVECMD_PORTADOWN` wavetable entry back onto itself, so it fires every call
+instead of once, until the next note resets `ptr[WTBL]`. Implemented,
+differential-hashed to exactly the 44 files that reach `_drum_entries`, and
+directly verified on Bump_Set_Spike — VICE traces genuine repeated,
+self-terminating falls (`117 → 116 → 115 → 114`, one high-byte step per
+frame, matching the player's own rate). **It was reverted before commit.**
+
+#### What the player has that `CMD_PORTADOWN` does not: a floor
+
+Warhawk `$136D`'s `LDA freqhi,X / BEQ out` stops the sweep the instant the
+shadow counter reaches 0 — the frequency freezes low rather than continuing
+past it. `CMD_PORTADOWN` (`gplay.c:557-572`) is `cptr->freq -= speed` on an
+unsigned 16-bit value with no clamp anywhere in the function. A loop that
+outlives the distance to zero does not freeze — it wraps to a very high
+frequency and keeps going, for as long as the loop keeps firing.
+
+**This is not a theoretical risk.** Tracing all 44 affected files with
+`--vice` (312 samples/frame, both sides already validated in § 7.nn) for a
+falling run of two or more frames landing above `0xF000` with no gate
+retrigger — the underflow signature, distinct from an ordinary new-note jump
+— found **921 hits across 20 of the 44 files**, confirmed reproducible with
+each file traced into its own isolated directory (the first pass shared one
+workdir across the loop, which is exactly the contamination class this repo's
+own tooling notes already warn about; a manual re-check of one hit did not
+reproduce until the paths were isolated, which is what surfaced the risk and
+was then confirmed real, not an artefact, once it was fixed).
+
+**One of the twenty is `Commando.sid` — this project's byte-exact reference
+fixture.** Read directly off the trace file, voice 0, gate held at `0x14`
+throughout, no retrigger anywhere:
+
+```
+frame 567: freq   628 (0x0274)
+frame 568: freq   372 (0x0174)
+frame 569: freq   116 (0x0074)
+frame 570: freq 65396 (0xFF74)   <- underflow
+frame 571: freq 65140 (0xFE74)
+frame 572: freq 64884 (0xFD74)
+...continues falling, unbounded, for as long as the loop keeps firing
+```
+
+256 units removed every frame (the low byte `$74` never changes, confirming
+the step), straight through zero and around the 16-bit space with nothing to
+stop it. This note had been falling for 175 consecutive frames before it
+wrapped — over three seconds — far longer than any note § 7.ii's three-file
+sample called typical (lengths 2-9 ticks). Whatever this specific instrument
+is (a sustained tone rather than a percussive hit, most likely, given the
+duration), the drum bit is set on it and the player's own guard would have
+frozen it near-silent; this encoding turns that into an audible screech for
+the rest of the note.
+
+#### Why no bound is provably safe
+
+Goattracker's own frequency table (`gplay.c:9-21`) has its lowest legal note
+at `0x0117` = **279**. The drum step at `-S1` is 256 (`DRUM_SPEED_PER_FRAME`,
+scaled down at higher multipliers by `_drum_speed`, so this is the worst
+case, not a special one). **279 − 256 = 23**: one step is the largest number
+of unconditional repetitions that can never underflow, for *any* note the
+instrument might be triggered on — which is exactly the one step this
+converter already emits. A second static step would already risk it from the
+table's lowest note; an unbounded loop risks it from anywhere, given enough
+held time, as Commando's very ordinary starting frequency (~44800, nowhere
+near the table floor) and unremarkable held duration (three seconds) just
+demonstrated.
+
+Two structural facts close off the alternatives that would fix this properly:
+
+- **`CMD_TONEPORTA`** does clamp — `gplay.c:574-585`'s glide-to-target stops
+  exactly at `targetfreq` — but it is not one of the commands the
+  wavetable's one-shot dispatch (`WAVEEXEC`'s `wave >= WAVECMD` switch,
+  `gplay.c:522-572`) recognises. It is reachable only from a pattern's own
+  effect column, set via `cptr->command = cptr->newcommand` at pattern-read
+  time (`gplay.c:414`) — a different mechanism entirely, requiring the target
+  note to be threaded through `patterns.py`'s row construction rather than
+  `goatwriter.py`'s per-instrument wavetable, and knowledge (a floor note to
+  glide toward) this function does not have.
+- **The wavetable format has no bounded-repeat primitive.** A jump is
+  unconditional and permanent; there is no "loop N times then continue."
+  Bounding the *iteration count* independent of the *entry count* is not
+  expressible at all — only the entry count can be bounded, and the corpus's
+  actual starting frequencies vary too widely (down toward the table's own
+  floor, per Warhawk's guard existing at all) to pick a universal safe N
+  above 1.
+
+**Reverted rather than shipped with a caveat.** The reach was real (44
+files), the trajectory shape was right (confirmed on Bump_Set_Spike), and it
+still failed on the corpus's own reference fixture — which is exactly the
+"never ship a fake success" case this repo's rules exist for. The under-render
+§ 7.ii measured stands as documented, unresolved technical debt: closing it
+needs either per-note information threaded into the wavetable build (which
+`_wavetable_entries` does not have — one wavetable is shared by every
+occurrence of the instrument, at every pitch, of every duration) or a pattern-
+level `CMD_TONEPORTA` encoding, neither undertaken here.
+
+> **Do not resurrect the jump-to-self loop for this without a floor.** The
+> arpeggio's identical trick (§ 7.mm) is safe only because a relative-note
+> wavetable entry *sets* `cptr->freq` from the frequency table every visit —
+> it cannot drift. `CMD_PORTADOWN` has no such reset, which is the whole
+> difference between the two cases and the reason one ships and the other
+> does not.
+
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
