@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.124 — 2026-08-08
+
+- the -S5 attack loss is siddump's frame sampling, not the conversion
+
 ## 0.5.123 — 2026-08-08
 
 - eliminate gatetimer as the -S5 cause; name the sampling limit

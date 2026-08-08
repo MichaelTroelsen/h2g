@@ -910,10 +910,42 @@ are not powers of two either. **Do not raise the cap without re-measuring.**
     same frame shows no rising edge at all — which is exactly what "attacks
     vanish" looks like.
 
-  The second is a resolution limit that grows with the multiplier, and it
-  bounds what any `-m` trace can say about `-S5`. It also means the `-S3` and
-  `-S4` gains are measured slightly pessimistically. Separating the two needs
-  a per-call trace, which `-m` does not provide — the VICE harness would.
+  **v0.5.124 separated them, and it is the sampling.** The same packed file
+  and the same 2500 play calls, sampled two ways:
+
+  | sampling | attacks |
+  |---|---:|
+  | once per 5 calls (`-m5`, 10 s) | **52** |
+  | once per call (`-m1`, 50 s) | **87** |
+  | the original | 90 |
+
+  The conversion emits 87 attacks against the original's 90. **`-S5` does not
+  lose notes; siddump's per-frame sample loses them**, because it takes the
+  last call of each frame and a gate that rises and falls inside one frame
+  leaves no edge. Note sequences are time-independent, so comparing our
+  `-m1` long trace against the original's 10 s is a fair test, and on it
+  `-S5` beats the cap:
+
+  | | cap 4 | `-S5` as traced | `-S5` fairly |
+  |---|---:|---:|---:|
+  | Mr_Meaner | 91% | 76% | **96%** |
+  | Off_the_Cuff | 89% | 76% | **100%** |
+
+  (Kings_of_the_Beach_intro is missing because a throwaway script derived its
+  multiplier wrongly — that row was not measured, and it was the largest
+  apparent regression, so the cap cannot move on two files.)
+
+  **So `MAX_ROW_DENOMINATOR = 4` rests on an artefact, and the `-S2`/`-S3`/
+  `-S4` gains in v0.5.121 are understated for the same reason.** The
+  wavetable body is still unscaled — `_wave_delay` holds only entry 1, so
+  entries 2-5 run `m` times faster per row — but that is a separate question
+  from the attack count and is not what these numbers show.
+
+  **Next, in order:** give `fidelity.py` an equal-calls comparison mode
+  (trace ours at `-m1` over `multiplier x seconds` against the original's
+  `seconds`, compare sequences only), re-measure all three files including
+  Kings_of_the_Beach_intro, and only then decide the cap. Do not raise it on
+  the two files above.
 
   **This matters beyond `-S5`.** If per-call structures degrade with the
   multiplier, they degrade at `-S3` and `-S4` too — the corpus gain there just
