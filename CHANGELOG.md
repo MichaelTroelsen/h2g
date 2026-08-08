@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.119 — 2026-08-08
+
+- encode the skip counter behind --skip-gate; opt-in, and the reason
+
 ## 0.5.118 — 2026-08-08
 
 - complete the static check: rows per note are exact, 41/41

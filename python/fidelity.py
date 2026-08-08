@@ -84,7 +84,8 @@ from pathlib import Path
 
 from h2g import __version__
 from h2g.convert import convert
-from h2g.goatwriter import FORMAT_GTS5, find_song_speeds
+from h2g.goatwriter import (FORMAT_GTS5, effective_frames,
+                            find_song_speeds)
 from h2g.sidfile import find_freq_table, load_sid
 
 # Defaults are the tools as they sit on this machine; every one is overridable
@@ -2602,6 +2603,19 @@ def pace(orig: Trace, ours: Trace) -> dict:
     return out
 
 
+def _skip_gate_multiplier(sid: Path) -> int | None:
+    """recommended_multiplier with the skip counter taken into account."""
+    try:
+        from h2g.convert import _detect_tables
+        from h2g.goatwriter import find_song_speeds, recommended_multiplier
+        s = load_sid(str(sid))
+        s, det = _detect_tables(s, lambda m: None)
+        sp = find_song_speeds(s, det if det.can_convert else None)
+        return recommended_multiplier(sp, 0, True)
+    except Exception:                                          # noqa: BLE001
+        return None
+
+
 def pace_report(sid: Path, workdir: Path, opts: dict, args,
                 multiplier: int = 1) -> str:
     """What `--pace` prints for one file.
@@ -2630,7 +2644,9 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     a = run_siddump(local, args.seconds, traced, args.siddump, cal)
 
     speeds = find_song_speeds(load_sid(str(sid)))
-    read = speeds.frames_for(traced) if speeds is not None else None
+    # The row the conversion was actually written for, which is not the raw
+    # gate when --skip-gate corrected it.
+    read = effective_frames(speeds, traced, bool(opts.get("skip_gate")))
     tempo = None
     out.append(f"{sid.name}: subtune {traced}, {args.seconds}s, "
                f"packed -S{multiplier}; speed gate reads "
@@ -2982,6 +2998,11 @@ def main(argv=None) -> int:
                         "per run: the files in it have fixed names, so two "
                         "harnesses sharing one directory silently measure each "
                         "other's files. Name one only to keep the intermediates")
+    p.add_argument("--skip-gate", action="store_true",
+                   help="convert with --skip-gate: take the counter above the "
+                        "speed gate into account when deriving the row, "
+                        "wherever the corrected row is a whole number "
+                        "(whats-next.md 7b)")
     p.add_argument("--ntsc", action="store_true",
                    help="leave $02A6 at 0 when tracing, which is NTSC and is "
                         "what a bare emulated machine looks like. Three corpus "
@@ -3065,8 +3086,14 @@ def _run(p, args, workdir: Path) -> int:
         if args.pace:
             for sid in sids:
                 opts = _preset_opts(doc, sid.name)
-                print(pace_report(sid, workdir, opts, args,
-                                  _preset_multiplier(doc, sid.name)))
+                mult = _preset_multiplier(doc, sid.name)
+                if getattr(args, "skip_gate", False):
+                    opts["skip_gate"] = True
+                    # The tempo and the -S factor have to agree: correcting the
+                    # row can change the multiplier (Tarzan 2 -> 1), and
+                    # presets.json was generated without the option.
+                    mult = _skip_gate_multiplier(sid) or mult
+                print(pace_report(sid, workdir, opts, args, mult))
             return 0
         if args.diagnose:
             # Deliberately not a row: the output is an argument about one
@@ -3093,6 +3120,8 @@ def _run(p, args, workdir: Path) -> int:
                 opts["effects"] = True
             if args.fold_transpose:
                 opts["fold_transpose"] = True
+            if getattr(args, "skip_gate", False):
+                opts["skip_gate"] = True
             # Applied to the packing step, not to the trace: gt2reloc's -S
             # changes the packed bytes so the tune plays at its real rate,
             # but siddump calls the play routine seconds x 50 times whatever

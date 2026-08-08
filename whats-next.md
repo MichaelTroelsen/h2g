@@ -555,6 +555,39 @@ table.** `tests/test_outer_gate.py` holds that shut.
 That also disposes of v0.5.102's arithmetic problem (one frame in twelve
 predicting 2.4 where Tarzan measures 3.00): twelve was the decoy.
 
+### v0.5.119 — encoded behind `--skip-gate`, and why it stays opt-in
+
+`convert(skip_gate=True)` / `--skip-gate` writes the corrected row wherever it
+comes out a whole number (`SongSpeeds.encodable_frames`), which is the only
+form Goattracker's tempo can express. Nine files change bytes.
+
+**It works, and it is not an improvement.** Measured on all nine:
+
+| | timing (`--pace` ours/theirs) | melody |
+|---|---|---|
+| Tarzan | 0.667 → **1.000** | 73% → **59%** |
+| Pygmies_Revenge | 0.750 → **1.000** | 80% → **93%** |
+| six others | unchanged at the traced subtune | unchanged |
+| Knucklebusters | 1.333 → refused | unchanged |
+
+Tarzan's timing becomes exact — 1.000 with a zero IQR over 417 gaps — and its
+melody falls ten points. That is **not** the traced window: it holds at 10, 20,
+40 and 60 seconds.
+
+**The cause is a coupling I should have seen coming.** Correcting the row moves
+the `-S` multiplier (Tarzan 2 → 1), and v0.5.82 divides every per-frame rate
+the writer emits — slide steps, the drum sweep, wavetable delays — by that
+same multiplier. So the fix un-does its own compensation. The row is right and
+everything downstream of it is then wrong.
+
+**What it would take to make this the default:** the per-frame rates need to
+be scaled by the *player's* actual frames-per-row rather than by the `-S`
+factor. Those are the same number today, which is why nothing separated them
+until the row was corrected. Until then `skip_gate` is in
+`presets.EXCLUDED_FROM_ALWAYS` with that reason, and `tests/test_skip_gate.py`
+records the multiplier coupling so it cannot be enabled by default without
+someone reading why it was not.
+
 ### Read, not encoded — deliberately
 
 `SongSpeeds.skip`, `skip_for()` and `true_frames()` are new; `frames_for()` is

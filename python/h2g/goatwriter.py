@@ -286,6 +286,21 @@ class SongSpeeds:
             return self.skip[subtune]
         return None
 
+    def encodable_frames(self, subtune: int = 0) -> Optional[int]:
+        """`true_frames` when Goattracker can express it exactly, else None.
+
+        A row is a whole number of play calls, so a corrected row of 2.67 --
+        the player skipping one frame in four -- has no tempo. Rounding it
+        would trade a known 25% error for an unknown one, and the honest
+        encoding of a fractional row is §8's re-gridding, not a round(). Only
+        the whole-number cases are returned, which on this corpus is six
+        files against forty-two fractional ones.
+        """
+        t = self.true_frames(subtune)
+        if t is None:
+            return None
+        return int(round(t)) if abs(t - round(t)) < 0.02 else None
+
     def true_frames(self, subtune: int = 0) -> Optional[float]:
         """Frames per duration unit *including* the outer counter's skips.
 
@@ -408,8 +423,26 @@ def find_song_speeds(sid: SidFile,
     return None
 
 
+def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,
+                     skip_gate: bool = False) -> Optional[int]:
+    """Frames per unit as the tempo should encode it.
+
+    Without `skip_gate` this is the speed gate's own reload+1, which is what
+    every version before v0.5.119 used. With it, the counter above the gate is
+    taken into account wherever the corrected row is a whole number -- see
+    SongSpeeds.encodable_frames and whats-next.md §7b.
+    """
+    if speeds is None:
+        return None
+    if skip_gate:
+        got = speeds.encodable_frames(subtune)
+        if got is not None:
+            return got
+    return speeds.frames_for(subtune)
+
+
 def recommended_multiplier(speeds: Optional[SongSpeeds],
-                           subtune: int = 0) -> int:
+                           subtune: int = 0, skip_gate: bool = False) -> int:
     """gt2reloc -S value under which this tune's tempo is expressible.
 
     A row must last `frames` player calls scaled by the multiplier, and
@@ -418,7 +451,7 @@ def recommended_multiplier(speeds: Optional[SongSpeeds],
     needs the play routine called twice per frame, and frames == 1 three
     times. greloc.c:1595 arms a CIA stub for exactly this.
     """
-    f = speeds.frames_for(subtune) if speeds is not None else None
+    f = effective_frames(speeds, subtune, skip_gate)
     if f is None or f >= GT_MIN_TEMPO + 1:
         return 1
     return -(-(GT_MIN_TEMPO + 1) // f)     # ceil(3 / f)
@@ -426,7 +459,7 @@ def recommended_multiplier(speeds: Optional[SongSpeeds],
 
 def tempo_command_value(sid: SidFile, subtune: int = 0,
                         speeds: Optional[SongSpeeds] = None,
-                        multiplier: int = 1) -> int:
+                        multiplier: int = 1, skip_gate: bool = False) -> int:
     """CMD_SETTEMPO value for this subtune: its player's frames per unit.
 
     One converted row is one duration unit, and the player's speed gate says a
@@ -442,7 +475,7 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     """
     if speeds is None:
         speeds = find_song_speeds(sid)
-    f = speeds.frames_for(subtune) if speeds is not None else None
+    f = effective_frames(speeds, subtune, skip_gate)
     if f is None:
         # The old constant, scaled to the caller's timebase: 3 calls at 1x is
         # 3*m calls at m-times the call rate.
@@ -455,8 +488,8 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     return min(max(f * multiplier, TEMPO_FASTEST_STEADY), 0x7F)
 
 
-def derived_group_tempos(sid: SidFile, det: Detection,
-                         groups: int) -> Tuple[List[int], int, str]:
+def derived_group_tempos(sid: SidFile, det: Detection, groups: int,
+                         skip_gate: bool = False) -> Tuple[List[int], int, str]:
     """Per-subtune CMD_SETTEMPO values, the -S multiplier, and a source note.
 
     `groups` is how many 3-track groups the caller has, which equals the
@@ -466,8 +499,9 @@ def derived_group_tempos(sid: SidFile, det: Detection,
     is scaled by it, so the whole file shares one timebase.
     """
     speeds = find_song_speeds(sid, det)
-    mult = recommended_multiplier(speeds)
-    values = [tempo_command_value(sid, s, speeds, mult) for s in range(groups)]
+    mult = recommended_multiplier(speeds, 0, skip_gate)
+    values = [tempo_command_value(sid, s, speeds, mult, skip_gate)
+              for s in range(groups)]
     note = speeds.source if speeds is not None else \
         "no speed gate found, keeping the constant"
     return values, mult, note

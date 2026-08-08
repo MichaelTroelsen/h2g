@@ -150,6 +150,19 @@ def main(argv=None) -> int:
              "Off by default: it changes the output bytes of the files it "
              "reaches")
     parser.add_argument(
+        "--skip-gate", action="store_true",
+        help="derive the row length from the counter ABOVE the speed gate as "
+             "well as the gate itself. Most Hubbard players decrement the "
+             "speed gate only on some frames -- a second counter jumps past "
+             "it, or returns from the play call outright -- so a row lasts "
+             "(reload + 1) x (O + 1) / O frames rather than reload + 1. "
+             "Applied only where that comes out a whole number, which is all "
+             "Goattracker can express. It fixes the timing (Tarzan 0.67 -> "
+             "1.00 against the original) but moves the -S multiplier, and "
+             "every per-frame rate is scaled by that multiplier, so slides "
+             "and sweeps are then wrong: Tarzan's melody falls 73%% -> 59%%. "
+             "Opt-in for that reason")
+    parser.add_argument(
         "--fold-transpose", action="store_true",
         help="recover the orderlist transposes that do not fit Goattracker's "
              "+14 ceiling. Hubbard's players carry transposes of 24, 36 and "
@@ -247,6 +260,7 @@ def main(argv=None) -> int:
                           ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
                           ("--reject-phantoms", "reject_phantoms"),
+                          ("--skip-gate", "skip_gate"),
                           ("--fold-transpose", "fold_transpose"),
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),

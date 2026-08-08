@@ -76,6 +76,17 @@ EXCLUDED_FROM_ALWAYS = {
     # array is mutable player state, and a snapshot of a multi-subtune file
     # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
     "initial_instrument",
+    # Right about the row and wrong about everything downstream of it.
+    # Correcting the row moves the -S multiplier (Tarzan 2 -> 1), and v0.5.82
+    # divides every per-frame rate -- slide steps, the drum sweep, wavetable
+    # delays -- by that multiplier. So the fix un-does its own compensation:
+    # Tarzan's timing goes from 0.667 to a perfect 1.000 while its melody
+    # falls 73% -> 59%, and that is not the traced window (it holds at 10, 20,
+    # 40 and 60 seconds). Two files gain (Tarzan and Pygmies_Revenge reach
+    # 1.000 timing; Pygmies' melody rises 80% -> 93%), one loses, six do not
+    # move at the traced subtune. Opt-in until the multiplier coupling is
+    # handled -- see whats-next.md 7b.
+    "skip_gate",
 }
 
 

@@ -112,6 +112,7 @@ def convert(sid_path: str, log: Logger = print,
             status_bit6: bool = False,
             reject_phantoms: bool = False,
             fold_transpose: bool = False,
+            skip_gate: bool = False,
             initial_instrument: bool = False,
             sustain_exact: bool = False,
             no_hard_restart: bool = False,
@@ -308,7 +309,8 @@ def convert(sid_path: str, log: Logger = print,
         # resolved_tempo because the values differ between subtunes.
         resolved_tempo = None
         groups = len(tracks) // 3
-        values, mult, note = derived_group_tempos(sid, det, groups)
+        values, mult, note = derived_group_tempos(sid, det, groups,
+                                                  skip_gate)
         multiplier = mult
         if groups != subtunes_before:
             # A split subtune shifted the numbering, so per-subtune
