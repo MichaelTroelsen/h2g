@@ -278,3 +278,37 @@ def test_the_store_variants_are_a_closed_set():
     hits = [p.name for p in sorted(CORPUS.glob("*.sid"))
             if search_file(load_sid(str(p)).data, absx_zp) >= 1]
     assert hits == [], f"a fourth dialect exists: {hits}"
+
+
+def test_the_triangle_gate_becomes_a_vibdelay():
+    """The player's gate is a note-length threshold, not a countdown.
+
+    `LDA $14EF,X / AND #$1F / CMP #$08 / BCC out` tests the note's own stored
+    duration, and $14EF,X is written once per note and never stepped -- so a
+    note shorter than 8 of the player's frames gets no vibrato at all.
+    Goattracker cannot say "only notes this long", but vibdelay reproduces the
+    half that matters: a note shorter than the delay ends before the
+    oscillator starts. It counts play calls, so it scales by the multiplier.
+    """
+    from h2g.detect import Detection, TRIANGLE_VIBRATO_GATE
+    from h2g.goatwriter import VIBRATO_DELAY, _vibrato_delay
+    tri = Detection(triangle_vibrato=5)
+    assert _vibrato_delay(tri, 1) == TRIANGLE_VIBRATO_GATE
+    assert _vibrato_delay(tri, 2) == TRIANGLE_VIBRATO_GATE * 2
+    # the gated players are the only ones that move: nothing else has a gate
+    assert _vibrato_delay(Detection(vibrato_offset=5), 1) == VIBRATO_DELAY
+    assert _vibrato_delay(Detection(vibrato_offset=5), 4) == VIBRATO_DELAY
+    assert _vibrato_delay(Detection(), 1) == VIBRATO_DELAY
+
+
+def test_vibdelay_stays_a_byte_and_never_disables():
+    """0 would mean "never oscillate" (gplay.c:770), which is not the gate.
+
+    A big multiplier must clamp rather than wrap past $FF into something the
+    loader reads as a different delay entirely.
+    """
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_delay
+    for mult in (1, 2, 3, 4, 5, 6, 40, 255):
+        d = _vibrato_delay(Detection(triangle_vibrato=5), mult)
+        assert 1 <= d <= 0xFF, mult

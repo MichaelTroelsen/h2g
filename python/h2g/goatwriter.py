@@ -13,6 +13,8 @@ from fractions import Fraction
 from typing import List, Optional, Tuple
 
 from .detect import (Detection, FILTER_ENABLE_BIT,
+                     TRIANGLE_VIBRATO_GATE, TRIANGLE_VIBRATO_MAX_SHIFT,
+                     TRIANGLE_VIBRATO_PEAK, TRIANGLE_VIBRATO_PERIOD,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
                      VIBRATO_SHIFT_MASK)
 from .sidfile import GT_FREQ0, SidFile
@@ -813,6 +815,109 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
+def _vibrato_delay(det: Detection, multiplier: int) -> int:
+    """Goattracker `vibdelay` for this player's vibrato, in play calls.
+
+    `vibdelay` is a countdown, not a flag: gplay.c:769-776 is a fallthrough
+    from `CMD_DONOTHING`, breaking while `vibdelay > 1` and decrementing once
+    per call, so the oscillator first runs on the `vibdelay`-th call after the
+    note. 1 means "from the first call" and 0 means "never".
+
+    The classic and LFO-table players gate nothing, so they keep
+    `VIBRATO_DELAY`. **The global-triangle player does gate, but not with a
+    delay** -- and the difference is worth stating precisely, because a delay
+    is what it looks like:
+
+        BD EF 14  LDA $14EF,X    ; the note's raw pattern status byte
+        29 1F     AND #$1F       ; ...its duration field
+        C9 08     CMP #$08
+        90 1C     BCC out        ; duration < 8 -> no vibrato on this note
+
+    `$14EF,X` is written once per note (`LDA ($FD),Y / STA $14EF,X` at $10A2)
+    and never incremented or decremented anywhere in the player, so this is a
+    *per-note length threshold* decided before the note sounds, not a counter
+    running during it. Nothing in a Goattracker instrument can express "only
+    notes at least this long", because `vibdelay` is per instrument.
+
+    What `vibdelay` reproduces exactly is the half that matters here: a note
+    shorter than the delay **ends before the oscillator ever starts**, so
+    setting the delay to the threshold suppresses vibrato on exactly the notes
+    the player suppresses it on. The threshold is 8 of the player's frames and
+    `vibdelay` counts our calls, so it scales by `multiplier` like every other
+    rate in this file (see _drum_speed).
+
+    The half it does not reproduce: on a note long enough to qualify, the
+    player oscillates from its first frame where this starts at frame 8. So
+    long notes are under-vibratoed at the head. That is the opposite error from
+    applying the effect to every note regardless of length, and much the
+    smaller one -- before this, a corpus where most notes are shorter than the
+    threshold got vibrato on all of them.
+    """
+    if det.triangle_vibrato is None:
+        return VIBRATO_DELAY
+    return min(0xFF, max(1, TRIANGLE_VIBRATO_GATE * multiplier))
+
+
+def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
+    """Speed-table entry for the global-triangle dialect's shift-count byte.
+
+    The player (detect._find_triangle_vibrato, 25 corpus files) does
+
+        frequency = note + phase x (interval_at_note >> (byte + 1))
+
+    with `phase` the folded triangle `0,1,2,3,3,2,1,0` off a counter stepped
+    once per play call. Both halves of the mapping come from *simulating*
+    gplay.c:795-801 rather than reading its constants, which is the discipline
+    § 7.ll exists to enforce. Simulated, Goattracker's oscillator obeys two
+    exact laws:
+
+        period       = 2 * cmp + 4   play calls
+        peak-to-peak = (cmp + 2)     * speed
+
+    (the first restates the documented `cmp + 2` half-period, which is what
+    makes the simulation trustworthy rather than novel.)
+
+    * **Period.** The player's counter steps once per *frame* and eight steps
+      make a cycle, so its half-period is `TRIANGLE_VIBRATO_PERIOD / 2` = 4
+      frames. Goattracker's is `cmp + 2` *calls*, i.e. `(cmp + 2) / multiplier`
+      frames. Hence
+
+          cmp = (PERIOD / 2) * multiplier - VIBRATO_CMP_BIAS
+
+      which is the classic mapping's own formula at a fixed bound of 4 -- this
+      dialect simply has no per-instrument period to read.
+
+    * **Excursion.** The player's phase runs `0..PEAK`, so its peak-to-peak is
+      `PEAK * (interval >> (byte + 1))`; it is one-sided, the note sitting at
+      the bottom of the swing rather than the middle, exactly as the classic
+      player's is one-sided the other way. Equating peak-to-peak with
+      `(cmp + 2) * speed = PERIOD/2 * multiplier * speed` and
+      `speed = interval >> rshift`:
+
+          rshift = byte + 1 + log2(multiplier) + log2((PERIOD / 2) / PEAK)
+
+      `log2(4/3)` is 0.415, and `round(k + 0.415) == k` for any integer k, so
+      the emitted shift is `byte + 1 + log2(multiplier)` -- coincidentally the
+      classic mapping's expression, reached from different quantities.
+
+    **The residual is a systematic 33% overshoot in depth, and it is the
+    format's, not a slip.** Goattracker's note-relative speed can only be
+    `interval >> k`, a power of two; the player wants three of them. 4/3 is
+    the nearest expressible ratio and it is 1.33x too deep. Correcting it
+    would need the absolute speed form, which does not track pitch the way
+    this player does, so the depth is traded for the pitch-tracking.
+    """
+    if not byte or byte > TRIANGLE_VIBRATO_MAX_SHIFT:
+        # The player's own `BEQ past`, and its own way of switching a record
+        # off: a shift this large leaves nothing of the 16-bit interval. No
+        # player in the family masks the byte -- Last_V8 stores 81.
+        return None
+    half = TRIANGLE_VIBRATO_PERIOD // 2
+    cmp_value = min(0x7F, max(0, half * multiplier - VIBRATO_CMP_BIAS))
+    rshift = min(byte + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
+
+
 def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the LFO-table format.
 
@@ -915,8 +1020,13 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         offset = det.table_vibrato.offset
         entry_of = lambda b: _table_vibrato_entry(b, det.table_vibrato, mult)
         engine = "LFO table"
+    elif det.triangle_vibrato is not None:
+        offset = det.triangle_vibrato
+        entry_of = lambda b: _triangle_vibrato_entry(b, mult)
+        engine = "global triangle"
     else:
         return {}
+    delay = _vibrato_delay(det, mult)
     data = sid.data
     out: dict = {}
     for i in range(max(instr_used - 1, 0)):
@@ -930,7 +1040,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
             if len(speed_table) >= GT_MAX_TABLELEN:
                 continue
             speed_table.append(entry)
-        out[i] = (speed_table.index(entry) + 1, VIBRATO_DELAY)
+        out[i] = (speed_table.index(entry) + 1, delay)
     if log and out:
         log(f"Instrument vibrato......: {len(out)} of "
             f"{max(instr_used - 1, 0)} record(s), "

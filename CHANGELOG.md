@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.158 — 2026-08-09
+
+- detect the global-triangle vibrato dialect and gate it like the player does
+
 ## 0.5.157 — 2026-08-09
 
 - add GOATTRACKER-REFERENCE.md read from the official readme

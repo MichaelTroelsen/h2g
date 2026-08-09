@@ -72,6 +72,12 @@ class Detection:
     # command-table engine's form and shares no byte format with the above.
     # Mutually exclusive with vibrato_offset -- see _find_table_vibrato().
     table_vibrato: "TableVibrato | None" = None
+    # And a THIRD vibrato: one routine assembled into 25 corpus files, whose
+    # oscillator is a global triangle rather than anything per instrument, and
+    # whose record byte is a bare right-shift count rather than the $78/$07
+    # pair. Mutually exclusive with both of the above -- see
+    # _find_triangle_vibrato().
+    triangle_vibrato: Optional[int] = None
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -841,6 +847,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
             log(f"Instrument vibrato......: record +{tv.offset} "
                 f"(LFO table $F0>>4, unit $0F x interval>>{tv.unit_shift}), "
                 + ", ".join(f"len {l} peak {p}" for l, p in tv.shapes))
+        else:
+            det.triangle_vibrato = _find_triangle_vibrato(sid, det)
+            if det.triangle_vibrato is not None:
+                log(f"Instrument vibrato......: record +{det.triangle_vibrato} "
+                    f"(shift count, global {TRIANGLE_VIBRATO_PERIOD}-call "
+                    f"triangle 0..{TRIANGLE_VIBRATO_PEAK})")
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
@@ -1390,6 +1402,88 @@ def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
 #     50DC  C8 B1 5F  INY / LDA ($5F),Y ; bit 7 set: the operand byte
 #     50ED  C8 B1 5F  INY / LDA ($5F),Y ; the note byte
 #
+# --- The global-triangle vibrato -------------------------------------------
+#
+# A third form again, and the widest: one routine assembled unchanged into 25
+# corpus files. It has neither the $78/$07 pair nor an LFO table. One_Man_and_
+# his_Droid $11A0, with the whole effect being
+#
+#     frequency = note + phase x (semitone_at_note >> (record+5 + 1))
+#
+#     11A0  B9 8D 15  LDA record+5,Y
+#           8D 00 15  STA shiftctr
+#           F0 6F     BEQ past          ; zero -> no vibrato
+#           AD 1C 15  LDA $151C         ; the GLOBAL oscillator counter
+#           29 07     AND #$07
+#           C9 04     CMP #$04
+#           90 02     BCC +2
+#           49 07     EOR #$07          ; -> 0,1,2,3,3,2,1,0
+#           ...       (semitone interval at the note)
+#     11C8  4A / 6E / CE / 10 F7        ; shift it right (record+5 + 1) times
+#           ...       add the step `phase` times, then STA $D400/$D401
+#
+# Two things make it its own dialect rather than a variant. The period is
+# **fixed**: `$151C` is incremented at the play routine's own entry point,
+# unconditionally, and only three bits are used -- eight calls a cycle for
+# every tune and every instrument. And the record byte is a bare shift count,
+# so reading it through the $78/$07 split is not lossy but *wrong*: the six
+# vibrato records in One_Man_and_his_Droid all hold 2, which that split reads
+# as bound 0, i.e. no oscillation at all.
+#
+# The signature is one contiguous run from the triangle fold through the shift
+# loop, operands wildcarded. It matches 25 files, every one of them a file the
+# two shapes above find nothing in, and none that they do -- a clean partition,
+# so it cannot disturb a file that already reads correctly.
+TRIANGLE_VIBRATO_SHAPE = (
+    "29 07 C9 04 90 02 49 07 8D ?? ?? BD ?? ?? 0A A8 38 "
+    "B9 ?? ?? F9 ?? ?? 8D ?? ?? B9 ?? ?? F9 ?? ?? 4A 6E ?? ?? CE ?? ?? 10 F7")
+
+# `LDA record+n,Y / STA abs / BEQ` -- the enable test whose operand names the
+# byte. Read rather than assumed, the same way _find_vibrato reads its own; it
+# comes out +5 in all 25.
+TRIANGLE_VIBRATO_ENABLE = (0xB9, 0x8D, 0xF0)
+
+# Play calls per full cycle: `AND #$07` over a counter stepped once per call,
+# folded to 0,1,2,3,3,2,1,0.
+TRIANGLE_VIBRATO_PERIOD = 8
+# Peak of that triangle, so the excursion is `PEAK * (interval >> (n + 1))`.
+TRIANGLE_VIBRATO_PEAK = 3
+# A shift this large drives the 16-bit interval to zero, which is the player's
+# own way of saying "no vibrato on this record" -- Last_V8 stores 81 and
+# Human_Race 119, and no player in the family masks the byte.
+TRIANGLE_VIBRATO_MAX_SHIFT = 15
+
+# The gate: `LDA $14EF,X / AND #$1F / CMP #$08 / BCC out`. `$14EF,X` is the
+# note's raw pattern status byte, stored once per note at $10A2
+# (`LDA ($FD),Y / STA $14EF,X`) and never stepped, so `& $1F` is the note's
+# *duration* and this is a length threshold, not a countdown: a note shorter
+# than 8 of the player's frames gets no vibrato at all. See
+# goatwriter._vibrato_delay for what Goattracker can and cannot express of it.
+TRIANGLE_VIBRATO_GATE = 8
+
+
+def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
+    """Instrument-record offset of the shift-count byte, or None.
+
+    Consulted only where `_find_vibrato` and `_find_table_vibrato` found
+    nothing, so it can rescue a file that reads no vibrato and can never
+    disturb one that reads correctly -- the same rule find_relocation and the
+    instrument-index shape follow.
+    """
+    data = sid.data
+    at = search_file(data, TRIANGLE_VIBRATO_SHAPE)
+    if at < 1:
+        return None
+    lda, sta, beq = TRIANGLE_VIBRATO_ENABLE
+    for k in range(at - 1, max(0, at - 48), -1):
+        if data[k] == lda and data[k + 3] == sta and data[k + 6] == beq:
+            off = sid.to_offset(data[k + 1] | data[k + 2] << 8) - det.instr_start
+            if 0 <= off < det.instr_stride:
+                return off
+            return None
+    return None
+
+
 # The BVS lands at the DEC past both INY/LDA pairs, whatever bit 7 says --
 # so a status byte of $C0-$FE consumes nothing but itself, where a decoder
 # that honours bit 7 first reads an operand and a note it never read and
