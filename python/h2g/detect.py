@@ -1144,6 +1144,23 @@ def _find_slide_high_first(data: bytes) -> bool:
 # Unlike the effect byte at +7, this one is a shared format.
 VIBRATO_SHAPE = "48 29 78 4A 4A 4A 9D ?? ?? 68 29 07 8D ?? ??"
 
+# The two stores are the only thing that varies across the family. 56 files
+# keep the bound in `STA abs,X` and the shift in `STA abs`; five reach the same
+# two cells in zero page, which is one byte shorter for the indexed store and
+# so misses the shape above by a single addressing mode:
+#
+#     W_A_R $E642   48 29 78 4A 4A 4A 95 D3 68 29 07 8D FE E8
+#     canonical     48 29 78 4A 4A 4A 9D ?? ?? 68 29 07 8D ?? ??
+#                                      ^^ STA $D3,X, not STA abs,X
+#
+# Same PHA/mask/LSR/PLA/mask structure, same $78 and $07, same `LDA record+5,Y`
+# feeding it -- so these are one routine in three addressing dialects, not
+# three signatures. Ordered canonical-first, which keeps every file that
+# already read correctly on exactly the byte pattern it always matched.
+VIBRATO_SHAPE_ZP_BOUND = "48 29 78 4A 4A 4A 95 ?? 68 29 07 8D ?? ??"
+VIBRATO_SHAPE_ZP_BOTH = "48 29 78 4A 4A 4A 95 ?? 68 29 07 85 ??"
+VIBRATO_SHAPES = (VIBRATO_SHAPE, VIBRATO_SHAPE_ZP_BOUND, VIBRATO_SHAPE_ZP_BOTH)
+
 # The depth, in the two forms the corpus uses: the interval stored to an
 # absolute cell or to zero page. Nothing else differs, and 56 of 56 match one.
 VIBRATO_DEPTH_SHAPES = (
@@ -1175,7 +1192,11 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
     algebraically what it always was, so no other file can move.
     """
     data = sid.data
-    at = search_file(data, VIBRATO_SHAPE)
+    at = -1
+    for shape in VIBRATO_SHAPES:
+        at = search_file(data, shape)
+        if at >= 1:
+            break
     if at < 1:
         return None
     if not any(search_file(data, s) >= 1 for s in VIBRATO_DEPTH_SHAPES):

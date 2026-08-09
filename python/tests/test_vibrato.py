@@ -236,3 +236,45 @@ def test_resolving_through_to_offset_moves_no_other_file():
             found[path.name] = det.vibrato_offset
     assert set(found.values()) == {5}, f"unexpected offsets: {found}"
     assert len(found) >= 50, f"the rescue should add one, found {len(found)}"
+
+
+def test_the_zero_page_dialects_are_the_same_routine():
+    """One vibrato in three addressing dialects, not three signatures.
+
+    W_A_R stores the bound with `STA $D3,X` where the canonical shape has
+    `STA abs,X` -- one addressing mode, one byte shorter, so the pattern
+    misses. The masks, the PHA/PLA split and the `LDA record+5,Y` feeding it
+    are identical, which is why these are variants rather than new signatures.
+    See H2G-CONVERSION-METHOD.md section 7.zz.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import detect, VIBRATO_SHAPES
+    assert VIBRATO_SHAPES[0] == VIBRATO_SHAPE, "canonical must be tried first"
+    for name in ("W_A_R", "Tarzan", "Mega_Apocalypse",
+                 "Samantha_Fox_Strip_Poker", "Spellbound"):
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        assert search_file(sid.data, VIBRATO_SHAPE) < 1, \
+            f"{name} is meant to miss the canonical shape"
+        det = detect(sid, log=lambda m: None)
+        assert det.vibrato_offset == 5, name
+        # and the byte it now reads is real data, not an empty column
+        records = [sid.data[det.instr_start + i * det.instr_stride + 5]
+                   for i in range(det.instr_used)
+                   if det.instr_start + i * det.instr_stride + 5 < len(sid.data)]
+        assert any(records), f"{name} would gain a vibrato with no depth"
+
+
+def test_the_store_variants_are_a_closed_set():
+    """The fourth combination does not occur, so the set is not open-ended.
+
+    56 files use abs,X + abs; 2 use zp,X + abs; 3 use zp,X + zp; and abs,X + zp
+    has no instance. A file turning up in that last cell would mean the two
+    stores vary independently and this enumeration is the wrong shape.
+    """
+    if not CORPUS.is_dir():
+        return
+    absx_zp = "48 29 78 4A 4A 4A 9D ?? ?? 68 29 07 85 ??"
+    hits = [p.name for p in sorted(CORPUS.glob("*.sid"))
+            if search_file(load_sid(str(p)).data, absx_zp) >= 1]
+    assert hits == [], f"a fourth dialect exists: {hits}"

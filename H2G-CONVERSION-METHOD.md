@@ -4069,6 +4069,84 @@ like travel now makes a deep original effect look like no effect at all.
 > missing their vibrato" — that is the same shape of inference as § 7.pp's
 > 55-of-95 screen and § 7.xx's retracted lead.
 
+### 7.zz Reading one of them: the same vibrato, stored in zero page
+
+Taking § 7.yy's own advice and reading a single `no_shape` player found the
+routine immediately — and it is not a new one. W_A_R was the pick because it
+has the most to gain: the largest within-note travel among the 31 (358,992)
+against a conversion producing **zero**.
+
+Its parameter split, at file `+0x0242`:
+
+```
+W_A_R       B9 53 E9  LDA $E953,Y     ; the vibrato byte, record+5
+            D0 03     BNE on
+            4C 8E E6  JMP past        ; zero -> no vibrato
+            48        PHA
+            29 78     AND #$78        ; the bound...
+            4A 4A 4A  LSR A x3        ; ...>> 3
+            95 D3     STA $D3,X       ; <-- zero page,X
+            68        PLA
+            29 07     AND #$07        ; the shift
+            8D FE E8  STA $E8FE
+
+canonical   48 29 78 4A 4A 4A 9D ?? ?? 68 29 07 8D ?? ??
+```
+
+The whole difference is `STA $D3,X` where the shape expects `STA abs,X` — one
+addressing mode, one byte shorter, and the pattern misses. Everything the
+mapping depends on is identical: the same `$78`/`$07` masks, the same PHA/PLA
+split, the same `LDA record+5,Y` feeding it (`$E953 - $E94E = 5`).
+
+Scanning the corpus for the store variants gives a small, closed set:
+
+| bound store / shift store | files |
+|---|---:|
+| `STA abs,X` / `STA abs` (canonical) | 56 |
+| `STA zp,X` / `STA abs` | 2 (Tarzan, W_A_R) |
+| `STA zp,X` / `STA zp` | 3 (Mega_Apocalypse, Samantha_Fox, Spellbound) |
+| `STA abs,X` / `STA zp` | 0 |
+
+So this is **one routine in three addressing dialects**, and adding the two
+zero-page forms takes detection from 50 files to **55**, every one of them
+still answering `+5`. The shapes are tried canonical-first, so no file that
+already read correctly can match anything new.
+
+#### What it bought, measured per file rather than claimed
+
+All five carry real vibrato data (6 to 22 non-zero bytes each) and all five
+emit it. The effect on within-note travel is not uniform, and reporting only
+the good one would misrepresent it:
+
+| file | original | ours before | ours after | | |
+|---|---:|---:|---:|---:|---|
+| W_A_R | 358,992 | 0 | **102,072** | 0.000 → 0.284 | toward |
+| Mega_Apocalypse | 106,752 | 0 | 0 | 0.000 → 0.000 | no change |
+| Samantha_Fox | 33,555 | 4,586 | 4,586 | 0.137 → 0.137 | no change |
+| Spellbound | 44,392 | 90,574 | 102,416 | 2.040 → 2.307 | **away** |
+| Tarzan | 0 | 8,908 | 8,908 | — | original does not move |
+
+**One clear win** — W_A_R goes from producing no within-note movement at all to
+28% of the original's, which is the single biggest recovery in this group.
+**Two produce no change in the window** despite emitting vibrato; their
+vibrato-carrying instruments are presumably not played in the traced 20
+seconds, which is consistent with Mega_Apocalypse's phantom-subtune structure
+but was not confirmed. **Spellbound moves away**, from 2.04x the original's
+travel to 2.31x — it was already overshooting, and this adds to it.
+
+Spellbound is not a reason to withhold the dialect. The player demonstrably
+contains the routine and reads the byte at `+5`; declining to detect it would
+be deliberately mis-reading a player to flatter a metric that § 7.xx already
+showed is unreliable in exactly this direction (the original's larger steps
+get printed as note changes and dropped, ours kept). Whatever makes Spellbound
+overshoot is a separate defect, and it was overshooting by 2x before this.
+
+That leaves 26 files still matching no vibrato shape — and the honest position
+on them is unchanged from § 7.yy: their originals barely move, a third already
+overshoot, and each needs its own player read before anything is written.
+
+## 9. The `.sng` output layout
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
