@@ -680,7 +680,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        no_hard_restart: bool = False,
                        filter_ptrs: dict | None = None,
                        vib_ptrs: dict | None = None,
-                       lead: int = 1) -> int:
+                       lead: int = 1,
+                       wave_starts: Optional[List[int]] = None) -> int:
     out.append(instr_used)
 
     if lead:
@@ -709,7 +710,13 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # Kept as the default only because the byte-exact Commando fixture
             # encodes it; --sustain-exact reads the register as the SID does.
             sr &= 0xEF
-        wave_ptr = (i * 5 + wtable_start) & 0xFF
+        # From the laid-out table, not from the index: a record before this
+        # one may be longer than WAVE_ENTRIES_PER_INSTR (a deep drum sweep),
+        # and then the arithmetic is simply wrong. Falls back to the stride
+        # for callers that pass no layout.
+        wave_ptr = ((wave_starts[i + lead]
+                     if wave_starts is not None and i + lead < len(wave_starts)
+                     else i * 5 + wtable_start) & 0xFF)
         # Not a stride: a swept instrument's pulse program is longer than a
         # static one's, so the start positions come from the built table.
         pulse_ptr = (pulse_starts[i + lead]
@@ -1065,7 +1072,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
                        min_notes: Optional[dict] = None,
-                       lead: int = 1) -> tuple:
+                       lead: int = 1,
+                       start: Optional[int] = None,
+                       budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1121,7 +1130,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # hardcoded Clear Voice, so record i is instrument i + 2.
         lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
-                             sustain=data[base + 4] >> 4)
+                             sustain=data[base + 4] >> 4, budget=budget)
 
     if drum:
         if effects:
@@ -1138,7 +1147,11 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
     # The instrument's own entries are 1-based indices i*5+6 .. i*5+10, so its
     # third is i*5+8 -- the loop target for both the arpeggio and the rise.
-    base_entry = (lead + i) * WAVE_ENTRIES_PER_INSTR + 1
+    # The arpeggio and the rise both jump back to entries of their own block,
+    # so the targets are this instrument's real start -- not arithmetic on its
+    # index, which stops being true the moment any earlier record is longer
+    # than WAVE_ENTRIES_PER_INSTR.
+    base_entry = start if start is not None         else (lead + i) * WAVE_ENTRIES_PER_INSTR + 1
     first = base_entry & 0xFF
     third = (base_entry + 2) & 0xFF
 
@@ -1200,7 +1213,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
 def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   multiplier: int = 1, min_note: Optional[int] = None,
-                  sustain: int = 0) -> tuple:
+                  sustain: int = 0,
+                  budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1285,12 +1299,57 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # tune", and suppressing its sweep as "much better". 60 of the corpus's
     # 284 drum-flagged records sustain; the other 224 keep the sweep.
     if index and not sustain:
-        left[2], right[2] = WAVECMD_PORTADOWN, index
-        # Entry 3 was a second stop the player could never reach past entry 2's,
-        # so deepening costs no slot: the stop stays at entry 4.
-        if _drum_steps_safe(2, min_note, multiplier):
-            left[3], right[3] = WAVECMD_PORTADOWN, index
+        # `budget` is how many entries this record may occupy in total; the
+        # caller shrinks it when the 255-entry table is running out. Below the
+        # fixed five it changes nothing, so a file with room behaves as it did.
+        want = _drum_max_steps(min_note, multiplier)
+        room = max(0, budget - 3)          # attack, gate-off, stop
+        steps = max(1, min(want, room)) if want else (
+            2 if _drum_steps_safe(2, min_note, multiplier) else 1)
+        left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF]
+        right = [0x00, 0x00]
+        left += [WAVECMD_PORTADOWN] * steps
+        right += [index] * steps
+        left.append(0xFF)
+        right.append(0x00)
+        while len(left) < WAVE_ENTRIES_PER_INSTR:
+            left.append(0xFF)
+            right.append(0x00)
     return left, right
+
+
+# Steps the player itself can take: it sweeps once per frame for `W - 1`
+# frames, and section 7.ii measured W across the corpus at 2-9 ticks. So eight
+# is the deepest sweep any note is actually held long enough to receive, and a
+# chain longer than that is not fidelity -- it is table space spent on frames
+# the note has already finished. Before this cap the safe bound alone produced
+# a 136-step chain and drove three files to the 255-row table ceiling.
+DRUM_MAX_SWEEP_STEPS = 8
+
+
+def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:
+    """Deepest sweep this record can take without wrapping, in wavetable steps.
+
+    The safety bound and the musical target turn out to be the same number.
+    The player sweeps until its own guard freezes the frequency at zero
+    (section 7.ii), so "as deep as it can go" is what faithfulness asks for;
+    and the deepest a Goattracker `CMD_PORTADOWN` chain can go without
+    underflowing is exactly the distance from the *lowest note the record is
+    played at* down to zero. Falling that far from any higher note lands short
+    of silence but still travels most of the way -- which is the shape a tom
+    has anyway.
+
+    Returns 0 where no bound is known, so an unknown record keeps the shallow
+    two-step form rather than guessing deep.
+    """
+    if min_note is None:
+        return 0
+    hi, lo = _drum_speed(multiplier)
+    step = (hi << 8) | lo
+    if step <= 0:
+        return 0
+    room = _note_freq(min_note) - DRUM_DEEPEN_MARGIN
+    return max(0, min(room // step, DRUM_MAX_SWEEP_STEPS * max(1, multiplier)))
 
 
 def _drum_speed_index(fmt: str, speed_table: List[tuple],
@@ -1355,29 +1414,64 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple],
     return speed_table.index(entry) + 1
 
 
+def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
+                      effects: bool, fmt: str, speed_table: List[tuple],
+                      multiplier: int, min_notes: Optional[dict],
+                      lead: int) -> tuple:
+    """(entries, starts) for the whole wavetable, laid out sequentially.
+
+    Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
+    `index * 5 + 1`, which is why the drum sweep could never be more than two
+    steps deep (section 7.tt): three of the five go to the attack, the gate-off
+    waveform and the stop. Laying the table out sequentially and *recording*
+    each start -- the shape `_pulse_layout` already uses, and for the same
+    reason -- lets a record be longer than five when it has something to say.
+
+    Two properties hold it together:
+
+    * **Nothing shrinks.** Every block is padded back up to
+      `WAVE_ENTRIES_PER_INSTR`, so a file where no record grows lays out byte
+      for byte as it always did. That is what makes the change verifiable
+      rather than merely plausible.
+    * **Nobody starves.** Each record's budget is what remains after reserving
+      the five entries every *later* record is owed, so a deep sweep early in
+      the table can never push a later instrument out of it.
+    """
+    entries: List[tuple] = []
+    starts: List[int] = []
+    for _ in range(lead):
+        starts.append(len(entries) + 1)
+        entries += [(0x09, 0x00), (0xFF, 0x00),
+                    (0x00, 0x00), (0x00, 0x00), (0x00, 0x00)]
+    n = max(instr_used - lead, 0)
+    for i in range(n):
+        start = len(entries) + 1
+        reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
+        budget = max(WAVE_ENTRIES_PER_INSTR,
+                     GT_MAX_TABLELEN - len(entries) - reserved)
+        left, right = _wavetable_entries(sid, det, i, effects, fmt, speed_table,
+                                         multiplier, min_notes, lead,
+                                         start=start, budget=budget)
+        starts.append(start)
+        entries += list(zip(left, right))
+    return entries, starts
+
+
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      instr_used: int, effects: bool = False,
                      fmt: str = DEFAULT_FORMAT,
                      speed_table: List[tuple] | None = None,
                      multiplier: int = 1,
                      min_notes: Optional[dict] = None,
-                     lead: int = 1) -> None:
-    n = max(instr_used - lead, 0)
-    table = speed_table if speed_table is not None else []
-    entries = [_wavetable_entries(sid, det, i, effects, fmt, table, multiplier,
-                                  min_notes, lead)
-               for i in range(n)]
-
-    out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
-    for _ in range(lead):
-        out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
-    for left, _ in entries:
-        out += bytes(left)
-
-    for _ in range(lead):
-        out += bytes([0x00, 0x00, 0x00, 0x00, 0x00])
-    for _, right in entries:
-        out += bytes(right)
+                     lead: int = 1,
+                     entries: Optional[List[tuple]] = None) -> None:
+    if entries is None:
+        table = speed_table if speed_table is not None else []
+        entries, _ = _wavetable_layout(sid, det, instr_used, effects, fmt,
+                                       table, multiplier, min_notes, lead)
+    out.append(_table_length_byte(len(entries), "wave"))
+    out += bytes(left for left, _ in entries)
+    out += bytes(right for _, right in entries)
 
 
 def _split_ticks(ticks: int) -> List[int]:
@@ -1673,11 +1767,16 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead)
+    # Before the records, because each one carries the wavetable step it
+    # starts on -- and those starts are no longer a stride.
+    wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
+                                                  fmt, table, multiplier,
+                                                  min_notes, lead)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
-                       lead=lead)
+                       lead=lead, wave_starts=wave_starts)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
-                     min_notes, lead=lead)
+                     min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
 
     if log:
