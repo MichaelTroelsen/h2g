@@ -48,6 +48,11 @@ from h2g.sidfile import load_sid
 # and fine enough to tell a narrow pulse from a square.
 PULSE_BUCKET = 0x100
 
+# Frames of each note to profile. Eight covers the drum sweep's whole reach
+# (section 7.ii: the player sweeps for W-1 frames, W being 2-9 ticks) and the
+# two-frame noise tick, which is what the per-instrument profile is for.
+PROFILE_FRAMES = 8
+
 WAVE_NAMES = ((0x80, "noise"), (0x40, "pulse"), (0x20, "saw"), (0x10, "tri"))
 
 
@@ -201,6 +206,81 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
                           _wave_name(o_by[a].most_common(1)[0][0][0]),
                           sum(o_by[a].values())] for a in extra],
                         ["ADSR", "waveform", "notes"])
+
+    # ---- per-instrument profile, read off the original -------------------
+    def profile(trace, nframes):
+        """ADSR -> the modal register behaviour over a note, from the trace."""
+        out = defaultdict(lambda: {"wave": Counter(), "pulse": [],
+                                   "freq": [], "gate": Counter(),
+                                   "notes": []})
+        for v in trace:
+            adsr = F.register_timeline(v.adsr_events, nframes)
+            wf = F.register_timeline(v.wf_events, nframes)
+            pul = F.register_timeline(v.pulse_events, nframes)
+            frq = F.register_timeline(v.freq_events, nframes)
+            atk = sorted(v.attack_frames)
+            for i, a in enumerate(atk):
+                nxt = atk[i + 1] if i + 1 < len(atk) else nframes
+                span = min(nxt, a + 1 + PROFILE_FRAMES, nframes)
+                if span <= a + 1:
+                    continue
+                key = adsr[min(a + 1, nframes - 1)]
+                d = out[key]
+                d["wave"][tuple(wf[f] & 0xF0
+                                for f in range(a + 1, span))] += 1
+                seg_p = [pul[f] for f in range(a + 1, span)]
+                seg_f = [frq[f] for f in range(a + 1, span)]
+                d["pulse"].append((min(seg_p), max(seg_p)))
+                d["freq"].append(seg_f[0] - min(seg_f))
+                # frames until the gate bit clears, if it does
+                g = next((f - a for f in range(a + 1, min(nxt, nframes))
+                          if not (wf[f] & 0x01)), None)
+                d["gate"][g] += 1
+                if i < len(v.attacks):
+                    d["notes"].append(v.attacks[i])
+        return out
+
+    o_prof = profile(orig, nframes)
+
+    lines.append("## What the original does, per instrument")
+    lines.append("")
+    lines.append("One row per instrument of ours, describing the *original's* "
+                 "behaviour over the first "
+                 f"{PROFILE_FRAMES} frames of each note it sounds. This is the "
+                 "spec the `.sng` should meet.")
+    lines.append("")
+    rows = []
+    for i, r in enumerate(recs):
+        adsr = (r[0] << 8) | r[1]
+        d = o_prof.get(adsr)
+        if not d or not d["wave"]:
+            continue
+        seq, _ = d["wave"].most_common(1)[0]
+        seq_s = " ".join(_wave_name(w) if w else "-" for w in seq)
+        lo = min(a for a, _ in d["pulse"]); hi = max(b for _, b in d["pulse"])
+        fall = sorted(d["freq"])[len(d["freq"]) // 2]
+        gate = d["gate"].most_common(1)[0][0]
+        rows.append([i + 1, f"`${adsr:04X}`", len(d["notes"]), seq_s,
+                     f"${lo:03X}" + (f"-${hi:03X}" if hi != lo else ""),
+                     fall, gate if gate is not None else "held"])
+    lines += _table(rows, ["GT", "ADSR", "notes", "waveform per frame",
+                           "pulse range", "pitch fall", "gate off after"])
+
+    lines.append("## What we wrote, per instrument")
+    lines.append("")
+    rows = []
+    for i, r in enumerate(recs):
+        adsr = (r[0] << 8) | r[1]
+        blk = []
+        for k in range(r[2] - 1, len(wl)):
+            blk.append(f"{wl[k]:02X}")
+            if wl[k] == 0xFF:
+                break
+        rows.append([i + 1, f"`${adsr:04X}`",
+                     f"`${r[2]:02X}`", " ".join(blk),
+                     f"`${r[7]:02X}`", f"`${r[8]:02X}`"])
+    lines += _table(rows, ["GT", "ADSR", "wave ptr", "wavetable",
+                           "gate timer", "1st frame wave"])
 
     lines.append("## Pulse width per instrument")
     lines.append("")

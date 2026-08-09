@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.169 — 2026-08-09
+
+- profile the original's per-instrument behaviour in the instrument map
+
 ## 0.5.168 — 2026-08-09
 
 - join the instrument map on ADSR for a near 1:1 mapping
