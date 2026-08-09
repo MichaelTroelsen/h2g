@@ -3626,6 +3626,103 @@ change while the frequency falls, and siddump samples once per frame, so at
 `-S2` and above the two steps land inside one sample and cannot be separated
 at all. The reach above is a byte-hash and a register trajectory, not a score.
 
+### 7.uu Flash_Gordon's wraparounds: the original wraps too, and the slide loses one call a row
+
+§ 7.tt's wraparound scan reported 18 frequency wraps on Flash_Gordon in *both*
+arms — pre-existing, so not the drum deepening's doing. Chasing them found two
+things, and the first one corrects how that scan should be read at all.
+
+#### The original wraps through zero on purpose
+
+Tracing the original alongside the conversion, **the original wraps nine times
+in 30 seconds** — and does it with a regularity that rules out accident:
+
+```
+ORIGINAL voice 0, frames 68-83
+  68  freq 0x5918 (22808)          wf 0x41
+  69  freq 0x5088 (20616)   -2192  wf 0x41
+  ...              (a constant -2192 every frame)
+  78  freq 0x0378 (  888)   -2192  wf 0x41
+  79  freq 0xfae8 (64232)  +63344  wf 0x41   <- wraps through zero
+  80  freq 0xf258 (62040)   -2192  wf 0x40   <- and keeps falling
+  82  freq 0x49b8 (18872)          wf 0x41   <- next note resets it
+```
+
+Every one of the nine is the identical `0x0378 → 0xfae8`, on a strict 81-frame
+cycle, with the three voices offset 18 frames from each other. Hubbard's player
+sweeps the frequency down at a constant rate with no floor, lets it wrap, and
+keeps going until the next note. It is a deliberate effect.
+
+> **So a wraparound is not per se a converter defect**, and § 7.oo's scan —
+> reused unchanged in § 7.tt — must not be read as a defect count. It was
+> still the right test there, because it was used *differentially* (0 files
+> gained one); the absolute number was never the claim. § 7.oo's own use of
+> it was also sound: what it found on Commando was a wrap the original does
+> not make. The distinction is "does the original wrap here too", and only
+> tracing both sides answers it.
+
+#### What is ours: the slide is delivered at 8/9 of its own encoded rate
+
+The conversion sweeps the same place, and its *encoding is exactly right*. Our
+per-call step is 548 and the file packs at `-S4`: `548 × 4 = 2192`, the
+original's per-frame step to the unit. But the delivered per-frame movement
+alternates:
+
+```
+OURS voice 0, frames 15-26
+  15  freq 0x47a1 (18337)          <- note C-6
+  16  freq 0x47a1 (18337)      +0    <- a whole frame with no movement at all
+  17  freq 0x4135 (16693)   -1644    <- 3 calls x 548
+  18  freq 0x38a5 (14501)   -2192    <- 4 calls x 548
+  19  freq 0x3239 (12857)   -1644
+  ...
+  25  freq 0x0321 (  801)   -2192
+  26  freq 0xfcb5 (64693)  +63892    <- wraps, like the original
+```
+
+`-1644` is three calls and `-2192` is four, so the question is only *how many
+of each frame's four calls slide*. Over the window above, 32 of 36 call-slots
+move the frequency — **exactly 8/9**. Flash_Gordon's subtune 0 carries
+`CMD_SETTEMPO 8`, and gplay.c:325 makes a row last `tempo + 1` = **9 calls**.
+One call per row does not slide, and 1644/2192 alternating is that single
+missing call beating against the 4-call frame.
+
+That the arithmetic lands exactly on `(tempo) / (tempo + 1)` is the evidence;
+*which* call is skipped is not established here. The reading it fits is
+gplay.c:510-513, where a call carrying a new note does `goto NEXTCHN` and so
+runs neither `WAVEEXEC` nor the tick-N effect block, plus gplay.c:733 gating
+that block on `cptr->tick` being non-zero. **But the file traced here is
+gt2reloc's packed standalone player, not `gplay.c`** — the same caveat § 7.rr
+records against the `clearpattern()` model — so this is a consistent mechanism,
+not one read out of the binary that ran.
+
+The zero-movement frame right after the note onset (frame 16) is a further,
+separate loss on top of the per-row one, and is what takes the whole sweep to
+roughly **80%** of the original's rate rather than 89%.
+
+#### Why ours wraps twice where the original wraps once
+
+Nothing to do with the step. The original's wrap at frame 79 is cut off by its
+next note three frames later; ours holds the note far longer, so the frequency
+keeps descending and crosses zero a second time (frame 59, `0x001d → 0xf9b1`).
+Both wraps are the same single unguarded sweep — a note-length difference, not
+a slide-rate one.
+
+#### What this opens, and what it does not
+
+The `8/9` is a property of the tempo, not of Flash_Gordon: **every slide in
+every file loses `1/(tempo + 1)` of its movement**, which across the corpus's
+tempos is a 6-25% shortfall on every pitch bend this converter emits. That is
+a much broader claim than one file, and it is *not* established here — one
+file's window is where it was measured. `bend` (travel, § 7.hh) is the
+dimension that could see it, and checking it corpus-wide against `--baseline`
+is the next step, not a conclusion.
+
+Compensating by scaling the encoded step by `(tempo + 1) / tempo` is the
+obvious candidate and is deliberately not done here: it would overshoot on any
+row where the slide *does* run its full count, and § 7.oo is the standing
+lesson about shipping an unverified rate change to the sweep path.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
