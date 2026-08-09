@@ -11,7 +11,14 @@ widespread instrument mechanism the project has found unemitted -- and the first
 census of it was wrong by a factor of 29, because the signature was written from
 one file's exact operands rather than from the shape.
 
-The gating bit is deliberately not read; see the comment above WAVE_PROGRAM_FETCH.
+The gating bit reads too, once anchored on the pointer load rather than scanned
+for loosely: $01 in 22 files, $08 in three, $20 in one, $80 in two (by sign,
+`BPL`), and one shape unrecognised. In 18 of the 29 the cell the branch tests is
+also independently known to be the effect byte, which is what makes this the
+instrument's own flag rather than some other state; the other 11 are files whose
+effect cell detection cannot locate at all. In these players effect bit $01 selects a wave program where in Warhawk's
+dialect it means a drum -- and no file does both, so nothing `--effects` reads
+collides with it.
 """
 import pathlib
 
@@ -94,7 +101,7 @@ def test_the_interpreter_is_found_across_the_corpus():
             sid = load_sid(str(path))
         except Exception:                              # noqa: BLE001
             continue
-        if find_wave_program(sid) >= 0:
+        if find_wave_program(sid)[0] >= 0:
             found += 1
     assert found == 29, f"{found} -- the interpreter's reach changed"
 
@@ -135,6 +142,53 @@ def test_every_located_program_decodes_to_something():
         assert nonempty, path.name
         checked += 1
     assert checked >= 20, checked
+
+
+@needs_corpus
+def test_the_gate_reads_and_never_guesses():
+    """Anchored on the pointer load, not scanned for. The first attempt swept 40
+    bytes back from the fetch and returned $01 for 21 files, which looked like
+    the drum bit and was dismissed as a mismatch -- it was under-anchored, and
+    $01 really is the gate in 13 of them."""
+    if not CORPUS.is_dir():
+        return
+    from collections import Counter
+    seen = Counter()
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid = load_sid(str(path))
+        except Exception:                              # noqa: BLE001
+            continue
+        at, gate = find_wave_program(sid)
+        if at >= 0:
+            seen[gate] += 1
+    assert sum(seen.values()) == 29
+    assert seen[0x01] == 22, dict(seen)
+    assert seen[0x08] == 3, dict(seen)
+    assert seen[0x20] == 1, dict(seen)
+    assert seen[0x80] == 2, dict(seen)
+    # ...and one shape this walk does not recognise, reported as unread
+    assert seen[0] == 1, dict(seen)
+
+
+@needs_corpus
+def test_the_gate_never_collides_with_a_bit_effects_already_reads():
+    """Bit $01 is a drum in Warhawk's dialect and a wave program here. If one
+    file did both, `--effects` would fabricate a drum where the player runs a
+    program."""
+    if not CORPUS.is_dir():
+        return
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+        except Exception:                              # noqa: BLE001
+            continue
+        if det.wave_program < 0 or not det.wave_program_gate:
+            continue
+        if det.wave_program_gate == 0x01:
+            assert not det.effect_drum, path.name
+        if det.wave_program_gate == 0x04:
+            assert not det.effect_arp, path.name
 
 
 def test_nothing_emits_it_yet():

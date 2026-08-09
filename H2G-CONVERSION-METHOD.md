@@ -2800,20 +2800,57 @@ register allocation.** The exact signature was not wrong, it was 29 times too
 specific, and a conclusion — "one file, not worth the work" — was drawn from it
 before the looser check took two minutes.
 
-#### What is not read, and why nothing is emitted
+#### The gating bit, and an under-anchored scan that looked like a wrong match
 
-The **gating bit**. Trans-Atlantic gates on effect bit `$08`, ACE II on bit
-`$80` with `BPL`, and a backward scan for the nearest `AND #$xx / BEQ` returns
-`$01` for 21 of the 29 — which is the *drum* bit in the other dialect, so the
-scan is picking up an unrelated test. Emitting on a guessed gate would invent a
-program for every record carrying whichever bit was wrong.
+A first attempt swept 40 bytes back from the *fetch* for any `AND #$xx / BEQ`,
+returned `$01` for most files, and was dismissed — `$01` is the *drum* bit in
+Warhawk's dialect, so it looked like the scan had found an unrelated test. It had
+not. It was **under-anchored**, and `$01` really is the gate. The test sits
+immediately above the pointer load, and that is the anchor it needs:
 
-So `find_wave_program` locates the pointer array (29 of 29, anchored on the
-zero-page pointer the fetch dereferences being the one the array is loaded into)
-and `decode_wave_program` decodes the opcodes, and `goatwriter` consumes
-neither. `tests/test_wave_program.py` pins that it stays that way until the gate
-is read — the same discipline the two-stage attack was held to before v0.5.179,
-and this time it is a deliberate stop rather than an oversight.
+```
+0B44  AD FB 0E  LDA effect      ; Trans-Atlantic: bit $08
+0B47  29 08     AND #$08
+0B49  F0 51     BEQ skip
+0B4B  8E A2 0D  STX save
+0B4E  B9 6B 11  LDA ptrs,Y      ; <- the anchor
+
+E3D2  AD 7B E5  LDA effect      ; ACE II: bit $80, tested by sign
+E3D5  10 51     BPL skip
+```
+
+| gate | how tested | files |
+|---|---|---:|
+| `$01` | `AND #$01 / BEQ` | 22 |
+| `$08` | `AND #$08 / BEQ` | 3 |
+| `$20` | `AND #$20 / BEQ` | 1 |
+| `$80` | `BPL` — by sign | 2 |
+| unread | shape not recognised | 1 |
+
+**So in 22 of these players effect bit `$01` selects a wave program, where in
+Warhawk's dialect the same bit means a drum.** That is the fourth independent
+reading of `+7` this section has had to record, and the check that matters is
+whether the two ever coincide: they do not, in any corpus file, so nothing
+`--effects` reads is fabricating a drum over a program. In 18 of the 29 the cell
+the branch tests is *independently* known to be the effect byte, which is what
+makes it the instrument's own flag; the other 11 are files whose effect cell
+detection cannot locate at all, so the gate is read but not corroborated.
+
+The dismissal is the part worth keeping. A plausible-looking number from a
+loose probe was written off as a false match because it collided with something
+known, when the collision was the finding. **Tighten the anchor before
+discarding the reading** — the loose scan and the tight one differ by one
+instruction's worth of context and by 22 files.
+
+#### Still not emitted
+
+`find_wave_program` returns the pointer array and the gate; `decode_wave_program`
+decodes the opcodes; `goatwriter` consumes neither, and
+`tests/test_wave_program.py` pins that. What remains before emission is the
+encoding itself: the `≥ $80` form maps onto a wavetable entry with an absolute
+note, but the `< $80` form is a 16-bit frequency *step* and Goattracker's
+wavetable can only issue a portamento through a speed-table index — two entries
+per step, plus a speed-table entry each, in a table capped at 255 rows.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

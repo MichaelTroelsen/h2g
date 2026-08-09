@@ -143,11 +143,14 @@ class Detection:
     # File offset of the "program" shape's per-instrument pointer array (two
     # bytes per record, strided like the instrument table), or -1.
     effect_program: int = -1
-    # File offset of the byte-code wave program's pointer array -- see
-    # find_wave_program(). Found in 29 of the 95 corpus files, which makes it
-    # the most widespread instrument mechanism still unemitted. Read only: the
-    # gating bit is not resolved, so nothing consumes this yet.
+    # The byte-code wave program -- see find_wave_program(). Found in 29 of the
+    # 95 corpus files, which makes it the most widespread instrument mechanism
+    # still unemitted. `wave_program` is the file offset of the per-instrument
+    # pointer array; `wave_program_gate` is the effect-byte bit that selects it,
+    # 0 where the shape was not recognised. Read only -- goatwriter consumes
+    # neither yet.
     wave_program: int = -1
+    wave_program_gate: int = 0
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -952,11 +955,13 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         log("Instrument effect byte..: bit $80 steps the frequency from a "
             "duration/delta table (read, not written)")
 
-    det.wave_program = find_wave_program(sid)
+    det.wave_program, det.wave_program_gate = find_wave_program(sid)
     if det.wave_program >= 0:
+        where = (f"effect bit ${det.wave_program_gate:02X}"
+                 if det.wave_program_gate else "an unrecognised gate")
         log(f"Instrument wave program.: byte-code, pointers at file "
-            f"+0x{det.wave_program:04X} (read, not written -- the gating bit "
-            f"is not resolved)")
+            f"+0x{det.wave_program:04X}, selected by {where} "
+            f"(read, not written)")
 
     det.freq_table = find_freq_table(sid)
     if det.freq_table is not None:
@@ -1934,36 +1939,71 @@ def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
 # bytes are literally "noise at $30xx", which is the 43 onsets the trace shows
 # on voice 2 and which no conversion has ever emitted.
 #
-# What is NOT read here is the gating bit. Trans-Atlantic gates on effect bit
-# $08 and ACE II on bit $80 with `BPL`, and a backward scan for the nearest
-# `AND #$xx / BEQ` picks up whatever other test happens to sit above -- $01 in
-# 21 of the 29, which is the *drum* bit in the other dialect. So the pointer
-# array is located and the decision of which instruments run a program is left
-# to whoever emits it. Landing half a reading beats guessing the other half.
+# The gating bit is the test *immediately* above the pointer load, and reading
+# it needs that anchor. A first attempt scanned 40 bytes back from the fetch for
+# any `AND #$xx / BEQ` and returned $01 for 21 of the 29 files, which looked
+# like the drum bit in the other dialect and was dismissed as a wrong match. It
+# was not wrong -- it was under-anchored, and $01 really is the gate in 13 of
+# them. In *these* players effect bit $01 selects a wave program, where in
+# Warhawk's dialect it means a drum; no file does both, so nothing `--effects`
+# reads collides with it.
+#
+#     0B44  AD FB 0E  LDA effect      ; Trans-Atlantic: bit $08
+#     0B47  29 08     AND #$08
+#     0B49  F0 51     BEQ skip
+#     0B4B  8E A2 0D  STX save
+#     0B4E  B9 6B 11  LDA ptrs,Y      ; <- the anchor
+#
+#     E3D2  AD 7B E5  LDA effect      ; ACE II: bit $80, tested by sign
+#     E3D5  10 51     BPL skip
+#
+# Read across the corpus: $01 in 13 files, $80 in 2 (ACE II and Monty, via
+# `BPL`), $08 in 2, $20 in 1, and one shape (Mega Apocalypse) this walk does not
+# recognise. Where detection independently knows the effect-byte cell -- 18 of
+# the 29 -- the operand the branch tests is that same cell, which is what makes
+# this the instrument's own flag rather than some other state.
 WAVE_PROGRAM_FETCH = "B1 ?? 10 ?? C9 85 D0 03"
 WAVE_PROGRAM_HOLD = 0x85
+_WAVE_PROGRAM_SIGN_BRANCH = (0x10, 0x30)     # BPL / BMI -- the bit is $80
+_WAVE_PROGRAM_BRANCH = (0x10, 0x30, 0xD0, 0xF0)
 
 
-def find_wave_program(sid: SidFile) -> int:
-    """File offset of the byte-code program's pointer array, or -1.
+def find_wave_program(sid: SidFile) -> tuple[int, int]:
+    """(pointer-array offset, gating bit) for the byte-code program, or (-1, 0).
 
     Anchored on the fetch rather than on any one player's operands: the
     zero-page pointer the fetch dereferences must be the same one the array is
-    loaded into, which is what ties the two together across 27 of the 29 files
-    that carry the interpreter.
+    loaded into, which is what ties the two together across 29 of 29 files that
+    carry the interpreter. The gate is then the branch immediately above that
+    load, and 0 where this walk does not recognise the shape -- an unread gate
+    is reported as unread, never guessed, because emitting on a wrong bit would
+    invent a program for every record carrying it.
     """
     off = search_file(sid.data, WAVE_PROGRAM_FETCH)
     if off < 0:
-        return -1
+        return -1, 0
     d = sid.data
     zp = d[off + 1]
+    site = -1
     for k in range(max(0, off - 40), off):
         if (d[k] == 0xB9 and k + 4 < len(d)
                 and d[k + 3] == 0x85 and d[k + 4] == zp):
-            at = sid.to_offset(d[k + 1] | (d[k + 2] << 8))
-            if at >= 0:
-                return at
-    return -1
+            site = k
+    if site < 0:
+        return -1, 0
+    at = sid.to_offset(d[site + 1] | (d[site + 2] << 8))
+    if at < 0:
+        return -1, 0
+    # ...past the `STX save` the block opens with, then the branch.
+    p = site - 3
+    gate = 0
+    if p >= 5 and d[p - 2] in _WAVE_PROGRAM_BRANCH:
+        q = p - 2
+        if d[q - 2] == 0x29:                 # AND #bit
+            gate = d[q - 1]
+        elif d[p - 2] in _WAVE_PROGRAM_SIGN_BRANCH:
+            gate = 0x80
+    return at, gate
 
 
 def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
