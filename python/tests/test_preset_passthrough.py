@@ -183,3 +183,21 @@ def test_restored_noise_has_to_land_closer_than_none_at_all():
     assert presets.fidelity_better((0.80, 0.75, 600, (40, 41, 0x3800, 0x3800)), ref)
     assert not presets.fidelity_better((0.80, 0.75, 600, (82, 41, 0x3800, 0x3800)), ref)
     assert not presets.fidelity_better((0.80, 0.75, 600, (83, 41, 0x3800, 0x3800)), ref)
+
+
+def test_a_listening_veto_names_a_real_option_and_a_real_file():
+    """The search scores registers; a veto is where someone heard the result
+    and it was wrong. A stale key here would silently stop vetoing."""
+    for name, keys in presets.FIDELITY_VETOED.items():
+        assert name.endswith(".sid"), name
+        assert keys <= set(presets.FIDELITY_TOGGLES), (name, keys)
+
+
+def test_the_shipped_presets_honour_every_veto():
+    doc = json.loads(PRESETS.read_text(encoding="utf-8"))
+    for name, keys in presets.FIDELITY_VETOED.items():
+        entry = (doc.get("songs") or {}).get(name, {})
+        for key in keys:
+            assert not entry.get(key), (
+                f"{name} still carries {key}, which a listening test rejected "
+                "-- regenerate presets.json")

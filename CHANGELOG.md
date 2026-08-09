@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.183 — 2026-08-09
+
+- veto --sfx-drum on Trans-Atlantic; a listening test overruled it
+
 ## 0.5.182 — 2026-08-09
 
 - emit the bit-$80 drum at its own pitch

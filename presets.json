@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.182 presets.py",
+  "generator": "h2g 0.5.183 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -797,8 +797,7 @@
       "subtunes": 1,
       "rows": 12899,
       "multiplier": 1,
-      "two_stage": true,
-      "sfx_drum": true
+      "two_stage": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

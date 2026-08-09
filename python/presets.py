@@ -115,6 +115,23 @@ EXCLUDED_FROM_ALWAYS = {
 }
 
 
+# Settings a *listening test* rejected, whatever the search measured. The
+# search scores registers; this is where someone heard the result and it was
+# wrong. Keyed per file because that is how they are found, and kept here
+# rather than hand-edited into presets.json, which is generated and would lose
+# the edit on the next run -- along with the reason.
+FIDELITY_VETOED: dict[str, set[str]] = {
+    # --sfx-drum puts the bit-$80 hit at the pitch the player uses and `wave`
+    # rises 61.1% -> 62.4% for it, but it is heard as a beep and not a drum.
+    # The snare this file is actually missing is GT 3's byte-code program
+    # (effect bit $08, pointers at $116B, first two bytes `81 30` = noise at
+    # $30xx), which nothing reads yet. Adding a wrong drum while the right one
+    # is absent makes the tune worse rather than closer, and no column in the
+    # report can see the difference.
+    "Trans-Atlantic_Balloon_Challenge.sid": {"sfx_drum"},
+}
+
+
 def _parse(blob: bytes, ntables: int = 4):
     """Tracks and patterns out of a .sng, for scoring."""
     pos = 4 + 32 * 3
@@ -455,6 +472,10 @@ def main(argv=None) -> int:
                           file=sys.stderr)
             elif path.name in carried:
                 found.update(carried[path.name])
+            for key in FIDELITY_VETOED.get(path.name, ()):
+                if found.pop(key, None):
+                    print(f"    {path.name}: {key} vetoed by a listening test",
+                          file=sys.stderr)
             songs[path.name] = found
         print(f"  {path.name:44} {'-' if not found else found['max_rows']}",
               file=sys.stderr)

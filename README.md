@@ -989,9 +989,19 @@ measured, that took Trans-Atlantic's melody from 94.7% to **50.4%**. Opening on
 the note keeps both: melody 94.7%, `wave` 61.1% → 62.4%, and the median noise
 pitch moves from an inaudible `$0685` to `$3744` against the original's `$302B`.
 
-Off by default and selected per song by `presets.py --fidelity`; four files take
-it — Bangkok Knights, Pandora, Thundercats and Trans-Atlantic, the last
-alongside `--two-stage`.
+Off by default and selected per song by `presets.py --fidelity`. Three files
+take it — Bangkok Knights, Pandora and Thundercats.
+
+**Trans-Atlantic was selected and then vetoed by a listening test**, which is
+what `presets.FIDELITY_VETOED` is for. `wave` rose for it and the pitch matched,
+and it was still heard as a beep rather than a drum. The snare that file is
+actually missing is GT 3's **byte-code wave program** — effect bit `$08`,
+pointers at `$116B`, and its first two bytes are `81 30`, "noise at `$30xx`" —
+which nothing reads yet. Adding a wrong drum while the right one is absent makes
+the tune worse, and no column in the report can see the difference. Vetoes live
+in `presets.py` rather than hand-edited into the generated `presets.json`, so the
+reason survives the next regeneration; `tests/test_preset_passthrough.py` fails
+if a shipped preset still carries one.
 
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
