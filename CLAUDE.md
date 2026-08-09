@@ -42,7 +42,19 @@ test dependency).
 
 - Run: `python -m h2g <input.sid> [-o output.sng] [-q]` (from `python/`). From the
   repo root, `.\convert.ps1` wraps the same thing and `.\play.ps1` also opens the
-  result in GoatTracker. Output-shaping flags are documented in README.md;
+  result in GoatTracker.
+- **Open a song for listening with `.\play.ps1 -Presets presets.json`, never by
+  launching `goattrk2.exe` yourself.** 37 of the 82 measured files advance a row
+  every 2-3 frames, and the editor calls the player once a frame, so a bare
+  launch plays them at 1/multiplier speed. The `.sng` cannot encode the rate —
+  Goattracker's fastest steady row is 3 calls (`TEMPO_FASTEST_STEADY`) — but the
+  *editor* can be set to it with **SHIFT+F6**, and `play.ps1` reads the song's
+  multiplier and prints how many presses. Bypassing it in v0.5.177 produced a
+  half-speed audition of Last_V8, a listening verdict that reversed the
+  measurement, and a `vsid` re-test that reversed it back: at speed, the
+  187-note version is right and the 71-note one is not. A packed `.sid` played
+  in `vsid` is the other correct way, and the only one for a `.sng` you cannot
+  set the multiplier on. Output-shaping flags are documented in README.md;
   `python -m h2g --help` is the authoritative list — don't restate it here, it
   drifts.
 - **Opening output in GoatTracker requires `--format gts5`.** GoatTracker's legacy

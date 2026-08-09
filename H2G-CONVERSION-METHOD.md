@@ -2604,6 +2604,22 @@ playing less**, which is why it does not veto. Half the notes missing is the
 worse fault. The five invented pitches are still real, and only a listen settles
 that.
 
+**Last_V8 was then auditioned, and the audition itself needed a second go.**
+Opened in GoatTracker it played at half speed — the editor calls the player once
+a frame and this tune advances a row every two — and at half speed the two
+settings were hard to tell apart, so the listening verdict came back for the
+*subset*. Re-tested at true speed as packed `-S2` `.sid` files, the 187-note
+version is plainly the right one. The counts say why: voice 2 carries 188 notes
+in the original, **71** with the option off and **187** with it on, and even the
+missing bass notes the listener reported are worse without it (3 of the
+original's 10 upper-register notes against 9).
+
+The editor could have played it correctly all along — **SHIFT+F6** sets the
+call-rate multiplier, and `play.ps1` reads the song's multiplier and prints how
+many presses. Launching `goattrk2.exe` directly skipped that. The rule is in
+CLAUDE.md now: a listening test at the wrong rate is not weak evidence, it is
+evidence for the wrong conclusion.
+
 The guard is `melody` (what is played, in order), `sequence` (uncollapsed, so a
 lost re-strike shows) and our own attack count. `FIDELITY_MARGIN` keeps difflib
 noise out. And because the fast structural search cannot see these options at
