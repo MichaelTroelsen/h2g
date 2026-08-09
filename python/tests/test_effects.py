@@ -30,7 +30,8 @@ from h2g.detect import (Detection, _effect_byte_address,
 from h2g.goatwriter import (DRUM_SPEED, FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
                             SPEED_NOTE_RELATIVE, WAVE_NOISE_GATEOFF,
                             WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
-                            _wavetable_entries)
+                            _drum_steps_safe, _note_freq, _wavetable_entries)
+from h2g.patterns import min_played_notes
 from h2g.sidfile import load_sid
 
 CORPUS = _CORPUS
@@ -49,12 +50,13 @@ class _FakeSid:
 
 
 def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
-             fmt=FORMAT_GTS5, speed_table=None, wave=0x41):
+             fmt=FORMAT_GTS5, speed_table=None, wave=0x41, multiplier=1,
+             min_notes=None):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_rise=rise, effect_arp=arp, effect_drum=drum)
     return _wavetable_entries(_FakeSid(effect_byte, wave), det, 0, effects,
                               fmt, speed_table if speed_table is not None
-                              else [])
+                              else [], multiplier, min_notes)
 
 
 # --- the fabricated octave arpeggio ----------------------------------------
@@ -203,6 +205,121 @@ def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
                        speed_table=table)
     assert table == [], "a GTS2 file stores no speed table"
     assert left[1] == 0x40 and left[2] == 0xFF
+
+
+# --- the sweep's depth ------------------------------------------------------
+#
+# The player sweeps for `W - 1` frames (section 7.ii); a wavetable command entry
+# fires exactly once and cannot be held or repeated (gplay.c:715-724), so depth
+# costs entries. The drum shape has room for two, and the second is written only
+# where it provably cannot wrap.
+
+def test_a_second_sweep_step_is_written_when_the_lowest_note_allows_it():
+    # Record 0 is Goattracker instrument 2. Note index 12 is 558 units, which
+    # clears two 256-unit steps with room to spare.
+    table = []
+    left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                           speed_table=table, min_notes={2: 12})
+    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1)
+    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1), "the second step"
+    assert left[4] == 0xFF and right[4] == 0x00, "the stop moves to entry 4"
+    assert table == [DRUM_SPEED], "both steps share the one speed entry"
+
+
+def test_the_second_step_is_refused_when_the_note_could_underflow():
+    """CMD_PORTADOWN has no floor, so depth is only safe where it is provable.
+
+    Section 7.oo reverted an unbounded loop for exactly this: gplay.c:557-572
+    is `cptr->freq -= speed` on an unsigned 16-bit value, and Commando's own
+    content wrapped it. Note 11 is 526 units -- one step clears, two do not.
+    """
+    left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                           min_notes={2: 11})
+    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1), "one step still"
+    assert left[3] == 0xFF and right[3] == 0x00, "and then stop"
+
+
+def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
+    # No bound is not a high bound: an instrument no orderlist-reachable
+    # pattern plays has no entry in min_played_notes, and a caller that passes
+    # nothing at all must get exactly the bytes that shipped before deepening.
+    for bound in (None, {}, {3: 60}):      # {3: ...} is a different instrument
+        left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                               min_notes=bound)
+        assert left[3] == 0xFF and right[3] == 0x00
+
+
+def test_the_bound_is_read_against_the_scaled_step_not_the_constant():
+    """A rate is per frame; the table applies it per call (section 7.bb).
+
+    _drum_speed divides the 256-unit step by the multiplier, so at -S2 two
+    steps travel 256 units, not 512 -- and a note that cannot take two steps at
+    -S1 can take them at -S2. Reading the bound against the constant would
+    refuse the multispeed file that is in fact safe.
+    """
+    assert not _drum_steps_safe(2, 11, 1)
+    assert _drum_steps_safe(2, 11, 2)
+
+
+def test_note_freq_floors_so_the_bound_errs_safe():
+    # Goattracker's table rounds where this floors, so _note_freq is never above
+    # the real value -- the safe direction for a no-underflow test.
+    assert _note_freq(0) == 0x0117, "GT_FREQ0, the lowest note"
+    assert _note_freq(12) == 558, "one octave up, floored"
+    assert _note_freq(-4) == 0, "a transpose can take a note below the table"
+
+
+def test_min_played_notes_follows_a_sticky_instrument_column():
+    """A quarter of the corpus's note rows name no instrument.
+
+    They inherit whichever one a previous row last named, possibly in a previous
+    pattern, so a row before the first naming row in a pattern cannot be
+    attributed and must lower the bound for *every* instrument. Reading it onto
+    whatever the pattern names first is how a drum's own low note gets filed
+    elsewhere and the sweep deepened past what it can take.
+    """
+    N = 0x60
+    pat = [N + 3, 0, 0, 0] + [N + 40, 2, 0, 0]
+    tracks = [[0, 0xFF, 0x00]]
+    assert min_played_notes(tracks, [pat])[2] == 3, \
+        "the unattributable row lowers instrument 2's bound"
+
+    pat3 = [N + 30, 2, 0, 0] + [N + 40, 3, 0, 0]
+    assert min_played_notes(tracks, [pat3]) == {2: 30, 3: 40}, \
+        "each instrument keeps its own lowest note"
+
+
+def test_min_played_notes_applies_the_lowest_orderlist_transpose():
+    """gplay.c:977-981 sets cptr->trans; :927 adds it to every note.
+
+    A pattern played once at +0 and once at -12 sounds an octave lower the
+    second time, and the bound has to be the lower of the two or the sweep is
+    sized for a pitch the tune never plays that note at.
+    """
+    N = 0x60
+    pat = [N + 30, 2, 0, 0]
+    assert min_played_notes([[0, 0xFF, 0x00]], [pat])[2] == 30
+    # 0xE4 - TRANSUP($F0) == -12
+    assert min_played_notes([[0xE4, 0, 0xFF, 0x00]], [pat])[2] == 18
+    assert min_played_notes([[0, 0xE4, 0, 0xFF, 0x00]], [pat])[2] == 18, \
+        "the lowest transpose wins, not the last one"
+
+
+def test_min_played_notes_ignores_a_pattern_no_orderlist_reaches():
+    # An unreferenced pattern cannot lower a bound, because it never plays.
+    N = 0x60
+    got = min_played_notes([[0, 0xFF, 0x00]],
+                           [[N + 40, 2, 0, 0], [N + 1, 2, 0, 0]])
+    assert got[2] == 40
+
+
+def test_min_played_notes_reads_a_restart_operand_as_a_position():
+    # $FF's operand is a restart *position*, not a pattern number -- counting it
+    # as one would attribute another pattern's notes to this instrument.
+    N = 0x60
+    got = min_played_notes([[0, 0xFF, 0x01]],
+                           [[N + 40, 2, 0, 0], [N + 1, 2, 0, 0]])
+    assert got[2] == 40, "the restart position is not a reference to pattern 1"
 
 
 def test_an_arpeggio_keeps_the_pair_it_needs_over_the_deep_drum():

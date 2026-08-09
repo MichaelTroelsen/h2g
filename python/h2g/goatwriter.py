@@ -15,7 +15,7 @@ from typing import List, Optional, Tuple
 from .detect import (Detection, FILTER_ENABLE_BIT,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
                      VIBRATO_SHIFT_MASK)
-from .sidfile import SidFile
+from .sidfile import GT_FREQ0, SidFile
 
 HEADER_LEN = 0x64
 FIELD_LEN = 0x20
@@ -128,6 +128,50 @@ def _drum_speed(multiplier: int = 1) -> tuple:
 # The multiplier-1 value, kept as a name because the wavetable tests and the
 # method doc both quote it.
 DRUM_SPEED = _drum_speed(1)
+
+
+# Units of headroom required above the exact no-underflow bound before a second
+# sweep step is written. _note_freq floors a formula where Goattracker's own
+# table rounds, so the two can disagree by a unit or two; 32 is far more than
+# that, and costs no corpus coverage (184 of 192 drum instruments still deepen).
+DRUM_DEEPEN_MARGIN = 32
+
+
+def _note_freq(note: int) -> int:
+    """Goattracker's `freqtbl` value for note index `note`, floored.
+
+    gplay.c:9-21 tabulates `GT_FREQ0 * 2**(n/12)` rounded. Flooring the formula
+    rather than transcribing the table keeps this *under* the real value, which
+    is the safe direction for a bound that decides whether a sweep can wrap.
+    """
+    if note < 0:
+        return 0
+    return int(GT_FREQ0 * (2.0 ** (note / 12.0)))
+
+
+def _drum_steps_safe(steps: int, min_note: Optional[int],
+                     multiplier: int = 1) -> bool:
+    """Can `steps` unconditional sweep steps never underflow this instrument?
+
+    `CMD_PORTADOWN` is `cptr->freq -= speed` on an unsigned 16-bit value with
+    no clamp anywhere (gplay.c:557-572), so a sweep deeper than the distance
+    from the note to zero wraps to a very high frequency and screeches -- which
+    is why section 7.oo reverted an unbounded jump-to-self loop after it did
+    exactly that on Commando. The player itself cannot: its own `LDA freqhi,X /
+    BEQ out` freezes at zero.
+
+    Goattracker's lowest note is only 279 (`GT_FREQ0`), so *no* step count above
+    one is safe for every note the format can express -- section 7.oo's reason
+    for stopping at one. It is safe for every note an instrument is actually
+    *played* at, though, and that is a property this converter can read off the
+    finished patterns (`patterns.min_played_notes`). A missing bound means
+    "unknown", so it declines rather than assuming.
+    """
+    if min_note is None:
+        return False
+    hi, lo = _drum_speed(multiplier)
+    step = (hi << 8) | lo
+    return _note_freq(min_note) - steps * step >= DRUM_DEEPEN_MARGIN
 
 
 # A wavetable left side of $01-$0F is a delay: the entry holds whatever
@@ -897,7 +941,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
 
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
-                       multiplier: int = 1) -> tuple:
+                       multiplier: int = 1,
+                       min_notes: Optional[dict] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -948,7 +993,11 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # keeps the pair it needs and such a record stays on the original's shape.
     # 62 of the 291 drum records this gate keeps are in that case.
     if drum and effects and not arp:
-        return _drum_entries(wave, fmt, speed_table, multiplier)
+        # min_played_notes is keyed by Goattracker instrument number, and this
+        # function's `i` is the 0-based record index: instrument 1 is the
+        # hardcoded Clear Voice, so record i is instrument i + 2.
+        lowest = None if min_notes is None else min_notes.get(i + 2)
+        return _drum_entries(wave, fmt, speed_table, multiplier, lowest)
 
     if drum:
         if effects:
@@ -1025,7 +1074,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
 
 def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
-                  multiplier: int = 1) -> tuple:
+                  multiplier: int = 1, min_note: Optional[int] = None) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1057,15 +1106,32 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     bends. See H2G-CONVERSION-METHOD.md section 7.ii. H2G's version was a single noise tick *first* and then the waveform,
     with no sweep at all.
 
-    Emitted here: attack, the gate-off waveform, one step of the sweep, stop.
-    The sweep is one entry rather than a loop because the player's is bounded
-    by a runtime counter and the table has three free slots (the fifth is the
-    stop); the step size is literal (see _drum_speed, which divides the
-    player's per-frame step by the -S multiplier) and the depth is not. All
-    five entries are in use, so unlike the plain shape this one has no slot for
-    a delay: its attack entry lasts one play call at every -S value. The
-    wave metric cannot see it either way -- it compares waveform class, and the
-    class does not change while the frequency falls.
+    Emitted here: attack, the gate-off waveform, one or two steps of the
+    sweep, stop. The step size is literal (see _drum_speed, which divides the
+    player's per-frame step by the -S multiplier); the depth is bounded by what
+    the wavetable can hold and by what cannot wrap.
+
+    **Why two and not `W - 1`.** A wavetable command entry executes exactly
+    once and then `ptr[WTBL]` advances unconditionally (gplay.c:715-724): the
+    delay branch is the `wave <= WAVELASTDELAY` *else* of the command branch,
+    so a command cannot be held or repeated, and N steps means N entries. This
+    layout gives each instrument exactly WAVE_ENTRIES_PER_INSTR of them
+    (`wave_ptr = i * 5 + ...`), of which the drum shape needs an attack, a
+    gate-off waveform and a stop -- leaving room for two. Depth past that is
+    not a floor problem but a *layout* one, and lifting it means variable-length
+    wavetables against a 255-entry budget: see H2G-CONVERSION-METHOD.md section
+    7.oo.
+
+    The second step is written only where `_drum_steps_safe` can prove it
+    cannot wrap for any note the instrument is played at -- 184 of the corpus's
+    192 drum instruments, across 40 files. The eight it declines are Last_V8's,
+    whose unattributable rows reach Goattracker's lowest note. The `wave`
+    metric cannot see any of this: it compares waveform class, and the class
+    does not change while the frequency falls.
+
+    All five entries are in use either way, so unlike the plain shape this one
+    has no slot for a delay: its attack entry lasts one play call at every -S
+    value, and only the sweep *rate* is scaled by the multiplier.
 
     **The noise ending is deliberately not written.** Emitting it as a fourth
     entry costs 2.4 points of corpus wave agreement (60.5% -> 58.1%) and takes
@@ -1083,6 +1149,10 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     index = _drum_speed_index(fmt, speed_table, multiplier)
     if index:
         left[2], right[2] = WAVECMD_PORTADOWN, index
+        # Entry 3 was a second stop the player could never reach past entry 2's,
+        # so deepening costs no slot: the stop stays at entry 4.
+        if _drum_steps_safe(2, min_note, multiplier):
+            left[3], right[3] = WAVECMD_PORTADOWN, index
     return left, right
 
 
@@ -1152,10 +1222,12 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      instr_used: int, effects: bool = False,
                      fmt: str = DEFAULT_FORMAT,
                      speed_table: List[tuple] | None = None,
-                     multiplier: int = 1) -> None:
+                     multiplier: int = 1,
+                     min_notes: Optional[dict] = None) -> None:
     n = max(instr_used - 1, 0)
     table = speed_table if speed_table is not None else []
-    entries = [_wavetable_entries(sid, det, i, effects, fmt, table, multiplier)
+    entries = [_wavetable_entries(sid, det, i, effects, fmt, table, multiplier,
+                                  min_notes)
                for i in range(n)]
 
     out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
@@ -1422,7 +1494,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               sustain_exact: bool = False,
               no_hard_restart: bool = False,
               filters: bool = False,
-              vibrato: bool = False) -> bytes:
+              vibrato: bool = False,
+              min_notes: Optional[dict] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -1458,7 +1531,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                table, log)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs)
-    _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier)
+    _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
+                     min_notes)
     _write_pulsetable(out, pulse_entries)
 
     if log:

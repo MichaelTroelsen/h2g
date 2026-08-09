@@ -1491,6 +1491,70 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
     return written
 
 
+def min_played_notes(tracks: List[List[int]],
+                     patterns: List[List[int]]) -> dict:
+    """Lowest note index each instrument is ever actually played at.
+
+    Two things stand between a pattern's note column and the pitch a voice
+    sounds, and a bound that ignores either is not safe to build on:
+
+    * **An orderlist transpose shifts every note in the patterns that follow
+      it** -- gplay.c:977-981 sets `cptr->trans` from a `$E0`-`$FE` orderlist
+      byte and gplay.c:927 adds it to the note. So a pattern's lowest note is
+      not its lowest *pitch*: its lowest pitch is that note under the lowest
+      transpose any orderlist position plays the pattern at.
+    * **The instrument column is sticky.** 15162 of the corpus's 61611 note
+      rows name no instrument and inherit whichever one a previous row -- in
+      this pattern or a previous one -- last named. Rows before the first
+      naming row in a pattern are therefore unattributable, and their note
+      has to lower the bound for *every* instrument rather than for one.
+      Attributing them to whatever the pattern happens to name first reads a
+      quarter of the corpus's notes onto the wrong instrument.
+
+    Returns `{goattracker instrument number: lowest note index}`, omitting an
+    instrument no orderlist-reachable pattern plays -- callers must treat a
+    missing key as "unknown", not as "high". Indices are relative to
+    `GT_FIRSTNOTE` and can be negative under a transpose.
+    """
+    lowest_trans: dict = {}
+    for track in tracks:
+        trans = 0
+        operand = False
+        for b in track:
+            if operand:
+                operand = False          # a restart position, not a pattern
+            elif b == GT_ORDER_RESTART:
+                operand = True
+            elif GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+                trans = b - GT_TRANSPOSE_UP
+            elif GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+                pass                     # repeat count, no operand
+            else:
+                lowest_trans[b] = min(trans, lowest_trans.get(b, trans))
+
+    out: dict = {}
+    unattributed = None
+    for index, pattern in enumerate(patterns):
+        if index not in lowest_trans:
+            continue                     # no orderlist reaches this pattern
+        shift = lowest_trans[index]
+        current = None
+        for row in range(len(pattern) // 4):
+            note, instr = pattern[4 * row], pattern[4 * row + 1]
+            if instr:
+                current = instr
+            if not GT_FIRSTNOTE <= note <= GT_LASTNOTE:
+                continue
+            n = note - GT_FIRSTNOTE + shift
+            if current is None:
+                unattributed = n if unattributed is None else min(unattributed, n)
+            else:
+                out[current] = min(n, out.get(current, n))
+    if unattributed is not None:
+        out = {k: min(v, unattributed) for k, v in out.items()}
+    return out
+
+
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
                    floor: int = GT_COMMAND_FLOOR,

@@ -3053,6 +3053,13 @@ held time, as Commando's very ordinary starting frequency (~44800, nowhere
 near the table floor) and unremarkable held duration (three seconds) just
 demonstrated.
 
+> **§ 7.tt corrects the paragraph above.** "Any note the instrument might be
+> triggered on" is not the same question as "any note the format can
+> express", and it is answerable from the finished patterns: measured across
+> the corpus, *every* drum instrument's lowest played note clears two steps.
+> The floor was never the binding constraint — the fixed five-entry
+> wavetable layout was. A bounded second step ships as of v0.5.146.
+
 Two structural facts close off the alternatives that would fix this properly:
 
 - **`CMD_TONEPORTA`** does clamp — `gplay.c:574-585`'s glide-to-target stops
@@ -3064,6 +3071,18 @@ Two structural facts close off the alternatives that would fix this properly:
   note to be threaded through `patterns.py`'s row construction rather than
   `goatwriter.py`'s per-instrument wavetable, and knowledge (a floor note to
   glide toward) this function does not have.
+
+  > **Wrong, and § 7.tt has the right reason.** `case CMD_TONEPORTA:` is at
+  > `gplay.c:574` — *inside* the wavetable switch, four lines past the
+  > `CMD_PORTADOWN` case this section cites. The switch was mis-bounded at
+  > 572, the line where `CMD_PORTADOWN`'s own block happens to close; it
+  > actually runs to ~692. The wavetable can execute `CMD_TONEPORTA`. What it
+  > cannot do is aim it: the target is `freqtbl[cptr->note]`, and the
+  > wavetable's note column sets `cptr->freq` and `cptr->lastnote` but
+  > **never `cptr->note`** (`gplay.c:717-726`), which only pattern-read time
+  > writes. So a wavetable `CMD_TONEPORTA` can only glide *toward* the note's
+  > own pitch, never below it — and below it is exactly where the drum goes.
+  > Same conclusion, different and checkable reason.
 - **The wavetable format has no bounded-repeat primitive.** A jump is
   unconditional and permanent; there is no "loop N times then continue."
   Bounding the *iteration count* independent of the *entry count* is not
@@ -3467,6 +3486,145 @@ both unaffected voices; the one remaining voice-1 difference is not new
 information, it is this file's existing, named, out-of-scope drum
 limitation showing up in a finer-grained comparison than the one that
 first found it.
+
+### 7.tt The drum sweep, half-closed: two steps bounded by proof rather than by luck
+
+§ 7.ii measured the drum as an under-render — the player sweeps for `W - 1`
+frames where this converter emitted one step — and § 7.oo tried the obvious
+loop, found it wrapped, and reverted it as a "structural dead end." Re-reading
+the player found **both of § 7.oo's stated blockers were wrong**, and one real
+one it never named.
+
+#### What § 7.oo got right
+
+The no-bounded-repeat claim is correct, and worth affirming because everything
+else here depends on it. A wavetable entry is a command *or* a delay, never
+both: `gplay.c:715-724` runs the delay branch as the `else` of
+`wave > WAVELASTDELAY`, and after either branch `cptr->ptr[WTBL]++` advances
+**unconditionally**. So a command entry fires exactly once and cannot be held,
+delayed or repeated. N steps costs N entries — there is no "repeat this one N
+times."
+
+#### Blocker 1, wrong: `CMD_TONEPORTA` *is* reachable from a wavetable
+
+§ 7.oo bounded the wavetable's command switch at `gplay.c:572` and concluded
+`CMD_TONEPORTA` sits outside it. 572 is where the `CMD_PORTADOWN` *case* closes;
+the switch runs on to ~692, and `case CMD_TONEPORTA:` is at **574**, four lines
+later. The wavetable can execute it.
+
+That does not rescue the drum, for a reason § 7.oo never reached: TONEPORTA's
+target is `freqtbl[cptr->note]`, and **the wavetable cannot move `cptr->note`.**
+Its note column writes `cptr->freq` and `cptr->lastnote` and leaves `cptr->note`
+alone (`gplay.c:717-726`); only pattern-read time sets it (`gplay.c:350`). So a
+wavetable TONEPORTA always glides *toward the note's own pitch* and clamps
+there — it can fall *into* a note from above, but never below it, and below it
+is where the drum sweep lives. Right conclusion, wrong reason, and the
+difference matters: the wrong reason invites "just use TONEPORTA from the
+wavetable," which now looks available and still is not the answer.
+
+#### Blocker 2, wrong: the floor was never the binding constraint
+
+§ 7.oo's arithmetic — Goattracker's lowest note is 279, the step is 256, so
+`279 - 256 = 23` leaves room for exactly one step — is sound about *any note the
+format can express*. But the clause that matters is its own: "any note the
+instrument **might be triggered on**," and that is a property of the finished
+patterns, which this converter is holding. Measured per instrument, over the
+lowest note each is actually played at:
+
+| | |
+|---|---:|
+| drum instruments played anywhere in the corpus | 192 |
+| whose lowest played note clears **two** 256-unit steps | **192** |
+| whose lowest played note clears eight (the whole `W - 1` range) | 180 |
+| median steps clearable | **16** |
+
+Not one drum instrument in the corpus is played anywhere near the table floor;
+the lowest is note index 18 (789 units, Spellbound). The floor is a real
+hazard — it is what wrapped Commando under an *unbounded* loop — but it never
+bounded a *fixed, small* count.
+
+#### The real blocker, which § 7.oo never named: the five-entry layout
+
+`WAVE_ENTRIES_PER_INSTR = 5`, and each instrument's wavetable pointer is
+arithmetic on its index (`wave_ptr = i * 5 + wtable_start`), so an instrument
+cannot have six entries without moving every later instrument's pointer. The
+drum shape spends its five on attack, gate-off waveform, one sweep step, and
+**two** stops — and the second stop is unreachable, because the first already
+ends the table. So the layout had exactly one spare slot all along, and depth
+past two needs variable-length wavetables against a 255-entry shared budget —
+which for a drum-heavy file (Rasputin has 10 drum instruments, `W_A_R` 156
+patterns' worth) cannot fund `W - 1` steps each regardless. **The under-render
+is bounded by table space, not by the floor.**
+
+#### What ships: a second step, where it is provably safe
+
+`_drum_steps_safe` writes the second `CMD_PORTADOWN` into the dead slot only
+where `_note_freq(lowest played note) - 2 * step >= 32`, with the step taken
+from `_drum_speed(multiplier)` rather than the 256 constant (§ 7.bb's rule: a
+rate read out of the player is per *frame*, the table applies it per *call*).
+An unknown bound is treated as unsafe, so a caller that supplies nothing gets
+exactly the bytes that shipped before — which is why every pre-existing test
+still passes unchanged.
+
+The bound comes from `patterns.min_played_notes`, and two properties of the
+data make it harder than "the lowest note in the pattern":
+
+- **An orderlist transpose shifts every note in the patterns after it**
+  (`gplay.c:977-981`, `:927`), so the bound is the lowest note under the
+  *lowest* transpose any position plays that pattern at.
+- **The instrument column is sticky.** 15162 of the corpus's 61611 note rows
+  name no instrument and inherit the last one named, possibly from a previous
+  pattern. Rows before the first naming row in a pattern are therefore
+  unattributable, and their note has to lower the bound for **every**
+  instrument. Filing them under whichever instrument the pattern happens to
+  name first is how a drum's own low note ends up on the wrong record and the
+  sweep gets deepened past what it can take. That case is what leaves
+  Last_V8's eight instruments at one step.
+
+Reach: **195 instruments across 42 files** take the second step, 24 stay at
+one. `Commando.sng` is untouched — the sweep needs GTS5 for its speed-table
+index and the fixture is GTS2, so `_drum_speed_index` returns 0 there and no
+sweep is written at all.
+
+#### Verified three ways, including the one that killed § 7.oo
+
+- **Analytically**, over all 83 convertible files: parsing every emitted
+  `.sng` back, every instrument carrying two steps clears the arithmetic, and
+  the stop is correctly at entry 4 in all 195. Zero violations.
+- **Empirically, the § 7.oo test**: pack and trace each of the 42 changed
+  files, scanning for a fall landing above `0xF000` with no gate retrigger —
+  the wraparound signature. Run on both arms, **0 files gained a wraparound.**
+  (Flash_Gordon shows 18 in *both* arms: pre-existing, not from this change,
+  and worth a look on its own.)
+- **In the trace, as a trajectory.** At `-S1` Bump_Set_Spike's single-step
+  frames go 111 → 222: the sweep runs two frames where it ran one. At `-S2`
+  every 128-unit frame becomes a 256-unit frame (Warhawk 15, Delta 25,
+  Last_V8_C128 124, with the 128-unit count going to zero) — both entries
+  fire inside one frame.
+
+That last row is the session's surprise, and it is a stronger result than
+"deeper". At `-S2` the old *single* entry swept 128 units per frame, because
+`_drum_speed` correctly divides the per-call step by the multiplier but one
+entry only ever fires on one call. So the shipped sweep ran at **half the
+player's per-frame rate** on every multispeed file. Two entries at `-S2` travel
+256 units in one frame — exactly the player's own `LDA freqhi,X / DEC freqhi,X`
+rate. The fix is a depth increase at `-S1` and a *rate correction* at `-S2`.
+
+#### What is still open, stated as a ratio
+
+The depth available is two **calls**; the player's is `W - 1` **frames**. So
+this closes `2 / (multiplier × (W - 1))` of the gap: exact for a 3-tick note at
+`-S1`, a quarter of an 9-tick note at `-S1`, and progressively less as the
+multiplier rises — `-S4` files (Flash_Gordon, `W_A_R`) get half a frame of
+player-equivalent sweep from their two entries. Closing the rest needs the
+variable-length wavetable and a budget policy described above, not a floor
+argument.
+
+**No dimension of `FIDELITY.md` can adjudicate any of this**, for two
+independent reasons: `wave` compares waveform *class* and the class does not
+change while the frequency falls, and siddump samples once per frame, so at
+`-S2` and above the two steps land inside one sample and cannot be separated
+at all. The reach above is a byte-hash and a register trajectory, not a score.
 
 ## 9. The `.sng` output layout
 

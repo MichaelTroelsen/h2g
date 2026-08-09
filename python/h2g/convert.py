@@ -10,7 +10,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, cmdtable_frames_per_row,
-                       pattern_references, phantom_patterns,
+                       min_played_notes, pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
@@ -350,9 +350,16 @@ def convert(sid_path: str, log: Logger = print,
         log(f"Per-call rates..........: {scaled} slide step(s), the drum sweep "
             f"and the rise divided by {multiplier} for the -S{multiplier} call "
             f"rate (siddump cannot see this, siddump.c:309/325)")
+    # Read after every stage that can move a note or an orderlist entry, and
+    # from the finished pair, because it is a *safety* bound: the drum sweep's
+    # depth is chosen from the lowest pitch each instrument actually plays, and
+    # a bound taken before splitting/packing/transpose-folding would describe
+    # patterns that are no longer the ones being written. See
+    # goatwriter._drum_steps_safe.
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
                      pulse=pulse, multiplier=multiplier,
                      sustain_exact=sustain_exact,
                      no_hard_restart=no_hard_restart,
-                     filters=filters, vibrato=vibrato)
+                     filters=filters, vibrato=vibrato,
+                     min_notes=min_played_notes(tracks, new_patterns))
