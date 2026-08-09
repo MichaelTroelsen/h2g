@@ -4332,6 +4332,104 @@ gives an implementer is everything except that mapping — the signature, the
 offset, the depth rule (`semitone >> (n+1)`, zero for large `n`), the period
 (8 calls), and a 25-file corpus to A/B over 60 s.
 
+### 7.bbb A listening session, and six metrics it overruled
+
+Everything above this point was measured. This section is what happened when
+the conversion was finally *played to a person* — Commando loaded into
+GoatTracker, variants built to isolate one change each. It found two defects no
+dimension of `FIDELITY.md` reports, corrected a diagnosis of mine, and settled
+a question the metrics had answered backwards.
+
+#### The click nobody could see: instrument 1
+
+The report was "instrument 01 sounds off". GT instrument 1 is not converted
+data at all — it is h2g's hardcoded Clear Voice placeholder, `AD $00 / SR $00`
+with a wavetable of `$09` (gate + **testbit**). The readme is unambiguous about
+what that makes: *"If all of them are zero just a very short click will be
+heard"* (readme:741) and testbit *"silences sound and resets the oscillator"*
+(readme:805).
+
+**12 rows of Commando played it, and 1422 rows across 64 corpus files.** The
+cause was `patterns.py:317`: an instrument change landing on a rest emitted a
+fake `C-0` on instrument 1, on the assumption that Goattracker cannot latch an
+instrument without a note. It can — `gplay.c:912-914` latches the column
+whenever it is non-zero, *before and independently of* the note test, so a
+`$BD` rest row carries the change and sounds nothing. Worse, `g_instrument`
+already persists across rows, so the rest would have carried it anyway: the
+block converted a silent latch into a click **and a retrigger of whatever was
+sounding**. Fixed behind `--rest-instrument` (v0.5.159), gated because it moves
+the byte-exact fixture — which is the anchor doing its job, since the VB6
+original is what emitted the placeholder.
+
+#### The drum sweep, and a diagnosis of mine that was wrong
+
+The second report was "the tuning of instrument 3 is off". The frequency tables
+were checked first and are correct — Commando's own table against Goattracker's
+agrees to within one unit across the range, the 6-cent detune `find_freq_table`
+already reports. So not a note-mapping fault, and consistent with the complaint
+naming *one* instrument.
+
+Instrument 3 is drum-flagged (`effect $05`) and so carries `_drum_entries`:
+two `CMD_PORTADOWN` steps and then a stop. **512 units of fall, and then the
+wavetable halts and the pitch simply sits there** for the rest of the note,
+where the player keeps stepping until its own guard freezes it near zero. A
+drum holding a definite wrong pitch is exactly what "out of tune" sounds like.
+
+A variant with the sweep suppressed was **"much better"**, and I read that as
+"the sweep does not belong on a tonal record" — reasoning from § 7.ii's finding
+that the player's drum condition is a single cross-voice cell that no
+per-instrument wavetable can encode. **That reading was wrong**, and the
+correction came from the next listen: the instrument is a **tom** — a *pitched*
+drum, tone and whoop together — and with the sweep restored it is *closer*, not
+further. The record's own waveform confirms it (`$41` pulse, `$15` triangle on
+its siblings; `_drum_entries` correctly uses the voice's waveform gate-released
+rather than noise).
+
+So the sweep belongs. What is wrong is only its depth, which is § 7.ii's
+under-render exactly: the player falls 256 units a frame for `W-1` frames —
+several octaves, down to inaudibility — against our two steps.
+
+#### What this means for v0.5.146, and where the ceiling actually is
+
+**v0.5.146 was directionally right and its metric said the opposite.** The
+travel measure called the deepening "away from the original on 18 of 24 files";
+the ear calls two steps closer than none. Deeper is better, and the shipped
+change took the last slot available:
+
+```
+entry 0  attack waveform
+entry 1  gate-off waveform
+entry 2  CMD_PORTADOWN
+entry 3  CMD_PORTADOWN     <- v0.5.146; the last free slot
+entry 4  $FF stop          <- required: without it execution runs on
+                              into the next instrument's wavetable
+```
+
+All five of `WAVE_ENTRIES_PER_INSTR` are in use, so **no further depth is
+reachable in this layout at all** — confirming § 7.tt's identification of the
+fixed five-entry allocation, not the underflow floor, as the real blocker.
+
+A full whoop needs roughly eight steps, and both halves of that already exist:
+the variable-length wavetable § 7.tt specified and deferred, and the
+per-instrument safety bound `_drum_steps_safe` already computes (median 16
+steps clearable, **180 of 194 instruments clear 8**). The one open design
+question — whether the tom should fall to silence or land on a pitch — was put
+to the listener and answered: **all the way to silence**, which is what the
+player's own `freqhi == 0` guard produces.
+
+> **Six measurements overruled in one session.** `slides` and `bend` inverted a
+> step-size change (§ 7.ww); a travel metric counted ties as modulation
+> (§ 7.xx); the same metric read the drum deepening and the triangle vibrato as
+> regressions when both are improvements; a 20-second window reported three
+> files as unaffected that a 60-second window shows moving (§ 7.zz); and the
+> vibrato mapping my own harness rejected was called "very close" by ear. The
+> pattern is not that the metrics are useless — several caught real defects
+> nothing else would have. It is that **every one of them is blind to the
+> difference between a wrong pitch and a right one at the wrong moment**, and
+> that a listener resolves in seconds what a register trace argues about for
+> versions. This project should have played its output to someone far earlier
+> than it did.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:

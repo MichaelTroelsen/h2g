@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.160 — 2026-08-09
+
+- record the listening session: the instrument-1 click, the tom, and six overruled metrics
+
 ## 0.5.159 — 2026-08-09
 
 - carry an instrument change on a rest instead of a click on the Clear Voice
