@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.167 — 2026-08-09
+
+- add HUBBARD-PLAYER-REFERENCE.md from C=Hacking 5
+
 ## 0.5.166 — 2026-08-09
 
 - restore the drum's two-frame noise tick, measured off the original
