@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.162 — 2026-08-09
+
+- put the drum sweep only on records whose envelope decays
+
 ## 0.5.161 — 2026-08-09
 
 - drop the wasted Clear Voice slot behind --compact-instruments

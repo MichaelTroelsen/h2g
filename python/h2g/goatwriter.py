@@ -1120,7 +1120,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # function's `i` is the 0-based record index: instrument 1 is the
         # hardcoded Clear Voice, so record i is instrument i + 2.
         lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
-        return _drum_entries(wave, fmt, speed_table, multiplier, lowest)
+        return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
+                             sustain=data[base + 4] >> 4)
 
     if drum:
         if effects:
@@ -1198,7 +1199,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
 
 def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
-                  multiplier: int = 1, min_note: Optional[int] = None) -> tuple:
+                  multiplier: int = 1, min_note: Optional[int] = None,
+                  sustain: int = 0) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1271,7 +1273,18 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF, 0xFF, 0xFF, 0xFF]
     right = [0x00, 0x00, 0x00, 0x00, 0x00]
     index = _drum_speed_index(fmt, speed_table, multiplier)
-    if index:
+    # The sweep goes only on a record whose envelope actually decays. The
+    # player's own gate is a single cross-voice cell written at note-start
+    # (section 7.ii), which no per-instrument wavetable can encode, so *some*
+    # approximation is forced -- and "every record carrying the bit" is a bad
+    # one. A sustain of 0 falls to silence: a hit, where a downward sweep is
+    # the whoop of a tom or a kick. A record that sustains is a held tone, and
+    # sweeping it does not decorate the note, it detunes it for the note's
+    # whole length and then holds the wrong pitch. Found by ear: a listener
+    # picked out one sustaining record (Commando's, sustain 4) as "out of
+    # tune", and suppressing its sweep as "much better". 60 of the corpus's
+    # 284 drum-flagged records sustain; the other 224 keep the sweep.
+    if index and not sustain:
         left[2], right[2] = WAVECMD_PORTADOWN, index
         # Entry 3 was a second stop the player could never reach past entry 2's,
         # so deepening costs no slot: the stop stays at entry 4.
