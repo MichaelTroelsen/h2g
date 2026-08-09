@@ -229,6 +229,18 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--two-stage", action="store_true",
+        help="write the attack waveform this player's effect bit $04 selects. "
+             "In 34 corpus files bit $04 is not an arpeggio but a second "
+             "waveform held for a per-instrument number of frames before the "
+             "record's own +2 (detect._find_two_stage). Detection has read it "
+             "since v0.5.66 and the writer ignored it, so those files played "
+             "the second stage from frame one -- and a record whose +2 is $00 "
+             "was silent altogether. Off by default: measured over the corpus "
+             "it costs 0.6 points of mean wave agreement, and it is right only "
+             "where the original sounds noise the conversion has none of. "
+             "presets.py --fidelity selects it per song")
+    parser.add_argument(
         "--no-test-restart", action="store_true",
         help="stop silencing the oscillator on every note's first frame. Each "
              "instrument's first-frame waveform has always been $09 -- testbit "
@@ -301,6 +313,7 @@ def main(argv=None) -> int:
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
+                          ("--two-stage", "two_stage"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -364,6 +377,7 @@ def main(argv=None) -> int:
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
                       no_test_restart=args.no_test_restart,
+                      two_stage=args.two_stage,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

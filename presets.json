@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.178 presets.py",
+  "generator": "h2g 0.5.179 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -40,7 +40,8 @@
       "bytes": 13509,
       "subtunes": 1,
       "rows": 18009,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -572,7 +573,8 @@
       "bytes": 10941,
       "subtunes": 1,
       "rows": 5695,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -782,7 +784,8 @@
       "bytes": 15614,
       "subtunes": 9,
       "rows": 47471,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -793,7 +796,7 @@
       "subtunes": 1,
       "rows": 12899,
       "multiplier": 1,
-      "no_test_restart": true
+      "two_stage": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

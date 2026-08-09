@@ -96,6 +96,16 @@ EXCLUDED_FROM_ALWAYS = {
     # (Last_V8 both rips, Trans-Atlantic_Balloon_Challenge), which is why the
     # option exists rather than the finding being a comment.
     "no_test_restart",
+    # Also measured and rejected as a default, twice: the first attempt (before
+    # v0.5.66's variable-length wavetable) cost 82 points of wave agreement
+    # across 18 files, and re-measuring under v0.5.175's aligned harness -- the
+    # obvious suspect, since a 1-4 frame transient is exactly what a 3-8 frame
+    # misalignment destroys -- reproduced it at -0.6pp mean, Tarzan -14. But it
+    # is the only thing that puts the drums back in the files whose effect byte
+    # uses this dialect: Trans-Atlantic sounds 0 noise frames against the
+    # original's 1089 without it and 928 with it, at exactly the original's
+    # onset counts. Per song, on the noise criterion in fidelity_better.
+    "two_stage",
 }
 
 
@@ -214,7 +224,7 @@ def best_options(sid_path: Path) -> dict | None:
 # would tie every time and silently pick the default. They can only be chosen by
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
-FIDELITY_TOGGLES = ("no_test_restart",)
+FIDELITY_TOGGLES = ("no_test_restart", "two_stage")
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the
@@ -225,18 +235,46 @@ FIDELITY_MARGIN = 0.02
 
 def fidelity_better(cand: tuple, ref: tuple,
                     margin: float = FIDELITY_MARGIN) -> bool:
-    """Is `cand` a better-playing (melody, sequence, attacks) than `ref`?
+    """Is `cand` a better-playing (melody, sequence, attacks, noise) than `ref`?
 
-    Three conditions, and the last two are the lesson of section 7.eee rather
-    than belt and braces. The candidate this search exists for reached `wave`
-    99.5% on Commando by deleting 79 notes: a per-frame agreement rewards losing
-    the events it scores. `melody` collapses consecutive repeats, so it cannot
-    see a re-struck note lost either -- only `sequence` and the raw attack count
-    can. A setting must gain on what is played *and* drop no note to win.
+    Two ways to win, and both are one-sided questions rather than agreement
+    percentages.
+
+    **Plays more of the tune.** A gain on `melody` of at least `margin`, with
+    `sequence` and the raw attack count not falling. The last two are the lesson
+    of section 7.eee rather than belt and braces: the candidate this search was
+    first built for reached `wave` 99.5% on Commando by deleting 79 notes,
+    because a per-frame agreement rewards losing the events it scores, and
+    `melody` collapses consecutive repeats so it cannot see a re-struck note
+    lost either.
+
+    **Sounds a register the original sounds and we do not.** `noise` is
+    (ours, theirs) frames of noise. A conversion with *none* where the original
+    has some is missing its drums outright -- Trans-Atlantic sounds 0 frames
+    against 1089 -- and no agreement percentage can say that, because there is
+    nothing on our side to disagree with. Restoring it must still not cost
+    notes, so the melody and sequence guards apply unchanged; it simply does not
+    have to *gain* on them.
+
+    Deliberately not scored on `wave`. Restoring a 1-4 frame transient moves it
+    the wrong way even when the transient is right -- section 7.eee again, and
+    measured: the two-stage attack gives Trans-Atlantic its 250 missing noise
+    onsets at exactly the original's counts and takes `wave` from 71% to 65%.
     """
-    return (cand[0] >= ref[0] + margin
-            and cand[1] >= ref[1]
-            and cand[2] >= ref[2])
+    plays_more = cand[0] >= ref[0] + margin
+    keeps_notes = (cand[1] >= ref[1] - margin
+                   and cand[2] >= ref[2]
+                   and cand[0] >= ref[0] - margin)
+    # "Closer to the original than none at all", which is what restoring a
+    # register has to mean: |ours - theirs| < |0 - theirs|. Not a fitted
+    # threshold -- it is the statement that the quantity moved towards the
+    # target rather than merely away from zero. Without it the criterion had no
+    # upper bound and took Sigma Seven, whose two-stage attack sounds 82 noise
+    # frames where the original sounds 41: drums invented at twice the rate are
+    # not an improvement on drums missing.
+    ours, theirs = cand[3]
+    finds_noise = theirs and not ref[3][0] and abs(ours - theirs) < theirs
+    return keeps_notes and bool(plays_more or finds_noise)
 
 
 def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
@@ -271,8 +309,11 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         got = F.compare(orig, dump)
         if got["melody"] is None or got["sequence"] is None:
             return None
+        wv = F.wave_compare(orig, dump, nframes=seconds * 50,
+                            lag=F.startup_lag(orig, dump)[0])
         return (got["melody"], got["sequence"],
-                sum(len(v.attacks) for v in dump))
+                sum(len(v.attacks) for v in dump),
+                (wv["our_noise_frames"], wv["orig_noise_frames"]))
 
     ref = play({})
     if ref is None:

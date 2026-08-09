@@ -226,6 +226,49 @@ def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
     return min(extra - 1, WAVE_MAX_DELAY)
 
 
+def _two_stage_entries(wave: int, attack: int, frames: int,
+                       multiplier: int = 1) -> tuple:
+    """Wavetable entries for the two-stage waveform, or None if it says nothing.
+
+    The dialect `detect._find_two_stage` reads, in 34 corpus files: effect bit
+    $04 is not an arpeggio but an *attack waveform*, held for a per-instrument
+    number of frames and then dropped to the record's own +2. Detection has
+    located both arrays since it was written and nothing consumed them, so
+    every one of those files played the second stage from its first frame.
+
+    What that costs is not subtle. Trans-Atlantic's GT 2 is `$81` noise for 4
+    frames before its pulse -- 226 notes of drum the conversion played as a
+    pulse -- and its GT 4 has **no waveform of its own at all** (`+2` is `$00`),
+    so the attack is the only waveform it ever has and the instrument was
+    silent for all 70 of its notes.
+
+    A record whose `+2` is zero gets the attack waveform with the gate cleared
+    as its second stage. The player writes `$00` there, which is "no waveform
+    selected" and stops the sound outright; a Goattracker wavetable cannot say
+    that -- `$00`-`$0F` are delays, not waveforms -- so the nearest it has is
+    the same waveform released.
+
+    `frames` is a per-frame count and the table steps per *call*, so it is
+    scaled by `multiplier`; and a delay entry holds for `value + 1` calls, with
+    entry 0 itself being one, exactly as `_wave_hold_byte` sets out.
+    """
+    if attack == 0 or frames <= 0:
+        return None
+    calls = max(1, frames) * max(1, multiplier)
+    second = (wave & 0xFE) or (attack & 0xFE)
+    left, right = [attack], [0x00]
+    extra = calls - 1             # entry 0 is already one call
+    if extra == 1:
+        left.append(attack)       # no delay encodes one call; rewrite instead
+        right.append(0x00)
+    elif extra > 1:
+        left.append(min(extra - 1, WAVE_MAX_DELAY))
+        right.append(0x80)
+    left += [second | (wave & 0x01), 0xFF]
+    right += [0x00, 0x00]
+    return left, right
+
+
 def _rate_shift(multiplier: int = 1) -> int:
     """Extra right-shift that turns a per-frame rate into a per-call one.
 
@@ -1112,7 +1155,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        min_notes: Optional[dict] = None,
                        lead: int = 1,
                        start: Optional[int] = None,
-                       budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
+                       budget: int = WAVE_ENTRIES_PER_INSTR,
+                       two_stage: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1177,6 +1221,21 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             arp = False
     if arp_note == 0:
         arp_note = 0x74
+
+    # Read before the drum and arpeggio shapes because in this dialect bit $04
+    # is neither: `_find_two_stage` only reports a player whose $04 handler is
+    # the attack-waveform block, and such a player sets neither effect_drum nor
+    # effect_arp, so the two can never both apply to one record. Gated on
+    # `effects` like every other reading of +7 -- with the flag off this
+    # function still reproduces the VB6 original byte for byte.
+    if (two_stage and det.effect_two_stage and (arp_style & 0x04)
+            and det.two_stage_wave >= 0):
+        at = det.two_stage_wave + i * det.instr_stride
+        fr = det.two_stage_frames + i * det.instr_stride
+        if max(at, fr) < len(data):
+            two = _two_stage_entries(wave, data[at], data[fr], multiplier)
+            if two is not None:
+                return two
 
     arp_set_keybit = 0 if drum else 1
     tail = (wave & 0xFE) | arp_set_keybit
@@ -1572,7 +1631,7 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple],
 def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       effects: bool, fmt: str, speed_table: List[tuple],
                       multiplier: int, min_notes: Optional[dict],
-                      lead: int) -> tuple:
+                      lead: int, two_stage: bool = False) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1606,7 +1665,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                      GT_MAX_TABLELEN - len(entries) - reserved)
         left, right = _wavetable_entries(sid, det, i, effects, fmt, speed_table,
                                          multiplier, min_notes, lead,
-                                         start=start, budget=budget)
+                                         start=start, budget=budget,
+                                         two_stage=two_stage)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -1961,7 +2021,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               vibrato: bool = False,
               min_notes: Optional[dict] = None,
               compact_instruments: bool = False,
-              no_test_restart: bool = False) -> bytes:
+              no_test_restart: bool = False,
+              two_stage: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2001,7 +2062,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
                                                   fmt, table, multiplier,
-                                                  min_notes, lead)
+                                                  min_notes, lead, two_stage)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        lead=lead, wave_starts=wave_starts,

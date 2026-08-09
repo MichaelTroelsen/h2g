@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.179 — 2026-08-09
+
+- emit the two-stage attack waveform, per song
+
 ## 0.5.178 — 2026-08-09
 
 - record the Last_V8 audition and the rate it has to be heard at

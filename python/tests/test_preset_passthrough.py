@@ -129,16 +129,46 @@ def test_the_fidelity_search_cannot_be_won_by_deleting_notes():
     on Commando by losing 79 notes, because a per-frame agreement rewards losing
     the events it scores. Melody alone would not catch it either -- it collapses
     consecutive repeats, so a re-struck note lost is invisible to it."""
-    ref = (0.80, 0.75, 600)
-    assert presets.fidelity_better((0.90, 0.80, 600), ref)
+    ref = (0.80, 0.75, 600, (0, 0))
+    assert presets.fidelity_better((0.90, 0.80, 600, (0, 0)), ref)
     # better melody, but the sequence or the notes went with it
-    assert not presets.fidelity_better((0.90, 0.70, 600), ref)
-    assert not presets.fidelity_better((0.90, 0.80, 599), ref)
+    assert not presets.fidelity_better((0.90, 0.70, 600, (0, 0)), ref)
+    assert not presets.fidelity_better((0.90, 0.80, 599, (0, 0)), ref)
 
 
 def test_a_gain_inside_the_noise_is_not_recorded():
-    ref = (0.80, 0.75, 600)
+    ref = (0.80, 0.75, 600, (0, 0))
     assert not presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN / 2,
-                                        0.90, 900), ref)
+                                        0.90, 900, (0, 0)), ref)
     assert presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN,
-                                   0.75, 600), ref)
+                                   0.75, 600, (0, 0)), ref)
+
+
+def test_restoring_noise_the_original_has_and_we_have_none_of_is_a_win():
+    """The second way to win, and the one --two-stage needs. A conversion with
+    no noise at all where the original has some is missing its drums outright
+    (Trans-Atlantic: 0 frames against 1089), which no agreement percentage can
+    say because there is nothing on our side to disagree with. Scoring it on
+    `wave` would reject it -- restoring a 1-4 frame transient moves that column
+    the wrong way even when the transient is right."""
+    ref = (0.80, 0.75, 600, (0, 1089))
+    assert presets.fidelity_better((0.80, 0.75, 600, (928, 1089)), ref)
+    # ...but not if the notes go with it
+    assert not presets.fidelity_better((0.80, 0.75, 599, (928, 1089)), ref)
+    # and not where the original has no noise either: that is invention
+    assert not presets.fidelity_better((0.80, 0.75, 600, (928, 0)),
+                                       (0.80, 0.75, 600, (0, 0)))
+    # nor where we already sound some -- the criterion is "none at all"
+    assert not presets.fidelity_better((0.80, 0.75, 600, (999, 1089)),
+                                       (0.80, 0.75, 600, (900, 1089)))
+
+
+def test_restored_noise_has_to_land_closer_than_none_at_all():
+    """|ours - theirs| < |0 - theirs|, not merely "more than zero". Without the
+    upper bound the criterion took Sigma Seven, whose two-stage attack sounds 82
+    noise frames where the original sounds 41 -- drums invented at twice the
+    rate are not an improvement on drums missing."""
+    ref = (0.80, 0.75, 600, (0, 41))
+    assert presets.fidelity_better((0.80, 0.75, 600, (40, 41)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 600, (82, 41)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 600, (83, 41)), ref)

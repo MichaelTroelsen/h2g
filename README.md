@@ -946,6 +946,43 @@ and a sweep that restarts with the note is at the same place on every onset
 however far it travels. It now reports the band each note covers on both sides,
 judged on median travel *within* one note; see § *The instrument map*.
 
+### `--two-stage` (the attack waveform, and the drums that were missing)
+
+In **34 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
+but a *second waveform*: an attack waveform held for a per-instrument number of
+frames, then the record's own `+2` (IK+ `$E38B`). `detect._find_two_stage` has
+read it since v0.5.66 and the writer ignored it, so all 34 played the second
+stage from frame one — and a record whose `+2` is `$00` was **silent
+altogether**, the attack being the only waveform it ever has.
+
+A listener found it: Trans-Atlantic's drums are gone, and the trace agrees —
+**0 frames of noise against the original's 1089**. Its GT 2 is `$81` noise for
+four frames before its pulse, 226 notes of drum played as a pulse; its GT 4 is
+one of the silent ones, 70 notes of nothing.
+
+```sh
+python -m h2g song.sid --two-stage --format gts5
+```
+
+**Off by default, and that is a measurement not a hedge.** Encoding it was tried
+before and cost 82 points of `wave` agreement across 18 files. The obvious
+suspect was the startup misalignment fixed in v0.5.175 — a 1–4 frame transient
+is exactly what a 3–8 frame offset destroys — so it was re-measured under the
+aligned harness and came back the same: −0.6pp mean, Tarzan −14.
+
+What that measurement does not capture is what the cost buys. `wave` is an
+agreement percentage, and restoring the transient moves it the wrong way *even
+when the transient is right*: Trans-Atlantic gains its 250 missing noise onsets
+at exactly the original's per-instrument counts and `wave` falls 71% → 65%.
+"We sound no noise at all where the original sounds 1089 frames" is not
+something an agreement percentage can say, because there is nothing on our side
+to disagree with.
+
+So `presets.py --fidelity` selects it per song on that one-sided criterion —
+the original sounds noise and we sound none — and four files take it: **ACE II,
+Pandora, Thundercats and Trans-Atlantic**. The search still refuses
+any candidate that loses notes.
+
 ### `--no-test-restart` (the silent frame on every note)
 
 Every instrument this tool has ever written carries `$09` in record byte +8, the
@@ -1081,12 +1118,18 @@ python presets.py <sid_dir> -o ../presets.json --fidelity
 
 This plays both settings: converts, packs with `gt2reloc`, traces both against
 the original with siddump, and records the setting only where it demonstrably
-plays better. On the corpus it takes `--no-test-restart` for exactly **three
-files** — `Last_V8` in both rips and `Trans-Atlantic_Balloon_Challenge`, which
-gain 16–17 points of melody from an option that costs 15.7 on average.
+plays better. Seven files take something: `--no-test-restart` for `Last_V8` in
+both rips, and `--two-stage` for ACE II, Pandora, Thundercats and Trans-Atlantic.
 
-It is scored on `melody` **and guarded on both `sequence` and our own attack
-count**, which is not belt and braces. The candidate this search exists for
+There are **two ways to win**, both one-sided questions rather than agreement
+percentages. Either the setting **plays more of the tune** — a `melody` gain of
+at least `FIDELITY_MARGIN`, which is what `--no-test-restart` offers its two
+files — or it **sounds a register the original sounds and we do not**, which is
+the only thing that can select `--two-stage`, whose files have *no noise at
+all* without it. Neither may cost notes.
+
+The first form is scored on `melody` **and guarded on both `sequence` and our
+own attack count**, which is not belt and braces. The candidate this search exists for
 reached `wave` 99.5% on Commando by deleting 79 notes: any per-frame agreement
 rewards losing the events it scores, and `melody` collapses consecutive repeats
 so it cannot see a re-struck note lost either. A setting must gain on what is

@@ -1373,6 +1373,47 @@ separately, by measurement, whether the target format can carry it. Landing
 the reading with nothing consuming it costs one dataclass field and saves the
 next reader from re-deriving it.
 
+#### v0.5.179: the measurement was right and the conclusion was too narrow
+
+A listener reported Trans-Atlantic's **drums missing**. They are: the
+conversion sounds **0 frames of noise against the original's 1089**. Its GT 2
+is `$81` noise for four frames before its pulse — 226 notes of drum played as a
+pulse — and its GT 4 has *no waveform of its own at all* (`+2` is `$00`), so the
+attack is the only waveform it ever has and the instrument was silent for all 70
+of its notes. Every one of those is this block, read and unused.
+
+The obvious suspect for the −82 was §7.ddd: a 1–4 frame transient is exactly
+what a 3–8 frame misalignment destroys, and until v0.5.175 every per-frame
+column was charged that offset. So it was re-measured under the aligned
+harness — **and came back the same**, −0.6pp mean and Tarzan −14. The original
+finding stands, on a better instrument.
+
+What was too narrow was the conclusion drawn from it. `wave` is an agreement
+percentage, and restoring the transient moves it the wrong way *even when the
+transient is right*: Trans-Atlantic gains its 250 missing noise onsets at
+exactly the original's per-instrument counts (GT 2: 226, GT 5: 24) and `wave`
+falls 71% → 65%. Meanwhile "we sound no noise whatever and the original sounds
+1089 frames of it" is not a disagreement any percentage can express, because
+there is nothing on our side to disagree *with* — the same one-sided shape
+`noise`, `pul` and `filt` exist for.
+
+So it ships as `--two-stage`, off by default, selected per song by
+`presets.py --fidelity` on that one-sided criterion: **the original sounds noise
+and we sound none** — bounded, because restoring a register has to mean landing
+*closer* to the original than nothing did (`|ours - theirs| < theirs`). That
+bound is not decoration: without it the criterion took Sigma Seven, whose
+attack sounds 82 noise frames where the original sounds 41, and drums invented
+at twice the rate are not an improvement on drums missing. Four files take it —
+ACE II, Pandora, Thundercats, Trans-Atlantic — and `fidelity_better` still
+refuses any candidate that loses notes, so the §7.eee failure mode cannot come
+back through the new door. Deliberately *not* scored on `wave`, for the reason
+measured above.
+
+The corrected lesson: **an encoding that costs an agreement column can still be
+right, if what it buys is something no agreement column can see.** The 2019-era
+conclusion — reading yes, writing no — was correct about the cost and never
+asked what the cost bought.
+
 ---
 
 ### 7.x Finding the table when the player does not store inline
