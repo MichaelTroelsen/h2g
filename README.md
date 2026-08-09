@@ -1487,6 +1487,49 @@ number is a floor on how wrong a conversion is, never a ceiling. Each staged
 entry states what the numbers predict precisely so that a listen can contradict
 them — a contradiction is the useful outcome.
 
+### The instrument map — `instrmap.py`
+
+Every other instrument-level check in this project reads the *player's own
+instrument table* and then argues about what its bytes mean. This reads the
+other end: what the SID registers actually hold, in the original and in our
+conversion, side by side.
+
+```sh
+cd python
+python instrmap.py <sid-or-dir> -o ../build/instrmap -t 60 --presets ../presets.json
+```
+
+One Markdown file per song plus an index. On demand, not a build artefact — it
+traces two emulations per song.
+
+The join is **ADSR**. It is a verbatim per-instrument copy of the record (0 of
+1635 corpus records differ), so it identifies an instrument where waveform and
+pulse cannot: several instruments share a waveform, and a swept pulse has no
+single value. Each report gives one row per instrument of ours — what the
+original sounds under that ADSR against what we sound — then the original's
+per-frame behaviour over the first 8 frames of each note (the spec the `.sng`
+should meet), what we actually wrote into the wavetable, and pulse width per
+instrument.
+
+**Both full siddump tables are folded into every report, with three instrument
+columns appended.** `Ins1`–`Ins3` name the GT instrument sounding on each
+voice, `*` marks a note's onset and `.` a voice with nothing yet; an ADSR no
+instrument of ours carries gets a lowercase letter, named in a legend. On the
+*original's* dump this is what labels Hubbard's trace with our instrument
+numbers, so the summary tables can be read down the trace rather than taken on
+trust — and the frames our instruments do not cover are visible rather than
+counted. The instrument is decided on the frame *after* the attack and held for
+the note, for the same reason the tables above are: the attack frame can still
+hold a hard restart's ADSR, which is the player's transition and not the
+instrument. `--no-dump` leaves the tables out.
+
+It has already found what no score did. Commando's drum was silent because our
+first-frame waveform `$09` carries the testbit and the tick cleared the gate on
+top of it (v0.5.172, 14 onsets against 0); the alternating rows under one
+instrument number are the arpeggio the ear had guessed at; and GT 1's pulse
+sweeps `$800`–`$D00` in the original and sits on `$A00` in ours, which is a
+pulse program not reaching the output and is not Commando-specific.
+
 ## Repository layout
 
 | Path | |

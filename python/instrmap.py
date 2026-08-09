@@ -55,6 +55,87 @@ PROFILE_FRAMES = 8
 
 WAVE_NAMES = ((0x80, "noise"), (0x40, "pulse"), (0x20, "saw"), (0x10, "tri"))
 
+# Width of one appended instrument column, and of the whole appended cell.
+# Both sides of the dump get the same three columns, so a row of one file can
+# be read against the same row of the other.
+_INS_W = 4
+_CELL = f"{'Ins1':>{_INS_W}} {'Ins2':>{_INS_W}} {'Ins3':>{_INS_W}}"
+
+
+def annotate_dump(text: str, trace, adsr_to_gt: dict,
+                  nframes: int) -> tuple[str, list]:
+    """siddump's own table with three instrument columns appended.
+
+    The join is the one the mapping table above uses -- ADSR identifies an
+    instrument, being a verbatim per-instrument copy of the record -- applied
+    per frame instead of per song. Applied to the *original's* dump this is
+    what labels Hubbard's trace with our instrument numbers.
+
+    A note's instrument is decided on the frame *after* its attack and then
+    held for the whole note, for the reason `_onsets` samples there: the attack
+    frame can still hold a hard restart's ADSR, which is the player's
+    transition and not the instrument. Deciding once per note rather than per
+    frame also means the column cannot disagree with the tables above it.
+
+    An ADSR no instrument of ours carries gets a lowercase letter instead, in
+    first-appearance order; `legend` in the return names them.
+    """
+    unmatched: dict[int, str] = {}
+
+    def label(adsr: int) -> str:
+        hits = adsr_to_gt.get(adsr)
+        if hits:
+            s = "/".join(str(h) for h in hits)
+            return s if len(s) <= _INS_W else f"{hits[0]}+"
+        if adsr not in unmatched:
+            i = len(unmatched)
+            # a..z then a2..z2; a corpus file has never needed the second lap
+            unmatched[adsr] = chr(ord("a") + i % 26) + ("" if i < 26
+                                                        else str(i // 26 + 1))
+        return unmatched[adsr]
+
+    # per-voice, per-frame: the label of the note sounding, and whether the
+    # frame is that note's onset
+    cols = [[""] * nframes for _ in range(3)]
+    onset = [set() for _ in range(3)]
+    for vi, v in enumerate(trace):
+        adsr = F.register_timeline(v.adsr_events, nframes)
+        atk = sorted(v.attack_frames)
+        for i, a in enumerate(atk):
+            nxt = atk[i + 1] if i + 1 < len(atk) else nframes
+            lab = label(adsr[min(a + 1, nframes - 1)])
+            onset[vi].add(a)
+            for f in range(a, min(nxt, nframes)):
+                cols[vi][f] = lab
+
+    out = []
+    for line in text.splitlines():
+        if line.startswith("+") and line.endswith("+"):
+            out.append(line + "-" * (len(_CELL) + 2) + "+")
+            continue
+        if not line.startswith("|"):
+            out.append(line)
+            continue
+        try:
+            frame = int(line.split("|")[1].strip())
+        except (ValueError, IndexError):
+            out.append(line + " " + _CELL + " |")   # header row
+            continue
+        if frame >= nframes:
+            out.append(line + " " * (len(_CELL) + 2) + "|")
+            continue
+        cells = []
+        for vi in range(3):
+            lab = cols[vi][frame] or "."
+            if frame in onset[vi]:
+                lab = "*" + lab
+            cells.append(f"{lab:>{_INS_W}}")
+        out.append(line + " " + " ".join(cells) + " |")
+
+    legend = [f"`${a:04X}` = `{n}`" for a, n in
+              sorted(unmatched.items(), key=lambda kv: kv[1])]
+    return "\n".join(out), legend
+
 
 def _wave_name(w: int) -> str:
     names = [n for bit, n in WAVE_NAMES if w & bit]
@@ -308,14 +389,33 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         # so the tables stay at the top of the file: a 60s trace is 3000 rows
         # a side, and every reading above is derived from these two tables, so
         # a disputed row can be checked here rather than re-traced.
-        for label, raw in (("the original", o_raw), ("our conversion", u_raw)):
-            if not raw:
+        #
+        # Both dumps carry the mapping in three appended columns, so the
+        # tables above can be read *down* the trace: which instrument is
+        # sounding, on which voice, on which frame -- on the original's side
+        # too, which is the whole point. Frames not covered by any instrument
+        # of ours are the gap, and they are visible rather than counted.
+        ins = defaultdict(list)
+        for i, r in enumerate(recs):
+            ins[(r[0] << 8) | r[1]].append(i + 1)
+        for label, raw, tr in (("the original", o_raw, orig),
+                               ("our conversion", u_raw, ours)):
+            if not raw or tr is None:
                 continue
+            body, legend = annotate_dump(raw[1].rstrip(), tr, ins, nframes)
             lines += ["<details>",
                       f"<summary>Full siddump of {label} "
-                      f"({len(raw[1].splitlines())} lines)</summary>", "",
-                      "```", f"$ {raw[0]}", raw[1].rstrip(), "```", "",
-                      "</details>", ""]
+                      f"({len(raw[1].splitlines())} lines), with the "
+                      "instrument sounding on each voice</summary>", ""]
+            lines += ["`Ins1`-`Ins3` are the GT instrument sounding on that "
+                      "voice, `*` marking the note's onset frame and `.` a "
+                      "voice with nothing yet. They are joined on ADSR and "
+                      "decided on the frame after the attack, exactly as the "
+                      "tables above are.", ""]
+            if legend:
+                lines += ["Lettered entries are ADSR values no instrument of "
+                          "ours carries: " + ", ".join(legend) + ".", ""]
+            lines += ["```", f"$ {raw[0]}", body, "```", "", "</details>", ""]
 
     # Counted off the joined mapping, so the index and the per-song tables
     # cannot disagree: a "mismatch" is one instrument whose waveform differs
