@@ -1315,8 +1315,41 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     A record that also sets the rise bit loses the rise here; it needs the same
     slots. 4 files have the rise routine at all.
     """
-    left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF, 0xFF, 0xFF, 0xFF]
-    right = [0x00, 0x00, 0x00, 0x00, 0x00]
+    # The note opens on noise, for two frames, and then takes the voice's own
+    # waveform. That is the `BCC` branch at Warhawk $1385 -> $1397: it fires
+    # while the remaining-duration counter is still large, i.e. at the START of
+    # the note, a direction section 7.ii corrected in v0.5.90 -- and the tick
+    # is measurable, not inferred. Tracing Commando's original and taking the
+    # length of the noise run at each onset splits cleanly in two: ADSR $0A09
+    # holds noise for 11 frames (a real noise instrument), while five other
+    # records hold it for exactly 2 and then switch to a pitched waveform --
+    # 349 note onsets in that file alone. See instrmap.py.
+    #
+    # h2g removed this tick, on the stated grounds that "there is no such tick
+    # in the player", judged by the corpus `wave` metric landing on a noise
+    # frame about as often as noise occurs. The trace says otherwise, and the
+    # VB6 original emitted it.
+    left = [WAVE_NOISE_GATEOFF]
+    right = [0x00]
+    # Two frames is `2 * multiplier` calls, of which the entry above is one.
+    # A delay entry is current for `value + 1` calls (see _wave_hold_byte), so
+    # one more entry covers the rest at every -S value the corpus uses; its
+    # right side is $80 because a delay's right side IS read, on its final
+    # call, and anything else would drag the note.
+    extra = NOISE_TICK_FRAMES * max(1, multiplier) - 1
+    if extra == 1:
+        left.append(WAVE_NOISE_GATEOFF)
+        right.append(0x00)
+    elif extra > 1:
+        left.append(min(extra - 1, WAVE_MAX_DELAY))
+        right.append(0x80)
+    left.append((wave & 0xFE) or WAVE_NOISE_GATEOFF)
+    right.append(0x00)
+    left.append(0xFF)
+    right.append(0x00)
+    while len(left) < WAVE_ENTRIES_PER_INSTR:
+        left.append(0xFF)
+        right.append(0x00)
     index = _drum_speed_index(fmt, speed_table, multiplier)
     # The sweep goes only on a record whose envelope actually decays. The
     # player's own gate is a single cross-voice cell written at note-start
@@ -1334,15 +1367,16 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # caller shrinks it when the 255-entry table is running out. Below the
         # fixed five it changes nothing, so a file with room behaves as it did.
         want = _drum_max_steps(min_note, multiplier)
-        room = max(0, budget - 3)          # attack, gate-off, stop
+        prefix = left[:-1] if left[-1] == 0xFF else list(left)
+        # strip the padding the tick block added, keeping the tick itself
+        while len(prefix) > 1 and prefix[-1] == 0xFF:
+            prefix.pop()
+        pre_r = right[:len(prefix)]
+        room = max(0, budget - len(prefix) - 1)     # ... and the stop
         steps = max(1, min(want, room)) if want else (
             2 if _drum_steps_safe(2, min_note, multiplier) else 1)
-        left = [wave, (wave & 0xFE) or WAVE_NOISE_GATEOFF]
-        right = [0x00, 0x00]
-        left += [WAVECMD_PORTADOWN] * steps
-        right += [index] * steps
-        left.append(0xFF)
-        right.append(0x00)
+        left = prefix + [WAVECMD_PORTADOWN] * steps + [0xFF]
+        right = pre_r + [index] * steps + [0x00]
         while len(left) < WAVE_ENTRIES_PER_INSTR:
             left.append(0xFF)
             right.append(0x00)
@@ -1356,6 +1390,11 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
 # the note has already finished. Before this cap the safe bound alone produced
 # a 136-step chain and drove three files to the 255-row table ceiling.
 DRUM_MAX_SWEEP_STEPS = 8
+
+# Frames of noise the drum block writes before the voice's own waveform,
+# measured off the original's trace rather than assumed: 349 of Commando's
+# note onsets hold noise for exactly this many frames and then switch.
+NOISE_TICK_FRAMES = 2
 
 
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:

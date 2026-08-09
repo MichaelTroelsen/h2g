@@ -51,12 +51,13 @@ class _FakeSid:
 
 def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
              fmt=FORMAT_GTS5, speed_table=None, wave=0x41, multiplier=1,
-             min_notes=None):
+             min_notes=None, budget=None):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_rise=rise, effect_arp=arp, effect_drum=drum)
+    kw = {} if budget is None else {"budget": budget}
     return _wavetable_entries(_FakeSid(effect_byte, wave), det, 0, effects,
                               fmt, speed_table if speed_table is not None
-                              else [], multiplier, min_notes)
+                              else [], multiplier, min_notes, **kw)
 
 
 # --- the fabricated octave arpeggio ----------------------------------------
@@ -161,10 +162,13 @@ def test_the_drum_is_a_gate_off_waveform_and_a_downward_sweep():
     table = []
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                            speed_table=table)
-    assert left[1] == 0x40, "the voice's own waveform, gate released"
-    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1)
+    # Entries 0-1 are the two-frame noise tick, so the voice's own waveform is
+    # entry 2 and the sweep starts at 3.
+    assert left[0] == WAVE_NOISE_GATEOFF, "the note opens on noise"
+    assert left[2] == 0x40, "the voice's own waveform, gate released"
+    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1)
     assert table == [DRUM_SPEED], "256 units per frame == one $D401 step"
-    assert left[3] == 0xFF and right[3] == 0x00, "and then stop"
+    assert 0xFF in left[4:], "and then stop"
 
 
 def test_the_noise_ending_is_measured_and_rejected():
@@ -181,15 +185,38 @@ def test_the_noise_ending_is_measured_and_rejected():
     assert WAVE_NOISE_GATEOFF not in left[2:]
 
 
-def test_the_drum_no_longer_leads_with_a_noise_tick():
-    # The inherited shape is one noise tick and then the waveform. There is no
-    # such tick in the player, and on the corpus it lands on a noise frame
-    # about as often as noise occurs -- chance, not information.
-    assert _entries(DRUM)[0][1] == WAVE_NOISE_GATEOFF, "the original's tick"
-    for on in (_entries(DRUM, effects=True, drum=True),
-               _entries(DRUM, effects=True, drum=False),
-               _entries(DRUM | ARP | 0x30, effects=True, drum=True, arp=True)):
-        assert on[0][1] != WAVE_NOISE_GATEOFF
+def test_the_drum_leads_with_a_two_frame_noise_tick():
+    """The tick is in the player, and this test used to assert it was not.
+
+    It was removed on the reading that "there is no such tick", judged by the
+    corpus `wave` metric landing on a noise frame about as often as noise
+    occurs. Both the disassembly and the trace say otherwise: Warhawk $1385's
+    `BCC` reaches the noise store while the remaining-duration counter is
+    still large -- the START of the note, a direction section 7.ii corrected
+    in v0.5.90 -- and measuring the noise run at each onset of Commando's
+    original splits into 11 frames for one record (a real noise instrument)
+    and exactly 2 frames for five others, over 349 onsets. See instrmap.py.
+    """
+    left, _ = _entries(DRUM, effects=True, drum=True, wave=0x41)
+    assert left[0] == WAVE_NOISE_GATEOFF, "the note opens on noise"
+    assert left[1] == WAVE_NOISE_GATEOFF, "for a second frame at -S1"
+    assert left[2] == 0x40, "and then the voice's own waveform"
+
+
+def test_the_tick_is_two_frames_at_every_call_rate():
+    """Two *frames*, not two calls -- the standing per-frame/per-call rule.
+
+    At -S{m} a frame is m calls, so the tick needs 2m of them. One delay entry
+    covers the remainder, and a delay is current for `value + 1` calls
+    (_wave_hold_byte), so the value is 2m - 2.
+    """
+    for m, want in ((1, WAVE_NOISE_GATEOFF), (2, 2), (4, 6)):
+        left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                               multiplier=m)
+        assert left[0] == WAVE_NOISE_GATEOFF
+        assert left[1] == want, f"-S{m}"
+        if m > 1:
+            assert right[1] == 0x80,                 "a delay's right side is read on its final call"
 
 
 def test_a_waveform_of_zero_is_noise_for_the_whole_drum():
@@ -204,7 +231,7 @@ def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
     left, _ = _entries(DRUM, effects=True, drum=True, fmt=FORMAT_GTS2,
                        speed_table=table)
     assert table == [], "a GTS2 file stores no speed table"
-    assert left[1] == 0x40 and left[2] == 0xFF
+    assert left[2] == 0x40 and left[3] == 0xFF,         "the tick still leads, but nothing sweeps"
 
 
 # --- the sweep's depth ------------------------------------------------------
@@ -217,12 +244,19 @@ def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
 def test_a_second_sweep_step_is_written_when_the_lowest_note_allows_it():
     # Record 0 is Goattracker instrument 2. Note index 12 is 558 units, which
     # clears two 256-unit steps with room to spare.
+    # The noise tick costs two entries, so at the old fixed budget of five
+    # only one sweep step fits -- the variable-length layout is what supplies
+    # room for more, and it passes the real budget in.
     table = []
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
-                           speed_table=table, min_notes={2: 12})
-    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1)
-    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1), "the second step"
-    assert left[4] == 0xFF and right[4] == 0x00, "the stop moves to entry 4"
+                           speed_table=table, min_notes={2: 12}, budget=8)
+    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1)
+    assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1), "the second step"
+    assert 0xFF in left[5:], "and then stop"
+
+    tight = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                     speed_table=[], min_notes={2: 12}, budget=5)[0]
+    assert tight[3] == WAVECMD_PORTADOWN and tight[4] == 0xFF,         "one step is all five entries hold once the tick is there"
     assert table == [DRUM_SPEED], "both steps share the one speed entry"
 
 
@@ -235,8 +269,8 @@ def test_the_second_step_is_refused_when_the_note_could_underflow():
     """
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                            min_notes={2: 11})
-    assert (left[2], right[2]) == (WAVECMD_PORTADOWN, 1), "one step still"
-    assert left[3] == 0xFF and right[3] == 0x00, "and then stop"
+    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1), "one step still"
+    assert left[4] == 0xFF and right[4] == 0x00, "and then stop"
 
 
 def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
@@ -246,7 +280,7 @@ def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
     for bound in (None, {}, {3: 60}):      # {3: ...} is a different instrument
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                                min_notes=bound)
-        assert left[3] == 0xFF and right[3] == 0x00
+        assert left[4] == 0xFF and right[4] == 0x00
 
 
 def test_the_bound_is_read_against_the_scaled_step_not_the_constant():

@@ -257,14 +257,24 @@ def test_the_rise_shape_takes_the_hold_when_the_tail_writes_nothing():
     assert at2[0][1] == 0x41, "one extra call is the waveform, not a delay"
 
 
-def test_the_drum_shape_has_no_slot_and_says_so():
-    # All five entries are in use, so the drum's attack stays at one call --
-    # only its sweep rate is scaled. The alternative would be dropping the
-    # sweep, which is the thing the frame is for.
+def test_the_drum_attack_is_the_noise_tick_and_scales_with_the_call_rate():
+    """This replaces a test that pinned the opposite, twice over.
+
+    It used to assert the drum had "no slot for" a delay -- true while every
+    instrument owned exactly five wavetable entries, and false since the table
+    became variable-length -- and that entry 1 was the gate-off waveform
+    rather than a hold. Both changed for the same reason: the note opens on a
+    two-frame noise tick (section 7.ii's `BCC`, and 349 measured onsets in
+    Commando), and two *frames* is 2m calls, so at -S2 and above entry 1 is a
+    delay covering the remainder rather than a waveform.
+    """
+    at1 = _entries(DRUM, effects=True, drum=True, multiplier=1)
+    assert at1[0][0] == 0x80 and at1[0][1] == 0x80, "two noise frames at -S1"
+
     at2 = _entries(DRUM, effects=True, drum=True, multiplier=2)
-    assert at2[0][1] == 0x40, "the gate-off waveform, not a delay"
-    assert "no slot for" in _wavetable_entries.__globals__[
-        "_drum_entries"].__doc__
+    assert at2[0][0] == 0x80, "still opens on noise"
+    assert at2[0][1] == 2, "a delay of 2 is current for 3 calls, so 4 in all"
+    assert at2[1][1] == 0x80, "a delay's right side is read on its last call"
 
 
 # --- slides -----------------------------------------------------------------
