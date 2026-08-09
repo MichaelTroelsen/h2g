@@ -63,7 +63,8 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "slides": True, "effects": True, "status_bit6": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
-         "filters": True, "pulse": True, "vibrato": True}
+         "filters": True, "pulse": True, "vibrato": True,
+         "rest_instrument": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing
@@ -235,6 +236,12 @@ def main(argv=None) -> int:
                    # delta is zero across every file whose bytes it moves:
                    # taken for faithfulness, not for score.
                    "status_bit6": FIXED["status_bit6"],
+                   # An instrument change on a rest is carried by the rest,
+                   # per gplay.c:912-914's latch, instead of a C-0 on the
+                   # Clear Voice -- which is a click and a retrigger. 1422
+                   # rows across 64 files. Found by ear; no dimension of
+                   # FIDELITY.md reports it.
+                   "rest_instrument": FIXED["rest_instrument"],
                    # Its companion, and not optional beside it: a phantom
                    # pattern entry decoded under the bit-6 grammar emits
                    # garbage portamento, and gt2reloc re-encodes the speed

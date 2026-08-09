@@ -167,6 +167,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
                        status_bit6: bool = False,
+                       rest_instrument: bool = False,
                        span: Optional[List[int]] = None,
                        note_base: int = 0,
                        slide_high_first: bool = False,
@@ -315,10 +316,24 @@ def _build_raw_pattern(data: bytes, addr: int,
             g_note = max(0, g_note + note_base) + 0x60
 
         resc_instr = -1
-        if g_note == GT_NO_NOTE and g_instrument != 0:
+        if not rest_instrument and g_note == GT_NO_NOTE and g_instrument != 0:
             g_note = 0x60
             resc_instr = g_instrument
             g_instrument = 1
+        # An instrument change landing on a rest needs no note to carry it.
+        # gplay.c:912-914 latches the column whenever it is non-zero, *before*
+        # and independently of the note test:
+        #
+        #     newnote = pattern[pattnum][pattptr];
+        #     if (pattern[pattnum][pattptr+1])
+        #       cptr->instr = pattern[pattnum][pattptr+1];
+        #
+        # so a $BD rest row carrying an instrument number latches it and sounds
+        # nothing. This used to emit a C-0 on instrument 1 instead -- the
+        # hardcoded Clear Voice, whose record is all-zero ADSR with the testbit
+        # set, i.e. a click and a retrigger of whatever was sounding. 1422 rows
+        # across 64 corpus files did that, and it is audible: found by ear on
+        # Commando, not by any dimension of FIDELITY.md.
 
         # An event lasts wait+1 frames, so it always emits at least its own row.
         # The player holds a fetched event until a per-voice counter loaded with
@@ -686,7 +701,8 @@ def cmdtable_frames_per_row(sid: SidFile, det: Detection,
 def decode_entry(sid: SidFile, det: Detection, i: int,
                  slides: bool = False,
                  status_bit6: bool = False,
-                 steps: Optional[List[int]] = None) -> Optional[List[int]]:
+                 steps: Optional[List[int]] = None,
+                 rest_instrument: bool = False) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -715,6 +731,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             steps=steps)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
+                              rest_instrument=rest_instrument,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
                               steps=steps)
@@ -1051,7 +1068,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      status_bit6: bool = False,
                      phantoms: Optional[dict] = None,
                      variants: Optional[List[tuple]] = None,
-                     steps: Optional[List[int]] = None):
+                     steps: Optional[List[int]] = None,
+                     rest_instrument: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1112,7 +1130,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             raw_patterns.append(list(ERROR_PATTERN))
             continue
 
-        events = decode_entry(sid, det, i, slides, status_bit6, steps)
+        events = decode_entry(sid, det, i, slides, status_bit6, steps,
+                              rest_instrument)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)

@@ -132,6 +132,17 @@ def main(argv=None) -> int:
              "downward frequency sweep, then noise. Off by default: it "
              "changes the output bytes")
     parser.add_argument(
+        "--rest-instrument", action="store_true",
+        help="carry an instrument change that lands on a rest with the rest "
+             "itself. Goattracker latches the instrument column whenever it is "
+             "non-zero, before and independently of the note test "
+             "(gplay.c:912-914), so a rest row can carry the change and sound "
+             "nothing. The original tool emitted a C-0 on instrument 1 instead "
+             "-- the Clear Voice, all-zero ADSR with the testbit set, i.e. a "
+             "click and a retrigger of whatever was sounding: 1422 rows across "
+             "64 corpus files. Off by default because it changes the output "
+             "bytes, the byte-exact Commando fixture among them")
+    parser.add_argument(
         "--status-bit6", action="store_true",
         help="honour the player's bit-6-first status test (BIT/BVS): a "
              "$C0-$FE status byte consumes only itself, instead of also an "
@@ -258,6 +269,7 @@ def main(argv=None) -> int:
         for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
                           ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
+                          ("--rest-instrument", "rest_instrument"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--skip-gate", "skip_gate"),
                           ("--fold-transpose", "fold_transpose"),
@@ -312,6 +324,7 @@ def main(argv=None) -> int:
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
                       status_bit6=args.status_bit6,
+                      rest_instrument=args.rest_instrument,
                       reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,
                       initial_instrument=args.initial_instrument,

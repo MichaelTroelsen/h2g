@@ -119,6 +119,7 @@ def convert(sid_path: str, log: Logger = print,
             filters: bool = False,
             pulse: bool = False,
             vibrato: bool = False,
+            rest_instrument: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -184,6 +185,16 @@ def convert(sid_path: str, log: Logger = print,
     count over-counts, and a phantom entry is what made the bit-6 fix
     net-negative on Last V8. Off by default: it changes the bytes of the
     files it reaches.
+
+    rest_instrument carries an instrument change that lands on a rest with the
+    rest itself, instead of the C-0-on-instrument-1 the original tool emitted.
+    Goattracker latches the instrument column whenever it is non-zero, before
+    and independently of the note test (gplay.c:912-914), so a $BD row can
+    carry the change and sound nothing -- where instrument 1 is the hardcoded
+    Clear Voice, all-zero ADSR with the testbit set, i.e. a click and a
+    retrigger. 1422 rows across 64 corpus files. Off by default because it
+    changes the bytes of those files, the byte-exact Commando fixture among
+    them; found by ear, and no dimension of FIDELITY.md reports it.
 
     fold_transpose recovers the orderlist transposes Goattracker's +14
     ceiling used to clamp away, by keeping `T mod 12` in the orderlist and
@@ -262,7 +273,8 @@ def convert(sid_path: str, log: Logger = print,
         slides=slides, status_bit6=status_bit6,
         phantoms=(phantom_patterns(sid, det, slides, status_bit6)
                   if reject_phantoms else None),
-        variants=variants, steps=slide_steps)
+        variants=variants, steps=slide_steps,
+        rest_instrument=rest_instrument)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
