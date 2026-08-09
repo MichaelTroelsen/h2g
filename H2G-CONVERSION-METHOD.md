@@ -2361,10 +2361,37 @@ which is exactly what v0.5.179 shipped and v0.5.180 had to add an audibility
 guard against.
 
 `detect._find_sfx_drum` lands the reading as `sfx_pitch`, `sfx_voice` and
-`sfx_period`; `goatwriter` does not use it yet, for the discipline this section
-has now recorded three times. Emitting it needs a wavetable entry carrying an
-**absolute** note (`$38xx` is about G-5) rather than the played one, and that
-has not been measured.
+`sfx_period`, and **v0.5.182 emits it** as `--sfx-drum`. A wavetable names
+notes rather than registers, so the pitch becomes the nearest absolute note --
+`$3800` is index 68 (`$375C`), inside a quarter-tone, which for noise is a
+difference nobody can hear. Five entries, looping as the player does:
+
+```
+41 00   the instrument's own waveform, at the played note
+02 80   hold for the rest of the period
+81 C4   noise at the drum's pitch
+81 C4
+FF nn   back to the top
+```
+
+**The note comes first, and the first attempt did not.** The player's counter
+is per voice and free-running, so a hit falls wherever it falls relative to a
+note start; a wavetable always begins at the note. Opening on the noise put the
+drum's pitch on the note's own first frame, where the played note never sounded
+at all -- Trans-Atlantic's melody fell from 94.7% to **50.4%**, and the measure
+caught it before it shipped. Opening on the note keeps both: melody 94.7%,
+`wave` 61.1% -> 62.4%, and the median noise pitch moves from an inaudible
+`$0685` to `$3744` against the original's `$302B`.
+
+Two details are measured rather than derived and are marked as open. The burst
+is **two** frames in the trace where the `CMP #$01` implies one; and the second
+frame's `$15EB` comes from somewhere this reader has not found, so both frames
+are written at the pitch that *is* read. Off by default, selected per song --
+Bangkok Knights, Pandora, Thundercats and Trans-Atlantic, the last alongside
+`--two-stage`, which needed `fidelity_better` to judge audibility on the
+*reference* as well as the candidate: scored on frame count alone, the
+two-stage's silent noise counted as "we have drums now" and blocked the audible
+one from ever being reached.
 
 **The lesson is about the shape of the error, not the details.** The paragraph
 above was not a guess — it cited addresses and quoted the disassembly. What it

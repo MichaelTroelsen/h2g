@@ -25,6 +25,8 @@ from corpus import CORPUS as _CORPUS, needs_corpus  # noqa: E402
 from h2g.detect import detect
 from h2g.sidfile import load_sid
 
+COMMANDO = pathlib.Path(__file__).resolve().parents[2] / "Commando.sid"
+
 CORPUS = _CORPUS
 
 SFX = ["ACE_II", "Auf_Wiedersehen_Monty", "Bangkok_Knights", "Delta",
@@ -143,12 +145,37 @@ def test_the_two_files_without_the_block_report_no_pitch():
         assert (det.sfx_pitch, det.sfx_voice, det.sfx_period) == (-1, -1, -1)
 
 
-def test_the_reading_is_landed_and_not_yet_written():
-    """Same discipline as the two-stage attack before v0.5.179: resolve what
-    the block means from the 6502, then decide separately, by measurement,
-    whether the target format should carry it. Emitting it needs a wavetable
-    entry with an *absolute* note -- $38xx is about G-5 -- and that has not
-    been measured yet."""
-    import h2g.goatwriter as gw
-    src = pathlib.Path(gw.__file__).read_text(encoding="utf-8")
-    assert "sfx_pitch" not in src
+def test_the_hit_opens_on_the_note_and_not_on_the_noise():
+    """The player's counter is per voice and free-running, so a hit falls
+    wherever it falls relative to a note start; a wavetable always begins at
+    the note. Opening on the noise puts the drum's pitch on the note's own
+    first frame, where the played note never sounds -- measured, it took
+    Trans-Atlantic's melody from 94.7% to 50.4%.
+    """
+    from h2g.goatwriter import _sfx_drum_entries, _sfx_note_byte
+    left, right = _sfx_drum_entries(0x41, 0x38, 6)
+    assert left == [0x41, 0x02, 0x81, 0x81]
+    assert right == [0x00, 0x80, _sfx_note_byte(0x38), _sfx_note_byte(0x38)]
+    assert right[0] == 0x00, "relative 0 -- the played note, not an absolute"
+
+
+def test_the_pitch_becomes_the_nearest_absolute_note():
+    """A wavetable's right side names a note, where the player writes $D401
+    directly and keeps the note's low byte. $3800 lands on index 68 ($375C)
+    and $4800 on 73 ($49E5), both inside a quarter-tone -- which for noise is
+    a difference nobody can hear, the pitch only setting how fast the shift
+    register clocks."""
+    from h2g.goatwriter import _note_freq, _sfx_note_byte
+    for hi in (0x38, 0x48):
+        idx = _sfx_note_byte(hi) - 0x80
+        assert abs(_note_freq(idx) - (hi << 8)) < (hi << 8) * 0.03
+        assert 0x81 <= _sfx_note_byte(hi) <= 0xDF, "outside GT's absolute range"
+
+
+def test_it_is_off_by_default_and_selected_per_song():
+    from h2g.convert import convert
+    import presets
+    assert len(convert(str(CORPUS.parent / "x.sid") if False
+                       else str(COMMANDO), log=lambda m: None)) == 15193
+    assert "sfx_drum" in presets.EXCLUDED_FROM_ALWAYS
+    assert "sfx_drum" in presets.FIDELITY_TOGGLES

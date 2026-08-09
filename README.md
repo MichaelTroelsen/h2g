@@ -946,6 +946,53 @@ and a sweep that restarts with the note is at the same place on every onset
 however far it travels. It now reports the band each note covers on both sides,
 judged on median travel *within* one note; see § *The instrument map*.
 
+### `--sfx-drum` (the drum that was filed as a game sound effect)
+
+Seven corpus files fire a **fixed-pitch noise hit** from the effect byte's bit
+`$80`, and it was left unconverted for years on the grounds that it was the
+*game's* sound effect — dead code in a rip. It is not. The gate is
+`LDA effect / BPL` on the playing instrument's own `+7`, the counter it tests is
+that voice's own frame counter (`INC base,X`, written by the player in six of
+the seven), and in Trans-Atlantic it fires **226 times in 60 seconds, on the
+beat**. See § 7 of the method write-up for the full correction.
+
+```
+41 05CE   the note, pulse
+81 38CE   noise — frequency HIGH replaced by $38, the note's low byte kept
+81 15EB   noise — a second fixed pitch
+41 05CE   the note again
+```
+
+**The pitch is the point.** `#$38` is an immediate, identical under C-3, E-2,
+G-2 and A-2, and `$48` in five of the other six files. The SID's noise is an
+LFSR clocked by the frequency register, so noise at the note's own `$05CE`
+writes the register and makes *no sound* — which is exactly what shipped in
+v0.5.179 before this landed.
+
+A wavetable names notes, not registers, so the pitch becomes the nearest
+absolute note: `$3800` → index 68 (`$375C`), inside a quarter-tone, which for
+noise nobody can hear. The block is five entries and loops, as the player does:
+
+```
+41 00   the instrument's own waveform, at the played note
+02 80   hold for the rest of the period
+81 C4   noise at the drum's pitch
+81 C4
+FF nn   back to the top
+```
+
+**The note comes first, and that is not cosmetic.** The player's counter is
+free-running, so a hit lands wherever it lands relative to a note start, while
+a wavetable always begins at the note. Opening on the noise puts the drum's
+pitch on the note's own first frame and the played note never sounds at all —
+measured, that took Trans-Atlantic's melody from 94.7% to **50.4%**. Opening on
+the note keeps both: melody 94.7%, `wave` 61.1% → 62.4%, and the median noise
+pitch moves from an inaudible `$0685` to `$3744` against the original's `$302B`.
+
+Off by default and selected per song by `presets.py --fidelity`; four files take
+it — Bangkok Knights, Pandora, Thundercats and Trans-Atlantic, the last
+alongside `--two-stage`.
+
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **34 corpus files** the instrument effect byte's bit `$04` is not an arpeggio

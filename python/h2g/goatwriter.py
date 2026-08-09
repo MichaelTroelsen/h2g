@@ -269,6 +269,76 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     return left, right
 
 
+SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
+WAVE_NOTE_KEEP = 0x80        # right side: leave the frequency alone
+WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
+
+
+def _sfx_note_byte(pitch_hi: int) -> int:
+    """Wavetable right-side byte for a frequency whose high byte is `pitch_hi`.
+
+    The player writes `$D401` directly and keeps the note's low byte, which a
+    wavetable cannot do -- its right side names a note, not a register. The
+    nearest absolute note is what it can say: `$3800` lands on index 68
+    (`$375C`) and `$4800` on 73 (`$49E5`), both inside a quarter-tone. For
+    noise that is not an approximation anyone can hear -- the pitch sets how
+    fast the shift register clocks, and a quarter-tone changes the colour of a
+    drum by nothing.
+    """
+    target = pitch_hi << 8
+    idx = min(range(96), key=lambda n: abs(_note_freq(n) - target))
+    return (WAVE_NOTE_ABS + idx) & 0xFF
+
+
+def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
+                      multiplier: int = 1) -> tuple:
+    """Entries for the bit-$80 drum: a noise hit every `period` frames.
+
+    `detect._find_sfx_drum` reads what this plays -- noise at a fixed frequency
+    high byte, on a per-voice counter, while an instrument carrying bit $80 is
+    held. It is the drum of seven corpus files and was left unwritten while it
+    was believed to be the game's own sound effect (§7).
+
+    The shape is a loop, because the player's is: two frames of noise at the
+    drum's pitch, the instrument's own waveform and note back again, a delay
+    covering the rest of the period, and a jump to the top. That is five
+    entries, which is exactly `WAVE_ENTRIES_PER_INSTR`.
+
+    Two things here are measured rather than derived, and both are marked in
+    §7 as open. The burst is **two** frames in the trace where the counter
+    test (`CMP #$01`) implies one; and the second frame's frequency is a fixed
+    `$15EB` from somewhere this reader has not found, so both frames are
+    written at the pitch that *is* read. The alternative -- emitting one frame,
+    or the note's own pitch -- is further from the trace, not closer.
+    """
+    if pitch_hi <= 0 or period <= 0:
+        return None
+    m = max(1, multiplier)
+    # **The note comes first, and that is not cosmetic.** The player's counter
+    # is per voice and free-running, so a hit falls wherever it falls relative
+    # to a note start; a wavetable always begins at the note. Opening on the
+    # noise therefore puts the drum's pitch on the note's own first frame,
+    # where the played note never sounds at all -- measured, it took
+    # Trans-Atlantic's melody from 94.7% to 50.4%. Opening on the note and
+    # hitting later in the loop keeps both.
+    left = [(wave & 0xFE) | 0x01]
+    right = [0x00]                           # relative 0: the played note
+    # Hold there for the rest of the period. A delay entry is current for
+    # `value + 1` calls (gplay.c:697-704), so the value is one less than the
+    # calls wanted -- and the count is in calls, not frames.
+    rest = (period - SFX_DRUM_FRAMES) * m - 1
+    if rest == 1:
+        left.append((wave & 0xFE) | 0x01)
+        right.append(0x00)
+    elif rest > 1:
+        left.append(min(rest - 1, WAVE_MAX_DELAY))
+        right.append(WAVE_NOTE_KEEP)
+    note = _sfx_note_byte(pitch_hi)
+    left += [WAVE_NOISE_GATEOFF | 0x01] * SFX_DRUM_FRAMES
+    right += [note] * SFX_DRUM_FRAMES
+    return left, right
+
+
 def _rate_shift(multiplier: int = 1) -> int:
     """Extra right-shift that turns a per-frame rate into a per-call one.
 
@@ -1156,7 +1226,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        lead: int = 1,
                        start: Optional[int] = None,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
-                       two_stage: bool = False) -> tuple:
+                       two_stage: bool = False,
+                       sfx_drum: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1221,6 +1292,20 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             arp = False
     if arp_note == 0:
         arp_note = 0x74
+
+    # The bit-$80 drum, read before everything else because it is the whole
+    # note: the player skips its own waveform and frequency writes on the frame
+    # it fires (`BNE` past them), so nothing else in this function applies to
+    # the instrument. Loops for as long as the note is held, as the player's
+    # per-voice counter does.
+    if (sfx_drum and det.sfx_pitch >= 0 and (arp_style & 0x80)
+            and fmt == FORMAT_GTS5):
+        hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier)
+        if hit is not None:
+            left, right = hit
+            jump = len(left) + 1
+            if start is not None and jump <= budget:
+                return left + [0xFF], right + [start]
 
     # Read before the drum and arpeggio shapes because in this dialect bit $04
     # is neither: `_find_two_stage` only reports a player whose $04 handler is
@@ -1631,7 +1716,8 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple],
 def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       effects: bool, fmt: str, speed_table: List[tuple],
                       multiplier: int, min_notes: Optional[dict],
-                      lead: int, two_stage: bool = False) -> tuple:
+                      lead: int, two_stage: bool = False,
+                      sfx_drum: bool = False) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1666,7 +1752,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         left, right = _wavetable_entries(sid, det, i, effects, fmt, speed_table,
                                          multiplier, min_notes, lead,
                                          start=start, budget=budget,
-                                         two_stage=two_stage)
+                                         two_stage=two_stage,
+                                         sfx_drum=sfx_drum)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -2022,7 +2109,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               min_notes: Optional[dict] = None,
               compact_instruments: bool = False,
               no_test_restart: bool = False,
-              two_stage: bool = False) -> bytes:
+              two_stage: bool = False,
+              sfx_drum: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2062,7 +2150,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
                                                   fmt, table, multiplier,
-                                                  min_notes, lead, two_stage)
+                                                  min_notes, lead, two_stage,
+                                                  sfx_drum)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        lead=lead, wave_starts=wave_starts,

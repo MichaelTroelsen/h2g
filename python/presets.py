@@ -106,6 +106,12 @@ EXCLUDED_FROM_ALWAYS = {
     # original's 1089 without it and 928 with it, at exactly the original's
     # onset counts. Per song, on the noise criterion in fidelity_better.
     "two_stage",
+    # The bit-$80 drum. Only seven files carry the block at all, and it seizes
+    # a voice's pitch for two frames in every period, so it is per song for the
+    # same reason as the two above rather than because it measures badly --
+    # Trans-Atlantic keeps melody at 94.7%, gains a point of wave and moves its
+    # noise from an inaudible $0685 to $3744 against the original's $302B.
+    "sfx_drum",
 }
 
 
@@ -224,7 +230,7 @@ def best_options(sid_path: Path) -> dict | None:
 # would tie every time and silently pick the default. They can only be chosen by
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
-FIDELITY_TOGGLES = ("no_test_restart", "two_stage")
+FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum")
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the
@@ -289,7 +295,21 @@ def fidelity_better(cand: tuple, ref: tuple,
     # frames where the original sounds 41: drums invented at twice the rate are
     # not an improvement on drums missing.
     ours, theirs, our_hz, their_hz = cand[3]
-    finds_noise = (theirs and not ref[3][0] and abs(ours - theirs) < theirs
+
+    def audible(state) -> bool:
+        """Noise a listener would hear: some frames, within an octave of the
+        original's pitch.
+
+        Applied to the *reference* as well as the candidate, which is what lets
+        an audible setting beat an inaudible one. Judged on frame count alone,
+        `--two-stage`'s silent noise counted as "we have drums now" and blocked
+        `--sfx-drum` from ever being reached on the one file that needs both.
+        """
+        frames, _, our_pitch, their_pitch = state
+        return bool(frames) and our_pitch * 2 >= their_pitch
+
+    finds_noise = (theirs and not audible(ref[3]) and audible(cand[3])
+                   and abs(ours - theirs) < theirs
                    # ...and the noise has to be audible. The SID's noise is an
                    # LFSR clocked by the frequency register, so a noise frame at
                    # a low frequency barely clocks it and makes no sound. The
@@ -301,7 +321,7 @@ def fidelity_better(cand: tuple, ref: tuple,
                    # the waveform is read, so the noise plays at the note's own
                    # $05xx and is inaudible. Within an octave is the test --
                    # a musical unit, not a fitted threshold.
-                   and our_hz * 2 >= their_hz)
+                   )
     return keeps_notes and bool(plays_more or finds_noise)
 
 

@@ -229,6 +229,14 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--sfx-drum", action="store_true",
+        help="write the fixed-pitch noise hit the effect byte's bit $80 fires. "
+             "Seven corpus files carry it and it was left unconverted while it "
+             "was believed to be the game's own sound effect; it is gated on "
+             "the playing instrument's own +7 and fires on the beat "
+             "(detect._find_sfx_drum). Needs --format gts5. Off by default "
+             "until measured; presets.py --fidelity selects it per song")
+    parser.add_argument(
         "--two-stage", action="store_true",
         help="write the attack waveform this player's effect bit $04 selects. "
              "In 34 corpus files bit $04 is not an arpeggio but a second "
@@ -314,6 +322,7 @@ def main(argv=None) -> int:
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--two-stage", "two_stage"),
+                          ("--sfx-drum", "sfx_drum"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -378,6 +387,7 @@ def main(argv=None) -> int:
                       no_hard_restart=args.no_hard_restart,
                       no_test_restart=args.no_test_restart,
                       two_stage=args.two_stage,
+                      sfx_drum=args.sfx_drum,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

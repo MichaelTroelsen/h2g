@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.181 presets.py",
+  "generator": "h2g 0.5.182 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -91,7 +91,8 @@
       "bytes": 14476,
       "subtunes": 1,
       "rows": 19334,
-      "multiplier": 1
+      "multiplier": 1,
+      "sfx_drum": true
     },
     "Battle_of_Britain.sid": {
       "max_rows": 128,
@@ -573,7 +574,8 @@
       "bytes": 10941,
       "subtunes": 1,
       "rows": 5695,
-      "multiplier": 1
+      "multiplier": 1,
+      "sfx_drum": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -784,7 +786,7 @@
       "subtunes": 9,
       "rows": 47471,
       "multiplier": 3,
-      "two_stage": true
+      "sfx_drum": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -795,7 +797,8 @@
       "subtunes": 1,
       "rows": 12899,
       "multiplier": 1,
-      "two_stage": true
+      "two_stage": true,
+      "sfx_drum": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

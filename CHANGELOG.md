@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.182 — 2026-08-09
+
+- emit the bit-$80 drum at its own pitch
+
 ## 0.5.181 — 2026-08-09
 
 - read the bit-$80 drum's pitch; it is music, not a game sound effect
