@@ -129,19 +129,19 @@ def test_the_fidelity_search_cannot_be_won_by_deleting_notes():
     on Commando by losing 79 notes, because a per-frame agreement rewards losing
     the events it scores. Melody alone would not catch it either -- it collapses
     consecutive repeats, so a re-struck note lost is invisible to it."""
-    ref = (0.80, 0.75, 600, (0, 0))
-    assert presets.fidelity_better((0.90, 0.80, 600, (0, 0)), ref)
+    ref = (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800))
+    assert presets.fidelity_better((0.90, 0.80, 600, (0, 0, 0x3800, 0x3800)), ref)
     # better melody, but the sequence or the notes went with it
-    assert not presets.fidelity_better((0.90, 0.70, 600, (0, 0)), ref)
-    assert not presets.fidelity_better((0.90, 0.80, 599, (0, 0)), ref)
+    assert not presets.fidelity_better((0.90, 0.70, 600, (0, 0, 0x3800, 0x3800)), ref)
+    assert not presets.fidelity_better((0.90, 0.80, 599, (0, 0, 0x3800, 0x3800)), ref)
 
 
 def test_a_gain_inside_the_noise_is_not_recorded():
-    ref = (0.80, 0.75, 600, (0, 0))
+    ref = (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800))
     assert not presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN / 2,
-                                        0.90, 900, (0, 0)), ref)
+                                        0.90, 900, (0, 0, 0, 0)), ref)
     assert presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN,
-                                   0.75, 600, (0, 0)), ref)
+                                   0.75, 600, (0, 0, 0, 0)), ref)
 
 
 def test_restoring_noise_the_original_has_and_we_have_none_of_is_a_win():
@@ -151,16 +151,27 @@ def test_restoring_noise_the_original_has_and_we_have_none_of_is_a_win():
     say because there is nothing on our side to disagree with. Scoring it on
     `wave` would reject it -- restoring a 1-4 frame transient moves that column
     the wrong way even when the transient is right."""
-    ref = (0.80, 0.75, 600, (0, 1089))
-    assert presets.fidelity_better((0.80, 0.75, 600, (928, 1089)), ref)
+    ref = (0.80, 0.75, 600, (0, 1089, 0x3800, 0x3800))
+    assert presets.fidelity_better((0.80, 0.75, 600, (928, 1089, 0x3800, 0x3800)), ref)
     # ...but not if the notes go with it
-    assert not presets.fidelity_better((0.80, 0.75, 599, (928, 1089)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 599, (928, 1089, 0x3800, 0x3800)), ref)
     # and not where the original has no noise either: that is invention
-    assert not presets.fidelity_better((0.80, 0.75, 600, (928, 0)),
-                                       (0.80, 0.75, 600, (0, 0)))
+    assert not presets.fidelity_better((0.80, 0.75, 600, (928, 0, 0x3800, 0x3800)),
+                                       (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800)))
     # nor where we already sound some -- the criterion is "none at all"
-    assert not presets.fidelity_better((0.80, 0.75, 600, (999, 1089)),
-                                       (0.80, 0.75, 600, (900, 1089)))
+    assert not presets.fidelity_better((0.80, 0.75, 600, (999, 1089, 0x3800, 0x3800)),
+                                       (0.80, 0.75, 600, (900, 1089, 0x3800, 0x3800)))
+
+
+def test_restored_noise_has_to_be_audible():
+    """The SID's noise is an LFSR clocked by the frequency register, so a noise
+    frame at a low frequency makes no sound at all. Counting frames rather than
+    sound selected four files whose restored drums a listener could not hear:
+    the attack in this dialect carries a pitch as well as a waveform, and only
+    the waveform is read, so the noise plays at the note's own $05xx."""
+    ref = (0.80, 0.75, 600, (0, 1089, 0, 0x3800))
+    assert presets.fidelity_better((0.80, 0.75, 600, (928, 1089, 0x3000, 0x3800)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 600, (928, 1089, 0x05CE, 0x3800)), ref)
 
 
 def test_restored_noise_has_to_land_closer_than_none_at_all():
@@ -168,7 +179,7 @@ def test_restored_noise_has_to_land_closer_than_none_at_all():
     upper bound the criterion took Sigma Seven, whose two-stage attack sounds 82
     noise frames where the original sounds 41 -- drums invented at twice the
     rate are not an improvement on drums missing."""
-    ref = (0.80, 0.75, 600, (0, 41))
-    assert presets.fidelity_better((0.80, 0.75, 600, (40, 41)), ref)
-    assert not presets.fidelity_better((0.80, 0.75, 600, (82, 41)), ref)
-    assert not presets.fidelity_better((0.80, 0.75, 600, (83, 41)), ref)
+    ref = (0.80, 0.75, 600, (0, 41, 0x3800, 0x3800))
+    assert presets.fidelity_better((0.80, 0.75, 600, (40, 41, 0x3800, 0x3800)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 600, (82, 41, 0x3800, 0x3800)), ref)
+    assert not presets.fidelity_better((0.80, 0.75, 600, (83, 41, 0x3800, 0x3800)), ref)

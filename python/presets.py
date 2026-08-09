@@ -233,6 +233,22 @@ FIDELITY_TOGGLES = ("no_test_restart", "two_stage")
 FIDELITY_MARGIN = 0.02
 
 
+def _noise_pitch(trace, nframes: int) -> int:
+    """Median $D400/$D401 across the frames a side spends on noise, 0 if none.
+
+    The SID's noise is a shift register clocked by the frequency, so this is
+    what decides whether a noise frame is a drum or nothing at all -- see
+    `fidelity_better`.
+    """
+    import fidelity as F                            # noqa: PLC0415
+    vals = []
+    for v in trace:
+        wf = F.register_timeline(v.wf_events, nframes)
+        fq = F.register_timeline(v.freq_events, nframes)
+        vals += [fq[f] for f in range(nframes) if wf[f] & 0x80]
+    return sorted(vals)[len(vals) // 2] if vals else 0
+
+
 def fidelity_better(cand: tuple, ref: tuple,
                     margin: float = FIDELITY_MARGIN) -> bool:
     """Is `cand` a better-playing (melody, sequence, attacks, noise) than `ref`?
@@ -272,8 +288,20 @@ def fidelity_better(cand: tuple, ref: tuple,
     # upper bound and took Sigma Seven, whose two-stage attack sounds 82 noise
     # frames where the original sounds 41: drums invented at twice the rate are
     # not an improvement on drums missing.
-    ours, theirs = cand[3]
-    finds_noise = theirs and not ref[3][0] and abs(ours - theirs) < theirs
+    ours, theirs, our_hz, their_hz = cand[3]
+    finds_noise = (theirs and not ref[3][0] and abs(ours - theirs) < theirs
+                   # ...and the noise has to be audible. The SID's noise is an
+                   # LFSR clocked by the frequency register, so a noise frame at
+                   # a low frequency barely clocks it and makes no sound. The
+                   # first version of this criterion counted frames and not
+                   # sound, and selected four files whose restored "drums" a
+                   # listener could not hear at all: the attack in this dialect
+                   # carries a *pitch* as well as a waveform (Trans-Atlantic
+                   # writes $38 over the note's frequency high byte) and only
+                   # the waveform is read, so the noise plays at the note's own
+                   # $05xx and is inaudible. Within an octave is the test --
+                   # a musical unit, not a fitted threshold.
+                   and our_hz * 2 >= their_hz)
     return keeps_notes and bool(plays_more or finds_noise)
 
 
@@ -309,11 +337,13 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         got = F.compare(orig, dump)
         if got["melody"] is None or got["sequence"] is None:
             return None
-        wv = F.wave_compare(orig, dump, nframes=seconds * 50,
+        nf = seconds * 50
+        wv = F.wave_compare(orig, dump, nframes=nf,
                             lag=F.startup_lag(orig, dump)[0])
         return (got["melody"], got["sequence"],
                 sum(len(v.attacks) for v in dump),
-                (wv["our_noise_frames"], wv["orig_noise_frames"]))
+                (wv["our_noise_frames"], wv["orig_noise_frames"],
+                 _noise_pitch(dump, nf), _noise_pitch(orig, nf)))
 
     ref = play({})
     if ref is None:

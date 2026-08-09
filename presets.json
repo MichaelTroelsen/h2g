@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.179 presets.py",
+  "generator": "h2g 0.5.180 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -573,8 +573,7 @@
       "bytes": 10941,
       "subtunes": 1,
       "rows": 5695,
-      "multiplier": 1,
-      "two_stage": true
+      "multiplier": 1
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
