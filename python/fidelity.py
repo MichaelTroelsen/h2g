@@ -451,7 +451,7 @@ def supports_video_flag(exe: str) -> bool:
 
 def run_siddump(sid: Path, seconds: int, subtune: int,
                 exe: str = SIDDUMP, calibrate: int = 0, calls: int = 1,
-                video=_USE_DEFAULT) -> Trace:
+                video=_USE_DEFAULT, capture: list | None = None) -> Trace:
     """Trace `seconds` of real time, `calls` playroutine calls per frame.
 
     `calls` is the tune's call rate over 50Hz -- gt2reloc's -S multiplier for
@@ -490,6 +490,11 @@ def run_siddump(sid: Path, seconds: int, subtune: int,
                 f"to accept it.")
     proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
                           stdin=subprocess.DEVNULL)
+    if capture is not None:
+        # The raw table, for callers that want to publish the evidence beside
+        # the conclusion (instrmap.py) rather than only the parse of it.
+        capture.append(" ".join(cmd))
+        capture.append(proc.stdout)
     return parse_dump(proc.stdout)
 
 

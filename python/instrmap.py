@@ -92,18 +92,22 @@ def _table(rows: list, head: list) -> list:
 
 
 def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
-           gt2reloc: str, siddump: str) -> tuple:
+           gt2reloc: str, siddump: str, dump: bool = True) -> tuple:
     """(markdown lines, summary dict) for one song."""
     nframes = seconds * 50
     sub = F.resolve_subtune(path, "auto")
     workdir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, workdir / "o.sid")
 
-    orig = F.run_siddump(workdir / "o.sid", seconds, sub, siddump, 0)
+    o_raw: list = []
+    orig = F.run_siddump(workdir / "o.sid", seconds, sub, siddump, 0,
+                         capture=o_raw)
     sng = F.convert(str(path), log=lambda m: None, **opts)
     sng, _ = F.legalise_restarts(sng)
     packed = F.pack_sid(sng, workdir, gt2reloc, mult)
-    ours = (F.run_siddump(packed, seconds, sub, siddump, calls=mult)
+    u_raw: list = []
+    ours = (F.run_siddump(packed, seconds, sub, siddump, calls=mult,
+                          capture=u_raw)
             if packed is not None else None)
 
     o_on = _onsets(orig, nframes)
@@ -299,6 +303,20 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
     lines += _table(rows, ["GT", "ADSR", "original", "ours", ""])
 
 
+    if dump:
+        # The evidence, in full, beside the conclusions drawn from it. Folded
+        # so the tables stay at the top of the file: a 60s trace is 3000 rows
+        # a side, and every reading above is derived from these two tables, so
+        # a disputed row can be checked here rather than re-traced.
+        for label, raw in (("the original", o_raw), ("our conversion", u_raw)):
+            if not raw:
+                continue
+            lines += ["<details>",
+                      f"<summary>Full siddump of {label} "
+                      f"({len(raw[1].splitlines())} lines)</summary>", "",
+                      "```", f"$ {raw[0]}", raw[1].rstrip(), "```", "",
+                      "</details>", ""]
+
     # Counted off the joined mapping, so the index and the per-song tables
     # cannot disagree: a "mismatch" is one instrument whose waveform differs
     # between the two sides, not a pair of set differences that might not
@@ -327,6 +345,11 @@ def main(argv=None) -> int:
                     help="trace length; 60 by default, because a shorter "
                          "window misses instruments a tune introduces late")
     ap.add_argument("--presets", help="presets.json, for per-song options")
+    ap.add_argument("--no-dump", action="store_true",
+                    help="leave out the full siddump tables. They are included "
+                         "by default -- the mapping is derived from them, so "
+                         "publishing both means a disputed row can be checked "
+                         "in place -- but they are ~3000 rows a side per song")
     ap.add_argument("--gt2reloc", default=F.GT2RELOC)
     ap.add_argument("--siddump", default=F.SIDDUMP)
     args = ap.parse_args(argv)
@@ -345,7 +368,8 @@ def main(argv=None) -> int:
         mult = F._preset_multiplier(doc, path.name)
         try:
             lines, s = report(path, opts, mult, args.seconds,
-                              work / path.stem, args.gt2reloc, args.siddump)
+                              work / path.stem, args.gt2reloc, args.siddump,
+                              dump=not args.no_dump)
         except Exception as exc:                      # noqa: BLE001
             print(f"  {path.name}: {type(exc).__name__}: {exc}")
             continue
