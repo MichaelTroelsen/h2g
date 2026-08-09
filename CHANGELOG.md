@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.175 — 2026-08-09
+
+- align the per-frame register columns on the packed player's startup lag
+
 ## 0.5.174 — 2026-08-09
 
 - read Hubbard's third pulse engine, the triangle with fixed bounds

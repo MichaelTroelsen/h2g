@@ -1270,6 +1270,28 @@ player writes them at its first note, and that leading zero otherwise reads as
 a spurious jump on all three voices of every file (Commando: 3.96x for a sweep
 that covers less). `$000` is 0% duty, so nothing audible is dropped.
 
+**The two per-frame agreements — `wave` and `adsr` — are aligned on the packed
+player's startup lag.** gt2reloc's player reaches its first note some 3–8
+frames after the original does, and comparing frame *k* to frame *k* charged
+that constant to the converter on every file: Commando's `wave` read 65% for a
+file whose waveforms agree 92% of the time once aligned, and v0.5.174's drum
+fix looked like a 4.6pp regression while taking noise coverage from 49% to 92%.
+Corpus-wide the alignment moves mean `wave` 67.0 → 70.2% and mean `adsr`
+71.9 → 76.4% — a change to the measure, with no converter change behind it, so
+figures either side of v0.5.175 are not comparable.
+
+The lag is **estimated, never fitted**: it is the difference between the two
+sides' first attack frames, one number from a defined signal. A shift chosen to
+maximise agreement would be a free parameter that can only raise the score. It
+was validated against exactly that search over 36 corpus files — it lands on
+the fitted optimum for 20 of them and gives a mean `wave` of 77.0% against the
+fit's 77.1%, so the search buys a tenth of a point and costs the column its
+meaning. A lag past `MAX_STARTUP_LAG` is not a latency (Chimera measures 438
+frames, an opening one side does not have) and is clamped and reported rather
+than applied. `noise`, `pul`, `pspan`, `filt` and `cut` are one-sided counts or
+travels over each side's own window, so they are shift-invariant and are taken
+before the alignment.
+
 `FIDELITY.md`'s own legend defines each, a *Filter* section there carries both
 sides' raw figures, and *What this run compared* names the registers no column
 reads.

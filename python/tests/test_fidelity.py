@@ -371,6 +371,63 @@ def test_adsr_is_none_when_neither_side_ever_set_an_envelope():
     assert fidelity.adsr_compare(_adsr_voices(), _adsr_voices(), 50)["adsr"] is None
 
 
+def _wf_at(*event_lists):
+    return ([fidelity.Voice(wf_events=list(e),
+                            attack_frames=[f for f, w in e if w & 0x01])
+             for e in event_lists]
+            + [fidelity.Voice()] * (3 - len(event_lists)))
+
+
+def test_the_startup_lag_is_the_difference_in_first_attack_frames():
+    """gt2reloc's player spends a few frames initialising before its first
+    note. Commando's first attacks are at frame 8 where the original's are at
+    1, and that constant was charged to the converter: `wave` read 65% for a
+    file whose waveforms agree 92% of the time once aligned."""
+    o = _wf_at([(1, 0x41)])
+    u = _wf_at([(8, 0x41)])
+    assert fidelity.startup_lag(o, u) == (7, 7)
+
+
+def test_an_alignment_shift_recovers_the_agreement_it_was_charged_for():
+    o = _wf_at([(1, 0x41), (11, 0x81), (13, 0x41)])
+    u = _wf_at([(8, 0x41), (18, 0x81), (20, 0x41)])
+    lag, _ = fidelity.startup_lag(o, u)
+    assert fidelity.wave_compare(o, u, nframes=40)["wave"] < 1.0
+    assert fidelity.wave_compare(o, u, nframes=40, lag=lag)["wave"] == 1.0
+
+
+def test_a_lag_too_large_to_be_a_latency_is_reported_not_applied():
+    """Chimera's raw lag is 438 frames -- 8.8 s, an opening one side does not
+    have. Absorbing that into an alignment would hide a real defect and throw
+    away a third of the window, so the applied lag is clamped and the raw one
+    kept."""
+    o = _wf_at([(1, 0x41)])
+    u = _wf_at([(439, 0x41)])
+    lag, raw = fidelity.startup_lag(o, u)
+    assert (lag, raw) == (fidelity.MAX_STARTUP_LAG, 438)
+
+
+def test_a_conversion_that_starts_early_shifts_the_other_way():
+    o = _wf_at([(5, 0x41)])
+    u = _wf_at([(3, 0x41)])
+    assert fidelity.startup_lag(o, u) == (-2, -2)
+
+
+def test_noise_counts_are_taken_before_the_shift():
+    """`noise` is a one-sided count over each side's own window. Shifting one
+    of them would drop `lag` frames from that side's total alone, so the count
+    would move with the alignment rather than with the conversion."""
+    o = _wf_at([(0, 0x81)])
+    u = _wf_at([(0, 0x81)])
+    for lag in (0, 5):
+        got = fidelity.wave_compare(o, u, nframes=20, lag=lag)
+        assert got["orig_noise_frames"] == got["our_noise_frames"] == 20
+
+
+def test_a_side_that_never_attacks_gets_no_lag():
+    assert fidelity.startup_lag(_wf_at([(1, 0x41)]), _wf_at()) == (0, 0)
+
+
 def _pulse_voices(*event_lists):
     vs = [fidelity.Voice(pulse_events=list(e)) for e in event_lists]
     return vs + [fidelity.Voice()] * (3 - len(vs))

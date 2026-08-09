@@ -729,8 +729,58 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     }
 
 
+# Largest startup lag `startup_lag` will apply. A packed .sid takes a handful
+# of frames to reach its first note that the original does not -- measured
+# across the corpus the lag clusters at 3-8 frames and never legitimately
+# exceeds ten. Chimera's raw lag is 438 (8.8 s), which is not a latency but an
+# opening one side does not have; absorbing that into an alignment would hide a
+# real defect and throw away a third of the window, so it is reported instead.
+MAX_STARTUP_LAG = 25
+
+
+def startup_lag(orig: list[Voice], ours: list[Voice]) -> tuple[int, int]:
+    """(lag to apply, lag measured): frames our first note trails theirs by.
+
+    Every per-frame agreement in this report walks the two traces frame against
+    frame, and a packed `.sid` does not start where the original does: gt2reloc's
+    player spends a few frames initialising before its first note. Commando's
+    first attacks are at frame 8 where the original's are at frame 1, and that
+    seven-frame constant was charged to the converter as disagreement -- `wave`
+    read 65% for a file whose waveforms, once aligned, agree 92% of the time.
+    It is why v0.5.174's drum fix looked like a 4.6pp regression while taking
+    noise coverage from 49% to 92% of the original's frames.
+
+    **Estimated, never fitted.** The lag is the difference between the two
+    sides' first attack frames -- one number, from a defined signal. Searching
+    the shift that maximises agreement would be a free parameter that can only
+    raise the score, which is not evidence of anything. The estimator was
+    validated against that search on 36 corpus files: it lands on the fitted
+    optimum for 20 of them and gives a mean `wave` of 77.0% against the fit's
+    77.1%, so the search buys a tenth of a point and costs the measure its
+    meaning.
+
+    Returns the applied lag clamped to +/-MAX_STARTUP_LAG and the raw one, so a
+    row can say the two differ rather than quietly correcting by 438 frames.
+    """
+    fo = [min(v.attack_frames) for v in orig if v.attack_frames]
+    fu = [min(v.attack_frames) for v in ours if v.attack_frames]
+    if not fo or not fu:
+        return 0, 0
+    raw = min(fu) - min(fo)
+    return max(-MAX_STARTUP_LAG, min(MAX_STARTUP_LAG, raw)), raw
+
+
+def _aligned(ta: list[int], tb: list[int], lag: int) -> tuple[list, list]:
+    """The two timelines with `lag` frames of our head (or theirs) dropped."""
+    if lag > 0:
+        return ta[:len(ta) - lag], tb[lag:]
+    if lag < 0:
+        return ta[-lag:], tb[:len(tb) + lag]
+    return ta, tb
+
+
 def wave_compare(orig: list[Voice], ours: list[Voice],
-                 nframes: int | None = None) -> dict:
+                 nframes: int | None = None, lag: int = 0) -> dict:
     """Per-frame waveform-CLASS agreement, and noise-frame counts per side.
 
     The class of a frame is the waveform-select nibble of $D404 -- `wf & $F0`
@@ -762,14 +812,16 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     agree = total = o_noise = u_noise = 0
     per_voice = []
     for a, b in zip(orig, ours):
+        # Noise is counted off the *unaligned* timelines: it is a one-sided
+        # count of what each side does over its own window, and shifting one of
+        # them would drop `lag` frames from that side's total only.
         ta = register_timeline(a.wf_events, nframes)
         tb = register_timeline(b.wf_events, nframes)
-        va = vt = vo_n = vu_n = 0
+        vo_n = sum(1 for x in ta if x & WF_NOISE)
+        vu_n = sum(1 for y in tb if y & WF_NOISE)
+        ta, tb = _aligned(ta, tb, lag)
+        va = vt = 0
         for x, y in zip(ta, tb):
-            if x & WF_NOISE:
-                vo_n += 1
-            if y & WF_NOISE:
-                vu_n += 1
             cx, cy = x & 0xF0, y & 0xF0
             if cx == 0 and cy == 0:
                 continue
@@ -796,7 +848,7 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
 
 
 def adsr_compare(orig: list[Voice], ours: list[Voice],
-                 nframes: int) -> dict:
+                 nframes: int, lag: int = 0) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
 
     Built exactly like wave_compare: the ADSR pair is sparse, so each side's
@@ -815,17 +867,22 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     envelope the next note will open with, and folding the gate in here would
     re-measure the note lengths the attack columns already measure.
 
+    `lag` is the startup latency from `startup_lag`, applied for the reason
+    given there: this walks the traces frame against frame, and a packed .sid
+    reaches its first note a few frames after the original does.
+
     Baseline: v0.5.71 measured this by hand at 54.2% before its sustain-nibble
     and hard-restart fixes and 66.2% after, over the 83 convertible files.
     Both fixes are shipped and in `presets.json`'s `always` block, so this
     column reproducing the post-fix figure is the check that it measures the
-    same thing.
+    same thing. That baseline predates the alignment and so is not comparable
+    to a figure taken with a nonzero lag.
     """
     agree = total = 0
     per_voice = []
     for a, b in zip(orig, ours):
-        ta = register_timeline(a.adsr_events, nframes)
-        tb = register_timeline(b.adsr_events, nframes)
+        ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
+                          register_timeline(b.adsr_events, nframes), lag)
         va = vt = 0
         for x, y in zip(ta, tb):
             if x == 0 and y == 0:
@@ -1708,8 +1765,15 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # resolution it does not have.
                 row["vice_failed"] = True
         else:
-            row.update(wave_compare(a, best_dump, nframes=nframes))
-            row.update(adsr_compare(a, best_dump, nframes))
+            # The per-frame agreements are aligned on the packed player's
+            # startup latency; the counts and travels below are shift-invariant
+            # one-sided measures and are not.
+            lag, raw = startup_lag(a, best_dump)
+            row["startup_lag"] = lag
+            if raw != lag:
+                row["startup_lag_raw"] = raw
+            row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
+            row.update(adsr_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
@@ -1858,6 +1922,24 @@ def _register_summary(measured: list[dict]) -> list[str]:
                "never does (marked `!` above)" if invented else "")
             + (f"; **{len(missing)}** play unfiltered where the original "
                "filters" if missing else ""))
+    # The alignment is a property of the run, so it is stated in the run rather
+    # than left in a docstring. A reader comparing `wave` or `adsr` against a
+    # figure taken before v0.5.175 needs to know both that a shift was applied
+    # and which files could not take one.
+    lagged = [r for r in measured if "startup_lag" in r]
+    if lagged:
+        lags = sorted(r["startup_lag"] for r in lagged)
+        over = [r for r in lagged if "startup_lag_raw" in r]
+        out.append(
+            "- startup lag applied to `wave` and `adsr` (the two per-frame "
+            f"agreements): median **{lags[len(lags) // 2]}** frame(s), range "
+            f"{lags[0]} to {lags[-1]}. It is the difference between the two "
+            "sides' first attack frames -- estimated from that one signal, "
+            "never fitted to maximise a score"
+            + (f"; **{len(over)}** file(s) measured a lag too large to be a "
+               "startup latency and were clamped rather than corrected ("
+               + ", ".join(f"{r['file']} {r['startup_lag_raw']}"
+                           for r in over[:6]) + ")" if over else ""))
     return out
 
 

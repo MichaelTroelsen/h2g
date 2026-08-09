@@ -147,8 +147,17 @@ test dependency).
   `tests/test_fidelity.py` fails if the registry and the printed header
   disagree. See README.md § *A/B against a previous run*.
 - **A low score in `FIDELITY.md` is a claim about the harness until it is a
-  claim about the converter.** Four separate defects have now been *in the
-  measurement*: NTSC originals named in the wrong key (v0.5.63), subtune 0
+  claim about the converter.** Five separate defects have now been *in the
+  measurement*, the largest being that **every per-frame column was charged
+  for the packed player's startup lag** until v0.5.175: gt2reloc's player
+  reaches its first note some 3-8 frames after the original, and comparing
+  frame k to frame k made that a disagreement on every file (mean `wave`
+  67.0 → 70.2%, `adsr` 71.9 → 76.4%, Commando's `wave` +32pp). It is
+  `startup_lag`, the difference between the two sides' first attack frames —
+  **estimated from that signal, never fitted**, because a shift chosen to
+  maximise agreement can only raise the score. The estimator was validated
+  against that search: it lands on the fitted optimum for 20 of 36 files and
+  gives a mean within 0.1pp of it. Also: NTSC originals named in the wrong key (v0.5.63), subtune 0
   traced where the header names another default (v0.5.64), a 10 s window
   shorter than a file's opening rest, and (v0.5.97) **rows whose two sides are
   not the same piece of music**, because the `.sid`'s own init routine

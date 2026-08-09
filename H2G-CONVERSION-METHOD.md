@@ -2470,6 +2470,78 @@ and `SURVEY.md` are the corpus. A number from one is not a number about the
 other, and for a while two measurements that should have agreed did not
 because they were of different files.
 
+### 7.ddd The drum's noise duration was right, and the report was seven frames late
+
+v0.5.174's drum fix took Commando's noise coverage from 49% to 92% of the
+original's frames and cost 4.6pp of `wave`. That was written up here as
+"the right amount of noise at partly the wrong times", with 962 frames of ours
+landing where the original has none, and the next task was to fix the duration.
+
+**There was nothing to fix.** Sweeping a frame offset over the noise agreement:
+
+| shift | both | ours-only | orig-only |
+|---:|---:|---:|---:|
+| +0 | 463 | 962 | 1079 |
+| **+7** | **1425** | **0** | **115** |
+
+At +7 every one of our 1425 noise frames coincides with an original noise
+frame. Our first attacks are at frame 8; the original's at frame 1. gt2reloc's
+player spends a few frames initialising before its first note, and comparing
+frame *k* to frame *k* charged that constant to the converter on every file.
+
+Per-instrument noise durations, measured before the shift was known, said the
+same thing and would have prevented the wrong write-up on their own:
+
+| GT | own wave | original | ours |
+|---|---|---|---|
+| 2 | `$41` | 2 frames ×166, 4 ×23 | 2 ×189 |
+| 4 | `$81` | 12 ×64, 6 ×5 | 11 ×64, 5 ×5 |
+| 5, 6, 8, 13 | | 2 | 2 |
+
+Exact but for two residuals summing to the 115 above, and **neither is a
+duration**. GT 2's 4-frame notes are two 2-frame bursts — the player re-fires
+the drum on a pattern row that does not retrigger the gate, so siddump sees one
+note where the player sees two. GT 4's "one frame short" is the *next* note's
+frame counted in this one: it holds `$09` with ADSR `$099F`, which is GT 3's
+envelope, not GT 4's.
+
+#### Estimated, not fitted
+
+The correction has to be one number from a defined signal. The obvious
+alternative — search the shift that maximises agreement — is a free parameter
+that can only raise the score, and would make the column evidence of nothing.
+So `startup_lag` is the difference between the two sides' first attack frames,
+and it was **validated against** the search it replaces on 36 corpus files:
+
+* it lands on the fitted optimum for **20 of 36**;
+* mean `wave` is **77.0%** at the estimate against **77.1%** at the fit.
+
+The search buys a tenth of a point and costs the measure its meaning.
+
+It is also bounded. Chimera's raw lag is **438 frames** — 8.8 s, an opening one
+side does not have. Absorbing that into an alignment would hide a real defect
+and discard a third of the window, so a lag past `MAX_STARTUP_LAG` is clamped
+and the raw value reported. The report names the file.
+
+Corpus effect, and it is a **measurement** change with no converter change
+behind it: mean `wave` 67.0 → 70.2%, mean `adsr` 71.9 → 76.4%, Commando's
+`wave` +32pp, Phantoms +26pp, six files −1pp. Noise, `pul`, `pspan`, `filt` and
+`cut` are one-sided counts or travels over each side's own window and are
+shift-invariant, so they are computed before the shift and did not move.
+
+**What this cost.** A converter fix was written up as a regression, and the
+next task was set to repair something that already worked. The check that would
+have caught it is cheap and general: **before attributing a per-frame
+disagreement to the converter, sweep the offset.** A single number that
+collapses the disagreement is not a defect in the thing being measured.
+
+The one real finding left over is not a duration either. At every note boundary
+we write `$09` — testbit plus gate, which silences the oscillator for a frame —
+where the player writes nothing. It is the hardcoded first-frame waveform in
+every record (`goatwriter._write_instruments`). `gplay.c:355-363` shows the
+alternative: a `firstwave` of `$FF` raises the gate and leaves the waveform
+alone, giving the note its attack without the silent frame.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
