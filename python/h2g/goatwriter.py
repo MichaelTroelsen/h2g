@@ -1126,6 +1126,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # invents an octave arpeggio for all of them.
     drum = (arp_style & 1) == 1
     arp = (arp_style & 4) == 4
+    tick = False
     if effects:
         if not det.effect_drum:
             drum = False
@@ -1138,7 +1139,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # once the sweep was gone ("still not correct"): the record was
             # still getting the drum's gate-off. Suppressing only half of the
             # treatment was the bug. See _drum_entries for the sustain rule.
+            #
+            # It owes the noise tick even so. The drum block's opening two
+            # frames of noise are not part of the percussive treatment -- the
+            # player writes them for any record carrying the bit -- and
+            # dropping the whole block dropped those too, which is why
+            # instrmap.py reports four of Commando's instruments opening on
+            # noise in the original and on a pitched waveform here.
             drum = False
+            tick = True
         if not det.effect_arp or arp_note == 0:
             arp = False
     if arp_note == 0:
@@ -1149,6 +1158,37 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
     left = [wave, 0x00, tail, 0xFF, 0xFF]
     right = [0x00, 0x00, 0x00, 0x00, 0x00]
+
+    # The tick goes at entries 1-2, not 0-1: the player writes the note's own
+    # waveform on the note's first frame and the drum block's noise only from
+    # the second. Traced on Commando's original, voice 0 reads
+    # `15 80 80 14 14` from each onset -- own waveform, two frames of noise,
+    # then the gate-off waveform. Putting the noise at entry 0 makes it two
+    # frames early and drops that opening frame entirely.
+    #
+    # `off` is how far that pushes everything after it, so the arpeggio's and
+    # the rise's jump targets still name the entry they mean. Variable-length
+    # wavetables (v0.5.163) are what make the extra entries affordable.
+    off = 0
+    if tick:
+        noise = WAVE_NOISE_GATEOFF | (wave & 0x01)
+        extra = NOISE_TICK_FRAMES * max(1, multiplier) - 1
+        tl, tr = [noise], [0x00]
+        if extra == 1:
+            tl.append(noise)
+            tr.append(0x00)
+        elif extra > 1:
+            # A delay is current for value + 1 calls, and its right side is
+            # read on the last of them, so $80 keeps it from moving the note.
+            tl.append(min(extra - 1, WAVE_MAX_DELAY))
+            tr.append(0x80)
+        off = len(tl)
+        # Two `tail` entries, mirroring the untimed shape's entries 1-2: the
+        # arpeggio loops over the second of them and the entry after it, so
+        # collapsing them to one puts the stop where the arpeggio's own
+        # entries belong and the loop is never reached.
+        left = [wave] + tl + [tail, tail, 0xFF, 0xFF]
+        right = [0x00] + tr + [0x00, 0x00, 0x00, 0x00]
 
     # A record that sets both bits gets both blocks in the player -- the drum
     # sets the waveform, the arpeggio then overwrites the frequency it swept
@@ -1173,7 +1213,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         else:
             left[1] = 0x80 | arp_set_keybit
             right[1] = (0x80 - arp_note) & 0xFF
-    else:
+    elif not tick:
+        # A ticked record already owns entry 1, and its tails sit at 3-4.
         left[1] = tail
 
     # The instrument's own entries are 1-based indices i*5+6 .. i*5+10, so its
@@ -1184,19 +1225,21 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # than WAVE_ENTRIES_PER_INSTR.
     base_entry = start if start is not None         else (lead + i) * WAVE_ENTRIES_PER_INSTR + 1
     first = base_entry & 0xFF
-    third = (base_entry + 2) & 0xFF
+    third = (base_entry + 2 + off) & 0xFF
 
     if arp:
         # $13CD: alternate between the note and the note minus the high
         # nibble, one frame each. Readme p.794: right side $60-$7F is a
         # negative relative note, so $80-N is -N semitones.
         hold = _wave_hold_byte(multiplier, wave)
-        if hold is None or tail != wave:
+        if hold is None or tail != wave or tick:
             # -S1: a call is a frame, so the plain two-entry loop is already
-            # at the player's rate.
-            left[3] = tail
-            right[3] = _arp_relative(arp_fixed, arp_note)
-            right[4] = third
+            # at the player's rate. A ticked record is forced onto this shape
+            # too: the multiplier shape below loops back to entry 0, which
+            # would replay the noise tick once per arpeggio cycle.
+            left[3 + off] = tail
+            right[3 + off] = _arp_relative(arp_fixed, arp_note)
+            right[4 + off] = third
         else:
             # At -S{m} each half must last m calls, which needs a hold entry
             # beside each -- five slots for attack + 2x(note, hold) + jump,
@@ -1220,9 +1263,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     elif effects and det.effect_rise and (arp_style & 2) == 2:
         index = _rise_speed_index(fmt, speed_table, multiplier)
         if index:
-            left[2] = WAVECMD_PORTAUP
-            right[2] = index
-            right[3] = third
+            left[2 + off] = WAVECMD_PORTAUP
+            right[2 + off] = index
+            right[3 + off] = third
 
     # The attack entry holds for one play call, which is one frame only at
     # -S1; under -S{m} it needs m. A delay entry ($01-$0F, held for N calls --
@@ -1235,7 +1278,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # is the only place the tail waveform is written, and the delay may take it
     # only where the tail *is* the attack byte and writing it changes nothing.
     hold = _wave_hold_byte(multiplier, wave)
-    if hold is not None and not arp and not drum and (
+    if hold is not None and not arp and not drum and not tick and (
             left[2] == tail or tail == wave):
         left[1] = hold
 
