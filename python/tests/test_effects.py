@@ -346,7 +346,9 @@ def test_warhawk_has_all_four_routines():
         return
     # Warhawk is the player the +7 bit-field reading was taken from, so it is
     # the one file that must answer yes to every probe: rise, arp, drum, pulse.
-    assert _detect_effects("Warhawk") == (True, True, True, True)
+    # The fifth element is the fixed arpeggio interval, 0 here: Warhawk is the
+    # nibble dialect, which takes its interval from the record.
+    assert _detect_effects("Warhawk") == (True, True, True, True, 0)
 
 
 def test_the_players_that_read_plus_seven_differently_are_rejected():
@@ -355,7 +357,7 @@ def test_the_players_that_read_plus_seven_differently_are_rejected():
     # Mega Apocalypse tests the whole byte with LDA/BEQ; Chicken Song does have
     # an AND #$02 on it, but the block swaps in noise rather than raising the
     # note, so the rise probe's `AND #$03 / BNE / INC` tail rejects it.
-    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False)
+    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False, 0)
     assert _detect_effects("Chicken_Song")[0] is False
 
 
@@ -378,4 +380,4 @@ def test_a_bit_can_be_tested_without_the_block_being_warhawks():
     tested = [b for b in (0x01, 0x02, 0x04, 0x08)
               if search_file(sid.data, f"{load} 29 {b:02X}") >= 1]
     assert tested == [0x01, 0x02, 0x04]
-    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False)
+    assert _detect_effects("Mega_Apocalypse") == (False, False, False, False, 0)

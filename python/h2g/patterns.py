@@ -1589,24 +1589,73 @@ def min_played_notes(tracks: List[List[int]],
             else:
                 lowest_trans[b] = min(trans, lowest_trans.get(b, trans))
 
+    # Which instruments a pattern can be entered on, found by walking each
+    # voice's orderlist the way the player does -- carrying the instrument
+    # across pattern boundaries, because the column is sticky between patterns
+    # and not only within one. Iterated to a fixpoint because a pattern reached
+    # again after a loop or a repeat can be entered in a state the first lap
+    # never produced; without that this would be an under-estimate, and an
+    # under-estimate here is a bound that is too *high*.
+    entry: dict = {}
+    # A track's orderlist loops, so the state it *starts* a lap in is whatever
+    # the previous lap left -- not "no instrument". Seeding only with None
+    # would miss states the second lap onward can produce, and a missed state
+    # is a bound that comes out too HIGH, which is the unsafe direction here.
+    track_starts = [{None} for _ in tracks]
+    changed = True
+    while changed:
+        changed = False
+        for t, track in enumerate(tracks):
+          for begin in list(track_starts[t]):
+            current, operand = begin, False
+            for b in track:
+                if operand:
+                    operand = False
+                    continue
+                if b == GT_ORDER_RESTART:
+                    operand = True
+                    continue
+                if GT_REPEAT <= b < GT_ORDER_RESTART:
+                    continue             # transpose or repeat, no operand
+                if b >= len(patterns):
+                    continue
+                seen = entry.setdefault(b, set())
+                if current not in seen:
+                    seen.add(current)
+                    changed = True
+                pattern = patterns[b]
+                for row in range(len(pattern) // 4):
+                    instr = pattern[4 * row + 1]
+                    if instr:
+                        current = instr
+            if current not in track_starts[t]:
+                track_starts[t].add(current)   # the next lap begins here
+                changed = True
+
     out: dict = {}
     unattributed = None
     for index, pattern in enumerate(patterns):
         if index not in lowest_trans:
             continue                     # no orderlist reaches this pattern
         shift = lowest_trans[index]
-        current = None
-        for row in range(len(pattern) // 4):
-            note, instr = pattern[4 * row], pattern[4 * row + 1]
-            if instr:
-                current = instr
-            if not GT_FIRSTNOTE <= note <= GT_LASTNOTE:
-                continue
-            n = note - GT_FIRSTNOTE + shift
-            if current is None:
-                unattributed = n if unattributed is None else min(unattributed, n)
-            else:
-                out[current] = min(n, out.get(current, n))
+        # Every instrument this pattern can start on. `None` means some path
+        # reaches it before any row has ever named one, which is genuinely
+        # unattributable and still has to lower every bound.
+        openers = entry.get(index) or {None}
+        for opener in openers:
+            current = opener
+            for row in range(len(pattern) // 4):
+                note, instr = pattern[4 * row], pattern[4 * row + 1]
+                if instr:
+                    current = instr
+                if not GT_FIRSTNOTE <= note <= GT_LASTNOTE:
+                    continue
+                n = note - GT_FIRSTNOTE + shift
+                if current is None:
+                    unattributed = (n if unattributed is None
+                                    else min(unattributed, n))
+                else:
+                    out[current] = min(n, out.get(current, n))
     if unattributed is not None:
         out = {k: min(v, unattributed) for k, v in out.items()}
     return out

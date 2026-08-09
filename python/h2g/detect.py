@@ -83,6 +83,10 @@ class Detection:
     # a shared format across the player family -- see _find_effect_routines().
     effect_rise: bool = False   # bit $02: +1 semitone every 4 frames
     effect_arp: bool = False    # bit $04: alternate with note - (byte >> 4)
+    # Semitones *up* for the second arpeggio dialect, whose interval is
+    # hardcoded in the routine rather than taken from the record's high
+    # nibble. 0 means the nibble form above. See _find_effect_routines.
+    arp_fixed_up: int = 0
     effect_drum: bool = False   # bit $01: pitch sweep down, then noise
     effect_pulse_lo: bool = False  # bit $08: accumulate +6 into pulse width LO
     # A SECOND, mutually exclusive reading of the same byte -- see
@@ -858,8 +862,8 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.status_bit6:
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
 
-    (det.effect_rise, det.effect_arp,
-     det.effect_drum, det.effect_pulse_lo) = _find_effect_routines(sid, det)
+    (det.effect_rise, det.effect_arp, det.effect_drum,
+     det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
     if any((det.effect_rise, det.effect_arp, det.effect_drum,
             det.effect_pulse_lo)):
         found = ", ".join(n for n, ok in (("drum", det.effect_drum),
@@ -1648,7 +1652,7 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     """
     found = _effect_byte_address(sid, det)
     if not found:
-        return False, False, False, False
+        return False, False, False, False, 0
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     any_load = "A5 ??" if zp else "AD ?? ??"
@@ -1656,6 +1660,31 @@ def _find_effect_routines(sid: SidFile, det: Detection):
         sid.data, f"{load} 29 02 F0 ?? {any_load} 29 03 D0 ?? FE") >= 1
     arp = search_file(
         sid.data, f"{load} 29 04 F0 ?? {load} 4A 4A 4A 4A 8D") >= 1
+    # A second arpeggio dialect, and the reason 12 corpus files arpeggiate
+    # with nothing emitted for them. It takes no interval from the record at
+    # all -- the alternate note is a hardcoded `ADC #$0C`, an octave *up*,
+    # where the nibble form subtracts. Commando $535E:
+    #
+    #     535E  AD 23 55  LDA effect
+    #           29 04     AND #$04 / BEQ out
+    #           AD 25 55  LDA $5525    ; the play routine's own frame counter,
+    #           29 01     AND #$01     ; INC'd at its entry point, so this
+    #           F0 ??     BEQ even     ; alternates every call
+    #           BD FB 54  LDA note,X
+    #           18 69 0C  CLC / ADC #$0C
+    #
+    # Because the interval is in the code and not the record, the high nibble
+    # says nothing here -- which is why the nibble rule ("a zero nibble means
+    # both halves play the same note") reads these files as having no
+    # arpeggio at all. The VB6 original's flat +12 substitution was right for
+    # *this* dialect and wrong for the other; h2g had it the other way round.
+    arp_up = 0
+    at = search_file(
+        sid.data,
+        f"{load} 29 04 F0 ?? AD ?? ?? 29 01 F0 ?? BD ?? ?? 18 69 ??")
+    if at >= 1 and at + 19 < len(sid.data):
+        arp_up = sid.data[at + 19]      # the ADC operand: semitones up
+        arp = arp = True
     # Warhawk $1366. Two guard loads follow the bit test -- a per-voice drum
     # counter and the note's own duration -- before the block decrements the
     # counter into $D401 (frequency high) and finally writes #$80 (noise) to
@@ -1677,7 +1706,7 @@ def _find_effect_routines(sid: SidFile, det: Detection):
         sid.data,
         f"{load} 29 08 F0 ?? AC ?? ?? B9 ?? ?? 6D ?? ?? "
         f"99 ?? ?? AC ?? ?? 99 02 D4") >= 1
-    return rise, arp, drum, pulse_lo
+    return rise, arp, drum, pulse_lo, arp_up
 
 
 def _find_pulse_lo(sid: SidFile, det: Detection) -> int:

@@ -1068,6 +1068,19 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     return out
 
 
+def _arp_relative(arp_fixed: int, arp_note: int) -> int:
+    """The wavetable right-side byte for the arpeggio's alternate note.
+
+    Readme p.794: `$00-$5F` is a relative note up, `$60-$7F` a negative one,
+    so `$80 - N` is N semitones down. The two dialects go opposite ways -- the
+    nibble form's `SBC` lowers the note, the fixed form's `ADC` raises it -- so
+    the sign is a property of the routine, not of the record.
+    """
+    if arp_fixed:
+        return arp_note & 0x5F
+    return (0x80 - arp_note) & 0xFF
+
+
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
@@ -1095,7 +1108,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     arp_style = data[base + 7]
     wave = data[base + 2]
 
-    arp_note = (arp_style & 0xF0) >> 4
+    # The fixed-interval dialect takes no interval from the record: its
+    # routine adds a hardcoded octave (detect.arp_fixed_up), so the nibble
+    # carries no information and the "zero nibble means no arpeggio" rule
+    # below must not apply to it.
+    # Gated on `effects` like every other read of the +7 byte: with the flag
+    # off this function reproduces the VB6 original exactly, and the original
+    # knew nothing of either dialect.
+    arp_fixed = det.arp_fixed_up if effects else 0
+    arp_note = arp_fixed or ((arp_style & 0xF0) >> 4)
     # The original substitutes $74 -- a +12 relative note, an octave-up
     # arpeggio -- whenever the high nibble is zero. The player does no such
     # thing: the nibble is written into the operand of the `SBC` at $13F4
@@ -1107,6 +1128,16 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     arp = (arp_style & 4) == 4
     if effects:
         if not det.effect_drum:
+            drum = False
+        elif drum and (data[base + 4] >> 4):
+            # A record whose envelope sustains is not percussive, and the drum
+            # shape is wrong for it in *both* its parts -- not just the pitch
+            # sweep. Its second entry releases the gate, so a held tone drops
+            # into its release on frame 2 and can never sustain at all. A
+            # listener caught the sweep first ("out of tune") and then this,
+            # once the sweep was gone ("still not correct"): the record was
+            # still getting the drum's gate-off. Suppressing only half of the
+            # treatment was the bug. See _drum_entries for the sustain rule.
             drum = False
         if not det.effect_arp or arp_note == 0:
             arp = False
@@ -1164,7 +1195,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # -S1: a call is a frame, so the plain two-entry loop is already
             # at the player's rate.
             left[3] = tail
-            right[3] = (0x80 - arp_note) & 0xFF
+            right[3] = _arp_relative(arp_fixed, arp_note)
             right[4] = third
         else:
             # At -S{m} each half must last m calls, which needs a hold entry
@@ -1183,7 +1214,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # carries $80 -- "no note change" -- or it would drag the
             # arpeggio note back to the base note one call early.
             left[1], right[1] = hold, 0x00
-            left[2], right[2] = tail, (0x80 - arp_note) & 0xFF
+            left[2], right[2] = tail, _arp_relative(arp_fixed, arp_note)
             left[3], right[3] = hold, 0x80
             right[4] = first
     elif effects and det.effect_rise and (arp_style & 2) == 2:

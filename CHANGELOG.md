@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.164 — 2026-08-09
+
+- full-depth tom, the sustaining-record gate, and the fixed-octave arpeggio dialect
+
 ## 0.5.163 — 2026-08-09
 
 - variable-length wavetables: the drum sweep is no longer capped at two steps
