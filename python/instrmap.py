@@ -124,77 +124,117 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         if b + 4 < len(sid.data):
             declared[(sid.data[b + 3] << 8) | sid.data[b + 4]] = i
 
-    lines = [f"# {path.name} — instrument map", "",
-             f"Subtune {sub}, {seconds}s, packed at `-S{mult}`. "
-             f"Signatures are the registers on the frame after each note "
-             f"onset.", ""]
+    # Our instrument records, read back out of the file we just wrote, so the
+    # mapping is against what shipped rather than what the writer intended.
+    q = 4 + 96
+    subs = sng[q]; q += 1
+    for _ in range(subs * 3):
+        n = sng[q]; q += 1; q += n + 1
+    ni = sng[q]; q += 1
+    recs = []
+    for i in range(ni):
+        recs.append(list(sng[q:q + 9])); q += 25
+    n = sng[q]; q += 1
+    wl = list(sng[q:q + n])
 
-    lines.append("## What the original plays")
+    def first_wave(ptr):
+        """The waveform this instrument's wavetable opens on."""
+        for k in range(ptr - 1, len(wl)):
+            if wl[k] == 0xFF:
+                return None
+            if wl[k] > 0x0F:
+                return wl[k] & 0xF0
+        return None
+
+    # Both sides keyed by ADSR, which is the natural join: it is a verbatim
+    # per-instrument copy of the record (0 of 1635 corpus records differ), so
+    # it identifies an instrument where waveform and pulse cannot -- several
+    # instruments share a waveform, and a swept pulse has no single value.
+    def by_adsr(onsets):
+        out = defaultdict(Counter)
+        for _, _, w, a, pu, _ in onsets:
+            out[a][(w, pu)] += 1
+        return out
+
+    o_by, u_by = by_adsr(o_on), by_adsr(u_on)
+
+    lines = [f"# {path.name} — instrument map", "",
+             f"Subtune {sub}, {seconds}s, packed at `-S{mult}`. Signatures are "
+             "the registers on the frame after each note onset, joined on ADSR "
+             "— a verbatim per-instrument copy, and so the one field that "
+             "identifies an instrument on both sides.", ""]
+
+    lines.append("## Mapping")
+    lines.append("")
+    rows, seen = [], set()
+    for i, r in enumerate(recs):
+        adsr = (r[0] << 8) | r[1]
+        seen.add(adsr)
+        ow = first_wave(r[2])
+        oh, uh = o_by.get(adsr), u_by.get(adsr)
+        o_n = sum(oh.values()) if oh else 0
+        u_n = sum(uh.values()) if uh else 0
+        o_w = _wave_name(oh.most_common(1)[0][0][0]) if oh else "—"
+        u_w = _wave_name(uh.most_common(1)[0][0][0]) if uh else "—"
+        if not oh and not uh:
+            verdict = "unused both sides"
+        elif not oh:
+            verdict = "**we play it, the original does not**"
+        elif not uh:
+            verdict = "**the original plays it, we do not**"
+        elif o_w != u_w:
+            verdict = f"**waveform: {o_w} -> {u_w}**"
+        else:
+            verdict = "ok"
+        rows.append([i + 1, f"`${adsr:04X}`",
+                     _wave_name(ow) if ow is not None else "—",
+                     o_w, o_n, u_w, u_n, verdict])
+    rows_map = rows
+    lines += _table(rows, ["GT", "ADSR", "opens on", "orig wave", "orig notes",
+                           "our wave", "our notes", "verdict"])
+
+    extra = sorted(set(o_by) - seen)
+    if extra:
+        lines.append("### Sounded by the original, with no instrument of ours")
+        lines.append("")
+        lines += _table([[f"`${a:04X}`",
+                          _wave_name(o_by[a].most_common(1)[0][0][0]),
+                          sum(o_by[a].values())] for a in extra],
+                        ["ADSR", "waveform", "notes"])
+
+    lines.append("## Pulse width per instrument")
     lines.append("")
     rows = []
-    for (w, a, p), n in o_sig.most_common():
-        ns = o_notes[(w, a, p)]
-        rows.append([_wave_name(w), f"`${a:04X}`", f"`${p * PULSE_BUCKET:03X}`",
-                     n, f"{min(ns)}–{max(ns)}" if ns else "—",
-                     "yes" if a in declared else "**no**"])
-    lines += _table(rows, ["waveform", "ADSR", "pulse~", "notes", "range",
-                           "ADSR in our table"])
+    for i, r in enumerate(recs):
+        adsr = (r[0] << 8) | r[1]
+        o_p = sorted({p for _, p in o_by.get(adsr, {})})
+        u_p = sorted({p for _, p in u_by.get(adsr, {})})
+        if not o_p and not u_p:
+            continue
+        def fmt(xs):
+            return " ".join(f"${x*PULSE_BUCKET:03X}" for x in xs) or "—"
+        rows.append([i + 1, f"`${adsr:04X}`", fmt(o_p), fmt(u_p),
+                     "ok" if set(o_p) == set(u_p)
+                     else ("**narrower**" if len(u_p) < len(o_p) else "wider")])
+    lines += _table(rows, ["GT", "ADSR", "original", "ours", ""])
 
-    lines.append("## What our conversion plays")
-    lines.append("")
-    rows = [[_wave_name(w), f"`${a:04X}`", f"`${p * PULSE_BUCKET:03X}`", n,
-             "yes" if (w, a, p) in o_sig else "**invented**"]
-            for (w, a, p), n in u_sig.most_common()]
-    lines += _table(rows, ["waveform", "ADSR", "pulse~", "notes",
-                           "in the original"])
 
-    # coverage, per dimension
-    o_adsr = {a for _, a, _ in o_sig}
-    u_adsr = {a for _, a, _ in u_sig}
-    o_wave = {w for w, _, _ in o_sig}
-    u_wave = {w for w, _, _ in u_sig}
-    o_pul = {p for _, _, p in o_sig}
-    u_pul = {p for _, _, p in u_sig}
-
-    def cov(o, u, fmt=str):
-        miss = sorted(o - u)
-        return (f"{len(o & u)}/{len(o)}"
-                + (" — missing " + ", ".join(fmt(m) for m in miss[:8])
-                   if miss else ""))
-
-    lines.append("## Coverage")
-    lines.append("")
-    lines += _table([
-        ["ADSR", cov(o_adsr, u_adsr, lambda x: f"`${x:04X}`")],
-        ["waveform class", cov(o_wave, u_wave, _wave_name)],
-        ["pulse bucket", cov(o_pul, u_pul, lambda x: f"`${x*PULSE_BUCKET:03X}`")],
-        ["ADSR vs our instrument table",
-         cov(o_adsr, set(declared), lambda x: f"`${x:04X}`")],
-    ], ["dimension", "covered"])
-
-    # the filter is global, so it gets one row rather than one per onset
-    def filt(tr):
-        if tr is None:
-            return "—"
-        f = tr.filter
-        cut = {v for _, v in f.cutoff_events}
-        ctrl = {v for _, v in f.ctrl_events}
-        return (f"{len(cut)} cutoff value(s), {len(ctrl)} control value(s)"
-                if cut or ctrl else "unused")
-
-    lines.append("## Filter (global, $D415–$D418)")
-    lines.append("")
-    lines += _table([["original", filt(orig)], ["ours", filt(ours)]],
-                    ["side", "activity"])
-
+    # Counted off the joined mapping, so the index and the per-song tables
+    # cannot disagree: a "mismatch" is one instrument whose waveform differs
+    # between the two sides, not a pair of set differences that might not
+    # correspond to any instrument at all.
+    mism = sum(1 for r in rows_map if r[7].startswith("**waveform"))
+    only_orig = sum(1 for r in rows_map
+                    if r[7].startswith("**the original"))
+    only_ours = sum(1 for r in rows_map if r[7].startswith("**we play"))
     summary = {
         "file": path.name,
-        "orig_signatures": len(o_sig),
-        "our_signatures": len(u_sig),
-        "adsr_missing": len(o_adsr - u_adsr),
-        "adsr_not_in_table": len(o_adsr - set(declared)),
-        "wave_missing": len(o_wave - u_wave),
-        "invented": sum(1 for k in u_sig if k not in o_sig),
+        "instruments": len(recs),
+        "matched": sum(1 for r in rows_map if r[7] == "ok"),
+        "waveform_mismatch": mism,
+        "only_original": only_orig + len(extra),
+        "only_ours": only_ours,
+        "unused": sum(1 for r in rows_map if r[7] == "unused both sides"),
     }
     return lines, summary
 
@@ -231,19 +271,21 @@ def main(argv=None) -> int:
             continue
         (out / f"{path.stem}.md").write_text("\n".join(lines), encoding="utf-8")
         summaries.append(s)
-        print(f"  {path.name:<40} {s['orig_signatures']:>3} signatures, "
-              f"{s['adsr_missing']} ADSR missing, {s['invented']} invented")
+        print(f"  {path.name:<40} {s['matched']:>3}/{s['instruments']:<3} matched, "
+              f"{s['waveform_mismatch']} waveform, "
+              f"{s['only_original']} orig-only, {s['only_ours']} ours-only")
 
     index = ["# Instrument maps", "",
-             f"{len(summaries)} song(s), {args.seconds}s each. "
-             "*missing* is a register signature the original produces and the "
-             "conversion does not; *invented* is the reverse.", ""]
+             f"{len(summaries)} song(s), {args.seconds}s each. One row per "
+             "instrument, matched between the original and the conversion on "
+             "ADSR. *matched* means both sides sound it with the same waveform "
+             "class.", ""]
     index += _table(
-        [[f"[{s['file']}]({Path(s['file']).stem}.md)", s["orig_signatures"],
-          s["our_signatures"], s["adsr_missing"], s["wave_missing"],
-          s["invented"]] for s in summaries],
-        ["song", "orig sigs", "our sigs", "ADSR missing", "wave missing",
-         "invented"])
+        [[f"[{s['file']}]({Path(s['file']).stem}.md)", s["instruments"],
+          s["matched"], s["waveform_mismatch"], s["only_original"],
+          s["only_ours"], s["unused"]] for s in summaries],
+        ["song", "instruments", "matched", "waveform differs",
+         "only original", "only ours", "unused"])
     (out / "index.md").write_text("\n".join(index), encoding="utf-8")
     print(f"wrote {len(summaries)} map(s) + index to {out}")
     return 0
