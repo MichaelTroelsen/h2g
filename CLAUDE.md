@@ -157,7 +157,11 @@ test dependency).
   **estimated from that signal, never fitted**, because a shift chosen to
   maximise agreement can only raise the score. The estimator was validated
   against that search: it lands on the fitted optimum for 20 of 36 files and
-  gives a mean within 0.1pp of it. Also: NTSC originals named in the wrong key (v0.5.63), subtune 0
+  gives a mean within 0.1pp of it. **And the same columns can be too kind:**
+  `wave` reached 99.5% on Commando for a v0.5.176 candidate that deleted 79
+  notes, because fewer attacks mean fewer transitions to disagree about. Read
+  any register agreement next to both sides' note counts — a change that
+  removes the events a column scores will always appear to improve it. Also: NTSC originals named in the wrong key (v0.5.63), subtune 0
   traced where the header names another default (v0.5.64), a 10 s window
   shorter than a file's opening rest, and (v0.5.97) **rows whose two sides are
   not the same piece of music**, because the `.sid`'s own init routine

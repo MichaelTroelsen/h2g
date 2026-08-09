@@ -138,6 +138,22 @@ DRUM_SPEED = _drum_speed(1)
 # that, and costs no corpus coverage (184 of 192 drum instruments still deepen).
 DRUM_DEEPEN_MARGIN = 32
 
+# Record byte +8, the waveform Goattracker writes on a note's first frame.
+#
+# `$09` is testbit plus gate -- Goattracker's own editor default and what this
+# tool has always written. The testbit holds the oscillator's phase accumulator
+# and the noise LFSR at zero, so the frame it occupies is *silent*, and it
+# occupies one on every note. Hubbard's players spend 4273 such frames across
+# 12 of the 83 corpus files; ours spent 9179 across 79.
+#
+# `$FF` is the alternative gplay.c:355-363 offers: a firstwave of `$FE` or above
+# is read as a gate value and assigned straight to `cptr->gate`, leaving
+# `cptr->wave` alone. So `$FF` opens the gate -- the note still attacks -- and
+# the frame keeps whatever waveform was already there instead of going quiet.
+# Anything below `$FE` is written to the waveform and forces the gate on.
+FIRSTWAVE_TESTBIT = 0x09
+FIRSTWAVE_GATE_ONLY = 0xFF
+
 
 def _note_freq(note: int) -> int:
     """Goattracker's `freqtbl` value for note index `note`, floored.
@@ -681,12 +697,14 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        filter_ptrs: dict | None = None,
                        vib_ptrs: dict | None = None,
                        lead: int = 1,
-                       wave_starts: Optional[List[int]] = None) -> int:
+                       wave_starts: Optional[List[int]] = None,
+                       no_test_restart: bool = False) -> int:
     out.append(instr_used)
+    first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
     if lead:
         # Instrument 1: always the empty "Clear Voice" slot.
-        out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
+        out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, first])
         out += _padded_name_bytes("Clear Voice")
 
     # The digi engine's records are 16 bytes rather than 8. The fields read
@@ -735,8 +753,15 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # GTS2 one (gsong.c:284-285) -- which is why they stay 0,0 unless
         # _vibrato_layout produced something, and it only does for GTS5.
         stbl_ptr, vib_delay = (vib_ptrs or {}).get(i, (0x00, 0x00))
+        # The player's own first frame is the record's waveform with the gate
+        # on -- Commando's noise record traces `81 80 80 80 80` -- so that is
+        # what `--no-test-restart` writes here. Anything below $FE is assigned
+        # to the waveform and forces the gate on (gplay.c:355-363), which is
+        # both halves of what a note needs: a real attack and no silent frame.
         out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, stbl_ptr,
-                      vib_delay, gatetimer, 0x09])
+                      vib_delay, gatetimer,
+                      ((data[base + 2] | 0x01) & 0xFF) if no_test_restart
+                      else FIRSTWAVE_TESTBIT])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
         name = f"{i + 2:02X}:{b5:02X}-{b6:02X}-{b7:02X}"
@@ -1935,7 +1960,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               filters: bool = False,
               vibrato: bool = False,
               min_notes: Optional[dict] = None,
-              compact_instruments: bool = False) -> bytes:
+              compact_instruments: bool = False,
+              no_test_restart: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -1978,7 +2004,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   min_notes, lead)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
-                       lead=lead, wave_starts=wave_starts)
+                       lead=lead, wave_starts=wave_starts,
+                       no_test_restart=no_test_restart)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

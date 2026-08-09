@@ -2535,12 +2535,53 @@ have caught it is cheap and general: **before attributing a per-frame
 disagreement to the converter, sweep the offset.** A single number that
 collapses the disagreement is not a defect in the thing being measured.
 
-The one real finding left over is not a duration either. At every note boundary
-we write `$09` — testbit plus gate, which silences the oscillator for a frame —
-where the player writes nothing. It is the hardcoded first-frame waveform in
-every record (`goatwriter._write_instruments`). `gplay.c:355-363` shows the
-alternative: a `firstwave` of `$FF` raises the gate and leaves the waveform
-alone, giving the note its attack without the silent frame.
+The one real finding left over is not a duration either — see §7.eee.
+
+### 7.eee The silent frame on every note, and why removing it is wrong
+
+Every record this tool writes carries `$09` in byte +8, the waveform Goattracker
+puts on a note's first frame: testbit plus gate. The testbit holds the phase
+accumulator and the noise LFSR at zero, so the frame is **silent**, and there is
+one per note. The originals spend 4273 such frames across 12 of 83 files; we
+spend **9179 across 79**. Most of ours are invented, and the invention is a
+hardcoded constant rather than anything read out of a player.
+
+So it looks like a clear defect, and it is not. Two replacements were measured.
+
+**`$FF` — gate on, waveform untouched** (`gplay.c:355-363` reads a firstwave of
+`$FE` or above as a gate value). On Commando: testbit frames 716 → 0, and `wave`
+**91.5% → 99.5%**. It also deleted 79 notes — the collapsed attack sequence on
+voice 1 went 139 → 125 against the original's 140, and on voice 3 216 → 153
+against 217. **A per-frame agreement rewards losing notes**, because fewer
+attacks mean fewer transitions to disagree about, and 99.5% was that and not
+fidelity. Any register-agreement column can be gamed this way; this is the first
+time in the project something actually did.
+
+**The record's own waveform with the gate on** — what the player's first frame
+really holds (`81 80 80 80 80` for Commando's noise record). This keeps the notes
+(139, 105, 216 against 140, 105, 217 — voice 2 gains one) and removes all 716
+invented frames. Corpus-wide, over the 82 files both settings convert:
+
+| | off | on |
+|---|---:|---:|
+| mean `melody` | 79.6% | **63.9%** |
+| mean `wave` | 69.8% | 73.9% |
+| testbit frames | 9179 | 55 |
+
+Melody falls **15.7 points** for 4.1 points of `wave`. Zoids loses 89, Thrust 87.
+The frame is load-bearing: it is what makes a re-struck note retrigger, the same
+role hard restart plays for the envelope. Three files gain 16–17
+(`Last_V8` in both rips, `Trans-Atlantic_Balloon_Challenge`), so the effect is
+not uniform — which is why this ships as `--no-test-restart`, off, and named in
+`presets.EXCLUDED_FROM_ALWAYS` with the numbers, rather than as a comment
+somebody re-derives.
+
+The general lesson is the one §7.ddd had just finished teaching from the other
+side. There, a per-frame column was *too harsh* because of an offset nobody had
+subtracted. Here it was *too kind* because a change quietly removed the events
+it scores. **A register-agreement percentage is only interpretable next to the
+note counts of both sides** — and the note counts are the thing a listener
+notices first.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

@@ -229,6 +229,18 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--no-test-restart", action="store_true",
+        help="stop silencing the oscillator on every note's first frame. Each "
+             "instrument's first-frame waveform has always been $09 -- testbit "
+             "plus gate -- and the testbit holds the phase accumulator and the "
+             "noise LFSR at zero, so that frame produces no sound. Hubbard's "
+             "players spend 4273 such frames across 12 of 83 corpus files; "
+             "conversions spend 9179 across 79. This writes $FF instead, which "
+             "gplay.c:355-363 reads as a gate value rather than a waveform: the "
+             "note still attacks and the frame keeps the waveform already "
+             "there. Off by default because it changes the output bytes of "
+             "every file, including the Commando fixture")
+    parser.add_argument(
         "--pulse", action="store_true",
         help="write the player's pulse-width sweep instead of a frozen duty "
              "cycle. Hubbard's players step a 12-bit pulse accumulator every "
@@ -287,6 +299,7 @@ def main(argv=None) -> int:
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
+                          ("--no-test-restart", "no_test_restart"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if not _given(flag) and always.get(key):
@@ -342,6 +355,7 @@ def main(argv=None) -> int:
                       initial_instrument=args.initial_instrument,
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
+                      no_test_restart=args.no_test_restart,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

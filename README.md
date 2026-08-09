@@ -946,6 +946,43 @@ and a sweep that restarts with the note is at the same place on every onset
 however far it travels. It now reports the band each note covers on both sides,
 judged on median travel *within* one note; see § *The instrument map*.
 
+### `--no-test-restart` (the silent frame on every note)
+
+Every instrument this tool has ever written carries `$09` in record byte +8, the
+waveform Goattracker writes on a note's first frame — testbit plus gate. The
+testbit holds the oscillator's phase accumulator and the noise LFSR at zero, so
+**that frame makes no sound**, and there is one on every note. Hubbard's players
+spend 4273 such frames across 12 of the 83 corpus files; conversions spend
+**9179 across 79**, so most of ours are invented.
+
+The flag writes the record's own waveform with the gate on instead, which is
+what the player's first frame actually holds — Commando's noise record traces
+`81 80 80 80 80`. Anything below `$FE` is assigned to the waveform and forces
+the gate on (`gplay.c:355-363`), so one byte buys both a real attack and no
+silent frame.
+
+**It is off by default, and not in `presets.json`'s `always` block, because the
+measurement went the other way.** Over the 82 files both settings convert:
+
+| | off | on |
+|---|---:|---:|
+| mean `melody` | 79.6% | **63.9%** |
+| mean `wave` | 69.8% | 73.9% |
+| testbit frames | 9179 | 55 |
+
+The frame is what makes a re-struck note retrigger — the same thing
+`--no-hard-restart`'s note says about hard restart. Zoids loses 89 points of
+melody and Thrust 87. Three files gain 16–17 (`Last_V8` in both rips and
+`Trans-Atlantic_Balloon_Challenge`), which is why this is an option rather than
+a comment.
+
+One reading was tried and rejected on the way, and it is worth recording because
+the number was seductive: a firstwave of `$FF` sets the gate and leaves the
+waveform alone, and scored `wave` **99.5%** on Commando — while losing 79 notes.
+A per-frame agreement *rewards* losing notes, because fewer attacks mean fewer
+transitions to disagree about. `tests/test_first_wave.py` pins that so the
+number cannot be rediscovered as a success.
+
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
 The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`

@@ -78,6 +78,15 @@ EXCLUDED_FROM_ALWAYS = {
     # array is mutable player state, and a snapshot of a multi-subtune file
     # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
     "initial_instrument",
+    # Measured and rejected as a default. Removing the testbit frame from every
+    # note's first frame deletes a register write the originals do not make
+    # (9179 frames of ours against their 4273, in 79 files against 12) and
+    # `wave` rises 69.8% -> 73.9% for it -- but the frame is what makes a
+    # re-struck note retrigger, and melody falls 79.6% -> 63.9% across the
+    # corpus, Zoids by 89 points and Thrust by 87. Three files gain 16-17
+    # (Last_V8 both rips, Trans-Atlantic_Balloon_Challenge), which is why the
+    # option exists rather than the finding being a comment.
+    "no_test_restart",
 }
 
 
