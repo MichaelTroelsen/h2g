@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.165 — 2026-08-09
+
+- add instrmap.py, a per-song instrument map read from the register trace
+
 ## 0.5.164 — 2026-08-09
 
 - full-depth tom, the sustaining-record gate, and the fixed-octave arpeggio dialect
