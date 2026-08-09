@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.147 — 2026-08-09
+
+- assess Audacity MCP against this project's needs
+
 ## 0.5.146 — 2026-08-09
 
 - deepen the drum sweep to two bounded steps; correct 7.oo's two wrong blockers
