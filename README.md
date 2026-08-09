@@ -989,8 +989,19 @@ measured, that took Trans-Atlantic's melody from 94.7% to **50.4%**. Opening on
 the note keeps both: melody 94.7%, `wave` 61.1% → 62.4%, and the median noise
 pitch moves from an inaudible `$0685` to `$3744` against the original's `$302B`.
 
-Off by default and selected per song by `presets.py --fidelity`. Three files
-take it — Bangkok Knights, Pandora and Thundercats.
+Off by default and selected per song by `presets.py --fidelity`. Two files take
+it — **Pandora and Thundercats** — and Pandora is the one that has been
+auditioned: distinct hits, on the beat, which is what validates the encoding.
+
+An instrument whose record waveform is `$00` gets **no** drum. `(wave & 0xFE) |
+0x01` is `$01` there, and `$01`–`$0F` are *delays* in a wavetable, not waveforms
+— `readme.txt` warns against a delay in an instrument's first step for exactly
+this reason. Emitted, the instrument set no waveform at all: it inherited noise
+from whatever played before and its delay entry applied a *relative* note, so
+Bangkok Knights sounded 40 of its 79 noise frames at `freqtbl[0]` = `$0117`
+where the drum belongs at `$49E5`. That file's entire drum was one such
+instrument, and it had been selected on a 41-point melody gain the broken block
+produced; with the guard in place it is no longer selected at all.
 
 **Trans-Atlantic was selected and then vetoed by a listening test**, which is
 what `presets.FIDELITY_VETOED` is for. `wave` rose for it and the pitch matched,

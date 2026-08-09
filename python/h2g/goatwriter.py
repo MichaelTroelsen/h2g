@@ -313,6 +313,16 @@ def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
     """
     if pitch_hi <= 0 or period <= 0:
         return None
+    # A record whose +2 is $00 has no waveform to come back to, and `$01` --
+    # what `(wave & 0xFE) | 0x01` yields -- is a *delay* in a wavetable, not a
+    # waveform ($01-$0F, readme.txt:3.4.1). Emitting it left the instrument
+    # setting no waveform at all: it inherited noise from whatever played
+    # before and its delay entry applied a relative note, so Bangkok Knights'
+    # GT 9 sounded 40 frames at `freqtbl[0]` = $0117 where the drum belongs at
+    # $49E5. readme.txt warns about a delay in the first step for this reason.
+    # No waveform means no drum here -- an under-read, not an invention.
+    if not wave & 0xF0:
+        return None
     m = max(1, multiplier)
     # **The note comes first, and that is not cosmetic.** The player's counter
     # is per voice and free-running, so a hit falls wherever it falls relative

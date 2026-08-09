@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.184 — 2026-08-09
+
+- never emit a delay byte where the drum needs a waveform
+
 ## 0.5.183 — 2026-08-09
 
 - veto --sfx-drum on Trans-Atlantic; a listening test overruled it

@@ -179,3 +179,18 @@ def test_it_is_off_by_default_and_selected_per_song():
                        else str(COMMANDO), log=lambda m: None)) == 15193
     assert "sfx_drum" in presets.EXCLUDED_FROM_ALWAYS
     assert "sfx_drum" in presets.FIDELITY_TOGGLES
+
+
+def test_an_instrument_with_no_waveform_gets_no_drum():
+    """`(wave & 0xFE) | 0x01` is `$01` for a record whose +2 is $00, and $01-$0F
+    are *delays* in a wavetable, not waveforms (readme.txt:3.4.1). Emitted, the
+    instrument set no waveform at all -- it inherited noise from whatever played
+    before, and its delay entry applied a relative note, so Bangkok Knights' GT 9
+    sounded 40 frames at `freqtbl[0]` = $0117 where the drum belongs at $49E5.
+    Half that file's noise frames were at the wrong pitch and the audibility
+    guard read the median as inaudible."""
+    from h2g.goatwriter import _sfx_drum_entries
+    assert _sfx_drum_entries(0x00, 0x48, 6) is None
+    assert _sfx_drum_entries(0x01, 0x48, 6) is None, "gate alone is not a waveform"
+    left, _ = _sfx_drum_entries(0x41, 0x48, 6)
+    assert left[0] > 0x0F, "the first entry must be a waveform, never a delay"
