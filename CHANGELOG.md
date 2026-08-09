@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.154 — 2026-08-09
+
+- re-measure the vibrato dialects at 60s; correct two short-window claims
+
 ## 0.5.153 — 2026-08-09
 
 - detect the vibrato's two zero-page store dialects

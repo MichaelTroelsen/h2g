@@ -4044,6 +4044,12 @@ Looked at per file, it is nothing of the sort:
   is W_A_R's 358,992 against 3.1M for Bump_Set_Spike and 5.5M for Proteus in
   the *detected* group — one to two orders of magnitude less. Three
   (5_Title_Tunes, Kings_of_the_Beach_ingame, Tarzan) have **exactly zero**.
+
+  > **Overstated — the window was too short.** Re-measured over 60 s rather
+  > than 20 s, the originals move considerably more (Devils_Galop 347,484,
+  > One_Man_and_his_Droid 237,339, Monty_on_the_Run 200,465) and only *two*
+  > sit at zero; Tarzan reaches 53,394. The gap between the groups is real but
+  > much smaller than this claims. See § 7.zz's window note.
 - **A third of them already overshoot.** Eleven of the 31 have a ratio above
   1 — Crazy_Comets 11.2, Commando 8.9, Thing_on_a_Spring 6.0,
   Confuzion 4.8, Battle_of_Britain 4.6. On those, *adding* vibrato moves away
@@ -4115,24 +4121,33 @@ already read correctly can match anything new.
 #### What it bought, measured per file rather than claimed
 
 All five carry real vibrato data (6 to 22 non-zero bytes each) and all five
-emit it. The effect on within-note travel is not uniform, and reporting only
-the good one would misrepresent it:
+emit it. Measured over **60 seconds**:
 
 | file | original | ours before | ours after | | |
 |---|---:|---:|---:|---:|---|
-| W_A_R | 358,992 | 0 | **102,072** | 0.000 → 0.284 | toward |
-| Mega_Apocalypse | 106,752 | 0 | 0 | 0.000 → 0.000 | no change |
-| Samantha_Fox | 33,555 | 4,586 | 4,586 | 0.137 → 0.137 | no change |
-| Spellbound | 44,392 | 90,574 | 102,416 | 2.040 → 2.307 | **away** |
-| Tarzan | 0 | 8,908 | 8,908 | — | original does not move |
+| W_A_R | 421,340 | 19,137 | **207,045** | 0.045 → 0.491 | toward |
+| Tarzan | 53,394 | 8,908 | **58,868** | 0.167 → 1.103 | toward |
+| Mega_Apocalypse | 199,903 | 0 | 9,584 | 0.000 → 0.048 | toward |
+| Samantha_Fox | 234,006 | 47,222 | 48,256 | 0.202 → 0.206 | toward |
+| Spellbound | 122,256 | 518,980 | 550,725 | 4.245 → 4.505 | **away** |
 
-**One clear win** — W_A_R goes from producing no within-note movement at all to
-28% of the original's, which is the single biggest recovery in this group.
-**Two produce no change in the window** despite emitting vibrato; their
-vibrato-carrying instruments are presumably not played in the traced 20
-seconds, which is consistent with Mega_Apocalypse's phantom-subtune structure
-but was not confirmed. **Spellbound moves away**, from 2.04x the original's
-travel to 2.31x — it was already overshooting, and this adds to it.
+**Four of five move toward the original.** W_A_R gains the most in absolute
+terms; Tarzan lands at 1.103, essentially parity.
+
+> **This table was first taken over 20 seconds and said something materially
+> different** — one win, *two* files flat, and Tarzan recorded as "the original
+> does not move" because its original shows zero within-note travel that early.
+> All three readings were artifacts of the window. A 20 s trace is not long
+> enough to reach the content of these files: Tarzan's original goes from 0 to
+> 53,394 between 20 s and 60 s, and Mega_Apocalypse's conversion from 0 to
+> 9,584. The flat entries were guessed at as "instruments not played in the
+> window", which was the right guess, but measuring is not guessing. **Use 60 s
+> for anything of this kind** — `fidelity.py`'s own `-t 10` default is tuned to
+> a different question (note-attack agreement, which saturates early) and is
+> far too short for one about a sustained effect.
+
+**Spellbound still moves away** — further at 60 s (4.25x → 4.51x) than the 20 s
+window suggested. It was already overshooting by four times before this change.
 
 Spellbound is not a reason to withhold the dialect. The player demonstrably
 contains the routine and reads the byte at `+5`; declining to detect it would
@@ -4141,9 +4156,35 @@ showed is unreliable in exactly this direction (the original's larger steps
 get printed as note changes and dropped, ours kept). Whatever makes Spellbound
 overshoot is a separate defect, and it was overshooting by 2x before this.
 
-That leaves 26 files still matching no vibrato shape — and the honest position
-on them is unchanged from § 7.yy: their originals barely move, a third already
-overshoot, and each needs its own player read before anything is written.
+#### The 26 that remain, measured properly
+
+With the same 60 s window, the group is no longer the flat "nothing to win"
+picture § 7.yy drew: 15 of the 26 sit under the original, 9 over, and only 2
+have an original that does not move at all. **Seven produce literally zero
+within-note travel against an original that does:**
+
+| file | original | ours |
+|---|---:|---:|
+| One_Man_and_his_Droid | 237,339 | **0** |
+| Ninja | 52,468 | **0** |
+| Rasputin | 37,108 | **0** |
+| Commodore_64_Music_Examples | 28,516 | **0** |
+| Phantoms_of_the_Asteroid | 23,857 | **0** |
+| Human_Race | 7,248 | **0** |
+| Master_of_Magic | 53,505 | 5,120 |
+
+That is a target list with a property the § 7.yy analysis could not offer: a
+conversion emitting *no* within-note movement cannot be overshooting, so the
+"adding vibrato would make it worse" objection does not apply to any of them.
+The nine that overshoot (Battle_of_Britain 11.1x, Confuzion 9.4x,
+Gerry_the_Germ 6.5x, Thing_on_a_Spring 4.6x, Crazy_Comets 4.1x,
+Commando 2.7x) remain a separate question, and a live one — something is
+generating movement the originals do not have.
+
+Next player to read is One_Man_and_his_Droid, on the same grounds W_A_R was
+picked: the largest original travel in the group against a conversion
+producing nothing. It has no `AND #$78` anywhere, so if it has a vibrato the
+parameter split is a different one, not another store dialect.
 
 ## 9. The `.sng` output layout
 
