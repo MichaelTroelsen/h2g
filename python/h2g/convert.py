@@ -294,6 +294,12 @@ def convert(sid_path: str, log: Logger = print,
     # table is stepped per play call, so a sweep written for one call a frame
     # runs at twice its rate under -S2; only the auto path knows the factor.
     multiplier = 1
+    # The row length in play calls, for build_speed_table's lost-call
+    # compensation. The largest one the file writes, because a pattern shared
+    # between two subtunes at different tempos has no single right answer and
+    # under-compensating the faster one is the safe direction -- see
+    # patterns.build_speed_table.
+    row_calls = 0
     if tempo != "auto":
         resolved_tempo = tempo
     elif det.frames_per_row > 1:
@@ -318,6 +324,7 @@ def convert(sid_path: str, log: Logger = print,
             values = [values[0]] * groups
         written = sum(apply_tempo(new_patterns, tracks[3 * k:3 * k + 3],
                                   values[k]) for k in range(groups))
+        row_calls = max(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
             f"{sorted(set(values))} in {written} pattern(s) ({note})")
         if mult > 1:
@@ -328,13 +335,15 @@ def convert(sid_path: str, log: Logger = print,
             raise ValueError(
                 f"tempo must be {GT_MIN_TEMPO}..127 (Goattracker reads 0 and 1 "
                 f"as funktempo, gplay.c:325), got {resolved_tempo}")
+        row_calls = resolved_tempo
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
 
     # Last, so it sees every command any earlier stage emitted. It rewrites the
     # data column in place, so nothing downstream may read it as a value again.
     scaled = 0
     if fmt != FORMAT_GTS2:
-        speed_table = build_speed_table(new_patterns, multiplier, slide_steps)
+        speed_table = build_speed_table(new_patterns, multiplier, slide_steps,
+                                        row_calls)
         # Every stored step is the divided one, so at -S2 and above the count
         # of scaled slides is the count of entries.
         scaled = len(speed_table) if multiplier > 1 else 0

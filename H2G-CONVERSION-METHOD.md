@@ -3804,6 +3804,120 @@ Not attempted here: it is a rate change to the slide path, which is where
 `bend` (travel, § 7.hh) as the dimension — the one column that can see step
 size rather than counting events.
 
+### 7.ww Compensating the lost call — and a report that reads the fix backwards
+
+§ 7.vv measured the deficit and named the fix: raise each encoded portamento
+step by `rc / (rc - 1)`, where `rc` is the row length in play calls. That
+ships here. It is the first change in this document whose benefit **no
+dimension of `FIDELITY.md` can show**, and two of them actively read it as a
+regression, so the evidence below is deliberately not a score.
+
+#### Where the scaling goes, and why that dissolves the coupling hazard
+
+§ 7.vv warned that the drum sweep shares the speed table, so scaling the table
+would inflate the drum step and invalidate § 7.tt's no-underflow bound.
+Scaling **inside `build_speed_table`** avoids it entirely rather than working
+around it: that function only ever sees pattern portamento commands
+(`GT_SPEEDTABLE_COMMANDS` is `(1, 2, 3)` — up, down, tone-porta), and the
+drum's entry is appended afterwards by `_drum_speed_index`, which *looks its
+value up* and appends only if absent. `_drum_steps_safe` then reasons from
+`_drum_speed(multiplier)` directly and never reads the table at all. Re-running
+§ 7.tt's verification confirms it: **195 instruments carrying two steps, 0
+safety violations**, identical to before this change.
+
+The same placement is what keeps `Commando.sng` byte-exact — the GTS2 column
+path (`scale_portamento_data`) is untouched, so the fixture cannot move.
+
+#### One row length per file, and it is the largest
+
+`rc` is a single number per file rather than per pattern, because per-pattern
+is ambiguous exactly where it would matter: of the 18 corpus files carrying
+several tempos, **17 play at least one pattern at two different ones**
+(Warhawk 44 such patterns, Spellbound 24, Knucklebusters 19). The caller passes
+`max(tempo values)`, which yields the *smallest* correction — under-delivering
+a fast subtune rather than overshooting a slow one. For the **65 of 83 files
+whose subtunes all share one tempo it is exact.**
+
+Reach: **40 of 83 files change bytes.**
+
+#### Validated against the one case with ground truth
+
+§ 7.uu established Flash_Gordon's sweep from both sides, so it is the case
+where "did this help" has an answer. Measuring the mean per-frame fall over
+sustained descending runs, against the original's:
+
+| | units/frame | ratio to original |
+|---|---:|---:|
+| original | 1038.8 | — |
+| compensation off | 902.3 | 0.869 |
+| **compensation on** | **954.1** | **0.918** |
+
+Toward parity by five points, and the residual is the design's own
+under-correction rather than a surprise: Flash_Gordon's tempi are
+`[8, 9, 10, 16]`, so it receives `16/15` where its traced subtune's `rc = 9`
+wants `9/8`.
+
+#### The report reads it backwards, for the reason this repo already documented
+
+`--baseline` against the pre-fix run moves five files, and the two dimensions
+that move most point the wrong way:
+
+| file | slides | bend |
+|---|---|---|
+| Flash_Gordon | 772 → 763 | 0.88 → **0.81** |
+| International_Karate | 124 → 120 | 0.66 → **0.61** |
+
+Both are the confound CLAUDE.md already records against v0.5.83's slide fix: a
+*larger* step is more likely to cross a semitone, so siddump prints the
+movement as a **note change** rather than a bend — and `bend` excludes ties by
+construction (§ 7.ii), while `slides` counts printed slide events. Making each
+step bigger therefore *removes* movement from both numerators while the actual
+register travel rises. The travel table above is measured off the raw frequency
+timeline, which cannot be reclassified.
+
+> **This is the third time a step-size change has been misread by a count or a
+> travel figure derived from siddump's own classification.** The rule stands
+> and needs restating: for a change to a step *size*, read the register
+> timeline directly. `bend` is a travel measure, which is why § 7.hh preferred
+> it to `slides` — but it is travel *as siddump chose to print it*, and that
+> choice depends on the step size being measured.
+
+#### What did not move, and what that turned up instead
+
+34 of the 40 files whose bytes changed moved no printed number. Sampling 13 of
+them on raw travel found the compensation changed the trace on only two, and
+inspecting the emitted tables explains part of it and leaves part open:
+
+- **Some files carry no pattern portamento at all.** Mozart's and After_8's
+  entire speed tables are values ≥ `$8000` — Goattracker's note-relative form,
+  i.e. vibrato entries appended by `goatwriter`. Nothing for this fix to scale,
+  and correctly their bytes did not change either.
+- **Rikky's table scaled exactly as intended (90 → 120, `4/3`) and its travel
+  did not move at all.** Not explained here. Its slides may fall outside the
+  20 s window, or adjacent to note onsets where the travel filter excludes
+  them. Recorded as unexplained rather than attributed.
+
+The sampling also turned up something larger than the deficit this section
+fixes: on several files our conversion's within-note pitch travel is a **small
+fraction of the original's** — Rikky 0.06, Powerplay_Hockey 0.03,
+Rock_Tells_the_Tale 0.02, After_8 0.01. A 6-33% lost-call deficit is
+second-order against a gap that size, and *that* is the more promising lead.
+It is a raw-travel figure over one window with the caveats above, not a
+diagnosis.
+
+#### Shipped on the mechanism, not on a score
+
+The measured mechanism (§ 7.vv, 13 of 13 files at or below the ceiling), an
+arithmetic correction exact for 65 of 83 files, a targeted validation on the
+one case with ground truth, and an unchanged drum bound. Not a fidelity
+improvement anyone can currently print — and stated that way rather than
+dressed up, because the two columns that did move say the opposite.
+
+Left open: per-pattern `rc` for the 18 multi-tempo files (Flash_Gordon would go
+from `16/15` to `9/8` on its traced subtune), which needs the table keyed by
+scaled step rather than raw value and an overflow guard the current
+no-overflow guarantee does not cover.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:

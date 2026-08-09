@@ -306,6 +306,46 @@ def test_a_zero_parameter_is_still_left_alone_when_scaling():
     assert patterns[0][3] == 0
 
 
+# --- the call a slide loses every row (section 7.vv) ------------------------
+
+def test_the_step_compensates_the_call_lost_every_row():
+    """A row lasts `row_calls` calls and the slide runs on all but one.
+
+    Measured at or below that ceiling in 13 of 13 files with enough steady
+    runs, so raising the step by row_calls/(row_calls-1) cannot overshoot a
+    row that was already delivering in full. At row_calls 3 -- the corpus's
+    most common tempo -- that is the difference between two thirds of every
+    bend and all of it.
+    """
+    # 8*4 == 32 at face value; a 3-call row delivers 2 of every 3 calls.
+    assert build_speed_table(_porta(8), 1, row_calls=3) == [(0x00, 48)]  # 32*3/2
+    assert build_speed_table(_porta(8), 1, row_calls=4) == [(0x00, 43)]  # 32*4/3, rounded
+    assert build_speed_table(_porta(8), 1, row_calls=9) == [(0x00, 36)]  # 32*9/8
+    # and it composes with the -S divide rather than replacing it
+    assert build_speed_table(_porta(8), 2, row_calls=3) == [(0x00, 24)]
+
+
+def test_no_compensation_without_a_row_length_or_below_funktempo():
+    """0 means "unknown"; 1 and 2 are funktempo, not a rate (gplay.c:325).
+
+    Defaulting to compensation would silently rescale every caller that has
+    not been taught to pass a row length -- including the GTS2 path, whose
+    bytes the Commando fixture pins.
+    """
+    plain = build_speed_table(_porta(8), 1)
+    for rc in (0, 1, 2):
+        assert build_speed_table(_porta(8), 1, row_calls=rc) == plain
+
+
+def test_compensation_cannot_split_a_step_into_two_entries():
+    # One monotone map over every value, so it can merge distinct steps but
+    # never split one -- which is what keeps the table's no-overflow guarantee.
+    patterns = [[GT_NO_NOTE, 0, 1, 8, GT_NO_NOTE, 0, 2, 8]]
+    table = build_speed_table(patterns, 1, row_calls=3)
+    assert len(table) == 1
+    assert [patterns[0][k + 3] for k in range(0, 8, 4)] == [1, 1]
+
+
 # --- slides in a GTS2 file --------------------------------------------------
 #
 # A GTS2 file stores no speed table; its loader rebuilds one from this column

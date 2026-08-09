@@ -927,7 +927,7 @@ def phantom_patterns(sid: SidFile, det: Detection,
     return out
 
 
-def _scaled_step(step: int, multiplier: int) -> tuple:
+def _scaled_step(step: int, multiplier: int, row_calls: int = 0) -> tuple:
     """A 16-bit per-frame step as a per-call (hi, lo) speed-table entry.
 
     Never rounds down to zero: a step of nothing is a slide that does not move,
@@ -936,14 +936,29 @@ def _scaled_step(step: int, multiplier: int) -> tuple:
     note-relative mode (gplay.c:539-547) and would mean something else
     entirely. Both bounds are reachable only with absurd inputs; they are here
     so that is a fact about the code rather than about the corpus.
+
+    `row_calls` is the row length in play calls, and compensates the one call a
+    slide loses every row. A row lasts `tempo + 1` calls (gplay.c:325) and the
+    portamento does not run on one of them, so a step encoded at face value is
+    delivered at `(row_calls - 1) / row_calls` of its intended rate -- measured
+    at or below that ceiling in 13 of 13 files with enough steady runs to
+    measure, and at `row_calls == 3`, the corpus's most common tempo, that
+    discards a third of every bend. See H2G-CONVERSION-METHOD.md section 7.vv.
+
+    Zero means "do not compensate", and so does anything under 3: below that
+    the value is funktempo rather than a rate (gplay.c:325), and `row_calls - 1`
+    stops being a call count worth dividing by.
     """
+    if row_calls >= 3:
+        step = step * row_calls / (row_calls - 1)
     v = min(max(1, round(step / max(1, multiplier))), 0x7FFF)
     return (v >> 8) & 0xFF, v & 0xFF
 
 
 def build_speed_table(patterns: List[List[int]],
                       multiplier: int = 1,
-                      steps: Optional[List[int]] = None) -> List[tuple]:
+                      steps: Optional[List[int]] = None,
+                      row_calls: int = 0) -> List[tuple]:
     """Encode every portamento parameter as a speed table, in place.
 
     Rewrites each speedtable-requiring command's data column to a 1-based
@@ -962,15 +977,25 @@ def build_speed_table(patterns: List[List[int]],
     the emitted slide the player's slide -- and it is exact, because the table
     stores the 16-bit step rather than the pattern column's eighth of it.
 
+    `row_calls` compensates the call a slide loses per row; see _scaled_step.
+    It is one number for the whole file rather than one per pattern because 17
+    of the 18 corpus files carrying several tempos play at least one pattern at
+    two different ones, so a per-pattern value is ambiguous exactly where it
+    would be needed. The caller passes the *largest* row length, which
+    under-compensates a faster subtune rather than overshooting a slower one --
+    and for the 65 of 83 files whose subtunes all share one tempo it is exact.
+
     The table cannot overflow: a data byte has 255 non-zero values and each
-    distinct one costs one entry, which is exactly MAX_TABLELEN.
+    distinct one costs one entry, which is exactly MAX_TABLELEN. Compensation
+    cannot change that -- it is one monotone map applied to every value, so it
+    can merge distinct steps but never split one.
     """
     m = max(1, multiplier)
     if steps is not None:
         # The decoder already wrote 1-based indices into the data column, so
         # the table is `steps` itself and no column needs rewriting. This is
         # the path that carries the step at full 16-bit width; see _step_index.
-        return [_scaled_step(v, m) for v in steps]
+        return [_scaled_step(v, m, row_calls) for v in steps]
     index: dict = {}
     table: List[tuple] = []
     for pattern in patterns:
@@ -986,7 +1011,7 @@ def build_speed_table(patterns: List[List[int]],
                 # Never round down to zero: a step of nothing is a slide that
                 # does not move, which is further from the player than the
                 # slowest step the table can hold.
-                table.append(_scaled_step(value * 4, m))
+                table.append(_scaled_step(value * 4, m, row_calls))
             pattern[k + 3] = index[value] + 1
     return table
 
