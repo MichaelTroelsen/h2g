@@ -143,6 +143,11 @@ class Detection:
     # File offset of the "program" shape's per-instrument pointer array (two
     # bytes per record, strided like the instrument table), or -1.
     effect_program: int = -1
+    # File offset of the byte-code wave program's pointer array -- see
+    # find_wave_program(). Found in 29 of the 95 corpus files, which makes it
+    # the most widespread instrument mechanism still unemitted. Read only: the
+    # gating bit is not resolved, so nothing consumes this yet.
+    wave_program: int = -1
     # Classic dialect only: bit 7 of a pattern note byte is a flag, not part of
     # the note -- the player masks it off before the frequency lookup.
     note_flag: bool = False
@@ -946,6 +951,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     elif det.effect_bit80 == "pitch":
         log("Instrument effect byte..: bit $80 steps the frequency from a "
             "duration/delta table (read, not written)")
+
+    det.wave_program = find_wave_program(sid)
+    if det.wave_program >= 0:
+        log(f"Instrument wave program.: byte-code, pointers at file "
+            f"+0x{det.wave_program:04X} (read, not written -- the gating bit "
+            f"is not resolved)")
 
     det.freq_table = find_freq_table(sid)
     if det.freq_table is not None:
@@ -1883,6 +1894,104 @@ def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
                 and k + 4 + d[k + 3] == entry
                 for k in range(max(0, off - 64), entry))
     return lo, hi, gated
+
+
+# A per-instrument BYTE-CODE WAVE PROGRAM, and the most widespread instrument
+# mechanism this project has found unread: **29 of the 95 corpus files**. It was
+# known in two of them (ACE II and Auf Wiedersehen Monty, as `effect_bit80
+# == "program"`); the other 27 include the file whose snare a listener reported
+# missing.
+#
+# The interpreter, Trans-Atlantic $0B4E (the operands differ; the shape does
+# not):
+#
+#     0B4E  B9 6B 11  LDA ptrs,Y      ; Y = i * stride -- 16-bit per instrument
+#     0B51  85 F0     STA $F0
+#     0B53  B9 6C 11  LDA ptrs+1,Y
+#     0B56  85 F1     STA $F1
+#     0B58  BD 4D 10  LDA pc,X        ; per-VOICE program counter
+#     0B5B  A8        TAY
+#     0B5C  B1 F0     LDA ($F0),Y     ; fetch an opcode
+#     0B5E  10 1E     BPL threebyte   ; < $80
+#     0B60  C9 85     CMP #$85
+#     0B62  D0 03     BNE twobyte
+#     0B64  4C 60 0C  JMP done        ; $85 -- HOLD, the counter does not move
+#
+# Three opcodes, and nothing else:
+#
+#     $85          hold here for the rest of the note (the program's end)
+#     >= $80       2 bytes: waveform -> $D404, then frequency HIGH -> $D401.
+#                  Both written *directly*, bypassing the normal path, so the
+#                  pitch is absolute and has nothing to do with the note.
+#     < $80        3 bytes: waveform, then a 16-bit value SUBTRACTED from the
+#                  voice's frequency accumulator (`SEC / LDA lo,X / SBC (ptr),Y
+#                  / STA lo,X` then the high byte with the borrow). A downward
+#                  pitch slide, per step.
+#
+# Trans-Atlantic's GT 3 -- the snare -- is `81 30 | 10 00 02 | 40 C0 03 |
+# 80 30 | 80 15 | 80 20 | ...`: noise at $30xx, then two slides down under a
+# released triangle and pulse, then three more noise pitches. Its first two
+# bytes are literally "noise at $30xx", which is the 43 onsets the trace shows
+# on voice 2 and which no conversion has ever emitted.
+#
+# What is NOT read here is the gating bit. Trans-Atlantic gates on effect bit
+# $08 and ACE II on bit $80 with `BPL`, and a backward scan for the nearest
+# `AND #$xx / BEQ` picks up whatever other test happens to sit above -- $01 in
+# 21 of the 29, which is the *drum* bit in the other dialect. So the pointer
+# array is located and the decision of which instruments run a program is left
+# to whoever emits it. Landing half a reading beats guessing the other half.
+WAVE_PROGRAM_FETCH = "B1 ?? 10 ?? C9 85 D0 03"
+WAVE_PROGRAM_HOLD = 0x85
+
+
+def find_wave_program(sid: SidFile) -> int:
+    """File offset of the byte-code program's pointer array, or -1.
+
+    Anchored on the fetch rather than on any one player's operands: the
+    zero-page pointer the fetch dereferences must be the same one the array is
+    loaded into, which is what ties the two together across 27 of the 29 files
+    that carry the interpreter.
+    """
+    off = search_file(sid.data, WAVE_PROGRAM_FETCH)
+    if off < 0:
+        return -1
+    d = sid.data
+    zp = d[off + 1]
+    for k in range(max(0, off - 40), off):
+        if (d[k] == 0xB9 and k + 4 < len(d)
+                and d[k + 3] == 0x85 and d[k + 4] == zp):
+            at = sid.to_offset(d[k + 1] | (d[k + 2] << 8))
+            if at >= 0:
+                return at
+    return -1
+
+
+def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
+    """The program at file offset `at` as (opcode, waveform, operand) steps.
+
+    `opcode` is "hold", "set" (absolute frequency high) or "slide" (a 16-bit
+    downward step). Stops at the hold, at `limit` steps, or at the end of the
+    data -- a program is not length-prefixed, so a truncated read is the only
+    alternative to trusting a byte count nothing states.
+    """
+    out: list = []
+    i = at
+    while len(out) < limit and i < len(data):
+        op = data[i]
+        if op == WAVE_PROGRAM_HOLD:
+            out.append(("hold", 0, 0))
+            return out
+        if op >= 0x80:
+            if i + 1 >= len(data):
+                return out
+            out.append(("set", op, data[i + 1]))
+            i += 2
+        else:
+            if i + 2 >= len(data):
+                return out
+            out.append(("slide", op, data[i + 1] | (data[i + 2] << 8)))
+            i += 3
+    return out
 
 
 # The "sfx" shape's payload, Trans-Atlantic $0C4A and six more files:

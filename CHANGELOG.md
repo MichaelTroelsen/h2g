@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.185 — 2026-08-09
+
+- read the byte-code wave program; 29 files, not one
+
 ## 0.5.184 — 2026-08-09
 
 - never emit a delay byte where the drum needs a waveform

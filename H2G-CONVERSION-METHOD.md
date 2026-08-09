@@ -2751,6 +2751,70 @@ it scores. **A register-agreement percentage is only interpretable next to the
 note counts of both sides** — and the note counts are the thing a listener
 notices first.
 
+### 7.fff The byte-code wave program — 29 files, and a census that said one
+
+A listener said Trans-Atlantic's snare was missing. It is GT 3, and the reason
+is a **per-instrument byte-code interpreter** that nothing in this project reads.
+Trans-Atlantic `$0B4E`, and the operands differ file to file while the shape does
+not:
+
+```
+0B4E  B9 6B 11  LDA ptrs,Y      ; Y = i * stride -- 16-bit per instrument
+0B51  85 F0     STA $F0
+0B58  BD 4D 10  LDA pc,X        ; per-VOICE program counter
+0B5C  B1 F0     LDA ($F0),Y     ; fetch an opcode
+0B5E  10 1E     BPL threebyte   ; < $80
+0B60  C9 85     CMP #$85
+0B64  4C 60 0C  JMP done        ; $85 -- HOLD, the counter does not move
+```
+
+Three opcodes and nothing else:
+
+| opcode | bytes | effect |
+|---|---|---|
+| `$85` | 1 | hold here for the rest of the note — the program's end |
+| ≥ `$80` | 2 | waveform → `$D404`, frequency **high** → `$D401`, both written directly |
+| < `$80` | 3 | waveform, then a 16-bit value **subtracted** from the voice's frequency accumulator |
+
+The second form is why the snare exists at all: both bytes go straight to the
+chip, so its pitch is the player's own and has nothing to do with the note.
+GT 3's program is `81 30 | 10 00 02 | 40 C0 03 | 80 30 | 80 15 | 80 20` —
+*noise at `$30xx`*, two slides down under a released triangle and pulse, then
+three more noise pitches. Its first two bytes are literally the missing snare,
+and they also answer the `$15EB` that §7.eee left open: `80 15` is right there.
+
+The third form is a subtraction, so a large operand slides **up**: three of
+GT 13's steps are `$FC00` taken away, which is `$0400` added. A decoder that
+read the operand as unsigned "down" would invert them.
+
+#### The census was wrong by a factor of 29
+
+The first signature for this was written from Trans-Atlantic's exact operands —
+44 bytes of them — and found **one** file. Written instead from the fetch-and-
+hold shape (`LDA (ptr),Y / BPL / CMP #$85 / BNE`, eight bytes), it finds
+**29 of 95**, including ACE II and Auf Wiedersehen Monty, which were already
+classified as `effect_bit80 == "program"` and never connected to the other 27.
+That makes this the most widespread instrument mechanism the project has found
+unemitted, and the lesson is old: **fingerprint the shape, not one file's
+register allocation.** The exact signature was not wrong, it was 29 times too
+specific, and a conclusion — "one file, not worth the work" — was drawn from it
+before the looser check took two minutes.
+
+#### What is not read, and why nothing is emitted
+
+The **gating bit**. Trans-Atlantic gates on effect bit `$08`, ACE II on bit
+`$80` with `BPL`, and a backward scan for the nearest `AND #$xx / BEQ` returns
+`$01` for 21 of the 29 — which is the *drum* bit in the other dialect, so the
+scan is picking up an unrelated test. Emitting on a guessed gate would invent a
+program for every record carrying whichever bit was wrong.
+
+So `find_wave_program` locates the pointer array (29 of 29, anchored on the
+zero-page pointer the fetch dereferences being the one the array is loaded into)
+and `decode_wave_program` decodes the opcodes, and `goatwriter` consumes
+neither. `tests/test_wave_program.py` pins that it stays that way until the gate
+is read — the same discipline the two-stage attack was held to before v0.5.179,
+and this time it is a deliberate stop rather than an oversight.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
