@@ -1160,10 +1160,19 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
     """Instrument-record offset of the vibrato byte, or None.
 
     The offset is read out of the `LDA record+n,Y` that feeds the split rather
-    than assumed: it is +5 in 49 of the 56 files that have the routine, and the
-    other 7 reach the byte by some addressing this does not recognise. Those
-    return None and get no vibrato -- an under-read, never a wrong one, the
-    same rule find_relocation and the instrument-index shape follow.
+    than assumed: it is +5 in every file that has the routine and resolves, and
+    a file whose addressing this does not recognise returns None and gets no
+    vibrato -- an under-read, never a wrong one, the same rule find_relocation
+    and the instrument-index shape follow.
+
+    The operand is resolved through `sid.to_offset` rather than against the
+    table's load-space address, because a file that relocates part of itself at
+    init names its instrument table in the *relocated* space. I, Ball copies
+    $9000-$9FFF to $E000 and its vibrato reads `$E710`, which against the
+    load-space table at `$970B` is an offset of 20485 and gets rejected;
+    resolved through the relocation it is the same +5 as everywhere else. For a
+    file with no relocation -- or any address that already resolves -- this is
+    algebraically what it always was, so no other file can move.
     """
     data = sid.data
     at = search_file(data, VIBRATO_SHAPE)
@@ -1171,10 +1180,9 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
         return None
     if not any(search_file(data, s) >= 1 for s in VIBRATO_DEPTH_SHAPES):
         return None
-    start = det.instr_start + sid.load_addr - HLEN + 1
     for k in range(at - 3, max(0, at - 26), -1):
         if data[k] in (0xB9, 0xBD):     # LDA abs,Y / LDA abs,X
-            off = (data[k + 1] | data[k + 2] << 8) - start
+            off = sid.to_offset(data[k + 1] | data[k + 2] << 8) - det.instr_start
             if 0 <= off < det.instr_stride:
                 return off
     return None

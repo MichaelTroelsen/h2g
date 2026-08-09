@@ -185,3 +185,54 @@ def test_every_file_with_the_split_also_has_the_note_relative_depth():
     assert split == both, "a file splitting the byte but deriving depth some " \
                           "other way would need its own mapping"
     assert split >= 50, f"the shape should be family-wide, found {split}"
+
+
+def test_a_relocating_player_resolves_its_vibrato_byte_too():
+    """I, Ball names its instrument table in the space it relocates *into*.
+
+    It copies $9000-$9FFF to $E000 at init, so the vibrato reads `$E710` while
+    the table's load-space address is `$970B` -- a difference of 20485, which
+    the stride check rejects, and the file got no vibrato at all. Resolving the
+    operand through sid.to_offset (which consults the relocation only when the
+    plain formula lands outside the file) makes it the same +5 as every other
+    file that has the routine.
+
+    Five of its eighteen records carry a non-zero vibrato byte, so this is not
+    a cosmetic detection change -- but note that no dimension available here
+    can show it: the original's within-note travel over the traced window is 0
+    with ties excluded and melody-dominated with them included. See
+    H2G-CONVERSION-METHOD.md section 7.yy.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import detect
+    sid = load_sid(str(CORPUS / "I_Ball.sid"))
+    assert sid.relocation is not None, "the fixture for this test relocates"
+    det = detect(sid, log=lambda m: None)
+    assert det.vibrato_offset == 5
+    records = [sid.data[det.instr_start + i * det.instr_stride + 5]
+               for i in range(det.instr_used)]
+    assert sum(1 for v in records if v) == 5
+
+
+def test_resolving_through_to_offset_moves_no_other_file():
+    """The rescue must not be able to disturb a file that already read right.
+
+    For an address the plain formula resolves, `to_offset(a) - instr_start` is
+    algebraically `a - (instr_start + load_addr - HLEN + 1)`, the subtraction
+    this replaced -- so the census below is the same one it always was, and
+    every file in it still answers +5.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import detect
+    found = {}
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            det = detect(load_sid(str(path)), log=lambda m: None)
+        except Exception:      # noqa: BLE001 -- an unconvertible file is not this test's business
+            continue
+        if det.vibrato_offset is not None:
+            found[path.name] = det.vibrato_offset
+    assert set(found.values()) == {5}, f"unexpected offsets: {found}"
+    assert len(found) >= 50, f"the rescue should add one, found {len(found)}"

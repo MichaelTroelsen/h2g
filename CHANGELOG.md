@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.152 — 2026-08-09
+
+- resolve the vibrato byte through the relocation, rescuing I_Ball
+
 ## 0.5.151 — 2026-08-09
 
 - retract the pitch-travel lead: 98% of it was note changes; the rest is 7.dd

@@ -3989,6 +3989,86 @@ Any use of these ratios needs an absolute floor first.
 > note change is still a note change, and it is the single largest term in any
 > `|Δfreq|` sum.
 
+### 7.yy Widening the vibrato: one file rescued, and a premise that did not survive
+
+§ 7.xx ended by pointing at the 28 files whose vibrato `detect` does not find,
+"where there's measurably ~77% of the pitch movement to recover". Investigating
+that recovered **one** file, and established that the premise behind the other
+thirty does not hold up. Both halves are the result.
+
+#### Where the files actually stand
+
+Partitioning the 83 convertible files by which stage of detection fails:
+
+| | files |
+|---|---:|
+| vibrato found, offset resolved | 49 |
+| the table-driven LFO form (§ 7.kk) | 2 |
+| matches `VIBRATO_SHAPE`, offset **not** resolved | **1** (I, Ball) |
+| matches the depth co-signature but not the split | 0 |
+| matches no vibrato shape at all | 31 |
+
+The docstring's long-standing "the other 7 reach the byte by some addressing
+this does not recognise" is now one file, not seven — earlier work closed the
+rest without the count being restated.
+
+#### The one real rescue: a relocating player names its table somewhere else
+
+I, Ball copies `$9000-$9FFF` to `$E000` at init, and its vibrato reads
+`$E710` — the relocated address. `_find_vibrato` compared that against the
+instrument table's *load-space* address `$970B`, got an offset of 20485,
+failed the stride check, and returned None. Resolving the operand through
+`sid.to_offset` instead — which already exists for exactly this, and consults
+the relocation only when the plain formula lands outside the file — gives
+`0x78E - 0x789 = 5`, the same `+5` as all 49 others.
+
+For any address the plain formula resolves,
+`to_offset(a) - instr_start` is algebraically the subtraction it replaced, so
+**no other file can move**, and the census confirms it: 50 files now, every one
+at `+5`. Five of I, Ball's eighteen records carry a non-zero vibrato byte, so
+the change is not cosmetic.
+
+**No instrument available here can show its effect, and that is worth stating
+plainly.** I, Ball's original has **zero** within-note pitch travel over the
+traced window once ties are excluded, and is melody-dominated with them
+included — so both readings of § 7.xx's measure are blind to it. Shipped on
+the address arithmetic, which is checkable, and on the `+5` agreeing with
+every other file in the corpus.
+
+#### The premise for the other thirty, and why it does not hold
+
+§ 7.xx's "median 0.233" for the undetected group implied a uniform deficit.
+Looked at per file, it is nothing of the sort:
+
+- **Their originals barely move.** The largest within-note travel among the 31
+  is W_A_R's 358,992 against 3.1M for Bump_Set_Spike and 5.5M for Proteus in
+  the *detected* group — one to two orders of magnitude less. Three
+  (5_Title_Tunes, Kings_of_the_Beach_ingame, Tarzan) have **exactly zero**.
+- **A third of them already overshoot.** Eleven of the 31 have a ratio above
+  1 — Crazy_Comets 11.2, Commando 8.9, Thing_on_a_Spring 6.0,
+  Confuzion 4.8, Battle_of_Britain 4.6. On those, *adding* vibrato moves away
+  from the original, not toward it.
+- **The static evidence is ambiguous, not confirming.** 30 of the 31 do
+  contain the semitone-depth idiom (`0A A8 38 B9 ?? ?? F9 ?? ??` — double the
+  note index, index the frequency table, subtract the neighbour). That looks
+  like a vibrato depth calculation, but the slide code computes a semitone the
+  same way, so its presence does not establish that a vibrato routine exists.
+  It is a lead, not a finding.
+
+And the measure cannot break the tie, for the reason § 7.xx already
+established in a different guise: the original's *large* pitch steps get
+printed as note changes and dropped from a ties-excluded sum, while ours, being
+smaller, are printed as bends and kept. The same asymmetry that made ties look
+like travel now makes a deep original effect look like no effect at all.
+
+> **What a real widening needs**, and did not get here: reading the 6502 of a
+> specific player in the `no_shape` group and establishing whether a vibrato
+> routine exists at all, before any signature is written. RetroDebugger makes
+> that tractable (§ 7.qq), one player at a time. What must *not* happen is
+> generalising from "30 of 31 contain a semitone calculation" to "30 files are
+> missing their vibrato" — that is the same shape of inference as § 7.pp's
+> 55-of-95 screen and § 7.xx's retracted lead.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
