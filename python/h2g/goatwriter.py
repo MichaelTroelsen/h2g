@@ -12,7 +12,7 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import List, Optional, Tuple
 
-from .detect import (Detection, FILTER_ENABLE_BIT,
+from .detect import (Detection, FILTER_ENABLE_BIT, decode_wave_program,
                      TRIANGLE_VIBRATO_GATE, TRIANGLE_VIBRATO_MAX_SHIFT,
                      TRIANGLE_VIBRATO_PEAK, TRIANGLE_VIBRATO_PERIOD,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
@@ -346,6 +346,107 @@ def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
     note = _sfx_note_byte(pitch_hi)
     left += [WAVE_NOISE_GATEOFF | 0x01] * SFX_DRUM_FRAMES
     right += [note] * SFX_DRUM_FRAMES
+    return left, right
+
+
+# Goattracker's "inaudible waveform" range: $E0-$EF sets the waveform to
+# $00-$0F (readme.txt:3.4.1, gplay.c:527). A player waveform below $10 -- gate
+# alone, or nothing at all -- cannot be written literally, because $01-$0F are
+# *delays*. This is the encoding for it, and the reason a wave program can carry
+# `slide $01` at all.
+WAVE_SILENT_BASE = 0xE0
+
+
+def _wave_byte(wave: int) -> int:
+    """Wavetable left byte that sets the player's waveform `wave`."""
+    return wave if wave >= 0x10 else WAVE_SILENT_BASE | (wave & 0x0F)
+
+
+def _speed_index(speed_table: List[tuple], entry: tuple) -> int:
+    """1-based speed-table index for `entry`, appending it, or 0 if full."""
+    if entry not in speed_table:
+        if len(speed_table) >= GT_MAX_TABLELEN:
+            return 0
+        speed_table.append(entry)
+    return speed_table.index(entry) + 1
+
+
+def _wave_program_entries(sid: SidFile, det: Detection, i: int,
+                          speed_table: List[tuple], fmt: str,
+                          multiplier: int, budget: int) -> Optional[tuple]:
+    """Wavetable entries for the byte-code wave program, or None.
+
+    The interpreter `detect.find_wave_program` reads, in 29 corpus files -- the
+    most widespread instrument mechanism this converter has left unemitted, and
+    the one carrying Trans-Atlantic's snare (`81 30`, noise at `$30xx`, 43 onsets
+    a listener reported missing).
+
+    Each opcode becomes entries:
+
+    * `>= $80` -- waveform plus an absolute frequency high byte -- is one entry:
+      the waveform, with the nearest absolute note on the right. The player
+      writes `$D401` directly and a wavetable names notes, so the pitch is
+      quantised to a semitone; for the noise these opcodes mostly carry, that is
+      inaudible (see `_sfx_note_byte`).
+    * `< $80` with a zero operand is also one entry: a waveform change and no
+      pitch movement, which is most of what GT 11-13 do.
+    * `< $80` with a nonzero operand is two: the waveform, then a portamento
+      whose speed-table entry is the operand itself. The player *subtracts* it,
+      so an operand above `$8000` is a rise and takes `CMD_PORTAUP` with the
+      two's complement -- which also keeps the high byte below `$80`, where a
+      speed-table entry would otherwise read as note-relative
+      (`SPEED_NOTE_RELATIVE`).
+    * `$85` holds, which is the program's end; the block stops there and
+      Goattracker keeps the last waveform, as the player does.
+
+    **Multiplier 1 only.** The player advances one opcode per frame and a
+    wavetable advances one entry per *call*, so at `-S2` the whole program would
+    run twice as fast. Slowing it needs a delay entry per opcode, which roughly
+    doubles a budget that already reaches 131 entries on Kings of the Beach.
+    Restricting it is an under-read; guessing the rate is not.
+    """
+    if fmt != FORMAT_GTS5 or max(1, multiplier) != 1:
+        return None
+    if det.wave_program < 0 or not det.wave_program_gate:
+        return None
+    data = sid.data
+    rec = det.instr_start + i * det.instr_stride
+    off = det.wave_program + i * det.instr_stride
+    if max(rec + 7, off + 1) >= len(data):
+        return None
+    if not data[rec + 7] & det.wave_program_gate:
+        return None
+    at = sid.to_offset(data[off] | (data[off + 1] << 8))
+    if at < 0:
+        return None
+
+    left: List[int] = []
+    right: List[int] = []
+    for kind, wave, arg in decode_wave_program(data, at):
+        if kind == "hold":
+            break
+        need = 2 if (kind == "slide" and arg) else 1
+        if len(left) + need + 1 > budget:      # ...and the stop
+            break
+        if kind == "set":
+            left.append(_wave_byte(wave))
+            right.append(_sfx_note_byte(arg))
+            continue
+        step = arg if arg < 0x8000 else 0x10000 - arg
+        cmd = WAVECMD_PORTADOWN if arg < 0x8000 else WAVECMD_PORTAUP
+        if not arg:
+            left.append(_wave_byte(wave))
+            right.append(WAVE_NOTE_KEEP)
+            continue
+        idx = _speed_index(speed_table, ((step >> 8) & 0xFF, step & 0xFF))
+        if not idx:
+            break
+        left += [_wave_byte(wave), cmd]
+        right += [WAVE_NOTE_KEEP, idx]
+    if not left:
+        return None
+    left.append(0xFF)
+    right.append(0x00)
     return left, right
 
 
@@ -1237,7 +1338,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        start: Optional[int] = None,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
                        two_stage: bool = False,
-                       sfx_drum: bool = False) -> tuple:
+                       sfx_drum: bool = False,
+                       wave_program: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1302,6 +1404,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             arp = False
     if arp_note == 0:
         arp_note = 0x74
+
+    # The byte-code wave program is the whole instrument where it applies: the
+    # player's interpreter writes $D404 and $D401 itself and returns, so no
+    # other shape in this function is reached for such a record.
+    if wave_program and speed_table is not None:
+        prog = _wave_program_entries(sid, det, i, speed_table, fmt,
+                                     multiplier, budget)
+        if prog is not None:
+            return prog
 
     # The bit-$80 drum, read before everything else because it is the whole
     # note: the player skips its own waveform and frequency writes on the frame
@@ -1727,7 +1838,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       effects: bool, fmt: str, speed_table: List[tuple],
                       multiplier: int, min_notes: Optional[dict],
                       lead: int, two_stage: bool = False,
-                      sfx_drum: bool = False) -> tuple:
+                      sfx_drum: bool = False,
+                      wave_program: bool = False) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -1763,7 +1875,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          multiplier, min_notes, lead,
                                          start=start, budget=budget,
                                          two_stage=two_stage,
-                                         sfx_drum=sfx_drum)
+                                         sfx_drum=sfx_drum,
+                                         wave_program=wave_program)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -2120,7 +2233,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               compact_instruments: bool = False,
               no_test_restart: bool = False,
               two_stage: bool = False,
-              sfx_drum: bool = False) -> bytes:
+              sfx_drum: bool = False,
+              wave_program: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2161,7 +2275,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
                                                   fmt, table, multiplier,
                                                   min_notes, lead, two_stage,
-                                                  sfx_drum)
+                                                  sfx_drum, wave_program)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        lead=lead, wave_starts=wave_starts,

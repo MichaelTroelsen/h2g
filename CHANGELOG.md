@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.187 — 2026-08-09
+
+- emit the byte-code wave program; the snare sounds
+
 ## 0.5.186 — 2026-08-09
 
 - read the wave program's gating bit; the loose scan was right

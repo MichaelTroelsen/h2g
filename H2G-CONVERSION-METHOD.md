@@ -2842,15 +2842,58 @@ known, when the collision was the finding. **Tighten the anchor before
 discarding the reading** — the loose scan and the tight one differ by one
 instruction's worth of context and by 22 files.
 
-#### Still not emitted
+#### Emitting it, and the snare that appears
 
-`find_wave_program` returns the pointer array and the gate; `decode_wave_program`
-decodes the opcodes; `goatwriter` consumes neither, and
-`tests/test_wave_program.py` pins that. What remains before emission is the
-encoding itself: the `≥ $80` form maps onto a wavetable entry with an absolute
-note, but the `< $80` form is a 16-bit frequency *step* and Goattracker's
-wavetable can only issue a portamento through a speed-table index — two entries
-per step, plus a speed-table entry each, in a table capped at 255 rows.
+`--wave-program` (v0.5.187). Each opcode becomes wavetable entries:
+
+| opcode | entries |
+|---|---|
+| `≥ $80` | one: the waveform, with the nearest absolute note on the right |
+| `< $80`, zero operand | one: a waveform change and no pitch movement |
+| `< $80`, nonzero | two: the waveform, then a portamento whose speed-table entry *is* the operand |
+| `$85` | none — the block stops, and Goattracker holds the last waveform as the player does |
+
+Two details the encoding turns on. The operand is **subtracted**, so one above
+`$8000` is a rise and takes `CMD_PORTAUP` with the two's complement — which also
+keeps the speed-table high byte below `$80`, where it would otherwise read as
+note-relative. And a waveform below `$10` cannot be written literally, because
+`$01`–`$0F` are *delays*: `$E0`–`$EF` sets the waveform to `$00`–`$0F` instead
+(`gplay.c:527`), and GT 11's program is three of those in a row.
+
+Trans-Atlantic's GT 3, the snare, emits `81/C2 10/80 F2/01 40/80 F2/02 80/C2 …`
+and **all 43 of its notes now sound noise in their opening frames**:
+
+```
+orig  11@15EB  81@30EB  10@13EB  40@102B  80@302B  80@152B
+ours  81@313C  10@313C  10@2F3C  40@2F3C  40@2B7C  80@313C
+```
+
+Noise at `$31xx` against `$30xx`. Ours starts the program a frame earlier — the
+player spends the note's first frame on the record's own `$11` — and the slides
+land a frame late, because each costs two wavetable entries where the player
+spends one. The waveform sequence and the pitches are otherwise the same.
+
+**Multiplier 1 only.** The player advances one opcode per frame and a wavetable
+advances one entry per *call*, so at `-S2` the program would run twice as fast;
+slowing it needs a delay per opcode, roughly doubling a budget that already
+reaches 131 entries on Kings of the Beach. 15 of the 29 files are `-S1`.
+
+#### The search cannot select it, and the criterion is why
+
+`presets.py --fidelity` chose it for **no file**, including the one whose snare
+it restores. Neither branch of `fidelity_better` fires: `melody` falls (94.7% →
+85.5%, the absolute pitches replacing the played notes), and the noise branch
+compares the **median** noise pitch — which on Trans-Atlantic is dominated by
+`--two-stage`'s ~900 inaudible frames and reads `$08B4` however audible the
+snare's ~300 frames at `$31xx` are.
+
+That is a real limitation of the criterion, not of the encoding, and it is left
+stated rather than tuned: a median is the wrong statistic for "did a new sound
+appear" when another mechanism contributes most of the frames. Bending the
+threshold until this one file passed would be fitting, which §7.eee already
+records the cost of. So the option ships off, selected nowhere, and the next
+honest step is a listening test — the same route `FIDELITY_VETOED` exists for,
+in the other direction.
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

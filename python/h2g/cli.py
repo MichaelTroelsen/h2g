@@ -229,6 +229,17 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--wave-program", action="store_true",
+        help="run the player's per-instrument byte-code wave program. 29 corpus "
+             "files carry an interpreter with three opcodes -- $85 holds, a byte "
+             ">= $80 sets a waveform and an absolute frequency, a byte < $80 "
+             "sets a waveform and subtracts a 16-bit pitch step -- and none of "
+             "it has ever been emitted. It is what carries Trans-Atlantic's "
+             "snare (`81 30`: noise at $30xx, 43 notes). Needs --format gts5 "
+             "and multiplier 1: the player advances an opcode per frame where a "
+             "wavetable advances an entry per call. Off by default; "
+             "presets.py --fidelity selects it per song")
+    parser.add_argument(
         "--sfx-drum", action="store_true",
         help="write the fixed-pitch noise hit the effect byte's bit $80 fires. "
              "Seven corpus files carry it and it was left unconverted while it "
@@ -323,6 +334,7 @@ def main(argv=None) -> int:
                           ("--no-test-restart", "no_test_restart"),
                           ("--two-stage", "two_stage"),
                           ("--sfx-drum", "sfx_drum"),
+                          ("--wave-program", "wave_program"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -388,6 +400,7 @@ def main(argv=None) -> int:
                       no_test_restart=args.no_test_restart,
                       two_stage=args.two_stage,
                       sfx_drum=args.sfx_drum,
+                      wave_program=args.wave_program,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

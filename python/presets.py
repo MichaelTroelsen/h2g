@@ -112,6 +112,13 @@ EXCLUDED_FROM_ALWAYS = {
     # Trans-Atlantic keeps melody at 94.7%, gains a point of wave and moves its
     # noise from an inaudible $0685 to $3744 against the original's $302B.
     "sfx_drum",
+    # The byte-code wave program: 29 files carry the interpreter, and it is what
+    # carries Trans-Atlantic's snare -- all 43 notes now sound noise in their
+    # first frames, at $31xx against the original's $30xx. Per song because it
+    # takes over the instrument's pitch entirely, and because each `< $80` opcode
+    # costs two wavetable entries where the player spends one, so the slides
+    # land a frame late.
+    "wave_program",
 }
 
 
@@ -247,7 +254,8 @@ def best_options(sid_path: Path) -> dict | None:
 # would tie every time and silently pick the default. They can only be chosen by
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
-FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum")
+FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
+                    "wave_program")
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the

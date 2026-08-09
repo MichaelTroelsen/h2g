@@ -191,11 +191,81 @@ def test_the_gate_never_collides_with_a_bit_effects_already_reads():
             assert not det.effect_arp, path.name
 
 
-def test_nothing_emits_it_yet():
-    """The gating bit is unresolved -- which instruments run a program is not
-    known -- so emitting would invent one for every record carrying whichever
-    bit was guessed. Same discipline as the two-stage attack before v0.5.179."""
-    import h2g.goatwriter as gw
-    src = pathlib.Path(gw.__file__).read_text(encoding="utf-8")
-    assert "wave_program" not in src
-    assert "decode_wave_program" not in src
+# --- the encoding ----------------------------------------------------------
+#
+# This test used to assert that goatwriter mentioned none of it, because the
+# gating bit was unread. v0.5.186 read the gate and v0.5.187 emits the program.
+
+def test_a_set_opcode_becomes_one_entry_at_an_absolute_note():
+    """The player writes $D401 directly and a wavetable names notes, so the
+    pitch quantises to a semitone -- inaudible for the noise these opcodes
+    mostly carry."""
+    from h2g.goatwriter import _wave_byte, _sfx_note_byte
+    assert _wave_byte(0x81) == 0x81
+    assert 0x81 <= _sfx_note_byte(0x30) <= 0xDF
+
+
+def test_a_waveform_below_ten_uses_the_inaudible_range():
+    """$01-$0F are *delays* in a wavetable. $E0-$EF sets the waveform to $00-$0F
+    instead (readme.txt:3.4.1, gplay.c:527), which is the only way to express
+    `slide $01` -- and GT 11's program is three of them in a row."""
+    from h2g.goatwriter import WAVE_SILENT_BASE, _wave_byte
+    assert _wave_byte(0x01) == WAVE_SILENT_BASE | 0x01
+    assert _wave_byte(0x00) == WAVE_SILENT_BASE
+    assert _wave_byte(0x10) == 0x10, "a real waveform is written literally"
+
+
+def test_a_speed_entry_is_reused_rather_than_duplicated():
+    from h2g.goatwriter import _speed_index
+    table = []
+    assert _speed_index(table, (0x02, 0x00)) == 1
+    assert _speed_index(table, (0x03, 0xC0)) == 2
+    assert _speed_index(table, (0x02, 0x00)) == 1
+    assert len(table) == 2
+
+
+@needs_corpus
+def test_the_snare_is_emitted_and_lands_on_noise():
+    """GT 3's program opens `81 30`, and the emitted block opens on a noise
+    waveform with an absolute note near $30xx. Before this, all 43 of its notes
+    sounded a triangle."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _note_freq, _wavetable_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    speed = []
+    left, right = _wavetable_entries(sid, det, 2, True, "gts5", speed, 1,
+                                     start=1, budget=30, wave_program=True)
+    assert left[0] == 0x81, "the snare must open on noise"
+    assert abs(_note_freq(right[0] - 0x80) - 0x3000) < 0x0300
+    assert left[-1] == 0xFF
+    # ...and the two slides became portamento commands with speed entries
+    assert 0xF2 in left or 0xF1 in left
+    assert speed, "a slide needs a speed-table entry"
+
+
+def test_it_is_off_by_default_and_selected_per_song():
+    from h2g.convert import convert
+    import presets
+    assert len(convert(str(pathlib.Path(__file__).resolve().parents[2]
+                           / "Commando.sid"), log=lambda m: None)) == 15193
+    assert "wave_program" in presets.EXCLUDED_FROM_ALWAYS
+    assert "wave_program" in presets.FIDELITY_TOGGLES
+
+
+def test_a_multispeed_file_is_left_alone():
+    """The player advances one opcode per frame and a wavetable advances one
+    entry per *call*, so at -S2 the whole program would run twice as fast.
+    Slowing it needs a delay per opcode, which roughly doubles a budget that
+    already reaches 131 entries on Kings of the Beach."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wave_program_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    assert _wave_program_entries(sid, det, 2, [], "gts5", 1, 30) is not None
+    assert _wave_program_entries(sid, det, 2, [], "gts5", 2, 30) is None
+    assert _wave_program_entries(sid, det, 2, [], "gts2", 1, 30) is None
