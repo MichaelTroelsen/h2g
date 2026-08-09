@@ -139,10 +139,15 @@ def test_the_bound_adds_no_dangling_reference(monkeypatch):
 def test_the_bound_lands_on_the_last_instrument_played_in_several_files():
     """Why the boundary is a reading and not a plausible-looking guess.
 
-    A pattern names Goattracker instrument `record + 2`. In several files the
-    bound is exactly the highest record any pattern reaches -- not one above,
-    not ten above. Arithmetic that happened to look tidy does not land on the
-    last instrument a tune plays, repeatedly, in files of different sizes.
+    A pattern names Goattracker instrument `record + base`, where base is 2 in
+    the inherited layout (instrument 1 being the empty Clear Voice) and 1 under
+    --compact-instruments. In several files the bound is exactly the highest
+    record any pattern reaches -- not one above, not ten above. Arithmetic that
+    happened to look tidy does not land on the last instrument a tune plays,
+    repeatedly, in files of different sizes.
+
+    The offset is derived from the options actually used rather than written in,
+    so this keeps testing the *bound* rather than the numbering convention.
     """
     if not CORPUS.is_dir():
         return
@@ -161,7 +166,8 @@ def test_the_bound_lands_on_the_last_instrument_played_in_several_files():
         _, patterns = _parse(blob, ntables=4)
         highest = max((p[k] for p in patterns for k in range(1, len(p), 4)),
                       default=0)
-        exact += det.instr_used == max(highest - 1, 0)
+        base = 1 if FIXED.get("compact_instruments") else 2
+        exact += det.instr_used == max(highest - (base - 1), 0)
     assert checked >= 25, checked
     assert exact >= 3, exact
 
@@ -215,3 +221,56 @@ def test_no_corpus_file_is_reported_over_the_wavetable_ceiling():
         if det.instr_used + 1 > 50:
             over.append(path.name)
     assert over == [], over
+
+
+def _instrument_count(blob: bytes) -> int:
+    """The stored instrument count byte, read the way gsong.c walks the file."""
+    q = 4 + 96
+    subs = blob[q]; q += 1
+    for _ in range(subs * 3):
+        n = blob[q]; q += 1; q += n + 1
+    return blob[q]
+
+
+def test_compact_instruments_frees_the_placeholder_slot():
+    """Goattracker reserves no slot; the VB6 original's Clear Voice did.
+
+    Its format stores instruments from 1 and a pattern column of 0 already
+    means "no change" (readme:613, 1386), so the empty slot at 1 is inherited
+    convention rather than a requirement. Dropping it frees an instrument slot
+    and five wavetable entries and lines the numbering up with the player's own
+    records -- which is how it was noticed: a listener named an instrument by
+    number and it was one slot away from the one h2g had written.
+    """
+    from h2g.convert import convert as _convert
+    fixture = str(REPO_ROOT / "Commando.sid")
+    # Both with rest_instrument, so the only difference under test is the
+    # numbering: compacting implies it (there is no empty slot left to aim a
+    # placeholder note at), and comparing against the placeholder layout would
+    # be comparing two changes at once.
+    plain = _convert(fixture, log=lambda m: None, fmt="gts5",
+                     rest_instrument=True)
+    compact = _convert(fixture, log=lambda m: None, fmt="gts5",
+                       rest_instrument=True, compact_instruments=True)
+    assert _instrument_count(compact) == _instrument_count(plain) - 1
+
+    _, pats_p = _parse(plain, ntables=4)
+    _, pats_c = _parse(compact, ntables=4)
+    shifted = 0
+    for a, b in zip(pats_p, pats_c):
+        for k in range(1, min(len(a), len(b)), 4):
+            if a[k]:
+                assert b[k] == a[k] - 1, "instrument numbers shift by exactly one"
+                shifted += 1
+    assert shifted, "the fixture should name instruments at all"
+
+
+def test_compact_is_off_by_default_and_the_fixture_is_untouched():
+    """Verified corpus-wide when this shipped: 83 of 83 byte-identical.
+
+    The fixture stands for that here, and is the reason the layout change is an
+    option rather than a correction -- Commando.sng is what proves the port
+    reproduces the VB6 original, and the original is what reserved the slot.
+    """
+    from h2g.convert import convert as _convert
+    assert _convert(str(REPO_ROOT / "Commando.sid"), log=lambda m: None) ==         (REPO_ROOT / "Commando.sng").read_bytes()

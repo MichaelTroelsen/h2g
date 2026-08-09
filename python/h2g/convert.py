@@ -120,6 +120,7 @@ def convert(sid_path: str, log: Logger = print,
             pulse: bool = False,
             vibrato: bool = False,
             rest_instrument: bool = False,
+            compact_instruments: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -185,6 +186,17 @@ def convert(sid_path: str, log: Logger = print,
     count over-counts, and a phantom entry is what made the bit-6 fix
     net-negative on Last V8. Off by default: it changes the bytes of the
     files it reaches.
+
+    compact_instruments drops the empty "Clear Voice" slot the VB6 original
+    reserved at instrument 1, putting the player's record 0 there instead.
+    Goattracker reserves nothing: its format stores instruments from 1 and a
+    pattern column of 0 already means "no change" (readme:613, 1386), so the
+    placeholder is inherited convention, not a requirement. It costs an
+    instrument slot, five wavetable entries, and -- the reason it was noticed
+    -- offsets every instrument number by one against the player's own
+    numbering, which makes the file hard to read against the original. Off by
+    default because it renumbers every instrument in every file, the byte-exact
+    Commando fixture included.
 
     rest_instrument carries an instrument change that lands on a rest with the
     rest itself, instead of the C-0-on-instrument-1 the original tool emitted.
@@ -274,7 +286,8 @@ def convert(sid_path: str, log: Logger = print,
         phantoms=(phantom_patterns(sid, det, slides, status_bit6)
                   if reject_phantoms else None),
         variants=variants, steps=slide_steps,
-        rest_instrument=rest_instrument)
+        rest_instrument=rest_instrument,
+        instr_base=1 if compact_instruments else 2)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
@@ -383,4 +396,5 @@ def convert(sid_path: str, log: Logger = print,
                      sustain_exact=sustain_exact,
                      no_hard_restart=no_hard_restart,
                      filters=filters, vibrato=vibrato,
-                     min_notes=min_played_notes(tracks, new_patterns))
+                     min_notes=min_played_notes(tracks, new_patterns),
+                     compact_instruments=compact_instruments)

@@ -132,6 +132,16 @@ def main(argv=None) -> int:
              "downward frequency sweep, then noise. Off by default: it "
              "changes the output bytes")
     parser.add_argument(
+        "--compact-instruments", action="store_true",
+        help="drop the empty \"Clear Voice\" slot the VB6 original reserved at "
+             "instrument 1 and put the player's record 0 there instead. "
+             "Goattracker reserves nothing -- its format stores instruments "
+             "from 1 and a pattern column of 0 already means \"no change\" -- so "
+             "the placeholder costs an instrument slot, five wavetable entries, "
+             "and offsets every instrument number by one against the player's "
+             "own numbering. Off by default: it renumbers every instrument in "
+             "every file, the byte-exact Commando fixture included")
+    parser.add_argument(
         "--rest-instrument", action="store_true",
         help="carry an instrument change that lands on a rest with the rest "
              "itself. Goattracker latches the instrument column whenever it is "
@@ -270,6 +280,7 @@ def main(argv=None) -> int:
                           ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
                           ("--rest-instrument", "rest_instrument"),
+                          ("--compact-instruments", "compact_instruments"),
                           ("--reject-phantoms", "reject_phantoms"),
                           ("--skip-gate", "skip_gate"),
                           ("--fold-transpose", "fold_transpose"),
@@ -325,6 +336,7 @@ def main(argv=None) -> int:
                       effects=args.effects,
                       status_bit6=args.status_bit6,
                       rest_instrument=args.rest_instrument,
+                      compact_instruments=args.compact_instruments,
                       reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,
                       initial_instrument=args.initial_instrument,

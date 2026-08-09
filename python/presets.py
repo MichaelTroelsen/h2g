@@ -64,7 +64,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
-         "rest_instrument": True}
+         "rest_instrument": True, "compact_instruments": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing
@@ -242,6 +242,11 @@ def main(argv=None) -> int:
                    # rows across 64 files. Found by ear; no dimension of
                    # FIDELITY.md reports it.
                    "rest_instrument": FIXED["rest_instrument"],
+                   # The VB6 original burned instrument 1 on an empty
+                   # placeholder; Goattracker reserves no slot of its own.
+                   # Frees a slot and five wavetable entries, and lines the
+                   # numbering up with the player's own records.
+                   "compact_instruments": FIXED["compact_instruments"],
                    # Its companion, and not optional beside it: a phantom
                    # pattern entry decoded under the bit-6 grammar emits
                    # garbage portamento, and gt2reloc re-encodes the speed

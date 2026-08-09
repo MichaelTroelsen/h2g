@@ -653,9 +653,17 @@ def _build_header(sid: SidFile, fmt: str = DEFAULT_FORMAT) -> bytearray:
     return header
 
 
-def _instruments_used(det: Detection, log=None) -> int:
-    """How many instrument slots the file will carry, Clear Voice included."""
-    available = det.instr_used + 1
+def _instruments_used(det: Detection, log=None, lead: int = 1) -> int:
+    """How many instrument slots the file will carry, `lead` placeholders included.
+
+    `lead` is 1 for the inherited layout, whose instrument 1 is a hardcoded
+    empty "Clear Voice" so the player's record 0 becomes instrument 2, and 0
+    for --compact-instruments, which puts record 0 at instrument 1. Goattracker
+    reserves no slot of its own: its format stores instruments from 1 and
+    treats 0 as "no change" in a pattern column (readme:613, 1386), so the
+    placeholder is the VB6 original's convention, not the format's.
+    """
+    available = det.instr_used + lead
     instr_used = min(available, MAX_INSTRUMENTS)
     if log and available > instr_used:
         # The count itself is bounded at the records (see detect's
@@ -671,19 +679,21 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        sustain_exact: bool = False,
                        no_hard_restart: bool = False,
                        filter_ptrs: dict | None = None,
-                       vib_ptrs: dict | None = None) -> int:
+                       vib_ptrs: dict | None = None,
+                       lead: int = 1) -> int:
     out.append(instr_used)
 
-    # Instrument 1: always the empty "Clear Voice" slot.
-    out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
-    out += _padded_name_bytes("Clear Voice")
+    if lead:
+        # Instrument 1: always the empty "Clear Voice" slot.
+        out += bytes([0x00, 0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x02, 0x09])
+        out += _padded_name_bytes("Clear Voice")
 
     # The digi engine's records are 16 bytes rather than 8. The fields read
     # here -- pulse +0/+1, waveform +2, attack/decay +3, sustain/release +4 --
     # sit at the same offsets in both layouts, so only the stride differs.
-    wtable_start = 6
+    wtable_start = lead * WAVE_ENTRIES_PER_INSTR + 1
     data = sid.data
-    n = max(instr_used - 1, 0)  # number of real (non-empty) instruments
+    n = max(instr_used - lead, 0)  # number of real (non-empty) instruments
 
     for i in range(n):
         base = det.instr_start + i * det.instr_stride
@@ -702,7 +712,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         wave_ptr = (i * 5 + wtable_start) & 0xFF
         # Not a stride: a swept instrument's pulse program is longer than a
         # static one's, so the start positions come from the built table.
-        pulse_ptr = (pulse_starts[i + 1] if i + 1 < len(pulse_starts) else 0) & 0xFF
+        pulse_ptr = (pulse_starts[i + lead]
+                     if i + lead < len(pulse_starts) else 0) & 0xFF
         # gatetimer bit $80 is Goattracker's "no hard restart" flag
         # (gsong.c:381). Without it, gplay.c:930-937 writes `adparam` -- the
         # editor's HR value, default $0F00 (goattrk2.c:49), baked into the
@@ -985,7 +996,8 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
 
 def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
-                    speed_table: List[tuple], log=None) -> dict:
+                    speed_table: List[tuple], log=None,
+                    lead: int = 1) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
 
     Goattracker runs a per-instrument vibrato with no pattern command at all:
@@ -1029,7 +1041,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     delay = _vibrato_delay(det, mult)
     data = sid.data
     out: dict = {}
-    for i in range(max(instr_used - 1, 0)):
+    for i in range(max(instr_used - lead, 0)):
         base = det.instr_start + i * det.instr_stride + offset
         if base >= len(data):
             continue
@@ -1043,7 +1055,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         out[i] = (speed_table.index(entry) + 1, delay)
     if log and out:
         log(f"Instrument vibrato......: {len(out)} of "
-            f"{max(instr_used - 1, 0)} record(s), "
+            f"{max(instr_used - lead, 0)} record(s), "
             f"{len({v[0] for v in out.values()})} speed-table entry(ies) "
             f"({engine})")
     return out
@@ -1052,7 +1064,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
-                       min_notes: Optional[dict] = None) -> tuple:
+                       min_notes: Optional[dict] = None,
+                       lead: int = 1) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1106,7 +1119,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # min_played_notes is keyed by Goattracker instrument number, and this
         # function's `i` is the 0-based record index: instrument 1 is the
         # hardcoded Clear Voice, so record i is instrument i + 2.
-        lowest = None if min_notes is None else min_notes.get(i + 2)
+        lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest)
 
     if drum:
@@ -1124,8 +1137,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
     # The instrument's own entries are 1-based indices i*5+6 .. i*5+10, so its
     # third is i*5+8 -- the loop target for both the arpeggio and the rise.
-    first = (i * WAVE_ENTRIES_PER_INSTR + 6) & 0xFF
-    third = (i * WAVE_ENTRIES_PER_INSTR + 8) & 0xFF
+    base_entry = (lead + i) * WAVE_ENTRIES_PER_INSTR + 1
+    first = base_entry & 0xFF
+    third = (base_entry + 2) & 0xFF
 
     if arp:
         # $13CD: alternate between the note and the note minus the high
@@ -1333,19 +1347,22 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      fmt: str = DEFAULT_FORMAT,
                      speed_table: List[tuple] | None = None,
                      multiplier: int = 1,
-                     min_notes: Optional[dict] = None) -> None:
-    n = max(instr_used - 1, 0)
+                     min_notes: Optional[dict] = None,
+                     lead: int = 1) -> None:
+    n = max(instr_used - lead, 0)
     table = speed_table if speed_table is not None else []
     entries = [_wavetable_entries(sid, det, i, effects, fmt, table, multiplier,
-                                  min_notes)
+                                  min_notes, lead)
                for i in range(n)]
 
     out.append(_table_length_byte(instr_used * WAVE_ENTRIES_PER_INSTR, "wave"))
-    out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
+    for _ in range(lead):
+        out += bytes([0x09, 0xFF, 0x00, 0x00, 0x00])
     for left, _ in entries:
         out += bytes(left)
 
-    out += bytes([0x00, 0x00, 0x00, 0x00, 0x00])
+    for _ in range(lead):
+        out += bytes([0x00, 0x00, 0x00, 0x00, 0x00])
     for _, right in entries:
         out += bytes(right)
 
@@ -1474,7 +1491,7 @@ def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
 
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                   pulse: bool, multiplier: int,
-                  log=None) -> tuple[List[tuple], List[int]]:
+                  log=None, lead: int = 1) -> tuple[List[tuple], List[int]]:
     """The whole pulse table, plus each instrument's 1-based start entry.
 
     Entries were a fixed two per instrument until the sweep gave some of them
@@ -1482,9 +1499,9 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     a stride -- `_write_instruments` writes them into the records.
     """
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
-    starts = [1]                       # instrument 1, the empty Clear Voice
+    starts = [1] * lead                # the empty Clear Voice, if present
     dropped = silent = 0
-    for i in range(max(instr_used - 1, 0)):
+    for i in range(max(instr_used - lead, 0)):
         program, loop = _pulse_program(sid, det, i, pulse, multiplier)
         start = len(entries) + 1
         block = program if loop is None else program + [(0xFF, start + loop)]
@@ -1530,7 +1547,8 @@ FILT_STOP = 0xFF
 FILT_MODULATE = 0x7F
 
 
-def _filter_entries(sid: SidFile, det: Detection, instr_used: int):
+def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
+                    lead: int = 1):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
 
     The player adds a per-instrument step to a per-voice cutoff accumulator
@@ -1605,7 +1623,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               no_hard_restart: bool = False,
               filters: bool = False,
               vibrato: bool = False,
-              min_notes: Optional[dict] = None) -> bytes:
+              min_notes: Optional[dict] = None,
+              compact_instruments: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -1623,26 +1642,29 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         out.append((len(track) - 1) & 0xFF)
         out += bytes(track)
 
-    instr_used = _instruments_used(det, log)
+    lead = 0 if compact_instruments else 1
+    instr_used = _instruments_used(det, log, lead)
     # The filter and pulse tables are both built before the instruments,
     # because each instrument record carries the table step it starts on --
     # but both are written after them, with the other tables. A swept
     # instrument's pulse program is longer than a static one's, so that start
     # position is not a stride either.
     if filters:
-        filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used)
+        filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used,
+                                                      lead)
     else:
         filter_entries, filter_ptrs = [], {}
     pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
-                                                multiplier, log)
+                                                multiplier, log, lead=lead)
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
-                               table, log)
+                               table, log, lead=lead)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
-                       sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs)
+                       sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
+                       lead=lead)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
-                     min_notes)
+                     min_notes, lead=lead)
     _write_pulsetable(out, pulse_entries)
 
     if log:

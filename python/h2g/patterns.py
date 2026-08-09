@@ -168,6 +168,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                        note_flag: bool = False,
                        status_bit6: bool = False,
                        rest_instrument: bool = False,
+                       instr_base: int = 2,
                        span: Optional[List[int]] = None,
                        note_base: int = 0,
                        slide_high_first: bool = False,
@@ -293,7 +294,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                     else:
                         cmd2 = min(speed // 4, 0xFF)
             else:
-                g_instrument = (b2 & 0x7F) + 2
+                g_instrument = (b2 & 0x7F) + instr_base
                 g_old_instr2 = g_old_instr1
                 g_old_instr1 = g_instrument
 
@@ -316,7 +317,13 @@ def _build_raw_pattern(data: bytes, addr: int,
             g_note = max(0, g_note + note_base) + 0x60
 
         resc_instr = -1
-        if not rest_instrument and g_note == GT_NO_NOTE and g_instrument != 0:
+        # `instr_base > 1` is not a style check: the placeholder trick points a
+        # dummy note at instrument 1, and under --compact-instruments slot 1
+        # holds the player's record 0, so pointing at it would sound a real
+        # instrument instead of silence. With no empty slot there is nothing to
+        # aim at, and carrying the change on the rest is the only correct form.
+        if (not rest_instrument and instr_base > 1
+                and g_note == GT_NO_NOTE and g_instrument != 0):
             g_note = 0x60
             resc_instr = g_instrument
             g_instrument = 1
@@ -444,7 +451,8 @@ def _digi_command(pending: tuple, steps: Optional[List[int]]) -> tuple:
 def _build_raw_pattern_digi(data: bytes, addr: int,
                             note_base: int = 0,
                             slides: bool = False,
-                            steps: Optional[List[int]] = None
+                            steps: Optional[List[int]] = None,
+                            instr_base: int = 2,
                             ) -> Optional[List[int]]:
     """Flat event stream for one digi-engine pattern, or None if out of range.
 
@@ -484,7 +492,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # +2 for the same reason the classic decoder adds it: Goattracker
             # instrument 1 is the empty "Clear Voice" slot, so the player's
             # record 0 is written as instrument 2.
-            instrument = data[addr + 1] + 2
+            instrument = data[addr + 1] + instr_base
             addr += 2
             continue
         if b in DIGI_TWO_OPERAND:
@@ -569,7 +577,8 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 slides: bool = False,
                                 slide_cmd: int = -1,
                                 slide_mask: int = 0x3F,
-                                steps: Optional[List[int]] = None
+                                steps: Optional[List[int]] = None,
+                                instr_base: int = 2,
                                 ) -> Optional[List[int]]:
     """Flat event stream for one command-table pattern, or None if unusable.
 
@@ -611,7 +620,7 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
             if c == instr_cmd:
                 # +2 for the same reason every other decoder here adds it:
                 # Goattracker instrument 1 is the empty "Clear Voice" slot.
-                instrument = data[addr + 1] + 2
+                instrument = data[addr + 1] + instr_base
             elif c == slide_cmd and slides and operands[c] >= 2:
                 lo, d2 = data[addr + 1], data[addr + 2]
                 step = ((d2 & slide_mask) << 8) | lo
@@ -702,7 +711,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  slides: bool = False,
                  status_bit6: bool = False,
                  steps: Optional[List[int]] = None,
-                 rest_instrument: bool = False) -> Optional[List[int]]:
+                 rest_instrument: bool = False,
+                 instr_base: int = 2) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -721,17 +731,19 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     addr = sid.to_offset(data[hi_i] * 256 + data[lo_i])
     if det.pattern_dialect == "digi":
         return _build_raw_pattern_digi(data, addr, det.note_base,
-                                       slides=slides, steps=steps)
+                                       slides=slides, steps=steps,
+                                       instr_base=instr_base)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
             det.cmd_instrument, det.frames_per_row,
             note_base=det.note_base, slides=slides,
             slide_cmd=det.cmd_slide, slide_mask=det.cmd_slide_mask or 0x3F,
-            steps=steps)
+            steps=steps, instr_base=instr_base)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               rest_instrument=rest_instrument,
+                              instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
                               steps=steps)
@@ -1069,7 +1081,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      phantoms: Optional[dict] = None,
                      variants: Optional[List[tuple]] = None,
                      steps: Optional[List[int]] = None,
-                     rest_instrument: bool = False):
+                     rest_instrument: bool = False,
+                     instr_base: int = 2):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1131,7 +1144,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
 
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
-                              rest_instrument)
+                              rest_instrument, instr_base)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
