@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.172 — 2026-08-09
+
+- fix the drum path's noise tick: own waveform first, gate bit kept
+
 ## 0.5.171 — 2026-08-09
 
 - publish the full siddump tables in the instrument map

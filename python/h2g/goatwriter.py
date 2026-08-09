@@ -1372,8 +1372,21 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # in the player", judged by the corpus `wave` metric landing on a noise
     # frame about as often as noise occurs. The trace says otherwise, and the
     # VB6 original emitted it.
-    left = [WAVE_NOISE_GATEOFF]
-    right = [0x00]
+    # Entry 0 is the note's own waveform, and the tick follows it. The player
+    # writes the waveform on the note's first frame and reaches the drum
+    # block's noise only from the second -- Commando's original reads
+    # `15 80 80 14 14` from each onset, visible in the siddump instrmap.py
+    # publishes. Putting the noise at entry 0 (as this did) ran it two frames
+    # early and dropped that opening frame.
+    #
+    # The noise keeps the record's own gate bit, where this used to clear it.
+    # The player does clear it, but our first-frame waveform is $09 -- gate
+    # *plus testbit*, and the testbit silences the oscillator -- so an entry 0
+    # that also clears the gate leaves the envelope untriggered and the
+    # instrument silent. Measured on Commando GT 13: 0 onsets against the
+    # original's 14 with $80, and exactly 14 with $81.
+    left = [wave, WAVE_NOISE_GATEOFF | (wave & 0x01)]
+    right = [0x00, 0x00]
     # Two frames is `2 * multiplier` calls, of which the entry above is one.
     # A delay entry is current for `value + 1` calls (see _wave_hold_byte), so
     # one more entry covers the rest at every -S value the corpus uses; its
@@ -1381,7 +1394,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # call, and anything else would drag the note.
     extra = NOISE_TICK_FRAMES * max(1, multiplier) - 1
     if extra == 1:
-        left.append(WAVE_NOISE_GATEOFF)
+        left.append(WAVE_NOISE_GATEOFF | (wave & 0x01))
         right.append(0x00)
     elif extra > 1:
         left.append(min(extra - 1, WAVE_MAX_DELAY))
@@ -1416,8 +1429,12 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
             prefix.pop()
         pre_r = right[:len(prefix)]
         room = max(0, budget - len(prefix) - 1)     # ... and the stop
-        steps = max(1, min(want, room)) if want else (
-            2 if _drum_steps_safe(2, min_note, multiplier) else 1)
+        # No `max(1, ...)`: the tick's own four entries plus a stop already
+        # fill WAVE_ENTRIES_PER_INSTR exactly, so forcing a step through would
+        # push this record to six and, on a table close to full, past the
+        # 255-row limit. A drum with no room loses its sweep, not its shape.
+        steps = min(want, room) if want else min(
+            room, 2 if _drum_steps_safe(2, min_note, multiplier) else 1)
         left = prefix + [WAVECMD_PORTADOWN] * steps + [0xFF]
         right = pre_r + [index] * steps + [0x00]
         while len(left) < WAVE_ENTRIES_PER_INSTR:

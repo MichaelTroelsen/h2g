@@ -159,16 +159,18 @@ def test_the_drum_is_a_gate_off_waveform_and_a_downward_sweep():
     # $1390 `LDA $157C,X / AND #$FE` -- the voice's own waveform with the gate
     # released -- and $1387 `LDA counter / DEC counter / STA $D401,Y`, the
     # frequency high byte falling one step per frame.
+    # budget 8: the tick's four entries plus a stop fill the old fixed five
+    # exactly, so a sweep needs the room the variable-length layout supplies.
     table = []
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
-                           speed_table=table)
-    # Entries 0-1 are the two-frame noise tick, so the voice's own waveform is
-    # entry 2 and the sweep starts at 3.
-    assert left[0] == WAVE_NOISE_GATEOFF, "the note opens on noise"
-    assert left[2] == 0x40, "the voice's own waveform, gate released"
-    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1)
+                           speed_table=table, budget=8)
+    # Entry 0 is the note's own waveform, 1-2 the noise tick, 3 the gate-off
+    # waveform, and the sweep starts at 4.
+    assert left[1] == 0x81, "the tick, keeping the gate bit"
+    assert left[3] == 0x40, "the voice's own waveform, gate released"
+    assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1)
     assert table == [DRUM_SPEED], "256 units per frame == one $D401 step"
-    assert 0xFF in left[4:], "and then stop"
+    assert 0xFF in left[5:], "and then stop"
 
 
 def test_the_noise_ending_is_measured_and_rejected():
@@ -198,9 +200,14 @@ def test_the_drum_leads_with_a_two_frame_noise_tick():
     and exactly 2 frames for five others, over 349 onsets. See instrmap.py.
     """
     left, _ = _entries(DRUM, effects=True, drum=True, wave=0x41)
-    assert left[0] == WAVE_NOISE_GATEOFF, "the note opens on noise"
-    assert left[1] == WAVE_NOISE_GATEOFF, "for a second frame at -S1"
-    assert left[2] == 0x40, "and then the voice's own waveform"
+    # Entry 0 is the note's OWN waveform: the player reaches the drum block's
+    # noise only on the note's second frame, which the published siddump shows
+    # as `15 80 80 14 14`. This test asserted noise at entry 0 until the trace
+    # said otherwise.
+    assert left[0] == 0x41, "the note's own waveform first"
+    assert left[1] == 0x81, "then noise, keeping the record's gate bit"
+    assert left[2] == 0x81, "for a second frame at -S1"
+    assert left[3] == 0x40, "and then the waveform with the gate released"
 
 
 def test_the_tick_is_two_frames_at_every_call_rate():
@@ -210,20 +217,20 @@ def test_the_tick_is_two_frames_at_every_call_rate():
     covers the remainder, and a delay is current for `value + 1` calls
     (_wave_hold_byte), so the value is 2m - 2.
     """
-    for m, want in ((1, WAVE_NOISE_GATEOFF), (2, 2), (4, 6)):
+    for m, want in ((1, 0x81), (2, 2), (4, 6)):
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                                multiplier=m)
-        assert left[0] == WAVE_NOISE_GATEOFF
-        assert left[1] == want, f"-S{m}"
+        assert left[1] == 0x81, "the tick starts at entry 1"
+        assert left[2] == want, f"-S{m}"
         if m > 1:
-            assert right[1] == 0x80,                 "a delay's right side is read on its final call"
+            assert right[2] == 0x80,                 "a delay's right side is read on its final call"
 
 
 def test_a_waveform_of_zero_is_noise_for_the_whole_drum():
     # $1390 `LDA $157C,X / AND #$FE / BNE` falls through to the noise store
     # when the masked waveform is zero.
     left, _ = _entries(DRUM, effects=True, drum=True, wave=0x01)
-    assert left[1] == WAVE_NOISE_GATEOFF
+    assert left[3] == WAVE_NOISE_GATEOFF,         "wave $01 masks to 0, so the gate-off entry falls back to noise"
 
 
 def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
@@ -231,7 +238,7 @@ def test_the_sweep_needs_gts5_and_a_gts2_drum_is_just_the_gate_off():
     left, _ = _entries(DRUM, effects=True, drum=True, fmt=FORMAT_GTS2,
                        speed_table=table)
     assert table == [], "a GTS2 file stores no speed table"
-    assert left[2] == 0x40 and left[3] == 0xFF,         "the tick still leads, but nothing sweeps"
+    assert left[3] == 0x40 and left[4] == 0xFF,         "the tick still leads, but nothing sweeps"
 
 
 # --- the sweep's depth ------------------------------------------------------
@@ -250,13 +257,13 @@ def test_a_second_sweep_step_is_written_when_the_lowest_note_allows_it():
     table = []
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                            speed_table=table, min_notes={2: 12}, budget=8)
-    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1)
-    assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1), "the second step"
-    assert 0xFF in left[5:], "and then stop"
+    assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1)
+    assert (left[5], right[5]) == (WAVECMD_PORTADOWN, 1), "the second step"
+    assert 0xFF in left[6:], "and then stop"
 
     tight = _entries(DRUM, effects=True, drum=True, wave=0x41,
                      speed_table=[], min_notes={2: 12}, budget=5)[0]
-    assert tight[3] == WAVECMD_PORTADOWN and tight[4] == 0xFF,         "one step is all five entries hold once the tick is there"
+    assert tight[4] == 0xFF,         "five entries hold the tick and the stop, and no sweep at all"
     assert table == [DRUM_SPEED], "both steps share the one speed entry"
 
 
@@ -268,9 +275,9 @@ def test_the_second_step_is_refused_when_the_note_could_underflow():
     content wrapped it. Note 11 is 526 units -- one step clears, two do not.
     """
     left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
-                           min_notes={2: 11})
-    assert (left[3], right[3]) == (WAVECMD_PORTADOWN, 1), "one step still"
-    assert left[4] == 0xFF and right[4] == 0x00, "and then stop"
+                           min_notes={2: 11}, budget=8)
+    assert (left[4], right[4]) == (WAVECMD_PORTADOWN, 1), "one step still"
+    assert left[5] == 0xFF and right[5] == 0x00, "and then stop"
 
 
 def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
@@ -279,8 +286,8 @@ def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
     # nothing at all must get exactly the bytes that shipped before deepening.
     for bound in (None, {}, {3: 60}):      # {3: ...} is a different instrument
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
-                               min_notes=bound)
-        assert left[4] == 0xFF and right[4] == 0x00
+                               min_notes=bound, budget=8)
+        assert left[5] == 0xFF and right[5] == 0x00
 
 
 def test_the_bound_is_read_against_the_scaled_step_not_the_constant():

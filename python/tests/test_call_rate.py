@@ -269,12 +269,13 @@ def test_the_drum_attack_is_the_noise_tick_and_scales_with_the_call_rate():
     delay covering the remainder rather than a waveform.
     """
     at1 = _entries(DRUM, effects=True, drum=True, multiplier=1)
-    assert at1[0][0] == 0x80 and at1[0][1] == 0x80, "two noise frames at -S1"
+    assert at1[0][0] == 0x41, "entry 0 is the note's own waveform"
+    assert at1[0][1] == 0x81 and at1[0][2] == 0x81, "two noise frames at -S1"
 
     at2 = _entries(DRUM, effects=True, drum=True, multiplier=2)
-    assert at2[0][0] == 0x80, "still opens on noise"
-    assert at2[0][1] == 2, "a delay of 2 is current for 3 calls, so 4 in all"
-    assert at2[1][1] == 0x80, "a delay's right side is read on its last call"
+    assert at2[0][1] == 0x81, "still opens the tick on noise"
+    assert at2[0][2] == 2, "a delay of 2 is current for 3 calls, so 4 in all"
+    assert at2[1][2] == 0x80, "a delay's right side is read on its last call"
 
 
 # --- slides -----------------------------------------------------------------
