@@ -3897,13 +3897,16 @@ inspecting the emitted tables explains part of it and leaves part open:
   20 s window, or adjacent to note onsets where the travel filter excludes
   them. Recorded as unexplained rather than attributed.
 
-The sampling also turned up something larger than the deficit this section
-fixes: on several files our conversion's within-note pitch travel is a **small
-fraction of the original's** — Rikky 0.06, Powerplay_Hockey 0.03,
-Rock_Tells_the_Tale 0.02, After_8 0.01. A 6-33% lost-call deficit is
-second-order against a gap that size, and *that* is the more promising lead.
-It is a raw-travel figure over one window with the caveats above, not a
-diagnosis.
+The sampling also appeared to turn up something larger than the deficit this
+section fixes: on several files our conversion's within-note pitch travel
+looked like a small fraction of the original's — Rikky 0.06, Powerplay_Hockey
+0.03, Rock_Tells_the_Tale 0.02, After_8 0.01.
+
+> **Retracted — see § 7.xx.** Those figures counted note changes as pitch
+> travel: a median 98.3% of the measured "travel" was siddump ties, which
+> excluding `attack_frames` does not remove. Corrected, After_8 is **2.506**,
+> not 0.014 — the sign was wrong, not only the size. What survives is
+> § 7.dd's known gap, and only on the files whose vibrato is undetected.
 
 #### Shipped on the mechanism, not on a score
 
@@ -3917,6 +3920,74 @@ Left open: per-pattern `rc` for the 18 multi-tempo files (Flash_Gordon would go
 from `16/15` to `9/8` on its traced subtune), which needs the table keyed by
 scaled step rather than raw value and an overflow guard the current
 no-overflow guarantee does not cover.
+
+### 7.xx The pitch-travel gap: 98% of it was melody, and the rest is § 7.dd
+
+§ 7.ww closed by naming a "more promising lead" than the lost-call deficit:
+several conversions whose within-note pitch travel was a few percent of the
+original's (Rikky 0.06, Powerplay_Hockey 0.03, Rock_Tells_the_Tale 0.02,
+After_8 0.01). **That lead was a measurement artifact, and this section
+retracts it.**
+
+#### What the measure was actually counting
+
+Summing `|Δfreq|` per frame while excluding note *onsets* is not the same as
+measuring modulation, because a note change does not need an onset. siddump
+prints an untriggered note change as a **tie**, and a tie moves the frequency
+register by a musical interval — far more than any vibrato. Excluding
+`attack_frames` alone leaves every one of them in the sum.
+
+Re-measuring with `tie_frames` excluded as well: **a median 98.3% of the
+original's measured "pitch travel" was note changes.** The four files quoted
+above:
+
+| file | ratio, ties counted | ratio, ties excluded |
+|---|---:|---:|
+| Rikky | 0.064 | 0.405 |
+| Powerplay_Hockey | 0.031 | 0.079 |
+| Rock_Tells_the_Tale | 0.018 | 0.079 |
+| **After_8** | **0.014** | **2.506** |
+
+After_8 does not have 1% of the original's within-note movement; it has two and
+a half times as much. The sign of that finding was wrong, not just its
+magnitude.
+
+#### With the tie removed, the real split appears — and it is § 7.dd's
+
+The corrected measure divides the corpus almost exactly along whether
+`detect` found the player's vibrato at all:
+
+| | files | median ratio | under 0.20 |
+|---|---:|---:|---:|
+| vibrato **detected** | 47 | **0.968** | 7 |
+| vibrato **not** detected | 28 | **0.233** | 13 |
+
+Where the vibrato is read, within-note pitch travel is at **parity** — 0.968,
+which is as close as this project has come to saying a dimension is simply
+right. Where it is not read, the median conversion carries **less than a
+quarter** of the original's within-note movement.
+
+So there is no new mystery here. This is § 7.dd's documented gap — "a third of
+the corpus bends nothing, because the vibrato was never written" — now
+*quantified*: on the 28 files whose vibrato addressing no signature matches,
+roughly three quarters of the pitch movement is missing, and on the 47 where it
+matches there is essentially nothing left to win. The fix is widening the
+vibrato signatures per dialect, which is 6502 work per player, not a rate or an
+encoding change.
+
+**The overshoot column is not readable and is not a finding.** Ratios explode
+on small denominators — Star_Paws shows 141x against an original travel of
+1043 units over 20 seconds, which is a rounding artifact wearing a percentage.
+Any use of these ratios needs an absolute floor first.
+
+> **Third consecutive section in which a register-trace measure failed on
+> note-versus-modulation classification**: § 7.vv's first slide detector
+> counted ties and vibrato as slides; § 7.ww found `bend` and `slides`
+> inverting a step-size change because siddump reprints a large step as a note;
+> and this one counted ties as travel. The common failure is treating
+> "excludes note onsets" as "excludes notes". It does not — an untriggered
+> note change is still a note change, and it is the single largest term in any
+> `|Δfreq|` sum.
 
 ## 9. The `.sng` output layout
 
