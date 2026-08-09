@@ -4280,11 +4280,57 @@ alone. A fixed 8-call period and a `0..3` triangle amplitude want their own
 derivation against `gplay.c:795-801`, simulated rather than read off, and their
 own before/after over a 60 s window.
 
-Six of fifteen records carry it, so the reach on this file is real. Five other
-files in § 7.zz's target list emit zero within-note travel against a moving
-original and are the natural next reads — Ninja, Rasputin,
-Commodore_64_Music_Examples, Phantoms_of_the_Asteroid, Human_Race — with the
-open question being whether they share *this* dialect or bring a third.
+#### It is not one file's dialect — it is twenty-five of them
+
+The other zero-output files were read next, on the principle that knowing
+whether a writer path serves one file or many should come before building it.
+Searching for the routine as a single contiguous 41-byte shape — the triangle
+fold through the shift loop, wildcarding only the operands —
+
+```
+29 07 C9 04 90 02 49 07 8D ?? ?? BD ?? ?? 0A A8 38
+B9 ?? ?? F9 ?? ?? 8D ?? ?? B9 ?? ?? F9 ?? ?? 4A 6E ?? ?? CE ?? ?? 10 F7
+```
+
+matches **exactly 25 files, every one of them currently undetected, and no file
+that detection already reads**. That is a clean partition, not an overlap: the
+signature cannot disturb a single file that works today. It covers all seven of
+§ 7.zz's zero-output targets and every remaining `no_shape` file except
+Kings_of_the_Beach_ingame.
+
+The enable fetch resolves to **`record+5` in all 25, unanimously**, and the
+sequence feeding it is byte-for-byte identical across files down to the branch
+displacement:
+
+```
+One_Man_and_his_Droid  B9 8D 15  8D 00 15  F0 6F  AD 1C 15  29 07 C9 04 90 02 49 07
+Last_V8                B9 A6 85  8D 19 85  F0 6F  AD 35 85  29 07 C9 04 90 02 49 07
+Human_Race             B9 E8 0D  8D C1 0D  F0 6F  AD E2 0D  29 07 C9 04 90 02 49 07
+Ninja                  B9 74 CC  8D 39 CC  F0 6F  AD 58 CC  29 07 C9 04 90 02 49 07
+```
+
+Only the addresses differ. This is one routine assembled into twenty-five
+tunes, which is why a single signature is the right shape for it rather than a
+per-game fingerprint.
+
+Most records hold a small shift count (1-4). Six files carry larger values
+(Last_V8 81, Human_Race 119, Ninja 21 and 24, 5_Title_Tunes 16, Last_V8 15) and
+**no player masks the byte** — so those really do shift the interval 16 or more
+times, which drives the depth to zero. Those instruments simply have no
+audible vibrato. That is consistent with the routine as read, not a
+counter-example to it, but it does mean a mapping must handle "shift large
+enough to vanish" rather than assuming 0-7.
+
+**Reach if implemented: detection goes from 55 to 80 of 83 files.** That is the
+single largest coverage change available in the converter, and it is the reason
+to build the writer path rather than special-case One_Man_and_his_Droid.
+
+Still not implemented here, for § 7.ll's reason: the mapping is the part this
+project has got wrong before, and a fixed 8-call period with a `0..3` triangle
+amplitude is not the pair `_classic_vibrato_entry` takes. What the decode now
+gives an implementer is everything except that mapping — the signature, the
+offset, the depth rule (`semitone >> (n+1)`, zero for large `n`), the period
+(8 calls), and a 25-file corpus to A/B over 60 s.
 
 ## 9. The `.sng` output layout
 

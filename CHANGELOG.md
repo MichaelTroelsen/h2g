@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.156 — 2026-08-09
+
+- the global-triangle vibrato is 25 files, one routine, record+5 unanimously
+
 ## 0.5.155 — 2026-08-09
 
 - decode One_Man_and_his_Droid's global-triangle vibrato dialect
