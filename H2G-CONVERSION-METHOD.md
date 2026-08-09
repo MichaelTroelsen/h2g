@@ -4186,7 +4186,105 @@ picked: the largest original travel in the group against a conversion
 producing nothing. It has no `AND #$78` anywhere, so if it has a vibrato the
 parameter split is a different one, not another store dialect.
 
-## 9. The `.sng` output layout
+### 7.aaa A second dialect, fully decoded: the global-triangle vibrato
+
+One_Man_and_his_Droid was the next player read, on § 7.zz's grounds — the
+largest original within-note travel among the remaining 26 (237,339 over 60 s)
+against a conversion emitting **zero**. It has no `AND #$78` anywhere, so if it
+had a vibrato it would not be another store dialect. It has one, and it is a
+genuinely different encoding.
+
+#### The routine, at `$11A0`
+
+```
+11A0  8C 0F 15  STY $150F
+      B9 8F 15  LDA $158F,Y   ; record+7 -> $151A
+      B9 8E 15  LDA $158E,Y   ; record+6 -> $1501
+      B9 8D 15  LDA $158D,Y   ; record+5 -> $1500
+      F0 6F     BEQ past      ; +5 zero -> no vibrato        (the enable test)
+      AD 1C 15  LDA $151C     ; the global LFO counter
+      29 07     AND #$07
+      C9 04     CMP #$04
+      90 02     BCC +2
+      49 07     EOR #$07      ; -> 0,1,2,3,3,2,1,0           (the phase)
+      8D 06 15  STA $1506
+      BD F5 14  LDA $14F5,X
+      0A A8     ASL A / TAY
+      38        SEC
+      B9 24 14  LDA freqtbl+2,Y
+      F9 22 14  SBC freqtbl,Y                                (the semitone)
+      8D 02 15  STA $1502
+      B9 25 14  LDA freqtbl+3,Y
+      F9 23 14  SBC freqtbl+1,Y
+11C8  4A        LSR A         ; \
+      6E 02 15  ROR $1502     ;  } shift the interval right
+      CE 00 15  DEC $1500     ;  } (record+5 + 1) times       (the depth)
+      10 F7     BPL $11C8     ; /
+      8D 03 15  STA $1503
+      B9 22 14  LDA freqtbl,Y     ; the note's own frequency
+      8D 04 15  STA $1504
+      B9 23 14  LDA freqtbl+1,Y
+      8D 05 15  STA $1505
+      BD EF 14  LDA $14EF,X
+      29 1F     AND #$1F
+      C9 08     CMP #$08
+      90 1C     BCC out       ; only once the voice counter reaches 8  (the gate)
+      AC 06 15  LDY $1506
+11FE  88        DEY
+      30 16     BMI out
+      18        CLC
+      AD 04 15  LDA $1504 / ADC $1502 / STA $1504
+      AD 05 15  LDA $1505 / ADC $1503 / STA $1505   ; add the step, phase times
+      4C FE 11  JMP $11FE
+out:  AC E5 14  LDY $14E5,X
+      AD 04 15  LDA $1504 / STA $D400,Y
+      AD 05 15  LDA $1505 / STA $D401,Y
+```
+
+So the whole effect is
+
+    frequency = note + phase x (semitone_at_this_note >> (record+5 + 1))
+
+with `phase` the folded triangle `0,1,2,3,3,2,1,0`. Like the canonical form
+(§ 7.ll) the apply loop **only ever adds** — the oscillation is one-sided.
+
+#### What makes it a different dialect, not a variant
+
+| | canonical (§ 7.ee) | this one |
+|---|---|---|
+| enable | `record+5` non-zero | `record+5` non-zero (same) |
+| amplitude | `(byte & $78) >> 3`, per instrument | fixed `0..3`, from the global triangle |
+| depth shift | `byte & $07` | the **whole** byte, as a shift count |
+| period | per instrument, via the bound | **fixed**: 8 play calls |
+| gate | none | per-voice counter `$14EF,X & $1F` must reach 8 |
+
+The period is fixed because `$151C` is incremented at **`$1012`, the play
+routine's own entry point** — unconditionally, once per call — and only three
+bits of it are used. Eight calls per cycle, whatever the tune's tempo.
+
+Reading `record+5` through the canonical mapping would be actively wrong here,
+not merely lossy: the six instruments that carry a vibrato all hold **2**,
+which the canonical split reads as bound `0` — no amplitude at all — and shift
+`2`. That is exactly the "an under-read, never a wrong one" line the detector
+holds, and it is why this needs its own signature rather than a widened one.
+
+#### Not implemented, deliberately
+
+The decode is complete enough to build on, and building on it is a larger
+change than a shape: it needs a new `Detection` field, its own writer path, and
+a mapping onto Goattracker's vibrato whose amplitude and period are *not* the
+two the canonical mapping takes. § 7.ll is the standing warning — the canonical
+mapping shipped for many versions with a doubled period and a halved amplitude
+that cancelled, and the error was only visible once one of them was corrected
+alone. A fixed 8-call period and a `0..3` triangle amplitude want their own
+derivation against `gplay.c:795-801`, simulated rather than read off, and their
+own before/after over a 60 s window.
+
+Six of fifteen records carry it, so the reach on this file is real. Five other
+files in § 7.zz's target list emit zero within-note travel against a moving
+original and are the natural next reads — Ninja, Rasputin,
+Commodore_64_Music_Examples, Phantoms_of_the_Asteroid, Human_Race — with the
+open question being whether they share *this* dialect or bring a third.
 
 ## 9. The `.sng` output layout
 

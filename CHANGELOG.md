@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.155 — 2026-08-09
+
+- decode One_Man_and_his_Droid's global-triangle vibrato dialect
+
 ## 0.5.154 — 2026-08-09
 
 - re-measure the vibrato dialects at 60s; correct two short-window claims
