@@ -6,7 +6,7 @@ state byte, which no per-instrument wavetable can express". That is true of
 nine of the twelve corpus files that test the bit, and false of the other
 three. Reading all twelve blocks out of the 6502 splits them:
 
-    sfx      9  a global state machine writing $D40F/$D412/$D416/$D418
+    sfx      9  a fixed-pitch noise hit on voice 3, plus cutoff and volume
     program  2  a per-instrument byte-code wave program (ACE II, Monty)
     pitch    1  a counter-driven frequency step (Delta)
 
@@ -97,3 +97,58 @@ def test_the_sound_effect_files_are_not_given_a_program():
         _, det = _detect(name)
         assert det.effect_bit80 == "sfx"
         assert det.effect_program == -1
+
+
+# --- what the "sfx" block actually is (v0.5.181) ---------------------------
+#
+# It was read as the *game's* sound effect and left unconverted because it
+# "keys off a global state byte". Both halves are wrong. The gate is
+# `LDA effect / BPL` on the very cell _effect_byte_address locates -- the
+# playing instrument's own +7 -- and the counter is `$0FAD,X` for the third
+# voice, not a global. It is a drum, and it is music. A listener found it by
+# reporting Trans-Atlantic's drums missing.
+
+@needs_corpus
+def test_the_sfx_block_is_a_fixed_pitch_drum_on_one_voice():
+    if not CORPUS.is_dir():
+        return
+    found = {}
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            det = detect(load_sid(str(path)), log=lambda m: None)
+        except Exception:                              # noqa: BLE001
+            continue
+        if det.effect_bit80 == "sfx" and det.sfx_pitch >= 0:
+            found[path.stem] = (det.sfx_pitch, det.sfx_voice, det.sfx_period)
+    assert len(found) == 7, sorted(found)
+    # Every one of them is voice 3, and the pitch is a constant of the player
+    # rather than the note -- which is the whole point: the SID's noise is an
+    # LFSR clocked by the frequency, so noise at the note's own low pitch
+    # writes the register and makes no sound.
+    assert {v for _, v, _ in found.values()} == {2}
+    assert found["Trans-Atlantic_Balloon_Challenge"][0] == 0x38
+    assert {p for p, _, _ in found.values()} == {0x38, 0x48}
+    assert {q for _, _, q in found.values()} <= {6, 8}
+
+
+@needs_corpus
+def test_the_two_files_without_the_block_report_no_pitch():
+    """IK+ patches its own code instead of writing $D40F/$D412, and Ricochet's
+    arms are empty in the rip. Neither may be handed a made-up pitch."""
+    if not CORPUS.is_dir():
+        return
+    for name in ("IK_plus", "Ricochet"):
+        _, det = _detect(name)
+        assert det.effect_bit80 == "sfx"
+        assert (det.sfx_pitch, det.sfx_voice, det.sfx_period) == (-1, -1, -1)
+
+
+def test_the_reading_is_landed_and_not_yet_written():
+    """Same discipline as the two-stage attack before v0.5.179: resolve what
+    the block means from the 6502, then decide separately, by measurement,
+    whether the target format should carry it. Emitting it needs a wavetable
+    entry with an *absolute* note -- $38xx is about G-5 -- and that has not
+    been measured yet."""
+    import h2g.goatwriter as gw
+    src = pathlib.Path(gw.__file__).read_text(encoding="utf-8")
+    assert "sfx_pitch" not in src

@@ -132,6 +132,14 @@ class Detection:
     # from a duration/delta table. Read only -- goatwriter consumes none of it,
     # for the reasons in H2G-CONVERSION-METHOD.md section 7.jj.
     effect_bit80: str = ""
+    # The "sfx" shape's own numbers -- see _find_sfx_drum(). It is a
+    # fixed-pitch noise burst on one voice, fired every `sfx_period` frames
+    # while an instrument with bit $80 is playing: frequency HIGH byte
+    # `sfx_pitch` (never the note's), waveform $81, and a cutoff and volume
+    # the block also writes. -1 when the block is absent.
+    sfx_pitch: int = -1
+    sfx_voice: int = -1
+    sfx_period: int = -1
     # File offset of the "program" shape's per-instrument pointer array (two
     # bytes per record, strided like the instrument table), or -1.
     effect_program: int = -1
@@ -919,9 +927,17 @@ def detect(sid: SidFile, log: Logger) -> Detection:
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
-        log("Instrument effect byte..: bit $80 fires the game's own sound "
-            "effect (global state, voice 3 + volume) -- not music, not "
-            "converted")
+        det.sfx_pitch, det.sfx_voice, det.sfx_period = _find_sfx_drum(sid, det)
+        if det.sfx_pitch >= 0:
+            log(f"Instrument effect byte..: bit $80 is a fixed-pitch drum on "
+                f"voice {det.sfx_voice + 1} -- noise at frequency high "
+                f"${det.sfx_pitch:02X}xx"
+                + (f", every {det.sfx_period} frames" if det.sfx_period
+                   else "") + " (read, not written)")
+        else:
+            log("Instrument effect byte..: bit $80 writes voice 3 and the "
+                "volume, in a shape this reader does not recognise -- not "
+                "converted")
     elif det.effect_bit80 == "program":
         where = (f"file +0x{det.effect_program:04X}"
                  if det.effect_program >= 0 else "an unresolvable address")
@@ -1867,6 +1883,64 @@ def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
                 and k + 4 + d[k + 3] == entry
                 for k in range(max(0, off - 64), entry))
     return lo, hi, gated
+
+
+# The "sfx" shape's payload, Trans-Atlantic $0C4A and six more files:
+#
+#     0C2E  AD FB 0E  LDA effect      ; the CURRENT INSTRUMENT's effect byte
+#     0C31  10 2D     BPL skip        ; bit $80 clear -> nothing
+#     0C33  AD AF 0F  LDA $0FAF       ; this voice's frame counter (INC $0FAD,X)
+#     0C36  C9 01     CMP #$01
+#     0C38  F0 10     BEQ fire
+#     ...   C9 06     CMP #$06        ; ...and the counter wraps here
+#     0C4A  A9 38     LDA #$38
+#     0C4C  8D 0F D4  STA $D40F       ; frequency HIGH -- a constant, not the note
+#     0C4F  A9 81     LDA #$81
+#     0C51  8D 12 D4  STA $D412       ; ...and noise
+#     0C54  A9 50     LDA #$50 / STA $D416
+#     0C59  A9 2F     LDA #$2F / STA $D418
+#
+# **This is a drum, and it is music.** It was read as the game's own sound
+# effect and left unconverted on the grounds that it keys off global state; the
+# gate is the instrument's effect byte -- the very cell `_effect_byte_address`
+# locates -- and `$0FAF` is not global, it is `$0FAD,X` for the third voice.
+# Seven of the nine files classified "sfx" carry this block byte for byte apart
+# from the pitch, which is $48 in six of them and $38 in Trans-Atlantic.
+#
+# It matters because the noise is at a *fixed* pitch. Trans-Atlantic's traces
+# read `41 05CE / 81 38CE / 81 15EB / 41 05CE` -- the note, then two frames of
+# noise an octave and a half above it, then the note again. A conversion that
+# sounds noise at the note's own $05CE writes the register and makes no sound:
+# the SID's noise is an LFSR clocked by the frequency, so pitch is not a
+# refinement here, it is the difference between a drum and silence.
+SFX_DRUM_SHAPE = "A9 ?? 8D ?? D4 A9 81 8D ?? D4"
+
+
+def _find_sfx_drum(sid: SidFile, det: Detection) -> tuple[int, int, int]:
+    """(frequency high byte, voice, frames between hits) for the bit-$80 drum.
+
+    (-1, -1, -1) unless the block is found *and* its two stores name the
+    frequency-high and control registers of one and the same voice -- the check
+    that makes this a reading rather than a pattern that happens to match.
+    """
+    off = search_file(sid.data, SFX_DRUM_SHAPE)
+    if off < 0:
+        return -1, -1, -1
+    d = sid.data
+    freq_reg, ctrl_reg = d[off + 3], d[off + 8]
+    # $D401 + 7v is the frequency high byte, $D404 + 7v the control register.
+    if (freq_reg - 0x01) % 7 or (ctrl_reg - 0x04) % 7:
+        return -1, -1, -1
+    voice = (freq_reg - 0x01) // 7
+    if voice != (ctrl_reg - 0x04) // 7 or not 0 <= voice <= 2:
+        return -1, -1, -1
+    # The period is the `CMP #n` the counter wraps on, a little above the
+    # `CMP #$01` that fires it. Reported as 0 rather than guessed if absent.
+    period = 0
+    for k in range(max(0, off - 32), off):
+        if d[k] == 0xC9 and d[k + 2:k + 3] and d[k + 1] > 1:
+            period = d[k + 1]
+    return d[off + 1], voice, period
 
 
 def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:

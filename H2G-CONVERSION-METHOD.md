@@ -2324,6 +2324,55 @@ even if Goattracker could.** It seizes voice 3 and the master volume, neither
 of which belongs to any instrument. This is the one result in section 7 where
 the right encoding is provably no encoding.
 
+#### v0.5.181: every sentence of that paragraph is wrong
+
+A listener reported Trans-Atlantic's drums missing. They are — the conversion
+sounds **0 frames of noise against the original's 1089** — and this block is
+where they went.
+
+**"Nothing in the SID file ever writes that counter."** `INC $0FAD,X` does,
+every frame, at the bottom of the same routine. `$0FAF` is `$0FAD + 2`: it is
+not a global cell but the **third voice's own frame counter**, which is why it
+is compared against 1 and reset at 6. Checked across the seven files carrying
+the block, **six write it with `INC base,X` from inside the player**; only Mega
+Apocalypse does not, and that is a rip whose arms are stripped.
+
+**"It is set by the game."** The gate above it is `LDA effect / BPL`, and
+`effect` is the cell `_effect_byte_address` locates — the *playing
+instrument's* `+7`. Nothing outside the music can reach it.
+
+**"The block is dead code."** It fires 226 times in 60 seconds of
+Trans-Atlantic, once per note of GT 2, on the beat.
+
+What it plays is a fixed-pitch noise hit:
+
+```
+41 05CE   the note, pulse
+81 38CE   noise, frequency HIGH replaced by $38 -- the note's low byte kept
+81 15EB   noise, a second fixed pitch
+41 05CE   the note again
+```
+
+The pitch is the point. `#$38` is an immediate, identical under C-3, E-2, G-2
+and A-2, and it is `$48` in five of the other six files. The SID's noise is an
+LFSR clocked by the frequency register, so a conversion that sounds noise at
+the note's own `$05CE` writes the register and produces **no sound at all** —
+which is exactly what v0.5.179 shipped and v0.5.180 had to add an audibility
+guard against.
+
+`detect._find_sfx_drum` lands the reading as `sfx_pitch`, `sfx_voice` and
+`sfx_period`; `goatwriter` does not use it yet, for the discipline this section
+has now recorded three times. Emitting it needs a wavetable entry carrying an
+**absolute** note (`$38xx` is about G-5) rather than the played one, and that
+has not been measured.
+
+**The lesson is about the shape of the error, not the details.** The paragraph
+above was not a guess — it cited addresses and quoted the disassembly. What it
+never did was ask whether the cell it called global was written anywhere in the
+file, which is one `grep`. A reading can be detailed, sourced, internally
+consistent and still wrong at the first load instruction, and the thing that
+caught it was somebody listening to the tune and saying the drums were missing.
+
 **Two files: a byte-code wave program.** ACE II `$E357`, Auf Wiedersehen Monty
 `$E743` — the same player, and the shape the "half a census" note above
 predicted when it observed that bit `$08` doubles as the high byte of a
