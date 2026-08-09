@@ -1530,7 +1530,13 @@ def _preset_opts(doc: dict, name: str) -> dict:
         if opt in opts or opt in _PER_SONG_OPTS:
             continue
         key = _RENAMED_OPTS.get(opt, opt)
-        opts[opt] = bool(always.get(key))
+        # A song entry overrides `always`, so an option that is right for a few
+        # files and wrong corpus-wide can be recorded per song. Without this a
+        # per-song key would be read by nothing -- the shape in which `--slides`
+        # and `--filter` each shipped dead (see _convert_options), and which
+        # `presets.py --fidelity` would otherwise reproduce for
+        # `no_test_restart`.
+        opts[opt] = bool(entry[key] if key in entry else always.get(key))
     return opts
 
 

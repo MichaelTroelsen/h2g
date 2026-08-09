@@ -20,6 +20,7 @@ from fidelity import (_NOT_CONVERT_OPTS, _PER_SONG_OPTS, _RENAMED_OPTS,
                       _convert_options, _preset_opts)
 from h2g import __version__
 from h2g.convert import convert
+import presets
 from presets import EXCLUDED_FROM_ALWAYS
 
 PRESETS = Path(__file__).resolve().parents[2] / "presets.json"
@@ -95,3 +96,49 @@ def test_the_shipped_always_block_carries_every_gated_option():
 def test_every_deliberate_exclusion_is_a_real_option():
     """A stale name in the exclusion set would hide a genuinely missing one."""
     assert EXCLUDED_FROM_ALWAYS <= set(_convert_options())
+
+
+# --- per-song options ------------------------------------------------------
+#
+# An option can be right for a few files and wrong corpus-wide, which `always`
+# cannot express. `presets.py --fidelity` records those per song, and until
+# v0.5.177 nothing read them: `_preset_opts` consulted `always` alone, so a
+# searched setting would have been written and then ignored -- the exact shape
+# in which --slides and --filter each shipped dead.
+
+def test_a_song_entry_beats_the_always_block_in_both_directions():
+    doc = {"always": {"no_test_restart": False, "pulse": True},
+           "songs": {"a.sid": {"no_test_restart": True, "pulse": False}}}
+    got = _preset_opts(doc, "a.sid")
+    assert got["no_test_restart"] is True, "a per-song override was ignored"
+    assert got["pulse"] is False, "a per-song False must switch one off too"
+    other = _preset_opts(doc, "b.sid")
+    assert (other["no_test_restart"], other["pulse"]) == (False, True)
+
+
+def test_the_fidelity_searched_options_are_kept_out_of_always():
+    """They are per song by construction: each is a corpus-wide loss and a win
+    on a handful of files, so an `always` entry would be wrong either way."""
+    assert set(presets.FIDELITY_TOGGLES) <= EXCLUDED_FROM_ALWAYS
+    assert not set(presets.FIDELITY_TOGGLES) & set(presets.FIXED)
+    assert set(presets.FIDELITY_TOGGLES) <= set(_convert_options())
+
+
+def test_the_fidelity_search_cannot_be_won_by_deleting_notes():
+    """Section 7.eee: the candidate this search exists for reached `wave` 99.5%
+    on Commando by losing 79 notes, because a per-frame agreement rewards losing
+    the events it scores. Melody alone would not catch it either -- it collapses
+    consecutive repeats, so a re-struck note lost is invisible to it."""
+    ref = (0.80, 0.75, 600)
+    assert presets.fidelity_better((0.90, 0.80, 600), ref)
+    # better melody, but the sequence or the notes went with it
+    assert not presets.fidelity_better((0.90, 0.70, 600), ref)
+    assert not presets.fidelity_better((0.90, 0.80, 599), ref)
+
+
+def test_a_gain_inside_the_noise_is_not_recorded():
+    ref = (0.80, 0.75, 600)
+    assert not presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN / 2,
+                                        0.90, 900), ref)
+    assert presets.fidelity_better((0.80 + presets.FIDELITY_MARGIN,
+                                   0.75, 600), ref)

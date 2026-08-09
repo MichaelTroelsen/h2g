@@ -288,6 +288,7 @@ def main(argv=None) -> int:
             args.tempo = always["tempo"]
         if not _given("--legal-restart") and always.get("legal_restart"):
             args.legal_restart = True
+        entry = doc.get("songs", {}).get(os.path.basename(args.sid_file)) or {}
         for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
                           ("--effects", "effects"),
                           ("--status-bit6", "status_bit6"),
@@ -302,9 +303,16 @@ def main(argv=None) -> int:
                           ("--no-test-restart", "no_test_restart"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
-            if not _given(flag) and always.get(key):
+            if _given(flag):
+                continue
+            # A song entry beats `always`, which is what lets an option that is
+            # right for a few files and wrong corpus-wide be recorded per song
+            # (presets.py --fidelity). Without this the key would be read by
+            # nothing -- the shape in which --slides and --filter shipped dead.
+            if key in entry:
+                setattr(args, key, bool(entry[key]))
+            elif always.get(key):
                 setattr(args, key, True)
-        entry = doc.get("songs", {}).get(os.path.basename(args.sid_file))
         if entry:
             # Only fill in what the user did not ask for, so an explicit flag
             # always beats the stored preset.

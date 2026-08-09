@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.176 presets.py",
+  "generator": "h2g 0.5.177 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -430,7 +430,8 @@
       "bytes": 17262,
       "subtunes": 9,
       "rows": 28384,
-      "multiplier": 2
+      "multiplier": 2,
+      "no_test_restart": true
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 128,
@@ -440,7 +441,8 @@
       "bytes": 17285,
       "subtunes": 9,
       "rows": 31294,
-      "multiplier": 2
+      "multiplier": 2,
+      "no_test_restart": true
     },
     "Lightforce.sid": {
       "max_rows": 94,
@@ -790,7 +792,8 @@
       "bytes": 13275,
       "subtunes": 1,
       "rows": 12899,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "W_A_R.sid": {
       "max_rows": 128,

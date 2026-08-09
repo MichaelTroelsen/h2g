@@ -61,6 +61,14 @@ test dependency).
   python presets.py <sid_dir> -o ../presets.json                          # per-song best options
   ```
 
+  `presets.py` also has a `--fidelity` mode, for options that change no
+  *structure* and so are invisible to its scoring (currently
+  `--no-test-restart`). Do not add it to the routine command: it traces four
+  emulations a song. A plain run **carries forward** whatever `--fidelity`
+  already recorded and prints how many, so the fast path cannot silently
+  revert a measured per-song decision — but a run with `--no-carry`, or an
+  output path with no previous file, will drop them.
+
   `--gt2reloc` is what fills the report's pack-back column at all — omit it
   and the column comes out empty, silently. `--legal-restart` is part of the
   same command because without it `greloc.c:244` refuses every tune that ends

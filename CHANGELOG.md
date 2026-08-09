@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.177 — 2026-08-09
+
+- search the structure-invisible options per song with presets.py --fidelity
+
 ## 0.5.176 — 2026-08-09
 
 - add --no-test-restart, measured and rejected as a default

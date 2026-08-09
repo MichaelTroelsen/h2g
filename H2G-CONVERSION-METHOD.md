@@ -2576,6 +2576,41 @@ not uniform — which is why this ships as `--no-test-restart`, off, and named i
 `presets.EXCLUDED_FROM_ALWAYS` with the numbers, rather than as a comment
 somebody re-derives.
 
+#### Searching it per song (v0.5.177)
+
+Three files wanting an option 79 do not is what per-song presets are for, except
+that `presets.py` could not express it. Its scoring is structural — playable
+subtunes, rows played, bytes — and `no_test_restart` changes **none** of them,
+not even the byte count, so adding it to the searched set would have tied every
+time and silently chosen the default. `presets.py --fidelity` searches it by
+playing both settings through `gt2reloc` and siddump, and `fidelity._preset_opts`
+plus `cli.py` now let a song entry override `always` — until v0.5.177 both read
+`always` alone, so a searched setting would have been written and then ignored,
+the exact shape in which `--slides` and `--filter` shipped dead.
+
+It takes the option for exactly the three files the corpus A/B predicted. And
+what it accepted is a **trade**, recorded rather than smoothed:
+
+| Last_V8 | off | on | original |
+|---|---:|---:|---:|
+| attacks | 41 | **79** | 77 |
+| melody | 46% | **62%** | |
+| pitch | **91%** | 56% | |
+| distinct pitches | 10 (10 shared) | 14 (9 shared, **5 invented**) | 11 |
+
+`pitch` is a set overlap that ignores order and count, so a conversion playing a
+strict subset of correct pitches scores near-maximally on it — it **rewards
+playing less**, which is why it does not veto. Half the notes missing is the
+worse fault. The five invented pitches are still real, and only a listen settles
+that.
+
+The guard is `melody` (what is played, in order), `sequence` (uncollapsed, so a
+lost re-strike shows) and our own attack count. `FIDELITY_MARGIN` keeps difflib
+noise out. And because the fast structural search cannot see these options at
+all, a plain regeneration **carries forward** whatever `--fidelity` recorded and
+prints the count: without that, the next routine commit would have quietly
+returned all three files to the default with nothing reporting it.
+
 The general lesson is the one §7.ddd had just finished teaching from the other
 side. There, a per-frame column was *too harsh* because of an offset nobody had
 subtracted. Here it was *too kind* because a change quietly removed the events

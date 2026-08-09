@@ -1068,6 +1068,48 @@ preset reproduce the exact bytes
 it records, and what makes the `gt2reloc` step at the end of the block
 succeed for all 78.
 
+#### `--fidelity`: the options no structural score can see
+
+Those three criteria are all structural, and some options change no structure at
+all — same subtunes, same rows, **same byte count**. `_score` cannot tell them
+apart, so putting one in the searched set would tie every time and silently pick
+the default. `--no-test-restart` is the first of them.
+
+```sh
+python presets.py <sid_dir> -o ../presets.json --fidelity
+```
+
+This plays both settings: converts, packs with `gt2reloc`, traces both against
+the original with siddump, and records the setting only where it demonstrably
+plays better. On the corpus it takes `--no-test-restart` for exactly **three
+files** — `Last_V8` in both rips and `Trans-Atlantic_Balloon_Challenge`, which
+gain 16–17 points of melody from an option that costs 15.7 on average.
+
+It is scored on `melody` **and guarded on both `sequence` and our own attack
+count**, which is not belt and braces. The candidate this search exists for
+reached `wave` 99.5% on Commando by deleting 79 notes: any per-frame agreement
+rewards losing the events it scores, and `melody` collapses consecutive repeats
+so it cannot see a re-struck note lost either. A setting must gain on what is
+played *and* drop no note. `FIDELITY_MARGIN` (2 points) keeps difflib noise out.
+
+**What it accepted for those three is a trade, not a clean win**, and the report
+shows both halves. `Last_V8` goes from 41 attacks to 79 against the original's
+77 — `retrig` 0.53 → 1.03, `melody` 46 → 62%, `seq` 45 → 61%, `wave` 54 → 59% —
+but `pitch` falls 91 → 56%, because it played a strict *subset* of ten correct
+pitches before and now plays fourteen, nine shared and **five the original never
+plays**. `pitch` is a set overlap that ignores order and count, so a conversion
+playing less always scores well on it; that is why it does not veto here, and
+why the guard is `melody`, `seq` and the attack count. Half the notes missing is
+the worse fault, but the five invented pitches are real and a listen is the only
+thing that can settle it.
+
+It is **off by default** — it traces four emulations per song and needs
+`siddump` and `gt2reloc`, where the structural search is stdlib-only and runs on
+every commit. So a plain run **carries forward** whatever `--fidelity` settings
+the output file already records, and says how many; `--no-carry` opts out.
+Without that, the next routine regeneration would quietly return those three
+files to the default and nothing would report it.
+
 Each song also records a **`multiplier`** — the `gt2reloc -S` value its
 `.sng` is tempo'd for. It is not a searched option but a property of the
 tune's player: the classic players gate their sequencer behind a countdown
