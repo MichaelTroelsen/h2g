@@ -265,3 +265,123 @@ def test_commando_accumulates_under_the_flag():
     reached = [i for i in range(det.instr_used)
                if sid.data[det.pulse_lo_base + i * det.instr_stride + 7] & 0x08]
     assert reached, "the fixture should exercise the engine"
+
+
+# --- the triangle: the third engine ----------------------------------------
+#
+# A triangle like the sweep above, but its bounds are constants in the routine
+# rather than a per-record array, and its rate byte packs the step (& $E0) and
+# the frames between steps (& $1F). 24 corpus files carry it, and until it was
+# read they all wrote a frozen width for every record using it.
+
+TRI_LO, TRI_HI = 8, 0x0E
+
+
+def _tri_det(n, gated=False) -> Detection:
+    det = _det(n, swept=False)
+    det.pulse_tri_lo, det.pulse_tri_hi = TRI_LO, TRI_HI
+    det.pulse_tri_gated = gated
+    return det
+
+
+def _tri(rate, lo=0xC0, hi=0x0A, effect=0x00, mult=1, gated=False):
+    rec = [lo, hi, 0x41, 0x00, 0x00, 0x00, rate, effect]
+    return _pulse_program(_sid([rec], []), _tri_det(1, gated), 0, True, mult)
+
+
+def test_the_triangle_starts_where_the_record_does_not_at_a_bound():
+    """Every note restarts the program (gplay.c:375-379), so the entry width is
+    the duty cycle every attack is heard on. The record's own is the only value
+    the player is ever known to open on; a bound would invent one."""
+    entries, loop = _tri(0xE0)
+    assert entries[0] == (0x8A, 0xC0), "set $AC0, the record's own width"
+    assert loop == 2, "the jump returns to the descent, past the first ascent"
+
+
+def test_the_step_is_the_high_three_bits_and_the_delay_the_low_five():
+    """rate $44: step $40 every ($04 + 1) frames, so 12.8 per frame."""
+    entries, _ = _tri(0x44)
+    assert entries[1][1] == round(0x40 / 5)
+
+
+def test_a_delay_only_rate_does_not_sweep():
+    """`rate & $E0` is the whole step. A rate of $1F moves the width by nothing,
+    however often it does it -- and an under-read never invents movement."""
+    assert _tri(0x1F)[1] is None
+
+
+def test_the_step_is_divided_by_the_call_rate_like_every_other_rate():
+    assert _tri(0x40, mult=2)[0][1][1] == 0x20
+
+
+def test_a_step_past_the_signed_byte_is_capped_and_the_span_recomputed():
+    """A Goattracker pulse speed is a signed byte, so 224 a frame cannot be
+    said at all. What must not follow is a wrong span: the tick counts are
+    computed from the speed actually emitted, so the band stays right and only
+    the rate is slow."""
+    entries, loop = _tri(0xE0)
+    assert entries[1][1] == GT_MAX_PULSE_SPEED, "224 a frame cannot be said"
+    lo, hi = _walk(entries)
+    assert (TRI_HI << 8) - hi < GT_MAX_PULSE_SPEED, "the ascent stops at the top"
+    assert lo >= TRI_LO << 8, "and the descent at the bottom"
+
+
+def _walk(entries):
+    """(lowest, highest) width the program reaches, playing it as gplay does."""
+    pos = ((entries[0][0] & 0x0F) << 8) | entries[0][1]
+    seen = [pos]
+    for t, s in entries[1:]:
+        for _ in range(t):
+            pos += s if s < 0x80 else s - 0x100
+            seen.append(pos)
+    return min(seen), max(seen)
+
+
+def test_the_descent_cannot_walk_below_the_lower_bound():
+    """Goattracker masks the width to $FFF where the player clamps, so a descent
+    measured from the bound rather than from where the ascent stopped would wrap
+    to the top of the range on a truncated step -- a sweep audibly inside out."""
+    for rate in (0x20, 0x40, 0x60, 0x80, 0xA0, 0xC0, 0xE0, 0x23, 0x45):
+        for lo, hi in ((0x00, 0x08), (0xFF, 0x0D), (0xC0, 0x0A)):
+            entries, _ = _tri(rate, lo=lo, hi=hi)
+            low, high = _walk(entries)
+            assert low >= TRI_LO << 8, (rate, lo, hi, entries)
+            assert high <= TRI_HI << 8, (rate, lo, hi, entries)
+
+
+def test_the_gate_routes_a_bit_08_record_to_the_other_engine():
+    """19 of the 24 files put this engine behind an effect-bit-$08 test, with
+    the accumulate engine on the other side. The other five have no test and
+    sweep every record -- so the gate is honoured only where it was found."""
+    assert _tri(0xE0, effect=0x08, gated=True)[1] is None
+    assert _tri(0xE0, effect=0x08, gated=False)[1] is not None
+
+
+def test_a_player_without_the_triangle_is_never_swept_by_it():
+    sid = _sid([[0xC0, 0x0A, 0x41, 0, 0, 0, 0xE0, 0x00]], [])
+    assert _pulse_program(sid, _det(1, swept=False), 0, True, 1)[1] is None
+
+
+@needs_corpus
+def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
+    """The bounds are $08/$0E in every file carrying it, which is exactly why
+    they are read from the CMP operands: a constant that holds everywhere is
+    indistinguishable from one nobody checked."""
+    sids = sorted(CORPUS.glob("*.sid"))
+    if not sids:
+        pytest.skip("corpus not present")
+    found = gated = 0
+    for path in sids:
+        try:
+            sid = load_sid(str(path))
+            det = detect(sid, log=lambda m: None)
+        except Exception:                              # noqa: BLE001
+            continue
+        if det.pulse_tri_hi < 0:
+            continue
+        found += 1
+        gated += det.pulse_tri_gated
+        assert (det.pulse_tri_lo, det.pulse_tri_hi) == (8, 0x0E), path.name
+        # anchored on the instrument table this detection already found
+        assert sid.data[det.instr_start:det.instr_start + 1]
+    assert (found, gated) == (24, 19), "the triangle's reach changed"

@@ -766,10 +766,11 @@ derived from the simulated semantics from the start and is unchanged.
 
 ### `--pulse` (the duty cycle that never moved)
 
-Hubbard has **two** pulse engines and no file uses both: 34 corpus files sweep
-the width between two bounds, 21 accumulate into its low byte, and the flag now
-reads both. The sweep is described first; the accumulate engine follows under
-*The other engine* below.
+Hubbard has **three** pulse engines: 34 corpus files sweep the width between
+two per-record bounds, 21 accumulate into its low byte, and 24 run a triangle
+between two bounds fixed in the routine. The flag reads all three. The
+per-record sweep is described first; the accumulate engine follows under *The
+other engine*, and the triangle under *The third engine*.
 
 Hubbard sweeps the pulse width every frame in **43 of the 95 corpus files**,
 and until this flag every one of them came out with the duty cycle frozen at
@@ -891,6 +892,59 @@ move the `pul` column and nothing else moves anywhere:
 
 Sixteen files change bytes; eleven of them move no number, because the records
 the engine reaches do not play inside the traced ten seconds.
+
+#### The third engine (the triangle with fixed bounds)
+
+**24 corpus files** run a third engine, and in 19 of them it is the `else` of
+the bit-`$08` test above — so finding the accumulate engine was never a reason
+to stop looking. It is a triangle across the whole 12-bit width, like the
+per-record sweep, but its turnaround nibbles are constants in the routine and
+its rate byte packs **two** fields. Commando `$524B`:
+
+```
+524B  AD 07 55  LDA rate          ; self-modified from record +6 at note fetch
+524E  F0 62     BEQ done
+5253  29 1F     AND #$1F          ; low five bits: frames between steps
+5255  DE 0D 55  DEC counter,X     ; per voice
+5258  10 58     BPL done
+525A  9D 0D 55  STA counter,X     ; so the period is (rate & $1F) + 1
+5260  29 E0     AND #$E0          ; high three bits: the step
+526E  79 91 55  ADC record,Y      ; the width lives in the INSTRUMENT RECORD
+5277  29 0F     AND #$0F
+527A  C9 0E     CMP #$0E          ; the upper turnaround, an operand
+527E  FE 10 55  INC dir,X
+      ...       descend: the same with SBC, ending CMP #$08
+```
+
+A rate of `$44` is therefore 64 every five frames, and a rate of `$1F` is
+nothing, thirty-two times — reading it as a plain rate, which is what both
+other engines do with the same `+6`, would make a slow sweep frantic and a
+static record swept. The bounds are `$08`/`$0E` in all 24 files, which is
+exactly why they are read from the two `CMP` operands: a constant that holds
+everywhere is indistinguishable from one nobody checked. **Five of the 24 have
+no bit-`$08` test at all** and sweep every record, so the gate is honoured only
+where it was found; 23 files change bytes, and the 24th (Hunter Patrol) has bit
+`$08` set on every record with a nonzero step, so all of them correctly go to
+the accumulate engine instead.
+
+Two things carry over and one cannot. The width lives in the instrument record,
+shared by every voice sounding it, and nothing reseeds it at note start — the
+sweep **free-runs across notes**, where Goattracker reloads a pulse pointer
+whenever its instrument is triggered (`gplay.c:375-379`). So the program is
+written to start at the record's own width rather than at a bound: that is the
+one duty cycle the player is known to open on, and it is what every attack will
+be heard on. And a Goattracker pulse speed is a **signed byte**
+(`readme.txt:887-889`), so at `-S1` the width cannot move more than 127 a call
+where the player moves up to 224. The band still comes out right — the tick
+counts are recomputed from the speed actually emitted — but the sweep runs up
+to 1.76x slow, and no option can fix that at multiplier 1.
+
+Commando's lead, GT 1, is the example: `$A00` frozen before, `$845`–`$DBA`
+after, against the original's `$820`–`$E40`. Note that **`instrmap.py`'s pulse
+column could not see this fix** as it stood — it sampled one frame per onset,
+and a sweep that restarts with the note is at the same place on every onset
+however far it travels. It now reports the band each note covers on both sides,
+judged on median travel *within* one note; see § *The instrument map*.
 
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
@@ -1193,20 +1247,32 @@ one vibrato cycle for a re-struck note.
 | **retrig** | our attacks over the original's; 1.0 is right |
 | **pitch** | overlap of the distinct pitches played |
 
-Attacks are not all of it. Six further columns compare the registers
+Attacks are not all of it. Seven further columns compare the registers
 themselves, each frame-by-frame with the last written value carried forward,
 because siddump prints a register only when it changes: **wave** (the
 waveform-select nibble), **noise** (frames of noise, ours over the
 original's), **adsr** (the envelope pair `$D405`/`$D406`), **pul** (how often
-the duty cycle moved, ours over the original's), **filt** (frames with a voice
+the duty cycle moved, ours over the original's), **pspan** (how wide a band
+the duty cycle covers, over the original's), **filt** (frames with a voice
 routed into the filter and a passband selected, ours over the original's) and
 **cut** (how far the cutoff travels, over the original's travel). The three
 counted ones are one-sided on purpose: they answer "did we invent this" or
-"did we drop it", which no agreement percentage can say — and `cut` is a
-ratio rather than a count because a sweep taken in finer steps writes twice as
-often and goes exactly as far. `FIDELITY.md`'s own legend defines each, a
-*Filter* section there carries both sides' raw figures, and *What this run
-compared* names the registers no column reads (with these six, none).
+"did we drop it", which no agreement percentage can say.
+
+`cut` and `pspan` are ratios rather than counts because **a sweep taken in
+finer steps writes twice as often and goes exactly as far**. `pspan` was added
+in v0.5.174 for that case in its purest form: a Goattracker pulse speed is a
+signed byte, so a player step of 224 a frame is emitted as 127 twice, and
+`pul` moved from 3/236 to 338/236 on `5_Title_Tunes` for a band that came out
+*narrower* than the original's. It excludes a width of `$000` on both sides —
+Goattracker writes `$D402/$D403` on every frame from the first call where the
+player writes them at its first note, and that leading zero otherwise reads as
+a spurious jump on all three voices of every file (Commando: 3.96x for a sweep
+that covers less). `$000` is 0% duty, so nothing audible is dropped.
+
+`FIDELITY.md`'s own legend defines each, a *Filter* section there carries both
+sides' raw figures, and *What this run compared* names the registers no column
+reads.
 
 [`FIDELITY.md`](FIDELITY.md) is the committed report, and the single place
 fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
@@ -1367,7 +1433,7 @@ remembering to write the caveat.
 siddump reads the SID **once per frame**, so a value written and overwritten
 inside a frame is not in its trace, and on a multiplier-`m` file the `m - 1`
 intermediate play calls leave no mark. `--vice` computes `wave`, `adsr`,
-`pul`, `filt` and `cut` from VICE's `dump` sound device instead, which writes
+`pul`, `pspan`, `filt` and `cut` from VICE's `dump` sound device instead, which writes
 the whole chip state on **every rasterline** — 312 samples a PAL frame. Both
 sides are traced that way; tracing only ours would trade one bias for another.
 
@@ -1523,12 +1589,21 @@ the note, for the same reason the tables above are: the attack frame can still
 hold a hard restart's ADSR, which is the player's transition and not the
 instrument. `--no-dump` leaves the tables out.
 
+**The pulse column reports the band each note covers, not the width at its
+onset.** A pulse program restarts with the note (`gplay.c:375-379`), so it is
+at the same place on every onset however far it travels afterwards — an
+onset-only reading calls a working sweep static, and did, for the whole of
+v0.5.174's first draft. The verdict is the *median travel within one note*
+rather than the union of the bands across notes: a player sweep that free-runs
+visits every phase, so comparing unions would score that difference as
+agreement.
+
 It has already found what no score did. Commando's drum was silent because our
 first-frame waveform `$09` carries the testbit and the tick cleared the gate on
 top of it (v0.5.172, 14 onsets against 0); the alternating rows under one
-instrument number are the arpeggio the ear had guessed at; and GT 1's pulse
-sweeps `$800`–`$D00` in the original and sits on `$A00` in ours, which is a
-pulse program not reaching the output and is not Commando-specific.
+instrument number are the arpeggio the ear had guessed at; and GT 1's flat duty
+cycle turned out to be a third pulse engine nothing had read, in 24 corpus
+files (v0.5.174, § `--pulse`).
 
 ## Repository layout
 

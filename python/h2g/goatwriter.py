@@ -1658,8 +1658,15 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     if not pulse:
         return static, None
     if det.pulse_bounds < 0:
+        # Two engines share the instrument record, and which one a record uses
+        # is the record's own effect bit $08. Ask the accumulate one first: it
+        # returns None unless the bit is set, so the order is what routes them.
         if det.pulse_lo_base >= 0:
             program = _pulse_lo_program(sid, det, i, multiplier)
+            if program is not None:
+                return program
+        if det.pulse_tri_hi >= 0:
+            program = _pulse_tri_program(sid, det, i, multiplier)
             if program is not None:
                 return program
         return static, None
@@ -1724,6 +1731,73 @@ def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
     entries = [((0x80 | (hi & 0x0F)) & 0xFF, lo)]
     entries += [(t, speed) for t in _split_ticks(max(1, 0x100 // speed))]
     return entries, 0
+
+
+def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
+                       multiplier: int) -> tuple[List[tuple], int] | None:
+    """The triangle engine's entries, or None if this record does not sweep.
+
+    The third pulse engine (`_find_pulse_tri`), and the one Commando's lead
+    uses: a triangle across the 12-bit width between two nibbles fixed in the
+    routine, stepped by `rate & $E0` every `(rate & $1F) + 1` frames. 24 corpus
+    files carry it; before this it fell through to the static width, so an
+    instrument whose whole character is a moving duty cycle came out frozen.
+    Commando's GT 1 covers six 256-wide buckets in the original and sat on one.
+
+    In a Goattracker pulse table: a set to the record's own width, an ascent to
+    the upper bound, then a descent and an ascent that alternate forever. The
+    first leg exists because the record starts mid-band -- `$AC0` of `$800`
+    to `$E00` in Commando -- and starting the program at a bound instead would
+    put every note's attack on a duty cycle the player never opens on.
+
+    Three approximations, stated rather than hidden:
+
+    * **The player's sweep free-runs and this one cannot.** The width lives in
+      the instrument record, shared by every voice sounding it, and nothing
+      reseeds it at note start; Goattracker reloads the pulse pointer whenever
+      an instrument is triggered (gplay.c:375-379). So the original's phase at
+      any given note is arbitrary and ours is always the record's own width.
+      The band and the rate carry over; the phase cannot.
+    * **A step above 127 cannot be expressed at all.** A Goattracker pulse
+      speed is a signed byte (readme.txt:887-889, gplay.c:889-899), so the most
+      the width can move is 127 per *call*. `rate & $E0` reaches 224, and at
+      `-S1` a step that large is emitted at 127 and sweeps ~1.8x slow. The span
+      stays right because the tick count is recomputed from the speed actually
+      emitted -- the same trade the other two engines make.
+    * The player turns around when the high nibble *equals* a bound, so a step
+      that does not divide the span overshoots by up to one step; the tick
+      count here turns a fraction of a step early instead.
+    """
+    data = sid.data
+    rec = det.instr_start + i * det.instr_stride
+    if rec + 7 >= len(data):
+        return None
+    # In 19 of the 24 files this engine is the else-branch of an effect-bit-$08
+    # test and the accumulate engine is the then-branch; in the other five
+    # there is no test and every record sweeps. Honouring the gate only where
+    # it exists is what keeps those two readings apart.
+    if det.pulse_tri_gated and data[rec + 7] & 0x08:
+        return None
+    step = data[rec + 6] & 0xE0
+    if step == 0:                    # rate 0, or a rate that is delay-only
+        return None
+    delay = (data[rec + 6] & 0x1F) + 1
+    speed = min(GT_MAX_PULSE_SPEED,
+                max(1, round(step / (delay * max(1, multiplier)))))
+    low, high = det.pulse_tri_lo << 8, det.pulse_tri_hi << 8
+    width = min(max(((data[rec + 1] & 0x0F) << 8) | data[rec], low), high)
+    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
+    first = (high - width) // speed
+    if first:
+        entries += [(t, speed) for t in _split_ticks(first)]
+    # Measured from where the ascent actually stopped rather than from the
+    # bound, so truncation cannot walk the band down into a 12-bit wrap --
+    # Goattracker masks the width to $FFF (gplay.c:891) where the player clamps.
+    ticks = _split_ticks(max(1, (width + first * speed - low) // speed))
+    loop = len(entries)
+    entries += [(t, (0x100 - speed) & 0xFF) for t in ticks]
+    entries += [(t, speed) for t in ticks]
+    return entries, loop
 
 
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,

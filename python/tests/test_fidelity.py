@@ -402,6 +402,49 @@ def test_pulse_movement_is_counted_per_voice():
     assert [v["our_pulse_changes"] for v in got["pulse_voices"]] == [0, 2, 0]
 
 
+def test_the_same_sweep_in_half_sized_steps_doubles_the_count_not_the_span():
+    """Why `pspan` exists beside `pul`, in the one case that produced it.
+
+    A Goattracker pulse speed is a signed byte, so a player step of 224 a frame
+    is emitted as 127 twice. The sound is the same sweep; the count reads it as
+    twice the movement. `pul` alone would score v0.5.174's third pulse engine
+    as a large regression -- 5_Title_Tunes went 3/236 to 338/236 -- for a band
+    that in fact came out slightly narrower than the original's.
+    """
+    coarse = _pulse_voices([(f, 0x800 + f * 0x100) for f in range(5)])
+    fine = _pulse_voices([(f, 0x800 + f * 0x80) for f in range(9)])
+    got = fidelity.pulse_compare(coarse, fine, 9)
+    assert got["our_pulse_changes"] == 2 * got["orig_pulse_changes"]
+    assert got["pulse_span"] == 1.0, "the band is the same one, either way"
+
+
+def test_the_leading_zero_goattracker_writes_is_not_part_of_the_band():
+    """Goattracker writes $D402/$D403 on every frame from the first call, so
+    our timeline opens on $000 where the player's opens on a real width. Left
+    in, that is a spurious jump on all three voices of every file -- it read as
+    3.96x the original's band on Commando for a sweep that covers less."""
+    orig = _pulse_voices([(0, 0x180), (5, 0x200)])
+    ours = _pulse_voices([(0, 0x000), (3, 0x180), (5, 0x200)])
+    got = fidelity.pulse_compare(orig, ours, 10)
+    assert got["orig_pulse_span"] == got["our_pulse_span"] == 0x80
+    assert got["pulse_span"] == 1.0
+
+
+def test_a_frozen_duty_cycle_has_no_span_at_all():
+    got = fidelity.pulse_compare(
+        _pulse_voices([(f, 0x800 + f * 0x10) for f in range(10)]),
+        _pulse_voices([(0, 0x800)]), 10)
+    assert got["pulse_span"] == 0.0
+
+
+def test_pulse_span_is_none_when_the_original_never_moves_the_width():
+    """A ratio needs a denominator. `-` in the column, never a division."""
+    got = fidelity.pulse_compare(_pulse_voices([(0, 0x800)]),
+                                 _pulse_voices([(f, f * 0x10)
+                                                for f in range(5)]), 5)
+    assert got["pulse_span"] is None
+
+
 def _filt(cutoff=(), ctrl=(), passband=(), volume=()):
     return fidelity.FilterState(cutoff_events=list(cutoff),
                                 ctrl_events=list(ctrl),
@@ -482,10 +525,11 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    orig_filtered_frames=0, our_filtered_frames=40,
                    orig_cutoff_changes=10, our_cutoff_changes=30,
                    orig_cutoff_travel=450, our_cutoff_travel=900,
-                   cutoff_sweep=2.0)
+                   cutoff_sweep=2.0,
+                   orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert "| adsr | pul | filt | cut | status |" in text
-    assert "| 50% | 60/100 | 40/0 ! | 2.00x |" in text
+    assert "| adsr | pul | pspan | filt | cut | status |" in text
+    assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
     assert "filtered frames, ours/original: **40/0**" in text
@@ -629,6 +673,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_noise_frames=0, our_noise_frames=0,
                  adsr=melody, adsr_frames=100,
                  orig_pulse_changes=0, our_pulse_changes=0,
+                 orig_pulse_span=0, our_pulse_span=0,
+                 pulse_span=1.0,
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,

@@ -2342,6 +2342,134 @@ separately, by measurement, whether the target format should carry it. The
 difference here is that for nine of the twelve files the measurement is not
 needed — the block is not part of the tune.
 
+### 7.ccc A third pulse engine, and a column that could not see it
+
+Commando's lead sat on a single duty cycle where the original swept six
+256-wide buckets. The instrument map named it; the annotated siddump of §7.bbb
+found the mechanism in one read, because labelling each row with the
+instrument sounding on it turns "what does GT 1 do" into a grep:
+
+```
+775 v1 1D46  A-4 B9  41 295F AC0 ONSET
+776 v1 ....  ... ..  .. .... BA0
+777 v1 ....  ... ..  .. .... C80
+778 v1 ....  ... ..  40 0000 D60
+779 v1 ....  ... ..  .. .... E40
+780 v1 ....  ... ..  .. .... D60
+```
+
+A triangle, `$E0` a frame, turning at `$E40`. Not the sweep of §7.n (whose
+bounds live in a per-record array, and which Commando does not have) and not
+the accumulate engine (which moves only `$D402`, so the high nibble cannot
+travel). A third engine, in the `else` of the accumulate branch:
+
+```
+524B  AD 07 55  LDA rate          ; self-modified from record +6 at note fetch
+524E  F0 62     BEQ done
+5253  29 1F     AND #$1F          ; low five bits: frames between steps
+5255  DE 0D 55  DEC counter,X     ; per voice
+5258  10 58     BPL done
+525A  9D 0D 55  STA counter,X     ; so the period is (rate & $1F) + 1
+5260  29 E0     AND #$E0          ; high three bits: the step
+526E  79 91 55  ADC record,Y      ; the width lives in the INSTRUMENT RECORD
+5277  29 0F     AND #$0F
+527A  C9 0E     CMP #$0E          ; the upper turnaround, an operand
+527E  FE 10 55  INC dir,X
+      ...       descend: the same with SBC, ending CMP #$08
+```
+
+**One rate byte, two fields.** `& $E0` is the step and `& $1F` the frames
+between steps, so a rate of `$44` is 64 every five frames and a rate of `$1F`
+is nothing, thirty-two times. Reading the byte as a plain rate — which is what
+both other engines do with the same `+6` — would have made a slow sweep a
+frantic one and a static record a swept one.
+
+**24 corpus files, and the bounds read rather than assumed.** They are `$08`
+and `$0E` in all 24. That is precisely why `_find_pulse_tri` takes them from
+the two `CMP` operands: a constant that holds everywhere is indistinguishable
+from one nobody checked. The instrument-table operand is checked against the
+table detection already found, as `_find_pulse_lo` does. 19 of the 24 sit
+behind an effect-bit-`$08` test with the accumulate engine on the other side;
+**five have no test at all** and sweep every record, so the gate is honoured
+only where it was found. 23 files change bytes; the 24th, Hunter_Patrol, has
+bit `$08` set on every record with a nonzero step, so the gate correctly sends
+all of them to the other engine.
+
+**Two things Goattracker cannot say, both stated in the code.** The width
+lives in the instrument record, so it is shared by every voice sounding that
+instrument and **free-runs across notes** — nothing reseeds it. Goattracker
+reloads a pulse pointer whenever its instrument is triggered
+(`gplay.c:375-379`), so our sweep restarts every note. And a pulse speed is a
+*signed byte* (`readme.txt:887-889`), so at `-S1` the width cannot move more
+than 127 a call where the player moves 224. The band still comes out right
+because the tick counts are recomputed from the speed actually emitted; only
+the rate is slow, by 1.76x.
+
+#### The column that could not see it
+
+With the sweep shipped, the map's pulse table still read `$A00` against the
+original's six buckets — **unchanged**. It was sampling one frame per onset,
+and a sweep that restarts with the note is at the same place on every onset
+however far it travels afterwards. The old column could not have shown this
+fix, or any pulse fix, at all.
+
+So the column was replaced rather than believed, per the rule this repo has
+had to learn twice (§7.f, §7.dd): the band each note covers, on both sides.
+The first version of *that* compared the **union of the bands across notes**
+and scored GT 1 `ok` — flattering, and wrong for the same reason: a
+free-running sweep visits every phase, so its union is the whole band however
+little it moves during any one note. The verdict is now the **median travel
+within one note**:
+
+| GT | orig at onset | ours at onset | orig band | our band | travel/note | verdict |
+|---|---|---|---|---|---|---|
+| 1 | `$800`–`$D00` | `$A00` | `$820-$E40` | `$845-$DBA` | 1568/762 | 0.49x |
+| 3 | `$100` | `$100` | `$100-$1FE` | `$152-$244` | 234/132 | 0.56x |
+| 6 | `$800` | `$800` | `$800-$8FE` | `$8DA-$8E6` | 20/12 | 0.60x |
+
+0.49x is the signed byte, and it is the ceiling at `-S1`. Rows 3 and 6 are the
+*accumulate* engine — a pre-existing deficit the onset-only column had hidden
+since it shipped, and one this fix did not touch. Note lengths are identical
+on both sides (median gaps 12, 18, 12), so it is not an artefact of the window.
+
+The pattern worth keeping: **the reading that made the sweep findable and the
+reading that made it measurable were two different changes to the same tool**,
+and the second only happened because the first produced a table that stayed
+flat when the converter demonstrably changed.
+
+#### And the same trap again, one report over
+
+`FIDELITY.md` did move — its `pul` column went from `3/236` to `338/236` on
+5_Title_Tunes, and similar elsewhere. Read as a count that is a large
+regression. It is not: `pul` counts *frames on which the duty cycle moved*, and
+a signed-byte speed emits one player step of 224 as 127 twice. Twice the
+frames, the same sweep. This is precisely the pair `cut` was added beside
+`filt` for in v0.5.78, and `pul` had gone without its companion ever since.
+
+So `pspan` — the width of the band, ours over the original's. Its first
+version then failed its own first check, in a way worth recording because it
+looked exactly like a converter defect: Commando read **3.96x the original's
+band** for a sweep measured at 0.49x an hour earlier. The cause was neither
+converter nor player. Goattracker writes `$D402/$D403` on every frame of every
+voice from its first call (`gplay.c:945`); the player writes them at its first
+note. So our timeline opens on a run of `$000` and the original's opens on a
+real width, and the span picked up a spurious `$000`-to-first-width jump on all
+three voices of every file. Excluding zero — 0% duty is silence, not a timbre,
+and the rule is symmetric — Commando reads 0.96x.
+
+Two things that made it findable in minutes rather than being published: the
+number was checked against a per-instrument measurement of the same thing
+taken independently, and when they disagreed by 4x the *instrument* was
+suspected before the converter. Corpus median is now 0.56x, six files are
+frozen at 0.00x, and two overshoot.
+
+A footnote that cost twenty minutes: `Commando.sid` in the repo root and
+`Commando.sid` in the corpus are **different rips** (4222 and 4165 bytes). The
+fixture is the one `instrmap.py` and the listening sessions use; `FIDELITY.md`
+and `SURVEY.md` are the corpus. A number from one is not a number about the
+other, and for a while two measurements that should have agreed did not
+because they were of different files.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

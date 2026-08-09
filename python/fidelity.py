@@ -854,8 +854,32 @@ def _changes(timeline: list[int]) -> int:
     return sum(1 for i in range(1, len(timeline)) if timeline[i] != timeline[i - 1])
 
 
+def _span(timeline: list[int]) -> int:
+    """The width of the band a nonzero register covers -- max less min.
+
+    The companion a count needs whenever the change under test is to a step
+    *size*. `_changes` reads the same sweep taken in twice as many half-sized
+    steps as twice the movement, which is exactly what a Goattracker pulse
+    program does to a player's staircase: a signed-byte speed cannot move
+    224 in one call, so it moves 127 twice, and the count doubles while the
+    sound is the same. The band does not move under that substitution.
+
+    **Zero is excluded, and the column is unusable without that.** Goattracker
+    writes `$D402/$D403` on every frame of every voice from the first call
+    (`gplay.c:945`) where the player writes them at its first note, so our
+    timeline opens on a run of `$000` and the original's opens on a real width.
+    Left in, that leading zero is a spurious `$000`-to-first-width jump on all
+    three voices of every file, and it read as us covering 3.96x the band on
+    Commando while our sweep in fact covers slightly *less*. A width of `$000`
+    is 0% duty -- silence, not a timbre -- so nothing audible is lost by
+    dropping it, and the rule is the same on both sides.
+    """
+    live = [v for v in timeline if v]
+    return (max(live) - min(live)) if live else 0
+
+
 def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
-    """How often each side moves the duty cycle, per voice and in total.
+    """How often each side moves the duty cycle, and how far it travels.
 
     Not an agreement percentage, and deliberately. Two players sweeping the
     same duty cycle at the same rate from different starting phases share
@@ -874,16 +898,23 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
     those and the shape should not.
     """
     o_ch = u_ch = 0
+    o_sp = u_sp = 0
     per_voice = []
     for a, b in zip(orig, ours):
-        vo = _changes(register_timeline(a.pulse_events, nframes))
-        vu = _changes(register_timeline(b.pulse_events, nframes))
+        ta = register_timeline(a.pulse_events, nframes)
+        tb = register_timeline(b.pulse_events, nframes)
+        vo, vu = _changes(ta), _changes(tb)
         per_voice.append({"orig_pulse_changes": vo, "our_pulse_changes": vu})
         o_ch += vo
         u_ch += vu
+        o_sp += _span(ta)
+        u_sp += _span(tb)
     return {
         "orig_pulse_changes": o_ch,
         "our_pulse_changes": u_ch,
+        "orig_pulse_span": o_sp,
+        "our_pulse_span": u_sp,
+        "pulse_span": (u_sp / o_sp) if o_sp else None,
         "pulse_voices": per_voice,
     }
 
@@ -1089,6 +1120,7 @@ def vice_register_compare(orig_samples: list, our_samples: list,
 
     # --- pulse: how often the duty cycle moves, per side --------------------
     o_ch = u_ch = 0
+    o_sp = u_sp = 0
     pulse_voices = []
     for vi in range(3):
         ta = [puls_cells_o[f][vi].representative() for f in range(nframes)]
@@ -1098,7 +1130,11 @@ def vice_register_compare(orig_samples: list, our_samples: list,
                              "our_pulse_changes": b_ch})
         o_ch += a_ch
         u_ch += b_ch
+        o_sp += _span(ta)
+        u_sp += _span(tb)
     out.update({"orig_pulse_changes": o_ch, "our_pulse_changes": u_ch,
+                "orig_pulse_span": o_sp, "our_pulse_span": u_sp,
+                "pulse_span": (u_sp / o_sp) if o_sp else None,
                 "pulse_voices": pulse_voices})
 
     # --- filter: the one global cell ----------------------------------------
@@ -1282,6 +1318,15 @@ DIMENSIONS = (
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
               "frames on which the duty cycle moved",
               source="our_pulse_changes"),
+    # `pspan` is to `pul` what `cut` is to `filt`, and for the identical
+    # reason. A count says whether the duty cycle moves at all; it cannot say
+    # whether it goes anywhere, and it reads a sweep taken in finer steps as
+    # more movement. v0.5.174 is exactly that case -- a Goattracker pulse speed
+    # is a signed byte, so a player step of 224 a frame comes out as 127 twice,
+    # and `pul` went from 3/236 to 338/236 on 5_Title_Tunes for a sweep that
+    # covers slightly *less* of the band than the original's.
+    Dimension("pulse_span", "pspan", ("$D402/$D403",), "ratio",
+              "how wide a band the duty cycle covers, over the original's"),
     # The filter is two dimensions because it is two questions, and one of
     # them is not a count: `filt` is whether we filter at all, `cut` is
     # whether the cutoff then moves as far as the original's. A count reads
@@ -1949,13 +1994,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | adsr | pul | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 13 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 14 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -1970,6 +2015,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
+            f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
             f"{status} |")
 

@@ -134,9 +134,9 @@ test dependency).
 - **Do not conclude a change did nothing from a flat table — make the tool
   say it.** Since v0.5.77 every dimension declares the SID registers it reads,
   every row records which dimensions it actually compared, and the report ends
-  with *What this run compared* naming the registers nothing in it reads
-  (`$D402/$D403`, `$D405/$D406`, `$D415/$D416`, `$D417`, `$D418` — pulse
-  width, envelope, filter, volume). `fidelity.py --baseline old.json` A/Bs a
+  with *What this run compared* naming the registers nothing in it reads —
+  regenerated from the rows, so read it there rather than from any list
+  written down elsewhere. `fidelity.py --baseline old.json` A/Bs a
   saved `--json` run against the current tree and hashes the converter's
   output per row, so it distinguishes **"no dimension this report measures can
   see this change"** from **"this change reaches nothing"** — the two readings
@@ -207,7 +207,12 @@ test dependency).
   current for `value + 1` calls, not `value` (gplay.c:697-704), and reading
   the range out of `gcommon.h` instead left every multispeed file's attack a
   call too long from v0.5.82 to v0.5.130. `tests/test_call_rate.py` now
-  transcribes that loop and times the shapes against it. Until v0.5.99 **no number in `FIDELITY.md` could
+  transcribes that loop and times the shapes against it. **And check that a
+  rate byte is only a rate**: the triangle pulse engine (v0.5.174, 24 files)
+  packs the step in `& $E0` and the frames between steps in `& $1F` at the
+  same record `+6` the other two pulse engines read as a plain per-frame rate,
+  so reading it as one would make a slow sweep frantic and a static record
+  swept. Until v0.5.99 **no number in `FIDELITY.md` could
   move on such a change**: stock siddump calls the play routine `seconds × 50`
   times whatever the PSID speed field says (`siddump.c:309/325`), so the trace
   saw every file as multiplier 1. `python/tools/siddump-rt` (vendored siddump

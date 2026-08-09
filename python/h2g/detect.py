@@ -111,6 +111,19 @@ class Detection:
     # +0/+1 seed the 12-bit width at note start and whose +6 is added to the
     # low byte every frame. -1 when the block is absent or unreadable.
     pulse_lo_base: int = -1
+    # The third pulse engine -- see _find_pulse_tri(). A triangle across the
+    # 12-bit width like `pulse_bounds`, but its turnaround nibbles are constants
+    # in the routine rather than a per-record array, and its rate byte packs
+    # two fields: & $E0 the step, & $1F the frames between steps. The high
+    # nibbles are read from the two CMP operands, never assumed. `gated` is
+    # whether the routine sits behind an effect-bit-$08 test, which decides
+    # whether it or the accumulate engine above runs for a given record; five
+    # of the 24 corpus files carrying it have no such test and sweep every
+    # record. The rate is at record +6 in 24 of 24, the same byte the
+    # accumulate engine uses.
+    pulse_tri_lo: int = -1
+    pulse_tri_hi: int = -1
+    pulse_tri_gated: bool = False
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -883,6 +896,19 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         if det.pulse_lo_base >= 0:
             log(f"Pulse-width accumulate..: state array at file "
                 f"+0x{det.pulse_lo_base:04X} (+0 lo, +1 hi, +6 rate)")
+
+    # Consulted whatever the two above found: this engine is a *branch* of the
+    # same routine as the accumulate one in 19 of its 24 files, so finding that
+    # one is no reason to stop looking, and in the other five it stands alone.
+    if det.pulse_bounds < 0:
+        (det.pulse_tri_lo, det.pulse_tri_hi,
+         det.pulse_tri_gated) = _find_pulse_tri(sid, det)
+        if det.pulse_tri_hi >= 0:
+            log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
+                f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
+                f"(step & $E0, delay & $1F)"
+                + ("" if det.pulse_tri_gated
+                   else " -- every record, no bit $08 test"))
 
     (det.effect_two_stage, det.two_stage_wave,
      det.two_stage_frames) = _find_two_stage(sid, det)
@@ -1762,6 +1788,85 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
     if at != det.instr_start:
         return -1
     return at
+
+
+# The triangle sweep, in full, because every field this converter needs is an
+# operand of it (Commando $524B, and 23 more files byte-for-byte apart from
+# the operands):
+#
+#     524B  AD 07 55  LDA rate       ; self-modified from record +6 at note fetch
+#     524E  F0 62     BEQ done
+#     5250  AC 18 55  LDY instidx
+#     5253  29 1F     AND #$1F       ; low five bits: frames between steps
+#     5255  DE 0D 55  DEC counter,X  ; per VOICE
+#     5258  10 58     BPL done
+#     525A  9D 0D 55  STA counter,X  ; reload -- so the period is (rate&$1F)+1
+#     525D  AD 07 55  LDA rate
+#     5260  29 E0     AND #$E0       ; high three bits: the step itself
+#     5262  8D 24 55  STA step
+#     5265  BD 10 55  LDA dir,X
+#     5268  D0 1A     BNE descend
+#     526A  AD 24 55  LDA step
+#     526D  18        CLC
+#     526E  79 91 55  ADC record,Y   ; +0 is the running low byte...
+#     5271  48        PHA
+#     5272  B9 92 55  LDA record+1,Y ; ...and +1 the running high nibble
+#     5275  69 00     ADC #$00
+#     5277  29 0F     AND #$0F
+#     5279  48        PHA
+#     527A  C9 0E     CMP #$0E       ; the upper turnaround, an operand
+#     527C  D0 1D     BNE write
+#     527E  FE 10 55  INC dir,X
+#     ...             descend: the same with SBC, ending CMP #$08
+#
+# Two things follow that no other engine in this player family does. The width
+# is kept *in the instrument record*, so it is shared by every voice sounding
+# that instrument and drifts for the rest of the tune; and nothing reseeds it
+# at note start, so the sweep free-runs across notes. Goattracker restarts a
+# pulse program whenever its instrument is triggered (gplay.c:375-379), so the
+# free running is the one part of this that cannot be carried over.
+PULSE_TRI_SHAPE = (
+    "29 1F DE ?? ?? 10 ?? 9D ?? ?? AD ?? ?? 29 E0 8D ?? ?? "
+    "BD ?? ?? D0 ?? AD ?? ?? 18 79 ?? ?? 48 B9 ?? ?? 69 00 29 0F 48 C9 ?? "
+    "D0 ?? FE ?? ?? 4C ?? ?? 38 B9 ?? ?? ED ?? ?? 48 B9 ?? ?? E9 00 29 0F "
+    "48 C9 ??")
+_TRI_BASE = 28      # operand of the ADC record,Y that names the instrument table
+_TRI_HI = 40        # operand of CMP #hi
+_TRI_LO = 66        # operand of CMP #lo
+# The routine is entered eight bytes above the match, at `LDA rate / BEQ /
+# LDY idx`; a BEQ landing there is the effect-bit-$08 test that chooses between
+# this engine and the accumulate one.
+_TRI_ENTRY = 8
+
+
+def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
+    """(low nibble, high nibble, gated on bit $08) for the triangle, or -1s.
+
+    Both bounds come out of the routine's own CMP operands. They are $08 and
+    $0E in all 24 corpus files that carry this engine, which is exactly why
+    they are read rather than written down here -- a constant that holds
+    everywhere is indistinguishable from one nobody checked.
+
+    Anchored the way `_find_pulse_lo` is: the block must be indexing the
+    instrument table this detection already found. A signature this long
+    matching something else is unlikely, but "unlikely" is not the standard the
+    rest of this file holds itself to, and the operand is right there.
+    """
+    off = search_file(sid.data, PULSE_TRI_SHAPE)
+    if off < 0:
+        return -1, -1, False
+    d = sid.data
+    base = d[off + _TRI_BASE] | (d[off + _TRI_BASE + 1] << 8)
+    if sid.to_offset(base) != det.instr_start:
+        return -1, -1, False
+    lo, hi = d[off + _TRI_LO] & 0x0F, d[off + _TRI_HI] & 0x0F
+    if hi <= lo:
+        return -1, -1, False
+    entry = off - _TRI_ENTRY
+    gated = any(d[k] == 0x29 and d[k + 1] == 0x08 and d[k + 2] == 0xF0
+                and k + 4 + d[k + 3] == entry
+                for k in range(max(0, off - 64), entry))
+    return lo, hi, gated
 
 
 def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:

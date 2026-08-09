@@ -297,7 +297,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         """ADSR -> the modal register behaviour over a note, from the trace."""
         out = defaultdict(lambda: {"wave": Counter(), "pulse": [],
                                    "freq": [], "gate": Counter(),
-                                   "notes": []})
+                                   "notes": [], "span": []})
         for v in trace:
             adsr = F.register_timeline(v.adsr_events, nframes)
             wf = F.register_timeline(v.wf_events, nframes)
@@ -316,6 +316,13 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
                 seg_p = [pul[f] for f in range(a + 1, span)]
                 seg_f = [frq[f] for f in range(a + 1, span)]
                 d["pulse"].append((min(seg_p), max(seg_p)))
+                # ...and again over the *whole* note. A pulse program is the
+                # one thing PROFILE_FRAMES is too short for: a sweep slower
+                # than 8 frames would be reported as a narrow band by a window
+                # that ends before it turns around.
+                whole = [pul[f] for f in range(a + 1, min(nxt, nframes))]
+                if whole:
+                    d["span"].append((min(whole), max(whole)))
                 d["freq"].append(seg_f[0] - min(seg_f))
                 # frames until the gate bit clears, if it does
                 g = next((f - a for f in range(a + 1, min(nxt, nframes))
@@ -326,6 +333,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         return out
 
     o_prof = profile(orig, nframes)
+    u_prof = profile(ours, nframes) if ours else {}
 
     lines.append("## What the original does, per instrument")
     lines.append("")
@@ -369,6 +377,14 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
 
     lines.append("## Pulse width per instrument")
     lines.append("")
+    lines.append("*at onset* is the width on the frame after each note begins; "
+                 "*over the note* is the band it covers between one note and "
+                 "the next. The two answer different questions and a pulse "
+                 "program only shows up in the second — a sweep that restarts "
+                 "with the note sits on one onset value however far it travels "
+                 "afterwards, so an onset-only reading calls a working sweep "
+                 "static.")
+    lines.append("")
     rows = []
     for i, r in enumerate(recs):
         adsr = (r[0] << 8) | r[1]
@@ -376,12 +392,47 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         u_p = sorted({p for _, p in u_by.get(adsr, {})})
         if not o_p and not u_p:
             continue
+
+        def band(prof):
+            """(the band every note of this instrument covers, median travel).
+
+            The verdict is taken from the *median travel within one note*, not
+            from the band. A player sweep that free-runs across notes visits
+            every phase, so its band is the full sweep however little it moves
+            during any one note, while a Goattracker pulse program restarts
+            with the note and can only ever show what it covers in that note.
+            Comparing bands would score that difference as agreement.
+            """
+            s = prof.get(adsr, {}).get("span") if prof else None
+            if not s:
+                return "—", 0
+            lo = min(a for a, _ in s); hi = max(b for _, b in s)
+            travel = sorted(b - a for a, b in s)
+            return (f"${lo:03X}" + (f"-${hi:03X}" if hi != lo else ""),
+                    travel[len(travel) // 2])
+
         def fmt(xs):
             return " ".join(f"${x*PULSE_BUCKET:03X}" for x in xs) or "—"
+        o_b, o_w = band(o_prof)
+        u_b, u_w = band(u_prof)
+        # Judged on the travelled band, not the onset buckets: the onset value
+        # is one sample of a moving register and cannot distinguish a static
+        # width from a sweep that happens to restart at the same place.
+        if not o_w and not u_w:
+            verdict = "static both sides" if o_b == u_b else "**width differs**"
+        elif o_w and not u_w:
+            verdict = "**the original sweeps, we do not**"
+        elif u_w and not o_w:
+            verdict = "**we sweep, the original does not**"
+        else:
+            ratio = u_w / o_w
+            verdict = ("ok" if 0.75 <= ratio <= 1.33
+                       else f"**{ratio:.2f}x the original's travel**")
         rows.append([i + 1, f"`${adsr:04X}`", fmt(o_p), fmt(u_p),
-                     "ok" if set(o_p) == set(u_p)
-                     else ("**narrower**" if len(u_p) < len(o_p) else "wider")])
-    lines += _table(rows, ["GT", "ADSR", "original", "ours", ""])
+                     o_b, u_b, f"{o_w}/{u_w}", verdict])
+    lines += _table(rows, ["GT", "ADSR", "orig at onset", "ours at onset",
+                           "orig band", "our band", "travel per note",
+                           "verdict"])
 
 
     if dump:

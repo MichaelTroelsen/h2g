@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.174 — 2026-08-09
+
+- read Hubbard's third pulse engine, the triangle with fixed bounds
+
 ## 0.5.173 — 2026-08-09
 
 - annotate both siddump tables with the instrument sounding per voice
