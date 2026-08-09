@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.149 — 2026-08-09
+
+- confirm the slide deficit corpus-wide: 13 of 13 at or below the tempo ceiling
+
 ## 0.5.148 — 2026-08-09
 
 - trace Flash_Gordon's wraparounds: the original wraps too, and slides lose a call a row

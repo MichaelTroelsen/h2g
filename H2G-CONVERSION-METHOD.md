@@ -3723,6 +3723,87 @@ obvious candidate and is deliberately not done here: it would overshoot on any
 row where the slide *does* run its full count, and § 7.oo is the standing
 lesson about shipping an unverified rate change to the sweep path.
 
+### 7.vv The slide deficit is corpus-wide: every pitch bend loses a call a row
+
+§ 7.uu measured Flash_Gordon's slide delivering 8/9 of its own encoded
+movement, matched that to `tempo + 1 = 9` calls per row, and explicitly
+refused to generalise from one file's window. Generalising it properly
+confirms it — but only after the first instrument built to do so failed its
+own validation.
+
+#### The prediction, and why it is readable off the file
+
+`CMD_SETTEMPO`'s data value **is** the row length in calls (gplay.c:494
+decrements a value ≥ 3, :325 makes a row last `tempo + 1` calls), so for each
+file the traced subtune's own tempo row gives `rc` directly, and the predicted
+delivery ceiling is `(rc − 1) / rc`. Measuring the *observed* ratio means
+finding steady slide runs in the trace and dividing the frequency actually
+travelled by the call-slots available: `moved / (frames × multiplier)`.
+
+#### The first detector was wrong, and the known case is what caught it
+
+A permissive run-finder (any monotone span, per-call step recovered by GCD)
+produced a table that looked like a result and was not one:
+
+| | first detector | validated detector |
+|---|---:|---:|
+| Flash_Gordon observed (hand-measured: **0.889**) | 0.823 | **0.893** |
+| files reading *above* the ceiling | many (Samantha_Fox 0.902 vs 0.667) | 1 of 19, at 5 runs |
+
+Reading above `(rc − 1) / rc` is impossible if one call per row cannot slide,
+so those rows alone falsified the instrument rather than the model. The cause
+was the span-finder counting vibrato, note ties and the drum sweep as slides,
+and GCD then recovering a step smaller than the real one — which inflates
+`moved / step` without limit. Tightening it (≥ 6 samples, ≥ 3 moving, at most
+`multiplier` distinct step sizes, none more than `multiplier` steps) brings
+Flash_Gordon to 0.893 against the hand figure's 0.889. **The corpus was not
+run until that agreed** — § 7.pp's lesson, applied before the fact for once
+rather than after.
+
+#### The result
+
+Restricted to files with enough steady slide runs to measure (19 of 83; 13 with
+20 runs or more):
+
+| | all 19 | ≥ 20 runs (13) |
+|---|---:|---:|
+| at or below the `(rc − 1)/rc` ceiling | 18 | **13 of 13** |
+| within 5 points of it | 10 | 8 |
+| mean predicted loss (`1/rc`) | 24.2% | 23.2% |
+| **mean observed loss** | 35.3% | **28.7%** |
+| mean (observed − predicted) | −0.111 | −0.055 |
+
+**Every high-confidence file loses slide movement, and none exceeds the
+ceiling** — the model's one falsifiable prediction, holding 13 for 13. The
+observed loss runs about 5 points worse than tempo alone accounts for, which
+is the second effect § 7.uu already saw directly on Flash_Gordon: a whole frame
+with no movement at the note onset, on top of the per-row skipped call.
+
+The magnitude is much larger than § 7.uu's guess of "6-25%". For `rc = 3` —
+the most common tempo in the corpus — the ceiling alone discards **a third** of
+every bend, and 8 of the 19 files measured sit at `rc = 3`.
+
+#### The fix, and the coupling that stops it being a one-liner
+
+Scaling each encoded step by `rc / (rc − 1)` is the obvious compensation, and
+the measurement above licenses it in a way § 7.uu could not: the ceiling is
+never exceeded, so raising the step cannot overshoot a row that was already
+delivering in full. It is still not a one-liner, for a reason this session
+created:
+
+> **The drum sweep shares the speed table.** `_drum_speed_index` appends
+> `_drum_speed(multiplier)` to the same `speed_table` the pattern portamentos
+> index, and § 7.tt's `_drum_steps_safe` proves its no-underflow bound against
+> that exact value. Scaling the table indiscriminately would inflate the drum
+> step and silently invalidate the bound that keeps the second sweep step from
+> wrapping. A fix has to scale the *pattern portamento* entries only, and
+> `_drum_steps_safe` has to read whatever value its own entry ends up holding.
+
+Not attempted here: it is a rate change to the slide path, which is where
+§ 7.oo's standing lesson applies, and it wants its own `--baseline` A/B with
+`bend` (travel, § 7.hh) as the dimension — the one column that can see step
+size rather than counting events.
+
 ## 9. The `.sng` output layout
 
 `build_sng` writes, in order:
