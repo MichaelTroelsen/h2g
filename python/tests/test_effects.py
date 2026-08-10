@@ -431,10 +431,13 @@ def test_the_noise_tick_length_is_derived_but_not_yet_wired():
     Exact on 22 of the 25 corpus files with a drum and a pitched record.
 
     It is read and not wired, because wiring it measured flat -- 26 of 29 drum
-    instruments match the original's run either way. Shortening the tick frees a
-    wavetable entry and the pitch sweep moves into it, so the change is two
-    changes; the sweep is the suspect. This test pins the reading and the fact
-    that nothing consumes it, so the next attempt starts from there.
+    instruments match the original's run either way. The sweep was the first
+    suspect and is exonerated: both tick settings at budget 5 and again at
+    budget 8 gave identical counts. What the derived tick does is move the noise
+    a frame earlier relative to siddump's gate-edge attack, so the two settings
+    are measured on different populations. This test pins the reading and the
+    fact that nothing consumes it, so the next attempt starts from there rather
+    than from the wrong suspect.
     """
     from h2g.convert import _detect_tables
     from h2g.goatwriter import _drum_entries, _noise_tick_frames

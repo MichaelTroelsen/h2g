@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.192 — 2026-08-10
+
+- exonerate the sweep; the drum tick's blocker is the measure
+
 ## 0.5.191 — 2026-08-10
 
 - derive the drum noise run from the speed gate; read, not wired

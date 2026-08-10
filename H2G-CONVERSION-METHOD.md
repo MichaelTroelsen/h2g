@@ -2986,16 +2986,35 @@ knowing this.
 `_noise_tick_frames` lands it. Wiring it into `_drum_entries` measured **flat**:
 26 of 29 drum instruments match the original's run length either way. It
 demonstrably fixes some — Last_V8 and Master of Magic's GT 8 both go 2 → 1,
-confirmed frame by frame — and breaks an equal number, because shortening the
-tick **frees a wavetable entry and the pitch sweep moves into it**:
+confirmed frame by frame — and appeared to break an equal number.
 
-```
-2-frame tick   41 81 81 40 FF
-1-frame tick   41 81 40 F2 FF     <- the sweep appears
-```
+The first explanation offered here was that shortening the tick frees a wavetable
+entry and the pitch sweep moves into it (`41 81 40 F2 FF` where a 2-frame tick
+gives `41 81 81 40 FF`), making it two changes under one flag. **That was wrong.**
+Running both tick settings at budget 5 and again at budget 8 — enough room for the
+sweep in either case — gave *identical* match counts. The sweep is exonerated.
 
-So it is two changes wearing one flag, and the sweep is the suspect. Isolating
-them is the next step; the reading is not the thing that needs work.
+What the derived tick actually does is move the noise a frame earlier relative to
+siddump's attack:
+
+| | scanned from `a+1` | from `a+0` |
+|---|---|---|
+| tick 2 | 46/55 | 19/55 |
+| tick derived | 43/**50** | 41/55 |
+
+Five instruments lose their `a+1` noise and gain it at `a+0`, so the two settings
+are not measured on the same population and 46/55 against 43/50 is not a
+comparison at all. **The metric cannot settle this**, for the fourth time today
+from the same cause: a run's position relative to a gate-edge attack is unstable
+when the run's length changes, and every boundary error in this session — GT 4's
+"one frame short", the drum's own frames 1–2, the `$09` that belonged to the next
+note — has been this.
+
+What a valid experiment needs is a position-independent measure: total noise
+frames per note, or the run measured from the waveform *transition* rather than
+from the attack. Until then the reading stays unwired, and the entry above should
+be read as "the mechanism is known and the encoding is unproven" rather than as a
+suspicion about the sweep.
 
 **Two aggregate measures disagreed about this and the frames settled it.** A
 file-level modal run said 14 → 16 files improved; a per-instrument one said
