@@ -86,14 +86,49 @@ def test_bounds_that_leave_no_band_keep_the_static_width():
         assert loop is None
 
 
-def test_a_sweep_is_a_set_then_up_then_down_then_a_jump():
-    sid = _sid([_record(rate=0x40)], [0x82])     # low 2, high 8
+def test_a_sweep_opens_at_the_records_own_width_not_at_a_bound():
+    """v0.5.188. The player reseeds its accumulator from record +0/+1 at each
+    note and sweeps from there, so the record's width is the duty cycle every
+    attack is heard on. This used to open at the low bound, which put
+    Trans-Atlantic's lead on `$D00` where the player opens on `$880` and shrank
+    its band from the original's 1728 to 508 -- the right shape in the wrong
+    place. `_pulse_tri_program` was given the width in v0.5.174; this path was
+    not, and both now share `_pulse_triangle`.
+    """
+    sid = _sid([_record(0x00, 0x04, rate=0x40)], [0x82])   # width $400, low 2, high 8
     entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
-    ticks = ((8 - 2) << 8) // 0x40                # 24
-    assert entries == [(0x82, 0x00), (ticks, 0x40), (ticks, 0xC0)]
-    assert loop == 1, "the jump returns to the ascending step, not the set"
+    assert entries[0] == (0x84, 0x00), "opens on the record's $400"
+    first = ((8 << 8) - 0x400) // 0x40             # up to the high bound
+    assert entries[1] == (first, 0x40)
+    assert loop == 2, "the jump returns to the descent, past the first ascent"
     # 0xC0 read as a signed byte is -0x40: the same speed downward.
-    assert entries[2][1] - 0x100 == -0x40
+    assert entries[loop][1] - 0x100 == -0x40
+
+
+def test_a_width_below_the_low_bound_is_kept_and_swept_up_from():
+    """The player does not clamp. Trans-Atlantic's GT 1 opens on `$880` with
+    bounds `$D00`/`$F00` and sweeps *up* from there until a bound turns it, so
+    its band is `$880`-`$F40` and not the `$D00`-`$F00` the bounds alone
+    describe. The first version of this fix clamped the width into the band and
+    therefore changed that instrument by nothing at all -- 508 of the original's
+    1728, where keeping the width gives 1651.
+    """
+    sid = _sid([_record(0x00, 0x01, rate=0x40)], [0x82])   # width $100, band $200-$800
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
+    assert entries[0] == (0x81, 0x00), "the record's width, not the bound"
+    assert loop == 2, "a first ascent is needed to reach the band"
+    # ...and the ascent runs the whole way from $100 to the high bound.
+    assert entries[1][0] == ((8 << 8) - 0x100) // 0x40
+
+
+def test_a_width_above_the_high_bound_is_clamped_down_to_it():
+    """The other direction *is* clamped: a width past the top has nowhere to
+    ascend, and the descent is measured from where the ascent stopped."""
+    sid = _sid([_record(0xFF, 0x0F, rate=0x40)], [0x82])
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
+    opened = ((entries[0][0] & 0x0F) << 8) | entries[0][1]
+    assert opened == (8 << 8)
+    assert loop == 1, "no first ascent from the top"
 
 
 def test_the_flag_off_is_the_inherited_static_encoding():
@@ -113,7 +148,7 @@ def test_a_player_with_no_sweep_routine_is_never_swept():
 def test_the_multiplier_halves_the_speed_because_the_table_steps_per_call():
     """gplay.c:872 steps the pulse table once per play call; the player steps
     once per frame. At -S2 an unscaled speed would sweep twice as fast."""
-    sid = _sid([_record(rate=0x40)], [0x82])
+    sid = _sid([_record(0x00, 0x04, rate=0x40)], [0x82])
     at1, _ = _pulse_program(sid, _det(1), 0, True, 1)
     at2, _ = _pulse_program(sid, _det(1), 0, True, 2)
     assert at1[1][1] == 0x40 and at2[1][1] == 0x20
@@ -124,11 +159,16 @@ def test_the_multiplier_halves_the_speed_because_the_table_steps_per_call():
 def test_the_span_is_recomputed_from_the_speed_actually_emitted():
     """An odd rate at -S2 cannot be halved exactly. The sweep must still cover
     the right band, so ticks come from the rounded speed rather than the rate."""
-    sid = _sid([_record(rate=0x0B)], [0x91])       # low 1, high 9, rate 11
-    entries, _ = _pulse_program(sid, _det(1), 0, True, 2)
-    speed = entries[1][1]
+    sid = _sid([_record(0x00, 0x09, rate=0x0B)], [0x91])  # width $900 = the top
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 2)
+    speed = 0x100 - entries[loop][1]
     assert speed == round(0x0B / 2)
-    assert _rising(entries) == ((9 - 1) << 8) // speed
+    # Opening at the high bound means no first ascent, so `loop` is 1 and the
+    # descent covers the whole band -- computed from the speed emitted, not the
+    # rate, which is the point of the test.
+    assert loop == 1
+    assert sum(t for t, sp in entries[1:]
+               if sp == (0x100 - speed) & 0xFF) == ((9 - 1) << 8) // speed
 
 
 def test_speed_is_capped_below_the_byte_that_would_read_as_negative():
@@ -151,13 +191,13 @@ def test_split_ticks_never_emits_a_step_that_would_read_as_a_set():
 def test_a_leg_longer_than_a_tick_byte_becomes_consecutive_steps():
     """gplay.c:902 advances on a zero counter and keeps modulating, so N steps
     of one speed and one step of their total are the same sweep."""
-    sid = _sid([_record(rate=0x01)], [0xF0])     # span 15 * 256, speed 1
+    sid = _sid([_record(0x00, 0x0F, rate=0x01)], [0xF0])  # width = the top
     entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
-    ups = [e for e in entries[1:] if e[1] == 0x01]
-    downs = [e for e in entries[1:] if e[1] == 0xFF]
+    ups = [e for e in entries[loop:] if e[1] == 0x01]
+    downs = [e for e in entries[loop:] if e[1] == 0xFF]
     assert len(ups) == len(downs) > 1
     assert sum(t for t, _ in ups) == (15 << 8)
-    assert loop == 1
+    assert loop == 1, "opening at the high bound needs no first ascent"
 
 
 # --- the table as a whole --------------------------------------------------

@@ -868,8 +868,19 @@ SF2 reading in `SIDM2-HUBBARD-KNOWLEDGE.md`. The width is seeded per note by
 as a fixed width. And the block indexes the instrument table itself, which the
 finder requires: a match naming any other array is rejected.
 
-In a Goattracker pulse table this is a set to the seeded width, one ascending
-leg long enough to cross the low byte, and a jump back to **the set** rather
+**The sweep opens at the record's own width, not at a bound** (v0.5.188). The
+player reseeds its accumulator from record `+0`/`+1` at each note and sweeps from
+there, so the width the record names is the duty cycle every attack is heard on —
+and it may legitimately sit *outside* the bounds, in which case the player sweeps
+into the band rather than clamping. Trans-Atlantic's lead opens on `$880` with
+bounds `$D00`/`$F00`, giving the original a band of `$880`–`$F40`; starting at the
+low bound gave 508 of that 1728, and clamping the width into the band gave the
+same 508. Keeping it gives **1651**. The fixed-bound triangle engine was given
+this treatment in v0.5.174 and this path was not; both now share
+`_pulse_triangle`.
+
+In a Goattracker pulse table the accumulate engine is a set to the seeded width,
+one ascending leg long enough to cross the low byte, and a jump back to **the set** rather
 than to the leg. Jumping to the set is what pins the high nibble: Goattracker's
 modulation carries into it (`gplay.c:888-900`) and the player never does. The
 approximation is the phase -- the player's accumulator wraps mod 256 and carries

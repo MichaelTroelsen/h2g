@@ -1916,6 +1916,47 @@ def _split_ticks(ticks: int) -> List[int]:
     return steps or [1]
 
 
+def _pulse_triangle(width: int, low: int, high: int,
+                    speed: int) -> tuple[List[tuple], int]:
+    """A triangle between two high nibbles, opening at the record's own width.
+
+    Shared by the two engines that sweep the whole 12-bit width -- the
+    per-record bounds array (`_pulse_program`) and the fixed-bound triangle
+    (`_pulse_tri_program`) -- because the shape is the same and only where the
+    bounds come from differs.
+
+    **It opens at the record's width, not at a bound.** The player reseeds its
+    accumulator from record +0/+1 at each note and sweeps from there, so the
+    width the record names is the duty cycle every attack is heard on. Starting
+    at the low bound instead put Trans-Atlantic's lead on `$D00` where the
+    player opens on `$880`, and shrank its band from the original's 1728 to 508:
+    the sweep was the right shape in the wrong place. `_pulse_tri_program` was
+    given the record's width in v0.5.174 for this reason and this path was not,
+    which is why the two now share one function.
+
+    The descent is measured from where the ascent actually stopped rather than
+    from the bound, so truncation cannot walk the band into a 12-bit wrap --
+    Goattracker masks the width to `$FFF` (gplay.c:891) where the player clamps.
+    """
+    lo_v, hi_v = low << 8, high << 8
+    # Clamped to the top only. A record's width may legitimately sit *below* the
+    # low bound -- Trans-Atlantic's GT 1 opens on $880 with bounds $D00/$F00 --
+    # and the player does not clamp it: it sweeps up from there until a bound
+    # turns it, so its band is $880-$F40 rather than the $D00-$F00 the bounds
+    # alone describe. Clamping up into the band cost that instrument two thirds
+    # of its travel and left the first version of this fix changing nothing.
+    width = min(width, hi_v)
+    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
+    first = (hi_v - width) // speed
+    if first:
+        entries += [(t, speed) for t in _split_ticks(first)]
+    ticks = _split_ticks(max(1, (width + first * speed - lo_v) // speed))
+    loop = len(entries)
+    entries += [(t, (0x100 - speed) & 0xFF) for t in ticks]
+    entries += [(t, speed) for t in ticks]
+    return entries, loop
+
+
 def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                    multiplier: int) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
@@ -1978,11 +2019,8 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     if rate == 0 or high <= low:
         return static, None
     speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
-    steps = _split_ticks(max(1, ((high - low) << 8) // speed))
-    entries = [((0x80 | low) & 0xFF, 0x00)]
-    entries += [(t, speed) for t in steps]
-    entries += [(t, (0x100 - speed) & 0xFF) for t in steps]
-    return entries, 1
+    width = ((data[base + 1] & 0x0F) << 8) | data[base]
+    return _pulse_triangle(width, low, high, speed)
 
 
 def _pulse_lo_program(sid: SidFile, det: Detection, i: int,
@@ -2079,20 +2117,8 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     delay = (data[rec + 6] & 0x1F) + 1
     speed = min(GT_MAX_PULSE_SPEED,
                 max(1, round(step / (delay * max(1, multiplier)))))
-    low, high = det.pulse_tri_lo << 8, det.pulse_tri_hi << 8
-    width = min(max(((data[rec + 1] & 0x0F) << 8) | data[rec], low), high)
-    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
-    first = (high - width) // speed
-    if first:
-        entries += [(t, speed) for t in _split_ticks(first)]
-    # Measured from where the ascent actually stopped rather than from the
-    # bound, so truncation cannot walk the band down into a 12-bit wrap --
-    # Goattracker masks the width to $FFF (gplay.c:891) where the player clamps.
-    ticks = _split_ticks(max(1, (width + first * speed - low) // speed))
-    loop = len(entries)
-    entries += [(t, (0x100 - speed) & 0xFF) for t in ticks]
-    entries += [(t, speed) for t in ticks]
-    return entries, loop
+    width = ((data[rec + 1] & 0x0F) << 8) | data[rec]
+    return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed)
 
 
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
