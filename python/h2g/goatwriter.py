@@ -1506,17 +1506,20 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # function's `i` is the 0-based record index: instrument 1 is the
         # hardcoded Clear Voice, so record i is instrument i + 2.
         lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
-        # `tick_frames` is deliberately left at its default rather than given
-        # `_noise_tick_frames(sid, det)`. The reading is right -- see there --
-        # but wiring it measured flat: 26 of 29 drum instruments match the
-        # original's run length either way. It fixes Last_V8 and Master_of
-        # Magic's GT 8 (verified frame by frame, 2 -> 1) and breaks an equal
-        # number, because shortening the tick frees a wavetable entry and the
-        # pitch sweep moves into it -- `41 81 40 F2 FF` where a 2-frame tick
-        # gives `41 81 81 40 FF`. Two changes at once, and the sweep is the
-        # suspect. Isolate them before wiring this.
+        # The tick length is the player's speed gate less one, not a constant:
+        # `lengthleft` decrements once per duration unit, so the drum's "first
+        # vbl" test stays true for `frames` frames and the note's own first
+        # frame is spent by the init path. See `_noise_tick_frames`.
+        #
+        # Two attempts to measure this came back flat, and both were the
+        # *metric*: an attack-anchored reading asks what the waveform is at
+        # `a + k`, and that anchor moves when the run's length changes.
+        # Measured position-independently (`fidelity.noise_run_agreement`) the
+        # derived length takes the corpus from 19 of 74 drum instruments
+        # matching the original's run to 43.
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
-                             sustain=data[base + 4] >> 4, budget=budget)
+                             sustain=data[base + 4] >> 4, budget=budget,
+                             tick_frames=_noise_tick_frames(sid, det))
 
     if drum:
         if effects:

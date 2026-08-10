@@ -222,6 +222,15 @@ test dependency).
   not the fix for the slide deficit** — `patterns._scaled_step`'s `row_calls`
   correction already compensates for the dropped call, so disabling the skip
   double-corrects (median slide ratio 1.04 → 1.23, worse on 47 of 75 files).
+- **A scripted edit must assert its match.** `str.replace` with a search string
+  that does not match returns the input unchanged and raises nothing, so a
+  `python - <<PY` rewrite can report success while changing no bytes. v0.5.192
+  and v0.5.193 both shipped commit messages describing edits that never applied
+  — including "`_noise_tick_frames` is now wired", which it was not — and
+  neither the test suite nor the byte-exact fixture could catch it, because the
+  affected file's derived value happened to equal the constant it replaced.
+  `assert old in s` before every replace, and check the change is in
+  `git diff`, not merely that the tests still pass.
 - **A score is not a clock.** Every column of `FIDELITY.md` compares
   *what* is played, never *when*: `melody` is a difflib ratio over a note
   sequence in a fixed window, and a conversion playing too fast overruns that

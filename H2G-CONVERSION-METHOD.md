@@ -2981,7 +2981,23 @@ was right for the file it was measured on and one frame too long for twelve
 others — and why the fixture and the drum a listener validated are unaffected by
 knowing this.
 
-#### Read, and deliberately not wired
+#### Wired in v0.5.196, after two commits said so and were wrong
+
+**v0.5.192 and v0.5.193 both claimed edits that never applied.** Each used a
+`str.replace` whose search text did not match, and `str.replace` returns the
+string unchanged rather than raising. The tests passed and the fixture stayed
+byte-exact — Commando's derived tick equals the old constant, so nothing this
+project pins could have caught it. v0.5.193's message states
+"`_noise_tick_frames` is now wired" and reports 19/74 → 43/74; the measurement
+was real (the experiment monkey-patched `_drum_entries`) and the shipped code
+never used it.
+
+Re-applied with an `assert` on the search text, the figure is confirmed at
+**43/74**. The rule that follows is narrow and absolute: **a scripted edit must
+assert its match**, and a commit that claims a code change must show that change
+in the diff, not in a passing test suite.
+
+#### The reading, and what it took to trust it
 
 `_noise_tick_frames` lands it. Wiring it into `_drum_entries` measured **flat**:
 26 of 29 drum instruments match the original's run length either way. It
