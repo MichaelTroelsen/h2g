@@ -1135,6 +1135,30 @@ def _vibrato_delay(det: Detection, multiplier: int) -> int:
     applying the effect to every note regardless of length, and much the
     smaller one -- before this, a corpus where most notes are shorter than the
     threshold got vibrato on all of them.
+
+    v0.5.198 measured that last sentence rather than asserting it, across the
+    25 corpus files this gate reaches, over 2487 notes of instruments whose
+    only pitch movement is the vibrato (no drum or arpeggio bit). The original
+    moves 435 of them. Two axes, and they oppose each other:
+
+        gate   moves/still agrees   still notes we wobble   onset late (median)
+           1                65.9%              826 of 2052                   +0
+           8                85.5%                      207                  +10
+          12                88.6%                      114                  +15
+
+    So `vibdelay 1` catches 413 of the 435 but wobbles 40% of the notes that
+    should be still, and 8 catches 282 and is 10 frames late on them. The
+    pervasive spurious wobble is the more audible error, which is what makes 8
+    the closer -- not that it scores highest. **12 scores highest and is not
+    shipped**: the moves/still axis cannot see the 5 extra frames of lateness
+    it costs, it plateaus at 14 because it saturates rather than peaks, and
+    late onset is the defect a listener actually reported. Do not raise this
+    constant on the strength of that column alone. 8 is also the player's own
+    threshold, so it is the one value here that is read rather than fitted.
+
+    Getting both halves needs the gate expressed per *note*, which means a
+    pattern-level vibrato command on qualifying notes with `vibdelay 1` --
+    not a change to this function.
     """
     if det.triangle_vibrato is None:
         return VIBRATO_DELAY

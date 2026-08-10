@@ -301,6 +301,26 @@ def test_the_triangle_gate_becomes_a_vibdelay():
     assert _vibrato_delay(Detection(), 1) == VIBRATO_DELAY
 
 
+def test_the_gate_is_the_players_threshold_and_not_the_best_scoring_value():
+    """A listener reported the vibrato starting late, and it does -- 10 frames
+    late at the median. The obvious fix, `vibdelay 1`, was measured across the
+    25 corpus files the gate reaches (2487 notes of vibrato-only instruments,
+    435 of which the original moves) and is *worse*: it fixes the onset exactly
+    but wobbles 826 of the 2052 notes that should be still, 65.9% note-level
+    agreement against 85.5%.
+
+    Raising it instead scores better still -- 88.6% at 12 -- and that is the
+    trap this test exists to hold shut. The moves/still column cannot see the
+    5 extra frames of lateness 12 costs, and it plateaus at 14 rather than
+    peaking, so it is saturating, not optimising. 8 is the value read out of
+    the player (`CMP #$08`); 12 is a value fitted to a proxy that is blind to
+    the reported defect. Fixing both halves needs a per-note pattern command,
+    not a different constant here -- see `_vibrato_delay`'s docstring.
+    """
+    from h2g.detect import TRIANGLE_VIBRATO_GATE
+    assert TRIANGLE_VIBRATO_GATE == 8
+
+
 def test_vibdelay_stays_a_byte_and_never_disables():
     """0 would mean "never oscillate" (gplay.c:770), which is not the gate.
 

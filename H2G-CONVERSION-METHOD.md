@@ -3209,6 +3209,65 @@ Worse, the check that would have caught it immediately did not: `len(convert(...
 file's length. **Compare the fixture's bytes, not its size** — `Commando.sng` is
 on disk for that purpose and `got == ref` is one line.
 
+### 7.kkk The vibrato onset: the best-scoring constant is the wrong one
+
+With the arpeggio fixed, the listener still heard missing movement, and §7.iii's
+diagnostic named the cause: on Commando's GT 1 the original's first pitch change
+lands on frame 1 and ours on frame 13. That is `_vibrato_delay`, which emits
+`vibdelay = 8` on this dialect to stand in for the player's per-note length gate
+(§7.aaa: `CMP #$08` on the note's stored duration — a threshold decided before
+the note sounds, which no Goattracker instrument can express, since `vibdelay` is
+per instrument). Its own docstring named the cost and called it "much the smaller
+error". That was an assertion; this section is the measurement.
+
+Across the 25 corpus files the gate reaches, over 2487 notes belonging to
+instruments whose *only* pitch movement is the vibrato — no drum bit, no arpeggio
+bit, so nothing else can move the frequency — the original moves 435. Two axes:
+
+```
+gate   moves/still agrees   still notes we wobble   onset late (median)
+   1                65.9%              826 of 2052                   +0
+   8                85.5%                      207                  +10
+  12                88.6%                      114                  +15
+  14                88.6%                      113                  +17
+```
+
+They oppose each other, and that is the whole finding. `vibdelay 1` fixes the
+onset *exactly* — median +0 — and wobbles 40% of the notes that should be still.
+`8` catches 282 of the 435 and is a fifth of a second late on them. The spurious
+wobble is the more audible error, so 8 ships: **not because it scores higher, but
+because of which error it makes.**
+
+The trap is the row below it. 12 scores best, and shipping it would have been
+defensible on any single column — but the moves/still column cannot see the five
+extra frames of lateness it costs, and it *plateaus* at 14 rather than peaking,
+which is the signature of a measure saturating rather than optimising. Raising
+the delay makes short notes stop moving; run it far enough and every note agrees
+by being still. 8 is the value read out of the player's own comparison; 12 is a
+value fitted to a proxy blind to the defect that started the investigation. This
+is the rule about a count versus a travel measure (§7.xx) in its other form: **a
+count can be maximised by destroying the events it counts**, and the `$FF`
+firstwave scored `wave` 99.5% by deleting 79 notes for the same reason.
+
+Two method notes from the run itself, both of the kind this document exists to
+record:
+
+- **The first pairing found zero notes.** Keying a note by its absolute frame
+  cannot match across sides that differ by the startup lag — the same class of
+  error as the four attack-anchored boundary mistakes in §7.ddd. Pairing by note
+  index per voice fixed it.
+- **The first sweep's "8" and the second's disagreed** (85.5% against 83.2%)
+  because one called the real `_vibrato_delay` — which returns `gate ×
+  multiplier` — and the other passed a literal 8, so multispeed files got 16 in
+  one and 8 in the other. Reproducing the old number under the new sweep before
+  believing any difference is what surfaced it, per the `--vice` rule in
+  `CLAUDE.md`. The scaling is worth 2.3pp on its own.
+
+Getting both halves is possible but not here: the gate is per note and
+`vibdelay` is per instrument, so it needs a pattern-level vibrato command on
+qualifying notes with `vibdelay 1`. `tests/test_vibrato.py` pins the constant at
+8 with this reasoning attached, so the next pass at it does not re-derive 12.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
