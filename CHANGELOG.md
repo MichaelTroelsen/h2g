@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.194 — 2026-08-10
+
+- settle -R0 against step-scaling, and record what a 10s window measures
+
 ## 0.5.193 — 2026-08-10
 
 - measure the drum's noise run without an attack anchor, and wire the derived tick

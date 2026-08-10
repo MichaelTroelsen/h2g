@@ -209,6 +209,16 @@ test dependency).
   maximal runs of the register, record their *lengths*, drop any run touching the
   window edge, attribute by the ADSR at the run's midpoint. It took the drum
   tick from "flat, cause unknown" to 19/74 → 43/74 in one run. `nrun` reports it.
+- **`slides` and `bend` need a 60 s window; at `-t 10` they are near-vacuous.**
+  17 of the committed report's 82 rows show `0/0` slides and 19 have no `bend`
+  at all, so a fifth of the corpus contributes nothing to those columns — and
+  two corpus A/Bs in one session read "identical on every file" from a window
+  that simply contained no slides. The same comparison at 60 s had 75 files with
+  slide activity and a clear verdict. Check what a window contains before
+  comparing settings in it. Settled by the same measurement: **`gt2reloc -R0` is
+  not the fix for the slide deficit** — `patterns._scaled_step`'s `row_calls`
+  correction already compensates for the dropped call, so disabling the skip
+  double-corrects (median slide ratio 1.04 → 1.23, worse on 47 of 75 files).
 - **A score is not a clock.** Every column of `FIDELITY.md` compares
   *what* is played, never *when*: `melody` is a difflib ratio over a note
   sequence in a fixed window, and a conversion playing too fast overruns that

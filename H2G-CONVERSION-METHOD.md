@@ -3053,6 +3053,56 @@ That is the third time in this session an aggregate contradicted a direct frame
 reading and the frames were right — §7.eee's `wave` 99.5%, §7.ddd's per-note
 travel, and this. **When an aggregate and a trace disagree, print the frames.**
 
+### 7.hhh `-R0` is the wrong half of a compensation already in place
+
+A listener said some of Commando's slides were not right, and the columns agreed:
+`slides` 293 of 527, `bend` 1.09x. `-Rxx` is gt2reloc's **realtime-effect**
+skipping, default-on and the sibling of the `-Oxx` pulse skipping §7 had just
+acted on — and portamento is a realtime effect. On Commando it looks decisive:
+
+| Commando, 60 s | slides | bend |
+|---|---:|---:|
+| default | 293 / 527 | 1.09x |
+| `-O0` | 245 / 527 | 0.44x |
+| **`-O0 -R0`** | **511 / 527** | **0.89x** |
+
+Corpus-wide it is the wrong move. Over the 75 files with any slide activity in a
+60-second window:
+
+| | slides | median ratio | median &#124;bend−1&#124; |
+|---|---:|---:|---:|
+| `-O0` | 147875 / 160711 | **1.04** | 0.59 |
+| `-O0 -R0` | 180196 / 160711 | 1.23 | 0.56 |
+
+Adding `-R0` puts the slide count **further** from the original on 47 files and
+closer on 27; `bend` is a wash (39 against 35). `melody`, `wave` and `pspan` do
+not move at all.
+
+**The reason is that the compensation already exists.** `patterns._scaled_step`
+has carried a `row_calls` correction since v0.5.147, added precisely because the
+packed player drops a call per row. `-R0` stops it dropping the call. Doing both
+over-corrects, and 92% → 112% is what that looks like. So the standing question
+in CLAUDE.md — "`--R0` versus step-scaling for the slide deficit" — has an answer:
+step-scaling, which is what ships, and whose median slide ratio is 1.04.
+
+Commando is an outlier at 47%, not an instance of the corpus deficit. Its slides
+want a per-file explanation.
+
+#### A 10-second window barely measures slides at all
+
+Both corpus A/Bs behind this were first run at `-t 10`, and both said `-O0` and
+the default were **identical on every file** — zero movement. That was the window,
+not a result: at 10 seconds Commando has `0/0` slides on both sides, and the
+committed `FIDELITY.md` has **17 of 82 rows at `0/0`** with `bend` uncomputed on
+19. The report's slide columns are close to vacuous for a fifth of the corpus, and
+any conclusion drawn from them at that window inherits it.
+
+Re-run at 60 seconds the same comparison had 75 files with slide activity and a
+clear verdict. **Check what a window contains before comparing settings in it** —
+this is the second time in one session that an aggregate said "no change" when the
+measurement was empty rather than the change inert (§7.eee's `--baseline` note is
+the first).
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
