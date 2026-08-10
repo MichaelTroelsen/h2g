@@ -3103,6 +3103,51 @@ this is the second time in one session that an aggregate said "no change" when t
 measurement was empty rather than the change inert (§7.eee's `--baseline` note is
 the first).
 
+### 7.iii Every "slide" in Commando is a vibrato
+
+A listener said some of Commando's slides were wrong. `--vibrato` off takes its
+slide count from 245 to **zero**, and `--slides` and `--effects` change it by
+nothing at all — all four combinations are bit-identical. So `slides` and `bend`
+were never measuring portamento on this file; siddump classifies pitch movement
+without a retrigger as a slide, and vibrato is exactly that.
+
+Which means the `-R0` corpus A/B of §7.hhh was ranking vibrato rates while
+appearing to rank slides. Goattracker's vibrato is a **realtime effect**, so
+gt2reloc's default-on `-R` skipping drops it on the note-fetch tick — and the
+`row_calls` step-scaling that compensates the pattern speed table does not touch
+it, which is why toggling that compensation changes Commando by nothing.
+
+`fidelity.pitch_motion` separates the two with no threshold to choose, because a
+vibrato *reverses* and a portamento does not: it counts direction changes in the
+frame-to-frame pitch delta, and reports `1 - net/gross` as the share of movement
+that is back-and-forth. Frames within one of an attack are skipped, an onset being
+a large jump in whatever direction the tune goes.
+
+On that measure the `-R0` question answers the other way:
+
+| | median reversal ratio | median &#124;ratio−1&#124; | closer / further |
+|---|---:|---:|---|
+| `-O0` | 0.46x | 0.62 | — |
+| `-O0 -R0` | 0.54x | 0.52 | **62 / 13** |
+
+**And the absolute figure is the finding.** Even with the skipping off we
+oscillate at **half** the original's rate, corpus median 0.48x over 82 files. The
+packer accounts for a small part of a factor of two; the rest is ours. v0.5.129
+corrected the vibrato *period* from a `cmp / 2` reading to `cmp + 2` play calls
+and left the amplitude alone because the two errors had cancelled — a remaining
+2x in the rate is exactly the shape of a period still half right.
+
+So `-R0` is not shipped. It is a real improvement on the rate and a real
+regression on the frame count (92% → 112%), and settling that trade before
+finding the missing factor of two would be optimising around the bigger defect.
+`vib` is a column now, so the next attempt has a measure that names what it is
+changing.
+
+**The report moved to a 60-second window for this** (v0.5.195). At 10 s, 17 of 82
+rows had `0/0` slides and 19 no `bend` at all; two corpus A/Bs in one session read
+"identical on every file" from a window that contained nothing to compare. Figures
+either side of the change are not comparable and the header records the window.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

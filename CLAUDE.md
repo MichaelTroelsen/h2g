@@ -95,7 +95,7 @@ test dependency).
   coherent and the tests pass, never while another change is half-applied: a
   run taken mid-edit records a state that never existed.
 - **`FIDELITY.md` is generated too, but on demand rather than every commit.**
-  `python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md`
+  `python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md`
   packs each conversion back to a `.sid` with gt2reloc and compares SID register
   traces against the original. It is the closest thing in the repo to a measure
   of whether a conversion *sounds* right, so regenerate it after a commit that
@@ -209,13 +209,16 @@ test dependency).
   maximal runs of the register, record their *lengths*, drop any run touching the
   window edge, attribute by the ADSR at the run's midpoint. It took the drum
   tick from "flat, cause unknown" to 19/74 → 43/74 in one run. `nrun` reports it.
-- **`slides` and `bend` need a 60 s window; at `-t 10` they are near-vacuous.**
-  17 of the committed report's 82 rows show `0/0` slides and 19 have no `bend`
-  at all, so a fifth of the corpus contributes nothing to those columns — and
+- **The report is generated at `-t 60`, not `-t 10`** (v0.5.195). At 10 s
+  `slides` and `bend` were near-vacuous: 17 of 82 rows showed `0/0` slides and
+  19 had no `bend` at all, so a fifth of the corpus contributed nothing to those
+  columns — and
   two corpus A/Bs in one session read "identical on every file" from a window
   that simply contained no slides. The same comparison at 60 s had 75 files with
   slide activity and a clear verdict. Check what a window contains before
-  comparing settings in it. Settled by the same measurement: **`gt2reloc -R0` is
+  comparing settings in it. Every figure in the report moved when the window
+  did, so **numbers either side of v0.5.195 are not comparable**; the header
+  records the window that produced them. Settled by the same measurement: **`gt2reloc -R0` is
   not the fix for the slide deficit** — `patterns._scaled_step`'s `row_calls`
   correction already compensates for the dropped call, so disabling the skip
   double-corrects (median slide ratio 1.04 → 1.23, worse on 47 of 75 files).

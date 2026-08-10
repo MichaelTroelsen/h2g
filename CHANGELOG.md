@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.195 — 2026-08-10
+
+- measure pitch oscillation rate apart from pitch travel
+
 ## 0.5.194 — 2026-08-10
 
 - settle -R0 against step-scaling, and record what a 10s window measures

@@ -916,6 +916,74 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def pitch_motion(voices: list[Voice], nframes: int) -> dict:
+    """Pitch movement split into oscillation and travel, without a threshold.
+
+    `slides` and `bend` lump every kind of pitch movement together, and on
+    Commando *all* of it is vibrato: turning `--vibrato` off takes the slide
+    count from 245 to zero, while `--slides` and `--effects` change it by nothing
+    at all. So a corpus A/B that reads "slide count" is mostly ranking vibrato
+    rates, which is not what it appears to be ranking -- the `-R0` decision in
+    section 7.hhh was taken on exactly that confusion.
+
+    The two are distinguishable without picking a threshold, because a vibrato
+    *reverses* and a portamento does not:
+
+        reversals   direction changes in the frame-to-frame pitch delta. An
+                    oscillator's rate is proportional to this, so Goattracker's
+                    realtime-effect skipping halves it.
+        gross       total |delta| -- how far the pitch moves in all.
+        net         |last - first| per note, summed -- how far it *gets*.
+
+    `1 - net/gross` is then the share of movement that is back-and-forth: near 1
+    for pure vibrato, near 0 for a clean slide. No cutoff anywhere.
+
+    Frames within one of an attack are skipped. A note onset is a large pitch
+    jump and would read as a reversal; unlike a fixed offset, though, dropping a
+    frame here costs one sample of many rather than shifting the whole
+    measurement (the mistake `noise_runs` exists to avoid).
+    """
+    reversals = gross = net = 0
+    for v in voices:
+        fq = register_timeline(v.freq_events, nframes)
+        skip = set()
+        for a in v.attack_frames:
+            skip |= {a - 1, a, a + 1}
+        atk = sorted(v.attack_frames)
+        for j, a in enumerate(atk):
+            nxt = atk[j + 1] if j + 1 < len(atk) else nframes
+            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
+            if len(seg) < 2:
+                continue
+            deltas = [seg[k + 1] - seg[k] for k in range(len(seg) - 1)]
+            gross += sum(abs(d) for d in deltas)
+            net += abs(seg[-1] - seg[0])
+            signs = [d > 0 for d in deltas if d]
+            reversals += sum(1 for k in range(1, len(signs))
+                             if signs[k] != signs[k - 1])
+    return {"reversals": reversals, "gross": gross, "net": net,
+            "oscillation": (1 - net / gross) if gross else None}
+
+
+def pitch_motion_compare(orig: list[Voice], ours: list[Voice],
+                         nframes: int) -> dict:
+    """Our pitch oscillation *rate* over the original's, and both shares.
+
+    The rate is the number that a call-skipping packer changes and that `slides`
+    obscured: an oscillator dropped on one tick in three runs at two thirds
+    speed, whatever its depth.
+    """
+    a, b = pitch_motion(orig, nframes), pitch_motion(ours, nframes)
+    return {
+        "orig_reversals": a["reversals"],
+        "our_reversals": b["reversals"],
+        "reversal_ratio": (b["reversals"] / a["reversals"]
+                           if a["reversals"] else None),
+        "orig_oscillation": a["oscillation"],
+        "our_oscillation": b["oscillation"],
+    }
+
+
 def noise_runs(voices: list[Voice], nframes: int) -> dict:
     """Maximal runs of noise, keyed by the ADSR latched while each one played.
 
@@ -1461,6 +1529,14 @@ DIMENSIONS = (
     # reading of the drum anchors on a gate-edge attack, and that anchor moves
     # when the run's length changes -- which made two corpus comparisons come
     # back flat and blamed the pitch sweep for it. See `noise_runs`.
+    # The only column that measures an oscillation *rate*. `slides` counts
+    # frames on which the pitch moved and `bend` sums how far -- neither can
+    # tell a vibrato from a portamento, and on Commando every "slide" is
+    # vibrato (`--vibrato` off takes the count from 245 to zero). A corpus A/B
+    # read off `slides` is therefore ranking vibrato rates while appearing to
+    # rank slides, which is how the -R0 question got answered twice, differently.
+    Dimension("reversal_ratio", "vib", ("$D400/$D401",), "ratio",
+              "how fast the pitch oscillates, over the original's rate"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
@@ -1873,6 +1949,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
+            row.update(pitch_motion_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
@@ -2174,13 +2251,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | nrun | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | noise | nrun | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 15 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 16 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -2193,6 +2270,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
+            f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "

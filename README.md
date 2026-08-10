@@ -1399,7 +1399,7 @@ compares what the two players tell the SID chip to do:
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md
 python fidelity.py --pair original.sid ours.sid        # two files you already have
 ```
 
@@ -1748,7 +1748,7 @@ the end of the list. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md) §7.
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 10 --presets ../presets.json -o ../FIDELITY.md \
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md \
     --json ../build/fidelity.json
 python listen.py <sid_dir> --from-json ../build/fidelity.json -t 30
 ```
