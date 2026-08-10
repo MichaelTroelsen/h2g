@@ -425,3 +425,34 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
         # anchored on the instrument table this detection already found
         assert sid.data[det.instr_start:det.instr_start + 1]
     assert (found, gated) == (24, 19), "the triangle's reach changed"
+
+
+# --- packing: gt2reloc's pulse skipping ------------------------------------
+
+def test_pack_sid_disables_gt2relocs_pulse_skipping():
+    """`-Oxx` is DEFAULT=on (readme:1225) and makes the packed player execute no
+    pulse table on the note-fetch tick, so at tempo 3 the duty cycle advances on
+    two calls in three where the player advances it every frame. Trans-Atlantic's
+    lead covered 762 of the original's 1584 with it on and 1143 with it off, and
+    readme:1078-1081 already says to disable it for a fast tempo -- every row
+    this converter emits is one player tick.
+
+    Asserted on the argument list rather than by packing, so it holds without
+    gt2reloc installed. The flag must also follow both filenames: gt2reloc reads
+    argv[1] and argv[2] positionally.
+    """
+    import inspect
+    import fidelity
+    src = inspect.getsource(fidelity.pack_sid)
+    assert '"-O0"' in src
+    assert "pulse_skip" in inspect.signature(fidelity.pack_sid).parameters
+    # ...and the survey has its own packer, which needs it too.
+    import survey
+    assert '"-O0"' in inspect.getsource(survey)
+
+
+def test_pulse_skipping_can_be_restored_for_an_ab():
+    import inspect
+    import fidelity
+    p = inspect.signature(fidelity.pack_sid).parameters["pulse_skip"]
+    assert p.default is False, "the faithful setting is the default"

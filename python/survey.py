@@ -119,7 +119,10 @@ def pack_to_sid(sng: bytes, exe: str, workdir: str):
     dst.unlink(missing_ok=True)
     src.write_bytes(sng)
     try:
-        subprocess.run([exe, "s.sng", "s.sid"], cwd=workdir, timeout=60,
+        # -O0 for the reason fidelity.pack_sid gives: the default-on pulse
+        # skipping makes the packed player advance the duty cycle on two calls
+        # in three, where the player advances it every frame.
+        subprocess.run([exe, "s.sng", "s.sid", "-O0"], cwd=workdir, timeout=60,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except (OSError, subprocess.SubprocessError):
         return "fail", 0

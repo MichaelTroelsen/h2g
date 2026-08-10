@@ -221,6 +221,13 @@ test dependency).
   files describe (an option's effect, a player dialect, a limit), the edit
   belongs in the same commit. Docs that drift are worse than absent ones: the
   method write-up is used as reference material by another project.
+- **Packing passes `gt2reloc -O0`, and that is not optional.** Its
+  pulse-optimization skipping is default-on and makes the packed player execute
+  no pulse table on the note-fetch tick, so a duty cycle advances on two calls
+  in three where the player advances it every frame. All three packing sites
+  (`fidelity.pack_sid`, `survey.py`'s own packer, `convert.ps1`) pass it;
+  `pack_sid(pulse_skip=True)` restores the default for an A/B. A pulse
+  measurement taken before v0.5.189 is not comparable to one after.
 - **Packing back to a `.sid` needs `--legal-restart`.** Hubbard's `$FE` track
   byte means "tune ended", and the only way an orderlist can say that is an
   out-of-range restart position — which `greloc.c:244` rejects, so `gt2reloc`

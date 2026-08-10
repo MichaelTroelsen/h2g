@@ -583,7 +583,7 @@ def greloc_export(lengths: list[tuple[int, int, int]]) -> dict:
 
 
 def pack_sid(sng: bytes, workdir: Path, exe: str = GT2RELOC,
-             multiplier: int = 1) -> Path | None:
+             multiplier: int = 1, pulse_skip: bool = False) -> Path | None:
     """Run gt2reloc, the standalone form of Goattracker's F9 packer.
 
     Returns the packed .sid, or None if gt2reloc refused. Its exit code is
@@ -604,6 +604,20 @@ Stock siddump cannot see it. It calls the play routine `seconds * 50`
     against the tools/siddump-rt build closes that; the packed bytes here are
     unchanged either way.
 
+    **`-O0` is passed unless `pulse_skip` says otherwise.** gt2reloc's
+    pulse-optimization skipping is DEFAULT=on (readme:1225) and makes the packed
+    player execute no pulse table on the note-fetch tick, so at tempo 3 the duty
+    cycle advances on two calls in three where the player advances it every
+    frame. Trans-Atlantic's lead covered 762 of the original's 1584 with it on
+    and 1143 with it off. readme:1078-1081 already says to disable it for a fast
+    tempo, and every row this converter emits is one player tick.
+
+    Measured over the 74 files that pack: mean `pspan` 0.61x -> 0.65x, mean
+    melody and mean `wave` unchanged to the decimal, no file losing melody --
+    gains to +0.33 (Sanxion, Sigma Seven, Delta Mix-E-Load), worst loss -0.11
+    (One Man and his Droid). It costs raster time on real hardware, which is
+    what the optimization is for; `pulse_skip=True` restores it for an A/B.
+
     Options must follow both filenames. gt2reloc reads argv[1] and argv[2]
     positionally, so a leading `-S2` is taken as the input filename and the run
     writes nothing -- silently, indistinguishable from any other refusal.
@@ -614,6 +628,8 @@ Stock siddump cannot see it. It calls the play routine `seconds * 50`
     args = [exe, "a.sng", "b.sid"]
     if multiplier > 1:
         args.append(f"-S{multiplier}")
+    if not pulse_skip:
+        args.append("-O0")
     try:
         subprocess.run(args, cwd=str(workdir), timeout=120,
                        capture_output=True, stdin=subprocess.DEVNULL)

@@ -52,6 +52,16 @@ that can simply be switched off.** The two are not equivalent:
 >   Costs rastertime, and changes the packed player for every file.
 > - Step scaling is approximate (integer rounding on the speed value) but free.
 >
+> **`-O0` is now passed at every packing site** (v0.5.189). The default-on pulse
+> skipping makes the packed player execute no pulse table on the note-fetch tick,
+> so at tempo 3 the duty cycle advances on two calls in three where the player
+> advances it every frame — Trans-Atlantic's lead covered 762 of the original's
+> 1584 with it on and 1143 with it off. Over the 74 files that pack: mean `pspan`
+> 0.61x → 0.65x, mean melody and mean `wave` unchanged to the decimal, no file
+> losing melody. readme:1078-1081 already says to disable it for a fast tempo,
+> and every row this converter emits is one player tick. It costs raster time on
+> real hardware, which is what the optimization is for.
+>
 > Also note `-Oxx` (readme:1225) is the same kind of switch for pulse skipping,
 > default on, and `Filtertable is executed on each tick regardless` while
 > `Wavetable is never skipped` (readme:1032-1033) — which is why the drum sweep

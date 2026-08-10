@@ -171,6 +171,12 @@ if ($wantSid) {
     # failure.
     $gtArgs = @((Split-Path -Leaf $sngPath), (Split-Path -Leaf $sidOut))
     if ($multiplier -gt 1) { $gtArgs += "-S$multiplier" }
+    # gt2reloc's pulse-optimization skipping is on by default and makes the
+    # packed player execute no pulse table on the note-fetch tick -- at tempo 3
+    # the duty cycle then advances on two calls in three where the player
+    # advances it every frame. readme:1078-1081 says to disable it for a fast
+    # tempo, and every row this converter emits is one player tick.
+    $gtArgs += "-O0"
     $dir = Split-Path -Parent $sngPath
     Start-Process -FilePath $exe -WorkingDirectory $dir -Wait -NoNewWindow `
                   -ArgumentList $gtArgs | Out-Null
