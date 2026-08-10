@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.191 — 2026-08-10
+
+- derive the drum noise run from the speed gate; read, not wired
+
 ## 0.5.190 — 2026-08-10
 
 - record the drum noise run census; the constant is wrong for 1548 notes

@@ -2952,12 +2952,57 @@ lies in the surrounding order — where the init path writes `$D404`, or when
 two families. We write 2 for every pitched record: right for 934 notes, one
 frame too long for 1548.
 
-Deliberately not fixed here. The majority case is 1, so flipping the constant
-would improve the count and make Commando wrong — the one file whose drum was
-validated by ear (v0.5.172). §7.eee and §7.ddd both record what happens when a
-rule is fitted to a plausible majority instead of read from the player, and this
-is the third time in one session that a discriminator has looked available and
-not been. The mechanism is findable; the constant is not the place to guess it.
+#### The mechanism: the run is the speed gate less one
+
+Found by elimination, not by fitting. Three structural comparisons across the
+twelve run-1 files and the nine run-2 files came back identical: the drum block
+itself, where `voicectrl` is written, and where `lengthleft` is decremented. So
+the difference is not in the code, which leaves the data — and the drum's own
+test is the clue:
+
+```
+lda savelnthcc,x / and #$1f / sbc #$01 / cmp lengthleft,x / bcc firstime
+```
+
+`lengthleft` decrements once per duration **unit**, not per frame. A unit lasts
+`frames` frames (the speed gate `find_song_speeds` reads), so the test stays true
+for that long — and the note's own first frame is spent by the init path writing
+the record's waveform to `$D404` *after* the drum routine has run. What reaches
+the chip is `frames - 1` frames of noise:
+
+| speed gate | noise run | files |
+|---:|---:|---:|
+| 2 | 1 | 12 |
+| 3 | 2 | 10 |
+
+Exact on 22 of 25. The three exceptions are the noise-throughout class and one
+file where no gate is found. Commando's gate is 3, which is why the hardcoded 2
+was right for the file it was measured on and one frame too long for twelve
+others — and why the fixture and the drum a listener validated are unaffected by
+knowing this.
+
+#### Read, and deliberately not wired
+
+`_noise_tick_frames` lands it. Wiring it into `_drum_entries` measured **flat**:
+26 of 29 drum instruments match the original's run length either way. It
+demonstrably fixes some — Last_V8 and Master of Magic's GT 8 both go 2 → 1,
+confirmed frame by frame — and breaks an equal number, because shortening the
+tick **frees a wavetable entry and the pitch sweep moves into it**:
+
+```
+2-frame tick   41 81 81 40 FF
+1-frame tick   41 81 40 F2 FF     <- the sweep appears
+```
+
+So it is two changes wearing one flag, and the sweep is the suspect. Isolating
+them is the next step; the reading is not the thing that needs work.
+
+**Two aggregate measures disagreed about this and the frames settled it.** A
+file-level modal run said 14 → 16 files improved; a per-instrument one said
+26 → 26. The file-level figure was collapsing several instruments into one mode.
+That is the third time in this session an aggregate contradicted a direct frame
+reading and the frames were right — §7.eee's `wave` 99.5%, §7.ddd's per-note
+travel, and this. **When an aggregate and a trace disagree, print the frames.**
 
 ## 8. Impedance mismatch: slicing and re-indexing
 

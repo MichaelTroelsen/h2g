@@ -422,3 +422,30 @@ def test_a_bit_can_be_tested_without_the_block_being_warhawks():
               if search_file(sid.data, f"{load} 29 {b:02X}") >= 1]
     assert tested == [0x01, 0x02, 0x04]
     assert _detect_effects("Mega_Apocalypse") == (False, False, False, False, 0)
+
+
+def test_the_noise_tick_length_is_derived_but_not_yet_wired():
+    """v0.5.191. `run = gate - 1` is the mechanism behind the hardcoded 2: the
+    drum's "first vbl" test compares against a length that decrements once per
+    duration *unit*, and the note's own first frame is spent by the init path.
+    Exact on 22 of the 25 corpus files with a drum and a pitched record.
+
+    It is read and not wired, because wiring it measured flat -- 26 of 29 drum
+    instruments match the original's run either way. Shortening the tick frees a
+    wavetable entry and the pitch sweep moves into it, so the change is two
+    changes; the sweep is the suspect. This test pins the reading and the fact
+    that nothing consumes it, so the next attempt starts from there.
+    """
+    from h2g.convert import _detect_tables
+    from h2g.goatwriter import _drum_entries, _noise_tick_frames
+    from h2g.sidfile import load_sid
+    import pathlib
+    fixture = pathlib.Path(__file__).resolve().parents[2] / "Commando.sid"
+    sid, det = _detect_tables(load_sid(str(fixture)), lambda *a, **k: None)
+    # Commando's gate is 3, so the derived value equals the constant -- which is
+    # why the fixture and the drum a listener validated by ear are unaffected.
+    assert _noise_tick_frames(sid, det) == 2
+    # ...and a 1-frame tick emits one noise entry, not zero.
+    left, _ = _drum_entries(0x41, "gts5", [], 1, min_note=40, sustain=0,
+                            budget=5, tick_frames=1)
+    assert left[:3] == [0x41, 0x81, 0x40]

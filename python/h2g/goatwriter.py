@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import math
 import re
+from collections import Counter
 from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import List, Optional, Tuple
@@ -196,6 +197,21 @@ def _drum_steps_safe(steps: int, min_note: Optional[int],
 # waveform is already set for that many play calls before advancing
 # (gcommon.h:56-57 WAVEDELAY/WAVELASTDELAY, executed at gplay.c:698-704).
 WAVE_MAX_DELAY = 0x0F
+
+# Frames of noise the drum block writes before the voice's own waveform,
+# measured off the original's trace rather than assumed: 349 of Commando's
+# note onsets hold noise for exactly this many frames and then switch.
+#
+# **It is not 2 everywhere, and this is known to be wrong for more notes than it
+# is right for.** Across every drum-flagged note in the corpus, a *pitched*
+# record gets a run of 1 on 1548 notes and 2 on 934; Monty gives 1 where
+# Commando gives 2 from a byte-identical routine, so the difference is in the
+# surrounding order and not in any record byte. A record whose waveform carries
+# no waveform bits gets noise for the whole note instead -- Hubbard's own
+# comment, "ctrlreg 0 is always noise" -- and that half `_drum_entries` already
+# emits correctly. Flipping this to 1 would suit the majority and break the one
+# file whose drum a listener validated. See H2G-CONVERSION-METHOD.md 7.ggg.
+NOISE_TICK_FRAMES = 2
 
 
 def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
@@ -1490,6 +1506,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # function's `i` is the 0-based record index: instrument 1 is the
         # hardcoded Clear Voice, so record i is instrument i + 2.
         lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
+        # `tick_frames` is deliberately left at its default rather than given
+        # `_noise_tick_frames(sid, det)`. The reading is right -- see there --
+        # but wiring it measured flat: 26 of 29 drum instruments match the
+        # original's run length either way. It fixes Last_V8 and Master_of
+        # Magic's GT 8 (verified frame by frame, 2 -> 1) and breaks an equal
+        # number, because shortening the tick frees a wavetable entry and the
+        # pitch sweep moves into it -- `41 81 40 F2 FF` where a 2-frame tick
+        # gives `41 81 81 40 FF`. Two changes at once, and the sweep is the
+        # suspect. Isolate them before wiring this.
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
                              sustain=data[base + 4] >> 4, budget=budget)
 
@@ -1578,7 +1603,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   multiplier: int = 1, min_note: Optional[int] = None,
                   sustain: int = 0,
-                  budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
+                  budget: int = WAVE_ENTRIES_PER_INSTR,
+                  tick_frames: int = NOISE_TICK_FRAMES) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -1682,7 +1708,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # one more entry covers the rest at every -S value the corpus uses; its
     # right side is $80 because a delay's right side IS read, on its final
     # call, and anything else would drag the note.
-    extra = NOISE_TICK_FRAMES * max(1, multiplier) - 1
+    extra = tick_frames * max(1, multiplier) - 1
     if extra == 1:
         left.append(WAVE_NOISE_GATEOFF | (wave & 0x01))
         right.append(0x00)
@@ -1741,20 +1767,46 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
 # a 136-step chain and drove three files to the 255-row table ceiling.
 DRUM_MAX_SWEEP_STEPS = 8
 
-# Frames of noise the drum block writes before the voice's own waveform,
-# measured off the original's trace rather than assumed: 349 of Commando's
-# note onsets hold noise for exactly this many frames and then switch.
-#
-# **It is not 2 everywhere, and this is known to be wrong for more notes than it
-# is right for.** Across every drum-flagged note in the corpus, a *pitched*
-# record gets a run of 1 on 1548 notes and 2 on 934; Monty gives 1 where
-# Commando gives 2 from a byte-identical routine, so the difference is in the
-# surrounding order and not in any record byte. A record whose waveform carries
-# no waveform bits gets noise for the whole note instead -- Hubbard's own
-# comment, "ctrlreg 0 is always noise" -- and that half `_drum_entries` already
-# emits correctly. Flipping this to 1 would suit the majority and break the one
-# file whose drum a listener validated. See H2G-CONVERSION-METHOD.md 7.ggg.
-NOISE_TICK_FRAMES = 2
+
+
+def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
+    """Frames of noise this player's drum block writes, from its speed gate.
+
+    **It is the speed gate less one, and that is a mechanism rather than a fit.**
+    The drum's "is this the note's first vbl" test compares `(duration & $1F) - 1`
+    against the note's remaining length, and `lengthleft` decrements once per
+    duration *unit* -- not per frame. So the test stays true for as many frames
+    as a unit lasts, and the note's own first frame is spent by the init path
+    writing the record's waveform to `$D404` after the drum routine has run. What
+    reaches the chip is therefore `frames - 1` frames of noise.
+
+    Measured across the 25 corpus files with a drum routine and a pitched record,
+    it is exact on 22:
+
+        gate 2 -> run 1   12 files (Monty, Last_V8, Warhawk, Phantoms, ...)
+        gate 3 -> run 2   10 files (Commando, Crazy_Comets, Zoids, ...)
+
+    The three exceptions are the noise-throughout class -- a record whose
+    waveform carries no waveform bits, which Hubbard's own comment covers
+    ("ctrlreg 0 is always noise") -- and one file where no gate is found at all,
+    which keeps `NOISE_TICK_FRAMES`.
+
+    This is what the hardcoded 2 was standing in for. It is right for Commando,
+    whose gate is 3, which is why the fixture and the drum a listener validated
+    by ear are both unchanged; it was one frame too long for the twelve files
+    whose gate is 2. See H2G-CONVERSION-METHOD.md 7.ggg.
+    """
+    try:
+        speeds = find_song_speeds(sid, det if det.can_convert else None)
+    except Exception:                                  # noqa: BLE001
+        return NOISE_TICK_FRAMES
+    frames = speeds.frames if (speeds and speeds.frames) else ()
+    if not frames:
+        return NOISE_TICK_FRAMES
+    # One value for a table the whole file shares: the modal gate, so a single
+    # odd subtune cannot retime every drum in the song.
+    modal = Counter(frames).most_common(1)[0][0]
+    return max(1, modal - 1)
 
 
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:
