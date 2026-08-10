@@ -199,6 +199,16 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **When a change alters an event's *duration*, do not measure it at a fixed
+  offset from an attack.** Four boundary errors in one session came from asking
+  what a register held at `a + k` for a gate-edge attack `a`: GT 4's "one frame
+  short" was the next note's `$09`, the drum's frames 1-2 against its routine's
+  "first vbl" was the init path writing `$D404` after it, and the noise-tick
+  comparison came back flat twice — once blamed on a pitch sweep that budget
+  testing then exonerated. `fidelity.noise_runs` is the shape that works: find
+  maximal runs of the register, record their *lengths*, drop any run touching the
+  window edge, attribute by the ADSR at the run's midpoint. It took the drum
+  tick from "flat, cause unknown" to 19/74 → 43/74 in one run. `nrun` reports it.
 - **A score is not a clock.** Every column of `FIDELITY.md` compares
   *what* is played, never *when*: `melody` is a difflib ratio over a note
   sequence in a fixed window, and a conversion playing too fast overruns that

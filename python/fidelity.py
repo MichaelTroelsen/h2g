@@ -916,6 +916,75 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def noise_runs(voices: list[Voice], nframes: int) -> dict:
+    """Maximal runs of noise, keyed by the ADSR latched while each one played.
+
+    **Position-independent, which is the whole point.** Every other reading of
+    the drum in this project anchors on siddump's gate-edge attack and asks what
+    the waveform is at `a + k`. That anchor moves when the run's *length*
+    changes -- shortening a drum's noise tick shifts five corpus instruments'
+    runs from `a+1` to `a+0` -- so two settings get measured on different
+    populations and their agreement rates are not comparable. Four separate
+    boundary errors in one session came from this: GT 4's "one frame short" (the
+    next note's `$09`), the drum's frames 1-2 against the routine's "first vbl"
+    (the init path writing `$D404` after it), and the tick comparison twice.
+
+    A run's length does not depend on where the run begins. So this finds
+    maximal stretches of `$D404 & $80` and records how long each is, with no
+    note boundary involved at all.
+
+    Two rules that keep it honest:
+
+    * a run touching frame 0 or the last frame is **dropped** -- it is cut by
+      the window, and its length is a fact about the window;
+    * attribution is the ADSR at the run's *midpoint*, not its start. The ADSR
+      pair is a verbatim per-instrument copy (see `instrmap.py`), and the
+      midpoint is inside the note however the run sits within it.
+
+    Returns `{adsr: Counter({run_length: count})}`.
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        f = 0
+        while f < nframes:
+            if not wf[f] & WF_NOISE:
+                f += 1
+                continue
+            start = f
+            while f < nframes and wf[f] & WF_NOISE:
+                f += 1
+            if start == 0 or f >= nframes:
+                continue                      # cut by the window
+            key = adsr[(start + f - 1) // 2]
+            out.setdefault(key, Counter())[f - start] += 1
+    return out
+
+
+def noise_run_agreement(orig: list[Voice], ours: list[Voice],
+                        nframes: int) -> dict:
+    """How many instruments sound noise for the same length on both sides.
+
+    Compared per ADSR and only where both sides sound noise at all, so a
+    conversion that drops an instrument's noise entirely is *absent* here rather
+    than counted as a disagreement -- that is what the one-sided `noise` count
+    is for. This answers the narrower question the count cannot: given that we
+    sound it, do we sound it for as long?
+    """
+    a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
+    shared = sorted(set(a) & set(b))
+    matched = sum(1 for k in shared
+                  if a[k].most_common(1)[0][0] == b[k].most_common(1)[0][0])
+    return {
+        "noise_run_instruments": len(shared),
+        "noise_run_matched": matched,
+        "noise_run_agreement": (matched / len(shared)) if shared else None,
+        "noise_run_orig_only": len(set(a) - set(b)),
+        "noise_run_ours_only": len(set(b) - set(a)),
+    }
+
+
 def _changes(timeline: list[int]) -> int:
     """How many times a register's value moved across a per-frame timeline.
 
@@ -1388,6 +1457,12 @@ DIMENSIONS = (
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
               "per-frame agreement of the envelope pair"),
+    # The only column that can see how *long* a drum sounds. Every other
+    # reading of the drum anchors on a gate-edge attack, and that anchor moves
+    # when the run's length changes -- which made two corpus comparisons come
+    # back flat and blamed the pitch sweep for it. See `noise_runs`.
+    Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
+              "instruments whose noise runs as long as the original's"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
               "frames on which the duty cycle moved",
               source="our_pulse_changes"),
@@ -1797,6 +1872,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
             row.update(adsr_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
+            row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
@@ -2098,13 +2174,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | wave | noise | nrun | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 14 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 15 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -2118,6 +2194,7 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
+            f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "

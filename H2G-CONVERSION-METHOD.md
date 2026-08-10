@@ -3010,11 +3010,41 @@ when the run's length changes, and every boundary error in this session — GT 4
 "one frame short", the drum's own frames 1–2, the `$09` that belonged to the next
 note — has been this.
 
-What a valid experiment needs is a position-independent measure: total noise
-frames per note, or the run measured from the waveform *transition* rather than
-from the attack. Until then the reading stays unwired, and the entry above should
-be read as "the mechanism is known and the encoding is unproven" rather than as a
-suspicion about the sweep.
+#### The measure, and the answer it gave
+
+`fidelity.noise_runs` finds **maximal stretches of `$D404 & $80`** and records how
+long each is. No attack, no note boundary — a run's length does not depend on
+where the run begins, which is exactly the property the previous two experiments
+lacked. Two rules keep it honest: a run touching either edge of the window is
+dropped, because its length is a fact about the window; and attribution is the
+ADSR at the run's *midpoint*, so it lands inside the note however the run sits
+within it.
+
+Measured that way, on the same 74 drum instruments both times:
+
+| tick length | instruments whose noise runs as long as the original's |
+|---|---:|
+| 2 (the constant) | **19 / 74 — 26%** |
+| gate − 1 (derived) | **43 / 74 — 58%** |
+
+So the derived length is right and both earlier "flat" results were the metric.
+It is wired (v0.5.193), and `nrun` is now a column of `FIDELITY.md` so the next
+change to the drum is measurable rather than arguable.
+
+The column's own shape is worth reading before quoting it: 35 files report it, and
+they split **25 at 0%, 5 partial, 5 at 100%** — so its per-file mean of 23% is not
+the pooled 58% above and neither number is wrong. A file with one drum instrument
+scores 0 or 100 and nothing between, which is why the pooled figure is the one to
+compare settings with and the column is the one to spot a file with.
+
+**The general lesson, and this session paid for it four times.** Every reading of
+the drum before this asked what the waveform was at `a + k` for a gate-edge
+attack. That is fine while `k` is fixed and useless the moment a change moves it —
+and the changes worth making are exactly the ones that move it. GT 4's "one frame
+short" was the next note's `$09`; the drum's frames 1–2 against the routine's
+"first vbl" was the init path writing `$D404` after it; the tick comparison came
+back flat twice, once blamed on a sweep that turned out to be innocent. **When a
+change alters an event's duration, measure the duration, not the offset.**
 
 **Two aggregate measures disagreed about this and the frames settled it.** A
 file-level modal run said 14 → 16 files improved; a per-instrument one said
