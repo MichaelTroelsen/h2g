@@ -199,6 +199,25 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **A constant read from one player is a constant about one player.**
+  `TRIANGLE_VIBRATO_GATE = 8` was read from a single file's `CMP #$08` and used
+  for all 25 in the dialect; 5 compare against something else, and Commando --
+  the file listening sessions use -- compares against 6. Assuming 8 there
+  damped 695 of its 705 notes and vibrated 10, the opposite of the intent.
+  Before generalising an immediate, **search the other files for the same
+  shape and print the operand**; where several copies of a shape exist, anchor
+  at a fixed delta from something already located rather than scanning (these
+  players carry a second gate on the same cell 377 bytes on). And prefer a
+  constant that can be *checked* against the trace: Commando's 6 selects the
+  24-and-30-frame notes, of which voice 1 has exactly the 31 the original is
+  measured to vibrate. See H2G-CONVERSION-METHOD.md § 7.lll.
+- **The same number can be right for a mechanism and wrong for its
+  approximation.** The per-file gate above improves the pattern-command path
+  (92.1% vs 90.3%) and *degrades* the `vibdelay` fallback it replaces (78.9%
+  vs 85.5%), because a delay is also doing the suppressing that the commands
+  took over. `_vibrato_delay` takes a `commanded` flag for exactly this
+  reason -- when a fix moves work from one place to another, re-measure the
+  constants left behind rather than propagating the new one to both.
 - **When a change alters an event's *duration*, do not measure it at a fixed
   offset from an attack.** Four boundary errors in one session came from asking
   what a register held at `a + k` for a gate-edge attack `a`: GT 4's "one frame

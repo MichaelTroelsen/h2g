@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
-from .search import search_file
+from .search import match_at, search_file
 from .sidfile import HLEN, FreqTable, SidFile, find_freq_table
 
 WAVEFORMS = {
@@ -78,6 +78,9 @@ class Detection:
     # pair. Mutually exclusive with both of the above -- see
     # _find_triangle_vibrato().
     triangle_vibrato: Optional[int] = None
+    # The note-length threshold that player gates the vibrato on, read from
+    # its own CMP -- _find_triangle_gate().
+    triangle_gate: Optional[int] = None
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -883,9 +886,13 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         else:
             det.triangle_vibrato = _find_triangle_vibrato(sid, det)
             if det.triangle_vibrato is not None:
+                det.triangle_gate = _find_triangle_gate(
+                    sid, search_file(data, TRIANGLE_VIBRATO_SHAPE))
                 log(f"Instrument vibrato......: record +{det.triangle_vibrato} "
                     f"(shift count, global {TRIANGLE_VIBRATO_PERIOD}-call "
-                    f"triangle 0..{TRIANGLE_VIBRATO_PEAK})")
+                    f"triangle 0..{TRIANGLE_VIBRATO_PEAK}, no vibrato below "
+                    f"duration {det.triangle_gate or TRIANGLE_VIBRATO_GATE}"
+                    + ("" if det.triangle_gate else ", assumed") + ")")
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
@@ -1553,6 +1560,37 @@ def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
 # shape; the rest (the digi and cmdtable engines among them) fetch
 # differently and are not touched by the flag this gates.
 STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
+
+
+# `LDA duration,X / AND #$1F / CMP #imm / BCC out` -- the per-note length gate
+# in front of the global-triangle oscillator. It sits at a fixed +56 bytes from
+# TRIANGLE_VIBRATO_SHAPE's match in all 25 corpus files that have the engine,
+# which is why this reads one place rather than scanning: each player has a
+# *second* gate on the same duration cell 377 bytes further on, guarding an
+# unrelated effect, and a scan picks up whichever comes first.
+TRIANGLE_GATE_SHAPE = "BD ?? ?? 29 1F C9 ?? 90"
+TRIANGLE_GATE_DELTA = 56
+TRIANGLE_GATE_IMMEDIATE = 6       # offset of the CMP operand within the shape
+
+
+def _find_triangle_gate(sid: SidFile, at: int) -> Optional[int]:
+    """The threshold `CMP #imm` this player compares the note duration against.
+
+    `TRIANGLE_VIBRATO_GATE` was read from one file and is right for 20 of the
+    25: the other five compare against 6 (Commando), 5, 4, 4 and 2. Commando's
+    matters most, because assuming 8 there gated the vibrato onto notes of 8
+    stored units where the player wants 6 -- and 6 is checkable against the
+    trace, since it selects exactly the 31 notes of GT 1 the original is
+    measured to vibrate.
+
+    Read at the fixed delta rather than searched for; see TRIANGLE_GATE_SHAPE.
+    """
+    if at < 1:
+        return None
+    k = at + TRIANGLE_GATE_DELTA
+    if match_at(sid.data, k, TRIANGLE_GATE_SHAPE):
+        return sid.data[k + TRIANGLE_GATE_IMMEDIATE]
+    return None
 
 
 def _find_status_bit6(data: bytes) -> bool:

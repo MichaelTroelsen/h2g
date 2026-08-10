@@ -73,6 +73,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
+         "vibrato_command": True,
          "rest_instrument": True, "compact_instruments": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
@@ -593,6 +594,16 @@ def main(argv=None) -> int:
                    # files it touches toward the original and 6 away -- all six
                    # already overshooting for another reason.
                    "vibrato": FIXED["vibrato"],
+                   # The global-triangle player's per-note length gate, as a
+                   # pattern command instead of a vibdelay -- the only form
+                   # that expresses it, since vibdelay is per instrument. A
+                   # no-op outside that dialect (25 files) and outside gts5.
+                   # Fixed rather than searched: measured over 2487 notes it
+                   # beats the instrument setting on both axes at once, 92.1%
+                   # against 85.7% note agreement with the vibrato onset
+                   # median exact instead of 10 frames late, and no dimension
+                   # of FIDELITY.md scores an oscillation onset.
+                   "vibrato_command": FIXED["vibrato_command"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

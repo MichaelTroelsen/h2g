@@ -229,6 +229,19 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--vibrato-command", action="store_true",
+        help="express the global-triangle player's vibrato as a per-note "
+             "pattern command instead of an instrument setting (25 corpus "
+             "files, --format gts5, needs --vibrato). That player gates "
+             "vibrato on the note's own duration -- `AND #$1F / CMP #$08`, no "
+             "vibrato below 8 -- which a Goattracker instrument cannot say, "
+             "because vibdelay is per instrument. gplay.c keeps the vibdelay "
+             "countdown inside `case CMD_DONOTHING`, so a row carrying "
+             "CMD_VIBRATO oscillates from the note's first call; zeroing the "
+             "instrument's speed-table pointer then silences the notes that "
+             "carry no command. Without it, vibdelay 8 stands in for the gate "
+             "and starts every long note 10 frames late")
+    parser.add_argument(
         "--wave-program", action="store_true",
         help="run the player's per-instrument byte-code wave program. 29 corpus "
              "files carry an interpreter with three opcodes -- $85 holds, a byte "
@@ -335,6 +348,7 @@ def main(argv=None) -> int:
                           ("--two-stage", "two_stage"),
                           ("--sfx-drum", "sfx_drum"),
                           ("--wave-program", "wave_program"),
+                          ("--vibrato-command", "vibrato_command"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -401,6 +415,7 @@ def main(argv=None) -> int:
                       two_stage=args.two_stage,
                       sfx_drum=args.sfx_drum,
                       wave_program=args.wave_program,
+                      vibrato_command=args.vibrato_command,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

@@ -1098,7 +1098,8 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
-def _vibrato_delay(det: Detection, multiplier: int) -> int:
+def _vibrato_delay(det: Detection, multiplier: int,
+                   commanded: bool = False) -> int:
     """Goattracker `vibdelay` for this player's vibrato, in play calls.
 
     `vibdelay` is a countdown, not a flag: gplay.c:769-776 is a fallthrough
@@ -1136,6 +1137,26 @@ def _vibrato_delay(det: Detection, multiplier: int) -> int:
     smaller one -- before this, a corpus where most notes are shorter than the
     threshold got vibrato on all of them.
 
+    **This is the fallback, not the mechanism, since v0.5.199** -- see
+    `_vibrato_command_pass`, which expresses the gate per note and reaches both
+    halves. What stays here is the approximation for the notes it cannot reach,
+    and the gate it uses depends on which of the two is running:
+
+    * On its own, `TRIANGLE_VIBRATO_GATE` (8), even in the five files whose
+      player compares against something else. A delay is doing two jobs at once
+      -- suppressing short notes and postponing long ones -- and the file's own
+      threshold is the right number only for the first. Substituting it here
+      drops corpus agreement from 85.5% to **78.9%**, more than doubling the
+      spurious vibratos (207 to 417): a lower threshold gives up the
+      suppression without buying a correct onset.
+    * Behind the command pass, the file's own threshold, because the commands
+      now do the suppressing and the residue is only notes with no free command
+      column. Measured that way it is the better number -- 92.1% against 90.3%,
+      129 misses against 173, almost all of it Ninja, whose gate is 2.
+
+    The same constant is therefore right in one role and wrong in the other,
+    which is why `commanded` is a parameter and not a convenience.
+
     v0.5.198 measured that last sentence rather than asserting it, across the
     25 corpus files this gate reaches, over 2487 notes of instruments whose
     only pitch movement is the vibrato (no drum or arpeggio bit). The original
@@ -1162,7 +1183,8 @@ def _vibrato_delay(det: Detection, multiplier: int) -> int:
     """
     if det.triangle_vibrato is None:
         return VIBRATO_DELAY
-    return min(0xFF, max(1, TRIANGLE_VIBRATO_GATE * multiplier))
+    gate = (det.triangle_gate or TRIANGLE_VIBRATO_GATE) if commanded         else TRIANGLE_VIBRATO_GATE
+    return min(0xFF, max(1, gate * multiplier))
 
 
 def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
@@ -1293,7 +1315,7 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
 def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
                     speed_table: List[tuple], log=None,
-                    lead: int = 1) -> dict:
+                    lead: int = 1, vibrato_command: bool = False) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
 
     Goattracker runs a per-instrument vibrato with no pattern command at all:
@@ -1334,7 +1356,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         engine = "global triangle"
     else:
         return {}
-    delay = _vibrato_delay(det, mult)
+    delay = _vibrato_delay(det, mult, commanded=vibrato_command)
     data = sid.data
     out: dict = {}
     for i in range(max(instr_used - lead, 0)):
@@ -1355,6 +1377,147 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
             f"{len({v[0] for v in out.values()})} speed-table entry(ies) "
             f"({engine})")
     return out
+
+
+CMD_VIBRATO = 0x04              # gcommon.h:8
+GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
+GT_LAST_NOTE = 0xBC             # gcommon.h:49 LASTNOTE
+GT_REST = 0xBD                  # gcommon.h:50 REST -- "no new note", not a stop
+
+
+def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
+                          vib_ptrs: dict, lead: int, log=None) -> dict:
+    """Move the global-triangle dialect's vibrato from the instrument to the
+    pattern rows, which is the only way to express its per-note length gate.
+
+    The player gates vibrato on the note's own stored duration and nothing
+    else (§ 7.aaa, and _vibrato_delay for the disassembly):
+
+        BD EF 14  LDA $14EF,X / AND #$1F / CMP #$08 / BCC out
+
+    A Goattracker *instrument* cannot say that, because `vibdelay` is per
+    instrument, so v0.5.198 measured the two ways of approximating it with one
+    number and shipped the less-bad one: `vibdelay 8` suppresses short notes
+    correctly and starts long ones 10 frames late. This is the exact form
+    instead, and it works because of where gplay.c puts the delay countdown:
+
+        case CMD_DONOTHING:
+        if ((!cptr->cmddata) || (!cptr->vibdelay)) break;
+        if (cptr->vibdelay > 1) { cptr->vibdelay--; break; }
+        case CMD_VIBRATO:                      // <-- fallthrough target
+        ...oscillate...
+
+    The countdown lives *inside* `case CMD_DONOTHING`. A row carrying
+    `CMD_VIBRATO` enters at the second label and never sees it, so a commanded
+    vibrato runs from the note's first call whatever `vibdelay` holds. Set the
+    instrument's `ptr[STBL]` to 0 and an *uncommanded* note takes the
+    `!cmddata` break and gets nothing at all. Between them: vibrato on exactly
+    the notes the player vibrates, starting where the player starts it.
+
+    Three properties of the row stream make this a pass rather than a rewrite:
+
+    * **The gate needs no unit conversion.** `_build_raw_pattern` emits `wait`
+      hold rows after each note and `wait = b1 & 0x1F` is the identical
+      expression to the player's `AND #$1F`, so a note occupies `wait + 1`
+      rows and `wait >= 8` is exactly `rows > TRIANGLE_VIBRATO_GATE`. Nothing
+      here depends on frames per row, on the tempo, or on the multiplier --
+      which is why this is the one rate-like quantity in the file that is *not*
+      scaled (contrast build_speed_table, _drum_speed, _wave_hold_byte).
+    * **Hold rows already carry the note row's command** (`events += [GT_NO_NOTE,
+      0x00, cmd1, cmd2]`), and an empty row would otherwise reset `cmddata`
+      back to the instrument's zeroed pointer and stop the oscillation
+      mid-note, so the command has to be on every row of the note -- and
+      writing it there matches what the decoder does with a portamento.
+    * **`$BD` is "no new note", not a rest.** gplay.c:925 only assigns
+      `newnote` for `<= LASTNOTE`, so a `$BD` row continues the note and is
+      safe to treat as part of its block.
+
+    **A short note is damped explicitly, and the instrument keeps its pointer.**
+    `$04 00` gives `cmddata = 0`, which still enters `case CMD_VIBRATO` but with
+    `cmpvalue` and `speed` both 0, so it adds nothing to the frequency -- a
+    suppression that costs no extra state and, unlike zeroing `ptr[STBL]`,
+    applies per note. Keeping the pointer then means a note this pass *cannot*
+    reach falls back to the v0.5.198 approximation rather than losing its
+    vibrato outright. Measured over the 25 files and 2487 notes of § 7.kkk,
+    the three combinations separate cleanly:
+
+        variant                    agree   miss  invent   onset (median)
+        instrument vibdelay 8      85.5%    153     207              +10
+        command, ptr[STBL] = 0     88.9%    212      63               +0
+        command, pointer kept      85.6%    152     207               +0
+
+    Zeroing the pointer removes 144 spurious vibratos -- notes lasting more
+    than 8 *calls* whose player duration is under 8 *frames*, which a delay
+    cannot distinguish and this gate can -- but costs 60 notes that qualify and
+    could not be commanded. Damping short notes explicitly gets both, which is
+    what this function does.
+
+    **The threshold is the file's own `CMP`, not TRIANGLE_VIBRATO_GATE.** Those
+    three rows were all measured against the assumed 8, and on Commando that
+    damped 695 of 705 notes and vibrated 10 -- the constant was read from one
+    player and 5 of the 25 compare against something else (Commando 6, then 5,
+    4, 4, 2; detect._find_triangle_gate). With its own 6 the file vibrates 50
+    notes and scores 100.0% where the instrument delay scored 97.8%, and the
+    arithmetic is checkable rather than fitted: `wait >= 6` selects the 24- and
+    30-frame notes, of which GT 1 has 27 + 4 = 31, exactly the 31 notes the
+    original is measured to vibrate. Corpus-wide, with the right threshold:
+
+        delay, gate 8 (v0.5.198)   85.5%   miss 153   invent 207   onset +10
+        delay, per-file gate       78.9%   miss 109   invent 417   onset +10
+        command + damp             92.1%   miss 129   invent  68   onset  +0
+
+    -- better on *both* axes than either delay, which no single `vibdelay` could
+    manage, and better on 6 files than the middle row is on any. The second row
+    is the warning: the per-file gate is an improvement here and a regression as
+    a plain delay. See `_vibrato_delay`.
+
+    Skipped, and counted rather than silently dropped: a note whose command
+    column is already spoken for (a portamento or a tempo change -- one column
+    per row, and the slide is the more audible of the two), and a *qualifying*
+    note whose live instrument is not known because no row has named one yet in
+    this pattern. A short note needs no index to damp, so an unnamed instrument
+    does not stop it.
+    """
+    gate = det.triangle_gate or TRIANGLE_VIBRATO_GATE
+    by_slot = {rec + 1 + lead: idx for rec, (idx, _delay) in vib_ptrs.items()}
+    placed = damped = busy = unknown = 0
+    for pat in patterns:
+        live = 0
+        i = 0
+        while i + 3 < len(pat):
+            note, instr = pat[i], pat[i + 1]
+            if instr:
+                live = instr
+            if not GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                i += 4
+                continue
+            end = i + 4
+            while (end + 3 < len(pat) and pat[end] == GT_REST
+                   and pat[end + 1] == 0):
+                end += 4
+            index = 0
+            if (end - i) // 4 > gate:
+                index = by_slot.get(live, -1)
+            if index < 0:
+                unknown += 1
+            elif pat[i + 2]:
+                busy += 1
+            else:
+                for row in range(i, end, 4):
+                    if pat[row + 2] == 0:
+                        pat[row + 2] = CMD_VIBRATO
+                        pat[row + 3] = index
+                if index:
+                    placed += 1
+                else:
+                    damped += 1
+            i = end
+    if log and (placed or damped):
+        log(f"Vibrato command.........: {placed} note(s) vibrated, "
+            f"{damped} damped by length"
+            + (f", {busy} with the column in use" if busy else "")
+            + (f", {unknown} on an unnamed instrument" if unknown else ""))
+    return vib_ptrs
 
 
 def _arp_relative(arp_fixed: int, arp_note: int) -> int:
@@ -2369,7 +2532,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               no_test_restart: bool = False,
               two_stage: bool = False,
               sfx_drum: bool = False,
-              wave_program: bool = False) -> bytes:
+              wave_program: bool = False,
+              vibrato_command: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2404,7 +2568,14 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
-                               table, log, lead=lead)
+                               table, log, lead=lead,
+                               vibrato_command=vibrato_command)
+    # After the layout because it needs the speed-table indices it allocated,
+    # and before the records because it decides what goes in their byte 5.
+    # Triangle-dialect only: it is that player's length gate this expresses,
+    # and the other two engines have no gate to express (_vibrato_delay).
+    if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
+        vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,

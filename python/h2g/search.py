@@ -8,6 +8,19 @@ Returns the 0-based offset into `data` of the first match, or -1.
 from __future__ import annotations
 
 
+def match_at(data: bytes, at: int, pattern: str) -> bool:
+    """Whether `pattern` matches at exactly `at`, same `??` wildcard grammar.
+
+    For a shape whose position is already known from another match rather than
+    searched for -- where a scan would find the wrong one of several identical
+    shapes. See detect.TRIANGLE_GATE_SHAPE.
+    """
+    values = [None if t == "??" else int(t, 16) for t in pattern.split()]
+    if at < 0 or at + len(values) > len(data):
+        return False
+    return all(v is None or data[at + i] == v for i, v in enumerate(values))
+
+
 def search_file(data: bytes, pattern: str) -> int:
     tokens = pattern.split()
     values = [None if t == "??" else int(t, 16) for t in tokens]

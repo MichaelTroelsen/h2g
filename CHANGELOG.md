@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.199 — 2026-08-10
+
+- express the triangle player's vibrato length gate as a per-note pattern command
+
 ## 0.5.198 — 2026-08-10
 
 - measure vibdelay 1 across the corpus; 8 stays, and 12 is a trap

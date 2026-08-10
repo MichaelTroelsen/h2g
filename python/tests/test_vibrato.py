@@ -332,3 +332,199 @@ def test_vibdelay_stays_a_byte_and_never_disables():
     for mult in (1, 2, 3, 4, 5, 6, 40, 255):
         d = _vibrato_delay(Detection(triangle_vibrato=5), mult)
         assert 1 <= d <= 0xFF, mult
+
+
+# --- v0.5.199: the gate as a per-note pattern command ----------------------
+#
+# The instrument setting could only ever approximate the player's per-note
+# length gate, because `vibdelay` is per instrument. These cover the exact
+# form: the threshold read from each player's own CMP, and the command pass.
+
+def test_match_at_checks_one_position_and_does_not_search():
+    from h2g.search import match_at
+    data = bytes([0x00, 0xBD, 0x11, 0x22, 0x29, 0x1F])
+    assert match_at(data, 1, "BD ?? ?? 29 1F")
+    assert not match_at(data, 0, "BD ?? ?? 29 1F"), "must not scan forward"
+    assert not match_at(data, 4, "29 1F C9"), "must not read past the end"
+    assert not match_at(data, -1, "BD")
+
+
+def test_the_delay_uses_the_files_gate_only_behind_the_command_pass():
+    """The same constant is right in one role and wrong in the other, which is
+    the whole reason `commanded` exists. As a plain delay the assumed 8 scores
+    85.5% where the file's own threshold scores 78.9%, because a delay is also
+    doing the suppressing and a lower threshold gives that up. Behind the
+    commands the residue is only un-commandable notes and the file's own
+    threshold wins, 92.1% against 90.3%.
+    """
+    from h2g.detect import Detection, TRIANGLE_VIBRATO_GATE
+    from h2g.goatwriter import _vibrato_delay
+    own = Detection(triangle_vibrato=5, triangle_gate=2)
+    assert _vibrato_delay(own, 1) == TRIANGLE_VIBRATO_GATE
+    assert _vibrato_delay(own, 1, commanded=True) == 2
+    assert _vibrato_delay(own, 3, commanded=True) == 6
+    # a file whose gate could not be read falls back to the constant in both
+    unread = Detection(triangle_vibrato=5)
+    assert _vibrato_delay(unread, 1, commanded=True) == TRIANGLE_VIBRATO_GATE
+
+
+def _pattern(*rows):
+    out = []
+    for r in rows:
+        out += list(r)
+    return out
+
+
+def _note(instr=0, cmd=0, data=0, note=0x70):
+    return (note, instr, cmd, data)
+
+
+def _hold(cmd=0, data=0):
+    return (0xBD, 0x00, cmd, data)
+
+
+def test_a_long_note_gets_the_command_on_every_row_of_its_block():
+    """An empty row resets `cmddata` to the instrument's pointer (gplay.c's
+    CMD_DONOTHING case), so a command on the note row alone would stop the
+    oscillation one row in. The decoder already repeats a portamento the same
+    way.
+    """
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pat = _pattern(_note(instr=2), _hold(), _hold(), _hold())
+    _vibrato_command_pass(det, [pat], {0: (7, 8)}, lead=1)
+    assert [pat[i + 2] for i in range(0, len(pat), 4)] == [4, 4, 4, 4]
+    assert [pat[i + 3] for i in range(0, len(pat), 4)] == [7, 7, 7, 7]
+
+
+def test_a_short_note_is_damped_with_an_explicit_zero_parameter():
+    """`$04 00` still enters case CMD_VIBRATO but with cmpvalue and speed both
+    0, so it adds nothing -- a per-note suppression, where zeroing the
+    instrument's pointer would suppress the un-commandable notes too.
+    """
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=4)
+    pat = _pattern(_note(instr=2), _hold())      # 2 rows, gate is 4
+    _vibrato_command_pass(det, [pat], {0: (7, 8)}, lead=1)
+    assert [pat[i + 2] for i in range(0, len(pat), 4)] == [4, 4]
+    assert [pat[i + 3] for i in range(0, len(pat), 4)] == [0, 0]
+
+
+def test_the_instrument_pointer_is_kept_so_unreachable_notes_still_vibrate():
+    """Measured: zeroing it removes 144 spurious vibratos but loses 60 notes
+    that qualify and have no free command column. Keeping it leaves those on
+    the v0.5.198 approximation instead of silent."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    before = {0: (7, 8), 1: (9, 8)}
+    after = _vibrato_command_pass(det, [_pattern(_note(instr=2), _hold(),
+                                                 _hold())], before, lead=1)
+    assert after == before
+
+
+def test_a_note_whose_command_column_is_taken_is_left_alone():
+    """One command column per row, and a portamento is the more audible of
+    the two."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pat = _pattern(_note(instr=2, cmd=1, data=5), _hold(1, 5), _hold(1, 5))
+    _vibrato_command_pass(det, [pat], {0: (7, 8)}, lead=1)
+    assert [pat[i + 2] for i in range(0, len(pat), 4)] == [1, 1, 1]
+
+
+def test_a_qualifying_note_on_an_unnamed_instrument_is_not_guessed():
+    """No row has named an instrument yet, so its depth is unknown. A *short*
+    note needs no index to damp, which is why only the long one is skipped."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    long_ = _pattern(_note(), _hold(), _hold())
+    _vibrato_command_pass(det, [long_], {0: (7, 8)}, lead=1)
+    assert [long_[i + 2] for i in range(0, len(long_), 4)] == [0, 0, 0]
+    short = _pattern(_note(), _hold())
+    _vibrato_command_pass(det, [short], {0: (7, 8)}, lead=1)
+    assert [short[i + 2] for i in range(0, len(short), 4)] == [4, 4]
+    assert [short[i + 3] for i in range(0, len(short), 4)] == [0, 0]
+
+
+def test_keyoff_and_keyon_end_a_block_rather_than_extending_it():
+    """gplay.c:921-925 handles $BE/$BF before the `<= LASTNOTE` test, so
+    neither is a note and neither continues one."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pat = _pattern(_note(instr=2), _hold(), (0xBE, 0, 0, 0), _hold())
+    _vibrato_command_pass(det, [pat], {0: (7, 8)}, lead=1)
+    assert [pat[i + 2] for i in range(0, len(pat), 4)] == [4, 4, 0, 0]
+
+
+@needs_corpus
+def test_the_gate_threshold_is_read_per_file_and_is_not_always_eight():
+    """`TRIANGLE_VIBRATO_GATE` was read from one player and is right for 20 of
+    the 25. Assuming it on Commando damped 695 of 705 notes and vibrated 10.
+
+    The shape sits at a fixed +56 from the oscillator's match in all 25, which
+    is why detection reads one position instead of scanning: every one of these
+    players has a *second* `AND #$1F / CMP` on the same duration cell 377 bytes
+    further on, guarding an unrelated effect, and a scan finds that one too.
+    """
+    if not CORPUS.is_dir():
+        return
+    from collections import Counter
+    from h2g.convert import _detect_tables
+    seen = Counter()
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            _sid, det = _detect_tables(load_sid(str(path)), lambda *a: None)
+        except Exception:                                  # noqa: BLE001
+            continue
+        if det.triangle_vibrato is None:
+            continue
+        seen[det.triangle_gate] += 1
+        assert det.triangle_gate is not None, path.name
+    assert sum(seen.values()) == 25, dict(seen)
+    assert seen[8] == 20, dict(seen)
+    assert sorted(k for k in seen if k != 8) == [2, 4, 5, 6], dict(seen)
+
+
+@needs_corpus
+def test_commandos_own_threshold_selects_the_notes_the_original_vibrates():
+    """The check that makes 6 a reading rather than a preference. Commando's
+    stored durations are in units of 3 frames, so `wait >= 6` is "24 frames or
+    longer" -- and GT 1 has 27 notes of 24 frames and 4 of 30, exactly the 31
+    notes the original's trace is measured to move the pitch on.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import _detect_tables
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Commando.sid")),
+                              lambda *a: None)
+    assert det.triangle_gate == 6
+    # ...and it is the file's own byte, not a table lookup: the CMP operand
+    from h2g.detect import (TRIANGLE_GATE_DELTA, TRIANGLE_GATE_IMMEDIATE,
+                            TRIANGLE_VIBRATO_SHAPE)
+    at = search_file(sid.data, TRIANGLE_VIBRATO_SHAPE)
+    assert sid.data[at + TRIANGLE_GATE_DELTA + TRIANGLE_GATE_IMMEDIATE] == 6
+
+
+@needs_corpus
+def test_the_command_pass_reaches_commando_and_leaves_the_fixture_alone():
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import convert
+    root = pathlib.Path(__file__).resolve().parents[2]
+    lines: list = []
+    convert(str(root / "Commando.sid"), log=lines.append, fmt=FORMAT_GTS5,
+            vibrato=True, effects=True, compact_instruments=True, slides=True,
+            vibrato_command=True)
+    said = [l for l in lines if "Vibrato command" in l]
+    assert said, lines[-5:]
+    assert "50 note(s) vibrated" in said[0], said[0]
+    # The fixture is GTS2, where _vibrato_layout returns nothing at all, so
+    # the whole mechanism is unreachable from it -- check the bytes, not len().
+    got = convert(str(root / "Commando.sid"), log=lambda m: None)
+    assert got == (root / "Commando.sng").read_bytes()

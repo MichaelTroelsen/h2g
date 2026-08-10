@@ -764,6 +764,81 @@ dropped those frames from both counts. One_on_One frame 102 is the site (old
 derivation and the gplay simulation, not the table. The LFO-table form was
 derived from the simulated semantics from the start and is unchanged.
 
+### `--vibrato-command` (the length gate, expressed exactly)
+
+**On by default via `presets.json`.** A no-op outside the global-triangle
+dialect (25 files) and outside `--format gts5`.
+
+That player gates the vibrato on the note's own stored duration and nothing
+else:
+
+```
+BD F5 54  LDA duration,X
+29 1F     AND #$1F
+C9 06     CMP #$06         ; Commando: shorter than 6 -> no vibrato
+90 1C     BCC out
+```
+
+A Goattracker *instrument* cannot say "only notes this long", because
+`vibdelay` is per instrument, so v0.5.198 measured the two ways of
+approximating it with one number and shipped the less-bad one — `vibdelay 8`,
+which suppresses short notes correctly and starts every long one ten frames
+late. This is the exact form, and it works because of where `gplay.c` puts the
+countdown:
+
+```c
+case CMD_DONOTHING:
+  if ((!cptr->cmddata) || (!cptr->vibdelay)) break;
+  if (cptr->vibdelay > 1) { cptr->vibdelay--; break; }
+case CMD_VIBRATO:          // <-- fallthrough target, entered directly
+```
+
+The countdown lives *inside* `case CMD_DONOTHING`. A row carrying `$04`
+oscillates from the note's first call whatever `vibdelay` holds, and `$04 00`
+gives `cmddata = 0`, which still enters the case but adds nothing — a per-note
+*damping*. So a long note gets `$04 <speed index>`, a short note gets `$04 00`,
+and the gate is reproduced note by note. Hold rows already repeat the note
+row's command, which is what keeps the oscillation running to the end of the
+note.
+
+The gate needs no unit conversion: `patterns._build_raw_pattern` computes
+`wait = b1 & 0x1F` from the same status byte with the same mask the player's
+`AND #$1F` uses, so a note occupies `wait + 1` rows and `wait >= gate` is a row
+count. It is the one rate-like quantity in the writer that is *not* divided by
+the multiplier.
+
+**The threshold is read per file, and it is not always 8.** The constant came
+from one player and is right for 20 of the 25; the others compare against 6
+(Commando), 5, 4, 4 and 2. Assuming 8 on Commando damped 695 of its 705 notes
+and vibrated 10. Its own 6 vibrates 50 — and that number is checkable rather
+than fitted: Commando's durations are in units of three frames, so `wait >= 6`
+means "24 frames or longer", and voice 1 has 27 notes of 24 frames plus 4 of
+30, exactly the 31 the original's trace moves the pitch on.
+
+Measured over 2487 notes of the 25 files, on instruments whose only pitch
+movement is the vibrato:
+
+| | note agreement | we miss | we invent | onset (median) |
+|---|---|---|---|---|
+| `vibdelay 8` (v0.5.198) | 85.5% | 153 | 207 | +10 frames |
+| the file's gate as a `vibdelay` | 78.9% | 109 | 417 | +10 frames |
+| `--vibrato-command` | **92.1%** | 129 | **68** | **+0** |
+
+Better on both axes at once, which no single `vibdelay` could manage: Commando
+97.8% → 100.0%, and Battle of Britain, Crazy Comets, Hunter Patrol, Ninja and
+One Man and his Droid all reach 100.0%. The middle row is the warning — the
+file's own threshold is an improvement as a *command* and a regression as a
+*delay*, because a delay is also doing the suppressing and a lower threshold
+gives that up. The instrument keeps its speed-table pointer, so a note this
+pass cannot reach (its command column already carrying a portamento, or its
+instrument not yet named in the pattern) falls back to the v0.5.198
+approximation rather than losing its vibrato: zeroing the pointer scores
+higher on the agreement column alone but silences 60 notes that qualify.
+
+No dimension of `FIDELITY.md` measures an oscillation *onset*, so the report
+cannot adjudicate this one either — see `--vibrato` above for the same problem
+with v0.5.129's period fix.
+
 ### `--pulse` (the duty cycle that never moved)
 
 Hubbard has **three** pulse engines: 34 corpus files sweep the width between

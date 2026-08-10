@@ -3268,6 +3268,99 @@ Getting both halves is possible but not here: the gate is per note and
 qualifying notes with `vibdelay 1`. `tests/test_vibrato.py` pins the constant at
 8 with this reasoning attached, so the next pass at it does not re-derive 12.
 
+### 7.lll The gate, expressed per note — and a constant read from one file
+
+§7.kkk ended by naming the fix it could not make: the player's gate is per
+*note* and `vibdelay` is per *instrument*, so getting both halves needs a
+pattern-level command. Building it turned up two things, and the second is the
+larger.
+
+**The mechanism was already there, in a fallthrough.** `gplay.c`:
+
+```c
+case CMD_DONOTHING:
+  if ((!cptr->cmddata) || (!cptr->vibdelay)) break;
+  if (cptr->vibdelay > 1) { cptr->vibdelay--; break; }
+case CMD_VIBRATO:          // <-- entered directly by a commanded row
+```
+
+The `vibdelay` countdown sits *inside* `case CMD_DONOTHING`. A row carrying
+`$04` enters at the second label and never sees it, so a commanded vibrato runs
+from the note's first call however large the instrument's delay is. And `$04 00`
+gives `cmddata = 0`, which still enters the case but computes `cmpvalue = 0,
+speed = 0` — a *damping* that applies per note, where zeroing the instrument's
+pointer would suppress the un-commandable notes too. Long note gets the index,
+short note gets zero, gate reproduced exactly.
+
+Three properties of the existing row stream made this a pass rather than a
+rewrite, and all three had to be checked rather than assumed:
+
+- **Hold rows already repeat the note row's command** (`events += [GT_NO_NOTE,
+  0x00, cmd1, cmd2]`). Without that an empty row would reset `cmddata` to the
+  instrument pointer and stop the oscillation one row in.
+- **`$BD` is "no new note", not a rest.** gplay.c:925 assigns `newnote` only for
+  `<= LASTNOTE`, so a `$BD` row continues the note and is safe to count as part
+  of its block. `$BE`/`$BF` are handled earlier and end a block.
+- **The gate needs no unit conversion.** `wait = b1 & 0x1F` is the identical
+  expression to the player's `AND #$1F` on the same byte, so a note occupies
+  `wait + 1` rows and `wait >= gate` is a row count — the one rate-like
+  quantity in the writer that must *not* be divided by the multiplier.
+
+#### The constant was read from one file, and 5 of 25 disagree
+
+The first run of the finished pass damped **695 of Commando's 705 notes and
+vibrated 10**, which is the opposite of the intended effect. `TRIANGLE_VIBRATO_GATE
+= 8` came from one player's `CMP #$08`; searching Commando for that shape finds
+it *nowhere*. Its two `AND #$1F / CMP` tests compare against `$06` and `$03`.
+
+Read at a fixed +56 bytes from the oscillator's own match — which holds in all
+25 files — the thresholds are 8 in twenty of them and 6, 5, 4, 4, 2 in the rest.
+The +56 anchor matters: every one of these players has a *second* gate on the
+same duration cell 377 bytes further on, guarding an unrelated effect, and a
+scan takes whichever comes first.
+
+With Commando's own 6 the pass vibrates 50 notes, and the number is checkable
+rather than fitted. Its stored durations are in units of three frames, so
+`wait >= 6` means "24 frames or longer"; voice 1 has 27 notes of 24 frames and 4
+of 30 — **exactly the 31 notes the original's trace is measured to move the
+pitch on** (§7.kkk's diagnostic). That correspondence is what makes 6 a reading.
+
+#### The same constant is right in one role and wrong in the other
+
+Over the 2487 notes of § 7.kkk:
+
+```
+                                 agree   miss  invent   onset (median)
+delay, gate 8 (v0.5.198)         85.5%    153     207              +10
+delay, the file's own gate       78.9%    109     417              +10
+command + damp, file's gate      92.1%    129      68               +0
+```
+
+The middle row is the one worth keeping. Feeding the correct per-file threshold
+into the *delay* makes it markedly worse, because a delay is doing two jobs —
+suppressing short notes and postponing long ones — and a lower threshold gives
+up the first without buying anything. Behind the commands, where the damping
+does the suppressing, the same per-file threshold is the *better* number for the
+residue (92.1% against 90.3%, 129 misses against 173, almost all of it Ninja
+with its gate of 2). So `_vibrato_delay` takes a `commanded` parameter rather
+than a convenience default: **a number can be correct for the mechanism and
+wrong for the approximation of it.**
+
+The command pass beats the shipped behaviour on *both* axes at once, which
+neither `vibdelay` value could do (§7.kkk), and reaches 100.0% on Commando,
+Battle of Britain, Crazy Comets, Hunter Patrol, Ninja and One Man and his
+Droid. The instrument keeps its pointer so an unreachable note — command column
+already carrying a portamento, or instrument not yet named in the pattern —
+falls back to the v0.5.198 approximation instead of going silent; zeroing it
+scores higher on the agreement column alone and silences 60 qualifying notes.
+
+Two process notes: the fixture could not have caught any of this, because it is
+a GTS2 file and `_vibrato_layout` returns nothing for GTS2 — the whole mechanism
+is unreachable from the project's only byte-exact anchor, which is why the
+corpus measurement is the check. And no dimension of `FIDELITY.md` measures an
+oscillation onset, so the report cannot adjudicate this change either; the
+per-note measure in this section is what does.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
