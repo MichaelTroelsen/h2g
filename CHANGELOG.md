@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.197 — 2026-08-10
+
+- put the arpeggio's first swing on the call the player uses
+
 ## 0.5.196 — 2026-08-10
 
 - actually wire the derived drum tick; v0.5.193 did not

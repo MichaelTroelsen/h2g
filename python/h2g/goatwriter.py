@@ -1543,6 +1543,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # than WAVE_ENTRIES_PER_INSTR.
     base_entry = start if start is not None         else (lead + i) * WAVE_ENTRIES_PER_INSTR + 1
     first = base_entry & 0xFF
+    second = (base_entry + 1 + off) & 0xFF
     third = (base_entry + 2 + off) & 0xFF
 
     if arp:
@@ -1555,9 +1556,28 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # at the player's rate. A ticked record is forced onto this shape
             # too: the multiplier shape below loops back to entry 0, which
             # would replay the noise tick once per arpeggio cycle.
-            left[3 + off] = tail
-            right[3 + off] = _arp_relative(arp_fixed, arp_note)
-            right[4 + off] = third
+            # The alternation belongs on the *third* call, not the fourth.
+            # The player's own trace is `note note arp note arp ...` -- Commando
+            # GT 2 reads `1D46 1D46 3A8C 1D46 3A8C` from each onset -- so the
+            # arpeggio note goes on entry 2 and the jump returns to entry 1,
+            # giving base, base, arp, base, arp. Carrying it on entry 3 with the
+            # jump to entry 2 delayed the first swing by one call, and with the
+            # `$09` first-frame waveform ahead of it the measured onset landed on
+            # frame 3 or later where the player's is frame 1-2 -- 15 of the 24
+            # corpus files with an arpeggio routine. The rate and the interval
+            # were always right; only the phase was late.
+            if effects:
+                right[2 + off] = _arp_relative(arp_fixed, arp_note)
+                right[3 + off] = second
+            else:
+                # `effects` off means "reproduce the VB6 original", and the
+                # fixture encodes its shape: the arpeggio on entry 3 with the
+                # jump returning to entry 2. Correcting the phase here broke 26
+                # byte-exactness tests -- the same leak, with the same count, as
+                # `arp_fixed_up` before it was gated.
+                left[3 + off] = tail
+                right[3 + off] = _arp_relative(arp_fixed, arp_note)
+                right[4 + off] = third
         else:
             # At -S{m} each half must last m calls, which needs a hold entry
             # beside each -- five slots for attack + 2x(note, hold) + jump,

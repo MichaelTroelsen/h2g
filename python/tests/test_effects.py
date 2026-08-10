@@ -80,8 +80,13 @@ def test_a_real_interval_is_kept_and_is_a_negative_relative_note():
     # nibble of 4 is $80-4 == $7C, four semitones down, matching SBC #$04.
     for nibble in (1, 4, 0x0C, 0x0F):
         on = _entries(ARP | (nibble << 4), effects=True, arp=True)
-        assert on[1][3] == (0x80 - nibble) & 0xFF
-        assert on[1][4] != 0x00, "and it still loops"
+        # Entry 2, not 3, since v0.5.197: the player's alternation lands on the
+        # note's *third* call (`1D46 1D46 3A8C 1D46 3A8C`), and carrying it on
+        # entry 3 delayed the first swing by one, which measured as an onset at
+        # frame 3+ against the player's 1-2 on 15 of 24 corpus files.
+        assert on[1][2] == (0x80 - nibble) & 0xFF
+        assert on[1][3] != 0x00, "and it still loops"
+        assert on[0][3] == 0xFF, "...from a jump, one entry earlier than before"
 
 
 def test_the_arpeggio_is_dropped_where_the_player_has_no_such_routine():
@@ -370,7 +375,9 @@ def test_an_arpeggio_keeps_the_pair_it_needs_over_the_deep_drum():
     # records this gate keeps.
     left, right = _entries(DRUM | ARP | 0x30, effects=True, drum=True,
                            arp=True, wave=0x41)
-    assert right[4] == 8, "the arpeggio keeps its loop"
+    # The loop target moved one entry earlier with the phase fix (v0.5.197), so
+    # it is right[3] rather than right[4] and names entry 1 rather than entry 2.
+    assert right[3] == 7, "the arpeggio keeps its loop"
     assert left[1] == 0x40, "and the drum says only where it starts"
 
 

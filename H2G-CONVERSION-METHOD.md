@@ -3164,6 +3164,51 @@ rows had `0/0` slides and 19 no `bend` at all; two corpus A/Bs in one session re
 "identical on every file" from a window that contained nothing to compare. Figures
 either side of the change are not comparable and the header records the window.
 
+### 7.jjj The arpeggio was a call late
+
+A listener said Commando's slides were wrong; §7.iii established that every
+"slide" on that file is pitch *oscillation*, and that its dominant half-period is
+one frame — an arpeggio, not a vibrato. So the question became whether our
+arpeggio produces that alternation. It does, correctly, and late:
+
+```
+orig GT 2:  1D46 1D46 3A8C 1D46 3A8C 1D46 3A8C
+ours GT 2:  1D46 1D46 1D46 1D46 1D46 3A8D 1D46
+                             ^ starts here
+```
+
+Right rate (every frame), right interval (an octave — `1D46`→`3A8C` is exactly
+×2, ours `3A8D` one LSB off from rounding), wrong phase. The cause is the shape:
+the arpeggio note sat on entry **3** with the jump returning to entry 2, so the
+first swing was the note's fourth call where the player's is its third. Moving it
+to entry 2 with the jump returning to entry 1 gives `base, base, arp, base,
+arp …` — the player's own sequence.
+
+Measured across the files with an arpeggio routine, the onset was late on **15 of
+24** before and **8 of 19** after, and the cluster moved exactly as designed:
+`orig 2 → ours 3` (6 files) became `orig 2 → ours 2` (5 files, matched), and
+`orig 1 → ours 3` became `orig 1 → ours 2`. The population shrank from 24 to 19,
+which is the same comparability caveat §7.ggg records — the direction is
+unambiguous but the two totals are not the same set.
+
+**A ticked record cannot be fixed this way** and is not: the noise tick owns
+frames 1–2, so its arpeggio cannot start before frame 3, while the player runs
+both at once — writing noise to `$D404` *and* the arpeggio's frequency on the
+same frame. A wavetable entry carries one waveform and one note, so expressing
+both means putting arpeggio notes on the tick's own entries. Left alone.
+
+#### It leaked into the VB6 path, exactly as `arp_fixed_up` did
+
+The first version changed the shape unconditionally and broke **26**
+byte-exactness tests — the same count, from the same cause, as the `arp_fixed_up`
+leak earlier in this session. `effects` off means "reproduce the VB6 original",
+and the fixture encodes its entry-3 shape.
+
+Worse, the check that would have caught it immediately did not: `len(convert(...))
+== 15193` passed, because moving a byte between two entries does not change the
+file's length. **Compare the fixture's bytes, not its size** — `Commando.sng` is
+on disk for that purpose and `got == ref` is one line.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

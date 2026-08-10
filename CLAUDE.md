@@ -222,6 +222,10 @@ test dependency).
   not the fix for the slide deficit** — `patterns._scaled_step`'s `row_calls`
   correction already compensates for the dropped call, so disabling the skip
   double-corrects (median slide ratio 1.04 → 1.23, worse on 47 of 75 files).
+- **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
+  passes for any edit that moves a byte between two wavetable entries, which is
+  most of them: v0.5.197's first attempt cleared that check and broke 26
+  byte-exactness tests. Read `Commando.sng` and compare — `got == ref`.
 - **A scripted edit must assert its match.** `str.replace` with a search string
   that does not match returns the input unchanged and raises nothing, so a
   `python - <<PY` rewrite can report success while changing no bytes. v0.5.192
