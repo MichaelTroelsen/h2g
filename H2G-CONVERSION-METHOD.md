@@ -2895,6 +2895,70 @@ records the cost of. So the option ships off, selected nowhere, and the next
 honest step is a listening test — the same route `FIDELITY_VETOED` exists for,
 in the other direction.
 
+### 7.ggg The drum's noise run is 1, 2 or the whole note — and we always write 2
+
+SIDM2's `HUBBARD.md` places the drum's noise on the **first** frame, where
+v0.5.172 concluded frames 1–2 from Commando's trace. Both are right, about
+different players, and the constant `NOISE_TICK_FRAMES = 2` is right for neither
+in general.
+
+Hubbard's own commented disassembly (C=Hacking #5, Monty) is unambiguous about
+the routine:
+
+```
+  lda savelnthcc,x / and #$1f / sbc #$01 / cmp lengthleft,x
+  bcc firstime                      ; the drum's first vbl
+  lda savefreqhi,x / dec savefreqhi,x / sta $d401,y     ; later: sweep down
+  lda voicectrl,x / and #$fe / bne dumpctrl             ; ...and its own waveform
+firstime:
+  lda #$80                          ; NOISE -- first vbl only
+```
+
+and its comment states the other half: *"ctrlreg 0 is always noise; ctrlreg x is
+noise for 1st vbl and x from then on."*
+
+Commando's routine is that same shape byte for byte. What reaches the chip is
+not the same:
+
+```
+Monty    GT 15   40 [41] 80  40  40         noise at offset 1
+Commando GT  8   14 [15] 80  80  14         noise at offsets 1 and 2
+```
+
+Both put the record's waveform on the note's own first frame — the note-init
+path writes `$D404` after the drum routine on that frame — so the routine's
+"first vbl" is the note's *second*. The disagreement is only the run's length.
+
+Measured over every drum-flagged note in the corpus, split by the record's
+waveform:
+
+| record waveform | noise run | notes |
+|---|---:|---:|
+| noise or none | 7 (the whole note) | **623** |
+| noise or none | 4–6 | 72 |
+| **pitched** | **1** | **1548** |
+| **pitched** | **2** | **934** |
+| pitched | 3 | 88 |
+| pitched | 7 | 90 |
+
+**The `ctrlreg 0` half is confirmed and already correct.** A record whose
+waveform carries no waveform bits gets noise throughout, and `_drum_entries`
+emits exactly that (`$81` → `81 81 81 80`). That half is predictable from the
+record alone, which is why Hubbard could state it as a rule.
+
+**The 1-versus-2 split is not.** Both routines are identical, so the difference
+lies in the surrounding order — where the init path writes `$D404`, or when
+`lengthleft` decrements — and nothing in the eight record bytes separates the
+two families. We write 2 for every pitched record: right for 934 notes, one
+frame too long for 1548.
+
+Deliberately not fixed here. The majority case is 1, so flipping the constant
+would improve the count and make Commando wrong — the one file whose drum was
+validated by ear (v0.5.172). §7.eee and §7.ddd both record what happens when a
+rule is fitted to a plausible majority instead of read from the player, and this
+is the third time in one session that a discriminator has looked available and
+not been. The mechanism is findable; the constant is not the place to guess it.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

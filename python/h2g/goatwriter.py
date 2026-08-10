@@ -1744,6 +1744,16 @@ DRUM_MAX_SWEEP_STEPS = 8
 # Frames of noise the drum block writes before the voice's own waveform,
 # measured off the original's trace rather than assumed: 349 of Commando's
 # note onsets hold noise for exactly this many frames and then switch.
+#
+# **It is not 2 everywhere, and this is known to be wrong for more notes than it
+# is right for.** Across every drum-flagged note in the corpus, a *pitched*
+# record gets a run of 1 on 1548 notes and 2 on 934; Monty gives 1 where
+# Commando gives 2 from a byte-identical routine, so the difference is in the
+# surrounding order and not in any record byte. A record whose waveform carries
+# no waveform bits gets noise for the whole note instead -- Hubbard's own
+# comment, "ctrlreg 0 is always noise" -- and that half `_drum_entries` already
+# emits correctly. Flipping this to 1 would suit the majority and break the one
+# file whose drum a listener validated. See H2G-CONVERSION-METHOD.md 7.ggg.
 NOISE_TICK_FRAMES = 2
 
 
