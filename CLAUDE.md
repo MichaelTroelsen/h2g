@@ -206,6 +206,18 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **A per-frame profile measured on one file can encode that file's structure
+  rather than the mechanism's.** Bit `$40`'s pitch fires once per *note*; the
+  drum block loops once per *period*. Trans-Atlantic has one burst per note, so
+  the two coincide there and the composed emission measured exact -- on Pandora
+  the same change put 281 frames at that pitch where the original has 35. It
+  surfaced only because Pandora ships with `--sfx-drum` on and had to be checked
+  before committing. **Verify a newly derived shape on a second file that uses
+  the mechanism differently**, and prefer the one whose options are already
+  enabled, since that is where a regression actually reaches. Also: `nrun`
+  compares run lengths and `melody` reads the attack frame, so **no report
+  column sees a noise frame's pitch** -- both the gain and the regression here
+  were invisible to `FIDELITY.md`. See § 7.rrr.
 - **Where an effect's frames *land* is part of the mechanism.** The balloon
   song's second drum is bits `$04`, `$80` and `$40` interleaved by frame --
   played note at offset 0, `$80`'s pitch at offset 1, `$40`'s at offset 2. Each

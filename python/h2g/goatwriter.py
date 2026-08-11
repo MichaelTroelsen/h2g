@@ -392,7 +392,8 @@ def _sfx_note_byte(pitch_hi: int) -> int:
 
 
 def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
-                      multiplier: int = 1) -> tuple:
+                      multiplier: int = 1,
+                      second_note: Optional[int] = None) -> tuple:
     """Entries for the bit-$80 drum: a noise hit every `period` frames.
 
     `detect._find_sfx_drum` reads what this plays -- noise at a fixed frequency
@@ -405,12 +406,22 @@ def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
     covering the rest of the period, and a jump to the top. That is five
     entries, which is exactly `WAVE_ENTRIES_PER_INSTR`.
 
-    Two things here are measured rather than derived, and both are marked in
-    §7 as open. The burst is **two** frames in the trace where the counter
-    test (`CMP #$01`) implies one; and the second frame's frequency is a fixed
-    `$15EB` from somewhere this reader has not found, so both frames are
-    written at the pitch that *is* read. The alternative -- emitting one frame,
-    or the note's own pitch -- is further from the trace, not closer.
+The burst is **two** frames in the trace where the counter test (`CMP #$01`)
+    implies one, which is still measured rather than derived.
+
+    **The second frame's pitch is effect bit $40, found in v0.5.204.** This
+    docstring used to record `$15EB` as "a fixed frequency from somewhere this
+    reader has not found", and both frames were written at the drum's own high
+    byte for want of anything better. It is the player's note table indexed by
+    the instrument's own byte -- `freqtable[52]` on Trans-Atlantic's record 1 --
+    and `_fixed_attack_note` derives it. Passed as `second_note`, the two frames
+    now carry the two pitches the trace shows:
+
+        +1  noise at the drum's high byte   ($38xx; low byte left as it was)
+        +2  noise at freqtable[index]       ($15EB, exactly)
+
+    That profile is identical on all 226 notes of that instrument, so it is the
+    shape and not a sample.
     """
     if pitch_hi <= 0 or period <= 0:
         return None
@@ -447,6 +458,8 @@ def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
     note = _sfx_note_byte(pitch_hi)
     left += [WAVE_NOISE_GATEOFF | 0x01] * SFX_DRUM_FRAMES
     right += [note] * SFX_DRUM_FRAMES
+    if second_note is not None and SFX_DRUM_FRAMES > 1:
+        right[-1] = second_note
     return left, right
 
 
@@ -1750,6 +1763,14 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # per-voice counter does.
     if (sfx_drum and det.sfx_pitch >= 0 and (arp_style & 0x80)
             and fmt == FORMAT_GTS5):
+        # `second_note=_fixed_attack_note(sid, det, i)` is NOT passed. The $40
+        # pitch fires once per *note* -- its counter runs out -- while this
+        # block's entries loop once per *period*, so passing it puts the pitch on
+        # every tick. Exact on Trans-Atlantic, whose bursts happen to line up,
+        # and badly over-applied on Pandora: 281 frames at that pitch where the
+        # original has 35. Emitting it needs a non-looping prologue in front of
+        # the looping body, which this block's single jump cannot express. See
+        # H2G-CONVERSION-METHOD.md section 7.rrr.
         hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier)
         if hit is not None:
             left, right = hit

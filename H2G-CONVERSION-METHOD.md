@@ -3784,6 +3784,75 @@ The decode lands here and the emission does not: `det.effect_bit40` and
 means emitting `$04`, `$80` and `$40` together as one per-frame block, which is a
 larger change than any of the three.
 
+### 7.rrr Composing the three bits: the profile that fits one file and not the next
+
+§ 7.qqq decoded bit `$40` and stopped short of emitting it, because putting its
+pitch on the attack's first frame took Trans-Atlantic's melody from 85% to 39%.
+The per-frame profile says where it does belong. Raw frames, identical on all
+three notes sampled and on all 226 by aggregate:
+
+```
++0  wf 41  freq = the played note        (the record's own waveform)
++1  wf 81  freq = $38CE / $38B4 / $389C  NOISE
++2  wf 81  freq = $15EB                  NOISE
++3..+6  wf 41  the played note
++7  wf 81  freq = $38xx                  NOISE      (6 frames on: sfx_period)
+```
+
+Two details fall out of that and both were previously open. The `$38xx` frames
+keep the **played note's low byte** (`05CE` → `38CE`), which is the signature of a
+routine writing only `$D401` -- confirming bit `$80` as a high-byte-only write.
+And `$15EB` is exactly `freqtable[52]`, the `$40` pitch.
+
+Better still, `_sfx_drum_entries`' own docstring had recorded the target years
+before the answer: *"the second frame's frequency is a fixed `$15EB` from
+somewhere this reader has not found, so both frames are written at the pitch that
+is read."* It is bit `$40`. Passing it as the burst's second note makes
+Trans-Atlantic essentially exact:
+
+```
+                        melody   nrun   0A99 pitches            runs
+original                    --     --   {21: 226, 56: 452}      {1: 226, 2: 226}
+shipped (no sfx_drum)      85%    67%   3-13, smeared           {4: 226}
+sfx_drum, both frames      85%   100%   {55: 678}  one pitch    {1: 226, 2: 226}
+sfx_drum + the $40 pitch   85%   100%   {21: 226, 55: 452}      {1: 226, 2: 226}
+```
+
+#### And it is still not shipped, because Pandora says otherwise
+
+```
+Pandora, that instrument's noise pitches
+  original   {3:13, 4:1, 5:7, 69:35, 72:364}     <- 35 frames at the $40 pitch
+  before     {73: 620}
+  after      {69: 281, 73: 339}                  <- 281 where 35 belong
+```
+
+**The `$40` pitch fires once per *note*; the drum block's entries loop once per
+*period*.** Its counter runs out, so only the first burst after a note carries
+it -- which is exactly what the Trans-Atlantic profile shows too (`+1,+2` a
+two-frame burst, `+7` a one-frame tick). Trans-Atlantic happens to have one burst
+per note, so per-tick and per-note coincide there and the numbers came out exact.
+Pandora has many ticks per note and the same change over-applies eightfold.
+
+That is the lesson worth more than the feature: **a profile measured on one file
+can encode that file's own structure rather than the mechanism's.** The
+Trans-Atlantic figures were not wrong, they were not general -- and the only
+reason the difference surfaced is that Pandora ships with `--sfx-drum` on, so it
+had to be checked before committing. Had the flag been off everywhere, the
+regression would have shipped behind an exact-looking table.
+
+Emitting it properly needs a **non-looping prologue** (played note, then the
+two-frame burst whose second frame carries the `$40` pitch) ahead of a **looping
+body** (the one-frame tick at the drum's pitch). `_sfx_drum_entries` returns a
+single block that the caller closes with one jump, which cannot express two
+regions. `second_note` is implemented and tested; nothing passes it.
+
+A last note on visibility: `nrun` compares run *lengths* and `melody` reads the
+attack frame, so **no dimension of the report can see a noise frame's pitch at
+all**. Both the Trans-Atlantic gain and the Pandora regression are invisible to
+`FIDELITY.md`; both were found by histogramming the pitch directly. That is a
+column the report is missing.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

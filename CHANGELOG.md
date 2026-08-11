@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.205 — 2026-08-11
+
+- compose the drum's two pitches; not shipped, Pandora refutes the profile
+
 ## 0.5.204 — 2026-08-11
 
 - decode effect bits $20 and $40; the drum is three bits interleaved

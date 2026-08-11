@@ -311,3 +311,40 @@ def test_the_pitch_is_not_wired_into_the_attack_yet():
     # ...and the held frames spell themselves out rather than using a delay,
     # which would keep the fixed pitch for the whole window
     assert fixed[1][1] == 0x00 and fixed[0][1] == 0x81
+
+
+def test_the_drum_can_carry_the_fixed_pitch_on_its_second_frame():
+    """The two-pitch burst the trace shows: the drum's own high byte on the
+    first noise frame, the $40 note on the second. This is the shape the
+    `_sfx_drum_entries` docstring used to call "a fixed $15EB from somewhere
+    this reader has not found"."""
+    from h2g.goatwriter import (SFX_DRUM_FRAMES, _sfx_drum_entries,
+                                _sfx_note_byte)
+    assert SFX_DRUM_FRAMES == 2
+    plain = _sfx_drum_entries(0x41, 56, 6, 1)
+    assert plain[1][-2] == plain[1][-1] == _sfx_note_byte(56)
+    two = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
+    assert two[1][-2] == _sfx_note_byte(56), "the first frame keeps the drum"
+    assert two[1][-1] == 0xB4, "the second carries the fixed pitch"
+    assert two[0] == plain[0], "waveforms unchanged"
+
+
+def test_the_fixed_pitch_is_not_passed_to_the_drum_block():
+    """It fires once per *note* -- its counter runs out -- while the block's
+    entries loop once per *period*. Passed here it lands on every tick: exact on
+    Trans-Atlantic, whose bursts line up, and 281 frames against the original's
+    35 on Pandora, which ships with --sfx-drum on. Emitting it needs a
+    non-looping prologue ahead of the looping body, which one jump cannot say.
+    """
+    import inspect
+
+    from h2g import goatwriter
+    src = inspect.getsource(goatwriter._wavetable_entries)
+    # Checked on the call itself, not on the source text: the comment beside
+    # it names the argument it deliberately omits.
+    src = inspect.getsource(goatwriter._wavetable_entries)
+    calls = [l.strip() for l in src.splitlines()
+             if "_sfx_drum_entries(" in l and not l.lstrip().startswith("#")]
+    assert calls == [
+        "hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, "
+        "multiplier)"], calls
