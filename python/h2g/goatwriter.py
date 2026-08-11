@@ -13,7 +13,8 @@ from dataclasses import dataclass, replace
 from fractions import Fraction
 from typing import List, Optional, Tuple
 
-from .detect import (Detection, FILTER_ENABLE_BIT, decode_wave_program,
+from .detect import (Detection, EFFECT_BIT40_MASK, FILTER_ENABLE_BIT,
+                     decode_wave_program,
                      TRIANGLE_VIBRATO_GATE, TRIANGLE_VIBRATO_MAX_SHIFT,
                      TRIANGLE_VIBRATO_PEAK, TRIANGLE_VIBRATO_PERIOD,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
@@ -292,6 +293,14 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     """
     if not det.effect_bit40 or det.wave_program < 0:
         return None
+    # **Per record, not per file.** `det.effect_bit40` says the player reads the
+    # bit; only this record's own effect byte says whether it is set. Checking
+    # the file alone applied the pitch to Thundercats' drum, whose record does
+    # not carry $40 -- 99 frames at a pitch the original never sounds there, and
+    # melody 77% -> 72%.
+    rec7 = det.instr_start + i * det.instr_stride + 7
+    if rec7 >= len(sid.data) or not sid.data[rec7] & EFFECT_BIT40_MASK:
+        return None
     table = find_freq_table(sid)
     if table is None:
         return None
@@ -436,31 +445,55 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
     if not wave & 0xF0:
         return None
     m = max(1, multiplier)
-    # **The note comes first, and that is not cosmetic.** The player's counter
-    # is per voice and free-running, so a hit falls wherever it falls relative
-    # to a note start; a wavetable always begins at the note. Opening on the
-    # noise therefore puts the drum's pitch on the note's own first frame,
-    # where the played note never sounds at all -- measured, it took
-    # Trans-Atlantic's melody from 94.7% to 50.4%. Opening on the note and
-    # hitting later in the loop keeps both.
-    left = [(wave & 0xFE) | 0x01]
-    right = [0x00]                           # relative 0: the played note
-    # Hold there for the rest of the period. A delay entry is current for
-    # `value + 1` calls (gplay.c:697-704), so the value is one less than the
-    # calls wanted -- and the count is in calls, not frames.
-    rest = (period - SFX_DRUM_FRAMES) * m - 1
-    if rest == 1:
-        left.append((wave & 0xFE) | 0x01)
-        right.append(0x00)
-    elif rest > 1:
-        left.append(min(rest - 1, WAVE_MAX_DELAY))
-        right.append(WAVE_NOTE_KEEP)
+    held = (wave & 0xFE) | 0x01
     note = _sfx_note_byte(pitch_hi)
-    left += [WAVE_NOISE_GATEOFF | 0x01] * SFX_DRUM_FRAMES
-    right += [note] * SFX_DRUM_FRAMES
-    if second_note is not None and SFX_DRUM_FRAMES > 1:
-        right[-1] = second_note
-    return left, right
+    noise = WAVE_NOISE_GATEOFF | 0x01
+
+    def hold(left: list, right: list, calls: int) -> None:
+        """Append entries covering `calls` calls of the instrument's own note.
+
+        One explicit entry is one call; a delay entry is current for `value + 1`
+        (gplay.c:697-704), and `$00` is not a delay -- `$01`-`$0F` are -- so a
+        remainder of exactly one call is spelled out rather than encoded.
+        """
+        if calls <= 0:
+            return
+        left.append(held)
+        right.append(0x00)                   # relative 0: the played note
+        rest = calls - 1
+        if rest == 1:
+            left.append(held)
+            right.append(0x00)
+        elif rest > 1:
+            left.append(min(rest - 1, WAVE_MAX_DELAY))
+            right.append(WAVE_NOTE_KEEP)
+
+    if second_note is None:
+        # **The note comes first, and that is not cosmetic.** The player's
+        # counter is per voice and free-running, so a hit falls wherever it
+        # falls relative to a note start; a wavetable always begins at the note.
+        # Opening on the noise therefore puts the drum's pitch on the note's own
+        # first frame, where the played note never sounds at all -- measured, it
+        # took Trans-Atlantic's melody from 94.7% to 50.4%.
+        left: List[int] = []
+        right: List[int] = []
+        hold(left, right, (period - SFX_DRUM_FRAMES) * m)
+        left += [noise] * SFX_DRUM_FRAMES
+        right += [note] * SFX_DRUM_FRAMES
+        return left, right, 0
+
+    # With the $40 pitch: a prologue that runs once, then a loop that does not.
+    # The burst at offsets +1..+2 carries two pitches, the drum's and $40's; the
+    # ticks after it carry one, because $40's counter has run out. Offsets are
+    # the trace's, on every note of Trans-Atlantic's instrument 0A99.
+    left = [held, noise, noise]
+    right = [0x00, note, second_note]
+    hold(left, right, (period - SFX_DRUM_FRAMES) * m)
+    loop = len(left)
+    left.append(noise)
+    right.append(note)
+    hold(left, right, (period - 1) * m)
+    return left, right, loop
 
 
 # Goattracker's "inaudible waveform" range: $E0-$EF sets the waveform to
@@ -1763,20 +1796,21 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # per-voice counter does.
     if (sfx_drum and det.sfx_pitch >= 0 and (arp_style & 0x80)
             and fmt == FORMAT_GTS5):
-        # `second_note=_fixed_attack_note(sid, det, i)` is NOT passed. The $40
-        # pitch fires once per *note* -- its counter runs out -- while this
-        # block's entries loop once per *period*, so passing it puts the pitch on
-        # every tick. Exact on Trans-Atlantic, whose bursts happen to line up,
-        # and badly over-applied on Pandora: 281 frames at that pitch where the
-        # original has 35. Emitting it needs a non-looping prologue in front of
-        # the looping body, which this block's single jump cannot express. See
-        # H2G-CONVERSION-METHOD.md section 7.rrr.
-        hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier)
+        # The $40 pitch fires once per *note* -- its counter runs out -- so it
+        # goes in a prologue the loop's jump skips. Passed into a single looping
+        # block it landed on every tick: exact on Trans-Atlantic, whose bursts
+        # happen to line up, and 281 frames against the original's 35 on
+        # Pandora. See H2G-CONVERSION-METHOD.md section 7.rrr.
+        hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, multiplier,
+                                second_note=_fixed_attack_note(sid, det, i))
         if hit is not None:
-            left, right = hit
+            left, right, loop = hit
             jump = len(left) + 1
             if start is not None and jump <= budget:
-                return left + [0xFF], right + [start]
+                # The jump targets the *loop*, not the block: a prologue before
+                # it must not repeat. `loop` is 0 for the plain shape, which is
+                # the whole block looping as before.
+                return left + [0xFF], right + [start + loop]
 
     # Read before the drum and arpeggio shapes because in this dialect bit $04
     # is neither: `_find_two_stage` only reports a player whose $04 handler is

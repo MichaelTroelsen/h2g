@@ -206,6 +206,13 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **A detection flag about a player is not a fact about a record.**
+  `det.effect_bit40` says the player *reads* bit $40; only a record's own effect
+  byte says it is *set*. Gating the fixed attack pitch on the file alone reached
+  Thundercats' drum, whose records carry $80 and $A0 -- 99 noise frames at a
+  pitch its original never sounds, and melody 77% -> 72%. Every per-record effect
+  bit needs both checks, and the per-record one is the one easy to forget because
+  the file-level flag is what detection hands you.
 - **A per-frame profile measured on one file can encode that file's structure
   rather than the mechanism's.** Bit `$40`'s pitch fires once per *note*; the
   drum block loops once per *period*. Trans-Atlantic has one burst per note, so

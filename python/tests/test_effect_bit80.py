@@ -153,7 +153,7 @@ def test_the_hit_opens_on_the_note_and_not_on_the_noise():
     Trans-Atlantic's melody from 94.7% to 50.4%.
     """
     from h2g.goatwriter import _sfx_drum_entries, _sfx_note_byte
-    left, right = _sfx_drum_entries(0x41, 0x38, 6)
+    left, right, _loop = _sfx_drum_entries(0x41, 0x38, 6)
     assert left == [0x41, 0x02, 0x81, 0x81]
     assert right == [0x00, 0x80, _sfx_note_byte(0x38), _sfx_note_byte(0x38)]
     assert right[0] == 0x00, "relative 0 -- the played note, not an absolute"
@@ -192,7 +192,7 @@ def test_an_instrument_with_no_waveform_gets_no_drum():
     from h2g.goatwriter import _sfx_drum_entries
     assert _sfx_drum_entries(0x00, 0x48, 6) is None
     assert _sfx_drum_entries(0x01, 0x48, 6) is None, "gate alone is not a waveform"
-    left, _ = _sfx_drum_entries(0x41, 0x48, 6)
+    left, _r, _loop = _sfx_drum_entries(0x41, 0x48, 6)
     assert left[0] > 0x0F, "the first entry must be a waveform, never a delay"
 
 
@@ -321,30 +321,64 @@ def test_the_drum_can_carry_the_fixed_pitch_on_its_second_frame():
     from h2g.goatwriter import (SFX_DRUM_FRAMES, _sfx_drum_entries,
                                 _sfx_note_byte)
     assert SFX_DRUM_FRAMES == 2
-    plain = _sfx_drum_entries(0x41, 56, 6, 1)
-    assert plain[1][-2] == plain[1][-1] == _sfx_note_byte(56)
-    two = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
-    assert two[1][-2] == _sfx_note_byte(56), "the first frame keeps the drum"
-    assert two[1][-1] == 0xB4, "the second carries the fixed pitch"
-    assert two[0] == plain[0], "waveforms unchanged"
+    # Without it both noise frames carry the drum's own pitch, which is what
+    # this emitter did for want of knowing where $15EB came from.
+    plain_l, plain_r, _ = _sfx_drum_entries(0x41, 56, 6, 1)
+    assert plain_r[-2] == plain_r[-1] == _sfx_note_byte(56)
+    # With it the burst moves to the front and carries the two pitches in order.
+    left, right, _loop = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
+    assert right[1] == _sfx_note_byte(56), "the first frame keeps the drum"
+    assert right[2] == 0xB4, "the second carries the fixed pitch"
+    assert left[1] == left[2], "both frames are the same noise waveform"
 
 
-def test_the_fixed_pitch_is_not_passed_to_the_drum_block():
-    """It fires once per *note* -- its counter runs out -- while the block's
-    entries loop once per *period*. Passed here it lands on every tick: exact on
+def test_the_fixed_pitch_goes_in_a_prologue_the_loop_skips():
+    """It fires once per *note* -- its counter runs out -- while the ticks recur
+    per *period*. Inside a single looping block it landed on every tick: exact on
     Trans-Atlantic, whose bursts line up, and 281 frames against the original's
-    35 on Pandora, which ships with --sfx-drum on. Emitting it needs a
-    non-looping prologue ahead of the looping body, which one jump cannot say.
+    35 on Pandora. A prologue the jump skips gets both -- Pandora's 35 then match
+    exactly and its nrun goes 0% -> 100%.
     """
-    import inspect
+    from h2g.goatwriter import _sfx_drum_entries, _sfx_note_byte
+    left, right, loop = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
+    assert loop > 0, "the prologue must not repeat"
+    assert right[1] == _sfx_note_byte(56) and right[2] == 0xB4
+    assert 0xB4 not in right[loop:], "the $40 pitch must sit outside the loop"
+    assert right[loop] == _sfx_note_byte(56)
+    assert _sfx_drum_entries(0x41, 56, 6, 1)[2] == 0, "plain shape loops whole"
 
-    from h2g import goatwriter
-    src = inspect.getsource(goatwriter._wavetable_entries)
-    # Checked on the call itself, not on the source text: the comment beside
-    # it names the argument it deliberately omits.
-    src = inspect.getsource(goatwriter._wavetable_entries)
-    calls = [l.strip() for l in src.splitlines()
-             if "_sfx_drum_entries(" in l and not l.lstrip().startswith("#")]
-    assert calls == [
-        "hit = _sfx_drum_entries(wave, det.sfx_pitch, det.sfx_period, "
-        "multiplier)"], calls
+
+def test_the_period_is_kept_across_the_prologue_and_the_loop():
+    """Ticks at offsets 1, 2 and 7 on a period of 6, and a loop body exactly one
+    period long so the next lands on 13 -- what the trace shows on every note."""
+    from h2g.goatwriter import WAVE_MAX_DELAY, _sfx_drum_entries
+    left, right, loop = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
+
+    def calls(byte):
+        return (byte + 1) if 0 < byte <= WAVE_MAX_DELAY else 1
+    hits, t = [], 0
+    for l in left:
+        if 0x10 <= l < 0xE0 and l & 0x80:
+            hits.append(t)
+        t += calls(l)
+    assert hits == [1, 2, 7], hits
+    assert t - sum(calls(l) for l in left[:loop]) == 6
+
+
+def test_the_fixed_pitch_is_gated_on_the_record_not_the_file():
+    """`det.effect_bit40` says the player reads the bit; only the record's own
+    effect byte says it is set. Checked on the file alone it reached
+    Thundercats' drum, whose record does not carry $40 -- 99 frames at a pitch
+    the original never sounds there, and melody 77% -> 72%."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _fixed_attack_note
+
+    class _S:
+        def __init__(self, eff):
+            self.data = bytes([0, 0, 0x41, 0x09, 0x99, 0, 0, eff]) * 4
+
+        def to_offset(self, a):
+            return 0
+    det = Detection(instr_start=0, instr_stride=8, effect_bit40=True,
+                    wave_program=0)
+    assert _fixed_attack_note(_S(0x80), det, 0) is None, "$40 clear"

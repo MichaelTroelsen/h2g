@@ -3853,6 +3853,58 @@ all**. Both the Trans-Atlantic gain and the Pandora regression are invisible to
 `FIDELITY.md`; both were found by histogramming the pitch directly. That is a
 column the report is missing.
 
+### 7.sss The prologue and the loop, and a gate that was per file
+
+§ 7.rrr established the shape and refused to ship it: bit `$40`'s pitch fires
+once per *note* while `_sfx_drum_entries` returned one block the caller closed
+with one jump, so the pitch landed on every *tick*. The fix is to let the jump
+target the loop rather than the block, which the function now reports:
+
+```
+0  wave|1  00        the played note              offset 0
+1  noise   drumnote  the drum's own high byte     offset 1
+2  noise   $40 note  freqtable[index]             offset 2   <- prologue ends
+3  wave|1  00                                     offset 3
+4  delay 2 keep                                   offsets 4-6
+5  noise   drumnote                               offset 7   <- loop starts here
+6  wave|1  00                                     offset 8
+7  delay 3 keep                                   offsets 9-12
+   FF -> entry 5                                  offset 13, and every 6 after
+```
+
+Ticks at 1, 2, 7, 13, 19 -- the trace's profile, with the two-pitch burst once
+and the single-pitch tick for as long as the note is held. The plain shape
+(no `$40`) returns `loop = 0` and is byte-identical to before.
+
+#### The gate was per file where the bit is per record
+
+The first cut of this regressed Thundercats: `melody` 77% -> 72%, and 99 noise
+frames at a pitch its original never sounds. `_fixed_attack_note` checked
+`det.effect_bit40` -- which says the *player* reads the bit -- and never whether
+*this record's* effect byte sets it. Thundercats' drum records are `$80` and
+`$A0`; neither carries `$40`. **A detection flag about a player is not a fact
+about a record**, and this converter has a whole family of per-record effect bits
+where that distinction is the entire point.
+
+With the gate on `data[rec + 7] & $40`:
+
+```
+                          ours                original            melody  nrun
+Trans-Atlantic (forced)   {21: 226, 55: 452}  {21: 226, 56: 452}     85%  100%
+Pandora                   {69:  35, 73: 375}  {69:  35, 72: 364}     96%  100%   (was 0%)
+Thundercats               {73: 291} unchanged {72: 419}              77%  100%
+```
+
+Trans-Atlantic is exact; **Pandora's 35 frames at the `$40` pitch match the
+original's 35 exactly** and its `nrun` goes 0% to 100%; Thundercats is untouched,
+which is the correct answer for a record without the bit. The 55-against-56 and
+73-against-72 gaps are `_sfx_note_byte`'s semitone quantisation, which for noise
+is inaudible by the argument in its own docstring.
+
+Note what carried this: none of it is visible in `FIDELITY.md` except Pandora's
+`nrun`. The pitch histogram is still the only instrument that sees a drum's
+colour, and it found both the win and the Thundercats regression.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from
