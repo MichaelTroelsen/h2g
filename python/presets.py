@@ -73,7 +73,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
-         "vibrato_command": True,
+         "vibrato_command": True, "cut_release": True,
          "rest_instrument": True, "compact_instruments": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
@@ -604,6 +604,15 @@ def main(argv=None) -> int:
                    # median exact instead of 10 frames late, and no dimension
                    # of FIDELITY.md scores an oscillation onset.
                    "vibrato_command": FIXED["vibrato_command"],
+                   # Players that end a note by zeroing both envelope
+                   # registers never let the record's release nibble sound,
+                   # so copying it into the instrument makes audible what the
+                   # original silences. Gated on the routine being found (33
+                   # files), a no-op elsewhere. Fixed rather than searched:
+                   # the `tail` column goes 27.6% to 99.2% over the 30
+                   # measurable files, better on 27 and worse on none, with
+                   # melody unchanged.
+                   "cut_release": FIXED["cut_release"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

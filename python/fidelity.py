@@ -1030,6 +1030,94 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
     return out
 
 
+def release_tails(voices: list[Voice], nframes: int) -> dict:
+    """The release nibble in force after each note ends, keyed by instrument.
+
+    What this exists for: Hubbard's classic player ends an untied note by
+    gating off **and writing AD = 0, SR = 0** (Commando $517C, on status bit 5
+    being clear -- 91% of 53308 notes across the 72 classic-dialect files). The
+    envelope is killed, so the note stops dead and the record's release nibble
+    is never audible. This writer copies that nibble into the Goattracker
+    instrument, where it *is* audible: 1298 of 1723 records carry a non-zero
+    one, and with `$5F` on Commando's lead every note of a staccato figure
+    rings through the gap that should separate it from the next.
+
+    No existing dimension can see this. `adsr` compares the pair while a note
+    plays, which agrees -- both sides write `295F` at the attack. `wave` and
+    `nrun` read $D404, and both sides gate off on the same frame. What differs
+    is only what the envelope does *after* the gate closes, and the report has
+    never had a column for it (CLAUDE.md: it cannot see note length).
+
+    **Not read at a fixed offset from the gate-off edge.** That is the anchor
+    four boundary errors in one session came from, and `noise_runs`' docstring
+    is the standing warning. The release is taken as the *minimum* over the
+    whole gap between one gate-on run and the next, so the answer does not
+    depend on which frame of the gap the player happens to write on -- and a
+    minimum is the right reduction because it is the value that decides whether
+    the note is still sounding.
+
+    Attribution is the ADSR at the preceding run's midpoint, as in
+    `noise_runs`: the pair is a verbatim per-instrument copy (`instrmap.py`)
+    and the midpoint is inside the note however the run sits in it. It has to
+    be read there rather than in the gap, because in the gap it is exactly the
+    thing being measured -- **and the release nibble is masked out of the key
+    for the same reason.** The first version keyed on the whole pair, so
+    emitting a zero release moved every one of our keys from `295F` to `2950`,
+    no instrument was shared with the original, and the column reported
+    "nothing to compare" for the change it exists to measure. An attribution
+    key must not contain the quantity being attributed.
+
+    Returns `{adsr: Counter({release_nibble: count})}`.
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        runs = []
+        f = 0
+        while f < nframes:
+            if not wf[f] & WF_GATE:
+                f += 1
+                continue
+            start = f
+            while f < nframes and wf[f] & WF_GATE:
+                f += 1
+            runs.append((start, f))
+        for i, (start, end) in enumerate(runs):
+            if start == 0 or end >= nframes:
+                continue                      # cut by the window
+            nxt = runs[i + 1][0] if i + 1 < len(runs) else nframes
+            if nxt >= nframes:
+                continue                      # the tail runs past the window
+            key = adsr[(start + end - 1) // 2] & 0xFFF0
+            out.setdefault(key, Counter())[
+                min(adsr[g] & 0x0F for g in range(end, nxt))] += 1
+    return out
+
+
+def release_tail_agreement(orig: list[Voice], ours: list[Voice],
+                           nframes: int) -> dict:
+    """Instruments whose notes end with the same release as the original's.
+
+    Per instrument and only where both sides have note ends to compare, on the
+    same footing as `noise_run_agreement`: an instrument we drop entirely is
+    absent rather than counted wrong, because that is a different defect and
+    `melody` already reports it.
+    """
+    a, b = release_tails(orig, nframes), release_tails(ours, nframes)
+    shared = sorted(set(a) & set(b))
+    matched = sum(1 for k in shared
+                  if a[k].most_common(1)[0][0] == b[k].most_common(1)[0][0])
+    longer = sum(1 for k in shared
+                 if b[k].most_common(1)[0][0] > a[k].most_common(1)[0][0])
+    return {
+        "release_tail_instruments": len(shared),
+        "release_tail_matched": matched,
+        "release_tail_agreement": (matched / len(shared)) if shared else None,
+        "release_tail_ours_longer": longer,
+    }
+
+
 def noise_run_agreement(orig: list[Voice], ours: list[Voice],
                         nframes: int) -> dict:
     """How many instruments sound noise for the same length on both sides.
@@ -1539,6 +1627,11 @@ DIMENSIONS = (
               "how fast the pitch oscillates, over the original's rate"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
+    # What happens after the gate closes. `adsr` compares the pair while the
+    # note plays and agrees; both sides also gate off on the same frame, so
+    # $D404 says nothing either. See `release_tails`.
+    Dimension("release_tail_agreement", "tail", ("$D405/$D406",), "fraction",
+              "instruments whose notes end with the original's release"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
               "frames on which the duty cycle moved",
               source="our_pulse_changes"),
@@ -1949,6 +2042,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
+            row.update(release_tail_agreement(a, best_dump, nframes))
             row.update(pitch_motion_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
@@ -2251,8 +2345,8 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | noise | nrun | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | noise | nrun | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
@@ -2273,6 +2367,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
             f"{_fmt_pct(r.get('wave'))} | {noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
+            f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
@@ -2311,6 +2406,21 @@ def report(rows: list[dict], args) -> str:
                 f"- mean ADSR agreement: "
                 f"**{_fmt_pct(sum(r['adsr'] for r in adsred) / len(adsred))}**"
                 f" ({len(adsred)} file(s))")
+            cut = [r for r in adsred if r.get("release_tail_agreement")]
+            if cut:
+                out.append(
+                    "  - **`adsr` is structurally lower on the files whose "
+                    "player kills the envelope at a note's end** (v0.5.200, "
+                    "`--cut-release`, 29 files). Those players write the "
+                    "record verbatim at the attack and zero both envelope "
+                    "registers when the note ends, so the release nibble they "
+                    "carry never acts; we emit 0 for it, which sounds "
+                    "identical and reads as a mismatch here on every "
+                    "instrument of those files. The drop was measured at "
+                    "-47.1pp on exactly those files and **0.0pp on the 50 "
+                    "without the routine**. Attack, decay and sustain are "
+                    "unchanged. `tail` is the column that reflects what the "
+                    "envelope actually does: 27.6% to 99.2%.")
         out += _register_summary(measured)
         ratios = [r["retrigger_ratio"] for r in measured if r["retrigger_ratio"]]
         if ratios:

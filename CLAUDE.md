@@ -199,6 +199,22 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **An attribution key must not contain the quantity being attributed.** The
+  `tail` column keys each note ending by the instrument's ADSR pair and
+  measures the release nibble in that pair; keyed on the whole pair, emitting a
+  zero release moved every one of our keys, no instrument was shared with the
+  original, and the column reported "nothing to compare" for the one change it
+  was built to measure. Mask the measured field out of the key. Same trap as
+  reading a duration at a fixed offset from the event whose duration changed,
+  in the other axis.
+- **A correlation over instruments is not a mechanism.** Two hypotheses fitted
+  Commando's seven instruments perfectly and scored 59.8% and 79.0% corpus-wide;
+  the answer was in six lines of player code (`AND #$20 / BNE` on a tie flag).
+  When a per-instrument split looks clean, that is the moment to go read the
+  routine, not to generalise the split. And **check the reduction before
+  believing a rate**: the same behaviour measured 20.7% read at the gate-off
+  edge frame and 100% read as a minimum over the gap, because the player does
+  not write on the edge frame. See H2G-CONVERSION-METHOD.md § 7.mmm.
 - **A constant read from one player is a constant about one player.**
   `TRIANGLE_VIBRATO_GATE = 8` was read from a single file's `CMP #$08` and used
   for all 25 in the dialect; 5 compare against something else, and Commando --

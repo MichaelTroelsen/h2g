@@ -3361,6 +3361,122 @@ corpus measurement is the check. And no dimension of `FIDELITY.md` measures an
 oscillation onset, so the report cannot adjudicate this change either; the
 per-note measure in this section is what does.
 
+### 7.mmm "Too many notes" was the right notes with the wrong endings
+
+A listener pointed at pattern 12 of Commando: *"the slide is not correct, it
+plays too many notes."* Three checks disposed of the stated diagnosis before
+anything was changed:
+
+- **The notes are right.** Voice 1 aligns with the original at difflib ratio
+  1.00 over 60 s, 231 attacks against 230. Voice 3 likewise.
+- **The pattern decodes exactly.** Every byte of Hubbard pattern 9 accounts for
+  itself as `wait`/instrument/note; the repeated `01 3E / 01 3E` events are
+  genuinely repeated notes in the player.
+- **There is no slide in it.** The lead's effect byte is `00`, the pattern
+  carries no slide operand, and its record `+6 = $E0` is the triangle pulse
+  engine's rate — so § 7.iii's finding still holds: every "slide" in Commando is
+  a vibrato.
+
+What a frame-by-frame register dump showed instead:
+
+```
+        ORIGINAL              OURS
+2485  * 2710 41 295F   →   * 2714 41 295F     note on
+2488    2710 40 0000   →     2714 40 295F     gate off
+2489    2710 40 0000   →     2714 40 295F     ...still ringing
+2490    2710 40 0000   →     2714 09 295F     testbit finally cuts it
+2491  * 2BD6 41 295F   →   * 2BDD 41 295F     next note
+```
+
+The gate-off frame matches. The *envelope* does not: the original writes
+`AD = 0, SR = 0`, so the note stops dead and there are three frames of silence;
+we keep the record's `$5F`, release `F`, so it rings until our hard-restart
+testbit chops it. Five frames of sound where the original has three, no silence
+between, and a click at the end — a staccato figure delivered legato. **The
+notes were right and their tails were overlapping**, which is what "too many
+notes" was describing.
+
+#### The mechanism, and a correlation that was not it
+
+The routine is at Commando `$518B`, reached from `$517F`:
+
+```
+LDA duration,X / AND #$20 / BNE skip    ; status bit 5 -- a tie flag
+LDA counter,X  / BNE skip               ; only on the note's last row
+LDA wave,X / AND #$FE / STA $D404,Y     ; gate off
+LDA #$00 / STA $D405,Y / STA $D406,Y    ; envelope destroyed
+```
+
+**Status-byte bit 5 is a tie flag** — clear means "cut this note". Our decoder
+already reads that bit (as `no_adsr`, mapping it to `CMD_TONEPORTA` when the
+instrument is unchanged, which is a defensible tie), but nothing used its
+*clear* case. 91% of 53308 notes across the 72 classic files are cut; Commando
+is 708 to 21.
+
+Getting there took a wrong turn worth recording. The first census asked, per
+gate-off edge, whether the ADSR register *was* zero on the edge frame:
+**20.7% corpus-wide**, and per instrument on Commando it split 100%/0% into a
+clean-looking pattern that two different hypotheses fitted — "effect bit `$01`
+clear" and "release nibble `= $F`" — at 59.8% and 79.0% corpus accuracy. Neither
+is a mechanism, and shipping on either would have been fitting. Reading the
+player settled it in one step; and once the measure took the release as a
+**minimum over the whole gap** rather than the value on the edge frame, the
+behaviour turned out to be present on **100% of Commando's instruments**, not
+20.7% of its edges. The player simply does not write its zero on the edge frame.
+
+#### The measure, and the key that erased its own subject
+
+`FIDELITY.md` could not see any of this and still cannot see note length
+(CLAUDE.md). `adsr` compares the envelope pair *while a note plays*, where both
+sides agree — both write `295F` at the attack. `wave` and `nrun` read `$D404`,
+and both sides gate off on the same frame. So the report needed a column for
+what the envelope does after the gate closes: `release_tails` / the **`tail`**
+column, built on `noise_runs`' shape — per-instrument, attributed at a run's
+midpoint, runs and gaps touching the window edge dropped.
+
+Its first version reported `n/a` for the very change it was written to measure.
+The attribution key was the whole ADSR pair, and emitting a zero release moves
+every one of our keys from `295F` to `2950`, so no instrument was shared with
+the original and there was nothing to compare. **An attribution key must not
+contain the quantity being attributed** — the release nibble is masked out of it
+now. This is the same trap as reading a duration at a fixed offset from the
+event whose duration changed (§ 7.ddd), in the other axis.
+
+Result over the 30 measurable files: mean `tail` **27.6% → 99.2%**, better on
+27, worse on none, `melody` unchanged at 78.2% — so nothing was lost, the change
+is entirely in the note endings. Commando 0% → 100% on all seven instruments.
+The sustain nibble is untouched: it governs the note while it plays, which is
+not what the cut destroys.
+
+#### And it pushes an existing column down 17 points
+
+Corpus mean `adsr` falls **75% → 58%**. Attributed, rather than assumed: the
+change is **−47.1 pp on the 29 files that have the cut routine and exactly
+0.0 pp on the 50 that do not**, so the cause is not in doubt.
+
+It is nonetheless not a regression in the sound. Those players write the record
+verbatim at the attack, so the original's register holds `295F` where ours now
+holds `2950`, and `adsr` compares the pair literally. But the release nibble is
+consulted by the SID only when the gate falls, and by then the player has
+overwritten it with zero — the `F` never acts. Attack, decay and sustain are
+identical on both sides, so the envelope behaves the same on every frame.
+
+Two things follow, and both are the point of this section. **A register-value
+agreement is not an envelope-behaviour agreement**, and this is the first change
+in the project where the two point in opposite directions — the standing rule
+that a low score is a claim about the harness until it is a claim about the
+converter, applied to a *fall* rather than a flat line. And the honest response
+is not to redefine `adsr` so the change scores well: the report now states the
+attribution beside the number, so nobody reads 58% as damage, and `tail` carries
+the property that matters.
+
+The alternative encodings were considered and do not exist. Keeping `SR = $5F`
+and cutting the note in the wavetable would match the registers *and* the sound,
+but the cut lands on the note's final row and a Goattracker wavetable is per
+instrument, so it cannot say "at the end of whatever note this is" — the same
+wall § 7.lll hit with the vibrato gate, and there is no per-note release
+command to escape through.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

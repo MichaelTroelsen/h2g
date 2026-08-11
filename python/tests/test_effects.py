@@ -459,3 +459,60 @@ def test_the_noise_tick_length_is_derived_but_not_yet_wired():
     left, _ = _drum_entries(0x41, "gts5", [], 1, min_note=40, sustain=0,
                             budget=5, tick_frames=1)
     assert left[:3] == [0x41, 0x81, 0x40]
+
+
+# --- v0.5.200: the release the player destroys -------------------------------
+
+def test_the_cut_routine_is_read_and_not_assumed():
+    """Gate-clear *then* zero both envelope registers. The bare
+    `LDA #$00 / STA $D405 / STA $D406` also matches an init routine clearing
+    the chip at startup, which says nothing about how notes end -- it appears
+    in 9 further files this deliberately does not claim.
+    """
+    from h2g.detect import ENVELOPE_CUT_SHAPES, find_envelope_cut
+
+    class _S:
+        def __init__(self, data):
+            self.data = data
+    body = bytes.fromhex("29FE9904D4A9009905D49906D4")
+    assert find_envelope_cut(_S(b"\x00" + body))
+    assert not find_envelope_cut(_S(b"\x00" + bytes.fromhex(
+        "A9009905D49906D4"))), "the gate-clear is part of the shape"
+    assert len(ENVELOPE_CUT_SHAPES) == 2, "Y- and X-indexed"
+
+
+def _sr(sid, det, **kw):
+    """The emitted sustain/release byte of the one real record.
+
+    Located by its attack/decay byte rather than by a fixed offset -- the
+    Clear Voice slot's name field is 16 bytes, and an arithmetic guess at it
+    read the name instead and reported no change at all.
+    """
+    from h2g.goatwriter import _write_instruments
+    out = bytearray()
+    _write_instruments(out, sid, det, 2, {}, False, False, {}, {}, lead=1, **kw)
+    at = out.index(0x29, 10)
+    return out[at + 1]
+
+
+def test_the_release_nibble_is_dropped_and_the_sustain_is_not():
+    """The cut destroys the envelope at the note's end; it says nothing about
+    the level the note holds at while it plays."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _write_instruments
+
+    class _S:
+        data = bytes([0x00, 0x00, 0x41, 0x29, 0x5F, 0x00, 0x00, 0x00])
+    det = Detection(instr_start=0, instr_stride=8, envelope_cut=True)
+    assert _sr(_S(), det, cut_release=True) == 0x50
+    assert _sr(_S(), det, cut_release=False) == 0x5F, "off by default"
+
+
+def test_a_player_without_the_routine_keeps_its_release():
+    from h2g.detect import Detection
+    from h2g.goatwriter import _write_instruments
+
+    class _S:
+        data = bytes([0x00, 0x00, 0x41, 0x29, 0x5F, 0x00, 0x00, 0x00])
+    det = Detection(instr_start=0, instr_stride=8, envelope_cut=False)
+    assert _sr(_S(), det, cut_release=True) == 0x5F,         "62 corpus files have no cut routine"

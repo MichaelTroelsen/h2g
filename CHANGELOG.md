@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.200 — 2026-08-11
+
+- drop the release nibble on players that kill the envelope at a note's end
+
 ## 0.5.199 — 2026-08-10
 
 - express the triangle player's vibrato length gate as a per-note pattern command

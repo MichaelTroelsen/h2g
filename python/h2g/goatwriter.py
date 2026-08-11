@@ -938,7 +938,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        vib_ptrs: dict | None = None,
                        lead: int = 1,
                        wave_starts: Optional[List[int]] = None,
-                       no_test_restart: bool = False) -> int:
+                       no_test_restart: bool = False,
+                       cut_release: bool = False) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -968,6 +969,19 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # Kept as the default only because the byte-exact Commando fixture
             # encodes it; --sustain-exact reads the register as the SID does.
             sr &= 0xEF
+        if cut_release and det.envelope_cut:
+            # This player ends an untied note by writing 0 to both envelope
+            # registers (detect.ENVELOPE_CUT_SHAPES), so the note stops dead
+            # and the release nibble in the record is never heard. Copying it
+            # into a Goattracker instrument makes it audible, and Goattracker
+            # gates off on the same frame the player does -- so the note rings
+            # through a gap that should be silence. Measured on Commando, the
+            # original's release is 0 on all 7 instruments at every note end
+            # while ours carries B, A, F, 9, B, 4 and F.
+            #
+            # The sustain is left alone: it governs the note while it plays,
+            # which is not what the cut destroys.
+            sr &= 0xF0
         # From the laid-out table, not from the index: a record before this
         # one may be longer than WAVE_ENTRIES_PER_INSTR (a deep drum sweep),
         # and then the arithmetic is simply wrong. Falls back to the stride
@@ -2533,7 +2547,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               two_stage: bool = False,
               sfx_drum: bool = False,
               wave_program: bool = False,
-              vibrato_command: bool = False) -> bytes:
+              vibrato_command: bool = False,
+              cut_release: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2584,6 +2599,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   sfx_drum, wave_program)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
+                       cut_release=cut_release,
                        lead=lead, wave_starts=wave_starts,
                        no_test_restart=no_test_restart)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,

@@ -764,6 +764,74 @@ dropped those frames from both counts. One_on_One frame 102 is the site (old
 derivation and the gplay simulation, not the table. The LFO-table form was
 derived from the simulated semantics from the start and is unchanged.
 
+### `--cut-release` (the release nibble that never sounds)
+
+**On by default via `presets.json`.** A no-op in the 62 corpus files whose
+player has no cut routine.
+
+A listener said pattern 12 of Commando "plays too many notes". The notes were
+right — voice 1 matches the original at ratio 1.00 over 60 s, and every byte of
+the Hubbard pattern decodes to exactly what GoatTracker shows. What was wrong
+was the note *endings*. Found at Commando `$517C`:
+
+```
+517F  BD F5 54  LDA duration,X
+5182  29 20     AND #$20      ; bit 5 -- the tie flag
+5184  D0 15     BNE skip      ; set -> hold, no cut
+5186  BD F2 54  LDA counter,X
+5189  D0 10     BNE skip      ; not the note's last row yet
+518B  BD F8 54  LDA wave,X / AND #$FE / STA $D404,Y   ; gate off
+5193  A9 00     LDA #$00
+5195  99 05 D4  STA $D405,Y   ; attack/decay = 0
+5198  99 06 D4  STA $D406,Y   ; sustain/release = 0
+```
+
+**Status-byte bit 5 is a tie flag**, and when it is clear the player destroys
+the envelope on the note's final row. So the note stops dead, and the record's
+release nibble is never audible. This writer copied that nibble into the
+GoatTracker instrument, where it *is* — 1298 of 1723 records carry a non-zero
+one. Commando's lead has `SR = $5F`, release `F`: every note of a staccato
+figure rang through the gap that should separate it from the next, ~5 frames of
+sound where the original has 3 and then silence. The gate-off frame itself was
+already correct.
+
+Reach: **Commando is 708 cut notes to 21 tied; across the 72 classic-dialect
+files 91% of 53308 notes are cut.**
+
+Gated on the routine being *found*, not assumed — `detect.ENVELOPE_CUT_SHAPES`
+requires the gate-clear as part of the shape, because a bare
+`LDA #$00 / STA $D405 / STA $D406` also matches an init routine clearing the
+chip at startup. 33 files match; 9 more have only the loose shape and are
+deliberately not claimed.
+
+Measured with the new `tail` column over the 30 measurable files:
+
+| | mean `tail` | files better | worse | melody |
+|---|---|---|---|---|
+| off | 27.6% | — | — | 78.2% |
+| `--cut-release` | **99.2%** | 27 | **0** | 78.2% |
+
+Commando goes 0% → 100%, all seven instruments. `melody` is unchanged, so no
+notes are lost — the change is entirely in what happens after the gate closes.
+The sustain nibble is left alone: it governs the note while it plays, which is
+not what the cut destroys.
+
+**It costs `adsr`, and that cost is the metric's.** The `adsr` column compares
+the register pair literally, and those players write the record verbatim at the
+attack — `295F` where we now write `2950` — so every instrument of those files
+reads as a mismatch. Corpus mean falls 75% → 58%, measured at **−47.1 pp on the
+29 files with the cut routine and 0.0 pp on the 50 without**. The nibble it
+disagrees about is one the SID only consults when the gate falls, by which point
+the player has already zeroed it; attack, decay and sustain are identical on
+both sides. So the sound is the same and the byte is not. The generated report
+says this next to the number, and `tail` is the column that tracks what the
+envelope does.
+
+Tied notes (9%) keep no release, since GoatTracker's release is per instrument
+where the flag is per note. In the player a tied note never gates off at all,
+and our decoder already maps bit 5 to `CMD_TONEPORTA`, which skips
+GoatTracker's own retrigger — so the two behave alike.
+
 ### `--vibrato-command` (the length gate, expressed exactly)
 
 **On by default via `presets.json`.** A no-op outside the global-triangle

@@ -81,6 +81,9 @@ class Detection:
     # The note-length threshold that player gates the vibrato on, read from
     # its own CMP -- _find_triangle_gate().
     triangle_gate: Optional[int] = None
+    # Whether the player kills the envelope when a note ends, so the record's
+    # release nibble is never audible -- find_envelope_cut().
+    envelope_cut: bool = False
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -894,6 +897,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                     f"duration {det.triangle_gate or TRIANGLE_VIBRATO_GATE}"
                     + ("" if det.triangle_gate else ", assumed") + ")")
 
+    det.envelope_cut = find_envelope_cut(sid)
+    if det.envelope_cut:
+        log("Note end................: gate off and envelope zeroed "
+            "(release nibble never sounds)")
+
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
@@ -1560,6 +1568,35 @@ def _find_triangle_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
 # shape; the rest (the digi and cmdtable engines among them) fetch
 # differently and are not touched by the flag this gates.
 STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
+
+
+# Clearing the gate and then writing 0 to *both* envelope registers -- how the
+# classic players end an untied note. Commando $518B:
+#
+#     518B  BD F8 54  LDA wave,X
+#     518E  29 FE     AND #$FE      ; drop the gate bit
+#     5190  99 04 D4  STA $D404,Y
+#     5193  A9 00     LDA #$00
+#     5195  99 05 D4  STA $D405,Y   ; attack/decay = 0
+#     5198  99 06 D4  STA $D406,Y   ; sustain/release = 0
+#
+# reached from $517F when the note's status bit 5 is clear and the row counter
+# has run out. The envelope is destroyed, so the note stops dead and the
+# record's release nibble never sounds -- see goatwriter's `cut_release`.
+#
+# The gate-clear has to be part of the shape. `A9 00 / STA $D405 / STA $D406`
+# on its own also matches an init routine clearing the chip at startup, which
+# says nothing about how notes end; it appears in 9 further files that this
+# does not claim.
+ENVELOPE_CUT_SHAPES = (
+    "29 FE 99 04 D4 A9 00 99 05 D4 99 06 D4",
+    "29 FE 9D 04 D4 A9 00 9D 05 D4 9D 06 D4",
+)
+
+
+def find_envelope_cut(sid: SidFile) -> bool:
+    """Whether this player zeroes AD and SR when a note ends (33 files)."""
+    return any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES)
 
 
 # `LDA duration,X / AND #$1F / CMP #imm / BCC out` -- the per-note length gate

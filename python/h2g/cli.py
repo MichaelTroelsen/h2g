@@ -229,6 +229,17 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--cut-release", action="store_true",
+        help="drop the release nibble on players that kill the envelope when a "
+             "note ends (33 corpus files). Those players gate off and write 0 "
+             "to both $D405 and $D406 for any untied note, so the record's "
+             "release never sounds -- but copying it into a Goattracker "
+             "instrument makes it audible, and Goattracker gates off on the "
+             "same frame, so the note rings through a gap that should be "
+             "silence. Commando's lead carries $5F and turns a staccato figure "
+             "legato. Measured over 30 files the `tail` column goes 27.6%% to "
+             "99.2%%, better on 27 and worse on none, with melody unchanged")
+    parser.add_argument(
         "--vibrato-command", action="store_true",
         help="express the global-triangle player's vibrato as a per-note "
              "pattern command instead of an instrument setting (25 corpus "
@@ -349,6 +360,7 @@ def main(argv=None) -> int:
                           ("--sfx-drum", "sfx_drum"),
                           ("--wave-program", "wave_program"),
                           ("--vibrato-command", "vibrato_command"),
+                          ("--cut-release", "cut_release"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -416,6 +428,7 @@ def main(argv=None) -> int:
                       sfx_drum=args.sfx_drum,
                       wave_program=args.wave_program,
                       vibrato_command=args.vibrato_command,
+                      cut_release=args.cut_release,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

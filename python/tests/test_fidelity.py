@@ -585,7 +585,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert "| vib | wave | noise | nrun | adsr |" in text
+    assert "| vib | wave | noise | nrun | tail | adsr |" in text
     assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
@@ -734,6 +734,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  noise_run_agreement=melody, noise_run_matched=1,
                  noise_run_instruments=1, noise_run_orig_only=0,
                  noise_run_ours_only=0,
+                 release_tail_agreement=melody, release_tail_matched=1,
+                 release_tail_instruments=1, release_tail_ours_longer=0,
                  orig_pulse_changes=0, our_pulse_changes=0,
                  orig_pulse_span=0, our_pulse_span=0,
                  pulse_span=1.0,
@@ -864,8 +866,11 @@ def test_the_registers_no_dimension_reads_are_named():
     # need its gate bit as an edge, which is why note *length* is in
     # NOT_MEASURED rather than here.)
     assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
+    # `adsr` and `tail` both read the envelope pair -- one while the note
+    # plays, one after it ends -- so dropping either alone leaves it read.
     assert "$D405/$D406" in dict(fidelity.registers_unread(
-        {d.key for d in fidelity.DIMENSIONS if d.key != "adsr"}))
+        {d.key for d in fidelity.DIMENSIONS
+         if d.key not in ("adsr", "release_tail_agreement")}))
     assert len(fidelity.registers_unread(set())) == len(fidelity.SID_REGISTERS)
 
 
@@ -1136,3 +1141,69 @@ def test_the_non_graded_rules_reproduce_siddumps_own_arithmetic():
     assert fidelity._graded_agreement(
         Counter({0x40: 312}), Counter({0x10: 312}), 0x40, 0x10,
         "last") == (0.0, 1.0)
+
+
+# --- v0.5.200: the release nibble the player never lets you hear -------------
+
+def test_a_release_tail_is_the_minimum_over_the_gap_not_a_fixed_offset():
+    """The gate-off edge is the anchor four boundary errors came from, and the
+    player does not write its zero on the edge frame -- reading the edge alone
+    saw the behaviour on 20.7% of edges where reading the gap sees it on 100%
+    of instruments. The minimum is the right reduction: it is the value that
+    decides whether the note is still sounding.
+    """
+    # Three notes, so the middle one is bounded on both sides -- the first and
+    # last are dropped for touching the window, like noise_runs.
+    wf = [(0, 0x41), (3, 0x40), (6, 0x41), (9, 0x40), (12, 0x41), (15, 0x40)]
+    # The release only drops to 0 on the *second* frame of the middle gap.
+    adsr = [(0, 0x295F), (10, 0x2950), (12, 0x295F)]
+    v = fidelity.Voice(freq_events=[(0, 0x1000)], wf_events=wf,
+                       adsr_events=adsr, pulse_events=[],
+                       attack_frames=[0, 6, 12])
+    got = fidelity.release_tails([v], 20)
+    assert got == {0x2950: {0: 1}}, got
+    # ...and reading only the edge frame would have said $F, the pre-cut value
+    assert fidelity.register_timeline(adsr, 20)[9] & 0x0F == 0x0F
+
+
+def test_the_key_masks_out_the_release_it_measures():
+    """The first version keyed on the whole ADSR pair, so emitting a zero
+    release moved every one of our keys from $295F to $2950, nothing was shared
+    with the original, and the column reported "nothing to compare" for exactly
+    the change it exists to measure."""
+    a = fidelity.release_tails([_tail_voice(0x0)], 20)
+    b = fidelity.release_tails([_tail_voice(0xF)], 20)
+    assert set(a) == set(b), "the instrument must be the same key either side"
+    assert fidelity.release_tail_agreement(
+        [_tail_voice(0x0)], [_tail_voice(0xF)], 20)[
+            "release_tail_agreement"] == 0.0
+    assert fidelity.release_tail_agreement(
+        [_tail_voice(0x0)], [_tail_voice(0x0)], 20)[
+            "release_tail_agreement"] == 1.0
+
+
+def _tail_voice(release, pair=0x2950):
+    """Three notes so the middle one is bounded, with a constant ADSR."""
+    p = pair | release
+    return fidelity.Voice(
+        freq_events=[(0, 0x1000)],
+        wf_events=[(0, 0x41), (3, 0x40), (6, 0x41), (9, 0x40),
+                   (12, 0x41), (15, 0x40)],
+        adsr_events=[(0, p)], pulse_events=[], attack_frames=[0, 6, 12])
+
+
+def test_a_run_or_a_gap_touching_the_window_edge_is_dropped():
+    """Same rule as noise_runs: a length or a gap cut by the window is a fact
+    about the window."""
+    v = fidelity.Voice(freq_events=[(0, 0x1000)],
+                       wf_events=[(0, 0x41), (3, 0x40)],
+                       adsr_events=[(0, 0x295F)], pulse_events=[],
+                       attack_frames=[0])
+    assert fidelity.release_tails([v], 12) == {}, "opens at frame 0"
+
+
+def test_an_instrument_only_one_side_plays_is_absent_not_wrong():
+    got = fidelity.release_tail_agreement(
+        [_tail_voice(0x0, 0x2950)], [_tail_voice(0x0, 0x1230)], 20)
+    assert got["release_tail_instruments"] == 0
+    assert got["release_tail_agreement"] is None
