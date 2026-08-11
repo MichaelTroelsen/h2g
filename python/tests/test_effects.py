@@ -590,3 +590,87 @@ def test_off_by_default_so_the_fixture_is_untouched():
     root = pathlib.Path(__file__).resolve().parents[2]
     assert convert(str(root / "Commando.sid"), log=lambda m: None) == \
         (root / "Commando.sng").read_bytes()
+
+
+# --- v0.5.207: effect bit $10, the pitch sequence ---------------------------
+
+@needs_corpus
+def test_the_pitch_sequence_reads_three_tables_and_a_global_phase():
+    """`note = played note + seq[phase]`, in 34 of 95 files. seq[0] is a byte
+    nothing writes (0 everywhere checked) and seq[1..2] are the instrument's own
+    pair; the phase is a global counter, not per note.
+    """
+    from corpus import CORPUS
+    from h2g.convert import _detect_tables
+    from h2g.sidfile import load_sid
+    if not CORPUS.is_dir():
+        return
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a: None)
+    seq = det.pitch_seq
+    assert seq is not None and seq.steps == 3
+    # the index array is `wave_program` again -- a pointer low byte under $08, a
+    # note index under $40, a sequence index under $10. One cell, three meanings.
+    assert seq.index == det.wave_program
+    idx = sid.data[seq.index + 0 * det.instr_stride]
+    assert [sid.data[seq.base], sid.data[seq.pairs + 2 * idx],
+            sid.data[seq.pairs + 2 * idx + 1]] == [0, 24, 0]
+
+
+def test_an_all_zero_sequence_emits_nothing():
+    """Three identical entries are not an arpeggio, they are the note."""
+    from h2g.detect import Detection, PitchSeq
+    from h2g.goatwriter import _pitch_seq_entries
+
+    class _S:
+        data = bytes([0, 0, 0x41, 0x0A, 0x99, 0, 0, 0x10]) + bytes(16)
+    det = Detection(instr_start=0, instr_stride=8,
+                    pitch_seq=PitchSeq(index=8, pairs=10, base=9))
+    assert _pitch_seq_entries(_S(), det, 0, 0x41) is None
+
+
+def test_it_is_gated_on_the_record_and_on_having_a_waveform():
+    from h2g.detect import Detection, PitchSeq
+    from h2g.goatwriter import _pitch_seq_entries
+
+    class _S:
+        def __init__(self, eff):
+            self.data = (bytes([0, 0, 0x41, 0x0A, 0x99, 0, 0, eff])
+                         + bytes([0, 0, 24, 0]) + bytes(12))
+    det = Detection(instr_start=0, instr_stride=8,
+                    pitch_seq=PitchSeq(index=8, pairs=10, base=9))
+    assert _pitch_seq_entries(_S(0x10), det, 0, 0x41) is not None
+    assert _pitch_seq_entries(_S(0x00), det, 0, 0x41) is None, "$10 clear"
+    assert _pitch_seq_entries(_S(0x10), det, 0, 0x00) is None, "no waveform"
+
+
+def test_the_modal_step_follows_the_attack_frame():
+    """The player's phase is global, so which step a note opens on is unknowable
+    and a wavetable always starts at entry 0. Entry 0 sounds the pattern's note
+    and the modal step goes on the frame after it -- the likeliest value under a
+    uniform unknown phase. Emitting `(0, 24, 0)` as written put the two-octave
+    jump one frame into every note and cost 4.2 points of mean melody.
+    """
+    from h2g.detect import Detection, PitchSeq
+    from h2g.goatwriter import _pitch_seq_entries
+
+    class _S:
+        data = (bytes([0, 0, 0x41, 0x0A, 0x99, 0, 0, 0x10])
+                + bytes([0, 0, 24, 0]) + bytes(12))
+    det = Detection(instr_start=0, instr_stride=8,
+                    pitch_seq=PitchSeq(index=8, pairs=10, base=9))
+    _left, right = _pitch_seq_entries(_S(), det, 0, 0x41)
+    assert right[0] == 0x00, "the attack sounds the pattern's note"
+    assert right[1] == 0x00, "...and the modal step follows it"
+    assert 0x18 in right, "the sequence's own step is still emitted"
+
+
+def test_off_by_default_and_deliberately_not_searched():
+    import presets
+    from h2g.convert import convert
+    assert "pitch_seq" in presets.EXCLUDED_FROM_ALWAYS
+    assert "pitch_seq" not in presets.FIDELITY_TOGGLES
+    root = pathlib.Path(__file__).resolve().parents[2]
+    assert convert(str(root / "Commando.sid"), log=lambda m: None) == \
+        (root / "Commando.sng").read_bytes()

@@ -87,6 +87,9 @@ class Detection:
     # Whether the player tests effect bit $40 -- a fixed pitch for the attack,
     # taken from its own note table. _find_effect_bit40().
     effect_bit40: bool = False
+    # Effect bit $10's arpeggio: a three-step semitone sequence stepped by a
+    # *global* phase counter. _find_pitch_seq().
+    pitch_seq: Optional["PitchSeq"] = None
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -900,6 +903,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                     f"duration {det.triangle_gate or TRIANGLE_VIBRATO_GATE}"
                     + ("" if det.triangle_gate else ", assumed") + ")")
 
+    det.pitch_seq = _find_pitch_seq(sid)
+    if det.pitch_seq is not None:
+        log(f"Effect bit $10..........: {det.pitch_seq.steps}-step pitch "
+            "sequence on a global phase counter")
+
     det.effect_bit40 = _find_effect_bit40(sid)
     if det.effect_bit40:
         log("Effect bit $40..........: fixed attack pitch from the note table")
@@ -1641,6 +1649,84 @@ def _find_effect_bit40(sid: SidFile) -> bool:
                     and data[i + 3] in (0x50, 0x70)):
                 return True
     return False
+
+
+@dataclass
+class PitchSeq:
+    """Effect bit $10: `note = played note + seq[phase]`, in semitones.
+
+    Read at Trans-Atlantic $0BBB, and the shape is in 34 of 95 corpus files --
+    as widespread as the two-stage attack:
+
+        LDA effect / AND #$10 / BEQ out
+        LDA index,Y / ASL / TAY          ; the record's own byte, doubled
+        LDA pairs,Y   / STA base+1       ; copy this instrument's two offsets
+        LDA pairs+1,Y / STA base+2
+        LDY phase                        ; a GLOBAL counter, not per note
+        CLC / LDA note,X / ADC base,Y    ; the played note plus this step
+        ASL / TAY / LDA freqtbl,Y ...    ; and out through the note table
+
+    So `seq[0]` is the byte at `base`, which nothing ever writes -- 0 in every
+    file checked, i.e. "the played note" -- and `seq[1]`/`seq[2]` are the
+    instrument's own pair. Trans-Atlantic's records 0 and 3 both hold `18 00`:
+    the note, two octaves up, the note, on a three-frame cycle. That is 1175 and
+    637 of the original's pitch reversals, against 31 and 16 in a conversion that
+    emitted none of it.
+
+    `index` is the same array `wave_program` names and `_fixed_attack_note`
+    reads -- a pointer low byte under bit $08, a note index under $40 and a
+    sequence index under $10. One cell, three meanings, chosen by the bit.
+
+    The phase is global and a Goattracker wavetable always restarts at the note,
+    so the emitted arpeggio's phase can sit up to `steps - 1` frames off the
+    player's. On a three-frame cycle that is inaudible; it is recorded because it
+    is a real difference and not a rounding.
+    """
+
+    index: int                  # offset of the per-instrument index array
+    pairs: int                  # offset of the pair table, indexed by 2 x index
+    base: int                   # offset of seq[0]; seq[1..] follow it
+    steps: int = 3
+
+
+PITCH_SEQ_SHAPE = ("29 10 F0 ?? B9 ?? ?? 0A A8 B9 ?? ?? 8D ?? ?? B9 ?? ?? "
+                   "8D ?? ?? AC ?? ?? 18 BD ?? ?? 79 ?? ?? 0A A8")
+PITCH_SEQ_AT_INDEX = 5          # operand offsets within the shape
+PITCH_SEQ_AT_PAIRS = 10
+PITCH_SEQ_AT_PHASE = 22
+PITCH_SEQ_AT_BASE = 29
+PITCH_SEQ_STEPS = 3             # the default when the reload cannot be read
+
+
+def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
+    """The bit-$10 arpeggio's three tables, or None."""
+    data = sid.data
+    at = search_file(data, PITCH_SEQ_SHAPE)
+    if at < 1:
+        return None
+
+    def operand(k: int) -> int:
+        return data[at + k] | (data[at + k + 1] << 8)
+
+    phase = operand(PITCH_SEQ_AT_PHASE)
+    # `DEC phase / BPL + / LDA #steps-1 / STA phase` closes the play routine, so
+    # the immediate is one less than the cycle length. Read rather than assumed;
+    # the constant only stands in where the reload is not found.
+    steps = PITCH_SEQ_STEPS
+    lo, hi = phase & 0xFF, (phase >> 8) & 0xFF
+    for i in range(len(data) - 9):
+        if (data[i] == 0xCE and data[i + 1] == lo and data[i + 2] == hi
+                and data[i + 3] == 0x10 and data[i + 5] == 0xA9
+                and data[i + 7] == 0x8D and data[i + 8] == lo):
+            steps = data[i + 6] + 1
+            break
+    seq = PitchSeq(index=sid.to_offset(operand(PITCH_SEQ_AT_INDEX)),
+                   pairs=sid.to_offset(operand(PITCH_SEQ_AT_PAIRS)),
+                   base=sid.to_offset(operand(PITCH_SEQ_AT_BASE)),
+                   steps=max(2, steps))
+    if min(seq.index, seq.pairs, seq.base) < 0:
+        return None
+    return seq
 
 
 ENVELOPE_CUT_SHAPES = (

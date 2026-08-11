@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.207 — 2026-08-11
+
+- read and emit effect bit $10's arpeggio; off by default, the phase is global
+
 ## 0.5.206 — 2026-08-11
 
 - emit the drum's fixed attack pitch: a prologue the loop skips

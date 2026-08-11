@@ -120,6 +120,17 @@ EXCLUDED_FROM_ALWAYS = {
     # costs two wavetable entries where the player spends one, so the slides
     # land a frame late.
     "wave_program",
+    # Effect bit $10's arpeggio. Read and emitted, off everywhere, and not in
+    # FIDELITY_TOGGLES either -- which is the honest disposition rather than a
+    # gap. The player steps the sequence with a *global* phase counter; a
+    # wavetable restarts at every note, so which step a note opens on cannot be
+    # reproduced at all. Over the 26 files that use it that trade is median vib
+    # 0.22x -> 0.58x against 5 points of mean melody, 7 files losing and After_8
+    # 92% -> 52%. `fidelity_better` selects on a melody *gain*, so it would
+    # never pick this up even where it helps (Trans-Atlantic: vib 0.17x -> 0.61x
+    # with melody unchanged) -- deciding it needs a scorer that weighs
+    # oscillation, which is the same gap the noise-pitch case has.
+    "pitch_seq",
 }
 
 

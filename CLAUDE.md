@@ -206,6 +206,19 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **A rate that looks wrong may be a mechanism that is absent.** `vib` 0.17x on
+  the balloon song was read as a vibrato-rate bug; the one instrument that *has*
+  a vibrato byte was within 20% of the original, and the missing 1812 reversals
+  belonged to effect bit `$10` -- an arpeggio never read at all. **Attribute a
+  ratio per instrument before tuning the mechanism you assume produces it.**
+- **A mechanism driven by a *global* counter cannot be put in a per-note
+  wavetable.** Bit `$10`'s phase is global; a wavetable restarts at every note,
+  so which step a note opens on is unreproducible and no rotation is right more
+  than 1/steps of the time. Emitting it takes median `vib` 0.22x -> 0.58x and
+  costs 5 points of mean melody. That is a per-song trade, not a fix -- and
+  `fidelity_better` cannot select it, because it scores a melody *gain*. Two
+  mechanisms now wait on a scorer that weighs oscillation and noise pitch. See
+  § 7.ttt.
 - **A detection flag about a player is not a fact about a record.**
   `det.effect_bit40` says the player *reads* bit $40; only a record's own effect
   byte says it is *set*. Gating the fixed attack pitch on the file alone reached

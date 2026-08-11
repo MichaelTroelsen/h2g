@@ -3905,6 +3905,76 @@ Note what carried this: none of it is visible in `FIDELITY.md` except Pandora's
 `nrun`. The pitch histogram is still the only instrument that sees a drum's
 colour, and it found both the win and the Thundercats regression.
 
+### 7.ttt "Fix the vibrato rate" -- which was not the vibrato
+
+The balloon song's `vib` column read **0.17x**: our pitch oscillating at a sixth
+of the original's rate. The instruction was to fix the vibrato rate, and the
+first measurement falsified the premise. Reversals by instrument:
+
+```
+instrument   original   ours     effect byte
+0A09             1175     31     $10
+0A99              904    112     $E4   (the drum, section 7.qqq)
+0AF8              637     16     $14
+0A88              317    257     $00, and the only record with a vibrato byte
+```
+
+The one instrument that *has* a vibrato is within 20% of the original. Nothing
+was wrong with the rate: bound 4 emits `cmp 2`, a period of 8 calls against the
+player's 4-frame half-period, which is exact. **The deficit was 1812 reversals of
+a mechanism that had never been read at all.**
+
+#### Bit $10 is a three-step arpeggio on a global phase
+
+Read at $0BBB, and the shape is in **34 of 95 files** -- as widespread as the
+two-stage attack:
+
+```
+LDA effect / AND #$10 / BEQ out
+LDA index,Y / ASL / TAY            ; the record's own byte, doubled
+LDA pairs,Y   / STA base+1         ; copy this instrument's two offsets
+LDA pairs+1,Y / STA base+2
+LDY phase                          ; a GLOBAL counter, DEC'd once per frame
+CLC / LDA note,X / ADC base,Y      ; the played note plus this step
+ASL / TAY / LDA freqtbl,Y ...
+```
+
+`seq[0]` is the byte at `base`, which nothing ever writes -- 0 in every file
+checked. `seq[1..2]` are the instrument's pair. Trans-Atlantic's records 0 and 3
+both hold `18 00`: **the note, two octaves up, the note**, on a three-frame
+cycle. The phase counter closes the play routine as `DEC phase / BPL / LDA #$02 /
+STA phase`, so its length is read rather than assumed.
+
+And the index array is `det.wave_program` for the third time: a pointer low byte
+under bit `$08`, a note index under `$40` (§ 7.qqq), a sequence index under
+`$10`. One cell, three meanings, chosen by the bit.
+
+#### It works, and the global phase is why it is off by default
+
+Emitted as a three-entry wavetable loop, Trans-Atlantic's record 0 goes from 31
+reversals to 1365 against the original's 1175, and the file's `vib` from 0.17x to
+**0.61x** with `melody` unchanged. Across the 26 files that use it:
+
+```
+              median vib   mean melody
+off                0.22x         81.5%
+--pitch-seq        0.58x         76.3%
+```
+
+Seven files lose melody, After_8 by 40 points. **The phase is the reason and it
+is not fixable here.** The player's counter is global, so which step a note opens
+on depends on when the note happens; a Goattracker wavetable always starts at
+entry 0. Leading with the modal step -- the likeliest value under a uniform
+unknown phase, with the attack frame kept at the pattern's own note -- was tried
+and moved the mean by -1 point, trading After_8 (92% -> 52%) for Chain Reaction.
+There is no rotation that is right more than a third of the time.
+
+So it ships read, emitted and **off**, and deliberately not in
+`FIDELITY_TOGGLES`: `fidelity_better` selects on a melody *gain*, so it would
+never pick this up even on the file where it plainly helps. Choosing it per song
+needs a scorer that weighs oscillation -- the same gap § 7.rrr found for noise
+pitch. Two mechanisms now wait on the same missing column.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

@@ -257,6 +257,61 @@ def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
     return min(extra - 1, WAVE_MAX_DELAY)
 
 
+def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
+                       wave: int) -> Optional[tuple]:
+    """Wavetable entries for effect bit $10's arpeggio, or None.
+
+    `detect.PitchSeq` reads the mechanism: `note = played note + seq[phase]` on a
+    global three-step counter, in 34 of 95 corpus files. A wavetable says that
+    directly -- one entry per step, the waveform held and the right side naming a
+    relative note -- and loops for as long as the note is held, as the player's
+    counter does.
+
+    Two honest limits. The player's phase is **global**, so it does not restart
+    with the note; a wavetable always does, and the emitted arpeggio can sit up
+    to `steps - 1` frames out of phase. On three frames that is inaudible. And a
+    sequence of all zeroes is *no* arpeggio -- the instrument simply plays its
+    note -- so it emits nothing rather than three identical entries.
+    """
+    seq = det.pitch_seq
+    if seq is None or not wave & 0xF0:
+        return None
+    data = sid.data
+    rec = det.instr_start + i * det.instr_stride
+    if rec + 7 >= len(data) or not data[rec + 7] & EFFECT_PITCH_SEQ_MASK:
+        return None
+    at = seq.index + i * det.instr_stride
+    if at >= len(data):
+        return None
+    idx = data[at]
+    pair = seq.pairs + 2 * idx
+    if seq.base >= len(data) or pair + 1 >= len(data):
+        return None
+    steps = [data[seq.base]] + [data[pair], data[pair + 1]]
+    steps = steps[:max(2, seq.steps)]
+    if not any(steps):
+        return None
+    # **Rotated so the most common step follows the attack.** The player's phase
+    # is global, so which step a note begins on is unknowable here; a wavetable
+    # always starts at its first entry. Emitting the sequence as written puts
+    # Trans-Atlantic's `+24` one frame into every note, where the player's
+    # `(0, 24, 0)` gives 0 on two phases of three -- measured, that cost 4.2
+    # points of mean melody across 26 files and took Chain Reaction and Zoolook
+    # from 100% to 78%. Leading with the modal step is the likeliest value under
+    # a uniform unknown phase, not a fit to the metric.
+    modal = Counter(steps).most_common(1)[0][0]
+    # Index 1, not index 0: entry 0 is the attack frame and must sound the
+    # pattern's own note, so the modal step goes on the frame after it.
+    turn = (steps.index(modal) - 1) % len(steps)
+    steps = steps[turn:] + steps[:turn]
+    left, right = [], []
+    for step in steps:
+        left.append(wave)
+        right.append(_arp_relative(1, step) if step < 0x80
+                     else (0x80 - (0x100 - step)) & 0xFF)
+    return left, right
+
+
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     """Absolute-note byte for effect bit $40's fixed attack pitch, or None.
 
@@ -1544,6 +1599,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     return out
 
 
+EFFECT_PITCH_SEQ_MASK = 0x10    # the effect byte's bit-$10 arpeggio
 WAVE_GATE_BIT = 0x01            # $D404 bit 0
 CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
@@ -1714,7 +1770,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
                        two_stage: bool = False,
                        sfx_drum: bool = False,
-                       wave_program: bool = False) -> tuple:
+                       wave_program: bool = False,
+                       pitch_seq: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1833,6 +1890,17 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             two = _two_stage_entries(wave, data[at], data[fr], multiplier)
             if two is not None:
                 return two
+
+    # Effect bit $10's arpeggio, after the two-stage block because a record
+    # setting both ($14 here) gets its waveform from that one -- and because a
+    # record with no waveform of its own reaches this and is declined, which is
+    # the same under-read `_sfx_drum_entries` makes for the same reason.
+    if pitch_seq and fmt == FORMAT_GTS5:
+        arpseq = _pitch_seq_entries(sid, det, i, wave)
+        if arpseq is not None:
+            left, right = arpseq
+            if start is not None and len(left) + 1 <= budget:
+                return left + [0xFF], right + [start]
 
     arp_set_keybit = 0 if drum else 1
     tail = (wave & 0xFE) | arp_set_keybit
@@ -2299,7 +2367,7 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       multiplier: int, min_notes: Optional[dict],
                       lead: int, two_stage: bool = False,
                       sfx_drum: bool = False,
-                      wave_program: bool = False) -> tuple:
+                      wave_program: bool = False, pitch_seq: bool = False) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -2336,7 +2404,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          start=start, budget=budget,
                                          two_stage=two_stage,
                                          sfx_drum=sfx_drum,
-                                         wave_program=wave_program)
+                                         wave_program=wave_program,
+                                         pitch_seq=pitch_seq)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -2722,7 +2791,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               sfx_drum: bool = False,
               wave_program: bool = False,
               vibrato_command: bool = False,
-              cut_release: bool = False) -> bytes:
+              cut_release: bool = False,
+              pitch_seq: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2770,7 +2840,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
                                                   fmt, table, multiplier,
                                                   min_notes, lead, two_stage,
-                                                  sfx_drum, wave_program)
+                                                  sfx_drum, wave_program,
+                                                  pitch_seq)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

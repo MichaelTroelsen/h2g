@@ -229,6 +229,17 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--pitch-seq", action="store_true",
+        help="emit the effect byte's bit-$10 arpeggio: a three-step semitone "
+             "sequence the player steps with a GLOBAL phase counter (34 corpus "
+             "files). Off by default and not searched per song, because the "
+             "phase is the problem: a wavetable restarts at every note and the "
+             "player's counter does not, so which step a note begins on cannot "
+             "be reproduced. Over 26 files it takes the median vib ratio 0.22x "
+             "-> 0.58x and costs 5 points of mean melody, 7 files losing. Worth "
+             "trying per song by ear -- Trans-Atlantic goes 0.17x -> 0.61x with "
+             "melody unchanged"),
+    parser.add_argument(
         "--tie", action="store_true",
         help="honour the classic players' tie flag: status bit 5 tells the "
              "player not to close the gate at that note's end, so the note "
@@ -373,6 +384,7 @@ def main(argv=None) -> int:
                           ("--vibrato-command", "vibrato_command"),
                           ("--cut-release", "cut_release"),
                           ("--tie", "tie"),
+                          ("--pitch-seq", "pitch_seq"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -442,6 +454,7 @@ def main(argv=None) -> int:
                       vibrato_command=args.vibrato_command,
                       cut_release=args.cut_release,
                       tie=args.tie,
+                      pitch_seq=args.pitch_seq,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:
