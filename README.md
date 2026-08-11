@@ -804,28 +804,42 @@ requires the gate-clear as part of the shape, because a bare
 chip at startup. 33 files match; 9 more have only the loose shape and are
 deliberately not claimed.
 
-Measured with the new `tail` column over the 30 measurable files:
+**Per instrument, not per file.** The cut is a single write on the note's last
+row, so an instrument whose effect routine runs every frame overwrites it and
+its release *is* audible. On Commando only records 0, 2, 6 and 8 are cut; the
+ones carrying the drum bit hold their envelope across the whole gap. Over the
+143 unambiguous instruments of the 33 files with the routine, `effect & $01 == 0`
+predicts the cut with **98.6%** accuracy, no false negatives and 2 false
+positives (`& $07` scores 86.0%, `== 0` 78.3%).
 
-| | mean `tail` | files better | worse | melody |
-|---|---|---|---|---|
-| off | 27.6% | — | — | 78.2% |
-| `--cut-release` | **99.2%** | 27 | **0** | 78.2% |
+Measured with the `tail` column over the 30 measurable files:
 
-Commando goes 0% → 100%, all seven instruments. `melody` is unchanged, so no
-notes are lost — the change is entirely in what happens after the gate closes.
-The sustain nibble is left alone: it governs the note while it plays, which is
-not what the cut destroys.
+| | mean `tail` | melody |
+|---|---|---|
+| off | 64.6% | 78.2% |
+| every record (v0.5.200) | 62.1% | 78.2% |
+| **gated per instrument** | **97.4%** | 78.2% |
+
+Commando goes 71% → 100%. `melody` is unchanged, so no notes are lost — the
+change is entirely in what happens after the gate closes. The sustain nibble is
+left alone: it governs the note while it plays, which is not what the cut
+destroys.
+
+The middle row is what v0.5.200 shipped, and it was a net regression: applying
+the cut to every record destroyed the drums, which a listener heard at once
+(Commando 71% → 29%, Zoids 83% → 17%, Rasputin 80% → 20%). It scored 27.6% →
+99.2% at the time because the `tail` measure then took the release as a *minimum
+over the gap* to the next note, which cannot tell this note's cut from the next
+note's setup and so counted every instrument as cut. See § 7.nnn.
 
 **It costs `adsr`, and that cost is the metric's.** The `adsr` column compares
 the register pair literally, and those players write the record verbatim at the
-attack — `295F` where we now write `2950` — so every instrument of those files
-reads as a mismatch. Corpus mean falls 75% → 58%, measured at **−47.1 pp on the
-29 files with the cut routine and 0.0 pp on the 50 without**. The nibble it
-disagrees about is one the SID only consults when the gate falls, by which point
-the player has already zeroed it; attack, decay and sustain are identical on
-both sides. So the sound is the same and the byte is not. The generated report
-says this next to the number, and `tail` is the column that tracks what the
-envelope does.
+attack — `295F` where we write `2950` — so an affected instrument reads as a
+mismatch. The nibble it disagrees about is one the SID consults only when the
+gate falls, by which point the player has already zeroed it; attack, decay and
+sustain are identical on both sides. So the sound is the same and the byte is
+not. The generated report states this next to the number, and `tail` is the
+column that tracks what the envelope does.
 
 Tied notes (9%) keep no release, since GoatTracker's release is per instrument
 where the flag is per note. In the player a tied note never gates off at all,

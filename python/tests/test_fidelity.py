@@ -1145,25 +1145,32 @@ def test_the_non_graded_rules_reproduce_siddumps_own_arithmetic():
 
 # --- v0.5.200: the release nibble the player never lets you hear -------------
 
-def test_a_release_tail_is_the_minimum_over_the_gap_not_a_fixed_offset():
-    """The gate-off edge is the anchor four boundary errors came from, and the
-    player does not write its zero on the edge frame -- reading the edge alone
-    saw the behaviour on 20.7% of edges where reading the gap sees it on 100%
-    of instruments. The minimum is the right reduction: it is the value that
-    decides whether the note is still sounding.
+def test_a_release_tail_is_read_on_the_gate_off_frame():
+    """v0.5.200 took the minimum over the whole gap and that was the bug.
+
+    A minimum cannot depend on which frame the player writes on -- but it also
+    cannot tell this note's cut from the *next note's* preparation. On Commando,
+    records 3 and 4 hold their release for two frames and then see a zero that
+    belongs to the following note; records 1, 7 and 12 never zero in the gap at
+    all yet reach 0 somewhere later in it. So the gap reduction scored all seven
+    instruments as cut, the writer zeroed all seven releases, and the drums lost
+    their tails. Widening a window is not automatically the safer reduction.
     """
-    # Three notes, so the middle one is bounded on both sides -- the first and
-    # last are dropped for touching the window, like noise_runs.
+    # Three notes so the middle one is bounded. Its release is $F on the
+    # gate-off frame and only drops to 0 two frames later -- the next note's
+    # setup, which this must not read.
     wf = [(0, 0x41), (3, 0x40), (6, 0x41), (9, 0x40), (12, 0x41), (15, 0x40)]
-    # The release only drops to 0 on the *second* frame of the middle gap.
-    adsr = [(0, 0x295F), (10, 0x2950), (12, 0x295F)]
+    adsr = [(0, 0x295F), (11, 0x2950), (12, 0x295F)]
     v = fidelity.Voice(freq_events=[(0, 0x1000)], wf_events=wf,
                        adsr_events=adsr, pulse_events=[],
                        attack_frames=[0, 6, 12])
-    got = fidelity.release_tails([v], 20)
-    assert got == {0x2950: {0: 1}}, got
-    # ...and reading only the edge frame would have said $F, the pre-cut value
-    assert fidelity.register_timeline(adsr, 20)[9] & 0x0F == 0x0F
+    assert fidelity.release_tails([v], 20) == {0x2950: {0xF: 1}}
+    # ...and a genuine cut, written on the gate-off frame, reads as one
+    cut = [(0, 0x295F), (9, 0x2950)]
+    v2 = fidelity.Voice(freq_events=[(0, 0x1000)], wf_events=wf,
+                        adsr_events=cut, pulse_events=[],
+                        attack_frames=[0, 6, 12])
+    assert fidelity.release_tails([v2], 20) == {0x2950: {0x0: 1}}
 
 
 def test_the_key_masks_out_the_release_it_measures():

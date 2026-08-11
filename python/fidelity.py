@@ -1048,13 +1048,21 @@ def release_tails(voices: list[Voice], nframes: int) -> dict:
     is only what the envelope does *after* the gate closes, and the report has
     never had a column for it (CLAUDE.md: it cannot see note length).
 
-    **Not read at a fixed offset from the gate-off edge.** That is the anchor
-    four boundary errors in one session came from, and `noise_runs`' docstring
-    is the standing warning. The release is taken as the *minimum* over the
-    whole gap between one gate-on run and the next, so the answer does not
-    depend on which frame of the gap the player happens to write on -- and a
-    minimum is the right reduction because it is the value that decides whether
-    the note is still sounding.
+    **Read on the gate-off frame, and v0.5.200 got this wrong.** The first
+    version took the *minimum* over the whole gap to the next note, reasoning
+    that a minimum cannot depend on which frame the player writes on. It cannot,
+    but it also cannot tell this note's cut from the *next note's* preparation:
+    on Commando, records 3 and 4 hold their release for two frames and only then
+    see a zero that belongs to the following note, and records 1, 7 and 12 never
+    zero within the gap at all yet reached 0 somewhere later in it. The gap
+    reduction scored all seven instruments as cut, the writer zeroed all seven
+    releases, and the drums lost their tails -- a listener heard it immediately.
+
+    The cut is a single write on the gate-off frame itself, so that is the frame
+    to read. This is not the fixed-offset-from-an-attack mistake `noise_runs`
+    warns about: nothing here is a duration, and the frame is the edge itself
+    rather than an offset from it. **Widening a window is not automatically the
+    safer reduction** -- it can admit a different event entirely.
 
     Attribution is the ADSR at the preceding run's midpoint, as in
     `noise_runs`: the pair is a verbatim per-instrument copy (`instrmap.py`)
@@ -1090,8 +1098,7 @@ def release_tails(voices: list[Voice], nframes: int) -> dict:
             if nxt >= nframes:
                 continue                      # the tail runs past the window
             key = adsr[(start + end - 1) // 2] & 0xFFF0
-            out.setdefault(key, Counter())[
-                min(adsr[g] & 0x0F for g in range(end, nxt))] += 1
+            out.setdefault(key, Counter())[adsr[end] & 0x0F] += 1
     return out
 
 
@@ -2409,18 +2416,16 @@ def report(rows: list[dict], args) -> str:
             cut = [r for r in adsred if r.get("release_tail_agreement")]
             if cut:
                 out.append(
-                    "  - **`adsr` is structurally lower on the files whose "
-                    "player kills the envelope at a note's end** (v0.5.200, "
-                    "`--cut-release`, 29 files). Those players write the "
-                    "record verbatim at the attack and zero both envelope "
-                    "registers when the note ends, so the release nibble they "
-                    "carry never acts; we emit 0 for it, which sounds "
-                    "identical and reads as a mismatch here on every "
-                    "instrument of those files. The drop was measured at "
-                    "-47.1pp on exactly those files and **0.0pp on the 50 "
-                    "without the routine**. Attack, decay and sustain are "
-                    "unchanged. `tail` is the column that reflects what the "
-                    "envelope actually does: 27.6% to 99.2%.")
+                    "  - **`adsr` reads lower on the files whose player kills "
+                    "the envelope at a note's end** (`--cut-release`). Those "
+                    "players write the record verbatim at the attack and zero "
+                    "both envelope registers when an untied note ends, so the "
+                    "release nibble they carry never acts; we emit 0 for it, "
+                    "which sounds the same and reads as a mismatch here. "
+                    "Attack, decay and sustain are unchanged, and only the "
+                    "instruments whose effect routine does not overwrite the "
+                    "cut are affected (goatwriter.EFFECT_PER_FRAME). `tail` is "
+                    "the column that reflects what the envelope does.")
         out += _register_summary(measured)
         ratios = [r["retrigger_ratio"] for r in measured if r["retrigger_ratio"]]
         if ratios:

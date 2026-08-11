@@ -516,3 +516,24 @@ def test_a_player_without_the_routine_keeps_its_release():
         data = bytes([0x00, 0x00, 0x41, 0x29, 0x5F, 0x00, 0x00, 0x00])
     det = Detection(instr_start=0, instr_stride=8, envelope_cut=False)
     assert _sr(_S(), det, cut_release=True) == 0x5F,         "62 corpus files have no cut routine"
+
+
+def test_an_instrument_whose_effect_runs_every_frame_keeps_its_release():
+    """v0.5.201. The cut is one write on the note's last row; an effect routine
+    that runs every frame overwrites it, so that instrument's release survives
+    and is audible. v0.5.200 zeroed every record of a cut-routine file and
+    destroyed Commando's drums -- reported by ear, and in the trace all along:
+    records 1, 7 and 12 hold their envelope across the whole gap.
+    """
+    from h2g.detect import Detection
+    from h2g.goatwriter import EFFECT_PER_FRAME
+
+    class _S:
+        def __init__(self, eff):
+            self.data = bytes([0x00, 0x00, 0x41, 0x29, 0x5F, 0x00, 0x00, eff])
+    det = Detection(instr_start=0, instr_stride=8, envelope_cut=True)
+    assert EFFECT_PER_FRAME == 0x01
+    assert _sr(_S(0x00), det, cut_release=True) == 0x50, "no effect -> cut"
+    assert _sr(_S(0x08), det, cut_release=True) == 0x50, "$08 is not per-frame"
+    assert _sr(_S(0x01), det, cut_release=True) == 0x5F, "the drum keeps it"
+    assert _sr(_S(0x05), det, cut_release=True) == 0x5F, "drum + arp"

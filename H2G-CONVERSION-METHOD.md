@@ -3477,6 +3477,81 @@ instrument, so it cannot say "at the end of whatever note this is" — the same
 wall § 7.lll hit with the vibrato gate, and there is no per-note release
 command to escape through.
 
+### 7.nnn The same evidence, reduced two ways — and the drums paid for it
+
+v0.5.200 (§ 7.mmm) shipped the envelope cut for **every** record of a file whose
+player has the cut routine. A listener came back one build later: *"something bad
+happened to the drums, perhaps the previous version sounded better."* It had.
+
+The trace had said so all along. Per instrument, on Commando, what the envelope
+does in the gap after a note:
+
+```
+rec  eff   first frames of the gap
+  0   00   0000 0000 0000          <- cut on the gate-off frame
+  2   08   0000 0000 0000          <- cut
+  1   05   064B 064B 064B 064B     <- never cut: a real release
+  7   05   0DFB 0DFB 0DFB 0DFB     <- never cut
+ 12   01   090A 090A 090A 090A     <- never cut
+  3   05   0A09 0A09 0000 0000     <- holds 2 frames, then the NEXT note's zero
+  4   03   0FC4 0FC4 0000 0000     <- likewise
+```
+
+Only two of seven are cut. **The cut is one write on the note's last row, and an
+instrument whose effect routine runs every frame overwrites it**, so its release
+survives and is heard. Zeroing it silences the drum's tail.
+
+#### Why the measure said the opposite
+
+`release_tails` took the release as the **minimum over the whole gap** to the
+next note. The reasoning was that a minimum cannot depend on which frame the
+player writes on — true, and beside the point: it also cannot tell *this* note's
+cut from the *next* note's preparation. Records 3 and 4 above are zeroed by the
+next note; records 1, 7 and 12 reach 0 somewhere later in a long gap. So the
+column scored all seven instruments as cut, agreed with a writer that zeroed all
+seven releases, and reported **27.6% → 99.2%, better on 27 files and worse on
+none** for a change that was making files worse.
+
+Read on the gate-off frame — one write, one frame, no ambiguity — the same three
+builds measure:
+
+```
+                            mean tail   melody
+off (v0.5.199)                  64.6%    78.2%
+every record (v0.5.200)         62.1%    78.2%
+gated per instrument            97.4%    78.2%
+```
+
+v0.5.200 was a **net regression** on the corpus, not the improvement it was
+committed as: Commando 71% → 29%, Zoids 83% → 17%, Rasputin 80% → 20%.
+
+The lesson generalises past this bug. § 7.mmm justified the gap reduction by
+citing the *edge* reading as the error — "20.7% at the edge, 100% over the gap"
+— and drew the conclusion that the wider window was the truer one. It was the
+other way round: the edge reading was right, and the gap reading was admitting a
+second event. **Widening a window is not automatically the safer reduction.**
+When two reductions of the same signal disagree by 5x, that is not a
+measurement detail to be settled by which number looks more plausible; one of
+them is counting something else, and which one has to be established by looking
+at the frames.
+
+#### And the discriminator was there too
+
+§ 7.mmm dismissed "effect bit `$01` clear" at **59.8%** corpus accuracy as a
+correlation rather than a mechanism. That figure was computed over all 95 files
+— but in the 62 with no cut routine nothing is cut whatever the effect byte
+says, so they could contribute only false positives. Restricted to the 33 files
+where the behaviour occurs, the same rule is **98.6%** accurate over 143
+unambiguous instruments, with **no false negatives** and 2 false positives.
+`& $07` scores 86.0%, `== 0` 78.3%.
+
+So the rule that was rejected for being a mere correlation was in fact the
+mechanism, mis-scored by evaluating it on a population where the phenomenon does
+not exist. **A discriminator is only meaningful on the population the behaviour
+occurs in** — and a necessary condition with zero false negatives deserves more
+attention than its raw accuracy suggests, which was the one clue in § 7.mmm's
+own table that pointed the right way and was not followed.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

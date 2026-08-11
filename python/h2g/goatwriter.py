@@ -115,6 +115,20 @@ VIBRATO_DELAY = 0x01
 #
 # siddump ignores the PSID speed field (siddump.c:309/325), so no number in
 # FIDELITY.md can move on this; RetroDebugger can see it.
+# Effect-byte bits whose routine writes the envelope registers on every
+# frame, so the note-end cut (detect.ENVELOPE_CUT_SHAPES) is immediately
+# overwritten and the record's release *is* audible after all. Bit $01
+# alone: over the 143 unambiguous instruments of the 33 files that have the
+# cut routine, `effect & $01 == 0` predicts the cut with 98.6% accuracy, no
+# false negatives and 2 false positives. `& $07` scores 86.0%, `== 0` 78.3%.
+#
+# The same rule looked like 59.8% when first tested, because that test ran
+# over all 95 files -- in the 62 with no cut routine nothing is cut whatever
+# the effect byte says, so they contributed only false positives. A
+# discriminator is only meaningful on the population the behaviour occurs
+# in, and that mistake is why v0.5.200 shipped the cut for every record.
+EFFECT_PER_FRAME = 0x01
+
 DRUM_SPEED_PER_FRAME = 0x0100
 
 
@@ -969,7 +983,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # Kept as the default only because the byte-exact Commando fixture
             # encodes it; --sustain-exact reads the register as the SID does.
             sr &= 0xEF
-        if cut_release and det.envelope_cut:
+        if (cut_release and det.envelope_cut
+                and not data[base + 7] & EFFECT_PER_FRAME):
             # This player ends an untied note by writing 0 to both envelope
             # registers (detect.ENVELOPE_CUT_SHAPES), so the note stops dead
             # and the release nibble in the record is never heard. Copying it
@@ -981,6 +996,15 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             #
             # The sustain is left alone: it governs the note while it plays,
             # which is not what the cut destroys.
+            #
+            # **Per instrument, not per file** (v0.5.201). An instrument
+            # whose effect routine runs every frame re-writes the envelope
+            # after the cut, so its release survives and is heard. On
+            # Commando only records 0, 2, 6 and 8 are cut; the ones
+            # carrying the drum bit hold their value across the whole gap,
+            # and zeroing their release destroyed the drums -- reported by
+            # a listener, and visible in the trace all along. See
+            # EFFECT_PER_FRAME.
             sr &= 0xF0
         # From the laid-out table, not from the index: a record before this
         # one may be longer than WAVE_ENTRIES_PER_INSTR (a deep drum sweep),

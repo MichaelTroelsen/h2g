@@ -199,6 +199,23 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **Widening a window is not automatically the safer reduction.** v0.5.200
+  measured a note's release as the minimum over the whole gap to the next note,
+  on the reasoning that a minimum cannot depend on which frame the player writes
+  on. True, but it also cannot tell this note's cut from the *next* note's
+  setup: the column scored every instrument as cut, the writer zeroed every
+  release, Commando's drums lost their tails and a listener heard it one build
+  later. Read on the gate-off frame the same three builds score 64.6% / 62.1% /
+  97.4% -- v0.5.200 was a net regression published as an improvement. **When two
+  reductions of one signal disagree by 5x, one of them is counting a different
+  event**; settle it by looking at the frames, not by picking the more plausible
+  number. See H2G-CONVERSION-METHOD.md § 7.nnn.
+- **A discriminator is only meaningful on the population the behaviour occurs
+  in.** "Effect bit $01 clear" scored 59.8% over all 95 files and was dismissed
+  as a correlation; over the 33 files that actually have the routine it is 98.6%
+  with zero false negatives -- it was the mechanism. The 62 files where the
+  phenomenon cannot occur could only contribute false positives. A **necessary**
+  condition with no false negatives is worth more than its raw accuracy implies.
 - **An attribution key must not contain the quantity being attributed.** The
   `tail` column keys each note ending by the instrument's ADSR pair and
   measures the release nibble in that pair; keyed on the whole pair, emitting a
