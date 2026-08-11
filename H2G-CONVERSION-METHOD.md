@@ -3696,6 +3696,94 @@ file has gone. The principled fix is to score `finds_noise` per instrument off
 `noise_runs`; that re-decides every file's toggles and needs its own corpus run,
 so it is deliberately not folded in here.
 
+### 7.qqq Effect bits $20 and $40, and a drum that is three bits interleaved
+
+A listener on the balloon song, after § 7.ppp made its snare register-exact:
+*"I do hear sound where the drums are but not snare drums."* The snare was right;
+a **second** drum was not, and chasing it turned up two effect bits this
+converter had never read.
+
+#### Why they were never found
+
+Detection looks for `AND #$xx` against the effect byte. Bit 6 has an idiom of its
+own -- `BIT cell / BVC` -- so **no scan for `AND #$40` could ever match**, which
+is the same trick `STATUS_BIT6_SHAPE` already relies on one field over. Anchored
+on the effect cell (the address the player tests with at least two masks whose
+meaning is known, which is what identifies it as the effect byte's copy rather
+than some other flag word):
+
+```
+$20 tested with AND #$20      35 of 95 files
+$40 tested with BIT / BVC     41 of 95 files
+```
+
+216 instrument records set `$20` and 204 set `$40`, across 57 files.
+
+#### $20 is a filter cutoff sweep
+
+```
+LDA effect / AND #$20 / BEQ out
+LDA accum,X / CLC / ADC step,Y / STA accum,X
+STA $D416                       ; cutoff high byte
+LDA res,Y / STA $D417           ; resonance and routing
+```
+
+A per-voice accumulator advanced by a per-instrument step every frame. An
+independent shape census -- an accumulate followed by `STA $D416` -- finds it in
+31 files, against 35 anchored on the cell.
+
+#### $40 is a fixed pitch out of the player's own note table
+
+```
+LDA counter,X / BEQ + / DEC counter,X / LDA $116B,Y / JMP fetch
++ LDA gate,Y / BNE out / LDA note,X
+fetch  ASL / TAY / LDA table,Y / STA freqlo,X / LDA table+1,Y / STA freqhi,X
+```
+
+Three things had to be pinned, and two of them cost a wrong turn:
+
+* **The two cells are the voice frequency** -- they feed `$D400`/`$D401`
+  directly a few instructions later.
+* **The table is the note table.** `sidfile.find_freq_table` locates it
+  independently and returns the address this routine indexes, so the value is a
+  *note* rather than an arbitrary number.
+* **`Y` is the record offset, not the record number.** Read as a number the byte
+  is 129 on record 1, mapping to `$1A03`, which is not a pitch the trace shows.
+  Read as `index x stride` it is `$34` = 52, and `freqtable[52]` is `$15EB` --
+  the frequency the original sounds on **226 of 226** frames. The clue that
+  forced it: the `$08` interpreter reads `$116B,Y` and `$116C,Y` as one
+  pointer's two halves, which only works if `Y` steps by more than one.
+
+And the array is `det.wave_program` itself -- the same cell, a pointer low byte
+under `$08` and a note index under `$40`. One byte, two meanings, chosen by the
+bit, as with `$01` (drum or wave program) and `$80` (drum or program).
+
+#### The drum is three bits interleaved by frame, which is why emitting one made it worse
+
+Emitted onto the attack's first frame -- the only place a two-stage block can put
+a note today -- the pitch is exactly right and `melody` **falls 85% to 39%**.
+Measuring where the original actually puts it explains that in one table. Per
+note, offsets from the attack frame:
+
+```
+offset 0   the PLAYED note's pitch    (freq-hi 3-13)   <- what melody reads
+offset 1   noise at freq-hi 56        ($80, sfx_pitch = 56)
+offset 2   noise at freq-hi 21        ($40, freqtable[52] = $15EB)
+```
+
+So `$04` supplies the attack waveform, `$80` the second frame's pitch and `$40`
+the third's, and the attack frame keeps the pattern's note. **The bits interleave
+by frame rather than stacking**, and any one of them alone lands its pitch on a
+frame that belongs to another. That is also the retrospective verdict on § 7.fff's
+listening veto: `--sfx-drum` was heard as "beeping" because it supplied offset 1
+with nothing at offset 2 and no attack waveform in front -- a third of a drum.
+
+The decode lands here and the emission does not: `det.effect_bit40` and
+`goatwriter._fixed_attack_note` are read, tested and unwired, exactly as
+`two_stage`'s arrays and the `$08` interpreter were before them. Emitting it
+means emitting `$04`, `$80` and `$40` together as one per-frame block, which is a
+larger change than any of the three.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

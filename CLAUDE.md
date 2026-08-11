@@ -199,6 +199,20 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **A bit tested with `BIT`/`BVC` is invisible to an `AND #$xx` scan.** Effect
+  bit `$40` went unread for the whole project because detection looks for
+  `AND #$40`; bit 6 (and bit 7, via `BPL`/`BMI`) have 6502 idioms of their own.
+  When a record byte's bits are being catalogued, scan for all three forms. And
+  identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
+  address only counts as the effect byte if the player also tests it with masks
+  whose meaning is already known.
+- **Where an effect's frames *land* is part of the mechanism.** The balloon
+  song's second drum is bits `$04`, `$80` and `$40` interleaved by frame --
+  played note at offset 0, `$80`'s pitch at offset 1, `$40`'s at offset 2. Each
+  bit alone puts its pitch on a frame that belongs to another: emitting `$40`
+  correctly derived but on frame 0 took melody 85% -> 39%. **Before emitting a
+  newly decoded effect, measure the original's per-offset-from-attack profile**,
+  not just the aggregate it contributes. See H2G-CONVERSION-METHOD.md § 7.qqq.
 - **Goattracker numbers patterns in hex, and the editor's pattern is not the
   converter's intermediate.** A listener's "PATT.12" is pattern **18**; three
   dumps of `new_patterns[12]` disagreed with the screenshot before that landed,

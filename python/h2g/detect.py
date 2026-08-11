@@ -84,6 +84,9 @@ class Detection:
     # Whether the player kills the envelope when a note ends, so the record's
     # release nibble is never audible -- find_envelope_cut().
     envelope_cut: bool = False
+    # Whether the player tests effect bit $40 -- a fixed pitch for the attack,
+    # taken from its own note table. _find_effect_bit40().
+    effect_bit40: bool = False
     # True when the player's instrument effect byte (+7) really is Warhawk's
     # bit-field, proved by finding the routine that tests it. The byte is NOT
     # a shared format across the player family -- see _find_effect_routines().
@@ -897,6 +900,10 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                     f"duration {det.triangle_gate or TRIANGLE_VIBRATO_GATE}"
                     + ("" if det.triangle_gate else ", assumed") + ")")
 
+    det.effect_bit40 = _find_effect_bit40(sid)
+    if det.effect_bit40:
+        log("Effect bit $40..........: fixed attack pitch from the note table")
+
     det.envelope_cut = find_envelope_cut(sid)
     if det.envelope_cut:
         log("Note end................: gate off and envelope zeroed "
@@ -1588,6 +1595,54 @@ STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
 # on its own also matches an init routine clearing the chip at startup, which
 # says nothing about how notes end; it appears in 9 further files that this
 # does not claim.
+# Effect bit $40 is tested with `BIT cell / BVC`, not `AND #$40` -- the 6502
+# idiom for bit 6, the same one STATUS_BIT6_SHAPE relies on for a pattern byte.
+# That is why every scan for the bit missed it: this converter's effect-bit
+# detection looks for `AND #$xx`.
+#
+# The cell is identified rather than assumed: it is the address the player tests
+# with at least two of the bit masks whose meaning is already known, which is
+# what makes it the effect byte's copy and not some other flag word.
+EFFECT_KNOWN_MASKS = (0x01, 0x02, 0x04, 0x08, 0x10)
+EFFECT_BIT40_MASK = 0x40
+
+
+def _effect_cells(data: bytes) -> dict:
+    """{address: set of masks} for every `LDA addr / AND #imm` on a bit mask."""
+    out: dict = {}
+    for i in range(len(data) - 5):
+        op = data[i]
+        if op in (0xAD, 0xBD, 0xB9) and data[i + 3] == 0x29:
+            addr, mask = data[i + 1] | (data[i + 2] << 8), data[i + 4]
+        elif op in (0xA5, 0xB5) and data[i + 2] == 0x29:
+            addr, mask = data[i + 1], data[i + 3]
+        else:
+            continue
+        if mask and not mask & (mask - 1):          # a single bit
+            out.setdefault(addr, set()).add(mask)
+    return out
+
+
+def _find_effect_bit40(sid: SidFile) -> bool:
+    """Whether this player reads effect bit $40 (41 of 95 corpus files).
+
+    Its body writes both halves of the voice frequency from the player's own
+    note table while a countdown runs -- a fixed pitch for the attack, sharing
+    its counter with bit $04's attack *waveform*. See goatwriter's
+    `_two_stage_entries` and H2G-CONVERSION-METHOD.md section 7.qqq.
+    """
+    data = sid.data
+    for addr, masks in _effect_cells(data).items():
+        if len(masks & set(EFFECT_KNOWN_MASKS)) < 2:
+            continue
+        lo, hi = addr & 0xFF, (addr >> 8) & 0xFF
+        for i in range(len(data) - 4):
+            if (data[i] == 0x2C and data[i + 1] == lo and data[i + 2] == hi
+                    and data[i + 3] in (0x50, 0x70)):
+                return True
+    return False
+
+
 ENVELOPE_CUT_SHAPES = (
     "29 FE 99 04 D4 A9 00 99 05 D4 99 06 D4",
     "29 FE 9D 04 D4 A9 00 9D 05 D4 9D 06 D4",

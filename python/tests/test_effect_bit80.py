@@ -194,3 +194,120 @@ def test_an_instrument_with_no_waveform_gets_no_drum():
     assert _sfx_drum_entries(0x01, 0x48, 6) is None, "gate alone is not a waveform"
     left, _ = _sfx_drum_entries(0x41, 0x48, 6)
     assert left[0] > 0x0F, "the first entry must be a waveform, never a delay"
+
+
+# --- v0.5.204: effect bit $40, decoded ---------------------------------------
+
+def test_bit40_is_tested_with_bit_and_bvc_not_and():
+    """Which is why every scan for it missed it. Bit 6 has a 6502 idiom of its
+    own -- `BIT cell / BVC` -- and this converter's effect-bit detection looks
+    for `AND #$xx`. The same idiom STATUS_BIT6_SHAPE relies on for a pattern
+    byte, one field over.
+    """
+    from h2g.detect import EFFECT_BIT40_MASK, _find_effect_bit40
+
+    class _S:
+        def __init__(self, data):
+            self.data = data
+    assert EFFECT_BIT40_MASK == 0x40
+    # a cell tested with two known masks, then BIT/BVC on the same cell
+    body = bytes.fromhex("AD341229 04 F0 05 AD3412 29 08 F0 05 2C 3412 50 04".replace(" ", ""))
+    assert _find_effect_bit40(_S(b"\x00" + body))
+    # ...the BIT must be on *that* cell, not any cell
+    other = bytes.fromhex("AD341229 04 F0 05 AD3412 29 08 F0 05 2C 9999 50 04".replace(" ", ""))
+    assert not _find_effect_bit40(_S(b"\x00" + other))
+
+
+def test_the_cell_is_identified_by_the_masks_already_understood():
+    """A lone `BIT addr / BVC` proves nothing -- the idiom is everywhere. What
+    makes the address the effect byte is that the player also tests it with at
+    least two of the bit masks whose meaning is known."""
+    from h2g.detect import _effect_cells, _find_effect_bit40
+
+    class _S:
+        def __init__(self, data):
+            self.data = data
+    one = bytes.fromhex("AD341229 04 F0 05 2C 3412 50 04".replace(" ", ""))
+    assert not _find_effect_bit40(_S(b"\x00" + one)), "one known mask is not a cell"
+    cells = _effect_cells(b"\x00" + one)
+    assert cells[0x1234] == {0x04}
+    # a non-power-of-two mask is not a bit test and must not register
+    assert not _effect_cells(bytes.fromhex("00AD341229070000"))
+
+
+@needs_corpus
+def test_it_reads_across_the_corpus_and_commando_does_not_have_it():
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import _detect_tables
+    from h2g.sidfile import load_sid
+    seen = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            _sid, det = _detect_tables(load_sid(str(path)), lambda *a: None)
+        except Exception:                                  # noqa: BLE001
+            continue
+        seen += det.effect_bit40
+    assert seen == 41, seen
+
+
+@needs_corpus
+def test_the_fixed_pitch_resolves_through_the_players_own_note_table():
+    """The derivation: Y is the record *offset*, not its number. Read as a
+    number it gives 129 on Trans-Atlantic's record 1, which maps to $1A03 and is
+    not the pitch the trace shows; read as index x stride the byte is $34 = 52,
+    and freqtable[52] is $15EB -- the frequency the original sounds on 226 of
+    226 frames.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import _detect_tables
+    from h2g.goatwriter import WAVE_NOTE_ABS, _fixed_attack_note, _note_freq
+    from h2g.sidfile import find_freq_table, load_sid
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a: None)
+    assert det.effect_bit40
+    # the same array the $08 interpreter reads as a pointer low byte
+    assert det.wave_program == sid.to_offset(0x116B)
+    assert sid.data[det.wave_program + 1 * det.instr_stride] == 52
+    tbl = find_freq_table(sid)
+    at = sid.to_offset(tbl.addr) + 2 * 52
+    assert (sid.data[at] | (sid.data[at + 1] << 8)) == 0x15EB
+    got = _fixed_attack_note(sid, det, 1)
+    assert got is not None and got >= WAVE_NOTE_ABS
+    assert abs(_note_freq(got - WAVE_NOTE_ABS) - 0x15EB) < 0x0100
+
+
+@needs_corpus
+def test_an_index_past_the_note_table_is_declined_rather_than_guessed():
+    """Records 15 and 18 hold 174 and 132, past the 95-entry table -- either
+    they take the played-note branch or the byte means something else there.
+    Reading past the table would invent a pitch."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import _detect_tables
+    from h2g.goatwriter import _fixed_attack_note
+    from h2g.sidfile import load_sid
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a: None)
+    assert _fixed_attack_note(sid, det, 15) is None
+    assert _fixed_attack_note(sid, det, 18) is None
+    # ...and a record without the bit reads that cell as a pointer, not a note
+    assert _fixed_attack_note(sid, det, 2) is None
+
+
+def test_the_pitch_is_not_wired_into_the_attack_yet():
+    """It belongs on the attack's third frame; frame 0 keeps the played note and
+    frame 1 is bit $80's drum. Applied to frame 0 -- the only place a two-stage
+    block could put it today -- melody falls 85% to 39%. The emitter accepts the
+    note so the shape is testable; nothing passes it."""
+    from h2g.goatwriter import _two_stage_entries
+    plain = _two_stage_entries(0x41, 0x81, 4, 1)
+    assert plain[1][0] == 0x00, "frame 0 keeps the played note"
+    fixed = _two_stage_entries(0x41, 0x81, 4, 1, attack_note=0xB4)
+    assert fixed[1][0] == 0xB4
+    # ...and the held frames spell themselves out rather than using a delay,
+    # which would keep the fixed pitch for the whole window
+    assert fixed[1][1] == 0x00 and fixed[0][1] == 0x81

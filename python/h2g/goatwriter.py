@@ -18,7 +18,7 @@ from .detect import (Detection, FILTER_ENABLE_BIT, decode_wave_program,
                      TRIANGLE_VIBRATO_PEAK, TRIANGLE_VIBRATO_PERIOD,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
                      VIBRATO_SHIFT_MASK)
-from .sidfile import GT_FREQ0, SidFile
+from .sidfile import GT_FREQ0, SidFile, find_freq_table
 
 HEADER_LEN = 0x64
 FIELD_LEN = 0x20
@@ -256,8 +256,64 @@ def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
     return min(extra - 1, WAVE_MAX_DELAY)
 
 
+def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
+    """Absolute-note byte for effect bit $40's fixed attack pitch, or None.
+
+    The derivation, which took two wrong turns worth recording. The routine is
+
+        LDA counter,X / BEQ + / DEC counter,X / LDA $116B,Y / JMP fetch
+        + LDA gate,Y / BNE out / LDA note,X
+        fetch  ASL / TAY / LDA table,Y / STA freqlo,X
+                           LDA table+1,Y / STA freqhi,X
+
+    and three things had to be pinned before it could be emitted:
+
+    * **What the two cells are.** They feed `$D400`/`$D401` directly
+      (`LDA freqhi,X / STA $D401,Y`), so they are the voice frequency.
+    * **What the table is.** `sidfile.find_freq_table` locates it
+      independently and returns the same address the routine indexes -- so the
+      pitch is a *note*, not an arbitrary value.
+    * **What indexes it.** `$116B,Y` read with `Y` as the instrument *number*
+      gives 129 on Trans-Atlantic's record 1, which maps to `$1A03` and is not
+      the pitch the trace shows. `Y` is the record **offset**: index × stride.
+      At that offset the byte is `$34` = 52, and `freqtable[52]` is `$15EB` --
+      exactly the frequency the original sounds on 226 of 226 frames.
+
+    And the table it indexes is `det.wave_program`, the same array the `$08`
+    interpreter reads as a *pointer low byte*. One cell, two meanings, chosen by
+    the effect bit -- as with `$01` (drum or wave program) and `$80` (drum or
+    program). Which is why this is gated on `det.effect_bit40`: read as a
+    pointer it is not a note, and the `$08` records here hold 176, 201 and 178,
+    i.e. `$3E00`, `$FF34` and `$3C00`, nonsense as pitches.
+
+    Returns None where the byte cannot be a note -- the player's table has a
+    definite length and an index past it is reading something else, which is a
+    reading this function will not guess at.
+    """
+    if not det.effect_bit40 or det.wave_program < 0:
+        return None
+    table = find_freq_table(sid)
+    if table is None:
+        return None
+    off = det.wave_program + i * det.instr_stride
+    if off >= len(sid.data):
+        return None
+    index = sid.data[off]
+    if not 0 <= index < table.length:
+        return None
+    at = sid.to_offset(table.addr) + 2 * index
+    if at + 1 >= len(sid.data):
+        return None
+    freq = sid.data[at] | (sid.data[at + 1] << 8)
+    if not freq:
+        return None
+    note = min(range(96), key=lambda n: abs(_note_freq(n) - freq))
+    return (WAVE_NOTE_ABS + note) & 0xFF
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
-                       multiplier: int = 1) -> tuple:
+                       multiplier: int = 1,
+                       attack_note: Optional[int] = None) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 34 corpus files: effect bit
@@ -286,9 +342,24 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         return None
     calls = max(1, frames) * max(1, multiplier)
     second = (wave & 0xFE) or (attack & 0xFE)
-    left, right = [attack], [0x00]
+    # `attack_note` is effect bit $40: the attack does not play the pattern's
+    # note at all, it plays a fixed pitch out of the player's own note table
+    # (detect._find_effect_bit40). Without it the attack sounded at whatever the
+    # pattern asked for, and since these attacks are mostly noise -- whose pitch
+    # is the rate its shift register clocks -- that is the difference between a
+    # snare and a thud. Trans-Atlantic's GT 2 sounded its noise at frequency
+    # high bytes 3-13 where the original sounds every one of 226 at $15EB.
+    left, right = [attack], [attack_note if attack_note is not None else 0x00]
     extra = calls - 1             # entry 0 is already one call
-    if extra == 1:
+    if attack_note is not None:
+        # The fixed pitch is the *first* frame's, and the rest of the attack
+        # returns to the played note -- so the remaining calls are spelled out
+        # rather than folded into a delay, which would keep the fixed pitch for
+        # all of them. Measured: held for the whole window it puts 904 frames at
+        # the fixed pitch where the original has 226, and melody collapses.
+        left += [attack] * extra
+        right += [0x00] * extra
+    elif extra == 1:
         left.append(attack)       # no delay encodes one call; rewrite instead
         right.append(0x00)
     elif extra > 1:
@@ -1697,6 +1768,13 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         at = det.two_stage_wave + i * det.instr_stride
         fr = det.two_stage_frames + i * det.instr_stride
         if max(at, fr) < len(data):
+            # `_fixed_attack_note(sid, det, i)` is deliberately NOT passed here.
+            # Effect bit $40's pitch belongs on the attack's *third* frame, not
+            # its first, and its second frame belongs to bit $80's drum -- the
+            # three bits interleave by frame rather than stacking. Applied to
+            # frame 0 it puts the drum's pitch where the played note goes and
+            # melody falls 85% -> 39% on the one file it reaches. See
+            # H2G-CONVERSION-METHOD.md section 7.qqq.
             two = _two_stage_entries(wave, data[at], data[fr], multiplier)
             if two is not None:
                 return two
