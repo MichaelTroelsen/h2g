@@ -330,8 +330,11 @@ def test_the_listening_confirmation_is_recorded_with_its_reason():
     instrument defect. The mirror of FIDELITY_VETOED records the listening
     verdict instead of hand-editing generated presets.json."""
     import presets
-    assert presets.FIDELITY_CONFIRMED[
-        "Trans-Atlantic_Balloon_Challenge.sid"] == {"wave_program"}
-    # the same file vetoes the *wrong* drum, and both must survive together
-    assert presets.FIDELITY_VETOED[
-        "Trans-Atlantic_Balloon_Challenge.sid"] == {"sfx_drum"}
+    confirmed = presets.FIDELITY_CONFIRMED[
+        "Trans-Atlantic_Balloon_Challenge.sid"]
+    assert "wave_program" in confirmed
+    # v0.5.208: the sfx_drum veto is retired -- the listener reported no audible
+    # difference once the snare existed and the burst had its two pitches, and
+    # the oscillation scorer selects the setting on its own.
+    assert not presets.FIDELITY_VETOED, presets.FIDELITY_VETOED
+    assert "sfx_drum" in confirmed

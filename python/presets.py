@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import itertools
+import math
 import json
 import sys
 from pathlib import Path
@@ -120,9 +121,7 @@ EXCLUDED_FROM_ALWAYS = {
     # costs two wavetable entries where the player spends one, so the slides
     # land a frame late.
     "wave_program",
-    # Effect bit $10's arpeggio. Read and emitted, off everywhere, and not in
-    # FIDELITY_TOGGLES either -- which is the honest disposition rather than a
-    # gap. The player steps the sequence with a *global* phase counter; a
+    # Effect bit $10's arpeggio -- per song, never in `always`. The player steps the sequence with a *global* phase counter; a
     # wavetable restarts at every note, so which step a note opens on cannot be
     # reproduced at all. Over the 26 files that use it that trade is median vib
     # 0.22x -> 0.58x against 5 points of mean melody, 7 files losing and After_8
@@ -140,18 +139,21 @@ EXCLUDED_FROM_ALWAYS = {
 # rather than hand-edited into presets.json, which is generated and would lose
 # the edit on the next run -- along with the reason.
 FIDELITY_VETOED: dict[str, set[str]] = {
-    # --sfx-drum puts the bit-$80 hit at the pitch the player uses and `wave`
-    # rises 61.1% -> 62.4% for it, but it is heard as a beep and not a drum.
-    # The snare this file is actually missing is GT 3's byte-code program
-    # (effect bit $08, pointers at $116B, first two bytes `81 30` = noise at
-    # $30xx), which nothing reads yet. Adding a wrong drum while the right one
-    # is absent makes the tune worse rather than closer, and no column in the
-    # report can see the difference.
-    "Trans-Atlantic_Balloon_Challenge.sid": {"sfx_drum"},
+    # Empty, and the entry that was here is worth keeping as a record.
+    # Trans-Atlantic's --sfx-drum was vetoed in v0.5.1xx as "a beep and not a
+    # drum", on a build with no snare at all and a drum that sounded one pitch
+    # for every frame of its burst. Both are fixed: v0.5.203 emits the byte-code
+    # snare (387 noise frames against 387) and v0.5.206 gives the burst its two
+    # pitches, the drum's own then bit $40's. Asked to A/B the two builds the
+    # same listener reported no audible difference at all, which retires the
+    # verdict rather than reversing it -- and v0.5.208's oscillation scorer now
+    # selects the setting on its own. Lifting a listening veto needs the ear to
+    # stop objecting, not a better number; here it did both.
 }
 
-# The mirror of the veto: settings a listening test *confirmed*, which the
-# search scores as worse. Same reason for living here rather than in the
+# The mirror of the veto: settings recorded by hand because the search as run
+# does not carry them -- either it scores them worse, or the run that would pick
+# them up has not happened. Each entry says which. Same reason for living here rather than in the
 # generated presets.json -- the file would lose both the edit and the reason.
 FIDELITY_CONFIRMED: dict[str, set[str]] = {
     # The snare FIDELITY_VETOED's entry above names as the real one. With
@@ -171,7 +173,14 @@ FIDELITY_CONFIRMED: dict[str, set[str]] = {
     # describes. Fixing the criterion properly means scoring per instrument off
     # `fidelity.noise_runs`, which would re-decide every file's toggles and so
     # wants its own commit and its own corpus run.
-    "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program"},
+    #
+    # `pitch_seq` joins it on the same footing. Effect bit $10's arpeggio takes
+    # this file's `vib` from 0.17x to 0.61x with melody unchanged, and it is now
+    # selected by `fidelity_better`'s oscillation term -- but only a --fidelity
+    # run applies that, and one over 80 files at 31 combinations each is hours.
+    # Recorded here so the file gets today's measurement without waiting for it.
+    "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program", "pitch_seq",
+                                             "sfx_drum"},
 }
 
 
@@ -291,7 +300,11 @@ def best_options(sid_path: Path) -> dict | None:
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
-                    "wave_program")
+                    "wave_program", "pitch_seq")
+# Five toggles is 31 combinations a song, each a convert, a pack and two traces.
+# `pitch_seq` earned its place by being invisible to every other criterion here:
+# it strikes no new notes and sounds no new register, so only the oscillation
+# term can recommend it. See fidelity_better.
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the
@@ -383,7 +396,48 @@ def fidelity_better(cand: tuple, ref: tuple,
                    # $05xx and is inaudible. Within an octave is the test --
                    # a musical unit, not a fitted threshold.
                    )
-    return keeps_notes and bool(plays_more or finds_noise)
+    # **Moves the pitch oscillating at the original's rate.** `reversal_ratio` is
+    # ours over theirs, so 1.0 is right and the distance to it is symmetric only
+    # in log space -- 2.0x and 0.5x are the same size of wrong. Effect bit $10's
+    # arpeggio takes the balloon song 0.17x -> 0.61x, and nothing else in this
+    # function could see it: it strikes no new notes, sounds no new register and
+    # leaves melody untouched. Guarded by `keeps_notes` like everything else,
+    # which is what rejects it on the seven files where it costs melody.
+    def osc(state):
+        # A state built before this term existed carries no oscillation, and an
+        # absent dimension must not recommend anything -- `_closer` reads None
+        # as "not measurable".
+        return state[4] if len(state) > 4 else None
+    moves_oscillation = _closer(osc(cand), osc(ref), 1.0, margin)
+    # **Moves the noise to the pitch the original sounds it at.** The frames may
+    # already be there and be inaudible or wrong-coloured: the drum composition
+    # of section 7.sss puts Pandora's 35 attack-pitch frames exactly where the
+    # original's are, changing no count and no waveform. Medians, in log space,
+    # for the same reason as above.
+    moves_noise_pitch = _closer(cand[3][2] and cand[3][3] and
+                                cand[3][2] / cand[3][3],
+                                ref[3][2] and ref[3][3] and
+                                ref[3][2] / ref[3][3], 1.0, margin)
+    return keeps_notes and bool(plays_more or finds_noise
+                                or moves_oscillation or moves_noise_pitch)
+
+
+def _closer(cand: float | None, ref: float | None, target: float,
+            margin: float) -> bool:
+    """Whether `cand` sits nearer `target` than `ref` does, in log space.
+
+    A ratio's distance from 1 is only symmetric logarithmically -- 2.0 and 0.5
+    are equally wrong, where `abs(r - 1)` calls one twice the other. `margin` is
+    read as a fraction, so the move has to be worth at least that much of the
+    remaining gap rather than any move at all.
+
+    None on either side means the dimension was not measurable on that run, and
+    an unmeasurable dimension cannot recommend a setting.
+    """
+    if not cand or not ref or cand <= 0 or ref <= 0 or target <= 0:
+        return False
+    want = math.log(target)
+    return abs(math.log(cand) - want) < abs(math.log(ref) - want) - margin
 
 
 def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
@@ -421,10 +475,12 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         nf = seconds * 50
         wv = F.wave_compare(orig, dump, nframes=nf,
                             lag=F.startup_lag(orig, dump)[0])
+        pm = F.pitch_motion_compare(orig, dump, nf)
         return (got["melody"], got["sequence"],
                 sum(len(v.attacks) for v in dump),
                 (wv["our_noise_frames"], wv["orig_noise_frames"],
-                 _noise_pitch(dump, nf), _noise_pitch(orig, nf)))
+                 _noise_pitch(dump, nf), _noise_pitch(orig, nf)),
+                pm.get("reversal_ratio"))
 
     ref = play({})
     if ref is None:
@@ -523,8 +579,8 @@ def main(argv=None) -> int:
             for key in FIDELITY_CONFIRMED.get(path.name, ()):
                 if found is not None and not found.get(key):
                     found[key] = True
-                    print(f"    {path.name}: {key} confirmed by a listening "
-                          "test", file=sys.stderr)
+                    print(f"    {path.name}: {key} from "
+                          "FIDELITY_CONFIRMED", file=sys.stderr)
             songs[path.name] = found
         print(f"  {path.name:44} {'-' if not found else found['max_rows']}",
               file=sys.stderr)

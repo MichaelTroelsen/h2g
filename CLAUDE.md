@@ -206,6 +206,10 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **Compare a ratio in log space.** `presets._closer` scores how near a ratio
+  sits to 1 logarithmically, because 2.0x and 0.5x are the same size of wrong
+  where `abs(r - 1)` calls one twice the other. Applies to every `x`-suffixed
+  column in `FIDELITY.md`, not just the scorer.
 - **A rate that looks wrong may be a mechanism that is absent.** `vib` 0.17x on
   the balloon song was read as a vibrato-rate bug; the one instrument that *has*
   a vibrato byte was within 20% of the original, and the missing 1812 reversals

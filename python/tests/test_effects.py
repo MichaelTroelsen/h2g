@@ -666,11 +666,15 @@ def test_the_modal_step_follows_the_attack_frame():
     assert 0x18 in right, "the sequence's own step is still emitted"
 
 
-def test_off_by_default_and_deliberately_not_searched():
+def test_off_by_default_and_searched_per_song():
+    """v0.5.208 gave `fidelity_better` an oscillation term, which is the only
+    criterion that can see this setting: it strikes no new notes and sounds no
+    new register. Never in `always` -- the global phase makes it a per-song
+    trade, right on the balloon song and wrong on seven others."""
     import presets
     from h2g.convert import convert
     assert "pitch_seq" in presets.EXCLUDED_FROM_ALWAYS
-    assert "pitch_seq" not in presets.FIDELITY_TOGGLES
+    assert "pitch_seq" in presets.FIDELITY_TOGGLES
     root = pathlib.Path(__file__).resolve().parents[2]
     assert convert(str(root / "Commando.sid"), log=lambda m: None) == \
         (root / "Commando.sng").read_bytes()

@@ -3975,6 +3975,53 @@ never pick this up even on the file where it plainly helps. Choosing it per song
 needs a scorer that weighs oscillation -- the same gap § 7.rrr found for noise
 pitch. Two mechanisms now wait on the same missing column.
 
+### 7.uuu The scorer two mechanisms were waiting on
+
+§ 7.rrr and § 7.ttt both ended the same way: a setting measured as closer to the
+original that `presets.fidelity_better` could not select, because every criterion
+it had was about *notes* or about a register we sounded **none** of. Neither the
+drum's pitch nor the arpeggio's rate is either of those things.
+
+Two terms, on the same one-sided footing as the existing pair:
+
+- **Oscillation.** `reversal_ratio` is ours over theirs, so 1.0 is right. The
+  distance to it is compared **in log space**, because 2.0x and 0.5x are the same
+  size of wrong where `abs(r - 1)` calls one twice the other.
+- **Noise pitch.** The median frequency each side spends its noise frames at,
+  again as a ratio in log space. `_noise_pitch` was already computed for the
+  audibility guard, so this needed no new measurement -- the numbers were in the
+  tuple and unread.
+
+Both keep `keeps_notes`, and that guard is what makes them safe: it is exactly
+what rejects the arpeggio on the seven files where it costs melody while
+accepting it on the one where it does not. Run over three files, the search now
+answers
+
+```
+Trans-Atlantic   two_stage, sfx_drum, pitch_seq
+After_8          defaults        (pitch_seq costs it 40 points of melody)
+Chain Reaction   defaults        (100% -> 78%)
+```
+
+which is the per-song judgement both sections asked for.
+
+#### And it retired a listening veto
+
+The scorer selecting `sfx_drum` on Trans-Atlantic put the veto of § 7.fff back in
+question, and the listener had already answered it: asked to A/B the shipping
+build against one with the setting on, they reported **no audible difference at
+all**. The verdict was "a beep and not a drum", recorded when the file had no
+snare (§ 7.ppp fixed that) and the burst sounded one pitch for every frame
+(§ 7.sss fixed that). A veto is retired when the ear stops objecting, not when a
+number improves; here both happened, so `FIDELITY_VETOED` is now empty -- kept as
+a comment, because the sequence of it is the useful part.
+
+One practical note: five toggles is 31 combinations a song, each a convert, a
+pack and two traces, so applying the new criteria corpus-wide is an hours-long
+`--fidelity` run and has not been done. The three files measured today are
+recorded in `FIDELITY_CONFIRMED` so the balloon song gets its result now rather
+than waiting for it.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

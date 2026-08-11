@@ -201,3 +201,54 @@ def test_the_shipped_presets_honour_every_veto():
             assert not entry.get(key), (
                 f"{name} still carries {key}, which a listening test rejected "
                 "-- regenerate presets.json")
+
+
+# --- v0.5.208: the oscillation and noise-pitch criteria ----------------------
+
+def test_a_ratio_is_compared_in_log_space():
+    """2.0x and 0.5x are the same size of wrong; `abs(r - 1)` calls one twice
+    the other. The margin is a fraction of the remaining gap, so a move has to
+    be worth something rather than merely be a move."""
+    assert presets._closer(0.61, 0.17, 1.0, 0.02), "0.17x -> 0.61x is closer"
+    assert not presets._closer(0.5, 2.0, 1.0, 0.02), "same distance either side"
+    assert not presets._closer(0.17, 0.61, 1.0, 0.02), "and it is directional"
+    # an unmeasurable dimension cannot recommend a setting
+    for a, b in ((None, 0.5), (0.5, None), (0, 0.5), (0.5, 0)):
+        assert not presets._closer(a, b, 1.0, 0.02), (a, b)
+
+
+def test_oscillating_nearer_the_originals_rate_is_a_win():
+    """The criterion effect bit $10's arpeggio needed. It strikes no new notes
+    and sounds no new register, so `plays_more` and `finds_noise` are both blind
+    to it -- the balloon song goes vib 0.17x -> 0.61x with melody unchanged."""
+    ref = (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800), 0.17)
+    assert presets.fidelity_better(
+        (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800), 0.61), ref)
+    # ...and it is still guarded by the note tests, which is what rejects the
+    # same setting on the seven files where it costs melody
+    assert not presets.fidelity_better(
+        (0.52, 0.75, 600, (0, 0, 0x3800, 0x3800), 0.93), ref)
+    assert not presets.fidelity_better(
+        (0.80, 0.75, 599, (0, 0, 0x3800, 0x3800), 0.61), ref)
+
+
+def test_moving_the_noise_to_the_originals_pitch_is_a_win():
+    """The frames can already be there and be the wrong colour: the drum
+    composition changes no count and no waveform, only which pitch the burst
+    sounds at. `finds_noise` cannot see that -- it needs our side to have had
+    *none*."""
+    ref = (0.80, 0.75, 600, (928, 1089, 0x0500, 0x3800), 1.0)
+    assert presets.fidelity_better(
+        (0.80, 0.75, 600, (928, 1089, 0x3000, 0x3800), 1.0), ref)
+    # a move away is not a win, and neither is one inside the margin
+    assert not presets.fidelity_better(
+        (0.80, 0.75, 600, (928, 1089, 0x0200, 0x3800), 1.0), ref)
+
+
+def test_a_state_without_the_new_terms_still_scores():
+    """Four-element states predate this term. An absent dimension reads as
+    unmeasurable rather than as a zero, which would recommend everything."""
+    ref = (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800))
+    assert presets.fidelity_better((0.90, 0.80, 600, (0, 0, 0x3800, 0x3800)), ref)
+    assert not presets.fidelity_better(
+        (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800)), ref)
