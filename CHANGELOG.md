@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.202 — 2026-08-11
+
+- honour the tie flag: the note after it must not re-attack
+
 ## 0.5.201 — 2026-08-11
 
 - gate the envelope cut per instrument; v0.5.200 killed the drums

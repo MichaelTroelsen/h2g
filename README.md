@@ -764,6 +764,59 @@ dropped those frames from both counts. One_on_One frame 102 is the site (old
 derivation and the gplay simulation, not the table. The LFO-table form was
 derived from the simulated semantics from the start and is unchanged.
 
+### `--tie` (the note that should not be struck)
+
+**On by default via `presets.json`.** 64 classic-dialect files carry tied
+events.
+
+A listener pointed at pattern `$12` of Commando: *"note E-5 on pos 16 should not
+be played as a note, the glide from F#5 should stop at E-5 — the attack is too
+strong."* Exactly right, and the trace shows it:
+
+```
+          ORIGINAL                  OURS (before)
+row 15    2E7A 2E2C 2DDE 41         2F43 2EDE 40 → 09    we close the gate
+row 16    2BD6 41   no attack       2BDD 41  * ATTACK
+```
+
+**Status bit 5 is a tie flag.** It is the same bit as the envelope cut
+(`--cut-release`): `LDA duration,X / AND #$20 / BNE skip` at Commando `$517F`
+means *don't close the gate at this note's end*. So the original reaches row 16
+with the gate still open, and a note event with an open gate only changes the
+frequency — no new attack. The glide lands on E-5 and the vibrato takes over on
+the same sounding note. We closed the gate and hard-restarted, manufacturing the
+attack.
+
+GoatTracker expresses it in one command. `CMD_TONEPORTA` with parameter **0**:
+
+- `gplay.c:811` — `if (!cptr->cmddata) { cptr->freq = targetfreq; ... }`, an
+  instant pitch jump rather than a slide;
+- `gplay.c:930` — the hard-restart gate-off is skipped *because* the row's
+  command is `CMD_TONEPORTA`;
+- `gplay.c:355` — the `firstwave` testbit is skipped for the same reason;
+- and it zeroes `vibtime`, so the vibrato restarts on the landing, which is what
+  the original does.
+
+It goes on the note **following** the tied event, not on the tied event itself —
+the original does attack on the slide row; it is the landing that must not.
+
+On Commando, voice 1's attacks go **511 → 501** against the original's 502, and
+the waveform through the landing becomes a continuous `41 41 41 41` matching the
+original frame for frame. Across the 64 files:
+
+| | median `retrig` | mean `melody` |
+|---|---|---|
+| off | 1.008 | 82.3% |
+| `--tie` | **0.999** | **84.1%** |
+
+Nineteen files improve on `melody`, five lose. The largest single gain is
+**Delta_Mix-E-Load_loader, 6% → 100%** (retrigger 2.133 → 1.067) — it was being
+re-struck on almost every note. Chimera 86% → 98%, Confuzion 93% → 99%, Action
+Biker's retrigger 1.333 → 0.990. The worst regression is Kentilla, `melody`
+95% → 85%, whose retrigger nonetheless improves 1.127 → 1.035; `melody` is a
+difflib ratio over a fixed window, so removing attacks can shift its alignment
+(see *A score is not a clock* in CLAUDE.md).
+
 ### `--cut-release` (the release nibble that never sounds)
 
 **On by default via `presets.json`.** A no-op in the 62 corpus files whose

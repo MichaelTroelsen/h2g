@@ -199,6 +199,21 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **Goattracker numbers patterns in hex, and the editor's pattern is not the
+  converter's intermediate.** A listener's "PATT.12" is pattern **18**; three
+  dumps of `new_patterns[12]` disagreed with the screenshot before that landed,
+  and each looked plausible enough to keep chasing. The editor's pattern is also
+  post-dedup (GT 18 was Hubbard 15) and the orderlist's leading `D3` transposes,
+  so neither the index nor the pitches match the source bytes. **Identify a
+  pattern by its note-row positions**, and read the final `.sng` rather than an
+  intermediate when comparing against what a listener sees.
+- **Reading a bit is not drawing its consequence.** Status bit 5 was decoded for
+  years as `no_adsr` and emitted a `CMD_TONEPORTA` on the tied row itself, where
+  the slide branch overwrote it a few lines later -- inert. Its actual meaning is
+  "don't close the gate at this note's end", whose consequence lands on the
+  *next* note (no gate edge, so no attack). Three separate defects came out of
+  that one bit (§ 7.mmm, 7.nnn, 7.ooo). When a flag is already parsed but
+  nothing observable depends on it, that is a lead, not a finished feature.
 - **Widening a window is not automatically the safer reduction.** v0.5.200
   measured a note's release as the minimum over the whole gap to the next note,
   on the reasoning that a minimum cannot depend on which frame the player writes

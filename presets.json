@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.201 presets.py",
+  "generator": "h2g 0.5.202 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -20,6 +20,7 @@
     "vibrato": true,
     "vibrato_command": true,
     "cut_release": true,
+    "tie": true,
     "gt2reloc": true
   },
   "criteria": "most playable subtunes, then most rows, then smallest file",

@@ -73,7 +73,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "reject_phantoms": True, "fold_transpose": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
-         "vibrato_command": True, "cut_release": True,
+         "vibrato_command": True, "cut_release": True, "tie": True,
          "rest_instrument": True, "compact_instruments": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
@@ -613,6 +613,13 @@ def main(argv=None) -> int:
                    # measurable files, better on 27 and worse on none, with
                    # melody unchanged.
                    "cut_release": FIXED["cut_release"],
+                   # Status bit 5 is the players' tie flag: the gate is not
+                   # closed at that note's end, so the next note is legato.
+                   # Emitted as CMD_TONEPORTA 0 on the landing row. 64 classic
+                   # files carry tied events. Fixed rather than searched:
+                   # median retrigger ratio 1.008 -> 0.999 and mean melody
+                   # 82.3% -> 84.1%, 19 files better and 5 worse.
+                   "tie": FIXED["tie"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

@@ -3552,6 +3552,92 @@ occurs in** — and a necessary condition with zero false negatives deserves mor
 attention than its raw accuracy suggests, which was the one clue in § 7.mmm's
 own table that pointed the right way and was not followed.
 
+### 7.ooo Status bit 5, third time: it is a tie, and Goattracker can say it
+
+A listener, on pattern `$12` of Commando: *"note E-5 on pos 16 should not be
+played as a note but the glide from F#5 should stop at E-5 ... maybe the attack
+on E-5 is too strong."* Both halves of that are one defect, and the trace names
+it at frame 3896:
+
+```
+          ORIGINAL                  OURS
+row 12    3138 41 * attack          313C 41 * attack
+          30EA 309C 304E 3000 ...   313C 30D7 3072 3072 ...   the glide
+row 15    2E7A 2E2C 2DDE 41         2F43 2EDE 40 -> 09        we close the gate
+row 16    2BD6 41   no attack       2BDD 41  * ATTACK
+```
+
+**Status bit 5 again.** § 7.mmm found it gating the envelope cut and § 7.nnn
+found which instruments that reaches; the bit's actual meaning is *don't close
+the gate at this note's end*, and the consequence had not been drawn: the note
+that **follows** a tied event arrives with the gate already open, so the player's
+note-on writes a frequency and nothing else. No gate edge, no attack. Legato.
+
+Two things had to be found before this could be fixed, and finding the pattern
+was the harder one:
+
+- **Goattracker numbers patterns in hex.** "PATT.12" in the editor is pattern
+  **18**. Three separate dumps of `new_patterns[12]` disagreed with the
+  screenshot before that landed, and the notes looked plausible enough each time
+  to keep chasing the wrong data.
+- **The editor's pattern is not the converter's intermediate.** GT pattern 18 is
+  Hubbard pattern **15**, after de-duplication; and the orderlist's leading `D3`
+  transposes, so the pitches on screen are not the pitches in the pattern bytes
+  either. Matching by *note-row positions* rather than by index or by pitch is
+  what identified it.
+
+#### The mechanism exists in the target format, in one command
+
+`CMD_TONEPORTA` with parameter **0** does all four things the tie needs:
+
+```c
+case CMD_TONEPORTA:                       // gplay.c:805
+  if (!cptr->cmddata) {
+    cptr->freq = targetfreq;               // an instant jump, not a slide
+    cptr->lastnote = cptr->note;
+    cptr->vibtime = 0;                     // the vibrato restarts on the landing
+  }
+...
+if ((cptr->newcommand) != CMD_TONEPORTA) { // :930
+  if (!(instr[...].gatetimer & 0x40)) cptr->gate = 0xfe;   // gate-off SKIPPED
+```
+
+plus `:355`, which skips the `firstwave` testbit on the same test. So one command
+on the landing row reproduces the player exactly -- and the parameter has to be
+**0**, because any speed makes it a slide instead of the jump the player performs.
+
+It goes on the note *after* the tied event. The original **does** attack on the
+slide row; putting the command there instead would delete an attack that is
+really played. The existing decoder had read bit 5 for years (as `no_adsr`, the
+VB6 comment calling it "Portamento (no new ADSR)") and emitted `CMD_TONEPORTA`
+**on the tied row itself**, gated on the instrument being unchanged -- which for
+Commando was inert, because the slide branch overwrote the command a few lines
+later. The bit was read and its consequence was not.
+
+#### Result
+
+Commando's voice 1: attacks **511 -> 501** against the original's 502, and the
+waveform through the landing becomes `41 41 41 41`, frame for frame what the
+original does. Over the 64 classic files carrying tied events:
+
+```
+              median retrig   mean melody
+off                   1.008         82.3%
+--tie                 0.999         84.1%
+```
+
+19 files better on `melody`, 5 worse. **Delta_Mix-E-Load_loader goes 6% ->
+100%** with its retrigger ratio 2.133 -> 1.067: nearly every note in it is
+tied, and every one was being re-struck. Chimera 86% -> 98%, Confuzion 93% ->
+99%, Action Biker's retrigger 1.333 -> 0.990, Auf Wiedersehen Monty 1.169 ->
+1.013, W.A.R. 1.061 -> 1.000.
+
+The worst regression is Kentilla, `melody` 95% -> 85%, whose *retrigger* ratio
+improves over the same change (1.127 -> 1.035). `melody` is a difflib ratio over
+a fixed window, so a conversion that stops emitting 30 spurious attacks shifts
+what falls inside the window -- the standing "a score is not a clock" caveat,
+here in its note-count form rather than its tempo form.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

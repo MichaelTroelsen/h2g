@@ -537,3 +537,56 @@ def test_an_instrument_whose_effect_runs_every_frame_keeps_its_release():
     assert _sr(_S(0x08), det, cut_release=True) == 0x50, "$08 is not per-frame"
     assert _sr(_S(0x01), det, cut_release=True) == 0x5F, "the drum keeps it"
     assert _sr(_S(0x05), det, cut_release=True) == 0x5F, "drum + arp"
+
+
+# --- v0.5.202: the tie flag -------------------------------------------------
+
+def _decoded(status_bytes, tie):
+    """Decode a synthetic classic pattern: (status, operand?, note) events."""
+    from h2g.patterns import _build_raw_pattern
+    # addr must exceed 1: the decoder rejects `addr + i2 <= 1` outright.
+    data = bytes([0x00, 0x00]) + bytes(status_bytes) + bytes([0xFF])
+    return _build_raw_pattern(data, 2, tie=tie)
+
+
+def test_the_note_after_a_tied_event_becomes_a_toneporta_with_no_speed():
+    """Status bit 5 means the player never closes the gate at that note's end
+    (Commando $517F), so the next note arrives with the gate open and only
+    changes frequency. `CMD_TONEPORTA` with parameter 0 is exactly that:
+    gplay.c:811 assigns `freq = targetfreq` in one call, :930 skips the
+    hard-restart gate-off *because* the command is TONEPORTA, and :355 skips the
+    firstwave testbit for the same reason.
+    """
+    # a tied event (bit 5, wait 1, no operand), then a plain note
+    ev = _decoded([0x21, 0x30, 0x01, 0x34], tie=True)
+    rows = [ev[i:i + 4] for i in range(0, len(ev), 4)]
+    assert rows[0][2] == 0, "the tied event itself is not the landing"
+    landing = rows[2]
+    assert landing[2] == 3 and landing[3] == 0, rows
+    # ...and the toneporta is not repeated on the landing note's hold rows
+    assert rows[3][2] == 0, rows
+
+
+def test_it_is_the_following_note_and_not_the_tied_event_itself():
+    """The original attacks *on* the slide event and glides; it is the landing
+    that must not re-attack. Placing the command on the tied row instead would
+    remove the attack that is really there."""
+    ev = _decoded([0x21, 0x30, 0x01, 0x34], tie=True)
+    assert [ev[i + 2] for i in range(0, len(ev), 4)][:3] == [0, 0, 3]
+
+
+def test_a_second_note_after_the_landing_is_untouched():
+    ev = _decoded([0x21, 0x30, 0x01, 0x34, 0x01, 0x38], tie=True)
+    cmds = [ev[i + 2] for i in range(0, len(ev), 4)]
+    assert cmds.count(3) == 1, cmds
+    assert cmds[2] == 3, cmds
+
+
+def test_off_by_default_so_the_fixture_is_untouched():
+    ev = _decoded([0x21, 0x30, 0x01, 0x34], tie=False)
+    assert all(ev[i + 2] != 3 for i in range(0, len(ev), 4))
+    from h2g.convert import convert
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[2]
+    assert convert(str(root / "Commando.sid"), log=lambda m: None) == \
+        (root / "Commando.sng").read_bytes()

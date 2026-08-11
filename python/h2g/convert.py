@@ -122,6 +122,7 @@ def convert(sid_path: str, log: Logger = print,
             wave_program: bool = False,
             vibrato_command: bool = False,
             cut_release: bool = False,
+            tie: bool = False,
             filters: bool = False,
             pulse: bool = False,
             vibrato: bool = False,
@@ -293,7 +294,7 @@ def convert(sid_path: str, log: Logger = print,
                   if reject_phantoms else None),
         variants=variants, steps=slide_steps,
         rest_instrument=rest_instrument,
-        instr_base=1 if compact_instruments else 2)
+        instr_base=1 if compact_instruments else 2, tie=tie)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3

@@ -1538,14 +1538,20 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                 index = by_slot.get(live, -1)
             if index < 0:
                 unknown += 1
-            elif pat[i + 2]:
-                busy += 1
             else:
+                # Only the free rows, so a portamento or a tempo change keeps
+                # the column -- and a note whose *own* row is taken still gets
+                # the vibrato on the rest of its block rather than none at all.
+                # A tie emits CMD_TONEPORTA on the landing row (patterns.py),
+                # and the original starts oscillating a frame or two into that
+                # note, so filling from the next row is also what it does.
                 for row in range(i, end, 4):
                     if pat[row + 2] == 0:
                         pat[row + 2] = CMD_VIBRATO
                         pat[row + 3] = index
-                if index:
+                if pat[i + 2] != CMD_VIBRATO:
+                    busy += 1
+                elif index:
                     placed += 1
                 else:
                     damped += 1

@@ -172,7 +172,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        span: Optional[List[int]] = None,
                        note_base: int = 0,
                        slide_high_first: bool = False,
-                       steps: Optional[List[int]] = None) -> Optional[List[int]]:
+                       steps: Optional[List[int]] = None,
+                       tie: bool = False) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -211,6 +212,9 @@ def _build_raw_pattern(data: bytes, addr: int,
     g_old_instr1 = -1
     g_old_instr2 = -2
     i2 = 0
+    # Set by an event whose status bit 5 is clear-gate-suppressed; consumed by
+    # the next event that carries a note. See the `tie` block below.
+    pending_tie = False
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -357,6 +361,19 @@ def _build_raw_pattern(data: bytes, addr: int,
         # that belongs; the outer was the mistake. Corpus-wide the guard
         # discarded 2562 events across 43 files -- Chimera's pattern $6 is 96
         # consecutive one-frame events and came out completely empty.
+        if (tie and pending_tie and cmd1 == 0
+                and g_note != GT_NO_NOTE):
+            # The *previous* event carried status bit 5, so the player never
+            # closed the gate at its end (Commando $517F) and this note arrives
+            # with the gate still open -- a frequency change and no attack.
+            # `CMD_TONEPORTA` with parameter 0 is that, exactly: gplay.c:811
+            # assigns `freq = targetfreq` in one call, gplay.c:930 skips the
+            # hard-restart gate-off *because* the command is TONEPORTA, and
+            # gplay.c:355 skips the firstwave testbit for the same reason. It
+            # also zeroes `vibtime`, so the vibrato restarts on the landing --
+            # which is what the original does at the end of a slide.
+            cmd1, cmd2 = 3, 0x00
+        pending_tie = tie and bool(no_adsr)
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 == 3:
             cmd1 = 0
@@ -712,7 +729,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  status_bit6: bool = False,
                  steps: Optional[List[int]] = None,
                  rest_instrument: bool = False,
-                 instr_base: int = 2) -> Optional[List[int]]:
+                 instr_base: int = 2, tie: bool = False) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -746,7 +763,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
-                              steps=steps)
+                              steps=steps, tie=tie)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -1082,7 +1099,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      variants: Optional[List[tuple]] = None,
                      steps: Optional[List[int]] = None,
                      rest_instrument: bool = False,
-                     instr_base: int = 2):
+                     instr_base: int = 2, tie: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1144,7 +1161,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
 
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
-                              rest_instrument, instr_base)
+                              rest_instrument, instr_base, tie=tie)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -1156,7 +1173,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
         if base is None:
             base = decode_entry(sid, det, src, slides, status_bit6,
-                                steps)
+                                steps, tie=tie)
         if base is None:
             log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
