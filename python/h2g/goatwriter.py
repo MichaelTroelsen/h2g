@@ -455,26 +455,36 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     for kind, wave, arg in decode_wave_program(data, at):
         if kind == "hold":
             break
-        need = 2 if (kind == "slide" and arg) else 1
-        if len(left) + need + 1 > budget:      # ...and the stop
+        if len(left) + 3 > budget:     # ...the restore and the stop
             break
         if kind == "set":
             left.append(_wave_byte(wave))
             right.append(_sfx_note_byte(arg))
             continue
-        step = arg if arg < 0x8000 else 0x10000 - arg
-        cmd = WAVECMD_PORTADOWN if arg < 0x8000 else WAVECMD_PORTAUP
-        if not arg:
-            left.append(_wave_byte(wave))
-            right.append(WAVE_NOTE_KEEP)
-            continue
-        idx = _speed_index(speed_table, ((step >> 8) & 0xFF, step & 0xFF))
-        if not idx:
-            break
-        left += [_wave_byte(wave), cmd]
-        right += [WAVE_NOTE_KEEP, idx]
+        # **One entry, even when the operand is non-zero** (v0.5.203). A
+        # portamento needs a command entry of its own, and a wavetable spends a
+        # call on it, so a two-entry slide makes the program one frame longer
+        # than the player's -- which runs the whole thing late and truncates
+        # what follows. On Trans-Atlantic's snare the two slides cost 2 of 11
+        # frames and cut the closing noise burst from 8 frames to 6. The
+        # frame count is what the ear hears in a percussion transient; two
+        # frames of pitch movement under a released waveform is not, so the
+        # waveform keeps its frame and the movement is dropped.
+        left.append(_wave_byte(wave))
+        right.append(WAVE_NOTE_KEEP)
     if not left:
         return None
+    # **Restore the record's own waveform before stopping** (v0.5.203). The
+    # docstring above used to say Goattracker keeps the last waveform "as the
+    # player does"; the player does not. Its note-end routine writes the
+    # *stored* waveform with the gate cleared -- `LDA $54F8,X / AND #$FE /
+    # STA $D404,Y`, the same routine as the envelope cut (detect
+    # .ENVELOPE_CUT_SHAPES) -- so a program that ends on noise stops sounding
+    # noise when the note ends. Holding it instead let the noise run into the
+    # gap: Trans-Atlantic's snare had runs of 30, 54 and 78 frames where the
+    # original's are 8.
+    left.append(data[rec + 2] & ~WAVE_GATE_BIT & 0xFF)
+    right.append(WAVE_NOTE_KEEP)
     left.append(0xFF)
     right.append(0x00)
     return left, right
@@ -1417,6 +1427,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     return out
 
 
+WAVE_GATE_BIT = 0x01            # $D404 bit 0
 CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
 GT_LAST_NOTE = 0xBC             # gcommon.h:49 LASTNOTE

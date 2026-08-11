@@ -3638,6 +3638,64 @@ a fixed window, so a conversion that stops emitting 30 spurious attacks shifts
 what falls inside the window -- the standing "a score is not a clock" caveat,
 here in its note-count form rather than its tempo form.
 
+### 7.ppp The snare overshoot: run lengths named both causes at once
+
+`--wave-program` (§ 7.fff) restored Trans-Atlantic's snare and a listener said
+"the drum is better but not full fidelity". Measured, it sounded **670 noise
+frames against the original's 387**. Totals could not say why; run lengths
+could, and this is the third time `fidelity.noise_runs`' shape has been the one
+that works:
+
+```
+instrument 0729 (43 notes)   original: 43 runs of 1, 43 runs of 8
+                             ours:     43 of 1, 36 of 6, 3 of 30, 2 of 54, 1 of 78
+```
+
+Two separate defects in one column. The program decodes as `81 30` (noise, one
+frame), two slides under released waveforms (two frames), eight `80` opcodes
+(eight frames of noise), hold.
+
+- **The 6 instead of 8**: a slide opcode was emitted as *two* wavetable entries,
+  the waveform and then a portamento command. The player advances one opcode per
+  frame and a wavetable spends a call on every entry, so two slides made the
+  program 13 frames where the player's is 11 -- and the closing burst, being
+  last, is what the note length then truncated. One entry per opcode now; the
+  pitch movement is dropped. **A rate error and a length error look the same in a
+  total and different in a distribution.**
+- **The 30, 54 and 78**: the program ended holding noise. The emitter's own
+  docstring asserted that Goattracker "keeps the last waveform, as the player
+  does" -- and the player does not. Its note-end routine writes the *stored*
+  waveform with the gate cleared, `LDA $54F8,X / AND #$FE / STA $D404,Y`: the
+  very routine § 7.mmm read for the envelope cut, in the same file, three
+  sections earlier. A program ending on noise therefore stops sounding noise
+  when the note ends; holding it ran the burst into the gap. The record's own
+  waveform is emitted before the stop now.
+
+Both fixed, the snare's runs are **identical to the original's**: `{1: 43, 8: 43}`
+on each side, 387 noise frames against 387, `nrun` 50% -> 67%, where without the
+program voice 2 sounds none at all against 387.
+
+#### A criterion that cannot see a per-instrument defect
+
+`presets.fidelity_better` still scores the fixed program as *worse*, and not by a
+margin -- structurally. Its `finds_noise` criterion requires the reference to
+have **no audible noise**, which was written for "this conversion is missing its
+drums outright" (§ 7.fff: 0 frames against 1089). Trans-Atlantic now has plenty
+of noise from another instrument, so the test passes at file level while the
+snare is absent at instrument level: **a per-file test for a per-instrument
+defect, and a present hi-hat masks a missing snare.** `melody` meanwhile falls
+95% -> 85%, because siddump reads noise onsets as notes and the compared sequence
+gains 43 of them -- § 7.eee's blind spot again, in the direction that penalises
+being right.
+
+So the verdict is recorded in `presets.FIDELITY_CONFIRMED`, the mirror of
+`FIDELITY_VETOED` and new here: a setting a listening test *confirmed* and the
+search disagrees with. Both dictionaries now name the same file -- one vetoing
+the wrong drum, one confirming the right one, which is a fair summary of how this
+file has gone. The principled fix is to score `finds_noise` per instrument off
+`noise_runs`; that re-decides every file's toggles and needs its own corpus run,
+so it is deliberately not folded in here.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

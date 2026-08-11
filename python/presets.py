@@ -139,6 +139,30 @@ FIDELITY_VETOED: dict[str, set[str]] = {
     "Trans-Atlantic_Balloon_Challenge.sid": {"sfx_drum"},
 }
 
+# The mirror of the veto: settings a listening test *confirmed*, which the
+# search scores as worse. Same reason for living here rather than in the
+# generated presets.json -- the file would lose both the edit and the reason.
+FIDELITY_CONFIRMED: dict[str, set[str]] = {
+    # The snare FIDELITY_VETOED's entry above names as the real one. With
+    # v0.5.203's two fixes -- one wavetable entry per opcode, and the record's
+    # own waveform restored before the program stops -- its noise runs are
+    # *identical* to the original's: `{1: 43, 8: 43}` on both sides, 387 noise
+    # frames against 387, where without the program voice 2 sounds none at all
+    # against the original's 387.
+    #
+    # `fidelity_better` still scores it as worse, and the reason is structural
+    # rather than a margin: its `finds_noise` criterion requires the reference
+    # to have *no* audible noise, and this file already has plenty from another
+    # instrument. The test is per file where the defect is per instrument, so a
+    # missing snare is masked by a present hi-hat. `melody` meanwhile falls
+    # 95% -> 85%, because siddump reads noise onsets as notes and the sequence
+    # it compares gains 43 of them -- the same blind spot section 7.eee
+    # describes. Fixing the criterion properly means scoring per instrument off
+    # `fidelity.noise_runs`, which would re-decide every file's toggles and so
+    # wants its own commit and its own corpus run.
+    "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program"},
+}
+
 
 def _parse(blob: bytes, ntables: int = 4):
     """Tracks and patterns out of a .sng, for scoring."""
@@ -485,6 +509,11 @@ def main(argv=None) -> int:
                 if found.pop(key, None):
                     print(f"    {path.name}: {key} vetoed by a listening test",
                           file=sys.stderr)
+            for key in FIDELITY_CONFIRMED.get(path.name, ()):
+                if found is not None and not found.get(key):
+                    found[key] = True
+                    print(f"    {path.name}: {key} confirmed by a listening "
+                          "test", file=sys.stderr)
             songs[path.name] = found
         print(f"  {path.name:44} {'-' if not found else found['max_rows']}",
               file=sys.stderr)

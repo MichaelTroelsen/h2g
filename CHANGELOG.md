@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.203 — 2026-08-11
+
+- fix the wave program's noise overshoot; the snare's runs now match exactly
+
 ## 0.5.202 — 2026-08-11
 
 - honour the tie flag: the note after it must not re-attack

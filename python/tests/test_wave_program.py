@@ -241,9 +241,14 @@ def test_the_snare_is_emitted_and_lands_on_noise():
     assert left[0] == 0x81, "the snare must open on noise"
     assert abs(_note_freq(right[0] - 0x80) - 0x3000) < 0x0300
     assert left[-1] == 0xFF
-    # ...and the two slides became portamento commands with speed entries
-    assert 0xF2 in left or 0xF1 in left
-    assert speed, "a slide needs a speed-table entry"
+    # v0.5.203: a slide is one entry, not a waveform plus a portamento command.
+    # The two-entry form made the program 2 frames longer than the player's and
+    # truncated the closing noise burst from 8 frames to 6 -- see
+    # test_a_slide_opcode_costs_one_entry_so_the_program_keeps_its_length. The
+    # frame count is what a percussion transient is; 2 frames of pitch movement
+    # under a released waveform is not.
+    assert 0xF2 not in left and 0xF1 not in left
+    assert not speed, "a slide no longer allocates a speed-table entry"
 
 
 def test_it_is_off_by_default_and_selected_per_song():
@@ -269,3 +274,64 @@ def test_a_multispeed_file_is_left_alone():
     assert _wave_program_entries(sid, det, 2, [], "gts5", 1, 30) is not None
     assert _wave_program_entries(sid, det, 2, [], "gts5", 2, 30) is None
     assert _wave_program_entries(sid, det, 2, [], "gts2", 1, 30) is None
+
+
+# --- v0.5.203: the overshoot ------------------------------------------------
+
+@needs_corpus
+def test_a_slide_opcode_costs_one_entry_so_the_program_keeps_its_length():
+    """The player runs one opcode per frame. A portamento needs a command entry
+    of its own and a wavetable spends a call on it, so a two-entry slide made
+    the program longer than the player's and ran everything after it late: on
+    the snare, the closing noise burst came out 6 frames instead of 8.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wavetable_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    speed: list = []
+    left, _right = _wavetable_entries(sid, det, 2, True, "gts5", speed, 1,
+                                      start=1, budget=30, wave_program=True)
+    steps = _prog("Trans-Atlantic_Balloon_Challenge", 2)
+    opcodes = len([s for s in steps if s[0] != "hold"])
+    # one entry per opcode, plus the waveform restore, plus the stop
+    assert len(left) == opcodes + 2, (len(left), opcodes)
+    assert not speed, "a slide no longer allocates a speed-table entry"
+
+
+@needs_corpus
+def test_the_record_waveform_is_restored_before_the_program_stops():
+    """The player's note-end routine writes the *stored* waveform with the gate
+    cleared (`LDA $54F8,X / AND #$FE`), so a program ending on noise stops
+    sounding noise. Holding it instead let Trans-Atlantic's snare run 30, 54 and
+    78 frames where the original's runs are 8.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wavetable_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    left, _r = _wavetable_entries(sid, det, 2, True, "gts5", [], 1,
+                                  start=1, budget=30, wave_program=True)
+    rec = det.instr_start + 2 * det.instr_stride
+    assert left[-1] == 0xFF
+    assert left[-2] == sid.data[rec + 2] & 0xFE, [hex(x) for x in left[-3:]]
+    assert not left[-2] & 0x80, "the restore must not itself be noise"
+    assert left[-3] & 0x80, "...and it must follow the program's noise"
+
+
+def test_the_listening_confirmation_is_recorded_with_its_reason():
+    """`fidelity_better` scores the fixed program as worse, structurally: its
+    `finds_noise` test requires the reference to have no audible noise, and this
+    file has plenty from another instrument -- a per-file test for a per-
+    instrument defect. The mirror of FIDELITY_VETOED records the listening
+    verdict instead of hand-editing generated presets.json."""
+    import presets
+    assert presets.FIDELITY_CONFIRMED[
+        "Trans-Atlantic_Balloon_Challenge.sid"] == {"wave_program"}
+    # the same file vetoes the *wrong* drum, and both must survive together
+    assert presets.FIDELITY_VETOED[
+        "Trans-Atlantic_Balloon_Challenge.sid"] == {"sfx_drum"}

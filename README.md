@@ -1235,6 +1235,51 @@ in `presets.py` rather than hand-edited into the generated `presets.json`, so th
 reason survives the next regeneration; `tests/test_preset_passthrough.py` fails
 if a shipped preset still carries one.
 
+#### The snare, and the overshoot that hid inside it (v0.5.203)
+
+`--wave-program` reads that program, and for a long time reading it was not
+enough: with it on, the snare *existed* but sounded 670 noise frames against the
+original's 387. Comparing **run lengths** rather than totals named both causes at
+once (`fidelity.noise_runs`):
+
+```
+instrument 0729 (43 notes)   original: 43 runs of 1, 43 runs of 8
+                             ours:     43 of 1, 36 of 6, 3 of 30, 2 of 54, 1 of 78
+```
+
+The program is `81 30` (noise, 1 frame), two slides under released waveforms
+(2 frames), then eight `80` opcodes (8 frames of noise), then hold.
+
+1. **A slide opcode cost two wavetable entries** — the waveform, then a
+   portamento command — so the program ran 13 frames where the player's runs 11.
+   Everything after was late and the closing burst was truncated to 6 frames. It
+   is one entry now, and the two frames of pitch movement are dropped: the frame
+   count is what a percussion transient is made of, the movement under a released
+   waveform is not.
+2. **The program ended holding noise.** The comment claimed GoatTracker "keeps
+   the last waveform, as the player does" — the player does not. Its note-end
+   routine writes the *stored* waveform with the gate cleared (`LDA $54F8,X /
+   AND #$FE`, the same routine as `--cut-release`), so a program ending on noise
+   stops sounding noise. Holding it let the burst run into the gap before the
+   next note: the 30-, 54- and 78-frame runs. The record's own waveform is now
+   emitted before the stop.
+
+With both, the snare's runs are **identical to the original's** — `{1: 43, 8: 43}`
+on each side, 387 noise frames against 387, where without the program voice 2
+sounds none at all.
+
+The search still scores it as worse, and structurally rather than by a margin:
+`fidelity_better`'s `finds_noise` test requires the *reference* to have no
+audible noise, and this file has plenty from another instrument — a per-file test
+for a per-instrument defect, so a missing snare is masked by a present hi-hat.
+`melody` also falls 95% → 85%, because siddump reads noise onsets as notes and
+the compared sequence gains 43 of them. So it is recorded in
+`presets.FIDELITY_CONFIRMED`, the mirror of the veto above: a listening verdict
+that the search disagrees with, kept in `presets.py` with its reason rather than
+hand-edited into the generated file. Scoring `finds_noise` per instrument off
+`noise_runs` is the real fix and would re-decide every file's toggles, so it
+wants its own commit and its own corpus run.
+
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **34 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
