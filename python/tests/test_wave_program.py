@@ -149,7 +149,15 @@ def test_the_gate_reads_and_never_guesses():
     """Anchored on the pointer load, not scanned for. The first attempt swept 40
     bytes back from the fetch and returned $01 for 21 files, which looked like
     the drum bit and was dismissed as a mismatch -- it was under-anchored, and
-    $01 really is the gate in 13 of them."""
+    $01 really is the gate in 13 of them.
+
+    v0.5.227: the walk tries both widths of the `STX save` between the branch
+    and the load. Mega Apocalypse stores to zero page where the other 28 store
+    absolute, and one byte out it read no gate at all -- the last unread gate
+    in the corpus. There are now none, so this test's `seen[0]` is 0 and the
+    "reported as unread" path is exercised by the synthetic case below rather
+    than by a corpus file.
+    """
     if not CORPUS.is_dir():
         return
     from collections import Counter
@@ -163,12 +171,32 @@ def test_the_gate_reads_and_never_guesses():
         if at >= 0:
             seen[gate] += 1
     assert sum(seen.values()) == 29
-    assert seen[0x01] == 22, dict(seen)
+    assert seen[0x01] == 23, dict(seen)
     assert seen[0x08] == 3, dict(seen)
     assert seen[0x20] == 1, dict(seen)
     assert seen[0x80] == 2, dict(seen)
-    # ...and one shape this walk does not recognise, reported as unread
-    assert seen[0] == 1, dict(seen)
+    # ...and no file left with an unread gate.
+    assert seen[0] == 0, dict(seen)
+
+
+@needs_corpus
+def test_the_zero_page_store_reads_the_same_gate():
+    """Mega Apocalypse, the file the fixed-width step missed.
+
+    `LDA $EC / AND #$01 / BEQ / STX $E4 / LDA $54A3,Y` -- two bytes shorter
+    than the absolute form, so the old walk looked for the branch opcode
+    inside the `AND`'s operand. Pinned by the bytes rather than by the answer,
+    so a future change to the walk that happens to return $01 for the wrong
+    reason still fails here.
+    """
+    if not CORPUS.is_dir():
+        return
+    sid = load_sid(str(CORPUS / "Mega_Apocalypse.sid"))
+    at, gate = find_wave_program(sid)
+    assert gate == 0x01
+    # the five instructions above, verbatim, ending at the pointer load
+    site = sid.data.index(bytes.fromhex("A5EC2901F04686E4B9"))
+    assert site > 0
 
 
 @needs_corpus

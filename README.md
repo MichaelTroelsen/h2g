@@ -1256,7 +1256,14 @@ if a shipped preset still carries one.
 
 #### The snare, and the overshoot that hid inside it (v0.5.203)
 
-`--wave-program` reads that program, and for a long time reading it was not
+`--wave-program` reads that program in the 29 corpus files that carry the
+interpreter. It emits nothing for a file whose *gate* — the effect-byte bit
+selecting the program — could not be read, because a guessed bit would invent a
+program for every record carrying it; until v0.5.227 that silently covered Mega
+Apocalypse, whose gate the walk missed by two bytes because it stores the saved
+index to zero page where the other 28 store absolute. There are now none.
+
+Reading the program was for a long time not
 enough: with it on, the snare *existed* but sounded 670 noise frames against the
 original's 387. Comparing **run lengths** rather than totals named both causes at
 once (`fidelity.noise_runs`):

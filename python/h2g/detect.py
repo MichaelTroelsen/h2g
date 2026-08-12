@@ -2235,6 +2235,15 @@ def find_wave_program(sid: SidFile) -> tuple[int, int]:
     load, and 0 where this walk does not recognise the shape -- an unread gate
     is reported as unread, never guessed, because emitting on a wrong bit would
     invent a program for every record carrying it.
+
+    **The store between the branch and the load may be zero page.** The walk
+    stepped back a fixed three bytes for it, which is `STX abs` -- the form 28
+    of the 29 use. Mega Apocalypse writes `STX $E4` (two bytes) and, one byte
+    out, read no gate at all: its `LDA $EC / AND #$01 / BEQ` sits where the
+    fixed step expects the middle of an operand. Both widths are tried now,
+    which is a superset of the old rule and leaves the 28 unchanged. The same
+    shape as `_burst_cutoff_start` (v0.5.210): a signature anchored at a fixed
+    byte distance reads one dialect and silently declines the next.
     """
     off = search_file(sid.data, WAVE_PROGRAM_FETCH)
     if off < 0:
@@ -2251,15 +2260,22 @@ def find_wave_program(sid: SidFile) -> tuple[int, int]:
     at = sid.to_offset(d[site + 1] | (d[site + 2] << 8))
     if at < 0:
         return -1, 0
-    # ...past the `STX save` the block opens with, then the branch.
-    p = site - 3
+    # ...past the `STX save` the block opens with, then the branch. The store
+    # is three bytes absolute or two zero page, so the branch opcode sits five
+    # or four bytes back; absolute is tried first because it is what 28 of the
+    # 29 files carry and a two-byte step could otherwise land inside its
+    # operand.
     gate = 0
-    if p >= 5 and d[p - 2] in _WAVE_PROGRAM_BRANCH:
-        q = p - 2
+    for width in (3, 2):
+        q = site - width - 2                 # the branch opcode
+        if q < 2 or d[q] not in _WAVE_PROGRAM_BRANCH:
+            continue
         if d[q - 2] == 0x29:                 # AND #bit
             gate = d[q - 1]
-        elif d[p - 2] in _WAVE_PROGRAM_SIGN_BRANCH:
+        elif d[q] in _WAVE_PROGRAM_SIGN_BRANCH:
             gate = 0x80
+        if gate:
+            break
     return at, gate
 
 

@@ -273,6 +273,17 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **A walk that steps a fixed number of bytes over an instruction has assumed
+  its addressing mode.** `find_wave_program` stepped 3 for the `STX save`
+  between the gate's branch and the pointer load -- `STX abs`, which 28 of the
+  29 files carry. Mega Apocalypse stores to zero page, so the walk looked for
+  the branch opcode inside the `AND`'s operand and reported the gate as
+  *unread* -- and unread is `_wave_program_entries`' refusal condition, so
+  forcing `--wave-program` on that file changed nothing on any measure and it
+  was filed for two sessions as an unimplemented mechanism. Same shape as
+  `detect._burst_cutoff_start` (v0.5.210). When a fix widens a walk, run the
+  old one beside the new one over the corpus and require the difference to be
+  exactly the files you meant.
 - **Compare a ratio in log space.** `presets._closer` scores how near a ratio
   sits to 1 logarithmically, because 2.0x and 0.5x are the same size of wrong
   where `abs(r - 1)` calls one twice the other. Applies to every `x`-suffixed

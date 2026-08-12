@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.227 — 2026-08-12
+
+- read the wave-program gate through a zero-page store (Mega Apocalypse)
+
 ## 0.5.226 — 2026-08-12
 
 - the drum's noise tick reaches an arpeggio record, at its own length and on frame 1

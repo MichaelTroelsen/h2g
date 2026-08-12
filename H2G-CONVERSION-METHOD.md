@@ -6685,6 +6685,68 @@ shifts frames across (§ 7.uu); neither is evidence about pitch on its own.
 > derivation against a file with three subtunes cannot see that the same tune,
 > as the corpus ships it, has nineteen.
 
+### 7.yyy The other Class B file: a gate read one byte out
+
+v0.5.227. Mega Apocalypse was the second file the handoff filed as **Class B** —
+a transient on the note's second frame that measured *identically* under
+`--two-stage`, `--wave-program` and as shipped. Four of its seven instruments
+open `X noi …` where we hold the first frame's waveform:
+
+```
+adsr     orig                ours
+$07E7    tri noi pul pul     tri tri tri tri     +7 = $01
+$09F9    tri noi tri pul     tri tri tri tri     +7 = $01
+$0848    tri noi tri tri     tri tri tri tri     +7 = $44
+$0998    pul noi pul pul     pul pul pul pul     +7 = $80
+```
+
+The two `$01` records are the byte-code wave program of § 7.fff, whose
+interpreter detection *had already found* in this file (`wave_program` at
+`$4D21`). What it had not found was the gate:
+
+```
+4D74  A5 EC      LDA $EC        ; the effect byte, zero page here
+4D76  29 01      AND #$01
+4D78  F0 46      BEQ past
+4D7A  86 E4      STX $E4        ; <- two bytes, not three
+4D7C  B9 A3 54   LDA $54A3,Y    ; the pointer array -- the walk's anchor
+```
+
+`find_wave_program` anchors on that `LDA array,Y / STA zp` pair — deliberately,
+because the array and the pointer the fetch dereferences must be the same one —
+and then stepped back a **fixed three bytes** for the `STX save` before looking
+for the branch. Three is `STX abs`, which 28 of the 29 files carry. Mega
+Apocalypse stores to zero page, so the walk looked for a branch opcode inside
+the `AND`'s operand, found none, and reported the gate as unread. And reporting
+it as unread is the emitter's refusal condition — `_wave_program_entries`
+returns `None` when `wave_program_gate` is 0 — which is why forcing the option
+on changed nothing at all, on any measure. The mechanism was implemented,
+detected, enabled, and declining.
+
+Trying both widths reads `$01` and leaves all 28 others byte-identical (checked
+by running the old walk beside the new one over the corpus). The two `$01`
+records then match the original **frame for frame**, `tri noi pul pul` and
+`tri noi tri pul`, and the file's `onset` goes 42.9% → 71.4% with frame
+agreement 0.75 → 0.93.
+
+The other two records stay wrong and are named rather than folded in: `$0848`
+is `$44`, a bit pair nothing reads here, and `$0998` is `$80` — whose handler
+in this player writes `$D40F`/`$D412`, **voice 3 absolutely**, wherever the note
+is playing, where `_sfx_drum_entries` puts the hit in the note's own voice. That
+is a different shape from the seven-file drum § 7.rrr decoded and is not the
+same bit doing the same thing.
+
+**The change is inert until the preset search runs.** `--wave-program` is off
+for this file, so every conversion in the corpus is byte-identical after the fix
+(verified by hashing all 83). What it does is make the option *capable* of being
+selected, the same "a new option is inert until it is in three places" trap in
+its detection form.
+
+> **The transferable lesson:** this is `_burst_cutoff_start` (v0.5.210) again —
+> a signature anchored at a fixed byte distance reads one dialect and silently
+> declines the next. When a walk steps a constant number of bytes over an
+> instruction, ask which addressing mode that constant assumes.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
