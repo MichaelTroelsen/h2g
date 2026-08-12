@@ -109,6 +109,11 @@ class Detection:
     effect_two_stage: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
+    # Bit $02 in the SAME family, and not the rise: the voice's waveform
+    # alternates every frame between the record's own +2 and a second table,
+    # picked by a per-voice frame counter's low bit (W_A_R $E759). File offset
+    # of that table's first entry, indexed by the same i * instr_stride.
+    wave_alternate: int = -1
     # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
     # together or neither is. `pulse_bounds` is the file offset of an array
     # indexed by the same i * instr_stride the records are, holding the two
@@ -962,6 +967,11 @@ def detect(sid: SidFile, log: Logger) -> Detection:
         log("Instrument effect byte..: two-stage waveform (bit $04 is not "
             "an arpeggio in this player)")
         _bound_instruments(det, log)
+
+    det.wave_alternate = _find_wave_alternate(sid, det)
+    if det.wave_alternate >= 0:
+        log("Instrument effect byte..: bit $02 alternates the waveform every "
+            "frame with a second table (not the rise)")
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
@@ -2502,6 +2512,63 @@ TWO_STAGE_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
                    "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
 # LDA instr+0,X / STA .. / PHA / LDA instr+1,X / STA .. / PHA / LDA dur,X / PHA
 TWO_STAGE_PUSH = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48 BD ?? ?? 48"
+
+
+WAVE_ALT_SHAPE = ("{load} 29 02 F0 ?? AC ?? ?? BD ?? ?? 29 01 F0 ?? "
+                  "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
+
+
+def _find_wave_alternate(sid: SidFile, det: Detection) -> int:
+    """File offset of bit $02's alternate-waveform table, or -1.
+
+    **Bit $02 is the rise in Warhawk's dialect and something else here.**
+    W_A_R $E759, and the same block in 21 corpus files:
+
+        E759  LDA effect / AND #$02 / BEQ out
+        E760  LDY voice
+        E763  LDA counter,X / AND #$01 / BEQ alt   ; a per-voice frame counter
+        E76A  LDA instr+2,Y                        ; the record's own waveform
+        E76D  JMP store
+        E770  alt: LDA alttbl,Y                    ; the alternate
+        E773  store: STA wavecell,X
+
+    So the voice's waveform alternates every frame between the record's `+2`
+    and a second per-instrument table. In all 21 files the alternate is `$81`
+    -- noise with the gate on -- so what this sounds is a noise frame every
+    other frame, under the note.
+
+    **Anchored on the first operand being the records' own `+2`.** That is
+    what ties the block to this instrument table rather than to any
+    `AND #$02` that happens to be followed by two indexed loads; the second
+    operand is then the table this returns.
+
+    The phase is reproducible even though the counter is free-running: the
+    note's first frame is spent by the init path (section 7.www), and W_A_R's
+    205 onsets of instrument $0900 all read `tri tri noi tri` -- one shape,
+    no distribution at all.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found or det.instr_start < 0:
+        return -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, WAVE_ALT_SHAPE.format(load=load))
+    if i <= -1:
+        return -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 23 >= len(data):
+        return -1
+    own = data[p + 15] | data[p + 16] << 8
+    alt = data[p + 21] | data[p + 22] << 8
+    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    if own != instr_cpu + 2:            # not this instrument table's +2
+        return -1
+    off = alt - instr_cpu + det.instr_start
+    span = max(det.instr_used, 0) * det.instr_stride
+    if not (0 <= off and off + span <= len(data)):
+        return -1
+    return off
 
 
 def _find_two_stage(sid: SidFile, det: Detection):

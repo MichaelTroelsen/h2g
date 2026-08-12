@@ -417,6 +417,19 @@ chromatic rise, 21 the pulse-width variant.
   bit test rather than branching around it, so both run — but loses the sweep,
   which the arpeggio needs the slots for. The drum's *noise ending* is
   measured and deliberately left out; see below.
+- **Bit `$02` is the rise in one dialect and an alternating waveform in
+  twenty-one others** (W_A_R `$E759`): the voice's waveform swaps every frame
+  between the record's `+2` and a second per-instrument table, chosen by the
+  low bit of a per-voice frame counter. In 20 of the 21 files the alternate is
+  `$81`, noise with the gate on, so it sounds a noise frame every other frame
+  under the note. Emitted since v0.5.231, gated on the *routine* being found
+  rather than on the bit — no file has both blocks. The note's first frame
+  belongs to the init path, so the shape is the frame-0 lead and then the pair
+  looping, each half held for `multiplier` calls. Corpus `onset` 82.8% →
+  86.7%, and the noise-frame counts land on the originals' (Flash Gordon
+  1142/1144, W.A.R. 818/820, Tarzan 1254/1255) with melody, seq, pitch,
+  retrig, adsr and the rest unmoved on every file. See
+  H2G-CONVERSION-METHOD.md § 7.hhhh.
 - **The sweep is as deep as the note is long, and no deeper.** The routine has
   two exits — `LDA freqhi,X / BEQ out`, the frequency reaching zero, and
   `LDA remaining,X / BEQ out`, the note ending — and for a long time only the

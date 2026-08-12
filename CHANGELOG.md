@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.231 — 2026-08-12
+
+- emit effect bit $02's alternating waveform: 21 files, 98 records
+
 ## 0.5.230 — 2026-08-12
 
 - stop the fidelity search walking downhill, and calibrate what the onset column misses

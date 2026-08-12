@@ -7214,6 +7214,82 @@ settings and bytes are unchanged.
 > a no-regression clause, or the search's answer depends on the order its
 > options happen to be enumerated in — and nothing in the output says so.
 
+### 7.hhhh Effect bit `$02` is the rise in one dialect and this in twenty-one
+
+v0.5.231, and it came straight out of § 7.gggg's work list: `$0A` appeared six
+times among the `flat` misses, on W_A_R, W_A_R_Preview and Flash_Gordon, all
+reading `X X noi X` — a noise frame on the note's **third** frame, which no
+emitter here produced.
+
+`$0A` is `$02 | $08`, and W_A_R `$E759` says what both do:
+
+```
+E759  LDA effect / AND #$02 / BEQ $E776
+E760  LDY voice
+E763  LDA counter,X / AND #$01 / BEQ $E770   ; a per-voice FRAME counter
+E76A  LDA $E950,Y                            ; the record's own +2
+E76D  JMP $E773
+E770  LDA $EA51,Y                            ; ...or the alternate
+E773  STA wavecell,X
+
+E776  LDA effect / AND #$04 / BEQ $E791      ; the two-stage attack (7.vvv)
+E791  LDA effect / AND #$08 / BEQ $E7B9      ; the same alternation, on the NOTE
+```
+
+So the voice's waveform **alternates every frame** between the record's `+2`
+and a second per-instrument table one byte past the two-stage attack waveform.
+In 20 of the 21 files carrying the block that alternate is `$81` — noise with
+the gate on — so what it sounds is a noise frame every other frame under the
+note. Bit `$08` is the same alternation applied to the *note*; only the
+waveform half is emitted here, and the note half is named rather than guessed.
+
+**Bit `$02` is the rise in Warhawk's dialect**, which is why the emitter is
+gated on `det.wave_alternate >= 0` — the routine having been found — and not on
+the bit. No corpus file has both blocks.
+
+#### The phase, which is the thing that makes it expressible
+
+A per-voice counter that free-runs would leave a note no reproducible starting
+phase, and § 7.ttt is the precedent: bit `$10`'s arpeggio is driven by a global
+counter, cannot be put in a per-note wavetable, and no rotation of it is right
+more than 1/steps of the time. This one is different, and the trace says so
+rather than the code: W_A_R's instrument `$0900` reads `tri tri noi tri` on
+**all 205** of its onsets — one shape, no distribution at all. The note's first
+frame is spent by the init path (§ 7.www), and the alternation runs from the
+second. So the wavetable is the frame-0 lead, then the pair, looping — with each
+half held for `multiplier` calls, which W_A_R at `-S4` is the check on.
+
+#### What it measures
+
+Corpus A/B at fixed settings, 19 files' bytes changed:
+
+```
+onset   +26.9 pp on 12 files, 0 down     mean 82.8% -> 86.7%
+wave     +4.9 pp on 12 files             W_A_R_Preview 85 -> 100, Flash_Gordon 86 -> 99
+nrun    +50.0 pp on  4 files
+melody, seq, pitch, retrig, adsr, vib, tail, pul, filt, cut  unmoved on every file
+```
+
+The noise-frame counts are the evidence that the mechanism is *right* rather
+than merely helpful — ours against the original's, after:
+
+```
+Flash_Gordon  1142/1144    W_A_R      818/820     Tarzan   1254/1255
+Nemesis       1059/1074    W_A_R_Prev 1330/1332   Delta    1049/1050
+```
+
+Three files remain short (Chain_Reaction 268/1383, Deep_Strike 988/1031,
+Sanxion 1589/1669) — Chain_Reaction because several of its alternates are `$11`
+and `$15` rather than `$81`, which this emits faithfully and which therefore
+sounds no noise at all. Deep_Strike's `wave` falls 81% → 78% while its `onset`
+goes 57% → 100% and its noise 393 → 988 of 1031: the documented trade of
+§ 7.eee, and the only file where it lands that way.
+
+> **The transferable lesson:** the census in § 7.gggg was not a report, it was a
+> queue. Grouping the misses by the record byte that causes them turned "18% of
+> instruments disagree" into "read the `$02` handler", and the handler took an
+> afternoon where the census took a morning.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

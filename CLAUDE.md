@@ -312,6 +312,12 @@ test dependency).
   `fidelity_better` cannot select it, because it scores a melody *gain*. Two
   mechanisms now wait on a scorer that weighs oscillation and noise pitch. See
   § 7.ttt.
+- **A census of what a column misses is a queue, not a report.** Grouping
+  `onset`'s disagreeing instruments by the record byte that causes them turned
+  "18% disagree" into "$01 x19, $04 x11, $80 x6, $0A x6" -- and the `$0A` entry
+  was a decoded mechanism (bit `$02`'s alternating waveform, 21 files, 98
+  records) within the same session. When a dimension's level is unexplained,
+  classify its misses by cause before trying to move it.
 - **A detection flag about a player is not a fact about a record.**
   `det.effect_bit40` says the player *reads* bit $40; only a record's own effect
   byte says it is *set*. Gating the fixed attack pitch on the file alone reached

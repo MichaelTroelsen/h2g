@@ -542,6 +542,62 @@ def _two_stage_frames(frames: int, effect: int) -> int:
     return frames
 
 
+def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
+                            start: Optional[int] = None,
+                            budget: int = WAVE_ENTRIES_PER_INSTR,
+                            written: bool = False) -> Optional[tuple]:
+    """Bit $02's every-other-frame waveform, or None where it says nothing.
+
+    `detect._find_wave_alternate` reads the block: the voice's waveform
+    alternates each frame between the record's own `+2` and a second
+    per-instrument table, chosen by the low bit of a per-voice frame counter.
+    In 20 of the 21 corpus files carrying it the alternate is `$81` -- noise
+    with the gate on -- so what it sounds is a noise frame every other frame
+    under the note.
+
+    **The phase is not free, and it is not guessed.** The note's first frame is
+    spent by the init path writing the record's waveform (section 7.www), and
+    the alternation runs from the second: W_A_R's instrument `$0900` reads
+    `tri tri noi tri` on all 205 of its onsets, one shape with no distribution
+    at all. So the shape is the frame-0 lead, then the pair, looping -- which
+    is what a wavetable can hold. Contrast bit `$10`'s arpeggio (section
+    7.ttt), whose global counter gives a note no reproducible starting phase.
+
+    Each half lasts one *frame*, which is `multiplier` play calls, bought with
+    a delay entry beside it exactly as `_first_frame_lead` does. The loop
+    target is the first of the pair, so the lead is passed once per note and
+    the alternation is continuous after it.
+    """
+    if alt <= WAVE_MAX_DELAY or alt == wave or not (wave & 0xF0):
+        # An alternate in the delay range is not a waveform; an alternate
+        # equal to `+2` alternates with itself; and a record with no waveform
+        # of its own has nothing to alternate *from* -- the same under-read
+        # `_sfx_drum_entries` declines to guess at.
+        return None
+    if start is None:
+        return None
+    lead, lead_r = _first_frame_lead(wave, multiplier, written=written)
+
+    def half(w: int) -> tuple:
+        left, right = [w], [0x00]
+        rest = max(1, multiplier) - 1          # ...the entry above is one call
+        if rest == 1:
+            left.append(w)
+            right.append(0x00)
+        elif rest > 1:
+            left.append(min(rest - 1, WAVE_MAX_DELAY))
+            right.append(WAVE_NOTE_KEEP)
+        return left, right
+
+    a_l, a_r = half(wave)
+    b_l, b_r = half(alt)
+    left = lead + a_l + b_l
+    right = lead_r + a_r + b_r
+    if len(left) + 1 > budget:
+        return None
+    return left + [0xFF], right + [(start + len(lead)) & 0xFF]
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
@@ -2251,6 +2307,22 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             left, right = arpseq
             if start is not None and len(left) + 1 <= budget:
                 return left + [0xFF], right + [start]
+
+    # Effect bit $02's alternating waveform, after the two-stage block for the
+    # reason the player gives: a record setting both gets its waveform from
+    # $04's handler, which runs later and overwrites this one's cell on every
+    # frame -- while its counter runs with the attack waveform, and afterwards
+    # with the record's own `+2`. No corpus record sets both in any case.
+    # Gated on `effects` like every other reading of +7, and on the routine
+    # being present rather than on the bit alone: bit $02 is the *rise* in
+    # Warhawk's dialect, and no file has both blocks.
+    if effects and det.wave_alternate >= 0 and (arp_style & 0x02):
+        a = det.wave_alternate + i * det.instr_stride
+        if a < len(data):
+            alt = _wave_alternate_entries(wave, data[a], multiplier, start,
+                                          budget, written=no_test_restart)
+            if alt is not None:
+                return alt
 
     arp_set_keybit = 0 if drum else 1
     tail = (wave & 0xFE) | arp_set_keybit
