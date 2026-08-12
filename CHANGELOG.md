@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.229 — 2026-08-12
+
+- drop the frame-0 lead under --no-test-restart: firstwave already wrote it
+
 ## 0.5.228 — 2026-08-12
 
 - write up the six method-doc sections owed since v0.5.215; apply the corrected search

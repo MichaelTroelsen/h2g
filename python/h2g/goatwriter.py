@@ -399,7 +399,7 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     return (WAVE_NOTE_ABS + note) & 0xFF
 
 
-def _first_frame_entry(wave: int) -> bool:
+def _first_frame_entry(wave: int, written: bool = False) -> bool:
     """Whether the note's first frame gets an entry of the record's own `+2`.
 
     **The player writes the record's `+2` waveform on the note's first frame
@@ -426,12 +426,23 @@ def _first_frame_entry(wave: int) -> bool:
     entry for its silent frame would move a block that is right. A wavetable
     cannot write `$00` as a waveform either ($00-$0F are delays), so there is
     nothing faithful to put there.
+
+    **`written` is `--no-test-restart`, and it removes the entry entirely.**
+    That option writes the record's own waveform into the instrument's
+    `firstwave`, and the *packed* player -- unlike the editor's `gplay.c`,
+    which executes the wavetable on the same call -- jumps straight to
+    `mt_loadregs` after a new note's init (`player.s:908-911`), so the
+    wavetable's first entry lands on the note's *second* call. `firstwave` has
+    already put the record's waveform on frame 0; an entry here repeats it and
+    pushes the whole effect one frame late. IK+ measured `tri tri noi tri`
+    against the original's `tri noi tri pul` on three instruments, and the
+    same shift on its two-stage records.
     """
-    return bool(wave & 0xF0)
+    return not written and bool(wave & 0xF0)
 
 
 def _first_frame_lead(wave: int, multiplier: int = 1,
-                      force: bool = False) -> tuple:
+                      force: bool = False, written: bool = False) -> tuple:
     """The entries that hold the record's `+2` waveform for the note's frame 0.
 
     `(left, right)`, empty where the record has no waveform to put there
@@ -468,7 +479,7 @@ def _first_frame_lead(wave: int, multiplier: int = 1,
     block needs a note on the right side of every call and a delay would
     supply one only on its last.
     """
-    if not (force or _first_frame_entry(wave)):
+    if written or not (force or _first_frame_entry(wave)):
         return [], []
     left, right = [wave], [0x00]
     rest = max(1, multiplier) - 1              # ...the entry above is one call
@@ -525,7 +536,8 @@ def _two_stage_frames(frames: int, effect: int) -> int:
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
-                       budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
+                       budget: int = WAVE_ENTRIES_PER_INSTR,
+                       written: bool = False) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 34 corpus files: effect bit
@@ -584,7 +596,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     # same conversion `calls` above makes -- and the entries are dropped whole
     # rather than the block truncated where the 255-entry table has no room for
     # them, which is the degradation every other emitter here already makes.
-    lead, lead_r = _first_frame_lead(wave, multiplier)
+    lead, lead_r = _first_frame_lead(wave, multiplier, written=written)
     if lead and len(left) + len(lead) <= budget:
         left[:0] = lead
         right[:0] = lead_r
@@ -594,8 +606,8 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
 def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
                                  notes: List[int], start: int,
                                  multiplier: int = 1,
-                                 budget: int = WAVE_ENTRIES_PER_INSTR
-                                 ) -> Optional[tuple]:
+                                 budget: int = WAVE_ENTRIES_PER_INSTR,
+                                 written: bool = False) -> Optional[tuple]:
     """One block carrying bit $04's attack waveform *and* bit $10's arpeggio.
 
     The two bits are **sequential, independent tests on the same effect byte**,
@@ -682,7 +694,7 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     # calls -- spelled out rather than delayed, because this block spells every
     # other frame out for the same reason (a delay entry's right side is read
     # only on its last call, and the note base has to be current from the first).
-    lead = hold if _first_frame_entry(wave) else 0
+    lead = hold if _first_frame_entry(wave, written) else 0
     if lead + calls + loop + 1 > budget:
         return None
     left: List[int] = [wave] * lead
@@ -842,7 +854,8 @@ def _speed_index(speed_table: List[tuple], entry: tuple) -> int:
 
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           speed_table: List[tuple], fmt: str,
-                          multiplier: int, budget: int) -> Optional[tuple]:
+                          multiplier: int, budget: int,
+                          written: bool = False) -> Optional[tuple]:
     """Wavetable entries for the byte-code wave program, or None.
 
     The interpreter `detect.find_wave_program` reads, in 29 corpus files -- the
@@ -895,7 +908,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # on the program, every frame it emits ran one early and that first frame was
     # lost. Counted in the budget below like any other entry, so a record too
     # long for the table loses a trailing opcode rather than this.
-    seed = 1 if _first_frame_entry(data[rec + 2]) else 0
+    seed = 1 if _first_frame_entry(data[rec + 2], written) else 0
     left: List[int] = [data[rec + 2]] * seed
     right: List[int] = [WAVE_NOTE_BASE] * seed
     for kind, wave, arg in decode_wave_program(data, at):
@@ -2054,7 +2067,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        wave_program: bool = False,
                        pitch_seq: bool = False,
                        note_rows: Optional[dict] = None,
-                       row_calls: int = 0) -> tuple:
+                       row_calls: int = 0,
+                       no_test_restart: bool = False) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -2149,7 +2163,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # other shape in this function is reached for such a record.
     if wave_program and speed_table is not None:
         prog = _wave_program_entries(sid, det, i, speed_table, fmt,
-                                     multiplier, budget)
+                                     multiplier, budget,
+                                     written=no_test_restart)
         if prog is not None:
             return prog
 
@@ -2201,7 +2216,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 if notes is not None:
                     both = _two_stage_pitch_seq_entries(
                         wave, data[at], frames, notes, start,
-                        multiplier, budget)
+                        multiplier, budget, written=no_test_restart)
                     if both is not None:
                         return both
             # `_fixed_attack_note(sid, det, i)` is deliberately NOT passed here.
@@ -2212,7 +2227,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # melody falls 85% -> 39% on the one file it reaches. See
             # H2G-CONVERSION-METHOD.md section 7.qqq.
             two = _two_stage_entries(wave, data[at], frames, multiplier,
-                                     budget=budget)
+                                     budget=budget,
+                                     written=no_test_restart)
             if two is not None:
                 return two
 
@@ -2277,7 +2293,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # a second, unmeasured change.
         # (named apart from this function's `lead` parameter, which is the
         # instrument-number offset the wavetable pointers are built from)
-        frame0, frame0_r = _first_frame_lead(wave, multiplier, force=True)
+        frame0, frame0_r = _first_frame_lead(wave, multiplier, force=True,
+                                             written=no_test_restart)
         off = len(tl) + len(frame0) - 1
         # Two `tail` entries, mirroring the untimed shape's entries 1-2: the
         # arpeggio loops over the second of them and the entry after it, so
@@ -2314,7 +2331,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
                              sustain=data[base + 4] >> 4, budget=budget,
                              tick_frames=_noise_tick_frames(sid, det),
-                             note_rows=typical, row_calls=row_calls)
+                             note_rows=typical, row_calls=row_calls,
+                             written=no_test_restart)
 
     if drum and not tick:
         if effects:
@@ -2427,7 +2445,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   budget: int = WAVE_ENTRIES_PER_INSTR,
                   tick_frames: int = NOISE_TICK_FRAMES,
                   note_rows: Optional[int] = None,
-                  row_calls: int = 0) -> tuple:
+                  row_calls: int = 0,
+                  written: bool = False) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -2536,7 +2555,8 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # but the waveform too short to keep it off. 20 of the 23 instruments still
     # reading a frame early after v0.5.218 were on `-S2` files, against 3 on the
     # 45 single-speed ones.
-    lead, lead_r = _first_frame_lead(wave, multiplier, force=True)
+    lead, lead_r = _first_frame_lead(wave, multiplier, force=True,
+                                     written=written)
     left = lead + [WAVE_NOISE_GATEOFF | (wave & 0x01)]
     right = lead_r + [0x00]
     # Two frames is `2 * multiplier` calls, of which the entry above is one.
@@ -2831,7 +2851,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       sfx_drum: bool = False,
                       wave_program: bool = False, pitch_seq: bool = False,
                       note_rows: Optional[dict] = None,
-                      row_calls: int = 0) -> tuple:
+                      row_calls: int = 0,
+                      no_test_restart: bool = False) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -2871,7 +2892,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          wave_program=wave_program,
                                          pitch_seq=pitch_seq,
                                          note_rows=note_rows,
-                                         row_calls=row_calls)
+                                         row_calls=row_calls,
+                                         no_test_restart=no_test_restart)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -3310,7 +3332,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   min_notes, lead, two_stage,
                                                   sfx_drum, wave_program,
                                                   pitch_seq,
-                                                  note_rows, row_calls)
+                                                  note_rows, row_calls,
+                                                  no_test_restart)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

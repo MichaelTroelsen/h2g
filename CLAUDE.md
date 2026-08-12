@@ -157,6 +157,17 @@ test dependency).
   `_first_frame_lead` exists to open it one frame in. Extracting a helper is
   not the same as every caller using it -- grep for the constant the helper
   replaced, not just for the helper.
+- **This repo has two players, and they do not agree about the schedule.**
+  Every number here comes from `gt2reloc`'s packed player (`player.s`); the
+  editor's `gplay.c` is the more readable and the more often read. The packed
+  one does **not** execute the wavetable on a note's first call -- it jumps
+  straight to the register writes after the init (`player.s:908-911`) where
+  `gplay.c` falls through to `WAVEEXEC` on the same call. So `firstwave` is
+  what reaches `$D404` on frame 0 and wavetable entry 0 lands on frame 1. That
+  is invisible with the default `$09` firstwave and costs a frame with
+  `--no-test-restart`, which writes the record's own waveform there: the
+  frame-0 lead then repeats it and every effect runs one frame late. Read
+  `player.s` before concluding anything about *when* a table entry lands.
 - **A fixture is not the corpus.** `_noise_tick_frames` took the modal speed
   gate over a file's subtunes; the corpus rip of Commando carries 19 (four
   songs and fourteen one-frame sound effects, which outvote the music) where

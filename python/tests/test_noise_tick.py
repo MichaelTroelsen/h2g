@@ -149,3 +149,30 @@ def test_commando_derives_two_frames_from_its_own_header():
                               lambda *a, **k: None)
     assert sid.subtunes == 19
     assert _noise_tick_frames(sid, det) == 2
+
+
+# --- v0.5.229: --no-test-restart already wrote frame 0 -----------------------
+
+def test_no_test_restart_suppresses_the_frame_zero_entry(monkeypatch):
+    """`firstwave` puts the record's waveform on the note's first call.
+
+    The *packed* player is not the editor here. `gplay.c` executes the
+    wavetable on the same call as a note's init, but `player.s:908-911` jumps
+    to `mt_loadregs` straight after it, so the wavetable's first entry lands
+    on the note's **second** call. With `--no-test-restart` the instrument's
+    `firstwave` is the record's own waveform rather than `$09`, so a lead
+    entry repeats it and pushes the whole effect a frame late -- IK+ measured
+    `tri tri noi tri` against the original's `tri noi tri pul`.
+    """
+    _speeds((3,), monkeypatch)
+    with_lead = _entries(DRUM | ARP | 0x30)
+    det = Detection(instr_start=8, instr_stride=8,
+                    effect_arp=True, effect_drum=True)
+    without = _wavetable_entries(_Sid(DRUM | ARP | 0x30), det, 0, True, "gts5",
+                                 [], 1, no_test_restart=True)
+    assert with_lead[0] == [0x41, 0x81, 0x81, 0x40, 0x40, 0xFF, 0xFF]
+    assert without[0] == [0x81, 0x81, 0x40, 0x40, 0xFF, 0xFF],         "no lead: straight to the tick"
+    # ...and the arpeggio keeps its pair, with the loop target moved back by
+    # the entry that is no longer there rather than left pointing past it.
+    assert with_lead[1][-2:] == [0x09, 0x00]
+    assert without[1][-2:] == [0x08, 0x00]

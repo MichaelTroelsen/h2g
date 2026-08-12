@@ -1427,6 +1427,16 @@ what the player's first frame actually holds — Commando's noise record traces
 the gate on (`gplay.c:355-363`), so one byte buys both a real attack and no
 silent frame.
 
+**And it then owns the note's first frame, so the effect emitters must not.**
+The packed player does not execute the wavetable on a note's first call — it
+jumps straight to the register writes after the init (`player.s:908-911`),
+unlike the editor, which falls through to `WAVEEXEC` on the same call. So
+`firstwave` is what reaches `$D404` on frame 0 and wavetable entry 0 lands on
+frame 1. With the default `$09` that is invisible and the frame-0 lead every
+effect block emits is correct; with this flag the lead repeats what `firstwave`
+already wrote and pushes the whole effect a frame late. Since v0.5.229
+`_first_frame_entry` is gated on it. See H2G-CONVERSION-METHOD.md § 7.ffff.
+
 **It is off by default, and not in `presets.json`'s `always` block, because the
 measurement went the other way.** Over the 82 files both settings convert:
 

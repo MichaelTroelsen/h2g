@@ -7015,6 +7015,96 @@ its detection form.
 > declines the next. When a walk steps a constant number of bytes over an
 > instruction, ask which addressing mode that constant assumes.
 
+### 7.ffff The packed player is not the editor: `--no-test-restart` owns frame 0
+
+v0.5.229. IK+ was the handoff's **Class A** example — an attack transient the
+original sounds and we hold flat, where forcing `--two-stage` raised `onset`
+0.450 → 0.550 and cost 13 points of `melody`, so `keeps_notes` refused it. The
+diagnosis "the emitter is wrong for this file in the way the `$40` halving was
+wrong for Ricochet" was right about the shape and wrong about the mechanism.
+
+Forcing `--wave-program` on it and reading the shapes:
+
+```
+adsr     original            ours
+$0505    noi noi tri pul     noi noi noi tri     ours LATE
+$08D8    tri noi tri pul     tri tri noi tri     ours LATE
+$09F8    tri noi tri pul     tri tri noi tri     ours LATE
+```
+
+Three instruments a frame **late** — the mirror of § 7.www, whose corpus
+signature was 32 early and 0 late. And `songview.py` said the wavetable itself
+was exactly right: `11 / 81C2 / 1180 / 4180`, the record's `tri`, then the
+program's noise, tri, pulse. The bytes say `tri noi tri pul` and the chip plays
+`tri tri noi tri`.
+
+The one thing IK+ has that almost nothing else does is **`--no-test-restart`**,
+one of three corpus files carrying it. Turning it off, with everything else
+identical, gives three exact matches. The two conversions differ in **one byte
+per instrument**: `firstwave`, `$09` (gate + test bit) against the record's own
+waveform.
+
+#### Why that costs a frame, and why the editor cannot show it
+
+In `gplay.c` it would not. A new note sets `cptr->wave = firstwave` and then
+falls through to `WAVEEXEC` **on the same call**, so wavetable entry 0
+overwrites `firstwave` and the value never reaches the chip.
+
+The packed player is a different program. `player.s:903-911`, after the
+new-note init:
+
+```
+              .IF (NOEFFECTS == 0)
+                lda mt_chnnewparam,x            ;Execute tick 0 FX after
+mt_tick0jump1:                                  ;newnote init
+                jsr mt_tick0_0
+              .ENDIF
+                jmp mt_loadregs                 ; <- straight to the registers
+...
+mt_nonewnoteinit:                               ; only the NO-new-note path
+                jsr mt_tick0_0                  ; "and wavetable afterwards"
+mt_waveexec:
+```
+
+**The wavetable does not execute on a note's first call.** `firstwave` is what
+reaches `$D404` on frame 0, and entry 0 lands on frame 1. With the default
+`$09` that is invisible — the test bit selects no waveform, so frame 0 shows
+nothing and entry 0 (the lead § 7.www added) is the note's first audible
+frame, exactly where the player writes it. With `--no-test-restart` the
+record's waveform is *already* on frame 0, and the lead repeats it: every
+effect one frame late, for every instrument in the file.
+
+The raw trace, voice 2, the same note either way:
+
+```
+--no-test-restart          default
+frame 7  0000 C-0 80  11   frame 7  .... ... ..  09     <- note init
+frame 8  1BA2 (G#4)   ..   frame 8  1BA2 G#4 B8  11     <- entry 0
+frame 9  313C (F#5)   81   frame 9  313C (F#5)   81     <- entry 1
+```
+
+Note also what the option does to the *anchor*: with the gate on and the
+frequency still `0000`, siddump prints a bare note `C-0` at frame 7 and every
+attack-anchored measurement for those files reads from there.
+
+`_first_frame_entry` takes the flag and returns False under it, so all four
+emitters lose the lead together — the rule stays in one function, which is
+§ 7.bbbb's lesson and the fourth time this file has had to learn it. IK+ with
+`--wave-program`: `onset` 0% → **60%**, frame agreement 0.45 → 0.75, three
+instruments exact, no "late" left.
+
+**Corpus-wide it changes no byte**, because the three files carrying
+`--no-test-restart` have none of the effect options on — the lead is only
+emitted by the drum, two-stage, pitch-seq and wave-program blocks. Like
+§ 7.yyy, what the fix does is make those options *selectable* on files where
+they were being measured through a one-frame shift.
+
+> **The transferable lesson:** this repo has two players. Every number here
+> comes from `gt2reloc`'s packed one, and the editor's `gplay.c` is the more
+> readable and the more often read. They agree about the format and not about
+> the *schedule* — and a defect that lives in the difference is invisible to
+> the source everyone consults.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
