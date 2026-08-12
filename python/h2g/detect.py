@@ -114,6 +114,12 @@ class Detection:
     # picked by a per-voice frame counter's low bit (W_A_R $E759). File offset
     # of that table's first entry, indexed by the same i * instr_stride.
     wave_alternate: int = -1
+    # A second dialect of the same alternation (Hollywood or Bust $0774,
+    # Chicken Song): the alternate is not tabled but *derived* from the
+    # voice's own waveform as `$80 | (wave & $07)` -- noise keeping the
+    # control bits -- and the counter is global rather than per voice. True
+    # where that block was found; `wave_alternate` stays -1 for it.
+    wave_alternate_noise: bool = False
     # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
     # together or neither is. `pulse_bounds` is the file offset of an array
     # indexed by the same i * instr_stride the records are, holding the two
@@ -972,6 +978,18 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     if det.wave_alternate >= 0:
         log("Instrument effect byte..: bit $02 alternates the waveform every "
             "frame with a second table (not the rise)")
+    else:
+        found = _effect_byte_address(sid, det)
+        if found:
+            addr, zp = found
+            ld = (f"A5 {addr:02X}" if zp
+                  else f"AD {addr & 0xFF:02X} {addr >> 8:02X}")
+            det.wave_alternate_noise = search_file(
+                sid.data, WAVE_ALT_NOISE_SHAPE.format(load=ld)) >= 1
+            if det.wave_alternate_noise:
+                log("Instrument effect byte..: bit $02 alternates the "
+                    "waveform every frame with noise at its own control bits "
+                    "(not the rise)")
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
@@ -2516,6 +2534,13 @@ TWO_STAGE_PUSH = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48 BD ?? ?? 48"
 
 WAVE_ALT_SHAPE = ("{load} 29 02 F0 ?? AC ?? ?? BD ?? ?? 29 01 F0 ?? "
                   "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
+# Hollywood or Bust $0774. Same alternation, two differences: the counter is
+# global (`AD`, not `BD ..,X`) and the alternate is derived from the voice's
+# own waveform -- `AND #$07 / ORA #$80`, noise keeping the control bits --
+# rather than read from a table. The `STA $D404,Y` at the end is what makes it
+# specific: this block writes the chip itself.
+WAVE_ALT_NOISE_SHAPE = ("{load} 29 02 F0 ?? AD ?? ?? 29 01 F0 ?? "
+                        "BD ?? ?? 29 07 09 80 4C ?? ?? BD ?? ?? 99 04 D4")
 
 
 def _find_wave_alternate(sid: SidFile, det: Detection) -> int:

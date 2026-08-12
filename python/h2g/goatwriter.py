@@ -545,7 +545,8 @@ def _two_stage_frames(frames: int, effect: int) -> int:
 def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             start: Optional[int] = None,
                             budget: int = WAVE_ENTRIES_PER_INSTR,
-                            written: bool = False) -> Optional[tuple]:
+                            written: bool = False,
+                            alt_first: bool = False) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -579,18 +580,36 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     lead, lead_r = _first_frame_lead(wave, multiplier, written=written)
 
     def half(w: int) -> tuple:
-        left, right = [w], [0x00]
+        # **`$00` is "no frequency write" here, and `$80` is not.** The two
+        # players disagree about this byte: `gplay.c:202` skips the write on
+        # `$80` and treats `$00` as "the base note, +0 semitones", while the
+        # packed player tests `lda notetbl / bne` (`player.s:976-977`) -- so
+        # `$00` writes nothing at all, and `$80` reaches `adc chnnote / and
+        # #$7f`, which is `(128 + n) & 127 == n`: harmless as a transposition
+        # and still a *write*, re-asserting the base note every frame. Emitted
+        # with `$80`, Hollywood or Bust's melody fell 58% -> 25% against 47%
+        # with `$00`. Every number in this repo comes from the packed player,
+        # so `$00` is the value that leaves a bend alone.
+        left, right = [w], [WAVE_NOTE_BASE]
         rest = max(1, multiplier) - 1          # ...the entry above is one call
         if rest == 1:
             left.append(w)
-            right.append(0x00)
+            right.append(WAVE_NOTE_BASE)
         elif rest > 1:
             left.append(min(rest - 1, WAVE_MAX_DELAY))
             right.append(WAVE_NOTE_KEEP)
         return left, right
 
-    a_l, a_r = half(wave)
-    b_l, b_r = half(alt)
+    # **Which of the pair the note's second frame gets is read off the
+    # branch, not assumed.** Both dialects test the counter with
+    # `AND #$01 / BEQ`, and in both the note's frame 1 takes the
+    # *fall-through* -- the tabled dialect's is the record's own waveform
+    # (W_A_R measures `tri tri noi tri`) and the derived dialect's is the
+    # noise (Hollywood or Bust measures `tri noi tri noi`). Same rule, opposite
+    # output, which is why this is a parameter rather than a constant.
+    first, second = (alt, wave) if alt_first else (wave, alt)
+    a_l, a_r = half(first)
+    b_l, b_r = half(second)
     left = lead + a_l + b_l
     right = lead_r + a_r + b_r
     if len(left) + 1 > budget:
@@ -2316,11 +2335,25 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # Gated on `effects` like every other reading of +7, and on the routine
     # being present rather than on the bit alone: bit $02 is the *rise* in
     # Warhawk's dialect, and no file has both blocks.
-    if effects and det.wave_alternate >= 0 and (arp_style & 0x02):
-        a = det.wave_alternate + i * det.instr_stride
-        if a < len(data):
-            alt = _wave_alternate_entries(wave, data[a], multiplier, start,
-                                          budget, written=no_test_restart)
+    if effects and (arp_style & 0x02):
+        alt_byte, alt_first = None, False
+        if det.wave_alternate >= 0:
+            a = det.wave_alternate + i * det.instr_stride
+            if a < len(data):
+                alt_byte = data[a]
+        # `det.wave_alternate_noise` -- the derived dialect (Hollywood or
+        # Bust, Chicken Song) -- is deliberately NOT emitted here. It is
+        # decoded and measured: Chicken_Song gains (wave 77 -> 84%, noise
+        # 490 -> 919, nrun 0 -> 100%, onset 57 -> 86%, melody unmoved) and
+        # Hollywood_or_Bust loses **11 points of melody** for the same
+        # register gains. Two files, one each way, and no per-song switch
+        # short of a sixth `--fidelity` toggle -- which doubles a search
+        # already running 31 combinations a song. See
+        # H2G-CONVERSION-METHOD.md section 7.iiii.
+        if alt_byte is not None:
+            alt = _wave_alternate_entries(wave, alt_byte, multiplier, start,
+                                          budget, written=no_test_restart,
+                                          alt_first=alt_first)
             if alt is not None:
                 return alt
 

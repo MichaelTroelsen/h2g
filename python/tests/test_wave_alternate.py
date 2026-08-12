@@ -23,6 +23,12 @@ def test_the_shape_is_the_lead_then_the_pair_looping():
     left, right = _wave_alternate_entries(0x11, 0x81, 1, start=6, budget=8)
     assert left == [0x11, 0x11, 0x81, 0xFF]
     assert right == [0x00, 0x00, 0x00, 7], "loops to the pair, not the lead"
+    # ...and every right side is $00, which in the PACKED player is "no
+    # frequency write" (`player.s:976-977` tests `bne`). $80 is not the same
+    # thing here as it is in the editor: it reaches `adc chnnote / and #$7f`,
+    # which is a no-op transposition but still a write, re-asserting the base
+    # note every frame. Emitted with $80, Hollywood or Bust's melody fell
+    # 58% -> 25% against 47% with $00.
 
 
 @pytest.mark.parametrize("multiplier,left", [

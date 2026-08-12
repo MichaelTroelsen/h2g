@@ -7290,6 +7290,73 @@ goes 57% → 100% and its noise 393 → 988 of 1031: the documented trade of
 > instruments disagree" into "read the `$02` handler", and the handler took an
 > afternoon where the census took a morning.
 
+### 7.iiii Bit `$02`'s second dialect — decoded, measured, and not shipped
+
+v0.5.232. § 7.hhhh emptied `$0A` out of the census's work list; two entries in
+the same family were left, and they are the *same mechanism written twice*.
+
+Hollywood or Bust `$0774` (and Chicken Song):
+
+```
+0774  LDA effect / AND #$02 / BEQ out
+077B  LDA $09A2 / AND #$01 / BEQ $078C   ; a GLOBAL frame counter
+0782  LDA wave,X / AND #$07 / ORA #$80   ; ...noise, keeping the control bits
+0789  JMP store
+078C  LDA wave,X                         ; ...or the voice's own waveform
+078F  store: STA $D404,Y
+```
+
+Two differences from § 7.hhhh's: the counter is global rather than per voice,
+and the alternate is **derived** (`$80 | (wave & $07)`) rather than read from a
+table. Both files' phase is nonetheless stable — Hollywood or Bust's `$0800`
+reads `tri noi tri noi` on all 375 onsets and `$0A00` on all 125 — and the
+phase is *opposite* to the tabled dialect's, which the code explains rather
+than contradicts: in both, the note's frame 1 takes the `BEQ`'s **fall-through**
+branch, and the two players put different things there.
+
+#### Why it is not emitted
+
+Measured, both files, everything else fixed:
+
+```
+Chicken_Song       wave 77 -> 84%   noise 490 -> 919   nrun 0 -> 100%   onset 57 -> 86%   melody unmoved
+Hollywood_or_Bust  wave 83 -> 100%  noise   0 -> 1496  nrun - -> 100%   onset 71 -> 100%  melody 58 -> 47%
+```
+
+One file each way. Eleven points of melody is not a price this repo pays for
+register agreement -- it is exactly what `fidelity_better`'s `keeps_notes`
+guard exists to refuse -- and there is no per-song switch for it short of a
+sixth `--fidelity` toggle, which would double a search already running 31
+combinations a song. So the block is **detected and logged and not written**,
+the same standing `_find_sfx_drum` had for seven files before § 7.rrr, and the
+Hollywood or Bust question is handed on with its numbers rather than buried.
+
+#### What the detour found instead: the right-side byte
+
+Chasing the melody loss produced something that outlives it. The wavetable's
+right side does not mean the same thing in the two players:
+
+| byte | `gplay.c` (the editor) | `player.s` (what gt2reloc packs) |
+|---|---|---|
+| `$00` | the base note, +0 semitones — **re-asserts the note** | `bne` fails: **no frequency write at all** |
+| `$80` | `if (note != 0x80)` — **no change** | `adc chnnote / and #$7f` = `(128+n) & 127 == n` — a no-op transposition, and still a write |
+
+So the value that leaves a bend alone is `$00` in the packed player and `$80`
+in the editor, and every number in this repo comes from the packed one.
+Emitting the alternation with `$80` — chosen by reading `gplay.c` — took
+Hollywood or Bust's melody to **25%**, worse than either alternative, because
+it re-asserted the base note on every frame and cancelled the file's own pitch
+movement. That is the third place (§ 7.ffff, § 7.gggg) where the two players
+differ and the editor is the more readable and the more misleading.
+
+It also acquits the `$80` this repo already writes on delay entries: a no-op
+transposition is harmless, which is why nothing ever measured it.
+
+> **The transferable lesson:** decoding a mechanism and shipping it are
+> different decisions, and the second one is the corpus's to make. A block read
+> correctly out of the 6502 can still cost more than it gains, and "we
+> understand it now" is not a reason to emit it.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.232 — 2026-08-12
+
+- decode bit $02's second dialect, and what the wavetable's right side means
+
 ## 0.5.231 — 2026-08-12
 
 - emit effect bit $02's alternating waveform: 21 files, 98 records
