@@ -473,6 +473,30 @@ def _closer(cand: float | None, ref: float | None, target: float,
     return abs(math.log(cand) - want) < abs(math.log(ref) - want) - margin
 
 
+def prune_inert(sid_path: Path, base: dict, chosen: dict) -> dict:
+    """`chosen` without the flags that change none of the converted bytes.
+
+    A preset entry is a record of a measured decision, and a flag that alters
+    nothing was not one -- no measurement can have preferred it, because both
+    settings produced the identical file. See `tune_by_fidelity` for how one
+    gets in.
+
+    Order-dependent only where two flags are individually redundant because
+    the other is present (an OR of two paths onto one emission): the first is
+    dropped and the second kept, which records one decision rather than two.
+    """
+    if not chosen:
+        return chosen
+    out = dict(chosen)
+    full = convert(str(sid_path), log=lambda m: None, **base, **FIXED, **out)
+    for k in sorted(out):
+        without = dict(out, **{k: False})
+        if convert(str(sid_path), log=lambda m: None,
+                   **base, **FIXED, **without) == full:
+            del out[k]
+    return out
+
+
 def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                      siddump: str, gt2reloc: str, seconds: int,
                      log=lambda m: None) -> dict:
@@ -569,6 +593,22 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
             continue
         if fidelity_better(cand, ref):
             ref, out = cand, {k: v for k, v in extra.items() if v}
+    # **Drop any flag the winning combination did not actually use.**
+    # `fidelity_better` is not a total order -- each of its terms can improve
+    # while another degrades -- so this walk is a greedy path through the 31
+    # combinations rather than a maximum, and where it stops depends on the
+    # iteration order. That is a property of scoring several dimensions at
+    # once and is not fixed here. What *is* fixed is the consequence: a
+    # combination can win carrying a flag that changes nothing, and the entry
+    # then records a decision that was never measured. Mega Apocalypse
+    # selected `two_stage sfx_drum wave_program` where `two_stage` is inert
+    # (its player sets no `effect_two_stage`) and produced byte-identical
+    # output without it.
+    #
+    # Tested by the bytes rather than by re-scoring: a flag whose removal
+    # leaves the conversion identical cannot have been what any measurement
+    # preferred. One conversion per selected flag, no traces.
+    out = prune_inert(sid_path, base, out)
     if out:
         log(f"    {sid_path.name}: {' '.join(sorted(out))} "
             f"(melody {ref[0]:.0%})")

@@ -647,6 +647,15 @@ derives its keys from `inspect.signature(convert)` and
 `presets.EXCLUDED_FROM_ALWAYS` naming deliberate omissions. Do not hand-edit
 that list back into existence.
 
+And an option can be inert in the other direction: **`fidelity_better` is not a
+total order**, so the 31-combination `--fidelity` walk is a greedy path rather
+than a maximum and can stop on a combination carrying a flag that changes
+nothing. `presets.prune_inert` re-converts once per selected flag and drops any
+whose removal leaves the bytes identical, because a preset entry is a record of
+a measured decision and a flag that changes nothing was not one. Do not read
+the greedy path itself as a defect to fix with a single scalar score — five
+incommensurable dimensions collapsed into one number would be the worse lie.
+
 ## VB6 original — build / run (reference only, not actively developed)
 
 Requires Visual Basic 6.0 (IDE or `VB6.EXE` command-line compiler) on Windows, plus the

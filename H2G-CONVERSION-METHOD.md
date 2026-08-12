@@ -6533,6 +6533,274 @@ moved anywhere.
 
 ---
 
+### 7.zzz Two instruments for reading a conversion rather than scoring it
+
+v0.5.215–216, written up late (v0.5.228). Every measurement in this project
+reduces a conversion to a number. Two additions read it instead.
+
+**`songview.py`** decodes a finished `.sng` to one self-contained HTML page:
+orderlists with transposes resolved, wavetable entries with **cumulative call
+timing**, instruments tagged with the effect bits recovered from the provenance
+stamp `_write_instruments` already writes into the name (`NN:b5-b6-b7`, where
+b7 is the player's own effect byte), and every pattern labelled with **all
+three** of its identities — GoatTracker's hex number, the post-dedup index and
+the Hubbard source. That last one retires a confusion that cost three debugging
+attempts: a listener's "PATT.12" is pattern 18, the editor's pattern is
+post-dedup, and the orderlist's leading transpose moves the pitches too.
+
+It scores nothing, which is the point: unlike a new report column it cannot be
+silently wrong in a way that changes a decision. Its parser is a deliberate
+*second* reader of the format rather than a re-use of `build_sng`, and
+`tests/test_songview.py` checks the two against each other and against the
+byte-exact fixture — which is the only thing that makes the independence worth
+having.
+
+**`siddump -w<adr>[,…]`** (vendored `python/tools/siddump-rt`) dumps up to 16
+arbitrary memory addresses once per displayed frame, from the same `mem` and at
+the same point as the SID registers. It closes the one thing a register trace
+cannot show: *which wavetable entry produced a register*. Printed verbatim every
+frame and never elided to `..`, because a pointer that stops moving is exactly
+the signal being looked for. Proved inert without the flag by rebuilding the
+pre-patch source and diffing output on `Commando.sid -a0 -t5`: byte-identical.
+
+Both were built in response to the question "would better live telemetry from
+GoatTracker help?" The answer given, and the reason this pair exists instead:
+the fidelity harness never runs GoatTracker. It packs with `gt2reloc` and traces
+with `siddump`, so telemetry from the editor would measure a **different
+execution path** than every number in this repo — the shape of the § 7.nn
+mistake, where a finer instrument was believed before it had been shown to
+reproduce the coarser one's answer.
+
+§ 7.xxx is the first finding `songview.py` produced, and it produced it by
+making one wavetable legible in one screen.
+
+---
+
+### 7.aaaa The `onset` dimension: seeing a mechanism a frame out of phase
+
+v0.5.217, written up late (v0.5.228). Two emitters had, for as long as they had
+existed, opened a note on the *effect* where the player writes the record's own
+waveform first (§ 7.www). No column in the report could see it:
+
+* **`wave`** averages per-frame waveform agreement over the whole window, so a
+  wrong opening frame on a 43-note instrument is a rounding error against 3000
+  frames. Trans-Atlantic's GT 3 read `noise tri pulse noise` against the
+  original's `tri noise tri pulse` — and 63% either way.
+* **`nrun`** compares the *lengths* of noise runs and is position-independent by
+  design (§ 7.ddd), so a run that is right but starts a frame early scores 100%.
+
+`fidelity.onset_shapes` records the waveform classes a note *opens* on, over
+`ONSET_FRAMES = 4`, keyed by the ADSR pair latched one frame after the attack —
+`instrmap.py`'s rule, because the attack frame can still hold a hard restart's
+envelope. The key is `$D405/$D406` and the measured value is `$D404`, so the
+attribution cannot contain the quantity attributed (the trap `release_tails`
+fell into).
+
+Three properties worth stating, because two of them were got wrong first:
+
+1. **No startup-lag correction, and none is wanted.** Every other per-frame
+   column compares frame *k* to frame *k* and must be shifted by the packed
+   player's 3–8 frame latency (§ 7.ddd). This reads each side at its *own*
+   attack frames, so the latency cancels by construction. The first wiring
+   passed the lag in, which would have manufactured the phase error the column
+   exists to detect.
+2. **The direction is easy to write backwards, and was.** `ours == orig[1:]`
+   means we never played the original's first frame — we are **early**.
+3. **Reporting the direction is the point.** A wrong waveform and a right one a
+   frame out have completely different fixes, and the report had never
+   distinguished them. At introduction the corpus split was **32 early, 0
+   late** — which is what a systematic emitter defect looks like and what noise
+   does not.
+
+---
+
+### 7.bbbb The drum's first frame is a frame, not a call
+
+v0.5.220, written up late (v0.5.228). After § 7.www fixed two emitters, 23
+instruments still read early — and the split was **20 of 21 on multiplier-2
+files against 3 of 45 single-speed ones**, which is not a distribution a
+waveform error produces.
+
+`_drum_entries` had opened on the record's own waveform correctly since
+v0.5.172. Its docstring said so, and said the rest of it too:
+
+> All five entries are in use either way, so unlike the plain shape this one has
+> no slot for a delay: **its attack entry lasts one play call at every -S
+> value**, and only the sweep *rate* is scaled by the multiplier.
+
+That sentence reads as a description of a design and is a statement of the bug.
+A wavetable steps once per **call**; one frame is `multiplier` calls. At `-S2`
+the record's waveform therefore covered half of frame 0 and the noise tick
+finished it — and siddump samples the registers at the end of a frame, so frame
+0 read as the drum. It is the same defect § 7.www fixed, arriving by the other
+route: not the effect placed on frame 0, but the waveform too short to keep it
+off.
+
+`_first_frame_lead(wave, multiplier, force=True)` is the extracted rule, shared
+with `_two_stage_entries` — applying § 7.www's own lesson to itself. `force` is
+there because `_drum_entries` has *always* emitted that entry, including for
+records whose `+2` selects no waveform; gating it on `_first_frame_entry` would
+delete it for those, which is a second and separately unmeasured change.
+
+Corpus: onset matched **237 → 254**, early **23 → 14**, ten files up and none
+down; Warhawk (the drum player of § 7.ii) 0% → 67%, Last_V8 and its C128
+version → 100%. **melody, seq, adsr, nrun, tail and pitch moved on exactly zero
+files** — the signature of a change that relocates a waveform *within* frame 0
+and nothing else.
+
+(The rule needed a fourth application, three sessions later: § 7.xxx.)
+
+---
+
+### 7.cccc An option no scorer could select
+
+v0.5.221, written up late (v0.5.228). `presets.fidelity_better` decides which
+of the invisible-to-structure options a song gets. Its docstring already
+recorded that it is *deliberately* not scored on `wave`, because restoring a
+1–4 frame transient moves `wave` the wrong way even when the transient is right
+(§ 7.eee). The unintended consequence went unnoticed for as long as the option
+existed: **`--two-stage` was unselectable**. Its attack strikes no new note,
+sounds no new register and leaves `melody` untouched, so not one of the four
+terms could see it. 45 corpus files sounded a transient at 109 instruments —
+some 13,700 notes — and 42 of them had the option off.
+
+The new term is `onset_frame_agreement`, and it is **graded per frame rather
+than per instrument**. Both alternatives were checked before it was written:
+whole-shape equality (`onset_agreement`, what the report prints) scores Sigma
+Seven's `$0FFD` — no transient at all → a transient one frame too long — as
+**zero**, and `onset_first_matched` cannot see it either because frame 0 already
+agreed. Guarded by `keeps_notes` like every other term, and verified to decline
+as well as accept.
+
+> **The transferable lesson:** a scorer's blind spots are not symmetrical with
+> the report's. A column deliberately excluded from scoring (here `wave`, for a
+> good reason) removes every mechanism whose only visible effect is in that
+> column — so an exclusion needs a replacement, not just a justification.
+
+---
+
+### 7.dddd Bit `$40` halves bit `$04`'s attack
+
+v0.5.222, written up late (v0.5.228). This document carried, as an open
+question, that "the relationship between that byte and the shared `$0FAA,X`
+counter is not established". It is a halving. Measured across the corpus rather
+than reasoned:
+
+```
+frames byte 2, effect $44  ->  1 frame   Sigma Seven $0FFD (124 onsets)
+                                         Ricochet $0CE8 (77)
+                                         Skate or Die $08D9 (300), $0AD8 (26)
+frames byte 4, effect $44  ->  2 frames  Trans-Atlantic $0A99 (150)
+                                         Sanxion $1909 (81), Pandora $0D99 (31)
+                                         Auf Wiedersehen Monty $0AF9 (10)
+                                         Knucklebusters $0AAD (4)
+frames byte 2, effect $04  ->  2 frames  Sigma Seven $2B9D (61)
+```
+
+527 onsets on the first line and no counter-example there. **The second line is
+what makes this a finding rather than a coincidence**: at `frames = 2` a halving
+and a constant 1 are indistinguishable, and the constant was nearly shipped. The
+`frames = 4` records measure 2, not 1.
+
+The implied mechanism — an implication, not a reading of the 6502 — is that
+`$40`'s handler decrements the same per-voice attack counter `$04`'s does, so
+with both live it counts down twice per frame. One counter-example is recorded
+rather than smoothed over: Lightforce's `$1FF9` is `$44` with a frames byte of 4
+and measures **0** attack frames over 15 onsets. Unexplained; one record against
+nine.
+
+Effect, with `melody` unchanged everywhere: Sigma Seven onset 0.625 → **1.000**,
+Sanxion 0.750 → 0.938, Trans-Atlantic 0.958 → 1.000, Skate or Die 0.500 →
+0.625, Ricochet 0.650 → 0.700. **Ricochet and Skate or Die are the point** —
+before the halving, forcing `--two-stage` on them moved their onsets not at all,
+so § 7.cccc's criterion correctly declined them. The halving is what makes them
+*selectable*.
+
+---
+
+### 7.eeee Two measurement bugs in the preset search
+
+v0.5.223–225, written up late (v0.5.228). `presets.tune_by_fidelity` is a
+**second implementation** of "convert, pack, trace both, compare", beside
+`fidelity._measure`, and nothing pinned the two together. Both bugs were found
+by refusing to commit a search result that tuned a file reading `melody 5%` and
+asking why a 5% file was being tuned at all.
+
+1. **No calibration.** `_measure` traces the original with
+   `calibration(ft.detune)` where `sidfile.find_freq_table` reports its
+   frequency table as sitting off the semitone grid; the search passed a hardcoded `0`, so siddump named every note of
+   those files against the wrong table. Four corpus files are affected
+   (Kings_of_the_Beach_intro, One_on_One_Jordan_vs_Bird, Powerplay_Hockey,
+   Rock_Tells_the_Tale, all detune −0.696). One_on_One went 5% → **99%**.
+2. **No subtune counterpart.** `_measure` searches a window of *our* subtunes
+   and keeps the best match (`--search-subtunes`, default **3**); the search
+   compared the original's N against our N. Action_Biker reads **6%** that way
+   and **100%** the other — and on that 6% the search had "improved" it to 8%
+   with `no_test_restart`. It now selects nothing there, which is correct.
+
+The counterpart is resolved **once**, on the reference conversion, and reused
+for every candidate: three traces per candidate would triple a search already
+running 31 combinations a song, and none of the toggles changes an orderlist
+length. That is an assumption and it is stated where it is made.
+
+`tests/test_search_matches_report.py` pins the two harnesses together. Both
+bug-catching tests were verified to **fail when their bug is reintroduced**,
+which is the only way to know a regression test tests anything. The subtune test
+asserts the *method* — that more than one of our subtunes is probed — rather
+than the outcome, because which subtune fits legitimately moves; a guard test
+checks the two named files still exhibit what they are there for, so a corpus
+change cannot leave them passing vacuously.
+
+**The corrected search** (v0.5.225) then gained 34 settings across 28 files and
+lost 4. `--two-stage` reached 26 files where 3 had it, `--wave-program` 11 where
+1 did. A/B at *fixed code*, so the comparison isolates the settings:
+
+```
+onset   62.1% -> 76.2%   +14.1pp   26 files up, 0 down
+nrun    48.9% -> 51.7%    +2.8pp    2 up, 0 down
+wave    74.0% -> 74.4%   +0.35pp   14 up, 12 down
+melody, seq, adsr, tail, pitch      flat to within 0.02pp
+```
+
+> **The transferable lesson:** a second implementation of a measurement is a
+> second place for the measurement to be wrong, and it will not announce itself
+> — both of these read as *converter* defects on the file they touched. If a
+> harness is duplicated for speed, pin the copy to the original with a test that
+> fails when they diverge.
+
+#### A third thing the search does, found by reading its own answer (v0.5.228)
+
+Re-running the search after § 7.xxx and § 7.yyy changed exactly one entry —
+Mega Apocalypse gaining `wave_program`, which is what § 7.yyy predicted. It also
+gained `two_stage`, and that file's player sets no `effect_two_stage` at all:
+the flag is **inert**, the conversion byte-identical without it.
+
+Instrumenting the walk showed why, and it is not a bug in any one term:
+
+```
+combo  1  wave_program              wins: noise 0 -> 875 of 1444, onset .75 -> .93
+combo  3  sfx_drum                  wins: oscillation .51 -> .55   (onset falls to .75)
+combo  5  sfx_drum wave_program     wins: noise -> 1379, onset -> .93
+combo  9  two_stage wave_program    wins: noise *pitch* 16824 -> 8412 (theirs 8912)
+combo 13  two_stage sfx_drum wave_program   wins again on noise and oscillation
+```
+
+`fidelity_better` scores five one-sided questions and accepts a candidate that
+improves **any** of them while keeping its notes. That is not a total order, so
+the loop is a greedy *path* through the 31 combinations rather than a maximum,
+and where it stops depends on the iteration order — combo 9 wins by moving the
+noise pitch while giving back the oscillation combo 5 had gained.
+
+The ordering is left alone: a single scalar over five incommensurable
+dimensions would be a worse lie than a path through them. What is fixed is the
+consequence — `prune_inert` re-converts once per selected flag and drops any
+whose removal leaves the file identical. **A preset entry is a record of a
+measured decision, and a flag that changes nothing was not one.** One entry in
+the corpus was affected; the shipped conversion is unchanged, only its
+description of itself.
+
+---
+
 ### 7.xxx The drum block does not branch around the arpeggio
 
 v0.5.226. International Karate was one of the two files the previous session

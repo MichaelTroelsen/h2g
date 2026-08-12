@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.228 — 2026-08-12
+
+- write up the six method-doc sections owed since v0.5.215; apply the corrected search
+
 ## 0.5.227 — 2026-08-12
 
 - read the wave-program gate through a zero-page store (Mega Apocalypse)

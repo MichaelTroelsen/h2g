@@ -135,3 +135,30 @@ def test_a_file_needing_neither_is_traced_the_plain_way(monkeypatch):
     the anchor everything else in this repo is checked against."""
     seen = _search("Commando.sid", monkeypatch)
     assert all(c["cal"] == 0 for c in seen), "Commando needs no calibration"
+
+
+# --- v0.5.228: a preset states a measured decision, or nothing --------------
+
+@needs_corpus
+def test_a_flag_that_changes_nothing_is_not_recorded():
+    """`prune_inert` drops a setting the conversion cannot tell from its default.
+
+    `fidelity_better` is not a total order -- each term can improve while
+    another degrades -- so the 31-combination walk is greedy and where it stops
+    depends on iteration order. Mega Apocalypse stopped on
+    `two_stage sfx_drum wave_program` where `two_stage` is inert: its player
+    sets no `effect_two_stage`, and the conversion is byte-identical without
+    it. Nothing measured that flag, so the entry must not claim it.
+    """
+    P = presets
+    sid = CORPUS / "Mega_Apocalypse.sid"
+    if not sid.is_file():
+        return
+    base = {"max_rows": 128, "pack": True, "prune": False, "dedup": True}
+    kept = P.prune_inert(sid, base, {"two_stage": True, "sfx_drum": True,
+                                     "wave_program": True})
+    assert set(kept) == {"sfx_drum", "wave_program"}
+    # ...and it drops nothing that does change the bytes, which is what stops
+    # this from being a blanket "record less".
+    assert set(P.prune_inert(sid, base, {"wave_program": True})) == {
+        "wave_program"}
