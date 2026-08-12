@@ -130,6 +130,20 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **`onset` is the column that sees a mechanism emitted one frame out of
+  phase**, and until v0.5.217 nothing could. `wave` averages per-frame
+  agreement over the whole window, so a wrong opening frame on a 43-note
+  instrument is a rounding error against 3000; `nrun` compares run *lengths*
+  and is position-independent by design, so a run that is right but a frame
+  early scores 100%. Both read `$D404` and neither could see that
+  `_wave_program_entries` and `_two_stage_entries` opened on the effect where
+  the player opens on the record's own `+2` waveform. It reports the
+  *direction* (`onset_ours_early` / `_late`), because a wrong waveform and a
+  right one a frame out have different fixes -- and the corpus split is
+  **32 early, 0 late**, which is what a systematic defect looks like and what
+  noise does not. It takes **no startup-lag correction**: each side is read at
+  its own attack frames, so the latency cancels, and the first wiring of the
+  column passed a lag in and would have manufactured the error it detects.
 - **To read what a conversion *says* rather than what it measured, use
   `songview.py`** (`python songview.py <sng|sid> -o out.html --presets
   ../presets.json`). It decodes the whole `.sng` to one self-contained HTML

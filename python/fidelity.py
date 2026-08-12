@@ -1125,6 +1125,121 @@ def release_tail_agreement(orig: list[Voice], ours: list[Voice],
     }
 
 
+# How many frames of a note's opening the `onset` dimension compares. Short on
+# purpose: the defect it exists for is a one-frame shift at the attack, and a
+# longer window starts charging for note *length*, which is a different thing
+# and one no column here can see (CLAUDE.md).
+ONSET_FRAMES = 4
+
+
+def _wave_class(wf: int) -> int:
+    """A frame's waveform class, `wave_compare`'s definition exactly.
+
+    The select nibble alone (`wf & $F0`), gate and the other control bits
+    ignored -- deliberately the *same* reduction the `wave` column uses, so
+    `onset` and `wave` cannot disagree about what a frame's timbre is and then
+    be read against each other. A second notion of "class" here is how two
+    columns start telling different stories about one register.
+    """
+    return wf & 0xF0
+
+
+def onset_shapes(voices: list[Voice], nframes: int) -> dict:
+    """The waveform classes a note opens on, keyed by the instrument playing it.
+
+    **The gap this fills.** `wave` averages per-frame waveform agreement over
+    the whole window, so a wrong opening frame on an instrument with 43 notes
+    is a rounding error against 3000 frames. `nrun` compares the *lengths* of
+    noise runs and is deliberately position-independent, so a run that is right
+    but starts a frame early scores perfect. Neither can see a mechanism
+    emitted one frame out of phase -- and two emitters were, for as long as
+    they had existed: the player writes the record's own waveform on a note's
+    first frame and reaches the effect only on the second, where
+    `_wave_program_entries` and `_two_stage_entries` both opened on the effect.
+    On Trans-Atlantic that put GT 3 at `noise tri pulse noise` against the
+    original's `tri noise tri pulse`, with `wave` at 63% either way.
+
+    Keyed by the ADSR pair latched one frame *after* the attack, which is
+    `instrmap.py`'s rule and for its reason: the attack frame can still hold a
+    hard restart's envelope, which belongs to the player's transition rather
+    than to the instrument. The key is $D405/$D406 and the measured value is
+    $D404, so the two cannot contaminate each other -- the trap `release_tails`
+    fell into by keying a release measurement on the pair containing it.
+
+    A note whose window runs past `nframes` is dropped: what that would measure
+    is the distance to the end of the trace.
+
+    **No startup-lag correction, and none is wanted.** Every per-frame column
+    here compares frame k to frame k and so has to be shifted by the packed
+    player's 3-8 frame latency first. This reads each side at its *own* attack
+    frames, so that latency cancels by construction -- the same property that
+    makes `noise_runs` position-independent. Passing a lag in would move our
+    reads off our own attacks and manufacture the phase error it is meant to
+    detect.
+
+    Returns `{adsr: Counter({(class, ...): count})}`.
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        for a in v.attack_frames:
+            if a < 0 or a + ONSET_FRAMES > nframes:
+                continue                      # cut by the window
+            shape = tuple(_wave_class(wf[a + k]) for k in range(ONSET_FRAMES))
+            out.setdefault(adsr[min(a + 1, nframes - 1)],
+                           Counter())[shape] += 1
+    return out
+
+
+def onset_agreement(orig: list[Voice], ours: list[Voice],
+                    nframes: int) -> dict:
+    """Instruments whose notes open on the original's waveform sequence.
+
+    Per instrument and only where both sides have onsets to compare, the same
+    footing as `noise_run_agreement` and `release_tail_agreement`: an
+    instrument we drop entirely is absent here rather than counted wrong,
+    because `melody` already reports that and counting it twice would let one
+    defect move two columns.
+
+    `onset_first_matched` is reported beside the whole-shape figure because the
+    two answer different questions -- "does the note start on the right
+    waveform" and "does the whole opening line up" -- and a fix that corrects
+    the first frame while leaving the rest shifted would move only the former.
+    """
+    a = onset_shapes(orig, nframes)
+    b = onset_shapes(ours, nframes)
+    shared = sorted(set(a) & set(b))
+    modal = {k: (a[k].most_common(1)[0][0], b[k].most_common(1)[0][0])
+             for k in shared}
+    matched = sum(1 for k in shared if modal[k][0] == modal[k][1])
+    first = sum(1 for k in shared if modal[k][0][0] == modal[k][1][0])
+    # A shape that is ours shifted by one frame is a phase error rather than a
+    # wrong waveform, and saying so is the point of the column: the two have
+    # completely different fixes and the report has never distinguished them.
+    #
+    # **The direction is easy to write backwards, so read it off an example.**
+    # `ours == orig[1:]` means we never played the original's first frame -- we
+    # are a frame ahead of it, i.e. EARLY. Trans-Atlantic's GT 3 is exactly
+    # this: the original opens `tri noise tri pulse` and we open `noise tri
+    # pulse noise`, because the player writes the record's own waveform on the
+    # note's first frame and our wavetable opened on the effect instead.
+    early = sum(1 for k in shared
+                if modal[k][0] != modal[k][1]
+                and modal[k][0][1:] == modal[k][1][:ONSET_FRAMES - 1])
+    late = sum(1 for k in shared
+               if modal[k][0] != modal[k][1]
+               and modal[k][1][1:] == modal[k][0][:ONSET_FRAMES - 1])
+    return {
+        "onset_instruments": len(shared),
+        "onset_matched": matched,
+        "onset_agreement": (matched / len(shared)) if shared else None,
+        "onset_first_matched": first,
+        "onset_ours_early": early,
+        "onset_ours_late": late,
+    }
+
+
 def noise_run_agreement(orig: list[Voice], ours: list[Voice],
                         nframes: int) -> dict:
     """How many instruments sound noise for the same length on both sides.
@@ -1634,6 +1749,14 @@ DIMENSIONS = (
               "how fast the pitch oscillates, over the original's rate"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
+    # The column that sees a mechanism emitted one frame out of phase. `wave`
+    # averages 3000 frames, so a wrong opening on a 43-note instrument is a
+    # rounding error in it; `nrun` compares run lengths and is position-
+    # independent by design, so a run that is right but a frame early scores
+    # perfect. Both read $D404 and neither could see that two emitters opened
+    # on the effect where the player opens on the record's own waveform.
+    Dimension("onset_agreement", "onset", ("$D404",), "fraction",
+              "instruments whose notes open on the original's waveforms"),
     # What happens after the gate closes. `adsr` compares the pair while the
     # note plays and agrees; both sides also gate off on the same frame, so
     # $D404 says nothing either. See `release_tails`.
@@ -2050,6 +2173,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(release_tail_agreement(a, best_dump, nframes))
+            # No `lag`: each side is read at its *own* attack frames, so the
+            # startup latency cancels rather than needing correcting. See
+            # onset_shapes.
+            row.update(onset_agreement(a, best_dump, nframes))
             row.update(pitch_motion_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
@@ -2352,13 +2479,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | noise | nrun | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 16 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 17 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -2372,7 +2499,8 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
-            f"{_fmt_pct(r.get('wave'))} | {noise} | "
+            f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
+            f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "

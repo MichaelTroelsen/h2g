@@ -1760,6 +1760,32 @@ player writes them at its first note, and that leading zero otherwise reads as
 a spurious jump on all three voices of every file (Commando: 3.96x for a sweep
 that covers less). `$000` is 0% duty, so nothing audible is dropped.
 
+**onset** (instruments whose notes *open* on the original's waveforms). The
+column that sees a mechanism emitted one frame out of phase, which two others
+read the same register and cannot: `wave` averages per-frame agreement over the
+whole window, so a wrong opening frame on a 43-note instrument is a rounding
+error against 3000 frames, and `nrun` compares the *lengths* of noise runs and
+is position-independent by design, so a run that is right but starts a frame
+early scores 100%.
+
+It compares the first four frames from each attack as waveform classes
+(`wave`'s own reduction, so the two cannot disagree about what a frame's timbre
+is), keyed by the ADSR pair one frame after the attack — `instrmap.py`'s rule,
+because the attack frame can still hold a hard restart's envelope. The key is
+`$D405/$D406` and the measured value is `$D404`, so the attribution cannot
+contain the quantity being attributed, which is the trap `tail` fell into.
+
+**No startup-lag correction, and none is wanted**: each side is read at its own
+attack frames, so the packed player's 3–8 frame latency cancels by
+construction, exactly as it does for `noise_runs`. The first wiring of this
+column passed the lag in anyway and would have manufactured the phase error it
+exists to detect.
+
+It reports the *direction*, because a wrong waveform and a right waveform a
+frame out have entirely different fixes. Over the corpus that split is
+**one-sided: 32 instruments early, 0 late** — which is what a systematic
+emitter defect looks like and what noise does not.
+
 **The two per-frame agreements — `wave` and `adsr` — are aligned on the packed
 player's startup lag.** gt2reloc's player reaches its first note some 3–8
 frames after the original does, and comparing frame *k* to frame *k* charged
