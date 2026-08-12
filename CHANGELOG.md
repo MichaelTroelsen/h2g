@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.211 — 2026-08-12
+
+- fix _noise_tick_frames crash when the modal speed gate is unreadable (None)
+
 ## 0.5.210 — 2026-08-12
 
 - detect the filter cutoff sweep on files whose accumulator init is a burst of same-opcode stores

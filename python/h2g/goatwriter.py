@@ -2266,7 +2266,11 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
         speeds = find_song_speeds(sid, det if det.can_convert else None)
     except Exception:                                  # noqa: BLE001
         return NOISE_TICK_FRAMES
-    frames = speeds.frames if (speeds and speeds.frames) else ()
+    raw = speeds.frames if (speeds and speeds.frames) else ()
+    # A subtune whose reload exceeds MAX_SANE_SPEED_RELOAD reports None (see
+    # SongSpeeds.frames), and a file where that subtune is modal -- or every
+    # subtune's gate is unreadable -- must not let None reach Counter/`- 1`.
+    frames = tuple(f for f in raw if f is not None)
     if not frames:
         return NOISE_TICK_FRAMES
     # One value for a table the whole file shares: the modal gate, so a single

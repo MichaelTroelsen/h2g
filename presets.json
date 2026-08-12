@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.210 presets.py",
+  "generator": "h2g 0.5.211 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -288,6 +288,26 @@
       "subtunes": 1,
       "rows": 8113,
       "multiplier": 2
+    },
+    "Geoff_Capes_Strongman_Challenge.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": false,
+      "dedup": true,
+      "bytes": 11112,
+      "subtunes": 16,
+      "rows": 18534,
+      "multiplier": 1
+    },
+    "Gerry_the_Germ.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": false,
+      "dedup": true,
+      "bytes": 41586,
+      "subtunes": 7,
+      "rows": 32302,
+      "multiplier": 1
     },
     "Gremlins.sid": {
       "max_rows": 94,
@@ -711,6 +731,16 @@
       "subtunes": 1,
       "rows": 10031,
       "multiplier": 1
+    },
+    "Spellbound.sid": {
+      "max_rows": 128,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 35699,
+      "subtunes": 7,
+      "rows": 65763,
+      "multiplier": 2
     },
     "Star_Paws.sid": {
       "max_rows": 128,
