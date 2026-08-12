@@ -1061,6 +1061,45 @@ FILTER_ENABLE_BIT = 0x20
 # left alone rather than given an invented one.
 FILTER_CUTOFF_SHAPES = ("A9 ?? 9D {lo:02X} {hi:02X}", "A9 ?? 8D {lo:02X} {hi:02X}")
 
+
+def _burst_cutoff_start(data: bytes, cutoff_var: int) -> int:
+    """The `LDA #imm` feeding cutoff,X through a run of same-mode STAs, or -1.
+
+    9 of the 95 corpus files (Lightforce, After_8, Rikky, Dragons_Lair_Part_II,
+    Sanxion, Knucklebusters and three more) clear several per-voice arrays with
+    one `LDA #imm` and a *run* of consecutive `STA arr,X` -- the cutoff
+    accumulator among them -- rather than a dedicated load of its own:
+
+        A9 00        LDA #$00
+        9D EF F5     STA $F5EF,X
+        9D FF F5     STA $F5FF,X
+        9D 02 F6     STA $F602,X
+        9D 05 F6     STA $F605,X   <- cutoff_var, the 4th STA in the run
+
+    FILTER_CUTOFF_SHAPES only matches a `LDA #imm` immediately followed by ONE
+    `STA`, so it can never see this. This walks backward from a `STA
+    cutoff_var,X` (or the absolute `8D` form) through an unbroken run of
+    same-opcode `STA`s to the `LDA #imm` that feeds them all -- confirmed
+    identical (`LDA #$00`) on every one of the 9 files checked. Skips a `STA`
+    immediately preceded by `CLC`/`ADC` -- the sweep routine's own read-modify-
+    write of the accumulator, not an initialisation.
+    """
+    lo, hi = cutoff_var & 0xFF, cutoff_var >> 8
+    for j in range(len(data) - 3):
+        op = data[j]
+        if op not in (0x9D, 0x8D):
+            continue
+        if data[j + 1] != lo or data[j + 2] != hi:
+            continue
+        if j >= 4 and data[j - 4] == 0x18 and data[j - 3] == 0x79:
+            continue                      # CLC / ADC step,Y -- the sweep itself
+        k = j
+        while k - 3 >= 0 and data[k - 3] == op:
+            k -= 3
+        if k - 2 >= 0 and data[k - 2] == 0xA9:
+            return data[k - 1]
+    return -1
+
 # `LDA #imm / STA $D418`: mode nibble (bit 4 lowpass, 5 bandpass, 6 highpass)
 # plus master volume. Goattracker's filter-table left side is $80 | those same
 # three bits, so the passband maps across unshifted.
@@ -1114,6 +1153,8 @@ def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
         if k > -1:
             cutoff = data[k + 1]
             break
+    if cutoff < 0:
+        cutoff = _burst_cutoff_start(data, cutoff_var)
     if cutoff < 0:
         return None
 

@@ -12,7 +12,7 @@ from pathlib import Path
 import pytest
 
 from h2g.convert import convert
-from h2g.detect import detect, FILTER_ENABLE_BIT
+from h2g.detect import detect, FILTER_ENABLE_BIT, _burst_cutoff_start
 from h2g.goatwriter import (GT_MAX_FILT, MAX_INSTRUMENTS, FILT_SET_PARAMS,
                             FILT_SET_CUTOFF, FILT_STOP, _filter_entries)
 from h2g.sidfile import load_sid
@@ -26,7 +26,13 @@ pytestmark = pytest.mark.skipif(not CORPUS.is_dir(),
 # Originals that drive the filter hard, and the ones that never turn it on.
 # Measured with siddump's FCut/Typ columns over 60 s.
 FILTERED = ["ACE_II", "IK_plus", "I_Ball", "Nemesis_the_Warlock", "Pandora",
-            "Star_Paws", "Trans-Atlantic_Balloon_Challenge"]
+            "Star_Paws", "Trans-Atlantic_Balloon_Challenge",
+            # These six clear the cutoff accumulator with a burst of STAs
+            # sharing one `LDA #imm` (see _burst_cutoff_start) rather than a
+            # dedicated LDA/STA pair -- find_filter returned None for all six
+            # before that fallback existed.
+            "Delta_Mix-E-Load_loader", "Dragons_Lair_Part_II", "Food_Feud",
+            "Knucklebusters", "Lightforce", "Sanxion"]
 UNFILTERED = ["Powerplay_Hockey_USA_vs_USSR"]
 
 OPTS = dict(log=lambda m: None, fmt="gts5", slides=True, effects=True,
@@ -141,3 +147,41 @@ def test_the_array_is_two_bytes_per_record():
         # The step byte is the resonance byte's immediate neighbour.
         assert det.filter.offset + 1 < len(sid.data)
     assert seen >= 10
+
+
+def test_burst_cutoff_start_finds_the_shared_lda():
+    """Lightforce clears four per-voice arrays with one `LDA #$00`:
+
+        A9 00        LDA #$00
+        9D EF F5     STA $F5EF,X
+        9D FF F5     STA $F5FF,X
+        9D 02 F6     STA $F602,X
+        9D 05 F6     STA $F605,X   <- the cutoff accumulator, 4th in the run
+
+    FILTER_CUTOFF_SHAPES only matches a `LDA #imm` immediately followed by
+    ONE `STA`, so this fallback is the only thing that reads a start value
+    for Lightforce (and five other corpus files) at all.
+    """
+    from h2g.detect import FILTER_SHAPE
+    from h2g.search import search_file
+    sid, det = _det("Lightforce")
+    assert det.filter is not None
+    i = search_file(sid.data, FILTER_SHAPE)
+    cutoff_var = sid.data[i + 15] | sid.data[i + 16] << 8
+    assert _burst_cutoff_start(sid.data, cutoff_var) == 0
+
+
+def test_burst_cutoff_start_does_not_mistake_the_sweep_for_an_init():
+    """After_8's cutoff accumulator has only its own LDA/STA -- no init burst.
+
+    A version of the skip-check with the wrong byte offset (CLC/ADC is a
+    4-byte prefix, `18 79 lo hi`, not 2) would misread the sweep's own
+    `STA accum,X` as the initialisation and return a bogus value instead of
+    correctly reporting "not found".
+    """
+    from h2g.detect import FILTER_SHAPE
+    from h2g.search import search_file
+    sid, det = _det("After_8")
+    i = search_file(sid.data, FILTER_SHAPE)
+    cutoff_var = sid.data[i + 15] | sid.data[i + 16] << 8
+    assert _burst_cutoff_start(sid.data, cutoff_var) == -1
