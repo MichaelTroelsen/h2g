@@ -225,14 +225,28 @@ def test_the_tick_is_two_frames_at_every_call_rate():
     At -S{m} a frame is m calls, so the tick needs 2m of them. One delay entry
     covers the remainder, and a delay is current for `value + 1` calls
     (_wave_hold_byte), so the value is 2m - 2.
+
+    **Found by position, not at a fixed index.** The record's own waveform now
+    occupies a whole frame ahead of the tick rather than a single call
+    (v0.5.220), so the tick begins at entry `m`, and an index written into this
+    test is an assertion about the lead rather than about the tick.
     """
-    for m, want in ((1, 0x81), (2, 2), (4, 6)):
+    # (-S, the lead holding the record's waveform for one whole frame, the
+    # delay closing the two-frame tick). The lead is one entry at -S1 and two
+    # above it, the second being a delay of `m - 2` -- `value + 1` calls.
+    for m, lead, want in ((1, [0x41], 0x81),
+                          (2, [0x41, 0x41], 2),
+                          (4, [0x41, 0x02], 6)):
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                                multiplier=m)
-        assert left[1] == 0x81, "the tick starts at entry 1"
-        assert left[2] == want, f"-S{m}"
+        assert left[:len(lead)] == lead, \
+            f"-S{m}: the lead holds the record's waveform for a whole frame"
+        tick = len(lead)
+        assert left[tick] == 0x81, f"-S{m}: the tick follows the lead"
+        assert left[tick + 1] == want, f"-S{m}"
         if m > 1:
-            assert right[2] == 0x80,                 "a delay's right side is read on its final call"
+            assert right[tick + 1] == 0x80, \
+                "a delay's right side is read on its final call"
 
 
 def test_a_waveform_of_zero_is_noise_for_the_whole_drum():

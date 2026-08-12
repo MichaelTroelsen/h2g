@@ -430,6 +430,57 @@ def _first_frame_entry(wave: int) -> bool:
     return bool(wave & 0xF0)
 
 
+def _first_frame_lead(wave: int, multiplier: int = 1,
+                      force: bool = False) -> tuple:
+    """The entries that hold the record's `+2` waveform for the note's frame 0.
+
+    `(left, right)`, empty where the record has no waveform to put there
+    (`_first_frame_entry`) -- unless `force`, which keeps the entry whatever
+    `+2` holds.
+
+    **`force` is for a caller that already emitted this entry unconditionally**,
+    where dropping it would be a change of its own rather than the absence of
+    an addition. `_drum_entries` is that caller: it has always opened on the
+    record's waveform, including the records whose `+2` selects none, where the
+    byte lands in the wavetable's `$00`-`$0F` delay range and holds the frame
+    without writing it. Faithful for neither reading -- the player *writes*
+    `$00` there and a delay does not -- but making the lead a whole frame and
+    silently deleting it for those records are two changes, and only the first
+    is measured here.
+
+    **One frame is `multiplier` play calls, not one call.** A wavetable steps
+    once per call, so at `-S2` a single entry covers only half of frame 0 and
+    whatever follows finishes the frame -- and siddump samples the registers at
+    the end of a frame, so frame 0 reads as the *effect* rather than as the
+    waveform. That is the whole defect at one remove: the same emitters that
+    put the effect on frame 0 outright were also, on every multispeed file,
+    putting it there through an under-long lead.
+
+    A delay entry is current for `value + 1` calls (gplay.c:697-704), so one
+    extra entry covers any `-S` the corpus uses. Its right side is `$80` for
+    the reason `_drum_entries` gives: a delay's right side *is* read, on its
+    final call, and anything else would drag the note.
+
+    Shared by `_drum_entries` and `_two_stage_entries` rather than written out
+    in each -- this rule was prose in one function's docstring for 45 versions
+    while two siblings in the same file contradicted it (CLAUDE.md).
+    `_two_stage_pitch_seq_entries` spells its lead out instead, because that
+    block needs a note on the right side of every call and a delay would
+    supply one only on its last.
+    """
+    if not (force or _first_frame_entry(wave)):
+        return [], []
+    left, right = [wave], [0x00]
+    rest = max(1, multiplier) - 1              # ...the entry above is one call
+    if rest == 1:
+        left.append(wave)
+        right.append(0x00)
+    elif rest > 1:
+        left.append(min(rest - 1, WAVE_MAX_DELAY))
+        right.append(0x80)
+    return left, right
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
@@ -492,17 +543,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     # same conversion `calls` above makes -- and the entries are dropped whole
     # rather than the block truncated where the 255-entry table has no room for
     # them, which is the degradation every other emitter here already makes.
-    lead: List[int] = []
-    lead_r: List[int] = []
-    if _first_frame_entry(wave):
-        lead, lead_r = [wave], [0x00]
-        rest = max(1, multiplier) - 1          # ...the entry above is one call
-        if rest == 1:
-            lead.append(wave)
-            lead_r.append(0x00)
-        elif rest > 1:
-            lead.append(min(rest - 1, WAVE_MAX_DELAY))
-            lead_r.append(0x80)
+    lead, lead_r = _first_frame_lead(wave, multiplier)
     if lead and len(left) + len(lead) <= budget:
         left[:0] = lead
         right[:0] = lead_r
@@ -2389,8 +2430,18 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     # that also clears the gate leaves the envelope untriggered and the
     # instrument silent. Measured on Commando GT 13: 0 onsets against the
     # original's 14 with $80, and exactly 14 with $81.
-    left = [wave, WAVE_NOISE_GATEOFF | (wave & 0x01)]
-    right = [0x00, 0x00]
+    # **The waveform holds for a whole frame, which is `multiplier` calls.**
+    # This entry was one call at every -S value until v0.5.220, so on a
+    # multispeed file the noise below finished frame 0 and siddump -- which
+    # samples at end of frame -- read the drum's tick where the player has the
+    # record's waveform. It is the same defect v0.5.218 fixed in the other two
+    # emitters, arriving by the other route: not the effect placed on frame 0,
+    # but the waveform too short to keep it off. 20 of the 23 instruments still
+    # reading a frame early after v0.5.218 were on `-S2` files, against 3 on the
+    # 45 single-speed ones.
+    lead, lead_r = _first_frame_lead(wave, multiplier, force=True)
+    left = lead + [WAVE_NOISE_GATEOFF | (wave & 0x01)]
+    right = lead_r + [0x00]
     # Two frames is `2 * multiplier` calls, of which the entry above is one.
     # A delay entry is current for `value + 1` calls (see _wave_hold_byte), so
     # one more entry covers the rest at every -S value the corpus uses; its

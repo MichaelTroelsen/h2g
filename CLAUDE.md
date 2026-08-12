@@ -137,9 +137,20 @@ test dependency).
   length. `_wave_program_entries` and `_two_stage_entries` sit in the same file
   and carried the identical defect for 45 more versions, because nothing
   measured it and the fix had been written as prose about one function rather
-  than as a shared helper. It is `_first_frame_entry` now. When a fix is really
-  a *rule about the player*, give it a name every emitter has to call, and
-  a column that fails when one of them stops.
+  than as a shared helper. When a fix is really a *rule about the player*, give
+  it a name every emitter has to call, and a column that fails when one of them
+  stops -- `_first_frame_entry`/`_first_frame_lead` and `onset` are that pair.
+  **And the rule had a second half nobody had stated**: one frame is
+  `multiplier` play *calls*, so `_drum_entries` -- which had opened on the
+  record's waveform correctly since v0.5.172 -- still put the drum tick inside
+  frame 0 on every multispeed file, because its lead was one call at every
+  `-S`. Its docstring said so outright ("its attack entry lasts one play call
+  at every -S value") and read as a description rather than as the bug it was.
+  20 of the 23 instruments still reading a frame early after v0.5.218 were on
+  `-S2` files against 3 on the 45 single-speed ones; fixing it took corpus
+  onset agreement 237 -> 254 matched with **melody, seq, adsr, nrun, tail and
+  pitch all exactly unchanged**, which is the signature of a change that moves
+  a waveform *within* frame 0 and nothing else.
 - **`onset` is the column that sees a mechanism emitted one frame out of
   phase**, and until v0.5.217 nothing could. `wave` averages per-frame
   agreement over the whole window, so a wrong opening frame on a 43-note

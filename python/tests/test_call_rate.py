@@ -265,17 +265,28 @@ def test_the_drum_attack_is_the_noise_tick_and_scales_with_the_call_rate():
     became variable-length -- and that entry 1 was the gate-off waveform
     rather than a hold. Both changed for the same reason: the note opens on a
     two-frame noise tick (section 7.ii's `BCC`, and 349 measured onsets in
-    Commando), and two *frames* is 2m calls, so at -S2 and above entry 1 is a
-    delay covering the remainder rather than a waveform.
+    Commando), and two *frames* is 2m calls, so at -S2 and above the tick's
+    remainder is a delay rather than a waveform.
+
+    **v0.5.220 moved the tick's index, and for the same per-frame rule.** The
+    record's own waveform holds the note's *first frame*, which is m calls --
+    it was one call at every -S, so on a multispeed file the tick finished
+    frame 0 and siddump, sampling at end of frame, read the drum where the
+    player has the waveform. So the lead is one entry at -S1 and two above it,
+    and the tick starts after it. Indices below are derived from that rather
+    than written down, because an index written down here is an assertion
+    about the lead and this test is about the tick.
     """
     at1 = _entries(DRUM, effects=True, drum=True, multiplier=1)
     assert at1[0][0] == 0x41, "entry 0 is the note's own waveform"
     assert at1[0][1] == 0x81 and at1[0][2] == 0x81, "two noise frames at -S1"
 
     at2 = _entries(DRUM, effects=True, drum=True, multiplier=2)
-    assert at2[0][1] == 0x81, "still opens the tick on noise"
-    assert at2[0][2] == 2, "a delay of 2 is current for 3 calls, so 4 in all"
-    assert at2[1][2] == 0x80, "a delay's right side is read on its last call"
+    assert at2[0][:2] == [0x41, 0x41], \
+        "the waveform holds the whole first frame -- 2 calls at -S2"
+    assert at2[0][2] == 0x81, "still opens the tick on noise"
+    assert at2[0][3] == 2, "a delay of 2 is current for 3 calls, so 4 in all"
+    assert at2[1][3] == 0x80, "a delay's right side is read on its last call"
 
 
 # --- slides -----------------------------------------------------------------
