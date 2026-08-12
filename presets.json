@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.223 presets.py",
+  "generator": "h2g 0.5.225 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -74,7 +74,8 @@
       "bytes": 16351,
       "subtunes": 1,
       "rows": 19816,
-      "multiplier": 1
+      "multiplier": 1,
+      "wave_program": true
     },
     "Auf_Wiedersehen_Monty.sid": {
       "max_rows": 94,
@@ -84,7 +85,9 @@
       "bytes": 40053,
       "subtunes": 13,
       "rows": 24151,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true,
+      "wave_program": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 128,
@@ -95,8 +98,8 @@
       "subtunes": 1,
       "rows": 19334,
       "multiplier": 1,
-      "no_test_restart": true,
-      "pitch_seq": true
+      "sfx_drum": true,
+      "wave_program": true
     },
     "Battle_of_Britain.sid": {
       "max_rows": 128,
@@ -116,7 +119,9 @@
       "bytes": 3553,
       "subtunes": 1,
       "rows": 9176,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true,
+      "wave_program": true
     },
     "Bump_Set_Spike.sid": {
       "max_rows": 94,
@@ -136,7 +141,8 @@
       "bytes": 10749,
       "subtunes": 1,
       "rows": 15169,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -206,7 +212,8 @@
       "bytes": 13467,
       "subtunes": 1,
       "rows": 12328,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -216,7 +223,8 @@
       "bytes": 47348,
       "subtunes": 13,
       "rows": 36076,
-      "multiplier": 2
+      "multiplier": 2,
+      "two_stage": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -226,7 +234,8 @@
       "bytes": 6553,
       "subtunes": 10,
       "rows": 17309,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Devils_Galop.sid": {
       "max_rows": 128,
@@ -257,6 +266,7 @@
       "subtunes": 9,
       "rows": 31074,
       "multiplier": 4,
+      "two_stage": true,
       "pitch_seq": true
     },
     "Food_Feud.sid": {
@@ -267,7 +277,8 @@
       "bytes": 15437,
       "subtunes": 1,
       "rows": 14212,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Formula_1_Simulator.sid": {
       "max_rows": 128,
@@ -359,7 +370,7 @@
       "subtunes": 1,
       "rows": 15077,
       "multiplier": 1,
-      "no_test_restart": true,
+      "wave_program": true,
       "pitch_seq": true
     },
     "IK_plus.sid": {
@@ -370,7 +381,8 @@
       "bytes": 11655,
       "subtunes": 1,
       "rows": 23374,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "International_Karate.sid": {
       "max_rows": 94,
@@ -400,7 +412,8 @@
       "bytes": 9605,
       "subtunes": 7,
       "rows": 2769,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Kings_of_the_Beach_intro.sid": {
       "max_rows": 128,
@@ -461,7 +474,8 @@
       "bytes": 19552,
       "subtunes": 1,
       "rows": 19006,
-      "multiplier": 2
+      "multiplier": 2,
+      "two_stage": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -522,7 +536,8 @@
       "bytes": 16721,
       "subtunes": 6,
       "rows": 40118,
-      "multiplier": 1
+      "multiplier": 1,
+      "wave_program": true
     },
     "Nineteen.sid": {
       "max_rows": 128,
@@ -533,7 +548,9 @@
       "subtunes": 1,
       "rows": 11455,
       "multiplier": 1,
+      "two_stage": true,
       "sfx_drum": true,
+      "wave_program": true,
       "pitch_seq": true
     },
     "Ninja.sid": {
@@ -586,7 +603,9 @@
       "subtunes": 1,
       "rows": 5695,
       "multiplier": 1,
+      "two_stage": true,
       "sfx_drum": true,
+      "wave_program": true,
       "pitch_seq": true
     },
     "Phantoms_of_the_Asteroid.sid": {
@@ -627,7 +646,8 @@
       "bytes": 29540,
       "subtunes": 1,
       "rows": 11189,
-      "multiplier": 1
+      "multiplier": 1,
+      "wave_program": true
     },
     "Rasputin.sid": {
       "max_rows": 128,
@@ -647,7 +667,8 @@
       "bytes": 11919,
       "subtunes": 1,
       "rows": 10207,
-      "multiplier": 2
+      "multiplier": 2,
+      "two_stage": true
     },
     "Rikky.sid": {
       "max_rows": 128,
@@ -710,6 +731,7 @@
       "subtunes": 1,
       "rows": 19978,
       "multiplier": 2,
+      "two_stage": true,
       "pitch_seq": true
     },
     "Sigma_Seven.sid": {
@@ -720,7 +742,8 @@
       "bytes": 6492,
       "subtunes": 1,
       "rows": 3593,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Skate_or_Die_intro.sid": {
       "max_rows": 94,
@@ -730,7 +753,9 @@
       "bytes": 4367,
       "subtunes": 1,
       "rows": 10031,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true,
+      "wave_program": true
     },
     "Spellbound.sid": {
       "max_rows": 128,
@@ -751,7 +776,7 @@
       "subtunes": 3,
       "rows": 12550,
       "multiplier": 2,
-      "pitch_seq": true
+      "no_test_restart": true
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -805,7 +830,8 @@
       "rows": 47471,
       "multiplier": 3,
       "two_stage": true,
-      "sfx_drum": true
+      "sfx_drum": true,
+      "pitch_seq": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -829,7 +855,8 @@
       "bytes": 58300,
       "subtunes": 8,
       "rows": 45650,
-      "multiplier": 4
+      "multiplier": 4,
+      "two_stage": true
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -839,7 +866,8 @@
       "bytes": 13321,
       "subtunes": 1,
       "rows": 12130,
-      "multiplier": 4
+      "multiplier": 4,
+      "two_stage": true
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -859,7 +887,8 @@
       "bytes": 20337,
       "subtunes": 3,
       "rows": 20367,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Zoids.sid": {
       "max_rows": 128,
@@ -879,7 +908,8 @@
       "bytes": 10781,
       "subtunes": 1,
       "rows": 15169,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     }
   }
 }

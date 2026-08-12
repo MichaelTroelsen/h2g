@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.225 — 2026-08-12
+
+- apply the corrected --fidelity search: 34 settings gained, onset 62% -> 76%
+
 ## 0.5.224 — 2026-08-12
 
 - pin the preset search to the fidelity report's tracing
