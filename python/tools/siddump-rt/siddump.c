@@ -6,6 +6,7 @@
 #include "cpu.h"
 
 #define MAX_INSTR 0x100000
+#define MAX_WATCH 16
 
 typedef struct
 {
@@ -88,6 +89,13 @@ int main(int argc, char **argv)
   int timeseconds = 0;
   int usage = 0;
   int profiling = 0;
+  /* -w: addresses of the player's own state to sample once per displayed
+     frame, at the same point the SID registers are read. siddump shows what a
+     wavetable entry *produced*; it has never been able to show *which entry*
+     produced it, because that lives in the player's memory rather than in the
+     chip. These columns close that. See README.md in this directory. */
+  unsigned watchaddr[MAX_WATCH];
+  int numwatch = 0;
   unsigned loadend;
   unsigned loadpos;
   unsigned loadsize;
@@ -163,6 +171,25 @@ int main(int argc, char **argv)
         case 'Z':
         profiling = 1;
         break;
+
+        case 'W':
+        {
+          /* -w<hex>[,<hex>...] -- comma-separated, so one flag carries a
+             whole voice's worth of pointers and the columns stay in the
+             order the caller asked for. Parsed with strtoul rather than
+             sscanf because the list length is not known in advance. */
+          const char *p = &argv[c][2];
+          while (*p && numwatch < MAX_WATCH)
+          {
+            char *end;
+            unsigned long v = strtoul(p, &end, 16);
+            if (end == p) break;
+            watchaddr[numwatch++] = (unsigned)(v & 0xffff);
+            p = end;
+            while (*p == ',' || *p == ' ') p++;
+          }
+        }
+        break;
       }
     }
     else 
@@ -196,7 +223,12 @@ int main(int argc, char **argv)
            "-p<value> Pattern spacing, default 0 (none)\n"
            "-s        Display time in minutes:seconds:frame format\n"
            "-t<value> Playback time in seconds, default 60\n"
-           "-z        Include CPU cycles+rastertime (PAL)+rastertime, badline corrected\n");
+           "-z        Include CPU cycles+rastertime (PAL)+rastertime, badline corrected\n"
+           "-w<adr>   Dump player memory at these addresses, one column each, sampled\n"
+           "          once per displayed frame alongside the SID registers. Hex,\n"
+           "          comma-separated, up to 16: -w0fa0,0fa1,0fa2. Shows which\n"
+           "          wavetable/pulse/filter entry produced a register, which the\n"
+           "          chip-side columns cannot.\n");
     return 1;
   }
 
@@ -315,11 +347,25 @@ int main(int argc, char **argv)
   { // CPU cycles, Raster lines, Raster lines with badlines on every 8th line, first line included
     printf(" Cycl RL RB |");
   }
+  if (numwatch)
+  {
+    int w;
+    printf(" ");
+    for (w = 0; w < numwatch; w++) printf("%04X ", watchaddr[w]);
+    printf("|");
+  }
   printf("\n");
   printf("+-------+---------------------------+---------------------------+---------------------------+---------------+");
   if (profiling)
   {
     printf("------------+");
+  }
+  if (numwatch)
+  {
+    int w;
+    printf("-");
+    for (w = 0; w < numwatch; w++) printf("-----");
+    printf("+");
   }
   printf("\n");
 
@@ -489,6 +535,21 @@ int main(int argc, char **argv)
         sprintf(&output[strlen(output)], "| %4d %02X %02X ", cycles, rasterlines, rasterlinesbad);
       }
       
+      // Watched player memory. Sampled here, from the same `mem` and at the
+      // same point in the frame as the SID registers above, so a pointer in
+      // these columns and the register it produced are on one time axis --
+      // which is the whole reason for reading them here rather than from a
+      // separate emulator run. Printed verbatim every frame, never elided to
+      // "..": a pointer that stops moving is exactly the signal being looked
+      // for, and the register columns' repeat-elision would hide it.
+      if (numwatch)
+      {
+        int w;
+        sprintf(&output[strlen(output)], "| ");
+        for (w = 0; w < numwatch; w++)
+          sprintf(&output[strlen(output)], "  %02X ", mem[watchaddr[w]]);
+      }
+
       // End of frame display, print info so far and copy SID registers to old registers
       sprintf(&output[strlen(output)], "|\n");
       if ((!lowres) || (!((frames - firstframe) % spacing)))

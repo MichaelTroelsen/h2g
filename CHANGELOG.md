@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.216 — 2026-08-12
+
+- add siddump -w, a per-frame watch on the player's own memory
+
 ## 0.5.215 — 2026-08-12
 
 - add songview.py, an HTML view of what a .sng actually says

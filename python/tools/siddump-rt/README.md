@@ -66,6 +66,41 @@ state at end of frame — a gate raised and dropped within one frame is not seen
 Raster timing, badlines and the 0.25% between 100.25 Hz and 2 × 50 Hz are all
 outside it.
 
+## The second option: `-w`, watching player memory
+
+```
+-w<adr>[,<adr>...]  Dump player memory at these addresses, one column each.
+```
+
+Every other column in a siddump row is a **SID register** — what the player
+wrote to the chip. That is the right thing to compare two tunes on, and it is
+what the whole of `FIDELITY.md` rests on. But it can only ever show what a
+wavetable entry *produced*, never *which entry* produced it, because the
+pointer lives in the player's own memory. So a conversion whose wavetable holds
+exactly the right waveforms in exactly the right order, executed one frame
+early, is indistinguishable from one holding the wrong waveforms — the registers
+disagree either way, and no amount of staring at them says which.
+
+That question has cost this repo real time more than once (the drum sweep's
+depth, the delay entry's `value + 1` length, the vibrato gate). `-w` answers it
+directly:
+
+```sh
+./siddump.exe song.sid -a0 -t2 -w0fa0,0fa1,0fa2
+```
+
+appends a column per address, sampled from the same `mem` and at the same point
+in the frame as the SID registers beside them, so a pointer and the register it
+produced sit on one time axis. Up to 16 addresses; hex, comma-separated.
+
+**The columns are printed verbatim every frame, never elided to `..`** the way
+the register columns elide an unchanged value. A pointer that stops moving is
+precisely the signal being looked for, and repeat-elision would hide it.
+
+Inert without the flag: the header, the separator and the per-row text are all
+inside `if (numwatch)`, so a run without `-w` produces the same bytes it did
+before the patch.
+
 ## Build
 
 ```sh
