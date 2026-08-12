@@ -130,6 +130,21 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **To read what a conversion *says* rather than what it measured, use
+  `songview.py`** (`python songview.py <sng|sid> -o out.html --presets
+  ../presets.json`). It decodes the whole `.sng` to one self-contained HTML
+  page: orderlists with transposes resolved, wavetable entries with
+  **cumulative call timing** (a delay entry is current for `value + 1` calls,
+  the off-by-one that stood from v0.5.82 to v0.5.130), instruments tagged with
+  the effect bits recovered from their provenance stamp, and every pattern
+  labelled with **all three** of its identities — GT's hex number, the
+  post-dedup index and the Hubbard source. It scores nothing, so unlike a new
+  dimension it cannot be silently wrong in a way that changes a decision; when
+  a column disagrees with a wavetable, read the wavetable here before
+  theorising. Its parser is a *second* reader of the format, not a re-use of
+  `build_sng` — `tests/test_songview.py` checks the two against each other and
+  against the byte-exact fixture, which is the only thing making the
+  independence worth anything.
 - **`--vice` is the register dimensions at 312 samples a frame** (v0.5.131),
   from VICE's per-rasterline `dump` device, both sides. Use it for any change
   that moves a register *within* a frame -- siddump samples once per frame, so

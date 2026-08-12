@@ -2117,6 +2117,49 @@ instrument number are the arpeggio the ear had guessed at; and GT 1's flat duty
 cycle turned out to be a third pulse engine nothing had read, in 24 corpus
 files (v0.5.174, § `--pulse`).
 
+### The song view — `songview.py`
+
+`instrmap.py` reads what the SID registers *held*; this reads what the `.sng`
+*says*. Goattracker's editor can show the same bytes, but it shows a wavetable
+as a narrow column of hex pairs and a pattern sixteen rows at a time, so
+answering "which entry is instrument 3 opening on, and what does that byte
+mean" costs a dozen keystrokes and a page of held state.
+
+```sh
+cd python
+python songview.py <song.sng|song.sid> -o ../build/song.html --presets ../presets.json
+```
+
+One self-contained HTML file, no external assets. Give it a `.sid` and it
+converts first, with the song's own preset options (via `fidelity._preset_opts`,
+so it cannot drift from what every measurement in the repo is taken with).
+
+It **judges nothing and scores nothing**, which is the point: every metric this
+project has added could be, and several were, silently wrong in a way that
+changed a decision. A renderer of bytes already on disk has no such failure
+mode. Three things it does that the editor cannot:
+
+- **Every pattern carries all three of its identities** — Goattracker's hex
+  number (what the editor and a listener say), the converter's post-dedup
+  index, and the Hubbard pattern behind it. A listener's "PATT.12" is pattern
+  18 is Hubbard's 15, with the orderlist transposing on top; § 7 records three
+  separate debugging attempts lost to exactly that confusion.
+- **Wavetable entries carry cumulative timing** — a delay entry is current for
+  `value + 1` play calls (`gplay.c:697-704`), not `value`, and reading it the
+  other way left every multispeed file's attack a call too long from v0.5.82 to
+  v0.5.130. The table prints "covers calls 5-7" rather than `02 80`, so the
+  arithmetic is visible instead of remembered.
+- **Instruments carry their provenance** — `_write_instruments` stamps each
+  record `NN:b5-b6-b7`, and byte 7 is the player's own effect byte, so the
+  `.sng` alone says which effect bits (`$01` drum, `$04` two-stage, `$08`
+  program, `$10` arpeggio, `$20` filter, `$40` fixed pitch, `$80` sfx-drum) the
+  source record set. They are decoded into tags on each instrument.
+
+`tests/test_songview.py` checks the parser against `build_sng`'s output and
+against the byte-exact `Commando.sng` fixture. The parser is deliberately a
+*second* reader rather than a re-use of the writer's internals — one that
+shared code could not disagree with the writer, and disagreeing is the value.
+
 ## Repository layout
 
 | Path | |
