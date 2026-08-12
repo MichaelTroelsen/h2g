@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.224 — 2026-08-12
+
+- pin the preset search to the fidelity report's tracing
+
 ## 0.5.223 — 2026-08-12
 
 - fix two measurement bugs in the preset search: no calibration, no subtune counterpart
