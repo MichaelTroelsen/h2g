@@ -7039,8 +7039,9 @@ program's noise, tri, pulse. The bytes say `tri noi tri pul` and the chip plays
 `tri tri noi tri`.
 
 The one thing IK+ has that almost nothing else does is **`--no-test-restart`**,
-one of three corpus files carrying it. Turning it off, with everything else
-identical, gives three exact matches. The two conversions differ in **one byte
+one of the four corpus files carrying it (with Hollywood_or_Bust,
+One_on_One_Jordan_vs_Bird and Star_Paws). Turning it off, with everything
+else identical, gives three exact matches. The two conversions differ in **one byte
 per instrument**: `firstwave`, `$09` (gate + test bit) against the record's own
 waveform.
 
@@ -7093,7 +7094,7 @@ emitters lose the lead together — the rule stays in one function, which is
 `--wave-program`: `onset` 0% → **60%**, frame agreement 0.45 → 0.75, three
 instruments exact, no "late" left.
 
-**Corpus-wide it changes no byte**, because the three files carrying
+**Corpus-wide it changes no byte**, because the four files carrying
 `--no-test-restart` have none of the effect options on — the lead is only
 emitted by the drum, two-stage, pitch-seq and wave-program blocks. Like
 § 7.yyy, what the fix does is make those options *selectable* on files where
@@ -7104,6 +7105,114 @@ they were being measured through a one-frame shift.
 > readable and the more often read. They agree about the format and not about
 > the *schedule* — and a defect that lives in the difference is invisible to
 > the source everyone consults.
+
+### 7.gggg What `onset`'s 18% is made of, and a search that walked downhill
+
+v0.5.230. Two findings that turned out to be the same story from opposite ends:
+the column's remaining disagreements are almost entirely *mechanisms we do not
+emit*, and one reason we do not emit them is that the search which chooses the
+options can discard a setting it has already measured as better.
+
+#### Calibrating the level
+
+`onset` had never been calibrated. It demands an exact four-frame
+waveform-class match, so an unknown share of the misses could have been
+legitimate differences rather than defects — which is why every claim about it
+so far has quoted its *movement* and not its level. Classifying every
+disagreeing instrument in the corpus by kind settles it:
+
+| kind | | | what it means |
+|---|---:|---:|---|
+| match | 348 | 80.9% | |
+| **flat** | **59** | **13.7%** | the original changes class during the window and we hold frame 0's — a mechanism we do not emit at all |
+| **phase** | **15** | 3.5% | the right sequence, one frame early or late |
+| partial | 5 | 1.2% | some frames agree, nothing simpler fits |
+| wrong | 2 | 0.5% | both change, and to different things |
+| invented | 1 | 0.2% | we change where the original holds |
+
+430 instruments over 42 files with at least one miss. Of the 82 misses,
+**74 — 90% — are `flat` or `phase`**: a routine missing outright, or one
+emitted out of phase. The remaining 8 are the only candidates for "a legitimate
+difference the column is too strict about". The level is a defect count to
+within a tenth, and quoting it as such is now defensible.
+
+The census is a second implementation, so it can be checked against the first:
+its 15 `phase` instruments are exactly the 15 the report counts as
+`onset_ours_early` (and both say 0 late), computed by different code from the
+same traces.
+
+Grouping the `flat` misses by their record's effect byte gives the work list —
+read as a lead rather than a fact, since the census keys instruments by ADSR
+pair and several records can share one:
+
+```
+$01 x19   $04 x11   $80 x6   $0A x6   $08 x3   $20 x2   $02 x2   $14 x2
+```
+
+`$01` is a drum in one dialect and a byte-code wave program in another, `$04`
+the two-stage attack, `$80` the SFX drum — all three *implemented*. Which means
+a large part of the 59 is not missing code at all but options that are off.
+
+#### The search that walked downhill
+
+IK+ is the case, and it took an instrumented run to see. `--wave-program` on
+that file was **accepted**: noise 140 → 1170 of the original's 1517, `onset`
+0.45 → 0.75, `melody` unchanged at 0.990. Sixteen combinations later the walk
+replaced it with `--no-test-restart` — noise back to 168, `onset` back to 0.45 —
+which wins only because 168 frames of noise happen to sit at a pitch nearer the
+original's than 1170 do.
+
+§ 7.eeee's postscript had already found that `fidelity_better` is not a total
+order and that the 31-combination loop is therefore a greedy *path*. It fixed
+the cosmetic half: `prune_inert` drops a flag that changes nothing. This is the
+substantive half — the path can run **downhill**, and the setting it gives up is
+one it measured as better.
+
+The criterion now also requires the candidate to be no *worse* than the
+reference on `onset`, and never to lose the noise outright. It still imposes no
+total order on the five terms: a candidate that trades one for another is simply
+not accepted, which is the honest answer when the measurements disagree.
+
+**Two vetoes and not five, and the first attempt is why.** Written to cover
+every term it could compare — the oscillation ratio and the noise pitch as well
+— it rejected the very candidate it was built to protect. IK+'s
+`--wave-program` is better on noise, oscillation *and* onset, and was blocked by
+its noise *pitch*: that pitch is estimated over the frames the setting itself
+creates, 140 without it and 1170 with, and the pitch of 140 frames is not the
+same quantity as the pitch of 1170. Across the corpus that version lost **seven
+measured settings and gained one** — a net regression, caught because the search
+result was diffed against the shipped presets before being adopted.
+
+It is the veto form of a trap CLAUDE.md already states for register agreements:
+*a change that resizes the events a term scores cannot be judged by that term
+alone*. `onset` survives it because each side is read at its own attack frames
+and scored per instrument, so it does not grow with the frames a setting adds;
+and losing the noise outright is a fact rather than an estimate — named
+explicitly, because `_closer` reads 0 frames as *not measurable* and declines to
+compare it, so a candidate silencing a drum would otherwise pass while winning
+on something else.
+
+#### What it changed
+
+One file, which is the right size for a fix to a selection rule that had been
+wrong in one place:
+
+```
+IK_plus   no_test_restart -> wave_program
+          noise  168 -> 1170 of the original's 1517
+          nrun     0% -> 100%      onset  0% -> 60%
+          pitch   79% -> 85%       melody unchanged
+          wave    51% -> 49%   <- the documented cost of restoring a transient
+```
+
+Corpus means `onset` 82.0% → 82.8% and `nrun` 70.9% → 72.7%. Every other file's
+settings and bytes are unchanged.
+
+> **The transferable lesson:** "any one of these five improving is enough" is a
+> sound acceptance rule and an unsound *replacement* rule. The moment an
+> accepted candidate becomes the new reference, a rule with no total order needs
+> a no-regression clause, or the search's answer depends on the order its
+> options happen to be enumerated in — and nothing in the output says so.
 
 ---
 

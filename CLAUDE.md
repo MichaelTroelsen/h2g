@@ -660,12 +660,26 @@ that list back into existence.
 
 And an option can be inert in the other direction: **`fidelity_better` is not a
 total order**, so the 31-combination `--fidelity` walk is a greedy path rather
-than a maximum and can stop on a combination carrying a flag that changes
-nothing. `presets.prune_inert` re-converts once per selected flag and drops any
-whose removal leaves the bytes identical, because a preset entry is a record of
-a measured decision and a flag that changes nothing was not one. Do not read
-the greedy path itself as a defect to fix with a single scalar score — five
-incommensurable dimensions collapsed into one number would be the worse lie.
+than a maximum. Two consequences, and they needed separate fixes. It can stop
+on a combination carrying a flag that changes nothing — `presets.prune_inert`
+re-converts once per selected flag and drops any whose removal leaves the bytes
+identical, because a preset entry is a record of a measured decision and a flag
+that changes nothing was not one. And **the path can run downhill**: IK+
+accepted `--wave-program` (noise 140 -> 1170 of 1517, onset 0.45 -> 0.75) and
+then replaced it with a candidate worse on both, which won on a fourth term.
+`fidelity_better` now also requires the candidate to be no worse than the
+reference on `onset`, and never to lose the noise outright. **Two vetoes, not
+five**: written to cover every comparable term it rejected the candidate it was
+built to protect, because the oscillation ratio and the noise *pitch* are
+estimated over the frames the setting itself creates (IK+: 140 noise frames
+without `--wave-program`, 1170 with) -- the veto form of "read a register
+agreement next to both sides' note counts". That version lost seven measured
+settings corpus-wide and gained one; it was caught by diffing the search result
+against the shipped presets before adopting it, which is the check to run on
+every search. Do not read the greedy path itself as a defect to fix with a
+single scalar score — five incommensurable dimensions collapsed into one number
+would be the worse lie. **"Any one improving" is a sound acceptance rule and an
+unsound replacement rule**, and that distinction generalises past this repo.
 
 ## VB6 original — build / run (reference only, not actively developed)
 

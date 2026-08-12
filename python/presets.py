@@ -450,9 +450,52 @@ def fidelity_better(cand: tuple, ref: tuple,
         return state[5] if len(state) > 5 else None
     a, b = opens(cand), opens(ref)
     opens_right = a is not None and b is not None and a > b + margin
-    return keeps_notes and bool(plays_more or finds_noise
-                                or moves_oscillation or moves_noise_pitch
-                                or opens_right)
+    # **And it must not give back what a previous winner gained.** The five
+    # terms above are one-sided questions, so any of them is enough to accept;
+    # the search then makes the accepted candidate the new reference and walks
+    # on. That is a greedy path through 31 combinations and not a maximum, and
+    # without this clause the path can walk *downhill*: IK+ accepted
+    # `--wave-program` (noise 140 -> 1170 of the original's 1517, onset 0.45 ->
+    # 0.75, melody unchanged) and then replaced it, sixteen combinations later,
+    # with `--no-test-restart` -- which moves noise to 168, leaves onset at
+    # 0.45, and wins only because 168 frames of noise happen to sit at a pitch
+    # closer to the original's than 1170 do. The better setting was measured,
+    # accepted, and thrown away.
+    #
+    # So a candidate must be no *worse* than the reference on the terms where
+    # "worse" means the same thing at both sample sizes. That makes the
+    # accepted chain monotone in those, which is what stops it running
+    # downhill. It imposes no total order on the five -- a candidate that
+    # trades one for another is simply not accepted, which is the honest
+    # answer when the measurements disagree.
+    #
+    # **Two terms, not five, and the three left out are left out for a
+    # measured reason.** The oscillation ratio and the noise *pitch* are both
+    # estimated over the frames the setting itself creates: IK+ sounds 140
+    # noise frames without `--wave-program` and 1170 with it, and the pitch of
+    # 140 frames is not the same quantity as the pitch of 1170. Vetoing on
+    # them rejected the very candidate this clause was written to protect --
+    # better on noise, oscillation *and* onset, blocked by a pitch estimate
+    # taken over a tenth of the sample -- and cost seven measured settings
+    # across the corpus. It is the veto form of the trap CLAUDE.md states for
+    # register agreements: a change that resizes the events a term scores
+    # cannot be judged by that term alone.
+    #
+    # `onset` survives it because each side is read at its *own* attack frames
+    # and scored per instrument, so it does not grow with the frames a setting
+    # adds; and losing the noise outright is a fact, not an estimate.
+    def worse(c, r) -> bool:
+        return c is not None and r is not None and c < r - margin
+
+    gave_back = (worse(a, b)                                   # onset
+                 # Losing the noise outright is the one regression a *ratio*
+                 # cannot state: `_closer` reads 0 frames as "not measurable"
+                 # and declines to compare it, so silencing a drum would slip
+                 # through while winning on some other term.
+                 or bool(ref[3][0] and not cand[3][0]))
+    return keeps_notes and not gave_back and bool(
+        plays_more or finds_noise or moves_oscillation
+        or moves_noise_pitch or opens_right)
 
 
 def _closer(cand: float | None, ref: float | None, target: float,

@@ -449,6 +449,15 @@ def _first_frame_lead(wave: int, multiplier: int = 1,
     (`_first_frame_entry`) -- unless `force`, which keeps the entry whatever
     `+2` holds.
 
+    **`written` beats `force`.** It is `--no-test-restart`, which puts the
+    record's waveform in the instrument's `firstwave` -- and the packed player
+    writes that on the note's first call without executing the wavetable at
+    all (`player.s:908-911`), so frame 0 is already the record's waveform and
+    an entry here is a duplicate that delays the effect by a frame. `force`
+    says "this caller has always emitted the entry"; `written` says "the frame
+    is already accounted for", and the second is about the file rather than
+    about the caller's history.
+
     **`force` is for a caller that already emitted this entry unconditionally**,
     where dropping it would be a change of its own rather than the absence of
     an addition. `_drum_entries` is that caller: it has always opened on the

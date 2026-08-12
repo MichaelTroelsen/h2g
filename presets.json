@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.229 presets.py",
+  "generator": "h2g 0.5.230 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -382,7 +382,7 @@
       "subtunes": 1,
       "rows": 23374,
       "multiplier": 1,
-      "no_test_restart": true
+      "wave_program": true
     },
     "International_Karate.sid": {
       "max_rows": 94,

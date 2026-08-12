@@ -252,3 +252,56 @@ def test_a_state_without_the_new_terms_still_scores():
     assert presets.fidelity_better((0.90, 0.80, 600, (0, 0, 0x3800, 0x3800)), ref)
     assert not presets.fidelity_better(
         (0.80, 0.75, 600, (0, 0, 0x3800, 0x3800)), ref)
+
+
+def test_the_walk_cannot_give_back_what_a_previous_winner_gained():
+    """v0.5.230. The five terms are one-sided questions, so any of them
+    accepts; the search then makes the winner the new reference and walks on.
+    Without a no-regression clause that path runs downhill.
+
+    IK+ is the case, with the numbers from an instrumented search: it accepted
+    `--wave-program` (noise 140 -> 1170 of the original's 1517, onset 0.45 ->
+    0.75, melody unchanged) and then, sixteen combinations later, replaced it
+    with `--no-test-restart`, which drops the noise back to 168 and leaves
+    onset at 0.45 -- winning only because 168 frames sit at a pitch nearer the
+    original's than 1170 do. The better setting was measured, accepted, and
+    thrown away.
+    """
+    base = (0.990, 0.772, 535, (140, 1517, 0x3900, 0x3800), 0.0, 0.450)
+    wp = (0.990, 0.772, 535, (1170, 1517, 0x3800, 0x3800), 0.269, 0.750)
+    ntr = (0.989, 0.772, 535, (168, 1517, 0x3900, 0x3800), 0.0, 0.450)
+    assert presets.fidelity_better(wp, base), "the real gain is still a win"
+    assert not presets.fidelity_better(ntr, wp), \
+        "and cannot be replaced by something worse on noise and onset"
+    # ...while a candidate that improves one term and touches nothing else is
+    # still accepted, which is what keeps the clause from being a blanket veto.
+    better_onset = (0.990, 0.772, 535, (1170, 1517, 0x3800, 0x3800),
+                    0.269, 0.900)
+    assert presets.fidelity_better(better_onset, wp)
+
+
+def test_the_clause_does_not_veto_on_a_term_the_change_resizes():
+    """Only `onset` and losing the noise outright are vetoes.
+
+    The oscillation ratio and the noise *pitch* are estimated over the frames
+    the setting itself creates -- IK+ sounds 140 noise frames without
+    `--wave-program` and 1170 with it -- so "worse" does not mean the same
+    thing on both sides. Vetoing on them rejected the candidate the clause was
+    written to protect and cost seven measured settings across the corpus.
+    """
+    base = (0.990, 0.772, 535, (140, 1517, 0x3900, 0x3800), 0.0, 0.450)
+    wp = (0.990, 0.772, 535, (1170, 1517, 0x3800, 0x3800), 0.269, 0.750)
+    assert presets.fidelity_better(wp, base),         "better on noise, oscillation and onset -- a noisier pitch estimate "         "over eight times the sample must not veto it"
+
+
+def test_silencing_the_drum_is_not_a_win_however_the_onset_moves():
+    """The one regression a *ratio* cannot state.
+
+    `_ratio` reads 0 noise frames as "not measurable" and `_closer` declines
+    to compare it, so a candidate that silences a drum outright would slip
+    past the no-regression clause while winning on some other term. It is
+    named explicitly.
+    """
+    have = (0.990, 0.772, 535, (1170, 1517, 0x3800, 0x3800), 0.269, 0.750)
+    none = (0.990, 0.772, 535, (0, 1517, 0, 0x3800), 0.269, 0.900)
+    assert not presets.fidelity_better(none, have)
