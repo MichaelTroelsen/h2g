@@ -257,24 +257,21 @@ def _wave_hold_byte(multiplier: int = 1, wave: int = 0) -> Optional[int]:
     return min(extra - 1, WAVE_MAX_DELAY)
 
 
-def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
-                       wave: int) -> Optional[tuple]:
-    """Wavetable entries for effect bit $10's arpeggio, or None.
+def _pitch_seq_notes(sid: SidFile, det: Detection,
+                     i: int) -> Optional[List[int]]:
+    """Right-side note bytes for effect bit $10's arpeggio, or None.
 
-    `detect.PitchSeq` reads the mechanism: `note = played note + seq[phase]` on a
-    global three-step counter, in 34 of 95 corpus files. A wavetable says that
-    directly -- one entry per step, the waveform held and the right side naming a
-    relative note -- and loops for as long as the note is held, as the player's
-    counter does.
+    One entry per step of the player's cycle, in the order a wavetable should
+    play them. Split out of `_pitch_seq_entries` so the composed block that
+    carries bit $04's attack waveform as well (`_two_stage_pitch_seq_entries`)
+    derives its steps from the same place rather than from a second copy of the
+    rotation rule -- there is one rule and it is measured, see below.
 
-    Two honest limits. The player's phase is **global**, so it does not restart
-    with the note; a wavetable always does, and the emitted arpeggio can sit up
-    to `steps - 1` frames out of phase. On three frames that is inaudible. And a
-    sequence of all zeroes is *no* arpeggio -- the instrument simply plays its
-    note -- so it emits nothing rather than three identical entries.
+    Gated **per record**, on this record's own effect byte: `det.pitch_seq` says
+    only that the player reads the bit.
     """
     seq = det.pitch_seq
-    if seq is None or not wave & 0xF0:
+    if seq is None:
         return None
     data = sid.data
     rec = det.instr_start + i * det.instr_stride
@@ -304,12 +301,39 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     # pattern's own note, so the modal step goes on the frame after it.
     turn = (steps.index(modal) - 1) % len(steps)
     steps = steps[turn:] + steps[:turn]
-    left, right = [], []
-    for step in steps:
-        left.append(wave)
-        right.append(_arp_relative(1, step) if step < 0x80
-                     else (0x80 - (0x100 - step)) & 0xFF)
-    return left, right
+    return [_arp_relative(1, step) if step < 0x80
+            else (0x80 - (0x100 - step)) & 0xFF for step in steps]
+
+
+def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
+                       wave: int) -> Optional[tuple]:
+    """Wavetable entries for effect bit $10's arpeggio, or None.
+
+    `detect.PitchSeq` reads the mechanism: `note = played note + seq[phase]` on a
+    global three-step counter, in 34 of 95 corpus files. A wavetable says that
+    directly -- one entry per step, the waveform held and the right side naming a
+    relative note -- and loops for as long as the note is held, as the player's
+    counter does.
+
+    Two honest limits. The player's phase is **global**, so it does not restart
+    with the note; a wavetable always does, and the emitted arpeggio can sit up
+    to `steps - 1` frames out of phase. On three frames that is inaudible. And a
+    sequence of all zeroes is *no* arpeggio -- the instrument simply plays its
+    note -- so it emits nothing rather than three identical entries.
+
+    A record whose own `+2` waveform is zero is declined: every entry here puts
+    `wave` on the left, and `$00`-`$0F` on a wavetable's left side is a *delay*,
+    not a waveform, so such a block would say something else entirely. Bit $04
+    gives such a record a waveform to hold -- see
+    `_two_stage_pitch_seq_entries`, which is why that path does not repeat this
+    guard.
+    """
+    if not wave & 0xF0:
+        return None
+    notes = _pitch_seq_notes(sid, det, i)
+    if notes is None:
+        return None
+    return [wave] * len(notes), list(notes)
 
 
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
@@ -434,7 +458,107 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     return left, right
 
 
+def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
+                                 notes: List[int], start: int,
+                                 multiplier: int = 1,
+                                 budget: int = WAVE_ENTRIES_PER_INSTR
+                                 ) -> Optional[tuple]:
+    """One block carrying bit $04's attack waveform *and* bit $10's arpeggio.
+
+    The two bits are **sequential, independent tests on the same effect byte**,
+    not exclusive branches. Read off Trans-Atlantic's player, whose record byte
+    +7 is copied to the scratch cell `$0EFB` once and then tested five times in
+    a row -- `$08` at $0B44, `$04` at $0B9C, `$10` at $0BB8, `$20` at $0BEB and
+    `$40` (as `BIT`/`BVC`) at $0C05:
+
+        0B9C  LDA $0EFB / AND #$04 / BEQ $0BB7   ; bit $04: the *waveform*
+        0BA3  LDA $0FAA,X / BEQ +                ;   attack counter still running?
+        0BA8  DEC $0FAA,X / LDA $116C,Y          ;   yes: the attack waveform
+        0BB1 +LDA $10DB,Y                        ;   no:  the record's own +2
+        0BB4  STA $0D5E,X                        ;   -> the voice's waveform cell
+        0BB7  CLC
+        0BB8  LDA $0EFB / AND #$10 / BEQ $0BEB   ; bit $10: the *note*
+        ...   LDY $107C / LDA note,X / ADC seq,Y ;   played note + this step
+        0BDC  LDA $0C8C,Y / STA $0EE5,X          ;   -> the voice's frequency
+              LDA $0C8D,Y / STA $0EB5,X
+
+    Nothing between $0BB7 and $0BB8 can skip the second test, so a record whose
+    effect byte is `$14` gets both: the attack's waveform and, on the same
+    frames, the arpeggio's note. Trans-Atlantic's record 3 (`0AF8`) is the one
+    such record any corpus file plays with both options on, and the original's
+    trace shows exactly that -- five frames of `$11` from the note's onset with
+    the frequency stepping `+24, 0, 0, +24, 0` through them, and the arpeggio
+    continuing after the waveform goes to `$00`.
+
+    So the arpeggio runs across *both* stages, and the block loops on the
+    sustain stage rather than stopping there, because the player keeps writing
+    the frequency for as long as the note is held. Every frame gets its own
+    entry: a delay entry cannot carry a note that changes on the frames it
+    covers (gplay.c:697-723 applies the right side only on the delay's last
+    call), which is the cost of the mechanism and not a choice.
+
+    The rate is scaled the way `_two_stage_entries` scales `frames`: the
+    player's phase counter advances once per frame of a single-speed original,
+    and the wavetable steps once per *play call*, so each step holds
+    `multiplier` entries. `_pitch_seq_entries` does **not** do this and is
+    consistent with this function only at multiplier 1 -- which is where it is
+    verified, Trans-Atlantic being a multiplier-1 file. Flagged rather than
+    changed here: correcting the standalone path would move three shipped
+    multispeed files this change has no measurement of. And no trace in the
+    repo can adjudicate the scaling: siddump samples once per frame whatever
+    the call rate, so on Thundercats at -S3 the scaled and unscaled blocks emit
+    different bytes and score the identical 1308 reversals.
+
+    Returns None where the block will not fit the record's budget, so the
+    caller falls back to the plain two-stage shape rather than emitting a
+    truncated arpeggio.
+    """
+    if attack == 0 or frames <= 0 or not notes:
+        return None
+    # **The attack frame sounds the pattern's own note.** Entry 0 is applied on
+    # the note's first call, and that is the frame `melody` and a listener alike
+    # read the note's identity from. The player's phase is global, so whichever
+    # step really falls there is unknowable and any step we choose is a guess --
+    # but a step of zero is the one guess that cannot *rename* the note, so the
+    # cycle is rotated to open on one where it has one (`seq[0]` is the byte
+    # nothing writes, so it nearly always does). Measured on Thundercats, whose
+    # sequence opens `+3`: without this the reversals come out exact, 1308
+    # against the original's 1308, and melody falls 77.3% -> 65.7% on unchanged
+    # note counts -- 148 notes named three semitones sharp. The same trap as
+    # section 7.qqq's `$40` pitch on frame 0, and it is invisible on
+    # Trans-Atlantic, whose rotation already opens on zero and whose bytes this
+    # rule leaves untouched.
+    #
+    # A rotation is the freedom `_pitch_seq_notes` already exercises for the
+    # same reason, so this narrows a choice rather than contradicting one; it is
+    # applied here only, leaving the eight files that ship the standalone path
+    # byte for byte as they are.
+    if WAVE_NOTE_BASE in notes:
+        turn = notes.index(WAVE_NOTE_BASE)
+        notes = notes[turn:] + notes[:turn]
+    hold = max(1, multiplier)
+    calls = max(1, frames) * hold
+    second = (wave & 0xFE) or (attack & 0xFE)
+    tail = second | (wave & 0x01)
+    loop = len(notes) * hold
+    if calls + loop + 1 > budget:
+        return None
+    left: List[int] = []
+    right: List[int] = []
+    for c in range(calls + loop):
+        left.append(attack if c < calls else tail)
+        right.append(notes[(c // hold) % len(notes)])
+    # The jump targets the sustain stage, not the block: the attack runs once
+    # per note. `calls` is an exact multiple of `hold`, so the phase the loop
+    # re-enters on is the phase it left -- the cycle stays continuous across the
+    # jump, as the player's free-running counter does.
+    left.append(0xFF)
+    right.append(start + calls)
+    return left, right
+
+
 SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
+WAVE_NOTE_BASE = 0x00        # right side: the pattern's own note, +0 semitones
 WAVE_NOTE_KEEP = 0x80        # right side: leave the frequency alone
 WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
 
@@ -1882,6 +2006,22 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         at = det.two_stage_wave + i * det.instr_stride
         fr = det.two_stage_frames + i * det.instr_stride
         if max(at, fr) < len(data):
+            # A record setting bit $10 as well gets **both**: in the player the
+            # two are sequential tests on one effect byte, $04 choosing the
+            # waveform and $10 the note, and neither can skip the other. Gated
+            # per record on both bits -- `arp_style` is this record's own +7,
+            # and `_pitch_seq_notes` re-checks $10 on it -- because a
+            # file-level flag says only that the player reads the bit, which is
+            # the mistake `_fixed_attack_note` made against Thundercats' drum.
+            if (pitch_seq and fmt == FORMAT_GTS5 and start is not None
+                    and (arp_style & EFFECT_PITCH_SEQ_MASK)):
+                notes = _pitch_seq_notes(sid, det, i)
+                if notes is not None:
+                    both = _two_stage_pitch_seq_entries(
+                        wave, data[at], data[fr], notes, start,
+                        multiplier, budget)
+                    if both is not None:
+                        return both
             # `_fixed_attack_note(sid, det, i)` is deliberately NOT passed here.
             # Effect bit $40's pitch belongs on the attack's *third* frame, not
             # its first, and its second frame belongs to bit $80's drum -- the

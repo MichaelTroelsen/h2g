@@ -4022,6 +4022,116 @@ pack and two traces, so applying the new criteria corpus-wide is an hours-long
 recorded in `FIDELITY_CONFIRMED` so the balloon song gets its result now rather
 than waiting for it.
 
+### 7.vvv Two bits on one record: the tests are sequential, not exclusive
+
+§ 7.ttt emitted bit `$10`'s arpeggio and left one record of the balloon song
+unreached. Trans-Atlantic's record 3 (`0AF8`) sets effect byte `$14` — both
+`$10` **and** `$04`, the two-stage attack waveform of § 7.qqq — and
+`_pitch_seq_entries` declined it, because its `+2` waveform is `$00` and every
+entry that function emits puts `wave` on the *left* of the table, where
+`$00`–`$0F` is a delay and not a waveform. The two-stage path then owned the
+record and emitted no arpeggio at all: **0 pitch reversals in a 60 s trace,
+against the original's 411.**
+
+**The player does not choose between them.** The record's `+7` is copied to a
+scratch cell once and then tested five times running — `$08` at `$0B44`, `$04`
+at `$0B9C`, `$10` at `$0BB8`, `$20` at `$0BEB`, and `$40` as `BIT`/`BVC` at
+`$0C05`:
+
+```
+0B9C  LDA $0EFB / AND #$04 / BEQ $0BB7   ; bit $04 -- the WAVEFORM
+0BA3  LDA $0FAA,X / BEQ +                ;   attack counter still running?
+0BA8  DEC $0FAA,X / LDA $116C,Y          ;   yes: the attack waveform
+0BB1 +LDA $10DB,Y                        ;   no:  the record's own +2
+0BB4  STA $0D5E,X                        ;   -> the voice's waveform cell
+0BB7  CLC
+0BB8  LDA $0EFB / AND #$10 / BEQ $0BEB   ; bit $10 -- the NOTE
+0BBF  LDA $116B,Y / ASL / TAY            ;   this record's sequence
+      LDA $10AE,Y / STA $10AC ...        ;   copy its two offsets
+0BD0  LDY $107C                          ;   the GLOBAL phase
+0BD4  LDA $0D61,X / ADC $10AB,Y          ;   played note + this step
+0BDC  LDA $0C8C,Y / STA $0EE5,X          ;   -> the voice's frequency
+      LDA $0C8D,Y / STA $0EB5,X
+```
+
+Nothing between `$0BB7` and `$0BB8` can skip the second test. `$04` writes the
+waveform cell and falls through; `$10` writes the frequency pair. A record
+setting both gets both, on the same frames — and the original's trace says
+exactly that: five frames of `$11` from the onset with the frequency stepping
+`+24, 0, 0, +24, 0` through them, and the arpeggio still running after the
+waveform drops to `$00`.
+
+So the emission is **one block carrying both**: `frames × multiplier` entries of
+the attack waveform, then the sustain stage, then a jump back to the sustain
+stage's *first* entry — the attack runs once per note, the arpeggio for as long
+as the note is held. Every frame gets its own entry; a delay cannot carry a note
+that changes on the frames it covers, because `gplay.c:697-723` applies the
+right side only on the delay's last call. That is the cost of the mechanism, not
+a choice.
+
+```
+11/00  11/00  11/18  11/00  11/00 | 10/18  10/00  10/00 | FF/06
+`-------- attack, 5 frames -------' `--- sustain ------' `- loop to entry 6
+```
+
+`0AF8` goes from **0 reversals to 392** against the original's 411, on
+*unchanged* note counts (70 either side, before and after) — so this is not the
+"fewer events score better" artefact of the v0.5.176 candidate. `vib` moves
+**0.72x → 0.87x** and every other column of the row is identical to the
+decimal, `melody` and `wave` included: the change alters the note on those
+frames and never the waveform, which is precisely what those two columns do and
+do not read.
+
+#### The rule that only a second file could find
+
+Trans-Atlantic is the sole corpus file shipping both `--two-stage` and
+`--pitch-seq`, so a corpus differential hash moves exactly one file and the
+evidence for the shape is one song. § 7.rrr is the standing warning about that,
+and forcing both options onto **Thundercats** — four records at `$34`, a
+two-step sequence rather than three, a real sustaining `+2`, and multiplier 3
+rather than 1 — earned it again.
+
+Its reversals came out *exact*: 1308 against the original's 1308. Its `melody`
+fell **77.3% → 65.7%**, on unchanged note counts.
+
+The cause is where the arpeggio's frames land, the same axis as § 7.qqq.
+`_pitch_seq_notes` rotates the cycle so the modal step follows the attack, and
+Thundercats' sequence opens `+3`; entry 0 is applied on the note's *first* call,
+which is where `melody` — and a listener — read the note's identity. All 148
+notes were named three semitones sharp. On Trans-Atlantic the same rotation
+happens to open on zero, which is why the primary file could not see it.
+
+The composed block therefore **opens on a zero step wherever the cycle has
+one**, and it nearly always does: `seq[0]` is the byte nothing writes. The
+player's phase is global and unknowable here, so whichever step really falls on
+the onset is a guess either way — but a step of zero is the one guess that
+cannot *rename* the note. With it, Thundercats keeps 1308/1308 **and** its
+`melody` and `sequence` are unchanged to four decimals, and Trans-Atlantic's
+bytes do not move at all. A rotation is the freedom `_pitch_seq_notes` already
+exercises; this narrows the choice rather than contradicting it, and it is
+applied in the composed path only, so the eight files shipping the standalone
+arpeggio are byte for byte as they were.
+
+#### Two things left standing
+
+- **The evidence for shipping is still one file.** Thundercats and
+  Bangkok_Knights confirm the *shape*, the gating and the rate, but neither
+  ships `--pitch-seq` and `--two-stage` together, so neither is a shipped
+  measurement. What reaches users is Trans-Atlantic's row and nothing else.
+- **`_pitch_seq_entries` does not scale its rate by `multiplier`.** The composed
+  path does — § 7.bb's rule, and what `_two_stage_entries` already does to
+  `frames` three lines away — so the two agree only at multiplier 1, which is
+  where the composition is measured. Three shipped multispeed files
+  (Flash_Gordon at 4, Shockway_Rider and Star_Paws at 2) would run the
+  standalone arpeggio that many times too fast if the rule holds for it.
+  Flagged and not changed here, and **the trace cannot settle it**: run against
+  Thundercats at multiplier 3, scaled and unscaled emit different bytes and
+  score the *identical* 1308 reversals, because siddump samples the registers
+  once per frame whatever the call rate and an arpeggio cycling per call
+  aliases to one cycling per frame. `--vice` is the instrument that would see
+  it (§ 7.nn). Until then, "1308/1308 at multiplier 3" is evidence for the
+  block's *shape* and for its note content, and for nothing about its rate.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

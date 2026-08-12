@@ -1330,6 +1330,27 @@ the original sounds noise and we sound none — and four files take it: **ACE II
 Pandora, Thundercats and Trans-Atlantic**. The search still refuses
 any candidate that loses notes.
 
+#### With `--pitch-seq`: a record setting both bits gets both
+
+Bit `$04` and bit `$10` (the arpeggio, `--pitch-seq`) are **sequential,
+independent tests on the same effect byte** — `$04` at `$0B9C` writes the
+voice's waveform cell and falls straight through to `$10` at `$0BB8`, which
+writes its frequency. So a record setting `$14` plays its attack waveform *and*
+has its pitch stepped through the arpeggio on the same frames, and with both
+options on the converter emits one block carrying both: the attack's frames,
+then the sustain stage, then a jump back to the sustain stage looping the cycle
+for as long as the note is held.
+
+Only Trans-Atlantic ships both options, and only its record 3 (`0AF8`) is
+reached: **0 pitch reversals in a 60 s trace before, 392 after, against the
+original's 411**, on unchanged note counts, moving `vib` 0.72x → 0.87x with
+every other column of its row identical. Both bits are checked **per record**,
+never per file. Requires `--format gts5`; a record whose block will not fit its
+wavetable budget falls back to the plain two-stage shape.
+
+See H2G-CONVERSION-METHOD.md § 7.vvv — including why the block must open on a
+zero step, which cost Thundercats 11.6 points of `melody` before it did.
+
 ### `--no-test-restart` (the silent frame on every note)
 
 Every instrument this tool has ever written carries `$09` in record byte +8, the
