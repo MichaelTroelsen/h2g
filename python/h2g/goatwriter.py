@@ -399,9 +399,41 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     return (WAVE_NOTE_ABS + note) & 0xFF
 
 
+def _first_frame_entry(wave: int) -> bool:
+    """Whether the note's first frame gets an entry of the record's own `+2`.
+
+    **The player writes the record's `+2` waveform on the note's first frame
+    and reaches the effect block only from the second** -- the same rule
+    `_drum_entries` was corrected to in v0.5.172, which never propagated to the
+    other two emitters. Measured on Trans-Atlantic, modal waveform class over
+    frames 0..7 from each onset with identical note counts on both sides:
+
+        GT 3 (`+7 $08`, the wave program, 43 onsets a side)
+          ORIGINAL  tri   noise tri   pulse noise noise noise noise
+          OURS      noise tri   pulse noise noise noise noise noise
+        GT 5 (`+7 $24`, the two-stage attack, 24 onsets a side)
+          ORIGINAL  pulse noise pulse pulse pulse pulse pulse pulse
+          OURS      noise pulse pulse pulse pulse pulse pulse pulse
+
+    Both are the original shifted one frame left, and both originals' frame 0
+    is exactly `+2`'s class -- `$11` tri for GT 3, `$41` pulse for GT 5.
+
+    **A `+2` of `$00` is the exception, and it is what makes this a function.**
+    That record has no waveform and no gate on its first frame, so siddump sees
+    no gate edge there and calls the *second* frame the onset: Trans-Atlantic's
+    GT 4 (`+2 $00`, a five-frame `$11` attack) profiles as five frames of `tri`
+    from offset 0 in the original, already aligned with what we emit. Adding an
+    entry for its silent frame would move a block that is right. A wavetable
+    cannot write `$00` as a waveform either ($00-$0F are delays), so there is
+    nothing faithful to put there.
+    """
+    return bool(wave & 0xF0)
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
-                       attack_note: Optional[int] = None) -> tuple:
+                       attack_note: Optional[int] = None,
+                       budget: int = WAVE_ENTRIES_PER_INSTR) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 34 corpus files: effect bit
@@ -455,6 +487,25 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         right.append(0x80)
     left += [second | (wave & 0x01), 0xFF]
     right += [0x00, 0x00]
+    # The note's first frame is the record's own waveform; the attack starts on
+    # the second. See `_first_frame_entry`. One frame is `multiplier` calls, the
+    # same conversion `calls` above makes -- and the entries are dropped whole
+    # rather than the block truncated where the 255-entry table has no room for
+    # them, which is the degradation every other emitter here already makes.
+    lead: List[int] = []
+    lead_r: List[int] = []
+    if _first_frame_entry(wave):
+        lead, lead_r = [wave], [0x00]
+        rest = max(1, multiplier) - 1          # ...the entry above is one call
+        if rest == 1:
+            lead.append(wave)
+            lead_r.append(0x00)
+        elif rest > 1:
+            lead.append(min(rest - 1, WAVE_MAX_DELAY))
+            lead_r.append(0x80)
+    if lead and len(left) + len(lead) <= budget:
+        left[:0] = lead
+        right[:0] = lead_r
     return left, right
 
 
@@ -541,19 +592,29 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     second = (wave & 0xFE) or (attack & 0xFE)
     tail = second | (wave & 0x01)
     loop = len(notes) * hold
-    if calls + loop + 1 > budget:
+    # The note's first frame is the record's own waveform (`_first_frame_entry`)
+    # and the attack -- with the arpeggio that runs across it -- starts on the
+    # second. Trans-Atlantic's GT 4, the one corpus record this path reaches, has
+    # `+2 $00` and so takes no such entry; the branch is here because the other
+    # files carrying both bits do have a waveform. It is one *frame*, so `hold`
+    # calls -- spelled out rather than delayed, because this block spells every
+    # other frame out for the same reason (a delay entry's right side is read
+    # only on its last call, and the note base has to be current from the first).
+    lead = hold if _first_frame_entry(wave) else 0
+    if lead + calls + loop + 1 > budget:
         return None
-    left: List[int] = []
-    right: List[int] = []
+    left: List[int] = [wave] * lead
+    right: List[int] = [WAVE_NOTE_BASE] * lead
     for c in range(calls + loop):
         left.append(attack if c < calls else tail)
         right.append(notes[(c // hold) % len(notes)])
     # The jump targets the sustain stage, not the block: the attack runs once
-    # per note. `calls` is an exact multiple of `hold`, so the phase the loop
-    # re-enters on is the phase it left -- the cycle stays continuous across the
-    # jump, as the player's free-running counter does.
+    # per note, and so does the first-frame entry before it -- which is why the
+    # target carries `lead`. `calls` is an exact multiple of `hold`, so the phase
+    # the loop re-enters on is the phase it left; the cycle stays continuous
+    # across the jump, as the player's free-running counter does.
     left.append(0xFF)
-    right.append(start + calls)
+    right.append(start + lead + calls)
     return left, right
 
 
@@ -746,8 +807,15 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     if at < 0:
         return None
 
-    left: List[int] = []
-    right: List[int] = []
+    # **The note's first frame is the record's own waveform**, and the program
+    # runs from the second (`_first_frame_entry`): Trans-Atlantic's GT 3 opens
+    # `tri` -- its `+2`, `$11` -- and only then the program's `$81` noise. Opened
+    # on the program, every frame it emits ran one early and that first frame was
+    # lost. Counted in the budget below like any other entry, so a record too
+    # long for the table loses a trailing opcode rather than this.
+    seed = 1 if _first_frame_entry(data[rec + 2]) else 0
+    left: List[int] = [data[rec + 2]] * seed
+    right: List[int] = [WAVE_NOTE_BASE] * seed
     for kind, wave, arg in decode_wave_program(data, at):
         if kind == "hold":
             break
@@ -768,7 +836,10 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # waveform keeps its frame and the movement is dropped.
         left.append(_wave_byte(wave))
         right.append(WAVE_NOTE_KEEP)
-    if not left:
+    # `seed` alone is not a program: a record whose interpreter holds on its
+    # first opcode has nothing to say here and falls through to the shapes
+    # below, exactly as it did before the seed entry existed.
+    if len(left) <= seed:
         return None
     # **Restore the record's own waveform before stopping** (v0.5.203). The
     # docstring above used to say Goattracker keeps the last waveform "as the
@@ -2029,7 +2100,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # frame 0 it puts the drum's pitch where the played note goes and
             # melody falls 85% -> 39% on the one file it reaches. See
             # H2G-CONVERSION-METHOD.md section 7.qqq.
-            two = _two_stage_entries(wave, data[at], data[fr], multiplier)
+            two = _two_stage_entries(wave, data[at], data[fr], multiplier,
+                                     budget=budget)
             if two is not None:
                 return two
 

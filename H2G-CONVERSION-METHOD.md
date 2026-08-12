@@ -4132,6 +4132,91 @@ arpeggio are byte for byte as they were.
   it (§ 7.nn). Until then, "1308/1308 at multiplier 3" is evidence for the
   block's *shape* and for its note content, and for nothing about its rate.
 
+### 7.www The note's first frame belongs to the record, not to the effect
+
+`_drum_entries` learned in v0.5.172 that **the player writes the record's own
+`+2` waveform on a note's first frame and reaches the effect block only from
+the second** — Commando's trace reads `15 80 80 14 14` from each onset, and
+opening the wavetable on the drum's noise ran it two frames early and dropped
+that opening frame. The lesson was recorded in that one function and never
+propagated. Both of the other emitters put their mechanism's first entry at
+wavetable entry 0, so everything they emitted ran one frame early.
+
+The measurement is the modal waveform class over frames 0..7 from each note
+onset, per instrument, joined on ADSR the way `instrmap.py` joins — **with
+identical note counts on both sides**, so none of this is the "fewer events,
+fewer disagreements" artefact § 7 warns about elsewhere:
+
+```
+Trans-Atlantic GT 3 (+7 $08, the byte-code wave program), 43 onsets a side
+  ORIGINAL  tri   noise tri   pulse noise noise noise noise
+  OURS      noise tri   pulse noise noise noise noise noise    <- one frame early
+
+Trans-Atlantic GT 5 (+7 $24, the two-stage attack), 24 onsets a side
+  ORIGINAL  pulse noise pulse pulse pulse pulse pulse pulse
+  OURS      noise pulse pulse pulse pulse pulse pulse pulse    <- one frame early
+
+Thundercats GT 4/5/6/10 (+7 $34), 148 onsets each
+  ORIGINAL  pulse noise pulse pulse pulse pulse pulse pulse
+  OURS      noise pulse pulse pulse pulse pulse pulse pulse    <- the same
+```
+
+Each is the original shifted one frame left, and each original's frame 0 is
+exactly `+2`'s class — `$11` tri for GT 3, `$41` pulse for GT 5. Prepending
+that byte with the gate on, as `_drum_entries` does, makes all six frame-exact.
+
+**The exception is what makes this a function and not a line.** A record whose
+`+2` is `$00` has no waveform and no gate on its first frame, so siddump sees
+no gate edge there and calls the *second* frame the onset. Trans-Atlantic's
+GT 4 (`+2 $00`, a five-frame `$11` attack) already profiles as five frames of
+`tri` from offset 0 and is **already aligned**; an entry for its silent frame
+would move a block that is right, and a wavetable cannot write `$00` as a
+waveform anyway ($00-$0F are delays). `_first_frame_entry` is that test, and it
+leaves the one corpus record on the composed `$04`+`$10` path byte for byte.
+
+**One frame is `multiplier` calls**, § 7.bb's rule again: the lead covers the
+whole frame (an entry plus a delay), because at Thundercats' `-S3` a one-call
+lead still leaves the attack inside frame 0. And in the composed path the loop
+target moves with the lead, or the arpeggio's phase re-entry breaks.
+
+Reach and cost, over the 8 corpus files that ship `--two-stage` or
+`--wave-program` (the only files whose bytes move at all):
+
+| | before | after |
+|---|---:|---:|
+| onset-frame agreement, mean of 8 | 66.3% | **71.7%** |
+| Trans-Atlantic `melody` | 85% | **95%** |
+| Trans-Atlantic `seq` | 86% | **94%** |
+| `wave`, mean over the 7 that moved | — | **+2.1 pp** |
+
+Tarzan's `wave` goes 64% → 77% and Thanatos' 94% → 100%; ACE_II and Saboteur_II
+lose 2 and 3 points of it. Those two are the reading to be careful with:
+`wave_compare` scores absolute frames against a single global startup lag,
+while the onset-anchored measure of the same register reads ACE_II as *flat*
+and Saboteur_II as **+0.2** — and the lag itself is unchanged on both. What
+ACE_II exposes rather than causes is a separate defect: its GT 4 record claims
+a two-frame attack where the original sounds one, so the correctly-placed lead
+pushes the surplus noise frame from offset 0 (where it was wrong) to offset 2
+(where it is still wrong).
+
+**And one number moves away from the original, for a reason worth recording.**
+Trans-Atlantic's noise frames go 1089 → 1053 against an original's 1089 — an
+exact match, lost. All 36 are in GT 3, the wave-program snare, and they are the
+*last* frame of each of 36 notes:
+
+```
+  ORIGINAL  tri noise tri pulse noise noise noise noise noise noise noise noise $00
+  before    noise tri pulse noise noise noise noise noise noise noise $00 tri tri
+  after     tri noise tri pulse noise noise noise noise noise noise noise $00 tri tri
+```
+
+Our note is one frame shorter than the original's here, so shifting the program
+onto its right frames pushes its final noise entry past the note's end. Before,
+nine noise frames sat one frame early; after, eight sit exactly where the
+original's are. A frame **count** cannot tell those apart — `nrun`, which
+compares run *lengths* per instrument, does not move — which is the same
+count-versus-placement trap as § 7.qqq.
+
 ## 8. Impedance mismatch: slicing and re-indexing
 
 Goattracker imposes limits Hubbard's format does not (values from

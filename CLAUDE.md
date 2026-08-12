@@ -130,6 +130,16 @@ test dependency).
   `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV
   pairs for the only check that covers the rest; it needs `--json` from a
   `fidelity.py` run and writes to gitignored `build/listen/`.
+- **A lesson recorded in one emitter is not a lesson in the file.**
+  `_drum_entries` was corrected in v0.5.172 to put the record's own `+2`
+  waveform on the note's first frame, because the player writes it there and
+  reaches the effect block only from the second -- and its docstring says so at
+  length. `_wave_program_entries` and `_two_stage_entries` sit in the same file
+  and carried the identical defect for 45 more versions, because nothing
+  measured it and the fix had been written as prose about one function rather
+  than as a shared helper. It is `_first_frame_entry` now. When a fix is really
+  a *rule about the player*, give it a name every emitter has to call, and
+  a column that fails when one of them stops.
 - **`onset` is the column that sees a mechanism emitted one frame out of
   phase**, and until v0.5.217 nothing could. `wave` averages per-frame
   agreement over the whole window, so a wrong opening frame on a 43-note

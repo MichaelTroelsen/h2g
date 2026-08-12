@@ -123,16 +123,47 @@ def test_it_is_off_by_default_and_kept_out_of_always():
 def test_the_emission_is_the_attack_then_a_delay_then_the_records_own():
     """IK+ $E38B: the attack waveform for `frames` frames, then instrument +2.
 
-    The delay holds for `value + 1` calls and entry 0 is itself one, so four
-    frames is `attack`, delay 2, own -- the arithmetic `_wave_hold_byte` sets
-    out, applied to a per-instrument count instead of the call rate.
+    The delay holds for `value + 1` calls and the attack's own entry is one, so
+    four frames is `attack`, delay 2, own -- the arithmetic `_wave_hold_byte`
+    sets out, applied to a per-instrument count instead of the call rate.
+
+    Ahead of all that sits the record's own `+2`, gate on: the player writes it
+    on the note's first frame and reaches the attack block only from the second
+    (v0.5.217, `_first_frame_entry`).
     """
     from h2g.goatwriter import _two_stage_entries
     left, right = _two_stage_entries(0x41, 0x81, 4)
-    assert left == [0x81, 0x02, 0x41, 0xFF]
-    assert right == [0x00, 0x80, 0x00, 0x00]
+    assert left == [0x41, 0x81, 0x02, 0x41, 0xFF]
+    assert right == [0x00, 0x00, 0x80, 0x00, 0x00]
     # one frame needs no delay at all
-    assert _two_stage_entries(0x41, 0x81, 1)[0] == [0x81, 0x41, 0xFF]
+    assert _two_stage_entries(0x41, 0x81, 1)[0] == [0x41, 0x81, 0x41, 0xFF]
+
+
+def test_the_first_frame_is_the_records_own_waveform():
+    """Measured, not argued. Trans-Atlantic's GT 5 (`+2 $41`, a one-frame `$81`
+    attack) profiles over its 24 onsets as
+
+        ORIGINAL  pulse noise pulse pulse ...
+        OURS      noise pulse pulse pulse ...      (before v0.5.217)
+
+    -- the original shifted one frame left, its frame 0 being exactly `+2`'s
+    class. Thundercats' four records on ADSR $0987 say the same over 148 onsets
+    each. One *frame* is `multiplier` calls, so a multispeed file's lead covers
+    that many: at -S3 a one-call lead still leaves the attack inside frame 0,
+    and Thundercats -- packed at -S3 -- is where that was measured.
+    """
+    from h2g.goatwriter import _two_stage_entries
+    # -S3: the record's waveform, then a delay covering the frame's other two
+    # calls, then the attack and its own delay.
+    assert _two_stage_entries(0x41, 0x81, 1, 3, budget=12)[0] == [
+        0x41, 0x01, 0x81, 0x01, 0x41, 0xFF]
+    # A record with no waveform of its own has nothing to put there, and the
+    # player's silent first frame is not an onset in the trace either.
+    assert _two_stage_entries(0x00, 0x11, 5)[0][0] == 0x11
+    # ...and the entries are dropped whole rather than the block truncated
+    # where the table has no room: the shape degrades to what it always was.
+    assert _two_stage_entries(0x41, 0x81, 4, budget=4)[0] == [
+        0x81, 0x02, 0x41, 0xFF]
 
 
 def test_a_record_with_no_waveform_of_its_own_releases_the_attack():

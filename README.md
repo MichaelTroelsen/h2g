@@ -1277,16 +1277,31 @@ The program is `81 30` (noise, 1 frame), two slides under released waveforms
    next note: the 30-, 54- and 78-frame runs. The record's own waveform is now
    emitted before the stop.
 
-With both, the snare's runs are **identical to the original's** — `{1: 43, 8: 43}`
-on each side, 387 noise frames against 387, where without the program voice 2
-sounds none at all.
+With both, the snare's runs came out **identical to the original's** —
+`{1: 43, 8: 43}` on each side, 387 noise frames against 387, where without the
+program voice 2 sounds none at all.
+
+**Both of those numbers move again in v0.5.217**, and the trade is worth stating
+rather than hiding. The program was being emitted from wavetable entry 0, where
+the player reaches it only on a note's *second* frame — see
+[the first frame](#the-notes-first-frame-belongs-to-the-record) below. Corrected,
+frames 0..10 of every note match the original exactly, but our note here is one
+frame shorter than the original's, so the burst's last frame no longer fits:
+`{1: 43, 7: 36, 8: 7}`, 351 noise frames against 387. A run in the right place
+and one frame short, in place of a run of the right length one frame early.
+
+The same correction settles the melody objection below. `melody` used to fall
+95% → 85% with the program on, because the program's noise landed on the note's
+own attack frame and siddump named 43 notes by the snare's pitch instead of the
+played note's; with the record's waveform back on frame 0 the gate edge carries
+the played note again and `melody` returns to **95%** (`seq` 86% → 94%) at
+unchanged note counts.
 
 The search still scores it as worse, and structurally rather than by a margin:
 `fidelity_better`'s `finds_noise` test requires the *reference* to have no
 audible noise, and this file has plenty from another instrument — a per-file test
 for a per-instrument defect, so a missing snare is masked by a present hi-hat.
-`melody` also falls 95% → 85%, because siddump reads noise onsets as notes and
-the compared sequence gains 43 of them. So it is recorded in
+So it is recorded in
 `presets.FIDELITY_CONFIRMED`, the mirror of the veto above: a listening verdict
 that the search disagrees with, kept in `presets.py` with its reason rather than
 hand-edited into the generated file. Scoring `finds_noise` per instrument off
@@ -1350,6 +1365,39 @@ wavetable budget falls back to the plain two-stage shape.
 
 See H2G-CONVERSION-METHOD.md § 7.vvv — including why the block must open on a
 zero step, which cost Thundercats 11.6 points of `melody` before it did.
+
+#### The note's first frame belongs to the record
+
+**The player writes the record's own `+2` waveform on a note's first frame and
+reaches the effect block only from the second.** `--sfx-drum`'s emitter learned
+that in v0.5.172; `--two-stage` and `--wave-program` did not, and both put their
+mechanism's first entry at wavetable entry 0, so everything they emitted ran one
+frame early and the opening frame was lost.
+
+Measured as the modal waveform class over frames 0..7 from each note onset, per
+instrument, at **identical note counts on both sides**:
+
+```
+Trans-Atlantic GT 5 (+7 $24, the two-stage attack), 24 onsets a side
+  ORIGINAL  pulse noise pulse pulse pulse pulse pulse pulse
+  OURS      noise pulse pulse pulse pulse pulse pulse pulse
+Thundercats GT 4/5/6/10 (+7 $34), 148 onsets each — the same shape
+```
+
+Prepending that byte with the gate on makes all of them frame-exact. A record
+whose `+2` is `$00` is the exception and takes no such entry: it has no waveform
+and no gate on its first frame, so the trace's onset *is* its second frame and
+the block is already aligned (`$00`–`$0F` are delays in a wavetable, so there is
+nothing faithful to put there in any case). One frame is `multiplier` calls, so
+a multispeed file's lead covers that many.
+
+Over the 8 corpus files shipping either option — the only files whose bytes
+move — onset-frame agreement goes **66.3% → 71.7%**, none regressing;
+Trans-Atlantic's `melody` 85% → 95% and `seq` 86% → 94%; `wave` moves on 7 files
+for a mean **+2.1 pp** (Tarzan 64% → 77%, Thanatos 94% → 100%, ACE_II −2 and
+Saboteur_II −3). The one number that moves away from the original is
+Trans-Atlantic's noise-frame count, for the reason given under `--wave-program`
+above. See H2G-CONVERSION-METHOD.md § 7.www.
 
 ### `--no-test-restart` (the silent frame on every note)
 

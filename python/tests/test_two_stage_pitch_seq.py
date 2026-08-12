@@ -133,10 +133,17 @@ def test_the_rate_is_scaled_to_play_calls():
     frames = sid.data[det.two_stage_frames + 3 * det.instr_stride]
     assert frames == 1
     attack = sid.data[det.two_stage_wave + 3 * det.instr_stride]
-    assert left[:3] == [attack] * 3            # one frame -> three calls
-    assert right[:3] == [0x00] * 3             # one step  -> three calls
-    assert right[3:6] == [0x03] * 3
-    assert left[-1] == 0xFF and right[-1] == 1 + 3
+    # Entry 0 is the note's own first frame -- the record's `+2`, three calls of
+    # it (v0.5.217, `_first_frame_entry`) -- and the attack follows.
+    own = sid.data[det.instr_start + 3 * det.instr_stride + 2]
+    assert own & 0xF0
+    assert left[:3] == [own] * 3
+    assert left[3:6] == [attack] * 3           # one frame -> three calls
+    assert right[:6] == [0x00] * 6             # one step  -> three calls
+    assert right[6:9] == [0x03] * 3
+    # ...and the loop skips both the lead and the attack, so the arpeggio's
+    # phase re-enters where it left.
+    assert left[-1] == 0xFF and right[-1] == 1 + 3 + 3
 
 
 def test_gating_is_per_record_not_per_file():

@@ -238,8 +238,12 @@ def test_the_snare_is_emitted_and_lands_on_noise():
     speed = []
     left, right = _wavetable_entries(sid, det, 2, True, "gts5", speed, 1,
                                      start=1, budget=30, wave_program=True)
-    assert left[0] == 0x81, "the snare must open on noise"
-    assert abs(_note_freq(right[0] - 0x80) - 0x3000) < 0x0300
+    # Entry 0 is the record's own `+2` -- the note's first frame, which the
+    # player writes before it reaches the interpreter at all (v0.5.217, see
+    # `_first_frame_entry`). The program itself starts at entry 1.
+    assert left[0] == sid.data[det.instr_start + 2 * det.instr_stride + 2]
+    assert left[1] == 0x81, "the snare must open on noise"
+    assert abs(_note_freq(right[1] - 0x80) - 0x3000) < 0x0300
     assert left[-1] == 0xFF
     # v0.5.203: a slide is one entry, not a waveform plus a portamento command.
     # The two-entry form made the program 2 frames longer than the player's and
@@ -296,8 +300,9 @@ def test_a_slide_opcode_costs_one_entry_so_the_program_keeps_its_length():
                                       start=1, budget=30, wave_program=True)
     steps = _prog("Trans-Atlantic_Balloon_Challenge", 2)
     opcodes = len([s for s in steps if s[0] != "hold"])
-    # one entry per opcode, plus the waveform restore, plus the stop
-    assert len(left) == opcodes + 2, (len(left), opcodes)
+    # one entry per opcode, plus the note's own first frame ahead of the
+    # program (v0.5.217), the waveform restore, and the stop
+    assert len(left) == opcodes + 3, (len(left), opcodes)
     assert not speed, "a slide no longer allocates a speed-table entry"
 
 
