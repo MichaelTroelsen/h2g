@@ -61,7 +61,7 @@ from h2g.convert import _detect_tables, convert
 from h2g.goatwriter import (FORMAT_GTS5, find_song_speeds,
                             recommended_multiplier)
 from h2g.patterns import DEFAULT_TRACK
-from h2g.sidfile import load_sid
+from h2g.sidfile import find_freq_table, load_sid
 
 # Searched per song. Order is irrelevant -- every combination is tried.
 MAX_ROWS = (94, 128)
@@ -492,7 +492,31 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     local = workdir / "o.sid"
     shutil.copyfile(sid_path, local)
     sub = F.resolve_subtune(sid_path, "auto")
-    orig = F.run_siddump(local, seconds, sub, siddump, 0)
+    # **The original's own tuning, as `fidelity._measure` traces it.** Four
+    # corpus files carry a frequency table tuned off the semitone grid, and
+    # siddump names their notes against its own table unless told otherwise --
+    # so tracing them at 0 renames every note and collapses `melody`. This
+    # hardcoded a 0 until v0.5.223, which is why the search selected a setting
+    # for One_on_One_Jordan_vs_Bird "at melody 5%": the 5% was the harness.
+    ft = find_freq_table(load_sid(str(sid_path)))
+    cal = F.calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    orig = F.run_siddump(local, seconds, sub, siddump, cal)
+    # **And our subtune numbering need not match the original's.** A subtune
+    # whose orderlist exceeds Goattracker's limit costs itself and every later
+    # one shifts down, so the original's subtune N can be our N-1. `_measure`
+    # searches a window of ours and keeps the best match (`--search-subtunes`,
+    # default 3); this compared N against N and scored two different pieces of
+    # music -- Action_Biker reads 6% here and 100% there.
+    #
+    # Found **once**, on the reference conversion, and reused for every
+    # candidate: the alternative is three traces per candidate rather than
+    # one, and the toggles this searches change no orderlist length. That is
+    # an assumption, and it is the reason the window is re-derived per file
+    # rather than cached across the corpus.
+    ours_sub = sub
+
+    def _dump(packed, st):
+        return F.run_siddump(packed, seconds, st, siddump, calls=multiplier)
 
     def play(extra: dict):
         blob = convert(str(sid_path), log=lambda m: None,
@@ -501,7 +525,7 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         packed = F.pack_sid(blob, workdir, gt2reloc, multiplier)
         if packed is None:
             return None
-        dump = F.run_siddump(packed, seconds, sub, siddump, calls=multiplier)
+        dump = _dump(packed, ours_sub)
         got = F.compare(orig, dump)
         if got["melody"] is None or got["sequence"] is None:
             return None
@@ -515,6 +539,22 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                  _noise_pitch(dump, nf), _noise_pitch(orig, nf)),
                 pm.get("reversal_ratio"),
                 F.onset_agreement(orig, dump, nf)["onset_frame_agreement"])
+
+    # Fix `ours_sub` before any scoring, on the default conversion, by the same
+    # rule `_measure` uses: the window is the traced subtune and one either
+    # side, and the best `melody` wins. Ties keep `sub`, so a file whose
+    # numbering does line up is untouched.
+    probe = convert(str(sid_path), log=lambda m: None, **base, **FIXED)
+    probe, _ = F.legalise_restarts(probe)
+    packed = F.pack_sid(probe, workdir, gt2reloc, multiplier)
+    if packed is not None:
+        best = None
+        for st in (sub, sub - 1, sub + 1):
+            if st < 0:
+                continue
+            got = F.compare(orig, _dump(packed, st))
+            if got["melody"] is not None and (best is None or got["melody"] > best):
+                best, ours_sub = got["melody"], st
 
     ref = play({})
     if ref is None:
