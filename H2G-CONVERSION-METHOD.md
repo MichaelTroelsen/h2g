@@ -6198,6 +6198,144 @@ Note the two-parallel-arrays layout used by both the wave and pulse tables
 why `_write_wavetable` writes all left-column bytes for every instrument before
 writing any right-column bytes.
 
+### 7.ccc The drum sweep's other bound: the note's own length
+
+§ 7.ii read the drum block and § 7.tt bounded its depth by the only thing the
+converter then knew about a record — the lowest note it is played at, which
+says how far a `CMD_PORTADOWN` chain may fall before it wraps. `_drum_max_steps`
+said so in as many words: *"the safety bound and the musical target turn out to
+be the same number."* They do not. They coincide only when the note is long
+enough that the player's own guard never fires first, and on a short note it
+fires long before the wrap.
+
+The block has **two** exits, and § 7.tt only expressed one:
+
+```
+136D  LDA freqhi,X   / BEQ out      ; guard 1 -- the frequency reached zero
+1372  LDA remaining,X / BEQ out     ; guard 2 -- the NOTE ended
+```
+
+Guard 1 is the pitch bound. Guard 2 is the note's duration, and nothing in the
+converter looked at it. Commando's instrument 13 has room for thirteen steps by
+pitch, was capped at eight by `DRUM_MAX_SWEEP_STEPS`, and gets **five** from the
+player, because its note is four rows long.
+
+#### The arithmetic, in the units the guards count in
+
+`R` (`remaining,X`) decrements once per duration *unit*, not per frame — the
+same fact § 7.ggg read out of the noise tick. With `W` the value it reloads to,
+the block spends:
+
+* `R == W`, one whole unit, on the `BCC` noise branch, which writes the
+  frequency **without** decrementing it (so the sweep begins at the unit
+  boundary, not at the note's first frame);
+* `R` from `W-1` down to `1`, that is `W-1` units, sweeping once per frame;
+* `R == 0`, the last unit, straight back out through guard 2, frozen wherever
+  the sweep left it.
+
+A converted row is one unit and an event lasts `wait + 1` of them, so a note of
+`n` rows sweeps `(n - 2) * frames_per_row` frames. The first of those frames
+writes the value it loaded (`LDA freqhi / DEC freqhi / STA`), so one fewer than
+that many *decrements* reach the chip:
+
+    steps = (n - 2) * frames_per_row - 1
+
+Commando: `(4 - 2) * 3 - 1 = 5`. It is counted in play *calls* rather than
+frames — `(n - 2) * row_calls - multiplier`, the same number at `-S1` — because
+a row is not always a whole number of frames: W_A_R packs 9 calls at `-S4`, and
+recovering `frames_per_row` by flooring 9/4 to 2 loses an eighth of its sweep.
+
+#### Confirmed against the original, not argued
+
+A 240 s `siddump` of Commando subtune 0, note onsets taken at gate rising edges
+(`siddump.c:376-380` prints a bare note only there — taking them at waveform
+changes splits every drum note in three and was the first thing to get wrong):
+
+| note length | sweep | count |
+|---|---|---|
+| 12 frames = 4 rows | **5 steps**, `0DD0 0CD0 0BD0 0AD0 09D0 08D0` then frozen | 41 |
+| 24 frames = 8 rows | 12 steps, `0DD0 → 01D0` | 7 |
+| 36 frames = 12 rows | 12 steps, `0DD0 → 01D0` | 5 |
+
+The 12-step rows are guard **1** — `0D` decremented until the byte would reach
+zero — so both guards are visible in one trace, and the formula predicts the
+crossover: 8 rows would give 17 steps by duration, and the pitch floor cuts it
+to 12.
+
+#### Which single number, and why the minimum is the wrong one
+
+A wavetable holds one sweep for every note of an instrument, so whatever goes in
+is wrong for every note of a different length. The first implementation took the
+**minimum** duration, by analogy with `min_played_notes` — that one is a safety
+bound and the minimum is the only safe reduction of it. This is not a safety
+bound: the wrap is still handled by `_drum_max_steps`, which is applied as well.
+It is an approximation of a distribution, and the reduction that minimises the
+total error of one value against a distribution is its **median**.
+
+The difference is not academic. Bump_Set_Spike's record 0 is played at 2, 4 and
+6 rows in near-equal measure; its original sweeps 5 steps 221 times in 240 s;
+the minimum would emit **0** and delete the sweep. Scored over the corpus as
+play-weighted L1 error against each note's own true depth:
+
+| reduction | total error (steps) | best-or-tied on |
+|---|---:|---:|
+| pitch bound alone (shipped) | 320070 | 34 of 122 records |
+| minimum duration | 117806 | 97 |
+| modal duration | 100102 | 120 |
+| **median duration** | **99983** | **122** |
+
+Weighted by how often the orderlists actually play each pattern, because the
+median is a claim about what is heard — and `pack_repeats` encodes a run of `k`
+as `$D0 + k - 1`, so a bare count of references understates a repeated pattern.
+
+An occurrence whose hold rows run to the end of its pattern is **dropped**: what
+that measures is the distance to a pattern boundary, not the note, and it is a
+lower bound rather than a length. Counting them read Commando's instrument 13 as
+two rows — there is a two-row pattern whose only row is such a note — and would
+have taken its sweep away on the strength of a boundary.
+
+#### End to end, on two files that use the block differently
+
+Converted, packed with `gt2reloc`, traced. Voice 1 of Commando and voice 2 of
+Bump_Set_Spike:
+
+| | original | before | after |
+|---|---|---|---|
+| Commando, 12-frame note (×41) | 5 | 7 | **5** |
+| Commando, 24/36-frame note (×12) | 12 | 8 | 5 |
+| Bump_Set_Spike, 12-frame note (×246) | 5 | 7 | **5** |
+| Bump_Set_Spike, 18-frame note (×4) | 11 | 8 | 5 |
+
+The dominant case is now frame-for-frame identical to the original —
+`0DD1 0DD1 0DD1 0DD1 0CD1 0BD1 0AD1 09D1 08D1 08D1 08D1 08D1` against the
+original's `…0CD0 0BD0 0AD0 09D0 08D0 08D0 08D0 08D0`, the low byte differing by
+the one unit Goattracker's frequency table rounds to. The long notes are the
+trade the median makes, and they were already short at 8.
+
+#### What the report can and cannot say
+
+`FIDELITY.md` A/B over 95 files: **melody, seq, pitch, retrig, wave, noise,
+adsr, nrun, tail, pul, pspan, filt and cut moved on zero files.** `slides` and
+`bend` moved on 14 each — toward the original on 11 in log space, away on 2,
+flat on 1 — and `vib` on one file, toward.
+
+Read those two with § 7.ii in hand, because they are **not** a clean verdict on
+this change. A 256-unit step at these frequencies is more than a semitone, so
+siddump names the *original's* sweep frames as notes and `bend` excludes ties by
+construction: the column counts our sweep and not theirs. Reducing our depth
+therefore lowers our `bend` mechanically, which moves an over-1 file toward 1
+and an under-1 file away from it — exactly the split observed (every file above
+1.0 improved; the two below it, Bump_Set_Spike 0.43→0.36 and Deep_Strike
+0.36→0.33, did not). Commando itself moves **no** column at all.
+
+The evidence for this change is the frame comparison above, not the report. The
+report's contribution is the negative one, and it is worth having: nothing else
+moved anywhere.
+
+> **The transferable lesson:** when one value has to stand for a distribution,
+> the reduction is the **median** — the minimum is only right when the quantity
+> is a safety bound, and this repo had one of each sitting in the same function.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

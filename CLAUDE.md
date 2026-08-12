@@ -264,6 +264,29 @@ test dependency).
   *next* note (no gate edge, so no attack). Three separate defects came out of
   that one bit (§ 7.mmm, 7.nnn, 7.ooo). When a flag is already parsed but
   nothing observable depends on it, that is a lead, not a finished feature.
+- **A minimum is the reduction for a safety bound; a median is the reduction
+  for an approximation.** `_drum_max_steps` said "the safety bound and the
+  musical target turn out to be the same number" -- they coincide only when
+  the note is long enough that the player's wrap guard fires before its
+  *duration* guard, and Commando's instrument 13 has room for 13 steps, was
+  capped at 8, and gets 5 because its note is four rows long. One wavetable
+  sweep stands for every note an instrument plays, so the value that minimises
+  the total error against that distribution is its **median**. Taking the
+  minimum -- by analogy with `min_played_notes`, which really is a safety
+  bound -- would have emitted **zero** steps for Bump_Set_Spike's record 0,
+  whose original sweeps 5 steps 221 times in 240 s, because it is also played
+  at two rows in a third of its occurrences. Corpus L1 error: 320070 (pitch
+  bound alone), 117806 (minimum), 99983 (median). And weight the distribution
+  by how often the orderlist *plays* each pattern -- a duration in a pattern
+  played sixteen times is not one occurrence. See § 7.ccc.
+- **`bend` counts our drum sweep and not the original's**, because a 256-unit
+  step is more than a semitone and siddump names the player's steps as *notes*,
+  which `bend` excludes as ties (§ 7.ii). So any change to sweep depth moves
+  our numerator alone: over-1 files march toward 1 and under-1 files away, and
+  neither is evidence. Settle a sweep change by comparing the frames at
+  gate-edge onsets on both sides -- and take those onsets from siddump's
+  *bare* note (`siddump.c:376-380`), never from a waveform change, which the
+  drum's own noise tick fires three times a note.
 - **Widening a window is not automatically the safer reduction.** v0.5.200
   measured a note's release as the minimum over the whole gap to the next note,
   on the reasoning that a minimum cannot depend on which frame the player writes

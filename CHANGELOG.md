@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.212 — 2026-08-12
+
+- bound the drum sweep by the note's own duration, not pitch-wrap safety alone
+
 ## 0.5.211 — 2026-08-12
 
 - fix _noise_tick_frames crash when the modal speed gate is unreadable (None)

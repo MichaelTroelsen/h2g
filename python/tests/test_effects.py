@@ -30,8 +30,9 @@ from h2g.detect import (Detection, _effect_byte_address,
 from h2g.goatwriter import (DRUM_SPEED, FORMAT_GTS2, FORMAT_GTS5, RISE_SHIFT,
                             SPEED_NOTE_RELATIVE, WAVE_NOISE_GATEOFF,
                             WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
-                            _drum_steps_safe, _note_freq, _wavetable_entries)
-from h2g.patterns import min_played_notes
+                            _drum_duration_steps, _drum_steps_safe,
+                            _note_freq, _wavetable_entries)
+from h2g.patterns import median_played_durations, min_played_notes
 from h2g.sidfile import load_sid
 
 CORPUS = _CORPUS
@@ -51,10 +52,13 @@ class _FakeSid:
 
 def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
              fmt=FORMAT_GTS5, speed_table=None, wave=0x41, multiplier=1,
-             min_notes=None, budget=None):
+             min_notes=None, budget=None, note_rows=None, row_calls=0):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_rise=rise, effect_arp=arp, effect_drum=drum)
     kw = {} if budget is None else {"budget": budget}
+    if note_rows is not None:
+        kw["note_rows"] = note_rows
+        kw["row_calls"] = row_calls
     return _wavetable_entries(_FakeSid(effect_byte, wave), det, 0, effects,
                               fmt, speed_table if speed_table is not None
                               else [], multiplier, min_notes, **kw)
@@ -293,6 +297,128 @@ def test_an_unknown_lowest_note_keeps_the_shipped_single_step():
         left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
                                min_notes=bound, budget=8)
         assert left[5] == 0xFF and right[5] == 0x00
+
+
+# --- the drum sweep's *other* bound: the note's own length -----------------
+#
+# The pitch bound above says how far a CMD_PORTADOWN chain may fall before it
+# wraps. It says nothing about how long the player gets to sweep, which is the
+# note's own duration -- and on a short note that runs out first.
+
+def test_the_sweep_is_no_deeper_than_the_note_is_long():
+    """Commando's instrument 13, against a siddump of the original.
+
+    Its four-row note at three calls a row gives the drum block six frames of
+    sweep, of which the first writes the frequency it was already at, so five
+    decrements reach the chip: `0DD0 0CD0 0BD0 0AD0 09D0 08D0` and then a
+    freeze on `08D0`, which a 240 s trace of subtune 0 shows 106 times. The
+    pitch bound alone allowed thirteen and the corpus cap eight.
+    """
+    assert _drum_duration_steps(4, 3) == 5
+    left, right = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                           min_notes={2: 44}, budget=64,
+                           note_rows={2: 4}, row_calls=3)
+    assert left.count(WAVECMD_PORTADOWN) == 5
+    assert left[4 + 5] == 0xFF, "and then stop"
+    # ... where the pitch bound on its own writes the corpus cap.
+    deep = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                    min_notes={2: 44}, budget=64)[0]
+    assert deep.count(WAVECMD_PORTADOWN) == 8
+
+
+def test_a_note_too_short_to_sweep_gets_no_sweep():
+    # Two rows is `wait` 1: the block spends its one whole unit on the noise
+    # branch, which writes the frequency without decrementing it, and the
+    # last unit exits through `LDA remaining,X / BEQ out`. Bump_Set_Spike's
+    # record 14 is played at two rows and nothing else.
+    assert _drum_duration_steps(2, 3) == 0
+    assert _drum_duration_steps(1, 3) == 0
+    left = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                    min_notes={2: 44}, budget=64,
+                    note_rows={2: 2}, row_calls=3)[0]
+    assert WAVECMD_PORTADOWN not in left
+
+
+def test_the_duration_bound_only_ever_shortens_the_sweep():
+    # A long note leaves more room than the pitch bound allows, so the record
+    # is written exactly as it was -- and so is one with no measured note.
+    plain = _entries(DRUM, effects=True, drum=True, wave=0x41,
+                     min_notes={2: 44}, budget=64)
+    for kw in ({"note_rows": {2: 40}, "row_calls": 3},   # far more room
+               {"note_rows": {}, "row_calls": 3},        # nothing measured
+               {"note_rows": {3: 2}, "row_calls": 3},    # another instrument
+               {"note_rows": {2: 4}, "row_calls": 0}):   # no tempo known
+        assert _entries(DRUM, effects=True, drum=True, wave=0x41,
+                        min_notes={2: 44}, budget=64, **kw) == plain
+
+
+def test_the_duration_bound_is_in_calls_so_it_scales_with_the_multiplier():
+    """A rate is per frame; the table applies it per call (section 7.bb).
+
+    `_drum_speed` halves the step at -S2, so the same *travel* needs twice the
+    entries -- and `row_calls` is already the row in calls, so the frame count
+    divides back out of it.
+    """
+    assert _drum_duration_steps(4, 3, 1) == 5          # 6 frames, 5 decrements
+    assert _drum_duration_steps(4, 6, 2) == 10         # same travel, half-steps
+    assert _drum_duration_steps(4, 9, 3) == 15
+
+
+def test_median_played_durations_takes_the_median_not_the_minimum():
+    """One number stands for every note, so the L1 minimiser is the median.
+
+    Bump_Set_Spike's record 0 is the case: played at 2, 4 and 6 rows in
+    near-equal measure, its original sweeps 5 steps 221 times in 240 s, and
+    the minimum would emit none at all.
+    """
+    def pattern(*gaps):
+        """One pattern playing instrument 2 for each gap in turn.
+
+        A trailing note is added so the last measurable gap is `gaps[-1]`;
+        that trailing one runs to the end and is dropped.
+        """
+        out = []
+        for gap in gaps:
+            out += [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * (gap - 1)
+        return out + [0x60, 2, 0, 0] + [0xFF, 0, 0, 0]
+
+    order = [[0, 0xFF, 0x00]]
+    assert median_played_durations(order, [pattern(6, 4, 4)]) == {2: 4}
+    # A minority of short notes must not collapse the sweep: the minimum of
+    # 1, 4, 4, 4 is 1 -- no sweep at all -- where the median is 4.
+    assert median_played_durations(order, [pattern(1, 4, 4, 4)]) == {2: 4}
+    # ... and a minority of long ones must not deepen it.
+    assert median_played_durations(order, [pattern(2, 2, 2, 16)]) == {2: 2}
+
+
+def test_median_played_durations_drops_a_note_running_to_the_pattern_end():
+    """Its hold rows are cut by the boundary, so its length is unknown.
+
+    Counting them read Commando's instrument 13 as two rows -- a two-row
+    pattern whose only row is such a note -- where its real notes are four.
+    """
+    pat = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 3 + [0x60, 2, 0, 0] \
+        + [0xBD, 0, 0, 0] + [0xFF, 0, 0, 0]
+    assert median_played_durations([[0, 0xFF, 0x00]], [pat]) == {2: 4}, \
+        "only the first note is measurable"
+    # An instrument with nothing measurable at all is absent, not short --
+    # callers must read a missing key as unknown.
+    only = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] + [0xFF, 0, 0, 0]
+    assert median_played_durations([[0, 0xFF, 0x00]], [only]) == {}
+
+
+def test_median_played_durations_weights_by_how_often_a_pattern_plays():
+    # A duration in a pattern the orderlist plays three times outweighs one in
+    # a pattern played once: the median is a statement about what is heard.
+    long_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 7 + [0x60, 2, 0, 0] \
+        + [0xFF, 0, 0, 0]
+    short_p = [0x60, 2, 0, 0] + [0xBD, 0, 0, 0] * 3 + [0x60, 2, 0, 0] \
+        + [0xFF, 0, 0, 0]
+    pats = [long_p, short_p]
+    assert median_played_durations([[0, 1, 0xFF, 0x00]], pats) == {2: 4}
+    # the same two patterns, with the long one repeated -- REPEAT applies to
+    # the entry that follows it, so this plays pattern 0 three times.
+    assert median_played_durations([[0xD2, 0, 1, 0xFF, 0x00]], pats) == {2: 8}
 
 
 def test_the_bound_is_read_against_the_scaled_step_not_the_constant():

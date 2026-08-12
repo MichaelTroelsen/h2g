@@ -10,7 +10,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
                        convert_patterns, apply_tempo, cmdtable_frames_per_row,
-                       min_played_notes, pattern_references, phantom_patterns,
+                       min_played_notes, median_played_durations,
+                       pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks)
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
@@ -333,6 +334,14 @@ def convert(sid_path: str, log: Logger = print,
     # under-compensating the faster one is the safe direction -- see
     # patterns.build_speed_table.
     row_calls = 0
+    # The *shortest* row any subtune writes, for the drum sweep's duration
+    # bound. Opposite end of the same spread as `row_calls` and for the
+    # opposite reason: that one compensates a rate and wants the safe
+    # over-estimate, this one turns a note's length in rows into frames the
+    # sweep may occupy and wants the safe under-estimate -- a pattern shared
+    # between two subtunes at different tempos is short in the faster one.
+    # See goatwriter._drum_duration_steps.
+    short_row_calls = 0
     if tempo != "auto":
         resolved_tempo = tempo
     elif det.frames_per_row > 1:
@@ -358,6 +367,7 @@ def convert(sid_path: str, log: Logger = print,
         written = sum(apply_tempo(new_patterns, tracks[3 * k:3 * k + 3],
                                   values[k]) for k in range(groups))
         row_calls = max(values) if values else 0
+        short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
             f"{sorted(set(values))} in {written} pattern(s) ({note})")
         if mult > 1:
@@ -369,6 +379,7 @@ def convert(sid_path: str, log: Logger = print,
                 f"tempo must be {GT_MIN_TEMPO}..127 (Goattracker reads 0 and 1 "
                 f"as funktempo, gplay.c:325), got {resolved_tempo}")
         row_calls = resolved_tempo
+        short_row_calls = resolved_tempo
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
 
     # Last, so it sees every command any earlier stage emitted. It rewrites the
@@ -412,4 +423,6 @@ def convert(sid_path: str, log: Logger = print,
                      pitch_seq=pitch_seq,
                      filters=filters, vibrato=vibrato,
                      min_notes=min_played_notes(tracks, new_patterns),
+                     note_rows=median_played_durations(tracks, new_patterns),
+                     row_calls=short_row_calls,
                      compact_instruments=compact_instruments)

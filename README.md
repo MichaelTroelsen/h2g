@@ -411,6 +411,19 @@ chromatic rise, 21 the pulse-width variant.
   released, then the frequency falling one high byte per frame — not the
   leading noise tick the original wrote, which is in no player. The drum's
   *noise ending* is measured and deliberately left out; see below.
+- **The sweep is as deep as the note is long, and no deeper.** The routine has
+  two exits — `LDA freqhi,X / BEQ out`, the frequency reaching zero, and
+  `LDA remaining,X / BEQ out`, the note ending — and for a long time only the
+  first was expressed, as the distance a `CMD_PORTADOWN` chain can fall before
+  wrapping. On a short note the second fires long before it: Commando's
+  instrument 13 had room for thirteen steps, was capped at eight, and its
+  original takes **five**, because the note is four rows long. A note of `n`
+  rows sweeps `(n - 2) * frames_per_row - 1` steps, and the number written is
+  the **median** over the notes the instrument is actually played at — one
+  wavetable entry chain has to stand for all of them, and the median is what
+  minimises the total error against a spread. Traced end to end on two files:
+  the dominant sweep now matches the original frame for frame. See
+  H2G-CONVERSION-METHOD.md § 7.ccc.
 
 An earlier version applied Warhawk's reading corpus-wide and was caught by
 measurement: it put 287 frames of pitch movement into `W.A.R. Preview` and 256

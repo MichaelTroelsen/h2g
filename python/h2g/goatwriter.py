@@ -1771,7 +1771,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        two_stage: bool = False,
                        sfx_drum: bool = False,
                        wave_program: bool = False,
-                       pitch_seq: bool = False) -> tuple:
+                       pitch_seq: bool = False,
+                       note_rows: Optional[dict] = None,
+                       row_calls: int = 0) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -1949,6 +1951,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # function's `i` is the 0-based record index: instrument 1 is the
         # hardcoded Clear Voice, so record i is instrument i + 2.
         lowest = None if min_notes is None else min_notes.get(i + 1 + lead)
+        typical = (None if note_rows is None
+                   else note_rows.get(i + 1 + lead))
         # The tick length is the player's speed gate less one, not a constant:
         # `lengthleft` decrements once per duration unit, so the drum's "first
         # vbl" test stays true for `frames` frames and the note's own first
@@ -1962,7 +1966,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # matching the original's run to 43.
         return _drum_entries(wave, fmt, speed_table, multiplier, lowest,
                              sustain=data[base + 4] >> 4, budget=budget,
-                             tick_frames=_noise_tick_frames(sid, det))
+                             tick_frames=_noise_tick_frames(sid, det),
+                             note_rows=typical, row_calls=row_calls)
 
     if drum:
         if effects:
@@ -2070,7 +2075,9 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
                   multiplier: int = 1, min_note: Optional[int] = None,
                   sustain: int = 0,
                   budget: int = WAVE_ENTRIES_PER_INSTR,
-                  tick_frames: int = NOISE_TICK_FRAMES) -> tuple:
+                  tick_frames: int = NOISE_TICK_FRAMES,
+                  note_rows: Optional[int] = None,
+                  row_calls: int = 0) -> tuple:
     """The five wavetable entries for a record whose player really has a drum.
 
     Warhawk `$1366`, read out of the 6502 rather than inferred from the bit:
@@ -2102,10 +2109,13 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     bends. See H2G-CONVERSION-METHOD.md section 7.ii. H2G's version was a single noise tick *first* and then the waveform,
     with no sweep at all.
 
-    Emitted here: attack, the gate-off waveform, one or two steps of the
-    sweep, stop. The step size is literal (see _drum_speed, which divides the
-    player's per-frame step by the -S multiplier); the depth is bounded by what
-    the wavetable can hold and by what cannot wrap.
+    Emitted here: attack, the gate-off waveform, the sweep, stop. The step size
+    is literal (see _drum_speed, which divides the player's per-frame step by
+    the -S multiplier); the depth is bounded by three things, and the block
+    itself supplies two of them -- what cannot wrap (`_drum_max_steps`, its
+    `LDA freqhi,X / BEQ out`), how long the note lasts
+    (`_drum_duration_steps`, its `LDA remaining,X / BEQ out`), and what the
+    wavetable can hold.
 
     **Why two and not `W - 1`.** A wavetable command entry executes exactly
     once and then `ptr[WTBL]` advances unconditionally (gplay.c:715-724): the
@@ -2118,7 +2128,7 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     wavetables against a 255-entry budget: see H2G-CONVERSION-METHOD.md section
     7.oo.
 
-    The second step is written only where `_drum_steps_safe` can prove it
+    A step past the first is written only where `_drum_steps_safe` can prove it
     cannot wrap for any note the instrument is played at -- 184 of the corpus's
     192 drum instruments, across 40 files. The eight it declines are Last_V8's,
     whose unattributable rows reach Goattracker's lowest note. The `wave`
@@ -2217,6 +2227,15 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
         # 255-row limit. A drum with no room loses its sweep, not its shape.
         steps = min(want, room) if want else min(
             room, 2 if _drum_steps_safe(2, min_note, multiplier) else 1)
+        # ... and no deeper than a note of this record's own typical length
+        # gives the player frames to sweep in. The pitch bound above says how
+        # far a chain *may* fall; this says how far the original's own block
+        # gets to before the note ends. Only ever a reduction, so a record
+        # whose notes are long enough -- or one with no measured note at
+        # all -- is written exactly as it was.
+        held = _drum_duration_steps(note_rows, row_calls, multiplier)
+        if held is not None:
+            steps = min(steps, held)
         left = prefix + [WAVECMD_PORTADOWN] * steps + [0xFF]
         right = pre_r + [index] * steps + [0x00]
         while len(left) < WAVE_ENTRIES_PER_INSTR:
@@ -2231,7 +2250,57 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
 # chain longer than that is not fidelity -- it is table space spent on frames
 # the note has already finished. Before this cap the safe bound alone produced
 # a 136-step chain and drove three files to the 255-row table ceiling.
+#
+# It is a corpus-wide stand-in for the per-record number `_drum_duration_steps`
+# now derives, and the two are both applied: whichever is smaller wins.
 DRUM_MAX_SWEEP_STEPS = 8
+
+
+def _drum_duration_steps(note_rows: Optional[int], row_calls: int,
+                         multiplier: int = 1) -> Optional[int]:
+    """Sweep steps a note of `note_rows` rows leaves the player room for.
+
+    Read off the block in `_drum_entries`, in the units its two guards count
+    in. `R` is the note's remaining length and it decrements once per duration
+    *unit*, not per frame (`_noise_tick_frames`), so with `W = R`'s reload
+    value the block spends:
+
+    * `R == W`, one whole unit, on the `BCC` noise branch -- which writes the
+      frequency without decrementing it, and is why the sweep begins at the
+      unit boundary rather than at the note's first frame;
+    * `R` from `W - 1` down to `1`, `W - 1` units, sweeping once per frame;
+    * `R == 0`, the last unit, back out through `LDA remaining,X / BEQ out`
+      with the frequency frozen where the sweep left it.
+
+    A converted row is one unit and an event lasts `wait + 1` of them
+    (`_build_raw_pattern`), so `note_rows` rows is `W + 1` and the sweep
+    runs `(note_rows - 2) * frames_per_row` frames. The first of those
+    frames writes the frequency it was already at -- `LDA freqhi / DEC / STA`
+    stores the value it loaded -- so one fewer than that many *decrements*
+    reach the chip, and a `CMD_PORTADOWN` entry is exactly one decrement.
+
+    `row_calls` is the row in play calls (`tempo_command_value`), i.e.
+    `frames_per_row * multiplier`, and the step size is already `1/multiplier`
+    of a frame's (`_drum_speed`) -- so the whole thing is counted in calls and
+    the single frame comes off as `multiplier` calls. Done that way rather
+    than by recovering `frames_per_row` first because a row is not always a
+    whole number of frames: W_A_R packs 9 calls at `-S4`, and flooring 9/4 to
+    2 would lose an eighth of every sweep. What is kept right is the *travel*,
+    not the count.
+
+    Checked against the original: Commando's gate is 3 frames a unit and its
+    instrument 13 is played at four rows, giving `(4 - 2) * 3 - 1 = 5` -- and
+    a 240 s siddump of subtune 0 has 106 sweeps of exactly 5 steps
+    (`0DD0 -> 08D0`). The other 12 are `0DD0 -> 01D0`, longer notes stopped by
+    the player's *other* guard, `LDA freqhi,X / BEQ out`, which is the bound
+    `_drum_max_steps` already expresses.
+
+    Returns None where nothing is known, so an unmeasured record keeps
+    whatever the pitch bound alone gave it.
+    """
+    if note_rows is None or row_calls <= 0:
+        return None
+    return max(0, (note_rows - 2) * row_calls - max(1, multiplier))
 
 
 
@@ -2282,14 +2351,21 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:
     """Deepest sweep this record can take without wrapping, in wavetable steps.
 
-    The safety bound and the musical target turn out to be the same number.
-    The player sweeps until its own guard freezes the frequency at zero
-    (section 7.ii), so "as deep as it can go" is what faithfulness asks for;
-    and the deepest a Goattracker `CMD_PORTADOWN` chain can go without
-    underflowing is exactly the distance from the *lowest note the record is
-    played at* down to zero. Falling that far from any higher note lands short
-    of silence but still travels most of the way -- which is the shape a tom
-    has anyway.
+    This is the block's *first* exit -- `LDA freqhi,X / BEQ out`, the frequency
+    reaching zero (section 7.ii) -- and the deepest a Goattracker
+    `CMD_PORTADOWN` chain can go without underflowing is exactly the distance
+    from the *lowest note the record is played at* down to zero. Falling that
+    far from any higher note lands short of silence but still travels most of
+    the way, which is the shape a tom has anyway.
+
+    **It is not on its own the musical target**, though this said for three
+    versions that "the safety bound and the musical target turn out to be the
+    same number". They coincide only where the note lasts long enough for the
+    frequency to reach zero before the block's *other* exit -- `LDA
+    remaining,X / BEQ out`, the note ending -- fires. Commando's instrument 13
+    has room for thirteen steps here and its original takes five, because its
+    note is four rows long. `_drum_duration_steps` is that second guard, and
+    both are applied.
 
     Returns 0 where no bound is known, so an unknown record keeps the shallow
     two-step form rather than guessing deep.
@@ -2371,7 +2447,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       multiplier: int, min_notes: Optional[dict],
                       lead: int, two_stage: bool = False,
                       sfx_drum: bool = False,
-                      wave_program: bool = False, pitch_seq: bool = False) -> tuple:
+                      wave_program: bool = False, pitch_seq: bool = False,
+                      note_rows: Optional[dict] = None,
+                      row_calls: int = 0) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -2409,7 +2487,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          two_stage=two_stage,
                                          sfx_drum=sfx_drum,
                                          wave_program=wave_program,
-                                         pitch_seq=pitch_seq)
+                                         pitch_seq=pitch_seq,
+                                         note_rows=note_rows,
+                                         row_calls=row_calls)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -2796,7 +2876,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               wave_program: bool = False,
               vibrato_command: bool = False,
               cut_release: bool = False,
-              pitch_seq: bool = False) -> bytes:
+              pitch_seq: bool = False,
+              note_rows: Optional[dict] = None,
+              row_calls: int = 0) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -2845,7 +2927,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   fmt, table, multiplier,
                                                   min_notes, lead, two_stage,
                                                   sfx_drum, wave_program,
-                                                  pitch_seq)
+                                                  pitch_seq,
+                                                  note_rows, row_calls)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

@@ -1565,6 +1565,193 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
     return written
 
 
+def _entry_instruments(tracks: List[List[int]],
+                       patterns: List[List[int]]) -> dict:
+    """`{pattern: set of instruments it can be entered on}`, `None` for unknown.
+
+    Which instruments a pattern can be entered on, found by walking each
+    voice's orderlist the way the player does -- carrying the instrument
+    across pattern boundaries, because the column is sticky between patterns
+    and not only within one. Iterated to a fixpoint because a pattern reached
+    again after a loop or a repeat can be entered in a state the first lap
+    never produced; without that this would be an under-estimate, and an
+    under-estimate here is a bound that is too *high*.
+
+    Shared by `min_played_notes` and `median_played_durations`, which need the
+    same attribution over the same rows and differ only in what they measure.
+    """
+    entry: dict = {}
+    # A track's orderlist loops, so the state it *starts* a lap in is whatever
+    # the previous lap left -- not "no instrument". Seeding only with None
+    # would miss states the second lap onward can produce, and a missed state
+    # is a bound that comes out too HIGH, which is the unsafe direction here.
+    track_starts = [{None} for _ in tracks]
+    changed = True
+    while changed:
+        changed = False
+        for t, track in enumerate(tracks):
+          for begin in list(track_starts[t]):
+            current, operand = begin, False
+            for b in track:
+                if operand:
+                    operand = False
+                    continue
+                if b == GT_ORDER_RESTART:
+                    operand = True
+                    continue
+                if GT_REPEAT <= b < GT_ORDER_RESTART:
+                    continue             # transpose or repeat, no operand
+                if b >= len(patterns):
+                    continue
+                seen = entry.setdefault(b, set())
+                if current not in seen:
+                    seen.add(current)
+                    changed = True
+                pattern = patterns[b]
+                for row in range(len(pattern) // 4):
+                    instr = pattern[4 * row + 1]
+                    if instr:
+                        current = instr
+            if current not in track_starts[t]:
+                track_starts[t].add(current)   # the next lap begins here
+                changed = True
+    return entry
+
+
+def _pattern_plays(tracks: List[List[int]],
+                   patterns: List[List[int]]) -> dict:
+    """How many times each pattern is played per lap of the orderlists.
+
+    The same walk `pattern_references` makes, with the one thing it leaves
+    out: a `$D0`-`$DF` REPEAT applies to the entry that *follows* it
+    (gplay.c's `cptr->repeat`), so the pattern after one is played that many
+    times and a bare count of references understates it.
+    """
+    out: dict = {}
+    for track in tracks:
+        operand, repeat = False, 1
+        for b in track:
+            if operand:
+                operand = False
+            elif b == GT_ORDER_RESTART:
+                operand = True
+            elif GT_TRANSPOSE_DOWN <= b < GT_ORDER_RESTART:
+                pass
+            elif GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+                repeat = b - GT_REPEAT + 1
+            elif b < len(patterns):
+                out[b] = out.get(b, 0) + repeat
+                repeat = 1
+    return out
+
+
+def median_played_durations(tracks: List[List[int]],
+                            patterns: List[List[int]]) -> dict:
+    """The rows each instrument's *typical* note lasts, before the next fetch.
+
+    The companion to `min_played_notes`, and the other half of the drum
+    sweep's depth: the player's block sweeps for as long as the *note* lasts
+    (goatwriter._drum_entries), so a bound taken from pitch alone describes
+    only how far a sweep may fall before wrapping, never how far this
+    instrument's own notes give it time to. Commando's instrument 13 is the
+    case -- its pitch allows thirteen steps and the sweep was capped at eight,
+    where a siddump of the original takes five, because the note is four rows
+    long and that is all the frames the player gets.
+
+    One converted row is one of the player's duration units
+    (`goatwriter.tempo_command_value`), so the gap in rows from an event to
+    the next one *is* the note's length in the units the drum block counts
+    down. This measures rows; the caller turns rows into steps.
+
+    A row counts as an event -- a fetch, which reloads the counter the drum
+    reads -- when it carries a note or an instrument. Hold rows carry
+    neither: `_build_raw_pattern` emits `wait` of them after every event and
+    fills only the command columns, so nothing else can be confused for one.
+
+    **The median, and not the minimum.** A wavetable holds one sweep for all
+    of an instrument's notes, so whatever single number goes in is wrong for
+    every note of a different length, and the reduction that minimises the
+    total error of a single value against a distribution is its median -- not
+    its smallest member. The distinction is not academic: Bump_Set_Spike's
+    record 0 is played at 2, 4 and 6 rows in almost equal measure, its
+    original sweeps 5 steps 221 times in 240 s, and the minimum would emit
+    **0** and delete the sweep. Scored over the corpus as play-weighted L1
+    error against each note's own true depth, the median is best-or-tied on
+    all 122 measurable drum records where the minimum is on 97, and it takes
+    the total from 331064 steps (the pitch bound alone) to 98669.
+
+    Weighted by how often the orderlists actually play each pattern, because
+    the median is a statement about what is *heard*: a duration that occurs
+    in one pattern played sixteen times outweighs one in a pattern played
+    once. Each row contributes once per play even where several orderlist
+    paths reach the pattern in different instrument states -- the state
+    changes who the row is attributed to, not how often it sounds.
+
+    On an even split this returns the *lower* of the two middle values, which
+    is the shallower sweep. Both are L1-optimal, so the tie is broken on the
+    same ground as `_drum_steps_safe`'s: only the deep side can wrap.
+
+    **An occurrence whose hold rows run to the end of its pattern is
+    dropped.** What that measures is not the note's length but the distance to
+    a pattern boundary, and the note continues into whichever pattern the
+    orderlist plays next -- so the count is a lower bound on the real duration
+    rather than the duration. Counting them would read Commando's instrument
+    13 as two rows (a two-row pattern whose only row is such a note). An
+    instrument with no untruncated occurrence at all is simply absent from the
+    result, which callers must read as "unknown" rather than as "short".
+
+    Returns `{goattracker instrument number: rows}`.
+    """
+    entry = _entry_instruments(tracks, patterns)
+    weight = _pattern_plays(tracks, patterns)
+
+    hist: dict = {}
+    for index, pattern in enumerate(patterns):
+        if index not in entry:
+            continue                     # no orderlist reaches this pattern
+        plays = weight.get(index) or 1
+        rows = len(pattern) // 4
+        # A non-final slice carries no ENDPATT row (_slice_pattern), so its
+        # end is simply its row count.
+        end = rows
+        for row in range(rows):
+            if pattern[4 * row] == GT_END_PATTERN:
+                end = row
+                break
+        events = [row for row in range(end)
+                  if pattern[4 * row] != GT_NO_NOTE or pattern[4 * row + 1]]
+        # Who each event row belongs to, over every state the pattern can be
+        # entered in. A row reachable on two instruments counts for both --
+        # once each, not once per orderlist path.
+        owners: dict = {}
+        for opener in (entry.get(index) or {None}):
+            current = opener
+            for row in events:
+                instr = pattern[4 * row + 1]
+                if instr:
+                    current = instr
+                if current is not None:
+                    owners.setdefault(row, set()).add(current)
+        for k, row in enumerate(events):
+            if k + 1 >= len(events):
+                break                    # runs to the pattern end: unknown
+            gap = events[k + 1] - row
+            for instr in owners.get(row, ()):
+                counts = hist.setdefault(instr, {})
+                counts[gap] = counts.get(gap, 0) + plays
+
+    out: dict = {}
+    for instr, counts in hist.items():
+        total = sum(counts.values())
+        seen = 0
+        for gap in sorted(counts):
+            seen += counts[gap]
+            if seen * 2 >= total:
+                out[instr] = gap
+                break
+    return out
+
+
 def min_played_notes(tracks: List[List[int]],
                      patterns: List[List[int]]) -> dict:
     """Lowest note index each instrument is ever actually played at.
@@ -1606,48 +1793,7 @@ def min_played_notes(tracks: List[List[int]],
             else:
                 lowest_trans[b] = min(trans, lowest_trans.get(b, trans))
 
-    # Which instruments a pattern can be entered on, found by walking each
-    # voice's orderlist the way the player does -- carrying the instrument
-    # across pattern boundaries, because the column is sticky between patterns
-    # and not only within one. Iterated to a fixpoint because a pattern reached
-    # again after a loop or a repeat can be entered in a state the first lap
-    # never produced; without that this would be an under-estimate, and an
-    # under-estimate here is a bound that is too *high*.
-    entry: dict = {}
-    # A track's orderlist loops, so the state it *starts* a lap in is whatever
-    # the previous lap left -- not "no instrument". Seeding only with None
-    # would miss states the second lap onward can produce, and a missed state
-    # is a bound that comes out too HIGH, which is the unsafe direction here.
-    track_starts = [{None} for _ in tracks]
-    changed = True
-    while changed:
-        changed = False
-        for t, track in enumerate(tracks):
-          for begin in list(track_starts[t]):
-            current, operand = begin, False
-            for b in track:
-                if operand:
-                    operand = False
-                    continue
-                if b == GT_ORDER_RESTART:
-                    operand = True
-                    continue
-                if GT_REPEAT <= b < GT_ORDER_RESTART:
-                    continue             # transpose or repeat, no operand
-                if b >= len(patterns):
-                    continue
-                seen = entry.setdefault(b, set())
-                if current not in seen:
-                    seen.add(current)
-                    changed = True
-                pattern = patterns[b]
-                for row in range(len(pattern) // 4):
-                    instr = pattern[4 * row + 1]
-                    if instr:
-                        current = instr
-            if current not in track_starts[t]:
-                track_starts[t].add(current)   # the next lap begins here
-                changed = True
+    entry = _entry_instruments(tracks, patterns)
 
     out: dict = {}
     unattributed = None
