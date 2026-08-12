@@ -336,5 +336,16 @@ def test_the_listening_confirmation_is_recorded_with_its_reason():
     # v0.5.208: the sfx_drum veto is retired -- the listener reported no audible
     # difference once the snare existed and the burst had its two pitches, and
     # the oscillation scorer selects the setting on its own.
-    assert not presets.FIDELITY_VETOED, presets.FIDELITY_VETOED
-    assert "sfx_drum" in confirmed
+    #
+    # v0.5.209: the corpus --fidelity run confirms sfx_drum and pitch_seq are
+    # now selected independently, so both are trimmed from here -- only
+    # wave_program still needs the hand-recorded measurement.
+    assert "sfx_drum" not in confirmed
+    assert "pitch_seq" not in confirmed
+    assert confirmed == {"wave_program"}
+    # FIDELITY_VETOED is no longer required to be empty: the same run found
+    # Dragons_Lair_Part_II's subtune-correspondence bug (its init routine
+    # remaps subtune 0 to our subtune 9) had invalidated its pitch_seq
+    # measurement, an unrelated veto reason from the retired listening one.
+    assert presets.FIDELITY_VETOED == {
+        "Dragons_Lair_Part_II.sid": {"pitch_seq"}}

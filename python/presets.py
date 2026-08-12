@@ -133,13 +133,26 @@ EXCLUDED_FROM_ALWAYS = {
 }
 
 
-# Settings a *listening test* rejected, whatever the search measured. The
-# search scores registers; this is where someone heard the result and it was
-# wrong. Keyed per file because that is how they are found, and kept here
-# rather than hand-edited into presets.json, which is generated and would lose
-# the edit on the next run -- along with the reason.
+# Settings a *listening test* rejected, whatever the search measured, or a
+# setting the search picked from a measurement now known to be invalid (wrong
+# subtune traced, wrong window, etc). Keyed per file because that is how they
+# are found, and kept here rather than hand-edited into presets.json, which is
+# generated and would lose the edit -- along with the reason -- on every
+# regeneration, including a plain carry-forward run.
 FIDELITY_VETOED: dict[str, set[str]] = {
-    # Empty, and the entry that was here is worth keeping as a record.
+    "Dragons_Lair_Part_II.sid": {"pitch_seq"},
+    # The v0.5.208+ --fidelity run traced this file's subtune 0 (its PSID
+    # startSong) and scored a default-config melody of 9%, low enough for
+    # pitch_seq's 14% to read as an improvement. `fidelity.py --diagnose`
+    # shows why: the file's own init routine remaps subtunes, and subtune 0
+    # of the original corresponds to *our* subtune 9 (89% match there), not
+    # our subtune 0 -- the same class of bug CLAUDE.md already documents for
+    # this file. The search compared two different pieces of music the whole
+    # way through, so neither the veto here nor a future re-run of the search
+    # (which will reproduce the same wrong pairing) can be trusted for this
+    # file until `resolve_subtune`/`tune_by_fidelity` account for the remap.
+
+    # Empty otherwise, and the entry that was here is worth keeping as a record.
     # Trans-Atlantic's --sfx-drum was vetoed in v0.5.1xx as "a beep and not a
     # drum", on a build with no snare at all and a drum that sounded one pitch
     # for every frame of its burst. Both are fixed: v0.5.203 emits the byte-code
@@ -174,13 +187,14 @@ FIDELITY_CONFIRMED: dict[str, set[str]] = {
     # `fidelity.noise_runs`, which would re-decide every file's toggles and so
     # wants its own commit and its own corpus run.
     #
-    # `pitch_seq` joins it on the same footing. Effect bit $10's arpeggio takes
-    # this file's `vib` from 0.17x to 0.61x with melody unchanged, and it is now
-    # selected by `fidelity_better`'s oscillation term -- but only a --fidelity
-    # run applies that, and one over 80 files at 31 combinations each is hours.
-    # Recorded here so the file gets today's measurement without waiting for it.
-    "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program", "pitch_seq",
-                                             "sfx_drum"},
+    # `pitch_seq` joined it on the same footing for the same reason: the
+    # --fidelity run that would apply the new oscillation term had not
+    # happened yet. It has now (the corpus run behind v0.5.209) -- the search
+    # selects `pitch_seq` and `sfx_drum` for this file on its own, so both are
+    # dropped from here. `wave_program` stays: the search still does not pick
+    # it up on its own (see the `finds_noise`/per-instrument gap above, which
+    # applies to it too), so it remains a hand-recorded measurement.
+    "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program"},
 }
 
 
@@ -574,7 +588,7 @@ def main(argv=None) -> int:
                 found.update(carried[path.name])
             for key in FIDELITY_VETOED.get(path.name, ()):
                 if found.pop(key, None):
-                    print(f"    {path.name}: {key} vetoed by a listening test",
+                    print(f"    {path.name}: {key} vetoed (see FIDELITY_VETOED)",
                           file=sys.stderr)
             for key in FIDELITY_CONFIRMED.get(path.name, ()):
                 if found is not None and not found.get(key):

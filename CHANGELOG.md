@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.209 — 2026-08-11
+
+- apply the full --fidelity corpus search; veto Dragons_Lair_Part_II's pitch_seq (subtune-correspondence bug); trim Trans-Atlantic's FIDELITY_CONFIRMED now the search finds sfx_drum/pitch_seq on its own
+
 ## 0.5.208 — 2026-08-11
 
 - give the fidelity search oscillation and noise-pitch criteria

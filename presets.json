@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.208 presets.py",
+  "generator": "h2g 0.5.209 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -94,7 +94,9 @@
       "bytes": 14476,
       "subtunes": 1,
       "rows": 19334,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true,
+      "pitch_seq": true
     },
     "Battle_of_Britain.sid": {
       "max_rows": 128,
@@ -254,7 +256,8 @@
       "bytes": 46352,
       "subtunes": 9,
       "rows": 31074,
-      "multiplier": 4
+      "multiplier": 4,
+      "pitch_seq": true
     },
     "Food_Feud.sid": {
       "max_rows": 128,
@@ -304,7 +307,8 @@
       "bytes": 13585,
       "subtunes": 3,
       "rows": 7778,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "Human_Race.sid": {
       "max_rows": 128,
@@ -334,7 +338,9 @@
       "bytes": 12989,
       "subtunes": 1,
       "rows": 15077,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true,
+      "pitch_seq": true
     },
     "IK_plus.sid": {
       "max_rows": 94,
@@ -394,7 +400,8 @@
       "bytes": 42402,
       "subtunes": 3,
       "rows": 66780,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -414,8 +421,7 @@
       "bytes": 17266,
       "subtunes": 9,
       "rows": 28384,
-      "multiplier": 2,
-      "no_test_restart": true
+      "multiplier": 2
     },
     "Last_V8_C128_version.sid": {
       "max_rows": 128,
@@ -425,8 +431,7 @@
       "bytes": 17289,
       "subtunes": 9,
       "rows": 31294,
-      "multiplier": 2,
-      "no_test_restart": true
+      "multiplier": 2
     },
     "Lightforce.sid": {
       "max_rows": 94,
@@ -456,7 +461,8 @@
       "bytes": 27541,
       "subtunes": 8,
       "rows": 77476,
-      "multiplier": 1
+      "multiplier": 1,
+      "sfx_drum": true
     },
     "Monty_on_the_Run.sid": {
       "max_rows": 94,
@@ -506,7 +512,9 @@
       "bytes": 10528,
       "subtunes": 1,
       "rows": 11455,
-      "multiplier": 1
+      "multiplier": 1,
+      "sfx_drum": true,
+      "pitch_seq": true
     },
     "Ninja.sid": {
       "max_rows": 128,
@@ -546,7 +554,8 @@
       "bytes": 11631,
       "subtunes": 1,
       "rows": 5584,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "Pandora.sid": {
       "max_rows": 128,
@@ -557,7 +566,8 @@
       "subtunes": 1,
       "rows": 5695,
       "multiplier": 1,
-      "sfx_drum": true
+      "sfx_drum": true,
+      "pitch_seq": true
     },
     "Phantoms_of_the_Asteroid.sid": {
       "max_rows": 94,
@@ -647,7 +657,8 @@
       "bytes": 13053,
       "subtunes": 1,
       "rows": 14821,
-      "multiplier": 3
+      "multiplier": 3,
+      "two_stage": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -667,7 +678,8 @@
       "bytes": 17015,
       "subtunes": 1,
       "rows": 17654,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Shockway_Rider.sid": {
       "max_rows": 128,
@@ -677,7 +689,8 @@
       "bytes": 17355,
       "subtunes": 1,
       "rows": 19978,
-      "multiplier": 2
+      "multiplier": 2,
+      "pitch_seq": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 128,
@@ -707,7 +720,8 @@
       "bytes": 13476,
       "subtunes": 3,
       "rows": 12550,
-      "multiplier": 2
+      "multiplier": 2,
+      "pitch_seq": true
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -717,7 +731,8 @@
       "bytes": 12343,
       "subtunes": 11,
       "rows": 9422,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Thanatos.sid": {
       "max_rows": 128,
@@ -727,7 +742,8 @@
       "bytes": 6792,
       "subtunes": 1,
       "rows": 2321,
-      "multiplier": 4
+      "multiplier": 4,
+      "two_stage": true
     },
     "Thing_on_a_Spring.sid": {
       "max_rows": 128,
@@ -758,6 +774,7 @@
       "subtunes": 9,
       "rows": 47471,
       "multiplier": 3,
+      "two_stage": true,
       "sfx_drum": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
