@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.214 — 2026-08-12
+
+- regenerate FIDELITY.md after the filter-detection, noise-tick-crash, drum-sweep and pitch-seq-composition fixes
+
 ## 0.5.213 — 2026-08-12
 
 - compose effect bits $04 and $10 for a record that sets both
