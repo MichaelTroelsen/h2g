@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.219 — 2026-08-12
+
+- commit the prior session's handoff document
+
 ## 0.5.218 — 2026-08-12
 
 - put the record's own waveform on the note's first frame in all three emitters
