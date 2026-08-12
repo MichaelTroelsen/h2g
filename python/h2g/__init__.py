@@ -1,3 +1,3 @@
 """H2G: Rob Hubbard .SID -> Goattracker .sng converter (Python port of h2g.frm)."""
 
-__version__ = "0.5.232"
+__version__ = "0.5.233"

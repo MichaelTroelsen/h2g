@@ -596,8 +596,17 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
             left.append(w)
             right.append(WAVE_NOTE_BASE)
         elif rest > 1:
+            # $00 on the delay too, so one block keeps one convention. This
+            # one is a *consistency* change and nothing more: reading
+            # `player.s:955-962` suggested the jump path leaves carry set and
+            # that $80 would therefore reach `adc chnnote,x` as
+            # (128 + n + 1) & 127 == n + 1, a semitone up -- and tracing
+            # W_A_R both ways refutes it, 0 of 1500 frames differing in
+            # frequency on all three voices. $80 and $00 are equivalent on a
+            # delay entry; they are *not* on a waveform entry, where $80 is a
+            # write that re-asserts the base note (see `half`'s first line).
             left.append(min(rest - 1, WAVE_MAX_DELAY))
-            right.append(WAVE_NOTE_KEEP)
+            right.append(WAVE_NOTE_BASE)
         return left, right
 
     # **Which of the pair the note's second frame gets is read off the

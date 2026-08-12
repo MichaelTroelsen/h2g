@@ -174,7 +174,12 @@ test dependency).
   and `adc chnnote / and #$7f` -- `(128+n) & 127 == n`, a no-op transposition
   that still writes -- in the packed one. So the byte that leaves a bend alone
   is `$00`, not `$80`. Choosing `$80` from `gplay.c` took Hollywood or Bust's
-  melody to 25% against 47%, by re-asserting the base note every frame.
+  melody to 25% against 47%, by re-asserting the base note every frame -- on a
+  *waveform* entry. On a **delay** entry the two are equivalent: `player.s`
+  reads as though the jump path leaves carry set (a semitone up), and tracing
+  W_A_R both ways gives 0 of 1500 frames differing on all three voices. Two
+  readings of the same file, one right and one wrong, and only the trace
+  separated them.
 - **A fixture is not the corpus.** `_noise_tick_frames` took the modal speed
   gate over a file's subtunes; the corpus rip of Commando carries 19 (four
   songs and fourteen one-frame sound effects, which outvote the music) where

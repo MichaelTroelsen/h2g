@@ -7349,8 +7349,19 @@ it re-asserted the base note on every frame and cancelled the file's own pitch
 movement. That is the third place (§ 7.ffff, § 7.gggg) where the two players
 differ and the editor is the more readable and the more misleading.
 
-It also acquits the `$80` this repo already writes on delay entries: a no-op
-transposition is harmless, which is why nothing ever measured it.
+It also acquits the `$80` this repo already writes on delay entries, and here
+the reading nearly went wrong a second time. `player.s:955-962` looks as though
+the jump path leaves carry **set** -- the `clc` is assembled only for a song
+with no wave commands -- which would make `$80` on the entry directly before a
+jump `(128 + n + 1) & 127 == n + 1`, a semitone up. A corpus scan found 46 such
+entries across 10 files, 44 of them emitted by § 7.hhhh's own block at `-S3`
+and above. Tracing W_A_R both ways refutes it: **0 of 1500 frames differ in
+frequency on any of its three voices**. `$80` and `$00` are equivalent on a
+delay entry; they are not on a waveform entry, which is what cost Hollywood or
+Bust its 22 points. The alternation now writes `$00` throughout for one
+convention per block, and that change is byte-visible on 8 files and
+measurably inert -- said here because a flat A/B is otherwise indistinguishable
+from a change that reached nothing (§ 7.uuu).
 
 > **The transferable lesson:** decoding a mechanism and shipping it are
 > different decisions, and the second one is the corpus's to make. A block read
