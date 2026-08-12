@@ -432,8 +432,27 @@ def fidelity_better(cand: tuple, ref: tuple,
                                 cand[3][2] / cand[3][3],
                                 ref[3][2] and ref[3][3] and
                                 ref[3][2] / ref[3][3], 1.0, margin)
+    # **Opens its notes on the waveforms the original opens them on.** The
+    # docstring above records that this function is deliberately not scored on
+    # `wave`, because restoring a 1-4 frame transient moves `wave` the wrong
+    # way even when the transient is right. That reasoning is sound and it left
+    # `--two-stage` unselectable: the attack it restores strikes no new note,
+    # sounds no new register and leaves `melody` untouched, so not one term
+    # above could see it. 45 corpus files sound an attack transient at 109
+    # instruments -- some 13,700 notes -- that the conversion holds flat, and
+    # 42 of them have the option off.
+    #
+    # Graded per frame rather than per instrument (`onset_frame_agreement`, not
+    # `onset_agreement`): Sigma Seven's $0FFD goes from no transient at all to
+    # one a frame too long, which whole-shape equality scores as no change.
+    # Guarded by `keeps_notes` like every other term.
+    def opens(state):
+        return state[5] if len(state) > 5 else None
+    a, b = opens(cand), opens(ref)
+    opens_right = a is not None and b is not None and a > b + margin
     return keeps_notes and bool(plays_more or finds_noise
-                                or moves_oscillation or moves_noise_pitch)
+                                or moves_oscillation or moves_noise_pitch
+                                or opens_right)
 
 
 def _closer(cand: float | None, ref: float | None, target: float,
@@ -494,7 +513,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 sum(len(v.attacks) for v in dump),
                 (wv["our_noise_frames"], wv["orig_noise_frames"],
                  _noise_pitch(dump, nf), _noise_pitch(orig, nf)),
-                pm.get("reversal_ratio"))
+                pm.get("reversal_ratio"),
+                F.onset_agreement(orig, dump, nf)["onset_frame_agreement"])
 
     ref = play({})
     if ref is None:

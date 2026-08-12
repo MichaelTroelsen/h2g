@@ -1230,10 +1230,20 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
     late = sum(1 for k in shared
                if modal[k][0] != modal[k][1]
                and modal[k][1][1:] == modal[k][0][:ONSET_FRAMES - 1])
+    # **Graded, and the ungraded form is not a substitute.** `onset_agreement`
+    # demands the whole four-frame shape, which is the right thing for the
+    # report -- it says "this instrument opens correctly" and nothing weaker.
+    # It is the wrong thing for a *scorer*: Sigma Seven's $0FFD goes from no
+    # attack transient at all to one a frame too long, a large real gain that
+    # exact matching scores as zero, and `onset_first_matched` cannot see it
+    # either because frame 0 already agreed both times. This counts frames.
+    graded = sum(sum(1 for x, y in zip(*modal[k]) if x == y) / ONSET_FRAMES
+                 for k in shared)
     return {
         "onset_instruments": len(shared),
         "onset_matched": matched,
         "onset_agreement": (matched / len(shared)) if shared else None,
+        "onset_frame_agreement": (graded / len(shared)) if shared else None,
         "onset_first_matched": first,
         "onset_ours_early": early,
         "onset_ours_late": late,
