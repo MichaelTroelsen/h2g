@@ -481,6 +481,47 @@ def _first_frame_lead(wave: int, multiplier: int = 1,
     return left, right
 
 
+def _two_stage_frames(frames: int, effect: int) -> int:
+    """How many frames bit $04's attack actually lasts, from its table byte.
+
+    **A record that also sets bit `$40` sounds half of them**, and the byte on
+    its own does not say so -- which is why H2G-CONVERSION-METHOD.md carried
+    "the relationship between that byte and the shared `$0FAA,X` counter is not
+    established" as an open question. It is a halving, measured across the
+    corpus rather than reasoned:
+
+        frames byte 2, effect $44   ->  1 frame   Sigma Seven $0FFD (124 onsets)
+                                                  Ricochet $0CE8 (77)
+                                                  Skate or Die $08D9 (300), $0AD8 (26)
+        frames byte 4, effect $44   ->  2 frames  Trans-Atlantic $0A99 (150)
+                                                  Sanxion $1909 (81), Pandora $0D99 (31)
+                                                  Auf Wiedersehen Monty $0AF9 (10)
+                                                  Knucklebusters $0AAD (4)
+        frames byte 2, effect $04   ->  2 frames  Sigma Seven $2B9D (61)
+
+    527 onsets on the first line alone and not one counter-example there; the
+    `frames = 4` line is what rules out "always one frame", which the first line
+    alone cannot distinguish from a halving.
+
+    The mechanism this implies -- and it is an implication, not a reading of the
+    6502 -- is that `$40`'s handler decrements the same per-voice attack counter
+    `$04`'s does, so with both live it counts down twice per frame. That would
+    make the halving exact rather than approximate, which is what the two
+    measured points show.
+
+    **One counter-example, recorded rather than smoothed over.** Lightforce's
+    `$1FF9` is `$44` with a frames byte of 4 and measures 0 attack frames over
+    15 onsets. Not explained. It is one record against nine.
+
+    A halved byte never reaches zero here: `_two_stage_entries` declines a
+    record whose frames are <= 0, and this returns at least 1 so such a record
+    keeps an attack rather than silently losing the block.
+    """
+    if effect & EFFECT_FIXED_PITCH_MASK:
+        return max(1, frames // 2)
+    return frames
+
+
 def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
@@ -1836,6 +1877,10 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
 
 
 EFFECT_PITCH_SEQ_MASK = 0x10    # the effect byte's bit-$10 arpeggio
+# Bit $40: a fixed attack pitch out of the player's own note table. It also
+# halves bit $04's attack -- see `_two_stage_frames`, which is where the
+# measurement behind that is recorded.
+EFFECT_FIXED_PITCH_MASK = 0x40
 WAVE_GATE_BIT = 0x01            # $D404 bit 0
 CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
@@ -2118,6 +2163,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         at = det.two_stage_wave + i * det.instr_stride
         fr = det.two_stage_frames + i * det.instr_stride
         if max(at, fr) < len(data):
+            frames = _two_stage_frames(data[fr], arp_style)
             # A record setting bit $10 as well gets **both**: in the player the
             # two are sequential tests on one effect byte, $04 choosing the
             # waveform and $10 the note, and neither can skip the other. Gated
@@ -2130,7 +2176,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 notes = _pitch_seq_notes(sid, det, i)
                 if notes is not None:
                     both = _two_stage_pitch_seq_entries(
-                        wave, data[at], data[fr], notes, start,
+                        wave, data[at], frames, notes, start,
                         multiplier, budget)
                     if both is not None:
                         return both
@@ -2141,7 +2187,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # frame 0 it puts the drum's pitch where the played note goes and
             # melody falls 85% -> 39% on the one file it reaches. See
             # H2G-CONVERSION-METHOD.md section 7.qqq.
-            two = _two_stage_entries(wave, data[at], data[fr], multiplier,
+            two = _two_stage_entries(wave, data[at], frames, multiplier,
                                      budget=budget)
             if two is not None:
                 return two

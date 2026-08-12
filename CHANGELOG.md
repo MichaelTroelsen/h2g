@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.222 — 2026-08-12
+
+- bit $40 halves bit $04's attack -- the frames byte is not the duration
+
 ## 0.5.221 — 2026-08-12
 
 - give the fidelity search an onset criterion, the only one that can select --two-stage
