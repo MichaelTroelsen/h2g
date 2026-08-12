@@ -2117,6 +2117,30 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             tick = True
         if not det.effect_arp or arp_note == 0:
             arp = False
+        if drum and arp:
+            # **A record setting both bits owes the noise tick as well.** The
+            # drum block does not branch around the arpeggio: International
+            # Karate $B15F is Warhawk $1366 byte for byte, and every one of its
+            # exits -- the bit test, both guard loads and the `STA $D404,Y` at
+            # the end -- lands on the `NOP` at $B19B, one byte before the
+            # arpeggio's own `LDA effect / AND #$04` at $B19C. The two run in
+            # sequence for such a record, the drum writing $D404 (noise while
+            # the duration counter is still large) and the arpeggio then
+            # overwriting the frequency it swept.
+            #
+            # Five slots cannot hold the drum's *sweep* beside the arpeggio's
+            # pair, which is why the shape below keeps the arpeggio -- but the
+            # tick is two entries and the variable-length wavetable has room
+            # for them. `drum` stays true so the tail keeps its gate-off bit;
+            # only the tick is added, by the same route a sustaining record
+            # already takes.
+            #
+            # Measured on the original rather than argued from the bit: IK's
+            # three both-bits records open `pul noi noi pul`, `saw noi noi saw`
+            # and `pul noi noi pul` where we held the base waveform for all
+            # four frames, and its missing noise frames (437 against 828) are
+            # exactly this tick.
+            tick = True
     if arp_note == 0:
         arp_note = 0x74
 
@@ -2222,7 +2246,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     off = 0
     if tick:
         noise = WAVE_NOISE_GATEOFF | (wave & 0x01)
-        extra = NOISE_TICK_FRAMES * max(1, multiplier) - 1
+        # **The tick's length is the player's speed gate less one, not the
+        # constant**, exactly as it is in `_drum_entries` -- the same rule
+        # about the same block, and this emitter had been reading it from a
+        # hardcoded 2 while the other derived it. The corpus says which: the
+        # five files whose noise runs regressed when the tick first reached a
+        # both-bits record (Warhawk, Formula_1_Simulator, Spellbound, Proteus,
+        # Last_V8) are exactly the five whose gate derives 1, and IK -- where
+        # the original measures two frames of noise -- derives 2.
+        extra = _noise_tick_frames(sid, det) * max(1, multiplier) - 1
         tl, tr = [noise], [0x00]
         if extra == 1:
             tl.append(noise)
@@ -2232,19 +2264,35 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # read on the last of them, so $80 keeps it from moving the note.
             tl.append(min(extra - 1, WAVE_MAX_DELAY))
             tr.append(0x80)
-        off = len(tl)
+        # **And the lead is a frame, not a call** -- `_first_frame_lead`, the
+        # third emitter to need it and the third to have been written without
+        # it. At `-S2` a single entry covers half of frame 0 and the noise
+        # finishes the frame, so siddump (which samples at end of frame) reads
+        # the tick where the player has the record's own waveform: Warhawk's
+        # five ticked instruments all measured `noi pul pul pul` against the
+        # original's `pul noi pul pul`, while its two drum-only ones -- which
+        # take `_drum_entries`, where the lead was fixed in v0.5.220 -- matched.
+        # `force=True` for the same reason that caller gives: this block has
+        # always emitted entry 0, so gating it on `_first_frame_entry` would be
+        # a second, unmeasured change.
+        # (named apart from this function's `lead` parameter, which is the
+        # instrument-number offset the wavetable pointers are built from)
+        frame0, frame0_r = _first_frame_lead(wave, multiplier, force=True)
+        off = len(tl) + len(frame0) - 1
         # Two `tail` entries, mirroring the untimed shape's entries 1-2: the
         # arpeggio loops over the second of them and the entry after it, so
         # collapsing them to one puts the stop where the arpeggio's own
         # entries belong and the loop is never reached.
-        left = [wave] + tl + [tail, tail, 0xFF, 0xFF]
-        right = [0x00] + tr + [0x00, 0x00, 0x00, 0x00]
+        left = frame0 + tl + [tail, tail, 0xFF, 0xFF]
+        right = frame0_r + tr + [0x00, 0x00, 0x00, 0x00]
 
     # A record that sets both bits gets both blocks in the player -- the drum
     # sets the waveform, the arpeggio then overwrites the frequency it swept
-    # ($13F4 runs after $139F). Five entries cannot hold both, so the arpeggio
-    # keeps the pair it needs and such a record stays on the original's shape.
-    # 62 of the 291 drum records this gate keeps are in that case.
+    # ($13F4 runs after $139F). Five entries cannot hold the drum's *sweep*
+    # beside the arpeggio's pair, so such a record keeps the arpeggio and takes
+    # the shape above: the record's waveform on frame 0, the noise tick, then
+    # the gate-off tail the arpeggio alternates over. 62 of the 291 drum
+    # records this gate keeps are in that case.
     if drum and effects and not arp:
         # min_played_notes is keyed by Goattracker instrument number, and this
         # function's `i` is the 0-based record index: instrument 1 is the
@@ -2268,12 +2316,15 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                              tick_frames=_noise_tick_frames(sid, det),
                              note_rows=typical, row_calls=row_calls)
 
-    if drum:
+    if drum and not tick:
         if effects:
             # The arpeggio keeps entries 2-4, so all the drum can say here is
-            # where it starts: the voice's own waveform, gate released. The
-            # leading noise tick the original wrote is not in the player at
-            # all, and on the corpus it scores at chance.
+            # where it starts: the voice's own waveform, gate released. With
+            # `effects` on a both-bits record no longer reaches this: it is
+            # ticked above, and the tick block has already written entries
+            # 1-2 and both tails. Only the `effects`-off shape -- which
+            # reproduces the VB6 original and knows nothing of either
+            # routine -- is left here.
             left[1] = (wave & 0xFE) or WAVE_NOISE_GATEOFF
         else:
             left[1] = 0x80 | arp_set_keybit
@@ -2635,10 +2686,31 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
     ("ctrlreg 0 is always noise") -- and one file where no gate is found at all,
     which keeps `NOISE_TICK_FRAMES`.
 
-    This is what the hardcoded 2 was standing in for. It is right for Commando,
-    whose gate is 3, which is why the fixture and the drum a listener validated
-    by ear are both unchanged; it was one frame too long for the twelve files
-    whose gate is 2. See H2G-CONVERSION-METHOD.md 7.ggg.
+    This is what the hardcoded 2 was standing in for. It was one frame too long
+    for the twelve files whose gate is 2. See H2G-CONVERSION-METHOD.md 7.ggg.
+
+    **Which subtune's gate, though.** This took the mode over every subtune,
+    on the reasoning that one odd subtune must not retime a table the whole
+    song shares. Commando is what that gets wrong: its gates are
+    `(3, 4, 3, 3, 1, None, 1, ...)` -- four songs and fourteen one-frame sound
+    effects, so the effects outvote the music and the mode is 1 where the
+    original measures a two-frame tick on all five of its pitched drum records
+    (371 runs of 2 against nothing else). The subtune to read is the one the
+    file itself starts on, `resolve_subtune`'s rule and for its reason: it is
+    the subtune a player selects when the user selects none, and therefore the
+    one that is the tune.
+
+    Settled by measuring the original rather than by argument. Tracing each of
+    the 35 corpus files whose player has the drum routine and taking the modal
+    noise-run length over the ADSR pairs of its drum-flagged *pitched* records:
+
+        startSong exact on 27, the mode on 24, of the 28 files whose run is
+        short (1-3 frames); startSong is right everywhere the mode is and on
+        Commando, Delta and Phantoms_of_the_Asteroid besides.
+
+    The seven files neither derivation fits measure 12-18 frames -- the
+    noise-throughout class §7.ggg already documents -- and Sanxion is the one
+    genuine miss: it measures 1 where both derivations say 2.
     """
     try:
         speeds = find_song_speeds(sid, det if det.can_convert else None)
@@ -2646,15 +2718,16 @@ def _noise_tick_frames(sid: SidFile, det: Detection) -> int:
         return NOISE_TICK_FRAMES
     raw = speeds.frames if (speeds and speeds.frames) else ()
     # A subtune whose reload exceeds MAX_SANE_SPEED_RELOAD reports None (see
-    # SongSpeeds.frames), and a file where that subtune is modal -- or every
-    # subtune's gate is unreadable -- must not let None reach Counter/`- 1`.
-    frames = tuple(f for f in raw if f is not None)
-    if not frames:
-        return NOISE_TICK_FRAMES
-    # One value for a table the whole file shares: the modal gate, so a single
-    # odd subtune cannot retime every drum in the song.
-    modal = Counter(frames).most_common(1)[0][0]
-    return max(1, modal - 1)
+    # SongSpeeds.frames), and a file where that subtune is unreadable -- or
+    # every subtune's is -- must not let None reach Counter/`- 1`.
+    idx = max(0, getattr(sid, "start_song", 1) - 1)
+    gate = raw[idx] if idx < len(raw) else None
+    if gate is None:
+        frames = tuple(f for f in raw if f is not None)
+        if not frames:
+            return NOISE_TICK_FRAMES
+        gate = Counter(frames).most_common(1)[0][0]
+    return max(1, gate - 1)
 
 
 def _drum_max_steps(min_note: Optional[int], multiplier: int = 1) -> int:

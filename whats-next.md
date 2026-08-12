@@ -1,935 +1,654 @@
 <original_task>
 Continuation of long-running work on **H2G**, a signature-based ripper that
 converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
-`C:\Users\mit\claude\h2g`. The session opened against the previous handoff
-(then at v0.5.136) and ran to **v0.5.208**.
+`C:\Users\mit\claude\h2g`. The session opened by reading the previous handoff
+(then at v0.5.208) and ran to **v0.5.225**.
 
-There was no single up-front task. The session was driven as a sequence of
-short imperative directives, each answered before the next was given, in a
-dominant working mode that became the project's method:
+There was no single up-front task. The session was driven as a sequence of short
+directives — "read what next", "do the next task", "go on" — each answered before
+the next was given. The working mode is the project's established one:
 
-> load a conversion in GoatTracker (or `vsid`), report by ear what sounds
-> wrong, then diagnose the cause in the 6502 player, fix it, measure it
-> against the corpus, and ship or refuse to ship on the measurement.
+> measure the conversion against the original, find where they differ, read the
+> 6502 to learn why, fix it, re-measure across the corpus, and ship or refuse to
+> ship on the measurement.
 
-The directives, in order, were roughly: push pending commits; extend
-`instrmap.py`; fix GT 1's pulse sweep; fix the `$09` firstwave; teach
-`presets.py` to search structure-invisible options per song; audition
-selections; read and emit the byte-code wave program; fix the `-O0` packing
-default; find the drum noise-run mechanism; build position-independent
-measures; fix the arpeggio onset delay; measure `vibdelay 1` across the
-corpus and ship the closer; do the pattern-level vibrato command; explain
-pattern 12; fix the note endings; fix the tie; fix the balloon song's snare
-overshoot; find and decode effect bits `$20` and `$40`; emit them; fix the
-vibrato rate; build the oscillation scorer.
+The directives, in order, were roughly: read the handoff and pick the next task;
+run the full `--fidelity` corpus search; do items #2/#3/#4 of the previous
+handoff (filter sweep, Commando's drum sweep, the `0AF8` precedence question);
+push and commit; then a design question — *"would better telemetry from
+GoatTracker help, or should we build an HTML viewer? and can we improve the
+fidelity tracker too?"* — which produced `songview.py`, `siddump -w` and the
+`onset` dimension; then repeated "go on" driving the drum-sweep multiplier fix,
+the attack-transient investigation, the `$40` halving, two harness bugs, and the
+corrected corpus search.
 
-Scope note: everything below is inside the existing Python port
-(`python/h2g/`) plus its measurement harness (`python/fidelity.py`,
-`python/presets.py`). The VB6 original is reference only and was not touched.
+Scope note: everything is inside the Python port (`python/h2g/`) plus its
+measurement harness (`python/fidelity.py`, `python/presets.py`,
+`python/instrmap.py`, new `python/songview.py`) and the vendored siddump
+(`python/tools/siddump-rt/`). The VB6 original was not touched.
 </original_task>
 
 <work_completed>
 
-## Summary of the whole session
+## Summary
 
-**72 commits, v0.5.137 → v0.5.208, all pushed.** HEAD is `d5f1cea`, master in
-sync with `origin/master`. `818 passed, 2 skipped`. `Commando.sng` remains
-byte-exact throughout (it is the project's only fidelity anchor).
-
-The pre-compaction half (v0.5.137–v0.5.197) is summarised briefly; the
-post-compaction half (v0.5.198–v0.5.208) is documented in full, because that
-is where the live threads are.
+**17 commits, v0.5.209 → v0.5.225, all pushed.** HEAD is `31294e2`, master in
+sync with `origin/master`. `877 passed, 2 skipped`. `Commando.sng` remains
+byte-exact throughout (the project's only fidelity anchor). Working tree clean
+apart from untracked `6581.pdf` (deliberate, all session).
 
 ---
 
-## Part 1 — v0.5.137 to v0.5.197 (earlier in the session, condensed)
+## Part 1 — the previous handoff's work items
 
-Shipped in this range:
+### v0.5.209 — `59f36b8` — apply the full `--fidelity` corpus search
 
-- **`instrmap.py`** — a per-song instrument map with `annotate_dump()`, which
-  appends `Ins1 Ins2 Ins3` columns to both siddump tables. The instrument is
-  decided **once per note at attack+1 and held**, so a hard-restart ADSR
-  cannot relabel it.
-- **A third pulse engine** (`_pulse_tri_program`, 24 files): fixed-bound
-  triangle, whose rate byte packs the step in `& $E0` and the frames between
-  steps in `& $1F` at the same record `+6` the other two engines read as a
-  plain per-frame rate.
-- **Startup-lag alignment** (`fidelity.startup_lag`) — gt2reloc's player
-  reaches its first note 3–8 frames after the original, and every per-frame
-  column was being charged for it. Mean `wave` 67.0 → 70.2%, `adsr`
-  71.9 → 76.4%. Estimated from the signal, **never fitted**.
-- **`pspan`** (pulse span), **`nrun`** (noise-run agreement), **`vib`**
-  (reversal ratio) dimensions.
-- **`--two-stage`** (the bit-`$04` attack waveform, 34 files),
-  **`--sfx-drum`** (the bit-`$80` fixed-pitch drum), **`--wave-program`**
-  (the byte-code wave program, 29 files), **`--no-test-restart`** (measured
-  and rejected as a default), **`--rest-instrument`**,
-  **`--compact-instruments`**.
-- **`gt2reloc -O0` at all three packing sites** — its pulse-optimisation
-  skipping is default-on and made the packed player skip the pulse table on
-  the note-fetch tick. Mean `pspan` 0.61 → 0.65x.
-- **`presets.py --fidelity`** — the per-song search for structure-invisible
-  options, with `FIDELITY_VETOED` for listening-test overrides and
-  carry-forward on plain runs.
-- **The report moved to `-t 60`** from `-t 10`: at 10 s, 17 of 82 rows showed
-  `0/0` slides and two corpus A/Bs read "identical on every file" from a
-  window that contained no slides.
-- **`fidelity.noise_runs`** — the position-independent shape (run *lengths*,
-  attributed by the ADSR at the run's midpoint, runs touching a window edge
-  dropped). This shape recurs three more times later in the session and is
-  the single most useful measurement idea in the project.
-- **The arpeggio phase fix** (v0.5.197) — put the first swing on the call the
-  player uses.
+Ran `presets.py --fidelity -t 60` over the corpus (item #1 of the old handoff).
+80/95 convertible, 19 files took a non-default setting.
+
+**Caught a bad selection before committing.** `Dragons_Lair_Part_II` picked up
+`pitch_seq` at 14% melody. `fidelity.py --diagnose` showed why: the file's own
+init routine remaps subtunes, so the original's subtune 0 is *our* subtune 9
+(89% match there against 9% on the diagonal) — the search compared two different
+pieces of music. Added it to `presets.FIDELITY_VETOED`, broadening that
+dict's documented purpose from "a listening test rejected this" to "…or the
+measurement that chose it is known to be invalid". Renamed the log line from
+"vetoed by a listening test" to "vetoed (see FIDELITY_VETOED)".
+
+Also trimmed `FIDELITY_CONFIRMED` for Trans-Atlantic from three entries to one:
+the search now selects `sfx_drum` and `pitch_seq` independently, so only
+`wave_program` still needs the hand-recorded override. Updated the pinning test
+in `tests/test_wave_program.py`.
+
+### v0.5.210 — `3720d33` — filter cutoff detection (old handoff item #2)
+
+Delegated to an Opus agent in a worktree. **The item was stale**: effect bit
+`$20`'s filter sweep was already decoded and shipped at v0.5.72; the handoff had
+re-discovered a mechanism that had existed for 132 commits.
+
+The real gap was detection coverage. `FILTER_CUTOFF_SHAPES` only matched an
+`LDA #imm` immediately followed by one `STA`, missing players that clear several
+per-voice arrays with one `LDA #imm` feeding a *run* of consecutive `STA arr,X`.
+New `detect._burst_cutoff_start()` walks backward from a `STA cutoff_var,X`
+through an unbroken run of same-opcode stores to the feeding `LDA #imm`,
+explicitly skipping the sweep routine's own `CLC/ADC/STA`. Corpus filter
+coverage **15 → 21 files**; verified on two independent files (Lightforce `filt`
+0/2998→2993/2998, Sanxion 0/1809→2416/1809).
+
+### v0.5.211 — `a8ebd94` — `_noise_tick_frames` crash
+
+Found while investigating the drum sweep. `SongSpeeds.frames` is
+`Tuple[Optional[int], ...]` — a subtune whose reload exceeds
+`MAX_SANE_SPEED_RELOAD` reports `None` — but the guard only caught an *empty*
+tuple. `Counter(frames).most_common(1)[0][0]` could return `None` into
+`max(1, modal - 1)` and raise `TypeError`, silently marking the whole file
+unconvertible. Filtering `None` out before taking the mode recovered
+**Geoff_Capes_Strongman_Challenge, Gerry_the_Germ, Spellbound**; presets
+convertible count 80 → 83.
+
+### v0.5.212 — `346a160` — the drum sweep's second bound (old handoff item #3)
+
+Delegated to an Opus agent (worktree). The Warhawk-family drum block has **two**
+exits and only one was expressed:
+
+```
+136D  LDA freqhi,X    / BEQ out     ; the frequency reached zero  <- _drum_max_steps
+1372  LDA remaining,X / BEQ out     ; the NOTE ended              <- nothing read this
+```
+
+`_drum_max_steps`' docstring claimed "the safety bound and the musical target
+turn out to be the same number". They coincide only when the note is long enough
+for the frequency to reach zero first. Commando's instrument 13 has room for 13
+steps by pitch and its original takes 5, because its note is four rows long.
+
+New `patterns.median_played_durations` measures each instrument's typical note
+length in rows. **The median, not the minimum** — a wavetable holds one sweep for
+all of an instrument's notes, and the reduction minimising total error against a
+distribution is its median. The minimum deletes Bump_Set_Spike's sweep outright
+(its record 0 plays at 2, 4 and 6 rows in near-equal measure). Scored as
+play-weighted L1 error: pitch bound alone 320070, minimum 117806, mode 100102,
+**median 99983** (best-or-tied on all 122 measurable records against the
+minimum's 97).
+
+`goatwriter._drum_duration_steps` converts rows to steps against the row's call
+rate; `_drum_entries` applies whichever bound is smaller. Verified end to end on
+Commando *and* Bump_Set_Spike (the "second file that uses it differently" rule).
+The agent also disproved the prior session's blocker: `apply_tempo` was a red
+herring, `CMD_SETTEMPO` only lands in row 0's command columns.
+
+### v0.5.213 — `eb133f1` — compose effect bits `$04` and `$10` (old handoff item #4)
+
+Delegated to an Opus agent (worktree). Trans-Atlantic's player copies the
+record's `+7` to scratch `$0EFB` once then tests it five times in a row — `$08`
+at `$0B44`, `$04` at `$0B9C`, `$10` at `$0BB8`, `$20` at `$0BEB`, `$40` (as
+`BIT`/`BVC`) at `$0C05`. `$04`'s handler falls through a bare `CLC` into
+`$10`'s, so nothing can skip the second test. Record `0AF8` (`$14`) gets both.
+
+New `_two_stage_pitch_seq_entries` builds one block carrying the attack waveform
+and the arpeggio's note on every frame. Gated **per record** on both bits.
+Trans-Atlantic `0AF8`: reversals **0 → 392** against the original's 411, `vib`
+0.72x → 0.87x, every other column identical.
+
+**The second-file check caught a defect no review would have.** Forcing it on
+Thundercats gave *exact* reversals (1308 vs 1308) while `melody` fell
+**77.3% → 65.7%** — the shared rotation opened its sequence on `+3`, and
+wavetable entry 0 lands on the note's first call, renaming all 148 notes three
+semitones sharp. The block now opens on a zero step where the cycle has one;
+Thundercats then holds 1308/1308 with melody unchanged and Trans-Atlantic's bytes
+do not move.
+
+### v0.5.214 — `6a01aff` — FIDELITY.md regeneration for v0.5.210–213
 
 ---
 
-## Part 2 — v0.5.198 to v0.5.208 (in full)
-
-### v0.5.198 — `65250b2` — measure `vibdelay 1`; 8 stays, and 12 is a trap
-
-The directive was *"measure vibdelay 1 across the corpus and ship the
-closer"*, arising from a diagnosis that Commando's vibrato starts 10 frames
-late (`_vibrato_delay` emits `vibdelay = 8` for the global-triangle dialect
-to stand in for the player's per-note length gate).
-
-Built a per-note agreement harness: for each note of an instrument whose
-*only* pitch movement is the vibrato (effect byte `& $05 == 0`, so no drum
-and no arpeggio), does each side's pitch move at all? Paired **by note index
-per voice**. 25 files, 2487 notes, the original moving 435 of them.
-
-| gate | moves/still agrees | still notes we wobble | onset late (median) |
-|---|---|---|---|
-| 1 | 65.9% | 826 of 2052 | +0 |
-| **8 (kept)** | **85.5%** | 207 | +10 |
-| 12 | 88.6% | 114 | +15 |
-| 14 | 88.6% | 113 | +17 |
-
-Kept 8: `vibdelay 1` fixes the onset exactly but wobbles 40% of the notes
-that should be still. **Refused to ship 12** even though it scores best — the
-moves/still column cannot see the 5 extra frames of lateness it costs, and it
-*plateaus* at 14 rather than peaking, which is a count being maximised by
-destroying the events it counts. 8 is read out of the player's `CMP #$08`; 12
-would be fitted to a blind proxy. Pinned in `tests/test_vibrato.py`.
-
-Two harness errors, both recorded:
-1. The first pairing found **zero** notes — keyed by absolute frame, which
-   cannot match across the startup lag.
-2. Two sweeps' "8" disagreed (85.5% vs 83.2%) because one called the real
-   `_vibrato_delay` (which returns `gate × multiplier`) and the other passed
-   a literal 8. The multiplier scaling is worth 2.3pp by itself.
-
-### v0.5.199 — `ea5f540` — the vibrato length gate as a per-note pattern command
-
-`--vibrato-command`, **on by default** via `presets.json`. No-op outside the
-global-triangle dialect (25 files) and outside `--format gts5`.
-
-The mechanism was already in `gplay.c`:
-
-```c
-case CMD_DONOTHING:
-  if ((!cptr->cmddata) || (!cptr->vibdelay)) break;
-  if (cptr->vibdelay > 1) { cptr->vibdelay--; break; }
-case CMD_VIBRATO:          // <-- fallthrough target, entered directly
-```
-
-The `vibdelay` countdown lives **inside `case CMD_DONOTHING`**, so a row
-carrying `$04` oscillates from the note's first call whatever `vibdelay`
-holds. And `$04 00` gives `cmddata = 0`, which still enters the case but adds
-nothing — a per-note **damping**. Long note gets `$04 <speed index>`, short
-note gets `$04 00`.
-
-- The gate needs **no unit conversion**: `patterns._build_raw_pattern`
-  computes `wait = b1 & 0x1F` from the same status byte with the same mask
-  the player's `AND #$1F` uses, so `wait >= gate` is a row count. It is the
-  one rate-like quantity in the writer that must *not* be divided by the
-  multiplier.
-- Hold rows already repeat the note row's command, so the oscillation runs to
-  the end of the note.
-- `$BD` is "no new note", not a rest (gplay.c:925 assigns `newnote` only for
-  `<= LASTNOTE`).
-
-**The gate constant was wrong for the file that matters.**
-`TRIANGLE_VIBRATO_GATE = 8` was read from one player's `CMP #$08`, which
-Commando does not contain at all — it compares against **6**. Read at a fixed
-**+56 bytes** from `TRIANGLE_VIBRATO_SHAPE`'s match (`detect._find_triangle_gate`,
-`TRIANGLE_GATE_SHAPE`), the thresholds are **8 in 20 of 25 files, then 6
-(Commando), 5, 4, 4, 2**. The +56 anchor matters: every one of these players
-has a *second* gate on the same duration cell 377 bytes further on.
-Commando's 6 is checkable rather than fitted — its durations are in units of
-3 frames, so `wait >= 6` is "24 frames or longer", and voice 1 has 27 notes
-of 24 frames plus 4 of 30 = exactly the **31** notes the original is measured
-to vibrate.
-
-Results over 2487 notes:
-
-```
-delay, gate 8 (v0.5.198)     85.5%   miss 153   invent 207   onset +10
-delay, the file's own gate    78.9%   miss 109   invent 417   onset +10
-command + damp, file's gate   92.1%   miss 129   invent  68   onset  +0
-```
-
-The middle row is deliberate: the correct per-file threshold is an
-improvement as a *command* and a regression as a *delay*, because a delay is
-also doing the suppressing the damping took over. Hence
-`_vibrato_delay(det, multiplier, commanded=False)` — **a number can be right
-for a mechanism and wrong for the approximation of it.**
-
-Commando 97.8 → **100.0**; Battle of Britain, Crazy Comets, Hunter Patrol,
-Ninja, One Man and his Droid all reach 100.0.
-
-### v0.5.200 — `27f855b` — drop the release nibble on players that kill the envelope
-
-Answered *"pattern 12 plays too many notes"*. The notes were right (voice 1
-matched at difflib ratio 1.00, 231 attacks vs 230; every byte of the Hubbard
-pattern decoded; no slide in it). The **note endings** were wrong.
-
-Commando `$517C`:
-
-```
-LDA duration,X / AND #$20 / BNE skip   ; status bit 5 -- a tie flag
-LDA counter,X  / BNE skip              ; only on the note's last row
-LDA wave,X / AND #$FE / STA $D404,Y    ; gate off
-LDA #$00 / STA $D405,Y / STA $D406,Y   ; envelope destroyed
-```
-
-91% of 53308 notes across the 72 classic-dialect files are "cut" (Commando
-708 to 21). The envelope is destroyed, so the record's release nibble never
-sounds — but we copied it in, and with `$5F` on Commando's lead every note of
-a staccato figure rang through the gap.
-
-New **`tail`** column: `fidelity.release_tails` /
-`release_tail_agreement`, per instrument, gated on
-`detect.ENVELOPE_CUT_SHAPES` (which requires the gate-clear, because the bare
-zeroing also matches a startup init: 33 files claimed, 9 loose ones not).
-
-Also recorded: corpus mean `adsr` fell 75% → 58%, attributed as **−47.1 pp on
-the 29 files with the routine and 0.0 pp on the 50 without**. Not a
-regression in the sound (the SID consults the release nibble only when the
-gate falls, by which point the player has zeroed it), and `adsr` was **not**
-redefined to make the change score well — the generated report prints the
-attribution beside the number instead.
-
-### v0.5.201 — `ba2bcbd` — gate the envelope cut per instrument
-
-**A regression I shipped and a listener caught**: *"something bad happened to
-the drums, perhaps the previous version sounded better."* It had.
-
-The trace had said so all along. Per instrument on Commando, in the gap after
-a note:
-
-```
-rec  eff   first frames of the gap
-  0   00   0000 0000 0000          <- cut on the gate-off frame
-  2   08   0000 0000 0000          <- cut
-  1   05   064B 064B 064B 064B     <- never cut: a real release
-  7   05   0DFB 0DFB 0DFB 0DFB     <- never cut
- 12   01   090A 090A 090A 090A     <- never cut
-  3   05   0A09 0A09 0000 0000     <- holds 2 frames, then the NEXT note's zero
-  4   03   0FC4 0FC4 0000 0000     <- likewise
-```
-
-Only 2 of 7 are cut. The cut is one write on the note's last row, and an
-instrument whose effect routine runs every frame overwrites it. Gated on
-`goatwriter.EFFECT_PER_FRAME = 0x01`.
-
-**Two harness errors made v0.5.200 look like an improvement:**
-
-1. `release_tails` took the release as the **minimum over the gap** to the
-   next note. That cannot tell this note's cut from the *next* note's
-   preparation. It scored all seven instruments as cut and reported
-   "27.6% → 99.2%, better on 27 and worse on 0" for a change making files
-   worse. Read on the gate-off frame the three builds measure
-   **64.6% / 62.1% / 97.4%** — v0.5.200 was a net regression published as an
-   improvement. v0.5.200's write-up had justified the wide window by citing
-   the edge reading as the error (20.7% vs 100%); it was the other way round.
-2. "Effect bit `$01` clear" was dismissed at **59.8%** accuracy as a mere
-   correlation — computed over all 95 files, where the 62 without the routine
-   can only contribute false positives. Over the 33 that have it: **98.6%**,
-   **no false negatives**. It was the mechanism.
-
-Mean `adsr` recovered 58% → 64%.
-
-### v0.5.202 — `3cc921e` — honour the tie flag
-
-Answered *"note E-5 on pos 16 should not be played as a note but the glide
-from F#5 should stop at E-5 ... maybe the attack on E-5 is too strong."*
-Exactly right. At frame 3896:
-
-```
-          ORIGINAL                  OURS
-row 15    2E7A 2E2C 2DDE 41         2F43 2EDE 40 -> 09   we close the gate
-row 16    2BD6 41   no attack       2BDD 41  * ATTACK
-```
-
-**Status bit 5 is a tie flag** — the same bit as the envelope cut. It means
-*don't close the gate at this note's end*, and the consequence had never been
-drawn: the note that **follows** a tied event arrives with the gate already
-open, so the player's note-on writes a frequency and nothing else. No gate
-edge, no attack. The bit had been parsed for years as `no_adsr` and emitted
-`CMD_TONEPORTA` on the tied row *itself*, where the slide branch overwrote
-it — inert.
-
-GoatTracker says it in one command: **`CMD_TONEPORTA` with parameter 0**.
-`gplay.c:811` assigns `freq = targetfreq` in one call (a jump, not a slide —
-any speed makes it a slide); `:930` skips the hard-restart gate-off *because*
-the command is TONEPORTA; `:355` skips the firstwave testbit for the same
-reason; and it zeroes `vibtime`, so the vibrato restarts on the landing as
-the original's does. It goes on the note **after** the tied event — the
-original does attack on the slide row.
-
-- Commando voice 1: attacks **511 → 501** against the original's 502;
-  waveform through the landing `41 41 41 41`, frame for frame.
-- 64 classic files carry tied events: median `retrig` 1.008 → **0.999**, mean
-  `melody` 82.3% → **84.1%**, 19 better and 5 worse.
-- **Delta_Mix-E-Load_loader 6% → 100%** (retrig 2.133 → 1.067).
-- Worst regression Kentilla, melody 95% → 85%, whose retrigger *improves*.
-- Corpus report: melody 83% → **85%**, sequence 83% → 84%, pitch 91% → 92%,
-  median retrigger 1.01 → **1.00**.
-
-Also: `_vibrato_command_pass` now fills the free rows of a block whose note
-row is taken, instead of skipping the block, so a tied landing keeps its
-vibrato from the next row.
-
-**Two discoveries that cost real time**, both now in `CLAUDE.md`:
-GoatTracker **numbers patterns in hex**, so a listener's "PATT.12" is pattern
-**18** (three dumps of `new_patterns[12]` disagreed with the screenshot
-first); and the editor's pattern is post-dedup (GT 18 = Hubbard 15) with a
-transposing orderlist (`D3`), so neither index nor pitch matches the source.
-**Identify a pattern by its note-row positions and read the final `.sng`.**
-
-### v0.5.203 — `a25237c` — fix the wave program's noise overshoot
-
-The snare existed but sounded 670 noise frames against the original's 387.
-**Run lengths** named both causes at once:
-
-```
-instrument 0729 (43 notes)  original: 43 runs of 1, 43 runs of 8
-                            ours:     43 of 1, 36 of 6, 3 of 30, 2 of 54, 1 of 78
-```
-
-1. **6 instead of 8** — a `slide` opcode was emitted as *two* wavetable
-   entries (waveform, then a portamento command), so the program ran 13
-   frames where the player's runs 11, and the closing burst was truncated.
-   One entry per opcode now; the two frames of pitch movement are dropped.
-2. **30, 54, 78** — the program ended holding noise. Its own docstring
-   asserted GoatTracker "keeps the last waveform, as the player does". The
-   player does not: its note-end routine writes the stored waveform with the
-   gate cleared, `LDA $54F8,X / AND #$FE` — the *same routine* read three
-   sections earlier for the envelope cut. The record's own waveform is
-   emitted before the stop now.
-
-Result: the snare's runs are **identical to the original's** — `{1: 43, 8: 43}`
-on each side, 387 noise frames against 387. `nrun` 50% → 67%.
-
-Introduced **`presets.FIDELITY_CONFIRMED`**, the mirror of `FIDELITY_VETOED`,
-because `fidelity_better` scored the fixed program as *worse* structurally:
-its `finds_noise` test requires the reference to have **no** audible noise,
-and this file has plenty from another instrument — a per-file test for a
-per-instrument defect.
-
-### v0.5.204 — `bd284eb` — decode effect bits `$20` and `$40`
-
-Answered *"I do hear sound where the drums are but not snare drums"*: the
-snare was right, a **second** drum was not, and it runs two effect bits never
-read.
-
-**Why they were never found:** detection looks for `AND #$xx`, and bit 6 has
-its own idiom — `BIT cell / BVC`. Anchored on the effect cell (the address
-tested with at least two masks whose meaning is known):
-
-- **`$20` — a filter cutoff sweep, 35 of 95 files.** A per-voice accumulator
-  advanced by a per-instrument step into `$D416`, with `$D417` from a second
-  byte. An independent shape census (an accumulate then `STA $D416`) finds 31.
-- **`$40` — a fixed pitch out of the player's own note table, 41 files.**
-
-`$40`'s derivation, after two wrong turns: the two cells it writes feed
-`$D400`/`$D401`, so they are the voice frequency; `find_freq_table`
-independently returns the address the routine indexes, so the value is a
-note; and **`Y` is the record *offset*, not its number** — read as a number
-the byte is 129 (→ `$1A03`, not a pitch the trace shows), read as
-`index × stride` it is `$34` = 52, and `freqtable[52]` = `$15EB` is what the
-original sounds on **226 of 226** frames. The array is `det.wave_program`
-itself: a pointer low byte under `$08`, a note index under `$40`.
-
-**The emission was deliberately not wired.** On the attack's first frame the
-pitch is exactly right and `melody` falls **85% → 39%**. The original's
-per-offset profile says why:
-
-```
-offset 0   the PLAYED note's pitch   <- what melody reads
-offset 1   noise at freq-hi 56       ($80, sfx_pitch = 56)
-offset 2   noise at freq-hi 21       ($40, freqtable[52])
-```
-
-216 records set `$20` and 204 set `$40`, across 57 files.
-
-### v0.5.205 — `5c671bf` — compose the drum's two pitches; not shipped
-
-Raw frames gave the exact profile, identical on every note of instrument
-`0A99`:
-
-```
-+0  wf 41  the played note
-+1  wf 81  freq $38CE / $38B4 / $389C  NOISE   <- keeps the played note's LOW byte
-+2  wf 81  freq $15EB                  NOISE   <- exactly freqtable[52]
-+3..+6  wf 41  the played note
-+7  wf 81  freq $38xx                  NOISE   (6 frames on = sfx_period)
-```
-
-Two open questions closed: the `$38xx` frames keeping the played note's low
-byte confirms `$80` as a **high-byte-only write**; and `$15EB` is `$40`'s
-pitch — which `_sfx_drum_entries`' own docstring had recorded for years as
-*"a fixed `$15EB` from somewhere this reader has not found"*.
-
-Passing it as the burst's second note made Trans-Atlantic exact
-(`{21: 226, 55: 452}` vs `{21: 226, 56: 452}`, `nrun` 100%) — **and Pandora
-refuted it**: `{69: 281, 73: 339}` where the original has only 35 frames at
-that pitch. The `$40` pitch fires once per **note**; the drum block's entries
-loop once per **period**. Trans-Atlantic happens to have one burst per note,
-so the two coincide there. Not shipped; `second_note` implemented and tested,
-nothing passing it.
-
-### v0.5.206 — `1eca6da` — the prologue-plus-loop restructure
-
-`_sfx_drum_entries` now returns `(left, right, loop)` and the caller's jump
-targets `start + loop`, so a prologue can precede a looping body:
-
-```
-0  wave|1  00        played note        offset 0
-1  noise   drumnote  drum's high byte   offset 1
-2  noise   $40 note  freqtable[index]   offset 2   <- prologue ends
-3  wave|1  00                           offset 3
-4  delay 2                              offsets 4-6
-5  noise   drumnote                     offset 7   <- loop starts
-6  wave|1  00                           offset 8
-7  delay 3                              offsets 9-12
-   FF -> entry 5                        offset 13, every 6 thereafter
-```
-
-The plain shape returns `loop = 0` and is byte-identical to before.
-
-**One defect caught before shipping:** the first cut regressed Thundercats
-(melody 77% → 72%, 99 noise frames at a pitch its original never sounds)
-because `_fixed_attack_note` checked `det.effect_bit40` — which says the
-*player reads* the bit — and never whether *this record sets* it. Now gated
-on `data[rec + 7] & $40`.
-
-| file | ours | original | `nrun` |
-|---|---|---|---|
-| Trans-Atlantic (forced) | `{21: 226, 55: 452}` | `{21: 226, 56: 452}` | 100% |
-| **Pandora** | `{69: 35, 73: 375}` | `{69: 35, 72: 364}` | **0% → 100%** |
-| Thundercats | unchanged | — | 100% |
-
-Pandora's `wave` 68% → 70%. Its `noise` count read 620 → 410, which is not a
-fall: that instrument now sounds 410 against the original's 420 for it, where
-620 was over-production.
-
-### v0.5.207 — `ca3e5e5` — read and emit effect bit `$10`'s arpeggio; off by default
-
-The directive was *"fix the vibrato rate"* (the balloon song's `vib` was
-0.17x) and **the first measurement falsified the premise**:
-
-| instrument | original | ours | effect byte |
-|---|---|---|---|
-| `0A09` | 1175 | **31** | `$10` |
-| `0A99` | 904 | 112 | `$E4` (the drum) |
-| `0AF8` | 637 | **16** | `$14` |
-| `0A88` | 317 | 257 | `$00` — the only record *with* a vibrato byte |
-
-The vibrato was fine (bound 4 emits `cmp 2`, period 8 calls against a 4-frame
-half-period — exact). The deficit was 1812 reversals of a mechanism never
-read.
-
-**Bit `$10` is a three-step arpeggio, in 34 of 95 files:**
-
-```
-LDA effect / AND #$10 / BEQ out
-LDA index,Y / ASL / TAY          ; the record's byte, doubled
-LDA pairs,Y / STA base+1         ; this instrument's two offsets
-LDA pairs+1,Y / STA base+2
-LDY phase                        ; a GLOBAL counter, DEC'd once per frame
-CLC / LDA note,X / ADC base,Y    ; played note + this step
-ASL / TAY / LDA freqtbl,Y ...
-```
-
-`seq[0]` is a byte nothing writes (0 everywhere checked); `seq[1..2]` are the
-pair. Trans-Atlantic's records 0 and 3 hold `18 00` — the note, two octaves
-up, the note, on a three-frame cycle. The phase length is **read** from the
-reload (`DEC phase / BPL / LDA #$02 / STA phase`). The index array is
-`det.wave_program` for the **third** time.
-
-Emitted: record 0 goes 31 → 1365 reversals against 1175, and the file's `vib`
-0.17x → **0.61x** with melody unchanged. Across the 26 files that use it:
-
-```
-              median vib   mean melody
-off                0.22x         81.5%
---pitch-seq        0.58x         76.3%
-```
-
-Seven lose melody, After_8 by 40 points, **because the phase is global** and
-a wavetable restarts at every note. Leading with the modal step (likeliest
-under a uniform unknown phase, attack frame kept on the pattern's note) was
-tried and moved the mean by −1 point, trading After_8 for Chain Reaction. No
-rotation is right more than a third of the time. So it ships **off**.
-
-### v0.5.208 — `d5f1cea` — the oscillation and noise-pitch criteria
-
-`presets.fidelity_better` gained two terms, on the same one-sided footing as
-the existing pair:
-
-- **Oscillation** — `reversal_ratio` against 1.0, compared **in log space**
-  via the new `presets._closer`, because 2.0x and 0.5x are the same size of
-  wrong where `abs(r − 1)` calls one twice the other.
-- **Noise pitch** — the median frequency each side spends its noise frames
-  at, likewise a log-space ratio. **No new measurement**: `_noise_pitch` was
-  already computed for the audibility guard and the numbers were in the tuple,
-  unread.
-
-Both keep `keeps_notes`, which is what makes them safe — it accepts the
-arpeggio on the balloon song and rejects it where it costs melody. Verified:
-
-```
-Trans-Atlantic   two_stage, sfx_drum, pitch_seq
-After_8          defaults      (pitch_seq would cost 40 points of melody)
-Chain Reaction   defaults      (100% -> 78%)
-```
-
-`fidelity_better` also tolerates a 4-element state (built before these
-terms): an absent dimension reads as unmeasurable, not as a zero.
-
-**`FIDELITY_VETOED` is now empty.** The scorer selecting `sfx_drum` put the
-"beeping" veto back in question, and the listener had already answered — asked
-to A/B the two builds, they reported **no audible difference at all**. The
-verdict had been recorded when the file had no snare (fixed v0.5.203) and the
-burst sounded one pitch for every frame (fixed v0.5.206). Kept as a comment.
-
-`pitch_seq` joined `FIDELITY_TOGGLES` (now five toggles = **31 combinations
-per song**). Today's three measurements are in `FIDELITY_CONFIRMED` so the
-balloon song benefits now.
-
-Balloon song's row: **`vib` 0.17x → 0.72x**, **`noise` 1315/1089 →
-1089/1089 exactly**, **`nrun` 67% → 100%**, melody unchanged at 85%. Corpus
-aggregates unmoved.
+## Part 2 — the design question and the instruments it produced
+
+The user asked whether better live telemetry from GoatTracker would help, or an
+HTML viewer, since "GT is very compact while HTML does not have this
+limitation"; and separately said the fidelity tracker could be improved too.
+
+**The answer given**, and the reasoning that shaped the rest of the session: the
+data mostly already existed — `instrmap.py` had *already* computed the
+Trans-Atlantic answer and printed it in a table. The gap was **comprehension and
+attribution**, not measurement. Live GT telemetry was ranked *last* because the
+fidelity harness never runs GoatTracker (it packs with `gt2reloc` and traces with
+`siddump`), so telemetry from the editor would measure a **different execution
+path** than every number in the repo — the shape of the v0.5.131/132 mistake.
+
+### v0.5.215 — `786966c` — `python/songview.py`
+
+An HTML view of what a `.sng` *says*, as opposed to what it measured. Parses the
+whole file and renders one self-contained page (no external assets). Rendering
+verified in a real browser via Chrome MCP (19 instrument cards, 48 patterns, no
+horizontal overflow; `file://` is blocked, so served over `python -m http.server`
+on 127.0.0.1).
+
+Three things the editor cannot do:
+- **every pattern carries all three identities** — GT's hex number, the
+  post-dedup index, the Hubbard source (retires the confusion that cost three
+  debugging attempts);
+- **wavetable entries carry cumulative call timing** — a delay entry is current
+  for `value + 1` calls (gplay.c:697-704), the off-by-one that stood from
+  v0.5.82 to v0.5.130;
+- **instruments decode their effect bits** from the provenance stamp
+  `_write_instruments` already writes into the name (`NN:b5-b6-b7`, where b7 is
+  the player's effect byte — a gift discovered while reading the writer).
+
+Uses `fidelity._preset_opts` rather than re-implementing option filtering.
+`tests/test_songview.py` (11 tests) checks the parser against `build_sng`'s
+output and the byte-exact fixture — the parser is a deliberate *second* reader,
+and the test is what makes that safe.
+
+### v0.5.216 — `a0ae0b2` — `siddump -w`
+
+Added to the vendored `python/tools/siddump-rt/siddump.c`:
+`-w<adr>[,<adr>...]`, up to 16 addresses, dumped once per displayed frame from
+the same `mem` and at the same point as the SID registers. Closes the one thing
+register traces cannot show: *which wavetable entry produced a register*.
+
+Printed verbatim every frame, never elided to `..` — a pointer that stops moving
+is the signal being looked for. **Proved inert without the flag** by rebuilding
+the pre-patch source and diffing output on `Commando.sid -a0 -t5`: byte-identical.
+Documented in that directory's README.
+
+### v0.5.217 — `f98d6bf` — the `onset` dimension
+
+`fidelity.onset_shapes` / `onset_agreement`: the waveform classes a note *opens*
+on, over `ONSET_FRAMES = 4`, keyed by the ADSR one frame after the attack
+(instrmap's rule — the attack frame can hold a hard restart's envelope). Key is
+`$D405/$D406`, measured value is `$D404`, so the attribution cannot contain the
+quantity attributed.
+
+**Two errors caught during implementation, both now pinned by tests:**
+1. I first passed the startup lag in. Wrong — each side is read at its *own*
+   attack frames, so the latency cancels by construction; passing it would
+   manufacture the phase error the column detects.
+2. I wrote `early`/`late` backwards. `ours == orig[1:]` means we never played the
+   original's first frame, i.e. **early**.
+
+Corpus at introduction: 415 instruments, 55% matched, **32 early / 0 late** —
+a one-sided split that is what a systematic emitter defect looks like.
+
+### v0.5.218 — `938fe7a` — the note's first frame belongs to the record
+
+Delegated to an Opus agent (worktree), briefed with the full evidence.
+`_wave_program_entries` and `_two_stage_entries` opened on the *effect* where the
+player writes the record's own `+2` waveform on the note's first frame and
+reaches the effect only from the second. `_drum_entries` had been corrected to
+this in v0.5.172 and the lesson never propagated.
+
+Two refinements the agent found that the brief did not anticipate:
+- **a record whose `+2` is `$00` must get no entry** — no waveform and no gate on
+  frame 0, so siddump sees no gate edge and calls the *second* frame the onset;
+  and `$00`-`$0F` are wavetable delays, so there is nothing faithful to put;
+- **one frame is `multiplier` calls** — Thundercats at `-S3` only becomes
+  frame-exact with the lead scaled.
+
+Cross-validated by the `onset` column, which the agent never saw: **32 early →
+23**, matched 228 → 237, six files up and none down. Trans-Atlantic onset
+71% → 100%, melody 85% → **95%**.
+
+### v0.5.219 — `42f42fb` — commit the prior session's handoff document
+
+Finished a half-done commit left by a `/subtask` fork (it had bumped the version
+and written the CHANGELOG entry but not committed).
+
+### v0.5.220 — `3f281cc` — the drum's first frame is a frame, not a call
+
+The 23 instruments still reading early were **20 of 21 multiplier-2 files against
+3 of 45 single-speed ones**. `_drum_entries` had opened on the record's waveform
+correctly since v0.5.172 but its entry lasted **one call at every `-S`** — its own
+docstring said so, reading as a description rather than as the defect. At `-S2`
+the waveform covered half of frame 0 and the noise tick finished the frame; siddump
+samples at end of frame, so frame 0 read as the drum.
+
+Extracted `_first_frame_lead(wave, multiplier, force=False)`, shared with
+`_two_stage_entries` — applying v0.5.218's own lesson to itself. `force=True` for
+`_drum_entries`, which has *always* emitted that entry, so gating it on
+`_first_frame_entry` would be a second, unmeasured change (deleting it for
+records whose `+2` selects no waveform).
+
+Result: matched **237 → 254**, early **23 → 14**, ten files up and none down.
+Warhawk (the canonical drum player of § 7.ii) 0% → 67%; Last_V8 and its C128
+version → 100%. **melody, sequence, adsr, nrun, tail and pitch all moved on
+exactly zero files** — the signature of a change that relocates a waveform within
+frame 0 and nothing else.
 
 ---
 
-## New code surface added in Part 2
+## Part 3 — the attack-transient investigation
 
-**`python/h2g/detect.py`**
-- `Detection.triangle_gate`, `.envelope_cut`, `.effect_bit40`, `.pitch_seq`
-- `TRIANGLE_GATE_SHAPE`, `TRIANGLE_GATE_DELTA = 56`,
-  `TRIANGLE_GATE_IMMEDIATE = 6`, `_find_triangle_gate`
-- `ENVELOPE_CUT_SHAPES` (2 shapes, Y- and X-indexed), `find_envelope_cut`
-- `EFFECT_KNOWN_MASKS`, `EFFECT_BIT40_MASK`, `_effect_cells`,
-  `_find_effect_bit40`
-- `PitchSeq` dataclass (`index`, `pairs`, `base`, `steps`),
-  `PITCH_SEQ_SHAPE`, `PITCH_SEQ_AT_INDEX/PAIRS/PHASE/BASE`,
-  `PITCH_SEQ_STEPS`, `_find_pitch_seq`
+Starting from the user's concern that they *"cannot explain what is wrong with
+Trans-Atlantic from a fidelity perspective"*.
 
-**`python/h2g/search.py`** — `match_at(data, at, pattern)`, for a shape whose
-position is known from another match rather than searched for.
+**The chain that answered it:** `songview.py` made the wavetable legible and
+showed instrument 3's bytes were *right* → reframed the defect from "wrong
+waveform" to "wrong frame" → a trace comparison confirmed it and found it in a
+second emitter → the `onset` column made it measurable → the fix landed and the
+column independently confirmed it.
 
-**`python/h2g/goatwriter.py`**
-- `CMD_VIBRATO = 0x04`, `GT_FIRST_NOTE/GT_LAST_NOTE/GT_REST`,
-  `WAVE_GATE_BIT`, `EFFECT_PER_FRAME = 0x01`,
-  `EFFECT_PITCH_SEQ_MASK = 0x10`
-- `_vibrato_command_pass(det, patterns, vib_ptrs, lead, log)`
-- `_vibrato_delay(det, multiplier, commanded=False)`
-- `_fixed_attack_note(sid, det, i)` — bit `$40`'s absolute-note byte
-- `_pitch_seq_entries(sid, det, i, wave)` — bit `$10`'s arpeggio
-- `_two_stage_entries(..., attack_note=None)` — accepts the note, unwired
-- `_sfx_drum_entries(..., second_note=None)` → now returns
-  `(left, right, loop)`
-- `_write_instruments(..., cut_release=False)` — `sr &= 0xF0` gated on
-  `det.envelope_cut and not data[base+7] & EFFECT_PER_FRAME`
+### The corpus census (scratch, not committed)
 
-**`python/h2g/patterns.py`** — `_build_raw_pattern(..., tie=False)` with the
-`pending_tie` latch; `decode_entry(..., tie=False)`;
-`convert_patterns(..., tie=False)`
+`scratchpad/transient_census.py` measures, from the traces and never from the
+effect byte, instruments where the original changes waveform class on frame 1
+while we hold frame 0's. At v0.5.220: **45 files, 109 instruments, ~13,720
+notes**.
 
-**`python/h2g/convert.py`** — new options `vibrato_command`, `cut_release`,
-`tie`, `pitch_seq`
+**A methodological error made and corrected here:** I first split those by the
+transient's *timbre* (noise ⇒ drum tick, pitched ⇒ two-stage). Sigma Seven killed
+that — zero records set bit `$01` yet both instruments sound a noise transient. A
+noise transient is just as likely a two-stage attack whose attack waveform is
+noise. The timbre split was withdrawn.
 
-**`python/h2g/cli.py`** — `--vibrato-command`, `--cut-release`, `--tie`,
-`--pitch-seq`, all in the presets-override list
+### v0.5.221 — `3fa22f8` — the `onset` criterion in `fidelity_better`
 
-**`python/fidelity.py`** — `release_tails`, `release_tail_agreement`, the
-`tail` Dimension (`$D405/$D406`), and the generated note beside the `adsr`
-summary line
+`fidelity_better`'s docstring already recorded that it is *deliberately* not
+scored on `wave`, because restoring a 1–4 frame transient moves `wave` the wrong
+way even when right. The unintended consequence: `--two-stage` was
+**unselectable** — the attack strikes no new note, sounds no new register and
+leaves melody untouched, so none of the four existing terms could see it.
 
-**`python/presets.py`** — `FIDELITY_CONFIRMED`, `_closer`, the two new win
-conditions, `pitch_seq` in `FIDELITY_TOGGLES` and
-`EXCLUDED_FROM_ALWAYS`, `FIDELITY_VETOED` emptied, `always` gained
-`vibrato_command`, `cut_release`, `tie`
+Added a **graded** `onset_frame_agreement` (new in `fidelity.onset_agreement`)
+rather than the report's per-instrument `onset_agreement`. Checked both
+alternatives before writing the term: whole-shape equality scores Sigma Seven's
+`$0FFD` (no transient → transient one frame too long) as **zero**, and
+`onset_first_matched` cannot see it either because frame 0 already agreed.
+Verified it declines as well as accepts. `tests/test_onset_criterion.py`, 6 tests.
 
-**Tests** — extended `test_vibrato.py`, `test_fidelity.py`,
-`test_effects.py`, `test_effect_bit80.py`, `test_wave_program.py`,
-`test_preset_passthrough.py`. 818 pass, 2 skipped.
+### v0.5.222 — `b320b54` — bit `$40` halves bit `$04`'s attack
 
-**Docs** — `H2G-CONVERSION-METHOD.md` §§ 7.kkk–7.uuu; README sections for
-`--vibrato-command`, `--cut-release`, `--tie`; ~14 new rules in `CLAUDE.md`.
+Resolved an open question `H2G-CONVERSION-METHOD.md` had carried as *"the
+relationship between that byte and the shared `$0FAA,X` counter is not
+established"*.
+
+```
+frames 2, effect $44  -> 1 frame   Sigma Seven $0FFD (124), Ricochet $0CE8 (77),
+                                   Skate or Die $08D9 (300), $0AD8 (26)
+frames 4, effect $44  -> 2 frames  Trans-Atlantic $0A99 (150), Sanxion $1909 (81),
+                                   Pandora $0D99 (31), Auf W. Monty $0AF9 (10),
+                                   Knucklebusters $0AAD (4)
+frames 2, effect $04  -> 2 frames  Sigma Seven $2B9D (61)
+```
+
+527 onsets on the first line with no counter-example. **The `frames = 4` line is
+what rules out "a record with `$40` always sounds one frame"** — at `frames = 2`
+a halving and a constant 1 are indistinguishable, and I nearly shipped the
+constant. `goatwriter._two_stage_frames(frames, effect)` returns
+`max(1, frames // 2)` when `EFFECT_FIXED_PITCH_MASK` is set. Implied mechanism
+(an implication, not a reading of the 6502): `$40`'s handler decrements the same
+per-voice attack counter, so with both live it counts down twice per frame.
+
+One counter-example recorded rather than smoothed over: **Lightforce `$1FF9`** is
+`$44` with `frames 4` and measures 0 attack frames over 15 onsets. Unexplained.
+
+Effect (melody unchanged everywhere): Sigma Seven onset 0.625 → **1.000**,
+Sanxion 0.750 → 0.938, Skate or Die 0.500 → 0.625, Ricochet 0.650 → 0.700,
+Trans-Atlantic 0.958 → 1.000. **Ricochet and Skate or Die are the point** —
+before the halving, forcing `--two-stage` on them moved their onsets not at all,
+so v0.5.221's criterion correctly declined them. The halving makes them
+*selectable*.
+
+### v0.5.223 — `909ab85` — two measurement bugs in the preset search
+
+Found by refusing to commit a search result containing "One_on_One… (melody 5%)"
+and asking why a 5% file was being tuned at all.
+
+`presets.tune_by_fidelity` is a second implementation of "convert, pack, trace
+both, compare" beside `fidelity._measure`, and nothing pinned them together:
+
+1. **No calibration.** `_measure` traces the original with
+   `calibration(ft.detune)` where the frequency table sits off the semitone grid;
+   the search passed a hardcoded `0`, so siddump named every note of those files
+   against the wrong table. Four corpus files (Kings_of_the_Beach_intro,
+   One_on_One_Jordan_vs_Bird, Powerplay_Hockey, Rock_Tells_the_Tale, all
+   detune −0.696, cal `4280`). One_on_One went 5% → **99%**.
+2. **No subtune counterpart.** `_measure` searches a window of *our* subtunes and
+   keeps the best match (`--search-subtunes`, **default 3**); the search compared
+   the original's N against our N. Action_Biker reads **6%** that way and
+   **100%** the other, and on that 6% the search "improved" it to 8% with
+   `no_test_restart`. It now selects nothing, which is correct.
+
+The counterpart is resolved **once**, on the reference conversion, and reused for
+every candidate — three traces per candidate would triple a search already
+running 31 combinations a song, and the toggles vary no orderlist length. That
+assumption is stated where it is made.
+
+### v0.5.224 — `6e54cc0` — `tests/test_search_matches_report.py`
+
+Four tests pinning the search to the report. **Both bug-catching tests were
+verified to fail when their bug is reintroduced** (`presets.py` saved to
+`/tmp/presets_good.py`, sabotaged with assert-matched edits, tested, restored;
+`git diff` confirmed empty afterwards). The subtune test asserts the *method*
+(more than one of our subtunes is probed), not the outcome, because which
+subtunes fit legitimately moves. A guard test checks the two named files still
+exhibit what they are there for, so a corpus change cannot leave them passing
+vacuously. They run one toggle rather than the 31-combination sweep (~1 s).
+
+### v0.5.225 — `31294e2` — the corrected corpus search
+
+**34 settings gained across 28 files, 4 lost.** `--two-stage` reaches 26 files
+where 3 had it; `--wave-program` 11 where 1 did. A/B against the previous presets
+**at fixed code**, so the comparison isolates the settings:
+
+```
+onset   62.1% -> 76.2%   +14.1pp   26 files up, 0 down
+nrun    48.9% -> 51.7%    +2.8pp    2 up, 0 down
+wave    74.0% -> 74.4%   +0.35pp   14 up, 12 down
+melody, sequence, adsr, tail, pitch    flat to within 0.02pp
+```
+
+Both bogus selections from the broken run are gone.
+
+### Post-fix census
+
+45 → **27 files**, 109 → **59 instruments**, 13,720 → **7,047 notes**. Of the 27:
+10 have a two-stage routine, 20 have a wave program, **7 have neither**
+(Bump_Set_Spike, Chicken_Song, Crazy_Comets, Gerry_the_Germ, Hollywood_or_Bust,
+International_Karate, Ninja).
+
+Forcing each option on split the remainder into two classes:
+
+```
+IK_plus  as shipped     onset 0.450  melody 99%
+         +wave_program  onset 0.350  melody 76%    <- worse both ways
+         +two_stage     onset 0.550  melody 86%    <- onset up, melody -13pp
+Mega_Apocalypse / International_Karate: identical under all three settings
+```
+
+- **Class A** — the option exists and costs more than it gains (emitter quality
+  problem, the same shape the `$40` halving fixed for Ricochet).
+- **Class B** — no current option touches them (unimplemented mechanism).
 </work_completed>
 
 <work_remaining>
 
-Ordered by value. Items 1 and 2 are the ones the last two commits explicitly
-set up.
+Ordered by value.
 
-### 1. A full `--fidelity` run (mechanical, hours)
+### 1. Class B transients — the mechanism nothing implements
 
-```sh
-cd python
-python presets.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob" \
-    -o ../presets.json --fidelity -t 60
-```
+**Mega_Apocalypse and International_Karate measure identically under
+`--two-stage`, `--wave-program` and as shipped**, so some other routine writes
+`$D404` on the note's second frame. International_Karate is in the
+neither-routine set, so it is the cleanest case.
 
-**Why:** v0.5.208's oscillation and noise-pitch criteria only apply on a
-`--fidelity` run. Every other file keeps a carried-forward entry decided by
-the old scorer. Five toggles = 31 combinations per song × ~80 files, each a
-convert + pack + two traces.
+Method: `python fidelity.py <file> --diagnose` first, then the per-instrument
+detail script (`scratchpad/onsetdetail.py`, see below) to get the exact shapes,
+then read the player. **`siddump -w` (v0.5.216) exists for exactly this and has
+still never answered a question** — the packed player's wavetable pointer per
+voice would say which entry produced a frame. The retrodebugger MCP
+(`mcp__retrodebugger__*`) is also available for a memory breakpoint on `$D404`.
 
-**Prerequisites:** `python/tools/siddump-rt` must be built (the harness
-refuses a multiplier > 1 song without it); `gt2reloc` on PATH.
+**Do not infer the mechanism from the transient's timbre.** That error was made
+and refuted twice this session.
 
-**Validation:** diff `presets.json` and check that `pitch_seq` appears only
-where melody holds; re-run `python -m pytest tests/ -q`; regenerate
-`FIDELITY.md`. Expect Trans-Atlantic to keep all four settings (it is also
-pinned in `FIDELITY_CONFIRMED`, so that is not a test of the scorer).
+### 2. Class A transients — emitter quality on IK+ and the other 19
 
-**Note:** once this runs, the three `FIDELITY_CONFIRMED` entries for
-Trans-Atlantic (`wave_program`, `pitch_seq`, `sfx_drum`) become redundant if
-the search selects them independently — check and consider removing, with the
-comment's history preserved.
+`--two-stage` on IK+ raises onset 0.450 → 0.550 and costs 13 points of melody,
+so `keeps_notes` refuses it. Something in the emission is wrong for that file in
+a way the `$40` halving was wrong for Ricochet. Finding it would flip those files
+from "declined" to "selected" without any change to the criterion.
 
-### 2. Emit effect bit `$20`, the filter cutoff sweep (35 files)
+### 3. Lightforce `$1FF9`
 
-Decoded in v0.5.204 (§ 7.qqq) and unemitted. The routine:
+`$44` with `frames 4`, measures **0** attack frames over 15 onsets where the
+halving predicts 2. One record against nine. Recorded in `_two_stage_frames`'
+docstring; unexplained.
 
-```
-LDA effect / AND #$20 / BEQ out
-LDA accum,X / CLC / ADC step,Y / STA accum,X
-STA $D416                       ; cutoff high byte
-LDA res,Y / STA $D417           ; resonance and routing
-```
+### 4. Calibrate the 155 "other disagreement" onsets
 
-**Not yet read:** the offsets of `step` and `res` within the per-instrument
-table (both are `,Y` reads, so the same record-offset convention as `$40` and
-`$10` — expect them to be fields of the `det.wave_program` table or another
-parallel array). Add a `FilterSweep` dataclass alongside `PitchSeq`.
+Mean `onset` is 76.2% and the absolute level is **not calibrated** — the column
+demands an exact 4-frame class match, and an unknown share of the disagreements
+are legitimate differences rather than defects. Until this is understood, quote
+the *movement* of `onset`, not its level. (Note the 4-frame window itself,
+`ONSET_FRAMES`, is a choice: short on purpose so it does not start charging for
+note length.)
 
-**Emission target:** GoatTracker's filter table (`FTBL`), which
-`--filter`/`_filter_layout` already writes. A per-frame cutoff ramp is
-expressible there. The balloon song's record 1 sets `$20`, and its `cut`
-column is 0.82x — so there is measurable headroom.
+### 5. Documentation debt
 
-**Verification (do not skip):** measure on **at least two** files that use
-the mechanism differently, and prefer files whose options are already
-enabled — that is the lesson of v0.5.205/206.
+`H2G-CONVERSION-METHOD.md` has sections through **§ 7.www** (v0.5.218) and
+**§ 7.ccc** (v0.5.212). **v0.5.220, .221, .222, .223, .224 and .225 added no
+method-doc section.** CLAUDE.md requires the write-up to move with behaviour
+changes — it is used as reference material by another project. Sections owed:
+the multiplier half of the first-frame rule, the `onset` dimension, the `$40`
+halving, and the two harness bugs. `CLAUDE.md` and `README.md` *were* updated
+throughout.
 
-### 3. Commando's drum sweep — 7 steps where the original runs 5
+### 6. `songview.py`'s comparison overlay
 
-Rows 44/48 of GT pattern 18 (Hubbard 15), instrument 13:
+The designed selling point that was never built: `instrmap`'s per-instrument
+original-vs-ours tables, linked and sorted with flagged deltas on top. The `.sng`
+side is done. This would turn the scratch scripts used repeatedly this session
+into a first-class view.
 
-```
-original  0DD0 0CD0 0BD0 0AD0 09D0 08D0 | 08D0 08D0 08D0   <- stops, envelope -> 0000
-ours      0DD1 0CD1 0BD1 0AD1 09D1 08D1 | 07D1 06D1 06D1   <- two steps too far
-```
+### 7. Older, still open
 
-The original's sweep runs **5 steps and stops**; ours runs 7. Likely a budget
-or step-count read in `_drum_entries`. **Caution:** v0.5.134 investigated a
-drum-sweep *floor* and concluded none exists — this is a *length* claim, a
-different thing. Check against the routine, not against the trace alone.
+- The speed gate is under-read by a tune-specific 1.1–1.5× across the corpus
+  (`goatwriter.find_song_speeds`). Per-file targets in `build/pace.txt`. Use
+  `fidelity.py <file> --pace` before saying anything about tempo.
+- `FIDELITY.md` still has no noise-pitch column.
+- Trans-Atlantic's noise frames are 1053 against the original's 1089 — all 36 are
+  GT 3's snare final frame, because our note is one frame shorter than the
+  original's. **No column measures note length.**
 
-### 4. `0AF8` on the balloon song — 637 reversals unreached
+### 8. Listening verdicts pending
 
-Record 3, effect `$14` = `$10 + $04`. `_pitch_seq_entries` declines it
-because its `+2` waveform is `$00` (the `not wave & 0xF0` guard), so the
-two-stage path owns it. Needs a decision about precedence when both bits
-apply — in the player they are *sequential tests*, not exclusive, so `$04`
-sets the waveform and `$10` sets the note. Emitting both means one block
-carrying the attack waveform *and* the arpeggio's relative notes.
-
-### 5. Commando pattern 12's pulse sweep (free-running vs per-note reset)
-
-Diagnosed and never fixed. Our duty cycle restarts at `0AC0` on every note
-where the original's runs continuously across them:
-
-```
-original  0D60 0C80 0BA0 0AC0 09E0 0900 | 0900 0820 0900 09E0 ...
-ours      0AC0 0B3F 0BBE 0C3D 0CBC 0CBC | 0AC0 0B3F 0BBE 0C3D ...
-                                          ^^^^ reset
-```
-
-Three differences: the phase resets per note; the step is `0x7F` where the
-player's is `0xE0` (= the record's `+6`), because GoatTracker's pulse step is
-a **signed byte capped at ±127 per call** and 224/frame is unreachable at
-multiplier 1; and the range is narrower (`0AC0`–`0DBA` vs `0820`–`0E40`).
-The phase reset is likely a hard format limit (GT reloads `ptr[PTBL]` on
-every new note); confirm in `gplay.c` before attempting.
-
-### 6. Older, still open
-
-- **The speed gate is under-read by a tune-specific 1.1–1.5×** across the
-  corpus (`goatwriter.find_song_speeds`); right for 26 of 43 multiplier-1
-  files, so not a constant to correct. Per-file targets in `build/pace.txt`;
-  `tests/test_pace.py` pins the estimator. Use `fidelity.py <file> --pace`
-  before saying anything about tempo.
-- **`FIDELITY.md` still has no noise-pitch column.** Both v0.5.205's win and
-  its Thundercats regression were invisible to the report and found by
-  hand-rolled pitch histograms. The scorer now weighs it; the report does not
-  show it.
-- **`instrmap.py`'s pulse section** and the untracked `6581.pdf` (left alone
-  deliberately all session).
-
-### 7. Listening verdicts pending
-
-- Whether the balloon song is now right — it ships four settings it did not
-  have this morning (`two_stage`, `wave_program`, `sfx_drum`, `pitch_seq`).
-- Commando's pattern 12 after the tie fix.
+Nothing has been auditioned since the v0.5.209 corpus run. 28 files changed
+settings at v0.5.225 and none has been heard. Use `.\play.ps1 <file> -Presets
+presets.json` — **never launch `goattrk2.exe` directly**.
 </work_remaining>
 
 <attempted_approaches>
 
-## Shipped, then reverted or refused
+## Refuted, reverted, or refused
 
-1. **`vibdelay = 12`** (v0.5.198). Scored best (88.6% vs 85.5%) and was
-   refused: the moves/still column cannot see the 5 extra frames of onset
-   lateness it costs, and it plateaus at 14 rather than peaking — a count
-   maximised by destroying the events it counts.
-2. **The per-file gate as a plain `vibdelay`** (v0.5.199). Correct constant,
-   worse outcome: 78.9% vs 85.5%, inventions 207 → 417. A delay is also doing
-   the suppressing, so a lower threshold gives that up. Hence the `commanded`
-   parameter.
-3. **`cut_release` on every record** (v0.5.200 → reverted in v0.5.201). A
-   listener heard the drums break one build later. The corrected measure
-   scores the shipped v0.5.200 at **62.1% against 64.6% for off** — a net
-   regression published as an improvement.
-4. **`release_tails` as a minimum over the gap** (v0.5.200 → v0.5.201). It
-   admits the *next* note's envelope write and scored all seven instruments
-   as cut. Read on the gate-off frame instead. **Widening a window is not
-   automatically the safer reduction.**
-5. **Bit `$40`'s pitch on the attack's first frame** (v0.5.204). Pitch
-   exactly right, `melody` 85% → **39%**, because frame 0 belongs to the
-   played note. Not wired.
-6. **The `$40` pitch inside the looping drum block** (v0.5.205). Exact on
-   Trans-Atlantic, **8× over-applied on Pandora** (281 frames where 35
-   belong). The pitch fires once per note; the block loops per period.
-7. **`_fixed_attack_note` gated on the file only** (v0.5.206, caught before
-   commit). Reached Thundercats' drum, whose records are `$80`/`$A0` — 99
-   noise frames at a pitch its original never sounds, melody 77% → 72%.
-8. **`pitch_seq` as a default** (v0.5.207). Median `vib` 0.22x → 0.58x but
-   mean melody 81.5% → 76.3%, seven files losing. Ships off.
-9. **Rotating the arpeggio so the modal step follows the attack**
-   (v0.5.207). Principled (maximum likelihood under a uniform unknown phase)
-   and empirically neutral-to-worse: mean melody 77.3% → 76.3%, trading
-   After_8 (92% → 52%) for Chain Reaction. **The global phase is not
-   reproducible by a per-note wavetable at all.**
+1. **"The remaining early onsets are the § 7.ii drum tick"** — refuted by Sigma
+   Seven: zero records set bit `$01` yet both instruments sound a noise
+   transient. I had inferred mechanism from timbre.
+2. **"The transients are two-stage, detected but simply not enabled"** — looked
+   compelling and was *initially measured as refuted* (forcing the option fixed
+   1 instrument of 16). **That reading was itself wrong**: I read only the
+   matched count and missed that Sigma Seven's `$2B9D` became frame-exact while
+   `$0FFD` went from no transient to one a frame too long. Corrected next turn.
+3. **"A record with `$40` always sounds one attack frame"** — nearly shipped.
+   Indistinguishable from a halving at `frames = 2`; the `frames = 4` records
+   (which measure 2, not 1) separate them.
+4. **"The search and the report disagree because of subtune correspondence"** —
+   dismissed early on a misread (`if args.search_subtunes > 1` assumed to default
+   to 1; it defaults to **3**). Correct after all.
+5. **"The two harnesses actually agree"** — "confirmed" using a hand-built `args`
+   object that was itself misconfigured and coincidentally reproduced the search's
+   wrong number. Instrumenting the *real* CLI path via monkeypatched
+   `run_siddump` is what settled it.
+6. **`_first_frame_entry` gating for `_drum_entries`** — would have *removed* the
+   entry for records whose `+2` selects no waveform (a different change from "do
+   not add one"). Caught before running; hence `force=True`.
+7. **Passing the startup lag into `onset_agreement`** — would manufacture the
+   phase error the column detects. Caught before committing.
+8. **`early`/`late` written backwards** in `onset_agreement`. Caught by comparing
+   against an independent scratch analysis; both directions now have tests.
+9. **Committing the first corrected-criterion search** (39 files) — refused. It
+   was taken on the broken harness. `presets.json` was reverted with
+   `git checkout`.
+10. **Letting the first v0.5.221 search finish** — killed at ~2/3 when the `$40`
+    halving was found, because the `$44` files it had not yet reached were exactly
+    the ones the finding would change. `presets.py` writes only at the end, so
+    nothing was left half-written.
+11. **A `python - <<'PY'` heredoc edit** whose `\\n` became a literal newline and
+    broke a string literal across two lines. The `assert old in s` guard fired
+    correctly but only proves the *match*, not that the result parses. Now also
+    `ast.parse` the file after scripted edits.
 
-## Investigative dead ends
+## Delegation pattern that worked
 
-- **"Effect bit `$01` clear" dismissed at 59.8%** (v0.5.200) — computed over
-  all 95 files instead of the 33 with the routine, where it is 98.6% with no
-  false negatives. It *was* the mechanism.
-- **Two hypotheses fitted Commando's seven instruments perfectly** (`eff &
-  $01` and `release == $F`) and scored 59.8% / 79.0% corpus-wide. The answer
-  was six lines of 6502. **A correlation over instruments is not a
-  mechanism.**
-- **Chasing `new_patterns[12]`** for three dumps against a listener's
-  screenshot. GoatTracker numbers patterns in **hex**; "PATT.12" is 18.
-- **Searching for `AND #$40`** — bit 6 uses `BIT`/`BVC`. Nothing could match.
-- **Reading `$116B,Y` with `Y` as the record number** — gives 129 → `$1A03`,
-  not a pitch in the trace. `Y` is `index × stride`.
-- **A synthetic `_build_raw_pattern` test at `addr = 1`** — the decoder
-  rejects `addr + i2 <= 1` outright and returns `None`.
-- **Reading the emitted SR at a fixed buffer offset** — Clear Voice's name
-  field is 16 bytes, not 32, so the arithmetic read the name and reported no
-  change. Locate the record by its AD byte.
-- **A `str.replace`-style scripted edit whose search string spanned a
-  docstring terminator** — produced `""""""` and an unterminated-string
-  syntax error; and a test asserting `"second_note=_fixed_attack_note" not in
-  src` tripped on the *comment* that names the omitted argument.
+Four Opus agents in isolated git worktrees (`isolation: "worktree"`), each
+briefed with the full evidence and told to verify on a second file, not to
+commit, and not to touch generated artefacts. Patches were exported with
+`git diff`, applied with `git apply --3way`, tested, then committed by the main
+session. Every one found something the brief did not anticipate. One (v0.5.212's
+predecessor, a `/subtask` fork) correctly **reverted its own work** rather than
+ship an unverified fix.
 
-## Considered and not pursued
-
-- **Redefining `adsr`** so `--cut-release` scores well. Refused; the report
-  prints an attribution beside the number instead.
-- **Scoring `finds_noise` per instrument off `noise_runs`** — the principled
-  fix for the criterion's per-file blindness. Deferred because it re-decides
-  every file's toggles; v0.5.208's log-space median-pitch term addresses the
-  same gap more cheaply.
-- **`gt2reloc -R0`** as a fix for the slide deficit — settled negatively
-  earlier: `patterns._scaled_step`'s `row_calls` correction already
-  compensates, so disabling the skip double-corrects.
+Caveat learned: a `/subtask` fork cannot spawn its own subagents, so
+`/subtask do 2 / do 3 / do 4` ran only item 2.
 </attempted_approaches>
 
 <critical_context>
 
 ## Environment
 
-- Repo `C:\Users\mit\claude\h2g`, branch `master`, HEAD `d5f1cea`, pushed.
-- Corpus (95 files):
-  `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
-- GoatTracker 2.77 source (the version this builds against):
-  `C:\Users\mit\Downloads\GoatTracker_2.77\src` — `gplay.c`, `gsong.c`,
-  `gcommon.h`. Cited constantly; keep it to hand.
-- Build outputs in `build/` (gitignored). `6581.pdf` untracked, deliberately.
-- Python 3.14, stdlib only at runtime; `pytest` dev-only.
+- Repo `C:\Users\mit\claude\h2g`, branch `master`, HEAD `31294e2`, pushed.
+- Corpus (95 files): `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
+- GoatTracker 2.77 source: `C:\Users\mit\Downloads\GoatTracker_2.77\src`
+  (`gplay.c`, `gsong.c`, `gcommon.h`). `gt2reloc.exe` and `goattrk2.exe` are in
+  that tree's `win32/`; `fidelity.py` hardcodes the path (`H2G_GT2RELOC`
+  overrides).
+- `build/` is gitignored; `6581.pdf` untracked deliberately.
+- Python 3.14, stdlib only at runtime.
+- Scratch scripts used repeatedly and worth recreating:
+  `scratchpad/onsetdetail.py` (per-instrument onset shapes, both sides, one
+  file), `scratchpad/transient_census.py` (corpus census of unrendered
+  transients), `scratchpad/phase.py` (parses instrmap's folded dumps).
 
-## Non-obvious behaviours discovered this session
+## Rules added to CLAUDE.md this session
 
-- **`gplay.c:770`** — the `vibdelay` countdown is inside `case
-  CMD_DONOTHING`, so a pattern `CMD_VIBRATO` skips it entirely.
-- **`gplay.c:811`** — `CMD_TONEPORTA` with parameter **0** is an instant
-  pitch jump, not a slide, and zeroes `vibtime`.
-- **`gplay.c:930`** — the hard-restart gate-off is skipped when the row's
-  command is `CMD_TONEPORTA`, or when the instrument's gatetimer has bit
-  `$40`.
-- **`gplay.c:925`** — only `$60`–`$BC` assign `newnote`; `$BD` (REST) is
-  "no new note", not a stop.
-- **GoatTracker numbers patterns in hex** in the editor. Clear Voice's
-  instrument-name field is **16 bytes**, not 32.
-- **A wavetable delay entry holds the *current waveform*** — a delay after a
-  noise entry keeps sounding noise.
-- **GoatTracker's pulse step is a signed byte, ±127 per call**; a player
-  wanting 224/frame is unreachable at multiplier 1.
-- **Status bit 5 of a Hubbard pattern status byte is a tie flag** — three
-  separate defects came out of that one bit (§§ 7.mmm, 7.nnn, 7.ooo).
-- **`det.wave_program`'s array is read three different ways** depending on
-  the effect bit: a pointer low byte under `$08`, a note index under `$40`, a
-  sequence index under `$10`.
-- **`Y` in these players is a record *offset*** (`index × instr_stride`), not
-  a record number.
+1. **A lesson recorded in one emitter is not a lesson in the file.**
+   `_drum_entries` fixed the first-frame rule in v0.5.172; two siblings in the
+   same file carried the defect for 45 versions. When a fix is really a *rule
+   about the player*, give it a name every emitter calls and a column that fails
+   when one stops — `_first_frame_entry`/`_first_frame_lead` and `onset`.
+2. **The rule had a second half nobody stated**: one frame is `multiplier` play
+   *calls*. `_drum_entries`' docstring described its one-call lead as a fact
+   rather than as the bug.
+3. **`onset` is the column that sees a mechanism emitted one frame out of
+   phase**, and it takes no startup-lag correction.
 
-## Standing project rules that bit this session
+## Non-obvious behaviours discovered
 
-All are in `CLAUDE.md`; these are the ones that actually mattered:
+- **`--search-subtunes` defaults to 3**, so `fidelity.py` routinely compares the
+  original's subtune N against our N±1 and keeps the best. Any second harness
+  must do the same.
+- **`run_siddump`'s fifth positional argument is the calibration**, not a flag.
+  Four corpus files need it.
+- The instrument **name** field in a `.sng` is the converter's provenance stamp,
+  `NN:b5-b6-b7`, and b7 is the player's effect byte — decodable without
+  re-running detection.
+- `SongSpeeds.frames` can contain `None`.
+- Chrome MCP cannot open `file://` URLs; serve over `127.0.0.1`.
+- A `.sng`'s wavetable right side: `$00`-`$5F` relative up, `$60`-`$7F` relative
+  down, `$80`-`$DF` absolute note.
 
-- Regenerate `SURVEY.md` and `presets.json` **every commit** (they embed the
-  version); `FIDELITY.md` only after a commit that changes what the converter
-  emits, and never from a tree with unrelated edits.
-- **Check the fixture's bytes, not its length** — `len(...) == 15193` passes
-  for most single-byte moves.
-- **A scripted edit must assert its match**; verify the change appears in
-  `git diff`.
-- `--vice`/`FIDELITY.md` numbers either side of v0.5.195 are not comparable
-  (the window changed from 10 s to 60 s).
-- **Never launch `goattrk2.exe` directly** — use `.\play.ps1 <file>
-  -Presets presets.json`, which prints the SHIFT+F6 multiplier hint. 37 of 82
-  files advance a row every 2–3 frames and play at 1/multiplier speed
-  otherwise. `play.ps1` also accepts a `.sng` directly, which is how A/B
-  builds were launched.
-- A new `convert()` option is inert until it is in **three** places: the
-  signature, `presets.py`'s `FIXED`, and `_preset_opts`.
-  `tests/test_preset_passthrough.py` enforces it via
-  `EXCLUDED_FROM_ALWAYS`.
+## Assumptions needing validation
 
-## Rules added this session (all in `CLAUDE.md`)
-
-1. A constant read from one player is a constant about one player.
-2. The same number can be right for a mechanism and wrong for its
-   approximation.
-3. An attribution key must not contain the quantity being attributed.
-4. A correlation over instruments is not a mechanism.
-5. Widening a window is not automatically the safer reduction.
-6. A discriminator is only meaningful on the population the behaviour occurs
-   in.
-7. GoatTracker numbers patterns in hex; the editor's pattern is not the
-   converter's intermediate — identify by note-row positions.
-8. Reading a bit is not drawing its consequence.
-9. A bit tested with `BIT`/`BVC` is invisible to an `AND #$xx` scan.
-10. Where an effect's frames *land* is part of the mechanism.
-11. A per-frame profile measured on one file can encode that file's structure
-    rather than the mechanism's — verify on a second file that uses it
-    differently, preferring files whose options are already enabled.
-12. A detection flag about a player is not a fact about a record.
-13. A rate that looks wrong may be a mechanism that is absent — attribute a
-    ratio per instrument first.
-14. A mechanism driven by a global counter cannot be put in a per-note
-    wavetable.
-15. Compare a ratio in log space.
-
-## Assumptions that still need validation
-
-- `PitchSeq.base`'s `seq[0]` is 0 in **every file checked**, not proven for
-  all 34.
-- `$40`'s note index is validated by measurement on **one** instrument
-  (Trans-Atlantic record 1). Records 15 and 18 hold 174 and 132, past the
-  95-entry note table, and `_fixed_attack_note` declines them rather than
-  guessing.
-- `_two_stage_entries`' `frames` byte is 4 for Trans-Atlantic record 1, but
-  the measured attack occupies offsets +1..+2 (two frames). The relationship
-  between that byte and the shared `$0FAA,X` counter is **not** established.
-- The `$20` filter sweep's per-instrument `step`/`res` offsets are unread.
+- The `$40` halving's implied mechanism (a shared per-voice counter decremented
+  by both handlers) is **inferred from two measured points**, not read out of the
+  6502. Lightforce contradicts it once.
+- `tune_by_fidelity` resolves the subtune counterpart **once** and reuses it for
+  all 31 candidates, assuming no toggle changes orderlist length.
+- `onset`'s 4-frame window and its exact-match rule are choices, not measurements.
 </critical_context>
 
 <current_state>
 
 ## Repository
 
-- **HEAD `d5f1cea` (v0.5.208), pushed; `master` in sync with `origin/master`.**
-- Working tree clean except untracked `6581.pdf` (deliberate).
-- `python -m pytest tests/ -q` → **818 passed, 2 skipped**.
-- `Commando.sng` byte-exact (`convert('Commando.sid') == Commando.sng`).
-- `SURVEY.md`, `presets.json`, `FIDELITY.md` all regenerated at v0.5.208 and
+- **HEAD `31294e2` (v0.5.225), pushed; `master` in sync with `origin/master`.**
+- Working tree clean except untracked `6581.pdf`.
+- `python -m pytest tests/ -q` → **877 passed, 2 skipped** (the two skips are
+  environment-gated on `H2G_GT2RELOC`).
+- `Commando.sng` byte-exact.
+- `SURVEY.md`, `presets.json`, `FIDELITY.md` all regenerated at v0.5.225 and
   committed.
 
-## Shipped on by default (in `presets.json`'s `always`)
+## Corpus state
 
-`--vibrato-command`, `--cut-release`, `--tie`, plus everything from before.
-
-## Shipped off by default
-
-- `--pitch-seq` — in `FIDELITY_TOGGLES` (searched per song), never in
-  `always`.
-- `--sfx-drum`, `--two-stage`, `--wave-program`, `--no-test-restart` — all
-  per-song `FIDELITY_TOGGLES`.
-
-## Read but not emitted
-
-- **Effect bit `$20`** — the filter cutoff sweep, 35 files. Fully decoded
-  (§ 7.qqq), no detector fields, no emitter.
-- **Bit `$40`'s `_fixed_attack_note`** is wired only into
-  `_sfx_drum_entries`' prologue. `_two_stage_entries(attack_note=...)`
-  accepts it and **nothing passes it** — deliberate, with the reason in a
-  comment at the call site.
+- 83 of 95 files convertible (up from 80 — the v0.5.211 crash fix).
+- **38 files carry a non-default `--fidelity` setting** (up from 19):
+  `--two-stage` on 26, `--wave-program` on 11, plus `sfx_drum`, `pitch_seq`,
+  `no_test_restart` per song.
+- Corpus means at v0.5.225: melody **85%**, wave **74%**, onset **76.2%**.
 
 ## Per-song overrides in `presets.py`
 
-- `FIDELITY_VETOED` — **empty**, kept as a comment recording the retired
-  Trans-Atlantic `sfx_drum` veto and why.
-- `FIDELITY_CONFIRMED` —
-  `{"Trans-Atlantic_Balloon_Challenge.sid": {"wave_program", "pitch_seq",
-  "sfx_drum"}}`. These are hand-recorded measurements standing in for a
-  `--fidelity` run that has not happened.
+- `FIDELITY_VETOED` — `{"Dragons_Lair_Part_II.sid": {"pitch_seq"}}`, because its
+  init routine renumbers subtunes and the measurement that chose it compared two
+  different pieces of music.
+- `FIDELITY_CONFIRMED` — `{"Trans-Atlantic_Balloon_Challenge.sid":
+  {"wave_program"}}`.
 
-## Balloon song (Trans-Atlantic) — the file most worked on
+## New surface added this session
 
-Ships `two_stage`, `wave_program`, `sfx_drum`, `pitch_seq`. Its
-`FIDELITY.md` row at v0.5.208: 494/494 notes, retrig 1.00, melody 85%, seq
-86%, pitch 91%, `vib` **0.72x**, wave 63%, noise **1089/1089**, `nrun`
-**100%**, tail 100%, adsr 87%, pul 6505/6890, pspan 0.98x, filt 2992/2996,
-cut 0.82x.
-
-Known-remaining on it: instrument `0AF8` (637 reversals unreached), the `$20`
-filter sweep unemitted, `wave` at 63%.
+- `python/songview.py` + `tests/test_songview.py` (11)
+- `python/tools/siddump-rt/siddump.c` — `-w` (documented in its README)
+- `fidelity.py` — `_wave_class`, `ONSET_FRAMES`, `onset_shapes`,
+  `onset_agreement` (incl. `onset_frame_agreement`), the `onset` Dimension and
+  table column
+- `presets.py` — the `opens_right` term, calibration, the subtune-counterpart
+  probe
+- `goatwriter.py` — `_first_frame_entry`, `_first_frame_lead`,
+  `_two_stage_frames`, `EFFECT_FIXED_PITCH_MASK`, `_two_stage_pitch_seq_entries`,
+  `_drum_duration_steps`
+- `patterns.py` — `median_played_durations`, `_pattern_plays`,
+  `_entry_instruments`
+- `detect.py` — `_burst_cutoff_start`
+- New tests: `test_songview.py`, `test_onset.py` (10),
+  `test_onset_criterion.py` (6), `test_two_stage_frames.py` (5),
+  `test_search_matches_report.py` (4), `test_two_stage_pitch_seq.py` (7)
 
 ## Open questions for the user
 
-1. Whether the balloon song now sounds right — four settings changed today.
-2. Whether Commando's pattern 12 is fixed by the tie (last heard before it).
-3. The last listening report was **"I cannot hear any difference on the
-   drums"** between the shipping build and one with `--sfx-drum`. That
-   retired the veto; it is *not* an endorsement, and is recorded as such.
+1. **Nothing has been auditioned since v0.5.209.** 28 files changed settings at
+   v0.5.225. The `onset` gain is large and every other column is flat, but that
+   is a register argument, not a listening one.
+2. Whether Trans-Atlantic now sounds right — it has changed substantially
+   (v0.5.213, .218, .222).
+3. Whether the documentation debt (§ 5 of Work Remaining) should be paid before
+   more code lands.
 
 ## Immediate next action
 
-The user's last message asked whether the session can run on Sonnet. My
-answer: I cannot switch my own model (`/model sonnet` is theirs to set), and
-my read is that the long `--fidelity` run and the Commando drum-sweep fix are
-fine on Sonnet, while the `$20` emission and the `0AF8` precedence decision
-would benefit from Opus — because today's pattern showed that the work in
-those is not writing the emitter but disbelieving it (three regressions were
-caught only by checking a second file). **No model switch has occurred; no
-work is mid-flight; nothing is uncommitted.**
+The transient thread is characterised and paused at a natural boundary, with the
+two classes separated and evidenced. The highest-value next step is **Class B**:
+take International_Karate or Mega_Apocalypse and find what writes `$D404` on the
+note's second frame — using `siddump -w` or the retrodebugger, **not** by
+inferring the mechanism from the transient's waveform.
 </current_state>

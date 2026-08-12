@@ -6533,6 +6533,160 @@ moved anywhere.
 
 ---
 
+### 7.xxx The drum block does not branch around the arpeggio
+
+v0.5.226. International Karate was one of the two files the previous session
+filed as **Class B** — instruments whose original changes waveform on the note's
+second frame while the conversion holds the first, and which measured
+*identically* under `--two-stage`, `--wave-program` and as shipped, so "some
+other routine writes `$D404` on frame 1". Its `onset` was 40%, its `nrun` 0%,
+and it played 437 noise frames against the original's 828.
+
+`songview.py` — built for exactly this and, until now, never the thing that
+answered a question — made the three failing instruments legible in one screen:
+
+```
+instr 1  '02:00-20-55'  adsr $0A0A     41 00   pulse, gate on
+                                       40 00   pulse, gate off
+                                       40 7B   pulse, gate off, note -5
+                                       FF 02   jump to entry 2
+```
+
+An arpeggio, correctly derived, with no noise anywhere in it — against an
+original measured as `pul noi noi pul` on every one of that instrument's 36
+onsets. The record is `00 08 41 0A 0A 00 20 55`: `+7` is `$55`, which carries
+**both** the drum bit `$01` and the arpeggio bit `$04`.
+
+#### What the emitter believed, and what the player does
+
+`_wavetable_entries` had this case gated since the effect bits were first read:
+
+```python
+if drum and effects and not arp:
+    return _drum_entries(...)          # the tick, the gate-off, the sweep
+if drum:
+    left[1] = (wave & 0xFE) or WAVE_NOISE_GATEOFF
+    # "The leading noise tick the original wrote is not in the player at
+    #  all, and on the corpus it scores at chance."
+```
+
+The comment was written before v0.5.172 read the block, and the block says
+otherwise. International Karate `$B15F` is Warhawk `$1366` byte for byte:
+
+```
+B15F  AD F7 B2   LDA effect
+B162  29 01      AND #$01
+B164  F0 35      BEQ $B19B          ; not a drum
+B166  BD EB B2   LDA freqcnt,X / BEQ $B19B
+B16B  BD C3 B2   LDA remaining,X / BEQ $B19B
+B170  BD C6 B2   LDA duration,X / AND #$1F / SEC / SBC #$01
+B178  DD C3 B2   CMP remaining,X
+B17B  AC BC B2   LDY voice
+B17E  90 10      BCC $B190          ; early in the note -> noise
+B180  ...        DEC freqcnt,X / STA $D401,Y   ; else sweep the frequency
+B189  BD C9 B2   LDA wave,X / AND #$FE / BNE $B198
+B190  ...        LDA freqcnt,X / STA $D401,Y / LDA #$80
+B198  99 04 D4   STA $D404,Y
+B19B  EA         NOP
+B19C  AD F7 B2   LDA effect         ; <- the ARPEGGIO's own bit test
+B19F  29 04      AND #$04 / BEQ ...
+```
+
+Every exit of the drum block — the bit test, both guards, and the fall-through
+after its own `STA $D404,Y` — lands on the `NOP` at `$B19B`, one byte before the
+arpeggio's `LDA effect / AND #$04`. **There is no branch around it.** A record
+setting both bits gets both blocks: the drum writes the waveform (noise while
+the duration counter is still large), the arpeggio then overwrites the frequency
+the drum swept. What five wavetable slots cannot hold is the drum's *sweep*
+beside the arpeggio's pair — and the tick is not the sweep. It is two entries,
+and variable-length wavetables (§ 7.oo) have room for them.
+
+The fix is one line: such a record is routed through the `tick` path a
+*sustaining* drum record already took. IK's three both-bits records go from
+`pul pul pul pul` to `pul noi noi pul`, its `onset` from 40% to **100%**, and
+its noise frames from 437 to 865 against the original's 828.
+
+#### Two more defects the corpus surfaced on the way, both in the same shape
+
+The change reached 62 of the 291 drum records the effect gate keeps, so the
+corpus A/B did what one file could not.
+
+**One: the length was a constant here and derived there.** With the tick emitted
+at the hardcoded `NOISE_TICK_FRAMES = 2`, five files' `nrun` fell — Warhawk 67%
+→ 29%, Proteus 33% → 20%, Spellbound, Formula_1_Simulator, Last_V8. They are
+exactly the five whose speed gate derives a **one**-frame tick (§ 7.ggg), which
+`_drum_entries` has read since v0.5.191 and this path never did.
+
+**Two: the tick's own derivation read the wrong subtune.** Switching this path
+to `_noise_tick_frames` fixed those five and broke Commando — `nrun` 67% → 0%,
+`onset` 83% → 17%. The function took the **mode** of the gate over every
+subtune, and the corpus rip of Commando carries nineteen: four songs at gates
+3, 4, 3, 3 and fourteen one-frame sound effects. The effects outvote the music.
+Its original measures a two-frame tick on all five of its pitched drum records
+(371 runs of 2, and nothing else), and the mode says 1.
+
+The subtune to read is the one the file itself starts on — `resolve_subtune`'s
+rule, and for its reason: it is the subtune a player selects when the user
+selects none, and therefore the one that is the tune. Settled by measurement
+rather than by argument. Tracing each of the 35 corpus files whose player has
+the drum routine and taking the modal noise-run length over the ADSR pairs of
+its drum-flagged *pitched* records:
+
+| derivation | exact | of the 28 files whose run is 1–3 frames |
+|---|---:|---|
+| mode over all subtunes | 24 | |
+| **gate at `startSong`** | **27** | right everywhere the mode is, and on Commando, Delta and Phantoms_of_the_Asteroid besides |
+
+The seven files neither fits measure 12–18 frames — the noise-throughout class
+§ 7.ggg already documents. Sanxion is the one genuine miss: it measures 1 where
+both derivations say 2.
+
+**And this was invisible for as long as it existed**, because the test that
+pins the reading uses the repo's `Commando.sid` fixture, which carries *three*
+subtunes. The fixture's mode is 3; the corpus rip's is 1. The assertion passed
+throughout while every fidelity number for Commando — and every drum record in
+the file a listener validated by ear — was emitted at the wrong length.
+
+**Three: frame 0 is `multiplier` calls here too.** With the length right,
+Warhawk still read `noi pul pul pul` against `pul noi pul pul` on five
+instruments while its two drum-only ones matched. Its `-S2`: the tick path's
+lead was one *call*, so it covered half of frame 0 and the noise finished it,
+and siddump samples at end of frame. This is v0.5.220's defect arriving for the
+third time in the same file — `_drum_entries` was fixed then, `_two_stage_entries`
+in v0.5.218, and the plain `tick` path was never looked at. It now calls the
+shared `_first_frame_lead`.
+
+#### The corpus, at fixed settings
+
+| | | |
+|---|---|---|
+| `onset` | **+29.5 pp** on 15 files | 0 down. IK 40→100, Warhawk 67→100, Spellbound 50→100, Phantoms 57→100 |
+| `nrun` | **+37.2 pp** on 16 files | Warhawk 67→100, Proteus 33→100, Delta 67→100, Zoolook 50→100 |
+| `melody` | **+20.6 pp** on 8 files | 0 down. Formula_1_Simulator 39→88, Last_V8 (both) 62→100, Warhawk 74→82 |
+| `seq` | +17.3 pp on 8 | |
+| `pitch` | +12.6 pp on 5 | Spellbound 71→96 |
+| `wave` | +0.9 pp on 18 | mixed by file, as a whole-window average over a 1–2 frame change must be |
+| `adsr`, `tail`, `pul`, `filt`, `cut` | unmoved on every file | |
+
+Two columns move the wrong way and are recorded rather than smoothed over.
+`retrig` moves on 8 files, three of them from an undershoot to a *smaller*
+overshoot (in log space, which is how a ratio is compared here) and Spellbound
+from 1.13 to 1.50, a real regression on a file whose `melody` rose 16 points.
+`vib` falls on 11 of the 15 files it moves — our reversal count against the
+original's, on files where it was already under 1. Both columns read pitch
+movement through siddump's note/bend split, which a change to the *waveform*
+shifts frames across (§ 7.uu); neither is evidence about pitch on its own.
+
+> **The transferable lesson**, and it is the third version of the same one:
+> a rule about the player belongs in a function every emitter calls, not in a
+> comment in one of them. `_first_frame_lead` was extracted in v0.5.220 for
+> precisely this reason and the third emitter still did not call it. The
+> corollary is new: **a fixture is not the corpus.** A test that pins a
+> derivation against a file with three subtunes cannot see that the same tune,
+> as the corpus ships it, has nineteen.
+
+---
+
 ## 10. Failure modes, ranked by how quietly they fail
 
 Worth reading as a checklist of "what a static ripper gets wrong":

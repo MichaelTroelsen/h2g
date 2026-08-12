@@ -150,7 +150,24 @@ test dependency).
   `-S2` files against 3 on the 45 single-speed ones; fixing it took corpus
   onset agreement 237 -> 254 matched with **melody, seq, adsr, nrun, tail and
   pitch all exactly unchanged**, which is the signature of a change that moves
-  a waveform *within* frame 0 and nothing else.
+  a waveform *within* frame 0 and nothing else. **And a fourth emitter still
+  did not call it**: v0.5.226 found the plain `tick` block of
+  `_wavetable_entries` reading its tick length from a hardcoded constant where
+  `_drum_entries` derived it, and opening it one *call* into frame 0 where
+  `_first_frame_lead` exists to open it one frame in. Extracting a helper is
+  not the same as every caller using it -- grep for the constant the helper
+  replaced, not just for the helper.
+- **A fixture is not the corpus.** `_noise_tick_frames` took the modal speed
+  gate over a file's subtunes; the corpus rip of Commando carries 19 (four
+  songs and fourteen one-frame sound effects, which outvote the music) where
+  the repo's `Commando.sid` fixture carries 3. The test pinning the derivation
+  reads the fixture, so it passed for as long as the defect existed while
+  every fidelity number for that file -- and the drum a listener validated by
+  ear -- was emitted at the wrong length. The rule is now the gate at the
+  subtune the file *starts* on (`resolve_subtune`'s rule), which is exact on
+  27 of the 28 corpus files whose run is short against the mode's 24. When a
+  reduction over per-subtune data is pinned by a fixture, check the corpus
+  copy of the same tune has the same subtunes.
 - **`onset` is the column that sees a mechanism emitted one frame out of
   phase**, and until v0.5.217 nothing could. `wave` averages per-frame
   agreement over the whole window, so a wrong opening frame on a 43-note

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.226 — 2026-08-12
+
+- the drum's noise tick reaches an arpeggio record, at its own length and on frame 1
+
 ## 0.5.225 — 2026-08-12
 
 - apply the corrected --fidelity search: 34 settings gained, onset 62% -> 76%

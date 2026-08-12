@@ -407,10 +407,16 @@ chromatic rise, 21 the pulse-width variant.
   **159 of 450** records setting the drum bit and **544 of 683** setting the
   arpeggio bit are in such a file. Nothing is written for them now.
 - **Where the drum routine is present the gesture is written the way the
-  player plays it** (Warhawk `$1366`): the voice's own waveform with the gate
-  released, then the frequency falling one high byte per frame — not the
-  leading noise tick the original wrote, which is in no player. The drum's
-  *noise ending* is measured and deliberately left out; see below.
+  player plays it** (Warhawk `$1366`): the record's own waveform on the note's
+  first frame, then noise while the block's duration counter is still large,
+  then the voice's waveform with the gate released and the frequency falling
+  one high byte per frame. The noise is the block's own `BCC` branch, not the
+  fabricated tick the original wrote; its length is the player's speed gate
+  less one, read at the subtune the file starts on. A record that *also*
+  arpeggiates gets it too — the drum block falls through into the arpeggio's
+  bit test rather than branching around it, so both run — but loses the sweep,
+  which the arpeggio needs the slots for. The drum's *noise ending* is
+  measured and deliberately left out; see below.
 - **The sweep is as deep as the note is long, and no deeper.** The routine has
   two exits — `LDA freqhi,X / BEQ out`, the frequency reaching zero, and
   `LDA remaining,X / BEQ out`, the note ending — and for a long time only the

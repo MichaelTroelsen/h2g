@@ -511,14 +511,21 @@ def test_min_played_notes_reads_a_restart_operand_as_a_position():
 def test_an_arpeggio_keeps_the_pair_it_needs_over_the_deep_drum():
     # Both bits set: the player runs both blocks and the arpeggio's frequency
     # write ($13F4) lands after the drum's. Five entries cannot hold both, so
-    # such a record stays on the original's shape -- 62 of the 291 drum
-    # records this gate keeps.
+    # such a record keeps the arpeggio and loses the drum's *sweep* -- 62 of
+    # the 291 drum records this gate keeps.
     left, right = _entries(DRUM | ARP | 0x30, effects=True, drum=True,
                            arp=True, wave=0x41)
-    # The loop target moved one entry earlier with the phase fix (v0.5.197), so
-    # it is right[3] rather than right[4] and names entry 1 rather than entry 2.
-    assert right[3] == 7, "the arpeggio keeps its loop"
-    assert left[1] == 0x40, "and the drum says only where it starts"
+    # It does not lose the drum's noise tick. Every exit of the drum block
+    # falls into the arpeggio's own bit test (International Karate $B15F ->
+    # $B19B -> $B19C), so both run, and the tick is two entries the
+    # variable-length wavetable can afford. Measured on IK's original: its
+    # three both-bits records open `X noi noi X` where this held the base
+    # waveform for all four frames.
+    assert left[1] == 0x81 and left[2] == 0x81, "the drum's noise tick"
+    assert left[3] == 0x40, "then the voice's own waveform, gate released"
+    # The arpeggio still has its pair, two entries later.
+    assert left[4] == 0x40 and right[4] == 0x7D, "the arpeggio's second note"
+    assert right[5] == 9, "and its loop back to the first"
 
 
 # --- detection --------------------------------------------------------------
@@ -571,20 +578,17 @@ def test_a_bit_can_be_tested_without_the_block_being_warhawks():
     assert _detect_effects("Mega_Apocalypse") == (False, False, False, False, 0)
 
 
-def test_the_noise_tick_length_is_derived_but_not_yet_wired():
+def test_the_noise_tick_length_is_derived_from_the_gate():
     """v0.5.191. `run = gate - 1` is the mechanism behind the hardcoded 2: the
     drum's "first vbl" test compares against a length that decrements once per
     duration *unit*, and the note's own first frame is spent by the init path.
     Exact on 22 of the 25 corpus files with a drum and a pitched record.
 
-    It is read and not wired, because wiring it measured flat -- 26 of 29 drum
-    instruments match the original's run either way. The sweep was the first
-    suspect and is exonerated: both tick settings at budget 5 and again at
-    budget 8 gave identical counts. What the derived tick does is move the noise
-    a frame earlier relative to siddump's gate-edge attack, so the two settings
-    are measured on different populations. This test pins the reading and the
-    fact that nothing consumes it, so the next attempt starts from there rather
-    than from the wrong suspect.
+    Both emitters read it since v0.5.226 -- see `tests/test_noise_tick.py`,
+    which also pins *which subtune's* gate, the question this reading of the
+    repo fixture cannot ask: the fixture carries 3 subtunes where the corpus
+    rip of the same tune carries 19, so the mode was right here and wrong
+    there for as long as the two disagreed.
     """
     from h2g.convert import _detect_tables
     from h2g.goatwriter import _drum_entries, _noise_tick_frames
