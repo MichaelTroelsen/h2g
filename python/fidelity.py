@@ -1192,6 +1192,40 @@ def onset_shapes(voices: list[Voice], nframes: int) -> dict:
     return out
 
 
+def onset_shift(orig: tuple, ours: tuple) -> str | None:
+    """`"early"`, `"late"` or None: whether one frame of shift explains a shape.
+
+    A shape that is the original's sequence one frame out is a phase error
+    rather than a wrong waveform, and the two have completely different fixes:
+    section 7.www moved two emitters by a frame and left the waveforms alone.
+
+    **The direction is easy to write backwards, so read it off an example.**
+    `ours == orig[1:]` means we never played the original's first frame -- we
+    are a frame ahead of it, i.e. EARLY. Trans-Atlantic's GT 3 is exactly this:
+    the original opens `tri noise tri pulse` and we open `noise tri pulse
+    noise`, because the player writes the record's own waveform on the note's
+    first frame and our wavetable opened on the effect instead.
+
+    **A shift only counts where the unshifted reading does not already fit.**
+    On a shape the original holds constant, `ours[:-1] == orig[1:]` is true of
+    any shape agreeing in its first three frames, so a note of ours that simply
+    *ends* inside the window -- `noi noi noi --` against `noi noi noi noi` --
+    read as a one-frame phase error, and three of the corpus's six did. That is
+    a note-length difference, which is a different defect in a different place
+    and one no column here measures; `classify_onset` calls it `short`. The
+    inequality is what distinguishes evidence of a shift from a shift that
+    explains nothing.
+    """
+    if orig == ours:
+        return None
+    head = ONSET_FRAMES - 1
+    if ours[:head] == orig[1:] != orig[:head]:
+        return "early"
+    if ours[1:] == orig[:head] != orig[1:]:
+        return "late"
+    return None
+
+
 def onset_agreement(orig: list[Voice], ours: list[Voice],
                     nframes: int) -> dict:
     """Instruments whose notes open on the original's waveform sequence.
@@ -1214,22 +1248,8 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
              for k in shared}
     matched = sum(1 for k in shared if modal[k][0] == modal[k][1])
     first = sum(1 for k in shared if modal[k][0][0] == modal[k][1][0])
-    # A shape that is ours shifted by one frame is a phase error rather than a
-    # wrong waveform, and saying so is the point of the column: the two have
-    # completely different fixes and the report has never distinguished them.
-    #
-    # **The direction is easy to write backwards, so read it off an example.**
-    # `ours == orig[1:]` means we never played the original's first frame -- we
-    # are a frame ahead of it, i.e. EARLY. Trans-Atlantic's GT 3 is exactly
-    # this: the original opens `tri noise tri pulse` and we open `noise tri
-    # pulse noise`, because the player writes the record's own waveform on the
-    # note's first frame and our wavetable opened on the effect instead.
-    early = sum(1 for k in shared
-                if modal[k][0] != modal[k][1]
-                and modal[k][0][1:] == modal[k][1][:ONSET_FRAMES - 1])
-    late = sum(1 for k in shared
-               if modal[k][0] != modal[k][1]
-               and modal[k][1][1:] == modal[k][0][:ONSET_FRAMES - 1])
+    early = sum(1 for k in shared if onset_shift(*modal[k]) == "early")
+    late = sum(1 for k in shared if onset_shift(*modal[k]) == "late")
     # **Graded, and the ungraded form is not a substitute.** `onset_agreement`
     # demands the whole four-frame shape, which is the right thing for the
     # report -- it says "this instrument opens correctly" and nothing weaker.
@@ -1248,6 +1268,174 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
         "onset_ours_early": early,
         "onset_ours_late": late,
     }
+
+
+# The kinds an onset disagreement can be. Ordered as the report prints them:
+# the match first, then the two that name a fix, then the three that are
+# emitter quality.
+ONSET_KINDS = ("match", "phase", "short", "flat", "invented",
+               "partial", "wrong")
+
+_CLASS_NAMES = ((0x80, "noi"), (0x40, "pul"), (0x20, "saw"), (0x10, "tri"))
+
+
+def class_name(w: int) -> str:
+    """A waveform class as a name. `_wave_class`'s output, not a raw byte."""
+    names = [n for bit, n in _CLASS_NAMES if w & bit]
+    return "+".join(names) if names else "--"
+
+
+def shape_name(shape) -> str:
+    return " ".join(class_name(w) for w in shape)
+
+
+def classify_onset(orig: tuple, ours: tuple) -> str:
+    """Which *kind* of disagreement two modal onset shapes are.
+
+    `onset` reports a rate, and a rate says how much is wrong without saying
+    what to do about it. These kinds separate fixes that have nothing to do
+    with each other:
+
+    * `flat` -- our note holds one waveform where the original's moves. A
+      mechanism we do not render at all, and the group to go and read the 6502
+      for. Grouped by the record's effect byte, this is a work list: the
+      grouping is what turned "18% disagree" into "$01 x19, $04 x11, $80 x6,
+      $0A x6" and emptied the last of those within a session (v0.5.231).
+    * `phase` -- the original's sequence, one frame out. The emitter exists and
+      is misplaced; section 7.www is what that fix looks like. `onset_shift` is
+      the test, shared with the report's own `onset_ours_early`/`_late` so that
+      the two readings of one corpus cannot drift apart.
+    * `short` -- our note stops selecting a waveform inside the window while
+      the original still does. A note-*length* difference, which no column here
+      measures, and not the missing-mechanism defect the others are.
+    * `invented`, `partial`, `wrong` -- we move where the original holds, or we
+      move differently. Emitter quality rather than a missing mechanism.
+
+    **Order matters and `phase` is first**, because a genuine one-frame shift
+    can also satisfy a later definition -- and the shift is the more specific
+    claim. `short` is tested next for the same reason: a note that ends inside
+    the window otherwise reads as `invented`, which would send the reader
+    looking for a mechanism we render and the original does not, when what is
+    wrong is how long the note lasts.
+    """
+    if orig == ours:
+        return "match"
+    if onset_shift(orig, ours):
+        return "phase"
+    if any(u == 0 and o for o, u in zip(orig, ours)):
+        return "short"
+    if len(set(ours)) == 1 and len(set(orig)) > 1:
+        return "flat"
+    if len(set(orig)) == 1 and len(set(ours)) > 1:
+        return "invented"
+    if any(x == y for x, y in zip(orig, ours)):
+        return "partial"
+    return "wrong"
+
+
+def instrument_stamps(sng: bytes) -> dict:
+    """`{ADSR: {"gt": n, "effect": b7}}`, read back out of the file we shipped.
+
+    An instrument's *name* in a converted `.sng` is the converter's own
+    provenance stamp, `NN:b5-b6-b7`, so the source record's effect byte is
+    recoverable from the output without re-running detection. Parsed by
+    `songview.parse_sng` -- a second reader of the format, checked against
+    `build_sng` by `tests/test_songview.py` -- and imported here rather than at
+    module scope because songview imports this module.
+
+    The join key is the ADSR pair, for `onset_shapes`' reason: it is a verbatim
+    per-instrument copy of the record. Two instruments can still share one, and
+    where they do the entry says so rather than silently naming the first --
+    the effect byte would then be a guess about which of them the trace heard.
+    """
+    from songview import parse_sng
+    out: dict = {}
+    for ins in parse_sng(sng).instruments:
+        key = (ins.ad << 8) | ins.sr
+        if key in out:
+            out[key]["ambiguous"] = True
+            continue
+        out[key] = {"gt": ins.number, "effect": ins.effect_byte}
+    return out
+
+
+def onset_census(orig: list[Voice], ours: list[Voice], nframes: int,
+                 stamps: dict | None = None) -> list[dict]:
+    """Every instrument `onset` compared, with the kind of its disagreement.
+
+    Same population and same modal reduction as `onset_agreement` -- the
+    instruments both sides sound -- so the counts here add up to that column's
+    denominator and its `match` count is that column's numerator. It is a
+    classification of the same comparison, not a second measurement of it.
+    """
+    a = onset_shapes(orig, nframes)
+    b = onset_shapes(ours, nframes)
+    out = []
+    for adsr in sorted(set(a) & set(b)):
+        o = a[adsr].most_common(1)[0][0]
+        u = b[adsr].most_common(1)[0][0]
+        rec = {"adsr": adsr, "kind": classify_onset(o, u),
+               "orig": list(o), "ours": list(u),
+               "orig_notes": sum(a[adsr].values()),
+               "our_notes": sum(b[adsr].values())}
+        rec.update((stamps or {}).get(adsr, {}))
+        out.append(rec)
+    return out
+
+
+def census_report(rows: list[dict]) -> str:
+    """The onset census over a whole run: what the misses are made of.
+
+    Written as a separate document rather than a section of the report because
+    it is a queue rather than a measurement -- the report says how the corpus
+    scores, this says which files to open next and why.
+    """
+    recs = [dict(r, file=row["file"])
+            for row in rows for r in row.get("onset_census") or []]
+    out = ["# Onset census", "",
+           f"{len(recs)} instrument(s) compared across "
+           f"{sum(1 for r in rows if r.get('onset_census'))} file(s). Each is "
+           "one instrument both sides sound, keyed by its ADSR pair and read "
+           "at its own attack frames -- the population the `onset` column "
+           "scores, classified by the *kind* of its disagreement.", ""]
+    counts = Counter(r["kind"] for r in recs)
+    out += ["| kind | n | share |", "|---|---:|---:|"]
+    for k in ONSET_KINDS:
+        n = counts.get(k, 0)
+        out.append(f"| {k} | {n} | {100 * n / len(recs):.1f}% |"
+                   if recs else f"| {k} | {n} | - |")
+    out.append("")
+
+    misses = [r for r in recs if r["kind"] != "match"]
+    flat = [r for r in misses if r["kind"] == "flat"]
+    if flat:
+        by_eff = Counter(r.get("effect") for r in flat)
+        out += ["## `flat` misses by the record's effect byte", "",
+                "A mechanism the original runs and we hold flat, grouped by "
+                "the source record's `+7`. This is the work list: a group "
+                "whose bit is already implemented points at option selection, "
+                "one whose bit is not points at the player.", "",
+                "| effect | n | files |", "|---|---:|---|"]
+        for eff, n in by_eff.most_common():
+            files = sorted({r["file"] for r in flat if r.get("effect") == eff})
+            name = "-" if eff is None else f"`${eff:02X}`"
+            out.append(f"| {name} | {n} | {', '.join(files)} |")
+        out.append("")
+
+    if misses:
+        out += ["## Every disagreement", "",
+                "| file | GT | ADSR | effect | kind | original | ours | notes |",
+                "|---|---:|---|---|---|---|---|---:|"]
+        for r in sorted(misses, key=lambda r: (ONSET_KINDS.index(r["kind"]),
+                                               r["file"], r["adsr"])):
+            eff = r.get("effect")
+            out.append(
+                f"| {r['file']} | {r.get('gt', '-')} | `${r['adsr']:04X}` | "
+                f"{'-' if eff is None else f'${eff:02X}'} | {r['kind']} | "
+                f"`{shape_name(r['orig'])}` | `{shape_name(r['ours'])}` | "
+                f"{r['orig_notes']}/{r['our_notes']} |")
+        out.append("")
+    return "\n".join(out)
 
 
 def noise_run_agreement(orig: list[Voice], ours: list[Voice],
@@ -2187,6 +2375,13 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # startup latency cancels rather than needing correcting. See
             # onset_shapes.
             row.update(onset_agreement(a, best_dump, nframes))
+            if getattr(args, "census", None):
+                # The same two traces and the same modal reduction the column
+                # just scored -- a second pipeline would risk resolving a
+                # different subtune and then disagreeing with the report for a
+                # reason that has nothing to do with the conversion.
+                row["onset_census"] = onset_census(
+                    a, best_dump, nframes, instrument_stamps(sng))
             row.update(pitch_motion_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
@@ -3764,6 +3959,9 @@ def main(argv=None) -> int:
                         "stdout (the report still goes to -o)")
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
+    p.add_argument("--census", metavar="PATH",
+                   help="classify every onset disagreement by kind "
+                        "and write the work list here")
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", default="auto",
                    help="which subtune of the original to trace: a number, or "
@@ -3999,6 +4197,9 @@ def _run(p, args, workdir: Path) -> int:
         print(text)
     if args.json:
         Path(args.json).write_text(json.dumps(rows, indent=2) + "\n", encoding="utf-8")
+    if args.census:
+        Path(args.census).write_text(census_report(rows), encoding="utf-8")
+        print(f"wrote {args.census}", file=sys.stderr)
 
     if args.baseline:
         try:

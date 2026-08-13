@@ -2094,6 +2094,40 @@ Not the default: two emulator runs a row, at about 1.3x real time each. `vsid`
 is found at `--vice-exe` or `H2G_VSID`; a row whose trace fails is marked
 `vice_failed` rather than quietly falling back to the coarser one.
 
+### The onset census — `--census`
+
+```sh
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json --census ../build/CENSUS.md
+```
+
+`onset` reports a rate, and a rate says how much is wrong without saying what
+to do about it. `--census` classifies the same comparison — the same two
+traces, the same modal reduction, so its `match` count *is* the column's
+numerator — by the **kind** of each disagreement, and groups the largest kind
+by the source record's effect byte.
+
+| kind | what it means | what to do |
+|---|---|---|
+| `match` | the four opening frames agree | — |
+| `phase` | the original's sequence, one frame out | move the emitter, not its waveforms (§ 7.www) |
+| `short` | our note stops selecting a waveform inside the window | a note-*length* difference, which no column here measures |
+| `flat` | we hold one waveform where the original moves | a mechanism we do not render — read the player |
+| `invented` | we move where the original holds | emitter quality |
+| `partial` / `wrong` | some or no frames agree | emitter quality |
+
+The `flat` group is the work list, and grouping it by the record's `+7` is what
+makes it one: the first run of this turned "18% disagree" into `$01 x19,
+$04 x11, $80 x6, $0A x6`, and `$0A` was a decoded and emitted mechanism (21
+files, 98 records) within the same session. A group whose bit is already
+implemented points at *option selection*; one whose bit is not points at the
+player. The effect byte comes from the instrument's own name in the converted
+`.sng` — the converter's provenance stamp `NN:b5-b6-b7` — so no second
+detection pass is involved.
+
+The document goes to the path given and nothing else about the run changes; it
+is written beside `-o`/`--json` rather than inside the report, because a report
+says how the corpus scores and this says which file to open next.
+
 ### A/B against a previous run
 
 ```sh

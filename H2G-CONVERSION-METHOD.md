@@ -7368,6 +7368,77 @@ from a change that reached nothing (§ 7.uuu).
 > correctly out of the 6502 can still cost more than it gains, and "we
 > understand it now" is not a reason to emit it.
 
+### 7.jjjj The census becomes a mode, and a shift that explained nothing
+
+v0.5.234. § 7.gggg classified the `onset` column's disagreements with a scratch
+script, and that classification is what turned a rate into a work list — `$01
+x19, $04 x11, $80 x6, $0A x6` — the last group of which was decoded and
+emitted (§ 7.hhhh) inside the same session. The script was then lost with the
+scratch directory it lived in, and had to be written again to ask the same
+question of a later tree. It is now `fidelity.py --census`.
+
+#### Same comparison, not a second one
+
+The census is computed inside `_measure`, from the two traces the column has
+just scored and with the same modal reduction, so its `match` count *is*
+`onset_matched` and its population *is* `onset_instruments`. A second pipeline
+would have been the more independent check and the wrong trade here: it would
+resolve its own subtune (`--search-subtunes` defaults to **3**) and could then
+disagree with the report for a reason that has nothing to do with the
+conversion. The independence that is worth keeping is between `classify_onset`
+and the report's own `onset_ours_early`/`_late`, and that is held by a test
+rather than by a duplicate implementation.
+
+The effect byte each `flat` miss is grouped by comes from the instrument's own
+**name** in the converted `.sng` — `NN:b5-b6-b7`, the converter's provenance
+stamp — parsed by `songview.parse_sng`. No second detection pass, and the join
+key is the ADSR pair for `onset_shapes`' reason: it is a verbatim per-instrument
+copy of the record. Two instruments sharing one are marked `ambiguous` rather
+than silently attributed to the first, because a work-list entry filed under
+the wrong effect byte is worse than a missing one.
+
+#### What promoting it to a tool found
+
+Corpus at v0.5.233, pooled over instruments (not the per-file mean the report
+prints):
+
+| kind | | | what it means |
+|---|---:|---:|---|
+| match | 372 | 85.9% | |
+| **flat** | **50** | **11.5%** | the original changes class during the window and we hold frame 0's |
+| short | 4 | 0.9% | our note stops selecting a waveform inside the window |
+| phase | 3 | 0.7% | the right sequence, one frame early or late |
+| partial | 3 | 0.7% | |
+| invented | 1 | 0.2% | |
+| wrong | 0 | 0% | |
+
+Three of what had been **six** `phase` entries were not phase errors at all:
+
+    Devils_Galop   GT 2  $0208   original `noi noi noi noi`   ours `noi noi noi --`
+    Monty_on_the_Run GT 2 $0208  original `noi noi noi noi`   ours `noi noi noi --`
+    Pandora        GT 5  $4A59   original `tri tri tri tri`   ours `tri tri tri --`
+
+The shift test is `ours[:-1] == orig[1:]`, and on a shape the original holds
+**constant** that is true of anything agreeing in its first three frames. Our
+note simply *ends* inside the four-frame window — a note-**length** difference,
+which is a different defect in a different place and one no column here
+measures — and it was being reported as a one-frame phase error, which points
+at a fix (move the emitter) that would make it worse. `onset_shift` now
+requires the shift to explain something the unshifted reading does not, both
+readings share that one function, and the census calls the remainder `short`.
+
+The three that survive are Rasputin's, and they are real: `pul pul noi pul`
+against `pul noi pul pul` on three instruments, which no unshifted reading
+fits.
+
+> **The transferable lesson:** a degenerate case of a pattern-match is not
+> evidence of the pattern. `A == B` proves nothing where `A == B` is true of
+> everything in the neighbourhood — the discriminating question is whether the
+> hypothesis explains something its absence does not. And a diagnostic that
+> names the *wrong* cause is worse than one that names none: it sends the next
+> session to move an emitter that is already where it belongs.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

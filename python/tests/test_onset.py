@@ -125,3 +125,17 @@ def test_it_needs_no_startup_lag_correction():
     assert (F.onset_shapes(orig, 16)[0x0A09]
             == F.onset_shapes(shifted, 16)[0x0A09])
     assert F.onset_agreement(orig, shifted, 16)["onset_agreement"] == 1.0
+
+
+def test_a_note_that_merely_ends_early_is_not_counted_as_a_phase_error():
+    """On a shape the original holds constant, `ours[:-1] == orig[1:]` is true
+    of anything agreeing in its first three frames -- so `noi noi noi --`
+    against `noi noi noi noi` read as a one-frame shift, and three of the
+    corpus's six did. It is a note-*length* difference, which no column here
+    measures, and `onset_shift` now requires the shift to explain something the
+    unshifted reading does not."""
+    orig = _voices(([(0, 0x81)], [(0, 0x0208)], [0]))
+    ours = _voices(([(0, 0x81), (3, 0x01)], [(0, 0x0208)], [0]))
+    got = F.onset_agreement(orig, ours, 8)
+    assert got["onset_matched"] == 0
+    assert got["onset_ours_early"] == got["onset_ours_late"] == 0

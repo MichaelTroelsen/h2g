@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.234 — 2026-08-13
+
+- the onset census is a mode, and a shift that explained nothing
+
 ## 0.5.233 — 2026-08-12
 
 - one convention per block for the alternation's right sides (measured inert)

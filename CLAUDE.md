@@ -329,7 +329,21 @@ test dependency).
   "18% disagree" into "$01 x19, $04 x11, $80 x6, $0A x6" -- and the `$0A` entry
   was a decoded mechanism (bit `$02`'s alternating waveform, 21 files, 98
   records) within the same session. When a dimension's level is unexplained,
-  classify its misses by cause before trying to move it.
+  classify its misses by cause before trying to move it. It is
+  `fidelity.py --census PATH` since v0.5.234, written from the traces the
+  column itself scored rather than from a second pipeline -- **a scratch
+  script that answers a question twice is a tool that was not committed**, and
+  this one had to be rewritten from scratch a session after it earned its keep.
+  Promoting it found a defect in the column beneath it: `$01 x19` is one cause
+  and one fix, and the census is what says so.
+- **A degenerate match is not evidence.** `onset`'s phase test asks whether
+  `ours[:-1] == orig[1:]`, which on a shape the original holds *constant* is
+  true of anything agreeing in its first three frames -- so a note of ours that
+  merely *ends* inside the window (`noi noi noi --`) was reported as a one-frame
+  phase error, on 3 of the corpus's 6. The fix is to require the shifted
+  reading to explain something the unshifted one does not; the remainder is the
+  `short` kind, a note-*length* difference no column here measures. A
+  diagnostic naming the wrong cause is worse than one naming none.
 - **A detection flag about a player is not a fact about a record.**
   `det.effect_bit40` says the player *reads* bit $40; only a record's own effect
   byte says it is *set*. Gating the fixed attack pitch on the file alone reached
