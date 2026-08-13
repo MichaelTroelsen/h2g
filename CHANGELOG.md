@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.241 — 2026-08-13
+
+- a worktree is the isolation flag, not a kind of delegation
+
 ## 0.5.240 — 2026-08-13
 
 - tag every proposed task with how it can be run

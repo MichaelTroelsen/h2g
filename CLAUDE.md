@@ -729,14 +729,21 @@ So, for any work that runs concurrently:
 **Whenever you list next steps — in a handoff, in a "what next", in a plan —
 tag each item with how it can be run.** The three tags, and what qualifies:
 
-* **`[worktree]`** — safe for a subagent in its own git worktree
-  (`isolation: "worktree"`). Qualifies when the change is confined to
-  `python/h2g/` or one harness module, is verified by a corpus byte-hash plus a
-  targeted A/B, and **touches none of `SURVEY.md`, `presets.json`,
-  `FIDELITY.md`**. Brief the agent to copy
-  `python/tools/siddump-rt/siddump.exe` into its worktree first — it is
-  gitignored, and without it the harness silently measures only the
+* **`[subagent]`** — safe to hand to one agent (the Agent tool, `/subtask`).
+  Qualifies when the change is confined to `python/h2g/` or one harness module,
+  is verified by a corpus byte-hash plus a targeted A/B, and **touches none of
+  `SURVEY.md`, `presets.json`, `FIDELITY.md`**. Always give it
+  `isolation: "worktree"`, and brief it to copy
+  `python/tools/siddump-rt/siddump.exe` into that worktree first — the binary
+  is gitignored, and without it the harness silently measures only the
   single-speed files (v0.5.235 read a whole invalid baseline that way).
+
+  **A worktree is not a third kind of delegation.** It is the isolation flag,
+  and a subagent *and* an agent inside a workflow can each take it
+  (`isolation: "worktree"` on the Agent tool, `opts.isolation` in a workflow
+  script). What it buys is one checkout per agent, which is what stops two of
+  them corrupting a shared working tree. The choice to make is subagent vs
+  workflow — one report, or many.
 * **`[main]`** — this session only. Anything that regenerates an artefact, runs
   `presets.py --fidelity` (serial, about an hour, and it writes
   `presets.json`), or commits. Two searches at once are deterministic but
@@ -752,7 +759,7 @@ each of these four players". It is the wrong tool for anything that ends in a
 measurement of the whole corpus, because those serialise on the same binaries
 and the same generated files. And it is never started without the user asking.
 
-The point of the tag is that the user can hand a `[worktree]` item to a fork
+The point of the tag is that the user can hand a `[subagent]` item to a fork
 and keep the session for the `[main]` ones. An untagged list makes everything
 look like it needs this session.
 
