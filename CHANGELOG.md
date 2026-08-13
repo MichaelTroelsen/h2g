@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.248 — 2026-08-13
+
+- the outer gate's RTS spelling
+
 ## 0.5.247 — 2026-08-13
 
 - hold becomes a search term, guarded by rate not direction

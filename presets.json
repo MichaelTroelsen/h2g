@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.247 presets.py",
+  "generator": "h2g 0.5.248 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -131,10 +131,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 19438,
+      "bytes": 19564,
       "subtunes": 2,
       "rows": 18341,
-      "multiplier": 1
+      "multiplier": 5
     },
     "Chain_Reaction.sid": {
       "max_rows": 128,
@@ -291,7 +291,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 10672,
+      "bytes": 10680,
       "subtunes": 1,
       "rows": 12912,
       "multiplier": 2
@@ -839,10 +839,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 17072,
+      "bytes": 17094,
       "subtunes": 1,
       "rows": 18397,
-      "multiplier": 1
+      "multiplier": 3
     },
     "Thundercats.sid": {
       "max_rows": 128,

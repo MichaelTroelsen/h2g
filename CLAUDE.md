@@ -558,10 +558,18 @@ test dependency).
   Delta, ACE II, Deep Strike, Lightforce, Thanatos, Pygmies Revenge, Human
   Race — now measures **0% out**, packed exactly via the multiplier (Delta's
   row is 5/2 at `-S2`, Deep Strike's 8/3 at `-S3`). Corpus today: of 63 timed
-  files, **47 exact and 50 within 2%**. What is left is **one unread idiom** —
-  an outer gate ending in `RTS` rather than `JMP past-the-gate`, which
-  `OUTER_GATE` does not match, in 8 files including Warhawk (11% out, and its
-  own least-squares fit lands on `(R+1)/R` = 8/7). See § 7.rrrr; it changes
+  files, **47 exact and 50 within 2%**. That idiom — an outer gate ending in
+  `RTS` rather than `JMP past-the-gate`, which `OUTER_GATE` did not match, in
+  **9 files** — is read since v0.5.248: Formula 1 Simulator's melody went
+  88 → 100% and Thrust's 75 → 94%, both with `retrig` landing on 1.00 and
+  0.92 from 1.28 and 1.26. See §§ 7.rrrr and 7.tttt. **Read `--pace`'s
+  least-squares fit, not its median**: the original's gaps are whole frames,
+  so a row of 2.286 quantises to a mix whose median reads 2.25, and that
+  gap looked like a refutation of the factor twice. **And a file packed
+  above `-S4` cannot be judged on a normal trace** — Bump Set Spike reads
+  68% at `-S5` and 97% under `--equal-calls`, which is the first time that
+  caveat has decided a ship-or-refuse. Both of those reversals were
+  instruments read wrongly, not measurements. It changes
   packing, so it is `[main]` work. **This paragraph told two sessions the
   mechanism "has to be found in the players" after it had been found** — the
   fix landed and the note did not move. Write evidence with filenames in it:

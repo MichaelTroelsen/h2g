@@ -1262,6 +1262,23 @@ SPEED_RELOAD_STORE = b"\x8d"     # STA abs
 # against 15 files whose row length was timed independently, the corrected
 # number is within 5% on all 15 and within 1% on 10 (see whats-next.md 7b).
 OUTER_GATE = re.compile(rb"\xce(..)\x10\x08\xa9(.)\x8d(..)\x4c(..)", re.DOTALL)
+# **And it has a second spelling, unread until v0.5.248.** At the PSID *play*
+# address the same counter ends in `RTS` -- "on the underflow call, do nothing
+# at all" -- rather than jumping past the gate, and its branch is `BPL +6`
+# instead of `+8` because it steps over one byte and not three:
+#
+#     1012  DEC $15AE / BPL $101D / LDA #$07 / STA $15AE / RTS   (Warhawk)
+#
+# Nine corpus files open their play routine this way -- Warhawk, Proteus,
+# International Karate, Bump Set Spike, Game Killer, Thrust, Mozart, Ninja
+# and Formula 1 Simulator -- and **none of them carries the `JMP` form as
+# well**, so there is no question of which one applies. `SPEED_GATE`'s own
+# comment names this idiom, but as the prescaler variant of three files,
+# excluded because "no steady Goattracker tempo can express it": it also
+# sits above a normal gate here, where it multiplies rather than replaces,
+# and `_skip_gate_multiplier` is what expresses such a row when the
+# denominator is small enough.
+OUTER_GATE_RTS = re.compile(rb"\xce(..)\x10\x06\xa9(.)\x8d(..)\x60", re.DOTALL)
 
 # A reload byte above this is not a song speed. Real corpus values are 0-8
 # (f = 1..9); per-subtune tables are read past their end for files whose
@@ -1395,7 +1412,7 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
     is a decoy. v0.5.102 read the image byte and concluded the value was a
     per-player constant; it is per subtune in 32 of the 51 files that have it.
     """
-    m = OUTER_GATE.search(sid.data)
+    m = OUTER_GATE.search(sid.data) or OUTER_GATE_RTS.search(sid.data)
     if not m:
         return (), None
     ctr = m.group(1)[0] | (m.group(1)[1] << 8)

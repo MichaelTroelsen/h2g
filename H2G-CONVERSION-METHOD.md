@@ -8147,6 +8147,63 @@ setting already measured as better.
 > the rule as a claim about what is audible rather than about what is smaller.
 
 
+### 7.tttt The outer gate's `RTS` spelling, and two misread instruments
+
+v0.5.248, finishing what § 7.rrrr identified. `OUTER_GATE` matched only the
+form ending in `JMP past-the-gate`; at the PSID *play* address the same counter
+ends in `RTS` -- "on the underflow call, do nothing at all" -- with `BPL +6`
+rather than `+8` because it steps over one byte instead of three:
+
+    1012  DEC $15AE / BPL $101D / LDA #$07 / STA $15AE / RTS      (Warhawk)
+
+**Nine corpus files** open their play routine this way and **none carries the
+`JMP` form as well**, so a second pattern needed no precedence rule. Reading it
+changes the row length on three: Formula 1 Simulator, Thrust and Bump Set
+Spike.
+
+    Formula_1_Simulator   melody 88 -> 100%   wave 60 -> 91%
+    Thrust                melody 75 ->  94%   wave 80 -> 96%
+    Bump_Set_Spike        melody 96 ->  97%   (read with --equal-calls)
+
+#### Both apparent contradictions were misread instruments
+
+The measurement seemed to refuse the factor twice, and both times the fault was
+in the reading.
+
+**`--pace` prints a median and a least-squares fit, and they differ.** Warhawk's
+median says the row is 2.25 frames where `(R+1)/R` predicts `2 x 8/7` = 2.286 --
+but the same output's least-squares fit is 0.875, which *is* 8/7 exactly. The
+original's gaps are whole frames, so a 2.286 row quantises to a lumpy 2/3 mix
+whose median lands at 2.25. The fit is the estimator to read; § 7.rrrr said so
+and it was read past.
+
+**Bump Set Spike's "collapse" is the `-S5` sampling artefact.** Its corrected
+row is 3.6 frames, which needs `-S5`, and its melody duly read 96% -> 68%. That
+is the caveat this report already carries: siddump samples the registers once
+per frame whatever the call rate, so four calls in five are discarded. Under
+`--equal-calls` the same conversion reads **97%**. It is the corpus's first
+`-S5` file, so this is the first time that caveat has decided a ship/refuse.
+
+Its own image byte is 5, giving `6/5`; the `10/9 -> 3.33` § 7.rrrr attributed
+to it is **Thrust's** (image byte 9), and Thrust is where that number lands
+exactly.
+
+#### What did not change
+
+No file's `--fidelity` toggles moved -- 0 gained, 0 lost across the corpus. The
+whole gain is the row length, which is what a speed-gate fix should be. Nothing
+writes these immediates at init either (checked on all five candidates), so the
+image byte really is the reload here, unlike the `JMP` dialect where 32 of 51
+files rewrite it per subtune.
+
+> **The transferable lesson:** an estimator that prints two numbers is telling
+> you the quantity is not a point, and reaching for the friendlier one is how a
+> correct prediction gets refuted by its own confirmation. Both of this
+> section's reversals were instruments read wrongly -- a median where a fit was
+> wanted, and a trace at a rate the trace cannot see -- and the repo already
+> documented both hazards.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
