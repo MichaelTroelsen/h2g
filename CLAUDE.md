@@ -303,9 +303,12 @@ test dependency).
   target. Wiz's is `$FF`/`$DE` -- 222 in a 112-row table -- and `gt2reloc`
   refuses the file with exit code 0 and no message. Three corpus files carry
   such opcodes and two of them (Kings of the Beach intro, Mega Apocalypse)
-  ship with `--wave-program` on. **Open.** Replicating `gtable.c:1008`'s
-  `exectable` over the emitted tables finds this class in one pass and is
-  worth doing whenever a pack fails silently.
+  shipped with `--wave-program` on. Fixed in v0.5.237 by routing the command
+  range through the `$E0`-`$EF` encoding `_wave_byte` already used for
+  waveforms below `$10` -- and **the general form is now
+  `tests/test_table_validation.py`**, which replicates `exectable` over every
+  corpus conversion. When a pack fails silently, walk the tables: it turns
+  "gt2reloc will not pack it" into an instrument and a row.
 - **A guard that reads like a sanity check can be a population filter.**
   `detect._effect_byte_address` opened with `if det.instr_stride != 8: return
   None`, which switched off *every* routine that reads the instrument effect
@@ -763,12 +766,19 @@ stderr for `will not convert` and `search failed` before adopting its output --
 `presets.json` is a record of measurements, and a missing entry and a measured
 "no" are indistinguishable in the file.
 
-The overflow itself is still open: above `-S1` a drum record occupies **six**
-wavetable entries (the frame-0 lead is two, and the tick's delay one more) and
-only its *sweep* is checked against the budget, while `_wavetable_layout`
-reserves five per later record. It only bites when a table is nearly full --
-W_A_R has 29 instruments at `-S4`. Fixing it relays out every multispeed file's
-wavetable, so it wants its own commit and its own corpus A/B.
+The overflow itself is still open, and it is wider than the one crash.
+`_wavetable_layout` reserves `WAVE_ENTRIES_PER_INSTR` = 5 for every *later*
+record and floors each budget at the same 5 -- but handed a budget of 5, **197
+records across 40 corpus files emit 6, 7 or 8 entries**: several emitters check
+the budget only for their optional part (`_drum_entries` for its sweep) or not
+at all. So "nobody starves" is a property of the layout that the emitters do
+not hold up. It bites only near the ceiling, which is why one file crashes and
+not forty: measured natural lengths are 177 rows for W_A_R and 228 for
+Thundercats against the 255 limit, and **only Mega Apocalypse (391) exceeds
+it**. Two halves to the fix, and they are separable: reserve each later
+record's *natural* length instead of 5 (a pre-pass, and affordable for every
+file but that one), and make the emitters degrade honestly when the budget
+really does bind. Its own commit and its own corpus A/B.
 
 And an option can be inert in the other direction: **`fidelity_better` is not a
 total order**, so the 31-combination `--fidelity` walk is a greedy path rather

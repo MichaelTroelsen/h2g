@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.237 — 2026-08-13
+
+- a wave-program opcode in the command range is not a jump
+
 ## 0.5.236 — 2026-08-13
 
 - the effect byte's routines reach the 16-byte-record dialect

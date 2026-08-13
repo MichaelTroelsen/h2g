@@ -7794,12 +7794,31 @@ so execution walks off the end and `greloc.c` reports `TYPE_OVERFLOW` to a
 console that does not exist headless.
 
 Three corpus files carry opcodes in the command range: Wiz (one), Kings of the
-Beach intro (one) and Mega Apocalypse (six across three records) -- **and the
-last two ship with `wave_program` selected**, so their tables contain a jump
-where a waveform belongs and happen to land in range. Recorded here rather than
-fixed in this commit: the fix changes the bytes of two shipped conversions and
-so needs its own preset search, and the option Wiz would gain is refused today
-anyway (a candidate that will not pack is not a candidate).
+Beach intro (one) and Mega Apocalypse (six across three records) -- and the last
+two **ship with `wave_program` selected**, so their tables contained a jump
+where a waveform belongs and happened to land in range.
+
+Fixed in v0.5.237. `_wave_byte` already had an encoding for a byte that cannot
+be written literally -- `$E0`-`$EF`, which writes `$00`-`$0F` to `$D404`
+(readme.txt 3.4.1, gplay.c:527) -- for waveforms *below* `$10`, where
+`$01`-`$0F` are delays. The command range needed the same treatment and the
+same reasoning: `$FF` is all four waveform bits **and** the test bit, the test
+bit holds the oscillator in reset and four select bits AND to silence on a real
+chip, so what the player sounds there is nothing. `$E0 | (wave & $0F)` keeps
+gate, ring, sync and test exactly and drops a nibble that produces no output.
+
+Kings of the Beach intro and Mega Apocalypse change bytes and **no column of
+the report moves at all** -- stated because a flat A/B is otherwise
+indistinguishable from a change that reached nothing (§ 7.uuu); the byte hash is
+what says it reached them. Wiz *packs* for the first time, and with
+`--wave-program` forced its `onset` goes 67% -> 100% and `nrun` 0% -> 100% for
+12 points of melody, which is `keeps_notes`' business rather than this fix's.
+
+The general form is now a test. `gtable.c:1008`'s `exectable` is twenty lines,
+so `tests/test_table_validation.py` replicates it and walks every corpus
+conversion's tables under its shipped options, asserting neither `TYPE_JUMP`
+nor `TYPE_OVERFLOW`. It is the check that turns gt2reloc's silent refusal --
+exit code 0, no output file, no message -- into a named instrument and row.
 
 > **The transferable lesson:** a guard that reads like a sanity check can be a
 > population filter. `instr_stride != 8` looked like "this probe needs the

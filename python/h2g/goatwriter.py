@@ -933,11 +933,37 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
 # *delays*. This is the encoding for it, and the reason a wave program can carry
 # `slide $01` at all.
 WAVE_SILENT_BASE = 0xE0
+# gcommon.h:60. $F0-$FE are Goattracker's wavetable commands and $FF is the
+# jump, so no byte from $F0 up can be a waveform.
+WAVECMD_BASE = 0xF0
 
 
 def _wave_byte(wave: int) -> int:
-    """Wavetable left byte that sets the player's waveform `wave`."""
-    return wave if wave >= 0x10 else WAVE_SILENT_BASE | (wave & 0x0F)
+    """Wavetable left byte that sets the player's waveform `wave`.
+
+    **Two ranges cannot be written literally**, and both go through the
+    `$E0`-`$EF` encoding (readme.txt 3.4.1, gplay.c:527), which writes
+    `$00`-`$0F` to `$D404` -- control bits, no waveform selected:
+
+    * below `$10`, because `$01`-`$0F` are *delays*. This is what lets a wave
+      program carry `slide $01` at all.
+    * `$F0` and above, because `WAVECMD` is `$F0` (gcommon.h:60) -- that range
+      is Goattracker's commands and `$FF` is the **jump**. Writing such a byte
+      literally does not select a waveform, it rewrites the table: Wiz's
+      record 1 carries the opcode `set $FF, 250` and emitted `FF/DE`, a jump to
+      row 222 of a 112-row table, which `gt2reloc` refuses with exit code 0 and
+      no message (§ 7.nnnn). Three corpus files carry opcodes in that range and
+      two of them ship with `--wave-program` selected.
+
+    Dropping the four select bits is faithful rather than merely legal. `$FF`
+    is all four waveforms *and* the test bit: the test bit holds the oscillator
+    in reset and the four select bits AND to silence on a real chip, so what
+    the player sounds there is nothing. `$E0 | (wave & $0F)` keeps gate, ring,
+    sync and test exactly and drops a nibble that produces no output.
+    """
+    if 0x10 <= wave < WAVECMD_BASE:
+        return wave
+    return WAVE_SILENT_BASE | (wave & 0x0F)
 
 
 def _speed_index(speed_table: List[tuple], entry: tuple) -> int:
