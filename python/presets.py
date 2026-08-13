@@ -450,6 +450,58 @@ def fidelity_better(cand: tuple, ref: tuple,
         return state[5] if len(state) > 5 else None
     a, b = opens(cand), opens(ref)
     opens_right = a is not None and b is not None and a > b + margin
+
+    # **Holds the note for as long as the original does.** `hold`
+    # (fidelity.sound_run_agreement, v0.5.244) is the first term here that can
+    # see note *length*, and it exists because nothing else could: the modal
+    # per-file delta is -1 frame on 50 of 81 files, from GoatTracker fetching
+    # the next note `gatetimer & $3f` ticks early and writing `firstwave` over
+    # the previous note's last frame.
+    #
+    # It is an acceptance term and **not** a veto, and that asymmetry is the
+    # measurement rather than caution. Forced on corpus-wide,
+    # `--no-test-restart` -- the option this term can see -- gains 49 points of
+    # `hold` and costs **21 points of melody on 68 files with none improving**,
+    # because `firstwave` then puts a waveform on the attack frame and siddump
+    # names the note by it. `keeps_notes` already refuses all 68. What is left
+    # is the five files where `hold` rises and melody does not move at all --
+    # Chicken Song, Delta, Tarzan, Wiz, Sanxion -- which the search declines
+    # today only because nothing it scores can see the gain.
+    #
+    # Not added to `gave_back` for the reason that clause states about itself:
+    # a new veto cost seven measured settings the last time one was widened,
+    # and the conservative half of an asymmetric rule is the half that cannot
+    # lose a setting already measured as better.
+    def holds(state):
+        return state[6] if len(state) > 6 else None
+
+    # **And it may not be bought with the oscillation.** After_8 swapped
+    # `pitch_seq` for `no_test_restart` on this term, gaining hold 0 -> 50% and
+    # giving up an arpeggio ratio of 0.93 for 0.29 -- a near-perfect
+    # oscillation for half a hold. `gave_back` deliberately does not watch that
+    # ratio, for the reason stated above it, so `hold` has to decline the trade
+    # itself.
+    #
+    # **The veto is sized, and the second attempt got that wrong too.**
+    # `_closer`'s margin is a fraction of the *remaining* gap, so on a ratio
+    # already far from 1 a small wobble clears it: Chicken Song's 0.32 -> 0.29
+    # is 8.7% of a gap of 1.14 in log space and blocked a hold gain of
+    # 0 -> 100%, where After_8's 0.93 -> 0.29 is the same absolute move against
+    # a gap of 0.07. Both "worse"; only one is a change of *rate*.
+    # `_oscillation_lost` asks whether the candidate ends up more than twice as
+    # far from the original's rate as the reference was -- After_8 17x, Chicken
+    # Song 1.09x -- which is a statement about audibility rather than a
+    # threshold fitted to the corpus.
+    #
+    # **Melody is left to `keeps_notes`, and the first attempt got that wrong.**
+    # Requiring melody not to fall *at all* blocked seven of the eight files
+    # this term reaches, because their moves are thousandths -- Delta 1.000 ->
+    # 0.996, Tarzan 0.988 -> 0.985, Sanxion 0.968 -> 0.966 -- against a hold
+    # gain of 0 -> 100%. That is the noise floor of a difflib ratio, not a
+    # cost, and a guard tuned to it measures the wrong thing.
+    h_c, h_r = holds(cand), holds(ref)
+    holds_right = (h_c is not None and h_r is not None and h_c > h_r + margin
+                   and not _oscillation_lost(osc(cand), osc(ref)))
     # **And it must not give back what a previous winner gained.** The five
     # terms above are one-sided questions, so any of them is enough to accept;
     # the search then makes the accepted candidate the new reference and walks
@@ -495,7 +547,26 @@ def fidelity_better(cand: tuple, ref: tuple,
                  or bool(ref[3][0] and not cand[3][0]))
     return keeps_notes and not gave_back and bool(
         plays_more or finds_noise or moves_oscillation
-        or moves_noise_pitch or opens_right)
+        or moves_noise_pitch or opens_right or holds_right)
+
+
+def _oscillation_lost(cand: float | None, ref: float | None,
+                      factor: float = 2.0) -> bool:
+    """Whether `cand`'s oscillation rate is a different rate from `ref`'s.
+
+    Distance from 1 in log space, because a ratio is only symmetric there. The
+    question is not "is it worse" -- every estimate wobbles -- but "is it
+    *more than `factor` times* as far from the original's rate", which is a
+    claim about what a listener would hear rather than a threshold fitted to
+    the corpus. A reversal ratio of 0.93 becoming 0.29 is a different rate; one
+    of 0.32 becoming 0.29 is the same absence of one, measured twice.
+
+    Either side unmeasurable means no objection: a dimension that was not
+    computed cannot veto a setting.
+    """
+    if not cand or not ref or cand <= 0 or ref <= 0:
+        return False
+    return abs(math.log(cand)) > factor * abs(math.log(ref))
 
 
 def _closer(cand: float | None, ref: float | None, target: float,
@@ -621,7 +692,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 (wv["our_noise_frames"], wv["orig_noise_frames"],
                  _noise_pitch(dump, nf), _noise_pitch(orig, nf)),
                 pm.get("reversal_ratio"),
-                F.onset_agreement(orig, dump, nf)["onset_frame_agreement"])
+                F.onset_agreement(orig, dump, nf)["onset_frame_agreement"],
+                F.sound_run_agreement(orig, dump, nf)["sound_run_agreement"])
 
     # Fix `ours_sub` before any scoring, on the default conversion, by the same
     # rule `_measure` uses: the window is the traced subtune and one either

@@ -331,6 +331,17 @@ test dependency).
   `detect._burst_cutoff_start` (v0.5.210). When a fix widens a walk, run the
   old one beside the new one over the corpus and require the difference to be
   exactly the files you meant.
+- **A veto on a ratio must be sized, not merely signed.** `presets`'
+  oscillation guard first asked "is the candidate worse", via `_closer` --
+  whose margin is a fraction of the *remaining* gap, so on a ratio already far
+  from 1 any wobble clears it. Chicken Song's 0.32 -> 0.29 blocked a 100-point
+  `hold` gain while After_8's 0.93 -> 0.29, the same absolute move, is the one
+  that matters. `_oscillation_lost` asks whether the candidate ends up **more
+  than twice as far** from the original's rate (17x against 1.09x) -- a claim
+  about audibility rather than a constant fitted to the corpus. And when a
+  guard needs a bound, check the quantity's noise floor first: requiring melody
+  not to fall *at all* blocked seven of eight files over thousandths of a
+  difflib ratio.
 - **Compare a ratio in log space.** `presets._closer` scores how near a ratio
   sits to 1 logarithmically, because 2.0x and 0.5x are the same size of wrong
   where `abs(r - 1)` calls one twice the other. Applies to every `x`-suffixed

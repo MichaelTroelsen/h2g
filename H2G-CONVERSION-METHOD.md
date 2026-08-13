@@ -8068,6 +8068,85 @@ is `[main]` work with a corpus A/B.
 > loudly instead of quietly.
 
 
+### 7.ssss `hold` becomes a search term, and a veto that took three tries
+
+v0.5.247. § 7.rrrr's `hold` column measures note length, and the option whose
+main effect it measures — `--no-test-restart` — was selected on three files by
+a search that could not see it. The obvious move is to make it a criterion. The
+instructive part is everything that went wrong on the way.
+
+#### First, what the option actually does corpus-wide
+
+Forced on for all 81 songs that lacked it, against the v0.5.246 baseline:
+
+| column | better | worse | same | mean |
+|---|---:|---:|---:|---:|
+| **hold** | 50 | 5 | 26 | **+49.3 pp** |
+| **melody** | 0 | **68** | 15 | **−20.7 pp** |
+| wave | 67 | 11 | 5 | +3.3 pp |
+| onset | 3 | 18 | 60 | −10.9 pp |
+| nrun | 18 | 4 | 45 | +10.0 pp |
+
+Twenty-one points of melody across 68 files with **none improving** — the
+mechanism of § 7.kkkk at corpus scale: `firstwave` puts a waveform on the
+attack frame, and siddump names the note by whatever is sounding. So the option
+stays per-song, `keeps_notes` already refuses all 68, and the only files a
+`hold`-aware search can legitimately take are the ones where note length rises
+and nothing else moves.
+
+#### Then three attempts at saying "and nothing else moves"
+
+**Attempt 1 — melody must not fall at all.** It blocked seven of the eight
+files the term reaches. Their melody moves are *thousandths* — Delta 1.000 →
+0.996, Tarzan 0.988 → 0.985, Sanxion 0.968 → 0.966 — against a `hold` gain of
+0 → 100%. That is the noise floor of a difflib ratio, and a guard tuned to it
+measures the wrong thing. Melody belongs to `keeps_notes`, which has a margin
+for exactly this reason.
+
+**The justification for attempt 1 was itself assembled from two different
+comparisons.** After_8's numbers were read as "melody 92 → 91%, vib 0.93 →
+0.29" — but the melody figure came from an A/B that *swapped* `pitch_seq` for
+`no_test_restart`, and the oscillation figure from one that *stacked* them
+(where melody actually collapses 0.917 → 0.578). A cost from one experiment
+and a mechanism from another.
+
+**Attempt 2 — the oscillation must not get worse**, via `_closer`. Its margin
+is a fraction of the *remaining* gap, so on a ratio already far from 1 a wobble
+clears it: Chicken Song's 0.32 → 0.29 is 8.7% of a gap of 1.14 in log space and
+blocked a 100-point hold gain, where After_8's 0.93 → 0.29 is the same absolute
+move against a gap of 0.07. Both "worse". Only one is a change of *rate*.
+
+**Attempt 3, which holds — `_oscillation_lost`.** The candidate must not end up
+more than **twice as far** from the original's rate as the reference was:
+
+    After_8       0.93 -> 0.29    |log| 0.073 -> 1.238   17x     veto
+    Chicken_Song  0.32 -> 0.29    |log| 1.139 -> 1.238   1.09x   allow
+    Delta         0.51 -> 0.48                           1.03x   allow
+
+That is a statement about what a listener would hear — a reversal ratio of 0.93
+becoming 0.29 is a different rate; 0.32 becoming 0.29 is the same *absence* of
+one, measured twice — rather than a threshold fitted to the corpus.
+
+#### The result
+
+**7 files gained, 0 lost**: Chicken Song, Delta, Rikky, Sanxion, Sigma Seven,
+Tarzan, Wiz. After_8 keeps `pitch_seq two_stage` — the trade the veto exists to
+refuse, a near-perfect arpeggio ratio given up for half a hold.
+
+`hold` is an acceptance term and not part of `gave_back`, deliberately: a new
+veto cost seven measured settings the last time one was widened (§ 7.gggg), and
+the conservative half of an asymmetric rule is the half that cannot lose a
+setting already measured as better.
+
+> **The transferable lesson:** all three failures were the *expectation*, not
+> the measurement — an exact bound where the quantity has a noise floor, a
+> justification stitched from two experiments, and a test asserting the veto
+> should stand down on a move that lands further away. This is the `bend`
+> lesson (four corrections in six versions) in a new place: when reasoning
+> about a ratio, do the log arithmetic before writing the rule down, and state
+> the rule as a claim about what is audible rather than about what is smaller.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

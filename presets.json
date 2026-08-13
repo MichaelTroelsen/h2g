@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.246 presets.py",
+  "generator": "h2g 0.5.247 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -156,7 +156,8 @@
       "bytes": 7004,
       "subtunes": 1,
       "rows": 7830,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "Chimera.sid": {
       "max_rows": 94,
@@ -228,6 +229,7 @@
       "subtunes": 13,
       "rows": 36076,
       "multiplier": 2,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Delta_Mix-E-Load_loader.sid": {
@@ -691,6 +693,7 @@
       "subtunes": 1,
       "rows": 14874,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Rock_Tells_the_Tale.sid": {
@@ -735,6 +738,7 @@
       "subtunes": 1,
       "rows": 17654,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Shockway_Rider.sid": {
@@ -759,6 +763,7 @@
       "subtunes": 1,
       "rows": 3593,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Skate_or_Die_intro.sid": {
@@ -805,6 +810,7 @@
       "subtunes": 11,
       "rows": 9422,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Thanatos.sid": {
@@ -907,6 +913,7 @@
       "subtunes": 3,
       "rows": 20367,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true
     },
     "Zoids.sid": {

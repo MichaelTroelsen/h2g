@@ -99,3 +99,85 @@ def test_the_dimension_is_registered_and_printed():
     keys = [d.key for d in F.DIMENSIONS]
     assert "sound_run_agreement" in keys
     assert [d for d in F.DIMENSIONS if d.key == "sound_run_agreement"][0].column == "hold"
+
+
+# --- v0.5.247: `hold` as an acceptance term in the preset search ------------
+
+def _state(melody, seq, attacks, hold, *, noise=(10, 10, 100, 100),
+           osc=1.0, onset=0.5):
+    """A `presets.play()` result: the 7-tuple `fidelity_better` reads."""
+    return (melody, seq, attacks, noise, osc, onset, hold)
+
+
+def test_a_candidate_that_only_holds_longer_is_accepted():
+    """The five files this term exists for -- Chicken Song, Delta, Tarzan, Wiz,
+    Sanxion -- gain `hold` 0 -> 100% with melody, onset and everything else
+    unmoved, so no other term can see them."""
+    import presets as P
+    ref = _state(0.9, 0.9, 100, 0.0)
+    cand = _state(0.9, 0.9, 100, 1.0)
+    assert P.fidelity_better(cand, ref)
+
+
+def test_it_cannot_buy_a_hold_gain_with_notes():
+    """Forced corpus-wide, `--no-test-restart` gains 49 points of hold and
+    costs 21 of melody on 68 files with none improving. `keeps_notes` refuses
+    every one of them, and this term must not override that."""
+    import presets as P
+    ref = _state(0.9, 0.9, 100, 0.0)
+    cand = _state(0.6, 0.6, 100, 1.0)
+    assert not P.fidelity_better(cand, ref)
+
+
+def test_hold_is_not_a_veto():
+    """Asymmetric on purpose: a new veto cost seven measured settings the last
+    time one was widened (v0.5.230), so a candidate winning on another term is
+    not blocked by holding for less."""
+    import presets as P
+    ref = _state(0.9, 0.9, 100, 1.0)
+    cand = _state(0.95, 0.9, 100, 0.0)      # plays_more, holds worse
+    assert P.fidelity_better(cand, ref)
+
+
+def test_a_state_without_the_term_still_compares():
+    """`play()` grew a seventh element; a tuple from before it must not raise."""
+    import presets as P
+    old_ref = (0.9, 0.9, 100, (10, 10, 100, 100), 1.0, 0.5)
+    assert not P.fidelity_better(old_ref, old_ref)
+
+
+def test_hold_will_not_buy_note_length_with_anything_else():
+    """After_8 swapped `pitch_seq` for `no_test_restart` on this term: hold
+    0 -> 50% and wave +3, paid for with melody 92 -> 91%, pitch 97 -> 95% and
+    its arpeggio ratio collapsing 0.93 -> 0.29. `keeps_notes` allows a melody
+    slip inside the margin and `gave_back` does not watch oscillation, so the
+    weak form is what stops it."""
+    import presets as P
+    ref = _state(0.92, 0.91, 100, 0.0, osc=0.93)
+    cand = _state(0.91, 0.90, 100, 0.5, osc=0.29)
+    assert not P.fidelity_better(cand, ref)
+    # ...but the veto is about a change of *rate*, not about any move. Chicken
+    # Song's 0.32 -> 0.29 is the same absence of an oscillation measured twice,
+    # and blocked a hold gain of 0 -> 100% while `_closer` sized the veto.
+    weak = _state(0.62, 0.63, 100, 0.0, osc=0.32)
+    assert P.fidelity_better(_state(0.619, 0.628, 100, 1.0, osc=0.29), weak)
+    # ...while a melody move of a few thousandths is the noise floor of a
+    # difflib ratio and must not block a hold gain of 0 -> 100%. Requiring
+    # melody not to fall at all blocked seven of the eight files this term
+    # reaches; `keeps_notes` governs melody, with its margin.
+    assert P.fidelity_better(_state(0.916, 0.906, 100, 1.0, osc=0.93), ref)
+
+
+def test_the_oscillation_veto_asks_about_rate_not_direction():
+    """0.93 -> 0.29 is a different rate; 0.32 -> 0.29 is the same absence of
+    one. The bound is a factor of two from the original's rate -- a statement
+    about audibility rather than a threshold fitted to the corpus."""
+    from presets import _oscillation_lost
+    assert _oscillation_lost(0.29, 0.93)
+    assert not _oscillation_lost(0.29, 0.32)
+    assert not _oscillation_lost(0.48, 0.51)
+    assert not _oscillation_lost(None, 0.93), "unmeasurable cannot veto"
+    assert not _oscillation_lost(0.9, 0.5), "nor may a move toward the rate"
+    # ...and crossing over still counts as leaving it: 0.9 is 10% under the
+    # original's rate and 1.4 is 40% over, which is further away, not nearer.
+    assert _oscillation_lost(1.4, 0.9)
