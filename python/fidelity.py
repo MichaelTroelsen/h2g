@@ -1438,6 +1438,88 @@ def census_report(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def sound_runs(voices: list[Voice], nframes: int) -> dict:
+    """How many frames each note keeps a waveform selected, by instrument.
+
+    **The one thing no column measured.** CLAUDE.md has said for a long time
+    that nothing here sees note *length*, and the `onset` census's `short` kind
+    (v0.5.234) named five instruments where our note stops selecting a waveform
+    inside the four-frame opening window while the original still does. This is
+    that observation as a measurement.
+
+    What the two sides do, Commando voice 0, twelve-frame notes:
+
+        ORIGINAL  15 80 80 14 14 14 14 14 14 14 14 14 | next attack
+        OURS      15 81 81 15 15 15 15 15 15 14 14 09 | next attack
+
+    The original leaves its waveform latched to the last frame; ours spends
+    that frame on `$09` -- the test bit and the gate, no waveform selected at
+    all. Goattracker fetches the next note `gatetimer & $3f` ticks early
+    (gplay.c:905) and writes the instrument's `firstwave` then, so the note
+    before it loses its final frame. Every instrument of every corpus file is
+    one frame short for that reason.
+
+    **Capped at the next attack, and the cap is what makes it bounded.** A
+    gated-off voice keeps its waveform latched, so "until the waveform is
+    deselected" would run through the rest of the tune on the original side and
+    be dropped as window-cut. The quantity here is therefore *frames sounding
+    within this note's own slot*, which is what a listener hears as the note's
+    length, and both sides are cut the same way. A note whose slot reaches the
+    end of the window is dropped: its length would be a fact about the window.
+
+    Keyed by the ADSR pair one frame after the attack -- `onset_shapes`' rule
+    and for its reason. The key is $D405/$D406 and the measured quantity is a
+    duration, so neither can contaminate the other.
+
+    Returns `{adsr: Counter({frames: count})}`.
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        attacks = sorted(a for a in v.attack_frames if 0 <= a < nframes)
+        for i, a in enumerate(attacks):
+            stop = attacks[i + 1] if i + 1 < len(attacks) else nframes
+            if stop >= nframes:
+                continue                      # cut by the window
+            held = 0
+            while a + held < stop and wf[a + held] & 0xF0:
+                held += 1
+            out.setdefault(adsr[min(a + 1, nframes - 1)],
+                           Counter())[held] += 1
+    return out
+
+
+def sound_run_agreement(orig: list[Voice], ours: list[Voice],
+                        nframes: int) -> dict:
+    """Instruments whose notes sound for as long as the original's.
+
+    Same footing as `noise_run_agreement`: instruments both sides play, modal
+    length each, and an instrument only one side sounds is absent rather than
+    counted wrong.
+
+    `sound_run_delta` is the modal signed difference in frames and is the
+    number to read while the agreement sits at zero -- it says *how* short
+    rather than merely that nothing matches. As shipped it is `-1` on every
+    file measured; forcing `--no-test-restart`, which writes the record's own
+    waveform into `firstwave` instead of `$09`, takes Commando from 0 of 6
+    instruments matching to 6 of 6 and the delta to 0.
+    """
+    a = sound_runs(orig, nframes)
+    b = sound_runs(ours, nframes)
+    shared = sorted(set(a) & set(b))
+    pairs = [(a[k].most_common(1)[0][0], b[k].most_common(1)[0][0])
+             for k in shared]
+    matched = sum(1 for x, y in pairs if x == y)
+    deltas = Counter(y - x for x, y in pairs)
+    return {
+        "sound_run_instruments": len(shared),
+        "sound_run_matched": matched,
+        "sound_run_agreement": (matched / len(shared)) if shared else None,
+        "sound_run_delta": (deltas.most_common(1)[0][0] if deltas else None),
+    }
+
+
 def noise_run_agreement(orig: list[Voice], ours: list[Voice],
                         nframes: int) -> dict:
     """How many instruments sound noise for the same length on both sides.
@@ -1947,6 +2029,15 @@ DIMENSIONS = (
               "how fast the pitch oscillates, over the original's rate"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
+    # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
+    # this project's life. `nrun` compares noise runs and is silent about a
+    # pitched note; `tail` reads the envelope after the gate closes, not how
+    # long the waveform stayed. This reads the frames a note keeps a waveform
+    # selected within its own slot -- see `sound_runs`, and read
+    # `sound_run_delta` beside it while the agreement is zero.
+    Dimension("sound_run_agreement", "hold", ("$D404",), "fraction",
+              "instruments whose notes sound for as many frames as the "
+              "original's"),
     # The column that sees a mechanism emitted one frame out of phase. `wave`
     # averages 3000 frames, so a wrong opening on a 43-note instrument is a
     # rounding error in it; `nrun` compares run lengths and is position-
@@ -2370,6 +2461,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
+            row.update(sound_run_agreement(a, best_dump, nframes))
             row.update(release_tail_agreement(a, best_dump, nframes))
             # No `lag`: each side is read at its *own* attack frames, so the
             # startup latency cancels rather than needing correcting. See
@@ -2684,13 +2776,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | hold | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 17 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 18 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -2707,6 +2799,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
+            f"{_fmt_pct(r.get('sound_run_agreement'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
