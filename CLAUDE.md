@@ -539,8 +539,16 @@ test dependency).
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
   `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_hold_byte`
-  and the pulse programs now are. **Encode the rate against the loop that
-  consumes it, not the constant that names it**: a wavetable delay entry is
+  and the pulse programs now are -- and `_wave_program_entries` since
+  v0.5.235, which until then simply *refused* every multispeed file rather
+  than dividing. **A restriction is not a neutral default.** That one was
+  written down honestly in its own docstring, stood for 32 versions, and was
+  holding back the largest group of the onset census: seven files whose
+  `--wave-program` the preset search had measured twice and could never
+  select, because at `-S2` and above the option changed no bytes at all. When
+  an option is offered and never chosen, hash the output before theorising
+  about the criterion (`--baseline` prints it). **Encode the rate against the
+  loop that consumes it, not the constant that names it**: a wavetable delay entry is
   current for `value + 1` calls, not `value` (gplay.c:697-704), and reading
   the range out of `gcommon.h` instead left every multispeed file's attack a
   call too long from v0.5.82 to v0.5.130. `tests/test_call_rate.py` now
@@ -682,6 +690,15 @@ So, for any work that runs concurrently:
 - Worktree checkouts can be CRLF against LF blobs, which shows up as bogus
   whole-file merge conflicts. Normalise before concluding the conflict is
   real — and note that it usually is real anyway.
+- **A worktree has no build artefacts, and this harness needs one.**
+  `python/tools/siddump-rt/siddump.exe` is gitignored, `fidelity.SIDDUMP`
+  resolves it relative to the module, and a multiplier > 1 song is *refused*
+  rather than traced at the wrong rate — so a `--fidelity` search run in a
+  fresh worktree silently scores only the single-speed files. It produced a
+  clean-looking baseline of 15 selected songs against the real 30, and the
+  difference was read as a converter change for a while before the missing
+  binary turned up. Copy or build it in the worktree first, and sanity-check a
+  known multispeed file before trusting anything a fresh checkout measured.
 
 A new `convert()` option is inert until it is in **three** places: the
 signature, `presets.py`'s `FIXED`, and `_preset_opts`. `_preset_opts` now
@@ -689,6 +706,48 @@ derives its keys from `inspect.signature(convert)` and
 `tests/test_preset_passthrough.py` fails if any option escapes, with
 `presets.EXCLUDED_FROM_ALWAYS` naming deliberate omissions. Do not hand-edit
 that list back into existence.
+
+**`presets.py --fidelity` searches at `-t 60` since v0.5.235, and the ten
+seconds before it were choosing settings blind.** v0.5.195 moved the *report*
+to 60 s because a fifth of the corpus contributed nothing to some columns at
+10 s; the search kept its own default for forty versions. Sanxion's 10 s window
+holds one comparable instrument and zero noise frames against eight and 1669 at
+60 s — two of `fidelity_better`'s terms are noise terms and a third is `onset`,
+so the criterion was not disagreeing, it was blind, and five files lost a
+`two_stage` that a 60 s A/B scores at onset 40-83% -> 100% with melody unmoved.
+A corpus search now costs about four hours rather than forty minutes. When a
+window is found to be too short, the finding is about the window: grep for
+every other place the same one is chosen.
+
+**Forcing one option on top of a preset measures the pair.** Star Paws with
+`--wave-program` forced over its shipped settings loses 39 points of melody and
+looks like a broken emitter; the actual cause is `--no-test-restart`, which that
+preset carried and which owns frame 0, so the program's first opcode lands *in*
+frame 0 at `-S2` and renames every attack. Left to vary all five toggles, the
+search drops `no_test_restart`, keeps `wave_program`, and the song gains (onset
+56% -> 78%, noise 944 -> 1614 of 2372) with melody unmoved. When a forced option
+produces a *collapse* rather than a shortfall, suspect the combination before
+the mechanism.
+
+**A search that fails is not a search that says no.** One combination of
+W_A_R's overflowed Goattracker's 255-entry wavetable, the exception escaped
+`play()`, and `presets.py` abandoned the whole 31-combination walk for that
+song and fell back to the *structural* defaults -- silently dropping the
+`two_stage` an earlier search had measured. Two rules come out of it: a
+candidate that will not convert is one unplayable candidate (`play` returns
+None for it, exactly as it already did for a `.sng` gt2reloc refuses), and a
+song whose search genuinely fails keeps what the previous run recorded rather
+than reverting to a default that then looks like a decision. Read the search's
+stderr for `will not convert` and `search failed` before adopting its output --
+`presets.json` is a record of measurements, and a missing entry and a measured
+"no" are indistinguishable in the file.
+
+The overflow itself is still open: above `-S1` a drum record occupies **six**
+wavetable entries (the frame-0 lead is two, and the tick's delay one more) and
+only its *sweep* is checked against the budget, while `_wavetable_layout`
+reserves five per later record. It only bites when a table is nearly full --
+W_A_R has 29 instruments at `-S4`. Fixing it relays out every multispeed file's
+wavetable, so it wants its own commit and its own corpus A/B.
 
 And an option can be inert in the other direction: **`fidelity_better` is not a
 total order**, so the 31-combination `--fidelity` walk is a greedy path rather

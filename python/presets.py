@@ -586,8 +586,24 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         return F.run_siddump(packed, seconds, st, siddump, calls=multiplier)
 
     def play(extra: dict):
-        blob = convert(str(sid_path), log=lambda m: None,
-                       **base, **FIXED, **extra)
+        # **A combination that will not convert is one unplayable candidate,
+        # not a failed song.** Letting the exception out abandoned the whole
+        # 31-combination walk and fell back to the structural defaults, which
+        # silently *dropped* a setting the previous search had measured:
+        # W_A_R lost `two_stage` that way, because 4 of its combinations
+        # overflow Goattracker's 255-entry wavetable at `-S4` (a drum record
+        # occupies six entries above `-S1` and only the sweep is checked
+        # against the budget -- a separate defect, recorded rather than fixed
+        # here because the fix relays out every multispeed file's table).
+        # `pack_sid` returning None is already treated exactly this way.
+        try:
+            blob = convert(str(sid_path), log=lambda m: None,
+                           **base, **FIXED, **extra)
+        except Exception as exc:                     # noqa: BLE001
+            on = ' '.join(sorted(k for k, v in extra.items() if v))
+            log(f"    {sid_path.name}: {on or 'default'} will not convert "
+                f"({type(exc).__name__}), skipped")
+            return None
         blob, _ = F.legalise_restarts(blob)
         packed = F.pack_sid(blob, workdir, gt2reloc, multiplier)
         if packed is None:
@@ -658,7 +674,12 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     return out
 
 
-def main(argv=None) -> int:
+def build_parser() -> argparse.ArgumentParser:
+    """The CLI, separately so a test can read its defaults.
+
+    `-t` is one of them: the search's window has to be the window the report is
+    published at, and it silently was not for forty versions.
+    """
     parser = argparse.ArgumentParser(prog="presets")
     parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
     parser.add_argument("-o", "--output", default="presets.json")
@@ -669,8 +690,10 @@ def main(argv=None) -> int:
              "Needs siddump and gt2reloc, and traces two emulations per "
              "setting per song, so it is off by default -- the structural "
              "search is what every commit re-runs")
-    parser.add_argument("-t", "--seconds", type=int, default=10,
-                        help="trace length for --fidelity (default 10)")
+    parser.add_argument(
+        "-t", "--seconds", type=int, default=60,
+        help="trace length for --fidelity (default 60, the window "
+             "FIDELITY.md is generated at)")
     parser.add_argument(
         "--no-carry", action="store_true",
         help="do not carry forward the --fidelity settings already recorded in "
@@ -680,6 +703,11 @@ def main(argv=None) -> int:
              "the next routine regeneration")
     parser.add_argument("--siddump", default=None)
     parser.add_argument("--gt2reloc", default=None)
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
     args = parser.parse_args(argv)
 
     sid_dir = Path(args.sid_dir)
@@ -697,7 +725,12 @@ def main(argv=None) -> int:
     # dropped them would leave three measured files silently back on the
     # default. Carried forward instead, and counted out loud.
     carried: dict[str, dict] = {}
-    if not args.fidelity and not args.no_carry:
+    # Read whatever the output file already records, whether or not this run
+    # searches: without --fidelity it is what gets carried forward, and *with*
+    # it, it is what a song whose search fails falls back to. Falling back to
+    # the structural defaults instead is indistinguishable from a measured
+    # decision to use them -- the same reasoning that put the carry here.
+    if not args.no_carry:
         try:
             prev = json.loads(Path(args.output).read_text(encoding="utf-8"))
             for name, e in (prev.get("songs") or {}).items():
@@ -721,11 +754,19 @@ def main(argv=None) -> int:
                         args.seconds,
                         log=lambda m: print(m, file=sys.stderr)))
                 except Exception as exc:             # noqa: BLE001
-                    # A song the tools cannot play keeps its structural
-                    # result. Silently dropping to the default would be
-                    # indistinguishable from a measured decision.
+                    # A song the tools cannot play keeps whatever the last
+                    # search measured for it, and says so. Dropping to the
+                    # structural defaults is indistinguishable from a measured
+                    # decision to use them, and it is a *loss* of one: W_A_R
+                    # shed `two_stage` to a crash in one combination.
+                    keep = carried.get(path.name)
+                    if keep:
+                        found.update(keep)
                     print(f"    {path.name}: fidelity search failed "
-                          f"({type(exc).__name__}), keeping defaults",
+                          f"({type(exc).__name__}), "
+                          + (f"keeping {' '.join(sorted(keep))} from the "
+                             "previous run" if keep else "no previous setting "
+                             "to keep"),
                           file=sys.stderr)
             elif path.name in carried:
                 found.update(carried[path.name])
@@ -882,7 +923,11 @@ def main(argv=None) -> int:
     }
     Path(args.output).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     print(f"{len(songs)}/{len(paths)} convertible -> {args.output}", file=sys.stderr)
-    kept = sum(1 for n in carried if n in songs)
+    # Only a run that did *not* search carries wholesale; a --fidelity run
+    # reads the same file so a song whose search fails can keep its previous
+    # answer, and saying "carried 38" there would describe the opposite of
+    # what happened -- 38 settings re-measured, not preserved.
+    kept = 0 if args.fidelity else sum(1 for n in carried if n in songs)
     if kept:
         print(f"carried {kept} --fidelity setting(s) forward from "
               f"{args.output}; re-run with --fidelity to re-measure them",

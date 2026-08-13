@@ -7439,6 +7439,248 @@ fits.
 > session to move an emitter that is already where it belongs.
 
 
+### 7.kkkk The largest group in the census was a rate, not a mechanism
+
+v0.5.235. § 7.jjjj's work list opens with `$01 x19` — nineteen instruments
+across nine files whose notes the original opens on a noise transient and we
+hold flat. The shapes are almost one shape:
+
+    Saboteur_II   GT 3  $08F8   original `tri noi tri pul`   ours `tri tri tri tri`
+    Ricochet      GT 4  $07E7   original `tri noi pul pul`   ours `tri tri tri tri`
+    Shockway      GT 3  $0889   original `tri noi pul pul`   ours `tri tri tri tri`
+    Star_Paws     GT 8  $08C7   original `noi noi tri pul`   ours `noi noi noi noi`
+
+None of the nine has `det.effect_drum`, so bit `$01` is not the drum here. In
+eight it is the **wave-program gate**: `det.wave_program >= 0`,
+`det.wave_program_gate == $01`, and the records carrying the bit are exactly
+the instruments the census flags. So the mechanism was implemented, the option
+existed, and `presets.py --fidelity` had measured it on every one of these
+files across two corpus searches without ever selecting it.
+
+#### Because it was measuring nothing
+
+`--wave-program` forced on, corpus A/B: the converted bytes changed on **1 of
+9** files. `_wave_program_entries` opened with
+
+    if fmt != FORMAT_GTS5 or max(1, multiplier) != 1:
+        return None
+
+and seven of the nine pack at `-S2`, `-S3` or `-S5`. The option was selectable,
+measured, and inert — a search cannot choose a setting that changes no bytes,
+and `prune_inert` (§ 7.eeee) would have dropped it if it had. The refusal was
+deliberate and documented: one opcode is one of the player's frames, a
+wavetable steps once per *call*, so at `-S2` the program would run twice as
+fast, and the docstring said "restricting it is an under-read; guessing the
+rate is not".
+
+The rate needed no guessing. It is the same division every other table in this
+converter already does (§ 7.bb), and `_wave_hold_byte` is already the shared
+encoding of it: a repeat of the waveform at `-S2`, where no delay value exists
+for a single extra call, and a delay of `m - 2` above. Each opcode now gets one
+after it, so the program lasts the same number of *frames* at every `-S`, and
+the lead comes from `_first_frame_lead` — which this emitter, a fourth one,
+had never called (§ 7.bbbb).
+
+**The hold's right side is `$00` and that matters here specifically.** In the
+packed player `$00` is *no frequency write at all* and `$80` is a no-op
+transposition that still writes (§ 7.iiii). Elsewhere in this file the two are
+interchangeable on a delay entry, traced; after a `>= $80` opcode they are not,
+because `$80` would re-assert the pattern's own note over the absolute pitch
+the opcode had just set.
+
+#### What it lands
+
+Bytes now change on 7 of the 9, and the noise-frame counts are the evidence
+that the emission is *right* rather than merely present — ours against the
+original's:
+
+| file | noise before | noise after | original | onset | wave |
+|---|---:|---:|---:|---|---|
+| Shockway_Rider | 0 | **404** | 404 | 71% → 100% | 58% → 80% |
+| Saboteur_II | 185 | **748** | 753 | 60% → 100% | 77% → 84% |
+| Ricochet | 0 | **1402** | 1648 | 60% → 100% | 56% → 64% |
+| Thundercats | 439 | **1652** | 1841 | 57% → 86% | 63% → 78% |
+| Kings_of_the_Beach_intro | 1455 | **1975** | 2143 | 67% → 100% | 90% → 96% |
+| Star_Paws | 944 | **1614** | 2372 | 56% → 78% | 73% → 69% |
+
+`melody` is unmoved on all but Kings of the Beach, which gains six points.
+
+#### Star Paws, and an A/B that measured the wrong thing
+
+Forced on *over the song's existing preset*, Star Paws collapsed: voice 1 went
+from melody 1.00 to **0.00** at an unchanged attack count — every attack in its
+place and every one renamed, which is what an absolute pitch written over the
+played note looks like. It was nearly written up as a defect in the emission.
+
+It is an **interaction with `--no-test-restart`**, which that song's preset
+carried. That option puts the record's waveform in the instrument's `firstwave`
+and the emitters must then leave frame 0 alone (§ 7.ffff), so
+`_first_frame_lead` returns nothing and the program's first opcode — noise at an
+absolute pitch — becomes wavetable entry 0. At `-S2` entry 0 is still inside
+frame 0, siddump samples at end of frame, and the attack is named by the
+program's pitch instead of the played note's.
+
+The search resolves it by varying all five toggles together, which is what it
+is for: it drops `no_test_restart` and keeps `wave_program`, and Star Paws
+ships at melody **97%** (96.5% → 96.6%, unmoved), `onset` 56% → 78%, noise 944
+→ 1614 of 2372, `nrun` 0% → 67%. The `$01` instruments the census flagged for
+it — `$08C7`, `$08E7`, `$09E8` — are no longer misses.
+
+The lesson is about the A/B and not about the file: **forcing one option on top
+of a preset measures the pair, not the option.** A per-song preset is already a
+combination, and the combination is the thing under test.
+
+#### What the search selected, and what it did to the census
+
+`presets.py --fidelity` at 60 s (§ 7.mmmm) takes `wave_program` on **eight**
+files — ACE II, Chain Reaction, Kings of the Beach intro, Ricochet, Saboteur II,
+Shockway Rider, Star Paws and Thundercats — and changes nothing else in the
+corpus. That is the attribution: this change can only reach a file that has a
+wave program *and* packs above `-S1`, and all eight do, while every other song's
+setting comes back identical to what shipped.
+
+In `FIDELITY.md`: mean `wave` 75% → 76%, corpus noise frames 67176 → **73301** of
+the original's 82742, `onset` to 100% on five of the eight.
+
+    Shockway_Rider   noise    0 -> 404 of 404      onset  71% -> 100%   wave 58% -> 80%
+    Ricochet         noise    0 -> 1402 of 1648    onset  60% -> 100%   wave 56% -> 64%
+    Saboteur_II      noise  185 -> 748 of 753      onset  60% -> 100%   wave 77% -> 84%
+    ACE_II           noise  288 -> 542 of 543      onset  71% -> 100%   wave 74% -> 83%
+    Chain_Reaction   noise  268 -> 1367 of 1383    onset  71% -> 100%   wave 75% -> 90%
+    Thundercats      noise  439 -> 1652 of 1841    onset  57% ->  86%   wave 63% -> 78%
+    Kings_intro      noise 1455 -> 1975 of 2143    onset  67% -> 100%   melody 61% -> 67%
+    Star_Paws        noise  944 -> 1614 of 2372    onset  56% ->  78%   wave 73% -> 69%
+
+And in the census that started it, `$01` falls from **19** instruments to **4**:
+Hollywood or Bust and Ninja, whose players have no wave program at all
+(`det.wave_program == -1`, so bit `$01` there is something else again), and Wiz,
+the one file of the nine at `-S1` — it was already emitting its program before
+this change, and `gt2reloc` writes no `.sid` for the result. Corpus `match` goes
+372 → **390** of 433 (85.9% → 90.1%) and `flat` 50 → 31.
+
+`Wiz` is a second, older lead: it is the one file of the nine at `-S1`, so it
+was already emitting the program before this change, and `gt2reloc` writes no
+`.sid` for the result — exit code 0, no output file, the silent refusal path.
+Its wavetable is 112 entries, well inside the 255 limit, so that is not the
+cause. Pre-existing and unrelated to the multiplier.
+
+> **The transferable lesson:** "the option is measured and never selected" has
+> two readings — the search disagrees with you, or the search is comparing a
+> file with itself. `--baseline`'s byte-hash separates them in one run
+> (§ 7.uuu), and it is worth doing *before* theorising about the criterion. A
+> restriction written down honestly in a docstring is still a restriction
+> nobody re-examines: this one stood for 32 versions with the corpus's largest
+> unrendered group behind it. And the second half, from Star Paws: an option
+> forced on top of a preset is measured *with* that preset. When the result is
+> a collapse rather than a shortfall, suspect the pair before the mechanism.
+
+
+### 7.llll A search that failed, and a preset that looked like a decision
+
+v0.5.235, found while re-running the preset search for § 7.kkkk. One line in
+its output:
+
+    W_A_R.sid: fidelity search failed (ValueError), keeping defaults
+
+"Keeping defaults" is the structural result — and W_A_R's previous entry
+carried `two_stage`, measured by an earlier search. The song did not decide
+against it; the song was never scored. In the generated `presets.json` those
+two are the same absence.
+
+The exception is real and is a *different* defect:
+
+    ValueError: wave table needs 256 entries, exceeding MAX_TABLELEN (255)
+
+on 4 of W_A_R's 31 combinations, all of them `two_stage` + `pitch_seq`. The
+cause is that above `-S1` a drum record occupies **six** wavetable entries — the
+frame-0 lead is two entries (§ 7.bbbb) and the noise tick's delay is a third —
+while `_wavetable_layout` reserves `WAVE_ENTRIES_PER_INSTR` = 5 for every later
+record and floors each budget at the same 5. `_drum_entries` checks the budget
+only for its *sweep*, so its base shape can overrun by one. It bites only where
+a table is nearly full: W_A_R has 29 instruments at `-S4`, and record 25 was
+handed a budget of 5 and emitted 6.
+
+Two separable fixes, and only the cheap one is taken here:
+
+* **`play()` treats a candidate that will not convert as one unplayable
+  candidate**, returning None and naming it on stderr — exactly what it already
+  did for a `.sng` `gt2reloc` refuses. W_A_R's other 27 combinations are scored
+  now, and its answer is a measurement rather than a crash.
+* **A song whose search does fail keeps what the previous run recorded.** The
+  carry-forward that a routine regeneration already performs was gated on
+  `--fidelity` being *off*; it now happens either way, and the message says
+  which settings were kept.
+* The overflow itself is left open and written down. Fixing it means either
+  reserving six entries per record on a multispeed file or teaching every
+  emitter the budget its base shape needs — both relay out every multispeed
+  file's wavetable, which is a byte-visible change on dozens of files and wants
+  its own corpus A/B rather than a ride on this one.
+
+> **The transferable lesson:** in a generated file, "no setting" and "no
+> measurement" look identical, so the generator has to be the thing that keeps
+> them apart. Any batch tool whose per-item failure falls back to a default is
+> quietly rewriting earlier results — read its stderr before adopting its
+> output, and prefer a fallback that preserves the last known measurement over
+> one that invents a fresh default.
+
+
+### 7.mmmm The search was choosing settings in a window that could not see them
+
+v0.5.235, and the reason the first regenerated `presets.json` of this session
+could not be shipped. Re-running `presets.py --fidelity` at its default 10 s
+*lost* `two_stage` on five files — Sanxion, Tarzan, Zoolook, W_A_R and Flash
+Gordon — while the § 7.jjjj census, read over 60 s, showed exactly those files'
+`$04` records going flat. Two instruments disagreeing about the same change is
+the signal to distrust one of them.
+
+The one to distrust was the search's window. Put `two_stage` back on all five
+and A/B at 60 s:
+
+| file | onset | wave | noise |
+|---|---|---|---|
+| Tarzan | 40% → **100%** | 80% → 88% | 724 → 1254 |
+| Flash_Gordon | 50% → **100%** | 95% → 99% | . |
+| Sanxion | 62% → **100%** | 65% → 59% | 1186 → 1589 |
+| W_A_R | 75% → **100%** | . | . |
+| Zoolook | 83% → **100%** | . | . |
+
+`melody` unmoved on all five. And the reason the 10 s search cannot see it is
+that the window does not contain the music:
+
+    Sanxion at -t 10   onset instruments 1    original noise frames 0
+    Sanxion at -t 60   onset instruments 8    original noise frames 1669
+
+Two of `fidelity_better`'s five terms are *noise* terms and a third is `onset`;
+at 10 s this file offers one comparable instrument and no noise at all, so the
+criterion is not disagreeing, it is blind. Re-run at `-t 60` and the search
+selects `two_stage` for all five.
+
+**This is v0.5.195 repeating in the other tool.** That version moved
+`FIDELITY.md` from 10 s to 60 s for the same reason — a fifth of the corpus
+contributing nothing to `slides` and `bend` — and the finding was written up
+about the report. The search kept its own default for forty versions, so every
+preset in `presets.json` was chosen in a window the published report had
+already been shown to be too short. The default is now 60 and
+`tests/test_preset_passthrough.py` pins it against the report's window.
+
+#### The check that the new window is the right one
+
+A 60 s search is not self-evidently better just because a 60 s A/B agrees with
+it. The evidence that it is: run over the whole corpus, it **reproduces every
+shipped setting exactly** and adds only the eight `wave_program` entries § 7.kkkk
+earns. The 10 s run had moved 22 files, 24 settings lost and 10 gained, and that
+was read for a while as the converter having changed under a stale
+`presets.json`. It had not. The churn was the window, and the file it produced
+would have shipped 24 measured decisions away.
+
+> **The transferable lesson:** when a measurement window is found to be too
+> short, the finding is about the *window*, not about the tool that happened to
+> reveal it. Grep for every other place the same window is chosen. And when two
+> instruments disagree about one change — here a search saying "drop it" and a
+> census saying "it went flat" — the cheap next step is to ask which of them
+> can see the thing at all.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

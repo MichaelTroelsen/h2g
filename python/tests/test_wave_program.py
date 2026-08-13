@@ -292,20 +292,62 @@ def test_it_is_off_by_default_and_selected_per_song():
     assert "wave_program" in presets.FIDELITY_TOGGLES
 
 
-def test_a_multispeed_file_is_left_alone():
-    """The player advances one opcode per frame and a wavetable advances one
-    entry per *call*, so at -S2 the whole program would run twice as fast.
-    Slowing it needs a delay per opcode, which roughly doubles a budget that
-    already reaches 131 entries on Kings of the Beach."""
+def test_a_multispeed_file_holds_each_opcode_for_a_whole_frame():
+    """One opcode is one of the player's frames, and a frame is `multiplier`
+    play calls (v0.5.234). Refusing the file instead is what kept the largest
+    group of the onset census unrendered: 7 of the 9 files whose `$01` records
+    open on noise in the original and flat here carry a wave program and pack
+    above -S1, so the option was selectable, measured, and inert."""
     if not CORPUS.is_dir():
         return
     from h2g.goatwriter import _wave_program_entries
     sid, det = _detect_tables(
         load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
         lambda *a, **k: None)
-    assert _wave_program_entries(sid, det, 2, [], "gts5", 1, 30) is not None
-    assert _wave_program_entries(sid, det, 2, [], "gts5", 2, 30) is None
-    assert _wave_program_entries(sid, det, 2, [], "gts2", 1, 30) is None
+    one = _wave_program_entries(sid, det, 2, [], "gts5", 1, 60)
+    two = _wave_program_entries(sid, det, 2, [], "gts5", 2, 60)
+    three = _wave_program_entries(sid, det, 2, [], "gts5", 3, 60)
+    assert one is not None and two is not None and three is not None
+    # Every entry but the closing stop gains one call's worth of hold, so the
+    # program lasts the same number of *frames* at every -S.
+    assert len(two[0]) == len(three[0]) == 2 * len(one[0]) - 2
+    # -S2 has no delay value for a single extra call, so the waveform is
+    # written again; -S3 spends a delay of m - 2, current for m - 1 calls.
+    assert two[0][2:4] == [one[0][1], one[0][1]]
+    assert three[0][3] == 1
+    assert _wave_program_entries(sid, det, 2, [], "gts2", 1, 60) is None
+
+
+def test_a_hold_does_not_rewrite_the_pitch_the_opcode_just_set():
+    """`$00` on the right is no frequency write at all in the packed player;
+    `$80` is a no-op transposition that still writes, and would re-assert the
+    pattern's own note over a `>= $80` opcode's absolute pitch."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wave_program_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    left, right = _wave_program_entries(sid, det, 2, [], "gts5", 3, 60)
+    absolute = [k for k, (l, r) in enumerate(zip(left, right))
+                if l >= 0x10 and r >= 0x80 and k + 1 < len(left)]
+    assert absolute, "no absolute-pitch opcode in this record"
+    assert all(right[k + 1] == 0x00 for k in absolute)
+
+
+def test_the_multiplier_one_encoding_is_unchanged():
+    """The lead now comes from `_first_frame_lead` rather than being written
+    out here; at -S1 that has to be the same byte pair it always was, or this
+    is not a multispeed fix but a rewrite of every wave-program file."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wave_program_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    left, right = _wave_program_entries(sid, det, 2, [], "gts5", 1, 60)
+    assert (left[0], right[0]) == (0x11, 0x00)
+    assert len(left) == 14
 
 
 # --- v0.5.203: the overshoot ------------------------------------------------
@@ -382,3 +424,21 @@ def test_the_listening_confirmation_is_recorded_with_its_reason():
     # measurement, an unrelated veto reason from the retired listening one.
     assert presets.FIDELITY_VETOED == {
         "Dragons_Lair_Part_II.sid": {"pitch_seq"}}
+
+
+def test_the_budget_counts_the_hold_entry_too():
+    """A program that fills the table must not overrun its budget by the hold
+    entries: the caller reserves five entries for every *later* record, and
+    that reservation is the only thing making the variable-length layout safe.
+    The guard counted one entry per opcode when an opcode now costs two."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import _wave_program_entries
+    sid, det = _detect_tables(
+        load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
+        lambda *a, **k: None)
+    for budget in range(5, 30):
+        for mult in (1, 2, 3, 5):
+            got = _wave_program_entries(sid, det, 2, [], "gts5", mult, budget)
+            if got is not None:
+                assert len(got[0]) <= budget, (budget, mult, len(got[0]))

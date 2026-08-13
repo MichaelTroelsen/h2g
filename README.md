@@ -1334,6 +1334,56 @@ hand-edited into the generated file. Scoring `finds_noise` per instrument off
 `noise_runs` is the real fix and would re-decide every file's toggles, so it
 wants its own commit and its own corpus run.
 
+#### It ran at one speed only, and that hid nineteen instruments (v0.5.235)
+
+Until v0.5.235 this emitted nothing at all for a song packed above `-S1`:
+
+```python
+if fmt != FORMAT_GTS5 or max(1, multiplier) != 1:
+    return None
+```
+
+The reasoning was sound — one opcode is one of the player's frames, a wavetable
+steps once per *call*, so at `-S2` the program would run twice as fast — and the
+consequence was not. Eight of the nine files whose `$01` records the onset
+census flags as opening on a noise transient we hold flat carry a wave program,
+and seven of them pack at `-S2`, `-S3` or `-S5`. The option was offered to
+`presets.py --fidelity`, measured across two corpus searches, and could never be
+chosen, because it changed no bytes.
+
+Each opcode now gets a hold entry after it (`_wave_hold_byte`, the same
+encoding `_first_frame_lead` uses), so the program lasts the same number of
+*frames* at every `-S`, at the cost of a table roughly twice as long — which
+nothing starves for, since the caller's budget already reserves five entries for
+every later record and the loop already stops on it.
+
+With the option forced on, the noise-frame counts land on the original's:
+Shockway Rider 404 against 404, Saboteur II 748 against 753, Kings of the Beach
+1975 against 2143, and `onset` reaches 100% on four of them.
+
+**Star Paws is the one that needed the search rather than a forced A/B.**
+Forced on over that song's existing preset it collapses — voice 1 keeps every
+attack and renames every one, the signature of an absolute pitch landing on the
+attack frame. The cause is `--no-test-restart`, which that preset carried: it
+owns frame 0, so the emitters leave it alone, the program's first opcode
+becomes wavetable entry 0, and at `-S2` that is still inside frame 0. The
+search varies all five toggles together and simply drops `no_test_restart`;
+Star Paws ships `wave_program` alone at melody 97% (unmoved), `onset` 56% →
+78%, noise 944 → 1614. Forcing one option on top of a preset measures the pair.
+
+`Wiz` is the one file of the nine at `-S1`, so it was already emitting the
+program; `gt2reloc` writes no `.sid` for the result, with exit code 0 and no
+message. Pre-existing, and not about the multiplier.
+
+**One combination that will not convert no longer costs a song its search.**
+Four of W_A_R's 31 overflow Goattracker's 255-entry wavetable at `-S4`, the
+exception escaped, and the song fell back to the structural defaults — losing
+the `two_stage` an earlier search had measured. A candidate that will not
+convert is now skipped and named on stderr, like a `.sng` `gt2reloc` refuses;
+a song whose search fails outright keeps what the previous run recorded. The
+overflow itself is open: above `-S1` a drum record takes six entries and only
+its sweep is checked against the budget.
+
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
 In **34 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
@@ -1558,6 +1608,15 @@ it records, and what makes the `gt2reloc` step at the end of the block
 succeed for all 78.
 
 #### `--fidelity`: the options no structural score can see
+
+**It searches at `-t 60`, the window `FIDELITY.md` is published at** (v0.5.235;
+it was 10 s before). v0.5.195 had already found 10 s too short for the report —
+a fifth of the corpus contributed nothing to some columns — and the search kept
+its own default for forty versions. Sanxion's 10 s window holds one comparable
+instrument and zero noise frames against eight and 1669 at 60 s, so two of the
+criterion's five terms had nothing to read; five files lost a `two_stage` that a
+60 s A/B scores at `onset` 40–83% → 100% with `melody` unmoved. A full corpus
+search now takes about four hours.
 
 Those three criteria are all structural, and some options change no structure at
 all — same subtunes, same rows, **same byte count**. `_score` cannot tell them

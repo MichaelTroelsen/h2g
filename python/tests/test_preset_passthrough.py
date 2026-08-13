@@ -305,3 +305,77 @@ def test_silencing_the_drum_is_not_a_win_however_the_onset_moves():
     have = (0.990, 0.772, 535, (1170, 1517, 0x3800, 0x3800), 0.269, 0.750)
     none = (0.990, 0.772, 535, (0, 1517, 0, 0x3800), 0.269, 0.900)
     assert not presets.fidelity_better(none, have)
+
+
+# --- v0.5.235: one bad combination is not a failed song ---------------------
+
+def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
+    """Letting the exception out of `play` abandoned the whole 31-combination
+    walk and fell back to the structural defaults -- which *drops* a setting an
+    earlier search had measured. W_A_R lost `two_stage` that way: 4 of its
+    combinations overflow Goattracker's 255-entry wavetable at -S4, and the
+    other 27 were never scored."""
+    import shutil
+    import fidelity as F
+    import presets as P
+
+    skipped, converted = [], []
+
+    def fake_convert(path, log=None, **opts):
+        on = tuple(sorted(k for k, v in opts.items() if v is True))
+        if opts.get("two_stage"):
+            raise ValueError("wave table needs 256 entries")
+        converted.append(on)
+        return b"blob"
+
+    voices = [F.Voice(), F.Voice(), F.Voice()]
+    stubs = {
+        "make_workdir": lambda *a, **k: (tmp_path, False),
+        "resolve_subtune": lambda *a, **k: 0,
+        "calibration": lambda d: 0,
+        "run_siddump": lambda *a, **k: voices,
+        "pack_sid": lambda *a, **k: tmp_path / "p.sid",
+        "legalise_restarts": lambda b: (b, 0),
+        "compare": lambda a, b: {"melody": 0.5, "sequence": 0.5},
+        "wave_compare": lambda *a, **k: {"our_noise_frames": 0,
+                                         "orig_noise_frames": 0},
+        "startup_lag": lambda a, b: (0, 0),
+        "pitch_motion_compare": lambda *a, **k: {"reversal_ratio": 1.0},
+        "onset_agreement": lambda *a, **k: {"onset_frame_agreement": 0.5},
+    }
+    saved = {k: getattr(F, k) for k in stubs}
+    old_convert, old_freq, old_load = P.convert, P.find_freq_table, P.load_sid
+    old_copy, old_pitch = shutil.copyfile, P._noise_pitch
+    for k, v in stubs.items():
+        setattr(F, k, v)
+    P.convert, P.find_freq_table, P.load_sid = fake_convert, lambda s: None, lambda s: None
+    shutil.copyfile = lambda a, b: None
+    P._noise_pitch = lambda *a, **k: None
+    try:
+        got = P.tune_by_fidelity(tmp_path / "x.sid", {}, 4, "siddump", "gt2reloc",
+                                 10, log=skipped.append)
+    finally:
+        for k, v in saved.items():
+            setattr(F, k, v)
+        P.convert, P.find_freq_table, P.load_sid = old_convert, old_freq, old_load
+        shutil.copyfile, P._noise_pitch = old_copy, old_pitch
+
+    # 16 of the 31 non-empty combinations carry two_stage and raise; the walk
+    # scores the other 15 and returns rather than aborting the song.
+    assert got == {}
+    assert len(skipped) == 16
+    assert all("will not convert" in m for m in skipped)
+    # 15 scored candidates, the reference, and the subtune probe before it.
+    assert len(converted) == 17
+
+
+def test_the_search_window_is_the_window_the_report_is_published_at():
+    """v0.5.195 moved `FIDELITY.md` to 60 s because at 10 s a fifth of the
+    corpus contributed nothing to some columns. The *search* stayed at 10 and
+    nobody re-read that finding: Sanxion's 10 s window holds 1 comparable
+    instrument and **zero** noise frames against 8 and 1669 at 60 s, so the
+    noise and onset criteria were blind there and it dropped `two_stage` --
+    which an independent 60 s A/B scores at onset 62% -> 100%. Five files were
+    decided that way. Pinned so the window cannot drift back silently."""
+    import presets as P
+    assert P.build_parser().get_default("seconds") == 60

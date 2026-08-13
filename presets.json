@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.234 presets.py",
+  "generator": "h2g 0.5.235 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -44,7 +44,8 @@
       "subtunes": 1,
       "rows": 18009,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "wave_program": true
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -142,7 +143,8 @@
       "subtunes": 1,
       "rows": 15169,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "wave_program": true
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -423,7 +425,8 @@
       "bytes": 11682,
       "subtunes": 1,
       "rows": 8522,
-      "multiplier": 5
+      "multiplier": 5,
+      "wave_program": true
     },
     "Knucklebusters.sid": {
       "max_rows": 128,
@@ -669,7 +672,8 @@
       "subtunes": 1,
       "rows": 10207,
       "multiplier": 2,
-      "two_stage": true
+      "two_stage": true,
+      "wave_program": true
     },
     "Rikky.sid": {
       "max_rows": 128,
@@ -700,7 +704,8 @@
       "subtunes": 1,
       "rows": 14821,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "wave_program": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -733,6 +738,7 @@
       "rows": 19978,
       "multiplier": 2,
       "two_stage": true,
+      "wave_program": true,
       "pitch_seq": true
     },
     "Sigma_Seven.sid": {
@@ -777,7 +783,8 @@
       "subtunes": 3,
       "rows": 12550,
       "multiplier": 2,
-      "no_test_restart": true
+      "wave_program": true,
+      "pitch_seq": true
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -832,6 +839,7 @@
       "multiplier": 3,
       "two_stage": true,
       "sfx_drum": true,
+      "wave_program": true,
       "pitch_seq": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {

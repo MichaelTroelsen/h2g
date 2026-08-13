@@ -389,3 +389,55 @@ def test_the_gts2_column_leaves_non_table_commands_and_zeros_alone():
     patterns = [[GT_NO_NOTE, 0, 15, 0x08, GT_NO_NOTE, 0, 1, 0x00]]
     assert scale_portamento_data(patterns, 2) == 0
     assert patterns[0][3] == 0x08 and patterns[0][7] == 0x00
+
+
+# --- the byte-code wave program (v0.5.235) ----------------------------------
+#
+# One opcode is one of the player's frames. Until v0.5.235 the emitter refused
+# a multispeed file outright rather than dividing, which is what kept seven of
+# the onset census's `$01` files unrendered: the option was measured twice by
+# `presets.py --fidelity` and could never be selected, because it changed no
+# bytes. Timed here against the same transcription of WAVEEXEC as every other
+# shape in this file.
+
+def _wave_program(name, multiplier):
+    import pathlib
+    from h2g.sidfile import load_sid
+    from h2g.convert import _detect_tables
+    from h2g.goatwriter import _wave_program_entries
+    corpus = pathlib.Path("C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    if not (corpus / name).is_file():
+        return None
+    sid, det = _detect_tables(load_sid(str(corpus / name)), lambda *a, **k: None)
+    return _wave_program_entries(sid, det, 2, [], "gts5", multiplier, 120)
+
+
+def test_each_opcode_holds_for_one_frame_at_every_multiplier():
+    """The program's *frame* count is the invariant; its entry count is not."""
+    got = {}
+    for m in (1, 2, 3, 5):
+        prog = _wave_program("Trans-Atlantic_Balloon_Challenge.sid", m)
+        if prog is None:
+            return                                   # no corpus
+        # Waveform per call, up to the entry that restores the record's own.
+        # The window scales with the rate, or a high -S would only show
+        # the program's first few opcodes and the comparison would be
+        # between different amounts of program.
+        calls = [w for _, w, _ in wave_timeline(*prog, calls=40 * m)]
+        # Collapse to (waveform, calls held) and drop the trailing hold of the
+        # restore entry, which is the note's end rather than a program frame.
+        runs, last = [], object()
+        for w in calls:
+            if w == last:
+                runs[-1][1] += 1
+            else:
+                runs.append([w, 1]); last = w
+        got[m] = runs[:-1]
+    if not got:
+        return
+    # Same waveforms in the same order at every -S...
+    assert len({tuple(w for w, _ in r) for r in got.values()}) == 1
+    # ...each lasting `m` times as many calls as at -S1.
+    for m, runs in got.items():
+        base = [n for _, n in got[1]]
+        assert [n for _, n in runs] == [n * m for n in base], m

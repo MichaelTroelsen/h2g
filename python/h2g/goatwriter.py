@@ -806,7 +806,11 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
 
 
 SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
-WAVE_NOTE_BASE = 0x00        # right side: the pattern's own note, +0 semitones
+WAVE_NOTE_BASE = 0x00        # right side: no frequency write (player.s:976-977 `bne`).
+#                              The editor reads the same byte as "the base note, +0"
+#                              (gplay.c) -- see CLAUDE.md; every number here is the
+#                              packed player's, so the name is the editor's and the
+#                              behaviour is not
 WAVE_NOTE_KEEP = 0x80        # right side: leave the frequency alone
 WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
 
@@ -945,6 +949,24 @@ def _speed_index(speed_table: List[tuple], entry: tuple) -> int:
     return speed_table.index(entry) + 1
 
 
+def _hold_wave_program_entry(left: List[int], right: List[int],
+                             wave: int, multiplier: int) -> None:
+    """Extend the entry just appended to cover a whole frame at `-S{m}`.
+
+    One opcode of the byte-code program is one of the player's frames, and a
+    frame is `multiplier` play calls. `_wave_hold_byte` is the shared encoding
+    of that -- a repeat of the waveform at `-S2`, where no delay value exists
+    for a single extra call, and a delay of `m - 2` above it.
+
+    Right side `$00`: no frequency write, so an absolute pitch set by a
+    `>= $80` opcode survives its own frame. See `_wave_program_entries`.
+    """
+    hold = _wave_hold_byte(multiplier, _wave_byte(wave))
+    if hold is not None:
+        left.append(hold)
+        right.append(WAVE_NOTE_BASE)
+
+
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           speed_table: List[tuple], fmt: str,
                           multiplier: int, budget: int,
@@ -974,13 +996,30 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     * `$85` holds, which is the program's end; the block stops there and
       Goattracker keeps the last waveform, as the player does.
 
-    **Multiplier 1 only.** The player advances one opcode per frame and a
-    wavetable advances one entry per *call*, so at `-S2` the whole program would
-    run twice as fast. Slowing it needs a delay entry per opcode, which roughly
-    doubles a budget that already reaches 131 entries on Kings of the Beach.
-    Restricting it is an under-read; guessing the rate is not.
+    **One opcode is one frame, and one frame is `multiplier` play calls.** The
+    player advances one opcode per frame; a wavetable advances one entry per
+    *call*, so each opcode gets a hold entry after it (`_wave_hold_byte`, the
+    same rule as `_first_frame_lead`) and the program runs at the player's
+    rate at every `-S`. Until v0.5.234 the function simply refused a multiplier
+    above 1, which is what kept the largest group of the onset census
+    unrendered: 7 of the 9 files whose `$01` records the original opens on
+    noise and we held flat -- Kings of the Beach, Ricochet, Saboteur II,
+    Shockway Rider, Star Paws, Thundercats -- carry a wave program and pack at
+    `-S2`, `-S3` or `-S5`, so the option was selectable, measured, and inert.
+
+    The cost is a table roughly twice as long. Nothing starves for it: the
+    caller's budget already reserves five entries for every later record and
+    this loop already stops on it, so an over-long program loses its trailing
+    opcodes rather than another instrument's block.
+
+    **The hold entry's right side is `$00`.** In the packed player that is *no
+    frequency write at all* (`player.s:976-977`); `$80` is a no-op
+    transposition that still writes, which would re-assert the pattern's own
+    note and undo the absolute pitch a `>= $80` opcode had just set. The two
+    are equivalent on the delay entries elsewhere in this file (v0.5.233 traced
+    it) precisely because those follow entries that do not set a pitch.
     """
-    if fmt != FORMAT_GTS5 or max(1, multiplier) != 1:
+    if fmt != FORMAT_GTS5:
         return None
     if det.wave_program < 0 or not det.wave_program_gate:
         return None
@@ -1001,17 +1040,31 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # on the program, every frame it emits ran one early and that first frame was
     # lost. Counted in the budget below like any other entry, so a record too
     # long for the table loses a trailing opcode rather than this.
-    seed = 1 if _first_frame_entry(data[rec + 2], written) else 0
-    left: List[int] = [data[rec + 2]] * seed
-    right: List[int] = [WAVE_NOTE_BASE] * seed
+    # `_first_frame_lead` rather than a lead written out here: the rule has two
+    # halves and this function only ever had the first. Its one-entry seed was
+    # one *call* where frame 0 is `multiplier` of them -- the same defect
+    # v0.5.220 fixed in `_drum_entries` and v0.5.226 in the plain tick block,
+    # latent here only because the multiplier gate above made it unreachable.
+    lead_l, lead_r = _first_frame_lead(data[rec + 2], multiplier,
+                                       written=written)
+    left: List[int] = list(lead_l)
+    right: List[int] = list(lead_r)
+    seed = len(left)
+    # What one opcode costs: its own entry, plus the hold that makes it last a
+    # whole frame above -S1. The guard below has to count both, or a program
+    # that fills the table overruns the budget by one entry and takes it from
+    # the five every later record is reserved -- the one property that makes
+    # the variable-length layout safe (`_wavetable_layout`).
+    per_opcode = 1 + (_wave_hold_byte(multiplier) is not None)
     for kind, wave, arg in decode_wave_program(data, at):
         if kind == "hold":
             break
-        if len(left) + 3 > budget:     # ...the restore and the stop
+        if len(left) + per_opcode + 2 > budget:     # ...the restore and the stop
             break
         if kind == "set":
             left.append(_wave_byte(wave))
             right.append(_sfx_note_byte(arg))
+            _hold_wave_program_entry(left, right, wave, multiplier)
             continue
         # **One entry, even when the operand is non-zero** (v0.5.203). A
         # portamento needs a command entry of its own, and a wavetable spends a
@@ -1024,6 +1077,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # waveform keeps its frame and the movement is dropped.
         left.append(_wave_byte(wave))
         right.append(WAVE_NOTE_KEEP)
+        _hold_wave_program_entry(left, right, wave, multiplier)
     # `seed` alone is not a program: a record whose interpreter holds on its
     # first opcode has nothing to say here and falls through to the shapes
     # below, exactly as it did before the seed entry existed.
