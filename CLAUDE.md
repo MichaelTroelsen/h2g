@@ -724,6 +724,38 @@ So, for any work that runs concurrently:
   binary turned up. Copy or build it in the worktree first, and sanity-check a
   known multispeed file before trusting anything a fresh checkout measured.
 
+### Say, for every proposed task, whether it can be delegated
+
+**Whenever you list next steps — in a handoff, in a "what next", in a plan —
+tag each item with how it can be run.** The three tags, and what qualifies:
+
+* **`[worktree]`** — safe for a subagent in its own git worktree
+  (`isolation: "worktree"`). Qualifies when the change is confined to
+  `python/h2g/` or one harness module, is verified by a corpus byte-hash plus a
+  targeted A/B, and **touches none of `SURVEY.md`, `presets.json`,
+  `FIDELITY.md`**. Brief the agent to copy
+  `python/tools/siddump-rt/siddump.exe` into its worktree first — it is
+  gitignored, and without it the harness silently measures only the
+  single-speed files (v0.5.235 read a whole invalid baseline that way).
+* **`[main]`** — this session only. Anything that regenerates an artefact, runs
+  `presets.py --fidelity` (serial, about an hour, and it writes
+  `presets.json`), or commits. Two searches at once are deterministic but
+  contend; there is no reason to run them in parallel.
+* **`[user]`** — needs a human. Every listening verdict, and any decision about
+  what a tune should sound like. Stage the material with `listen.py` so the ask
+  is a link rather than a task.
+
+A **workflow** (multi-agent fan-out) is worth proposing only for *independent
+investigations that return findings rather than patches* — "classify these 18
+census misses by cause, one agent per effect byte", "read the `$80` routine in
+each of these four players". It is the wrong tool for anything that ends in a
+measurement of the whole corpus, because those serialise on the same binaries
+and the same generated files. And it is never started without the user asking.
+
+The point of the tag is that the user can hand a `[worktree]` item to a fork
+and keep the session for the `[main]` ones. An untagged list makes everything
+look like it needs this session.
+
 A new `convert()` option is inert until it is in **three** places: the
 signature, `presets.py`'s `FIXED`, and `_preset_opts`. `_preset_opts` now
 derives its keys from `inspect.signature(convert)` and

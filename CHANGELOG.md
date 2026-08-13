@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.240 — 2026-08-13
+
+- tag every proposed task with how it can be run
+
 ## 0.5.239 — 2026-08-13
 
 - the wavetable budget is a number the emitters keep
