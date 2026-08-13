@@ -55,7 +55,13 @@ def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
              min_notes=None, budget=None, note_rows=None, row_calls=0):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_rise=rise, effect_arp=arp, effect_drum=drum)
-    kw = {} if budget is None else {"budget": budget}
+    # `budget` defaults to `WAVE_ENTRIES_PER_INSTR`, and since v0.5.239
+    # that is a number the tick block honours rather than ignores: at
+    # five it declines its own shape and keeps the classic one. A test
+    # about a *shape* has to say how much room the record has, so the
+    # default here is what the layout gives a record with something to
+    # say. A test about the budget passes its own.
+    kw = {"budget": 32} if budget is None else {"budget": budget}
     if note_rows is not None:
         kw["note_rows"] = note_rows
         kw["row_calls"] = row_calls

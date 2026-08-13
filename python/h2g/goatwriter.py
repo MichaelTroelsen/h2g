@@ -2498,6 +2498,18 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # instrument-number offset the wavetable pointers are built from)
         frame0, frame0_r = _first_frame_lead(wave, multiplier, force=True,
                                              written=no_test_restart)
+        # **The tick is an addition, so it has to fit.** This block ignored
+        # `budget` entirely: with the frame-0 lead two entries above -S1 and the
+        # tick's own delay a third, it emits 7 or 8 where the caller has
+        # reserved 5, and the layout's "nobody starves" guarantee is the
+        # caller's arithmetic rather than a property the emitters held up. 122
+        # of the corpus's records are in that case, and it only bites where a
+        # table is nearly full: W_A_R at `--two-stage --pitch-seq` overran 255
+        # by one and `gt2reloc` refused the file. Where there is no room the
+        # record keeps the five-entry shape below -- the tick is what is lost,
+        # not the table.
+        tick = len(frame0) + len(tl) + 4 <= budget
+    if tick:
         off = len(tl) + len(frame0) - 1
         # Two `tail` entries, mirroring the untimed shape's entries 1-2: the
         # arpeggio loops over the second of them and the entry after it, so
@@ -2778,6 +2790,23 @@ def _drum_entries(wave: int, fmt: str, speed_table: List[tuple],
     right.append(0x00)
     left.append(0xFF)
     right.append(0x00)
+    # **And the base shape has to fit too.** Above `-S1` this is six entries --
+    # the frame-0 lead is two and the tick's delay a third -- against the five
+    # the caller reserves for every later record, on 75 corpus records. Only the
+    # *sweep* below was ever checked. Where there is no room the multiplier
+    # padding goes first: it is the smaller loss (the lead reverts to the one
+    # call it was before v0.5.220) and it keeps the tick, which is the thing a
+    # listener hears.
+    while len(left) > budget and len(lead) > 1:
+        del left[1], right[1]
+        lead = lead[:-1]
+    # Then the tick's own hold, which sits directly after the noise entry --
+    # index `len(lead) + 1`, and only where the tick has one to give up. The
+    # caller's floor is `WAVE_ENTRIES_PER_INSTR`, so trimming the lead alone
+    # already fits every budget the layout hands out and this is the guard for
+    # a caller that asks for less.
+    if len(left) > budget and len(left) > len(lead) + 3:
+        del left[len(lead) + 1], right[len(lead) + 1]
     while len(left) < WAVE_ENTRIES_PER_INSTR:
         left.append(0xFF)
         right.append(0x00)

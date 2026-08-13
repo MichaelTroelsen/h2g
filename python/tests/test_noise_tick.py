@@ -52,8 +52,14 @@ def _speeds(frames, monkeypatch):
 def _entries(effect, *, wave=0x41, multiplier=1, drum=True, arp=True):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_arp=arp, effect_drum=drum)
+    # **Say how much room the record has.** `budget` defaults to
+    # `WAVE_ENTRIES_PER_INSTR`, and since v0.5.239 that is a number the tick
+    # block honours rather than ignores: at five it declines its own shape and
+    # keeps the classic one. These tests are about the shape, not about a table
+    # running out, so they give the room the layout gives a record that has
+    # something to say.
     return _wavetable_entries(_Sid(effect, wave), det, 0, True, "gts5", [],
-                              multiplier)
+                              multiplier, budget=32)
 
 
 # --- which subtune's gate ----------------------------------------------------
@@ -169,7 +175,7 @@ def test_no_test_restart_suppresses_the_frame_zero_entry(monkeypatch):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_arp=True, effect_drum=True)
     without = _wavetable_entries(_Sid(DRUM | ARP | 0x30), det, 0, True, "gts5",
-                                 [], 1, no_test_restart=True)
+                                 [], 1, budget=32, no_test_restart=True)
     assert with_lead[0] == [0x41, 0x81, 0x81, 0x40, 0x40, 0xFF, 0xFF]
     assert without[0] == [0x81, 0x81, 0x40, 0x40, 0xFF, 0xFF],         "no lead: straight to the tick"
     # ...and the arpeggio keeps its pair, with the loop target moved back by

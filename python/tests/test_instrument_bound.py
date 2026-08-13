@@ -282,3 +282,65 @@ def test_compact_is_off_by_default_and_the_fixture_is_untouched():
     """
     from h2g.convert import convert as _convert
     assert _convert(str(REPO_ROOT / "Commando.sid"), log=lambda m: None) ==         (REPO_ROOT / "Commando.sng").read_bytes()
+
+
+# --- v0.5.239: the reservation is a property the emitters have to hold up ---
+
+@needs_corpus
+def test_no_record_overruns_a_budget_of_five():
+    """`_wavetable_layout` reserves `WAVE_ENTRIES_PER_INSTR` for every later
+    record and floors each budget at the same five. That is only a guarantee if
+    the emitters honour it, and two of them did not: the tick shape checked
+    nothing and `_drum_entries` checked only its sweep, so 197 records across 40
+    corpus files emitted 6, 7 or 8 when handed 5. It bites where a table is
+    nearly full -- W_A_R at `--two-stage --pitch-seq` overran 255 by one and
+    `gt2reloc` refused the file with no message."""
+    import json
+    import fidelity as F
+    from h2g.goatwriter import _wavetable_entries
+
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    over = []
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+        except Exception:                              # noqa: BLE001
+            continue
+        opts = F._preset_opts(doc, path.name)
+        mult = F._preset_multiplier(doc, path.name)
+        for i in range(max(det.instr_used - 1, 0)):
+            try:
+                left, _ = _wavetable_entries(
+                    sid, det, i, True, "gts5", [], mult, None, 1, 1, 5,
+                    two_stage=opts.get("two_stage", False),
+                    sfx_drum=opts.get("sfx_drum", False),
+                    wave_program=opts.get("wave_program", False),
+                    pitch_seq=opts.get("pitch_seq", False),
+                    no_test_restart=opts.get("no_test_restart", False))
+            except Exception:                          # noqa: BLE001
+                continue
+            if len(left) > 5:
+                over.append((path.name, i, len(left)))
+    assert not over, over[:10]
+
+
+@needs_corpus
+def test_every_search_combination_of_the_fullest_files_converts():
+    """The four corpus files whose wavetables come closest to the 255-row
+    ceiling, over all 31 combinations the preset search tries. W_A_R had four
+    that raised, and a raising candidate cost it a measured setting until
+    v0.5.235 made the search skip rather than abandon."""
+    import itertools
+    import presets as P
+    from h2g.convert import convert
+
+    for name in ("W_A_R.sid", "Mega_Apocalypse.sid", "Thundercats.sid",
+                 "Kings_of_the_Beach_intro.sid"):
+        path = CORPUS / name
+        found = P.best_options(path)
+        base = {k: found[k] for k in ("max_rows", *P.TOGGLES)}
+        for r in range(len(P.FIDELITY_TOGGLES) + 1):
+            for combo in itertools.combinations(P.FIDELITY_TOGGLES, r):
+                convert(str(path), log=lambda m: None, **base, **P.FIXED,
+                        **{k: True for k in combo})

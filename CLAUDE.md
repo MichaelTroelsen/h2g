@@ -766,19 +766,18 @@ stderr for `will not convert` and `search failed` before adopting its output --
 `presets.json` is a record of measurements, and a missing entry and a measured
 "no" are indistinguishable in the file.
 
-The overflow itself is still open, and it is wider than the one crash.
-`_wavetable_layout` reserves `WAVE_ENTRIES_PER_INSTR` = 5 for every *later*
-record and floors each budget at the same 5 -- but handed a budget of 5, **197
-records across 40 corpus files emit 6, 7 or 8 entries**: several emitters check
-the budget only for their optional part (`_drum_entries` for its sweep) or not
-at all. So "nobody starves" is a property of the layout that the emitters do
-not hold up. It bites only near the ceiling, which is why one file crashes and
-not forty: measured natural lengths are 177 rows for W_A_R and 228 for
-Thundercats against the 255 limit, and **only Mega Apocalypse (391) exceeds
-it**. Two halves to the fix, and they are separable: reserve each later
-record's *natural* length instead of 5 (a pre-pass, and affordable for every
-file but that one), and make the emitters degrade honestly when the budget
-really does bind. Its own commit and its own corpus A/B.
+**A guarantee written in the caller is a comment.** `_wavetable_layout`
+reserves `WAVE_ENTRIES_PER_INSTR` = 5 per later record and calls it "nobody
+starves" -- but handed a budget of 5, **197 records across 40 corpus files
+emitted 6, 7 or 8**: `_drum_entries` checked the budget for its *sweep* and not
+its base, and the tick block checked nothing. Above `-S1` the frame-0 lead is
+two entries and the tick's delay a third, so the five-entry assumption stopped
+being true when multispeed timing arrived and nothing said so. Fixed in
+v0.5.239, byte-identical on all 83 files, with the order of surrender chosen
+rather than incidental: the tick block keeps the five-entry shape, and
+`_drum_entries` gives up its multiplier padding before its tick. If an
+invariant spans two functions, test it across both -- `tests/
+test_instrument_bound.py` now does.
 
 And an option can be inert in the other direction: **`fidelity_better` is not a
 total order**, so the 31-combination `--fidelity` walk is a greedy path rather

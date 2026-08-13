@@ -104,10 +104,14 @@ def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
              speed_table=None, wave=0x41, multiplier=1):
     det = Detection(instr_start=8, instr_stride=8,
                     effect_rise=rise, effect_arp=arp, effect_drum=drum)
+    # `budget` defaults to `WAVE_ENTRIES_PER_INSTR`, and since v0.5.239 the
+    # emitters honour it: at five, a shape needing six declines rather than
+    # overrunning the caller's reservation. These tests are about *timing*, so
+    # they give the room the layout gives a record with something to say.
     return _wavetable_entries(_FakeSid(effect_byte, wave), det, 0, effects,
                               FORMAT_GTS5,
                               speed_table if speed_table is not None else [],
-                              multiplier)
+                              multiplier, budget=32)
 
 
 # --- the drum sweep ---------------------------------------------------------

@@ -7829,6 +7829,67 @@ exit code 0, no output file, no message -- into a named instrument and row.
 > than the extension.
 
 
+### 7.oooo A guarantee the layout asserted and the emitters did not keep
+
+v0.5.239, closing what § 7.llll recorded. `_wavetable_layout` hands each record
+a budget of `GT_MAX_TABLELEN - used - reserved`, reserving
+`WAVE_ENTRIES_PER_INSTR` = 5 for every *later* record and flooring each budget
+at the same 5, and its docstring calls that "nobody starves". It is the
+caller's arithmetic. Whether it holds depends on the emitters honouring the
+number, and two of them did not:
+
+    _drum_entries            emits 6 at a budget of 5    75 records
+    the tick / fall-through  emits 7 or 8               122 records
+
+across 40 of the 95 corpus files. Both are the same shape of omission:
+`_drum_entries` checks the budget for its *sweep* -- the optional part -- and
+not for its base, and the tick block checks nothing at all. Above `-S1` the
+frame-0 lead is two entries (§ 7.bbbb) and the tick's own delay is a third, so
+the five-entry assumption stopped being true the moment multispeed timing
+arrived and nothing said so.
+
+It bites only where a table is nearly full, which is why one file crashed and
+not forty. Emitted lengths against the 255 ceiling: **Mega Apocalypse 255 --
+exactly on it** -- Kings of the Beach intro 229, Thundercats 228,
+Trans-Atlantic 225. W_A_R at `--two-stage --pitch-seq` overran by one and
+`gt2reloc` refused the file with exit code 0 and no message, which cost it a
+measured `two_stage` until § 7.llll fixed the search's half of that.
+
+The fix is that both shapes now decline what does not fit, and the *order* of
+what is given up is the design:
+
+* The tick block keeps the five-entry shape instead of its own. The tick is
+  lost; the table is not.
+* `_drum_entries` gives up the **multiplier padding first** -- the lead reverts
+  to the one call it was before v0.5.220 -- and only then the tick's hold. That
+  is the smaller loss of the two: a frame-0 lead a call short moves a waveform
+  *within* frame 0, where losing the tick removes a noise transient a listener
+  hears.
+
+Corpus output is byte-identical on all 83 files, and every one of the 31 search
+combinations now converts for each of the four fullest files. Two tests hold
+it: no record may exceed a budget of 5 anywhere in the corpus, and those four
+files must convert under every combination. The first fails against the old
+tick block.
+
+**Three test helpers had to be corrected, and that is the finding restated.**
+`test_noise_tick.py`, `test_effects.py` and `test_call_rate.py` all called
+`_wavetable_entries` without a `budget`, taking the default of
+`WAVE_ENTRIES_PER_INSTR` -- and every shape they pinned was one the emitter
+could only produce by overrunning that number. The invariant was not held in
+the code and it was not held in the tests' model of the code either; nine
+assertions had been quietly describing an emitter that ignored its allocation.
+They now say how much room they mean. The default stays conservative: a caller
+that does not think about the table should get the shape that always fits, and
+the layout always passes a real number.
+
+> **The transferable lesson:** a guarantee written in the caller is a comment.
+> `reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR` reads like a proof and is
+> an assumption about code somewhere else -- one that was true when it was
+> written and stopped being true when multispeed timing made the minimum block
+> six entries. If an invariant spans two functions, test it across both.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
