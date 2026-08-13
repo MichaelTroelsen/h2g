@@ -368,6 +368,19 @@ test dependency).
   reading to explain something the unshifted one does not; the remainder is the
   `short` kind, a note-*length* difference no column here measures. A
   diagnostic naming the wrong cause is worse than one naming none.
+- **A symptom can be diagnosed right and explained wrong, and the explanation
+  is what propagates.** `_sfx_drum_entries` put the bit-$80 drum's hit at the
+  *end* of its period because a measurement showed melody collapsing 94.7% ->
+  50.4% when the noise opened the block. The collapse was real; the reason
+  written down for it -- "the player's counter is per voice and free-running"
+  -- was not. It is zeroed at note start in both dialects (`STA $8934,X` at
+  Bangkok `$80CE`), and the collapse was the noise landing on **frame 0**,
+  where siddump names the note. One misread cause reached a docstring, a
+  constant's comment and three tests, all agreeing with each other, and the
+  drum fired three frames late for as long as it existed. When a fix rests on
+  "we measured that the other way is worse", check that the *other way* is the
+  one you would fix next -- there were three placements here and only two were
+  ever tried.
 - **A detection flag about a player is not a fact about a record.**
   `det.effect_bit40` says the player *reads* bit $40; only a record's own effect
   byte says it is *set*. Gating the fixed attack pitch on the file alone reached

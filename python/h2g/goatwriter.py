@@ -900,18 +900,45 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
             right.append(WAVE_NOTE_KEEP)
 
     if second_note is None:
-        # **The note comes first, and that is not cosmetic.** The player's
-        # counter is per voice and free-running, so a hit falls wherever it
-        # falls relative to a note start; a wavetable always begins at the note.
-        # Opening on the noise therefore puts the drum's pitch on the note's own
-        # first frame, where the played note never sounds at all -- measured, it
-        # took Trans-Atlantic's melody from 94.7% to 50.4%.
+        # **The hit is on the note's second frame, and every `period` after.**
+        # Bangkok Knights $8488, and the same block byte for byte in Mega
+        # Apocalypse, Star Paws and Thundercats:
+        #
+        #     848D  LDA $8936 / CMP #$01 / BEQ fire     ; counter == 1 -> hit
+        #     8499  CMP #$06 / BCC out                  ; == period -> wrap
+        #     84A4  fire: LDA #$48 / STA $D40F / LDA #$81 / STA $D412
+        #
+        # and the counter is **zeroed at note start** -- `LDA #$00 / STA
+        # $8934,X` at $80CE, in the block that clears this voice's other
+        # per-note cells -- then `INC $8934,X` once a frame at $84D2. So it is
+        # note-locked, the phase is reproducible, and a wavetable can hold it.
+        #
+        # **This docstring used to say the opposite**, that the counter was
+        # "per voice and free-running", and put the noise at the *end* of the
+        # cycle for that reason. The measurement it cited is real and was
+        # misread: opening on the noise at **frame 0** puts the drum's pitch on
+        # the note's own attack frame, where siddump names the note, and
+        # Trans-Atlantic's melody duly fell 94.7% -> 50.4%. That is an argument
+        # against frame 0, not against frame 1 -- the same collapse
+        # `--no-test-restart` produces on Star Paws by the same route. Measured
+        # on the original, all four files sound noise at offset 1 on 100% of
+        # onsets, and Bangkok's 226 of 232 read `noi` at 1 and 7 -- one frame
+        # each, not the two the second-note dialect shows.
         left: List[int] = []
         right: List[int] = []
-        hold(left, right, (period - SFX_DRUM_FRAMES) * m)
-        left += [noise] * SFX_DRUM_FRAMES
-        right += [note] * SFX_DRUM_FRAMES
-        return left, right, 0
+        hold(left, right, m)                 # frame 0: the record's own note
+        loop = len(left)
+        left.append(noise)
+        right.append(note)
+        rest = m - 1                         # ...the hit lasts one frame
+        if rest == 1:
+            left.append(noise)
+            right.append(note)
+        elif rest > 1:
+            left.append(min(rest - 1, WAVE_MAX_DELAY))
+            right.append(WAVE_NOTE_KEEP)
+        hold(left, right, (period - 1) * m)
+        return left, right, loop
 
     # With the $40 pitch: a prologue that runs once, then a loop that does not.
     # The burst at offsets +1..+2 carries two pitches, the drum's and $40's; the

@@ -154,18 +154,28 @@ def test_the_two_files_without_the_block_report_no_pitch():
         assert (det.sfx_pitch, det.sfx_voice, det.sfx_period) == (-1, -1, -1)
 
 
-def test_the_hit_opens_on_the_note_and_not_on_the_noise():
-    """The player's counter is per voice and free-running, so a hit falls
-    wherever it falls relative to a note start; a wavetable always begins at
-    the note. Opening on the noise puts the drum's pitch on the note's own
-    first frame, where the played note never sounds -- measured, it took
-    Trans-Atlantic's melody from 94.7% to 50.4%.
+def test_the_hit_is_on_the_notes_second_frame():
+    """**Frame 0 is the played note and frame 1 is the hit** (v0.5.246).
+
+    This test used to assert the noise sat at the *end* of the cycle, on the
+    reading that the player's counter was "per voice and free-running". It is
+    not: Bangkok Knights zeroes it at note start (`LDA #$00 / STA $8934,X` at
+    $80CE, in the block clearing this voice's other per-note cells) and `INC`s
+    it once a frame at $84D2, then fires on `CMP #$01 / BEQ`. Trans-Atlantic's
+    player is the same routine byte for byte at $0C2E.
+
+    The measurement that reading rested on is real and was misread: opening on
+    the noise at **frame 0** puts the drum's pitch on the note's own attack
+    frame, where siddump names the note, and Trans-Atlantic's melody fell
+    94.7% -> 50.4%. That is an argument against frame 0, which this shape still
+    respects -- it is not an argument for putting the hit last.
     """
     from h2g.goatwriter import _sfx_drum_entries, _sfx_note_byte
-    left, right, _loop = _sfx_drum_entries(0x41, 0x38, 6)
-    assert left == [0x41, 0x02, 0x81, 0x81]
-    assert right == [0x00, 0x80, _sfx_note_byte(0x38), _sfx_note_byte(0x38)]
+    left, right, loop = _sfx_drum_entries(0x41, 0x38, 6)
+    assert left == [0x41, 0x81, 0x41, 0x03]
     assert right[0] == 0x00, "relative 0 -- the played note, not an absolute"
+    assert left[1] == 0x81 and right[1] == _sfx_note_byte(0x38)
+    assert loop == 1, "the loop returns to the hit, not to the note"
 
 
 def test_the_pitch_becomes_the_nearest_absolute_note():
@@ -329,11 +339,17 @@ def test_the_drum_can_carry_the_fixed_pitch_on_its_second_frame():
     this reader has not found"."""
     from h2g.goatwriter import (SFX_DRUM_FRAMES, _sfx_drum_entries,
                                 _sfx_note_byte)
+    # Two frames is **this dialect's** burst -- the one carrying $40's second
+    # pitch. The plain shape sounds one frame per period, which is what the
+    # counter test implies and what all four $48 files measure (noise at
+    # offset 1 on 100% of onsets, Bangkok 226 of 232 reading `noi` at 1 and 7).
     assert SFX_DRUM_FRAMES == 2
-    # Without it both noise frames carry the drum's own pitch, which is what
-    # this emitter did for want of knowing where $15EB came from.
-    plain_l, plain_r, _ = _sfx_drum_entries(0x41, 56, 6, 1)
-    assert plain_r[-2] == plain_r[-1] == _sfx_note_byte(56)
+    # Without it the plain shape sounds **one** noise frame per period, at the
+    # drum's own pitch. It carried two until v0.5.246, for want of knowing
+    # where $15EB came from -- and both of them at the wrong offset.
+    plain_l, plain_r, plain_loop = _sfx_drum_entries(0x41, 56, 6, 1)
+    assert plain_l.count(0x81) == 1
+    assert plain_r[plain_loop] == _sfx_note_byte(56)
     # With it the burst moves to the front and carries the two pitches in order.
     left, right, _loop = _sfx_drum_entries(0x41, 56, 6, 1, second_note=0xB4)
     assert right[1] == _sfx_note_byte(56), "the first frame keeps the drum"
@@ -354,7 +370,11 @@ def test_the_fixed_pitch_goes_in_a_prologue_the_loop_skips():
     assert right[1] == _sfx_note_byte(56) and right[2] == 0xB4
     assert 0xB4 not in right[loop:], "the $40 pitch must sit outside the loop"
     assert right[loop] == _sfx_note_byte(56)
-    assert _sfx_drum_entries(0x41, 56, 6, 1)[2] == 0, "plain shape loops whole"
+    # The plain shape has a prologue too, since v0.5.246: one frame of the
+    # played note before the hit, which the loop skips. Its jump returns to the
+    # hit at index 1, so the hits recur at 1, 1+period, 1+2*period ... as the
+    # counter does.
+    assert _sfx_drum_entries(0x41, 56, 6, 1)[2] == 1
 
 
 def test_the_period_is_kept_across_the_prologue_and_the_loop():

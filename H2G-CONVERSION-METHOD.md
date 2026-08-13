@@ -7930,9 +7930,53 @@ the census's third mechanism found by asking what a column *cannot* see.
 Structural check, since the routine hard-codes voice 3 while we put the noise
 in the instrument's own wavetable: in all four files this instrument plays only
 on voice 3 (232/371/291/45 onsets, no exceptions), so the wavetable is the
-right place for it. Star Paws is the one of the four without `--sfx-drum`
-selected and emits no drum at all; re-search it *after* the phase fix, since
-the search plausibly declined it because the phase is wrong.
+right place for it.
+
+#### The fix, and the belief it had to displace (v0.5.246)
+
+`_sfx_drum_entries` held the opposite in its docstring, in a constant's
+comment and in three tests: that the counter was **"per voice and
+free-running"**, so a hit falls wherever it falls and a wavetable — which
+always begins at the note — should therefore put the noise at the *end* of the
+cycle. The plain shape did exactly that, firing at offsets 4-5 of a 6-frame
+period where the player fires at 1.
+
+The counter is not free-running. Both dialects zero it at note start —
+Bangkok `LDA #$00 / STA $8934,X` at `$80CE`, Trans-Atlantic `STA $0FAD,X` at
+`$08D2`, each inside the block clearing that voice's other per-note cells — and
+`INC` it once a frame. Disassembled, the two players' gates are the same
+routine byte for byte apart from a `STY $D418` where the other has NOPs.
+
+**The measurement the old belief rested on is real, and was misread.** Opening
+on the noise took Trans-Atlantic's melody 94.7% → 50.4% — but that experiment
+put the noise on **frame 0**, where siddump names the note by whatever pitch is
+sounding, so the drum's pitch replaced every attack. It is an argument against
+frame 0, which the new shape still respects; it was never an argument for
+putting the hit last. The identical collapse appears in § 7.kkkk when
+`--no-test-restart` moves a wave program's first opcode into frame 0.
+
+The plain shape is now one frame of the played note, one frame of noise, then
+`period - 1` frames of the note, with the jump returning to the **hit** rather
+than the top. The burst is one frame, which is what `CMP #$01 / BEQ` implies
+and what all four `$48` files measure; `SFX_DRUM_FRAMES = 2` remains, and now
+belongs only to the second-note dialect, whose phase was already right — which
+is why Trans-Atlantic never exposed this.
+
+    Bangkok_Knights  onset  80% -> 100%   wave 38 -> 40%   melody unmoved
+    Thundercats      onset  86% -> 100%   wave 78 -> 83%   melody unmoved
+    Mega_Apocalypse  nrun   67% -> 100%   wave 66 -> 77%   onset 71 -> 86%
+    Nineteen         nrun   67% -> 100%
+    Pandora          onset  86%, wave 67 -> 68%
+
+**The `noise` count moves away from the original on four of the five, and that
+is the fix working**: one frame per period where we emitted two. Read alone it
+looks like damage. `nrun` compares run *lengths* per instrument and `onset`
+reads the opening frames, and both improve — the mirror of § 7.uuu's rule that
+a change removing the events a column scores will always appear to improve it.
+
+And the prediction it came with held: **Star Paws now accepts `--sfx-drum`**,
+which the search had declined at every previous run. Nothing else in the corpus
+changed setting — 1 gained, 0 lost.
 
 ### 7.qqqq A track dialect where `$FD` ends a voice and `$FE` is not the end
 
