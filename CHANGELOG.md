@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.243 — 2026-08-13
+
+- songview's original-vs-ours overlay
+
 ## 0.5.242 — 2026-08-13
 
 - dis6502.py, the disassembler, as a committed tool

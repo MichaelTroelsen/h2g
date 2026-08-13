@@ -355,6 +355,11 @@ tbody tr:hover{background:var(--code);}
 .dim{color:var(--dim);}
 .warn{color:var(--warn);font-weight:600;}
 .ok{color:var(--ok);}
+/* A disagreeing row in the comparison. Sorting them first is the ordering;
+   this is what makes one legible once the reader has scrolled. Border rather
+   than a background so it survives both themes at the same weight. */
+tr.flag td{border-left:0;box-shadow:inset 2px 0 0 var(--warn);}
+tr.flag td:last-child{color:var(--warn);font-weight:600;}
 .tag{display:inline-block;padding:1px 6px;margin:0 3px 2px 0;border-radius:9px;
 background:var(--code);border:1px solid var(--line);font-size:11px;
 color:var(--accent);}
@@ -375,6 +380,163 @@ summary{cursor:pointer;color:var(--accent);font-size:13px;padding:3px 0;}
 .pat table{width:auto;min-width:290px;}
 .legend{font-size:12px;color:var(--dim);margin:4px 0 12px;}
 """
+
+
+def pair_by_adsr(orig_keys, our_keys) -> List[Tuple[Optional[int], Optional[int], str]]:
+    """`[(original key, our key, how)]`, pairing instruments across the sides.
+
+    **The release nibble is in the key, and `--cut-release` changes it.** Those
+    players kill the envelope at a note's end, so we emit 0 for a release that
+    never acts -- and the same instrument then carries two ADSR values, the
+    original's `$295F` against our `$2950`. Keyed on the whole pair it appears
+    twice, once as "ours only" and once as "original only": two false flags for
+    one instrument that agrees, which is what this page showed on Commando the
+    first time it ran. `onset_agreement` compares only the *intersection* of
+    the keys, so the column silently drops such a pair instead; for a page
+    whose job is to show what happened, dropping is worse than pairing.
+
+    So: exact ADSR first, then one pass over what is left matching on
+    AD+sustain (`& $FFF0`), and **only where that is unambiguous on both
+    sides** -- exactly one unmatched candidate each. Guessing which of two
+    instruments a trace heard is the wrong-work-list-entry that
+    `fidelity.instrument_stamps` refuses to make for the same reason. Rows
+    paired that way are marked, because a pairing rule is a claim.
+
+    This is the `tail` column's lesson in the other axis: an attribution key
+    must not contain the quantity being attributed.
+    """
+    a, b = set(orig_keys), set(our_keys)
+    pairs = [(k, k, "adsr") for k in sorted(a & b)]
+    left_only, right_only = sorted(a - b), sorted(b - a)
+    for k in list(left_only):
+        cands = [j for j in right_only if (j & 0xFFF0) == (k & 0xFFF0)]
+        mine = [j for j in left_only if (j & 0xFFF0) == (k & 0xFFF0)]
+        if len(cands) == 1 and len(mine) == 1:
+            pairs.append((k, cands[0], "ad+s"))
+            left_only.remove(k)
+            right_only.remove(cands[0])
+    pairs += [(k, None, "adsr") for k in left_only]
+    pairs += [(None, k, "adsr") for k in right_only]
+    return sorted(pairs, key=lambda t: t[0] if t[0] is not None else t[1])
+
+
+@dataclass
+class InstrumentDelta:
+    """One instrument as the original plays it and as we do.
+
+    Keyed by the ADSR pair for `fidelity.onset_shapes`' reason: it is a verbatim
+    per-instrument copy of the source record, so it identifies an instrument
+    where a waveform cannot (several share one) and a pulse width cannot (a
+    swept one has no single value).
+    """
+    number: Optional[int]
+    adsr: int
+    effect: Optional[int]
+    declares: Optional[int]
+    orig_shape: Optional[tuple]
+    our_shape: Optional[tuple]
+    orig_notes: int
+    our_notes: int
+    kind: str
+    paired: str = "adsr"        # "adsr", or "ad+s" where the release differs
+
+    @property
+    def flagged(self) -> bool:
+        return self.kind != "match"
+
+
+def compare_sides(sid_path: Path, blob: bytes, *, seconds: int = 60,
+                  multiplier: int = 1, subtune=None,
+                  gt2reloc: Optional[str] = None,
+                  siddump: Optional[str] = None) -> List[InstrumentDelta]:
+    """Both sides' opening frames per instrument, for the overlay.
+
+    **Built on `fidelity.onset_shapes` rather than beside it.** That function
+    is what the `onset` column and the census both read, so a row here cannot
+    quietly disagree with the number in `FIDELITY.md` about what an instrument
+    opens on -- and `fidelity.classify_onset` supplies the same `match` /
+    `phase` / `short` / `flat` / `invented` / `partial` / `wrong` vocabulary the
+    census groups by. A second implementation would have been a second thing to
+    be wrong.
+
+    What it adds that neither has: the **declared** opening waveform, read out
+    of the `.sng` we shipped. A row can therefore separate "the wavetable says
+    the wrong thing" from "the wavetable is right and the player reaches it a
+    frame late", which is the distinction section 7.www turned on and which no
+    column can draw.
+
+    An instrument the original sounds and we have no record for appears with
+    `number` None rather than being dropped, the same rule `instrmap.py` uses.
+    """
+    import shutil                                    # noqa: PLC0415
+    import fidelity as F                             # noqa: PLC0415
+    from h2g.sidfile import find_freq_table, load_sid  # noqa: PLC0415
+
+    workdir, owned = F.make_workdir()
+    try:
+        local = workdir / "o.sid"
+        shutil.copyfile(sid_path, local)
+        sub = F.resolve_subtune(sid_path, "auto") if subtune is None else subtune
+        # The original is traced on its own tuning and ours always on
+        # Goattracker's -- four corpus files carry a table off the semitone
+        # grid, and tracing them at 0 renames every note.
+        ft = find_freq_table(load_sid(str(sid_path)))
+        cal = F.calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+        orig = F.run_siddump(local, seconds, sub, siddump or F.SIDDUMP, cal)
+
+        packed_blob, _ = F.legalise_restarts(blob)
+        packed = F.pack_sid(packed_blob, workdir, gt2reloc or F.GT2RELOC,
+                            multiplier)
+        if packed is None:
+            raise RuntimeError("gt2reloc wrote no .sid for this song")
+        ours = F.run_siddump(packed, seconds, sub, siddump or F.SIDDUMP,
+                             calls=multiplier)
+
+        nframes = seconds * 50
+        a = F.onset_shapes(orig, nframes)
+        b = F.onset_shapes(ours, nframes)
+    finally:
+        if owned:
+            shutil.rmtree(workdir, ignore_errors=True)
+
+    song = parse_sng(blob)
+    by_adsr = {}
+    for ins in song.instruments:
+        by_adsr.setdefault((ins.ad << 8) | ins.sr, ins)
+
+    pairs = pair_by_adsr(a, b)
+
+    out: List[InstrumentDelta] = []
+    for o_key, u_key, how in pairs:
+        adsr = u_key if u_key is not None else o_key
+        ins = by_adsr.get(adsr) or (by_adsr.get(o_key) if o_key else None)
+        o = a[o_key].most_common(1)[0][0] if o_key is not None else None
+        u = b[u_key].most_common(1)[0][0] if u_key is not None else None
+        if o is not None and u is not None:
+            kind = F.classify_onset(o, u)
+        elif o is None:
+            kind = "ours only"
+        else:
+            kind = "original only"
+        declares = None
+        if ins is not None:
+            prog = wave_program(song, ins.wave_ptr)
+            for _, left, _r, k, _m, _s, _e in prog:
+                if k == "wave":
+                    declares = left
+                    break
+        out.append(InstrumentDelta(
+            number=ins.number if ins else None, adsr=adsr,
+            effect=ins.effect_byte if ins else None, declares=declares,
+            orig_shape=o, our_shape=u,
+            orig_notes=sum(a[o_key].values()) if o_key is not None else 0,
+            our_notes=sum(b[u_key].values()) if u_key is not None else 0,
+            kind=kind, paired=how))
+    # Flagged first, and within each group by instrument number: the reason to
+    # open this page is the disagreements, and an alphabetical table buries
+    # three of them under twenty that agree.
+    out.sort(key=lambda d: (not d.flagged, d.number if d.number else 999))
+    return out
 
 
 def esc(s) -> str:
@@ -426,6 +588,55 @@ def _instrument_cards(song: Song) -> str:
   </table></div>
 </div>""")
     return "".join(rows)
+
+
+def _comparison_section(deltas: List[InstrumentDelta]) -> str:
+    import fidelity as F                             # noqa: PLC0415
+
+    def shape(x):
+        return f"<span class='mono'>{esc(F.shape_name(x))}</span>" if x else "&mdash;"
+
+    rows = []
+    for d in deltas:
+        num = (f"<a href='#ins{d.number}'>{d.number}</a>" if d.number
+               else "<span class='dim'>none</span>")
+        eff = f"${d.effect:02X}" if d.effect is not None else "&mdash;"
+        dec = (f"<span class='mono'>{esc(F.class_name(d.declares & 0xF0))}</span>"
+               if d.declares is not None else "&mdash;")
+        cls = " class='flag'" if d.flagged else ""
+        rows.append(
+            f"<tr{cls} id='cmp{d.number}'><td class='num'>{num}</td>"
+            f"<td class='mono'>${d.adsr:04X}"
+            + ("<span class='dim' title='paired on attack/decay and sustain: "
+               "the release nibble differs, which is --cut-release'>*</span>"
+               if d.paired == "ad+s" else "")
+            + f"</td><td class='mono'>{eff}</td>"
+            f"<td>{dec}</td><td>{shape(d.orig_shape)}</td>"
+            f"<td>{shape(d.our_shape)}</td>"
+            f"<td class='num dim mono'>{d.orig_notes}/{d.our_notes}</td>"
+            f"<td>{esc(d.kind)}</td></tr>")
+    flagged = sum(1 for d in deltas if d.flagged)
+    return f"""
+<h2>Original against ours</h2>
+<p class="legend">Every instrument both sides sound, joined on the ADSR pair
+&mdash; a verbatim copy of the source record, and so the one field that
+identifies an instrument on both sides. <b>Original</b> and <b>ours</b> are the
+waveform classes the first four frames of a note carry, read at each side's own
+attack frames, so the packed player's startup latency cancels rather than
+needing correcting. The verdict is <code>fidelity.classify_onset</code>, the
+same vocabulary the onset census groups by, computed from the same function the
+<code>onset</code> column scores &mdash; a row here cannot disagree with
+<code>FIDELITY.md</code> about what an instrument opens on.
+<b>Declares</b> is what our own wavetable says, which is the column neither the
+census nor <code>instrmap.py</code> has: it separates &ldquo;the wavetable is
+wrong&rdquo; from &ldquo;the wavetable is right and the player reaches it a
+frame late&rdquo;.
+{flagged} of {len(deltas)} disagree, and they are sorted first.</p>
+<div class="scroll"><table>
+<thead><tr><th>GT</th><th>ADSR</th><th>+7</th><th>declares</th>
+<th>original opens</th><th>we open</th><th>notes o/u</th><th>verdict</th></tr></thead>
+<tbody>{''.join(rows)}</tbody></table></div>
+"""
 
 
 def _pattern_blocks(song: Song, source_map: Optional[Dict[int, int]]) -> str:
@@ -499,7 +710,8 @@ def _describe_speed(l: int, r: int) -> str:
 
 
 def render(song: Song, title: str,
-           source_map: Optional[Dict[int, int]] = None) -> str:
+           source_map: Optional[Dict[int, int]] = None,
+           deltas: Optional[List[InstrumentDelta]] = None) -> str:
     used = sum(1 for i in song.instruments
                if i.wave_ptr or i.ad or i.sr)
     tracks = []
@@ -535,6 +747,7 @@ resolved as the player applies them. A pattern's number here is the same hex
 number Goattracker's editor shows.</p>
 {''.join(tracks)}
 
+{_comparison_section(deltas) if deltas else ''}
 <h2>Instruments</h2>
 <p class="legend">The name is the converter's own provenance stamp
 &mdash; source record, then bytes 5, 6 and 7 of it. Byte 7 is the player's
@@ -563,6 +776,15 @@ def main(argv=None) -> int:
     ap.add_argument("-o", "--output", required=True)
     ap.add_argument("--presets", help="presets.json, for per-song options "
                                       "when the target is a .sid")
+    ap.add_argument("--compare", action="store_true",
+                    help="also trace the original and this conversion and "
+                         "render a per-instrument comparison. Needs a .sid "
+                         "target, siddump and gt2reloc")
+    ap.add_argument("-t", "--seconds", type=int, default=60,
+                    help="trace length for --compare (default 60, the window "
+                         "FIDELITY.md is published at)")
+    ap.add_argument("--gt2reloc")
+    ap.add_argument("--siddump")
     args = ap.parse_args(argv)
 
     path = Path(args.target)
@@ -583,9 +805,26 @@ def main(argv=None) -> int:
     else:
         blob = path.read_bytes()
 
+    deltas = None
+    if args.compare:
+        if path.suffix.lower() != ".sid":
+            print("error: --compare needs a .sid target -- the original is "
+                  "half of the comparison", file=sys.stderr)
+            return 1
+        mult = 1
+        if args.presets:
+            import json                          # noqa: PLC0415
+            import fidelity as F                 # noqa: PLC0415
+            mult = F._preset_multiplier(
+                json.loads(Path(args.presets).read_text()), path.name)
+        deltas = compare_sides(path, blob, seconds=args.seconds,
+                               multiplier=mult, gt2reloc=args.gt2reloc,
+                               siddump=args.siddump)
+
     song = parse_sng(blob)
     out = Path(args.output)
-    out.write_text(render(song, path.stem, source_map), encoding="utf-8")
+    out.write_text(render(song, path.stem, source_map, deltas),
+                   encoding="utf-8")
     print(f"{path.name}: {len(song.patterns)} patterns, "
           f"{len(song.instruments)} instruments -> {out}")
     return 0
