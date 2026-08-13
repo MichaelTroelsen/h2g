@@ -529,12 +529,19 @@ test dependency).
   `fidelity.py <file> --pace` refuted it: timed over difflib-matched notes,
   32 of those 33 are closest to the original at the rate they are packed for.
   **Use `--pace` before saying anything about speed, tempo or `-S`.** What it
-  found instead is live: the speed gate `goatwriter.find_song_speeds` reads
-  is **under-read across the corpus** by a tune-specific 1.1–1.5x (gate 2 vs a
-  measured 2.5–3.0 on Tarzan, Delta, ACE II, Deep Strike; gate 3 vs 3.5–4.5 on
-  Lightforce, Thanatos, Pygmies Revenge; gate 4 vs 5.33 on Human Race). It is
-  right for 26 of 43 multiplier-1 files, so it is not a constant to correct —
-  the mechanism has to be found in the players. Per-file targets are in
+  found instead was the speed-gate under-read, and **`--skip-gate` (v0.5.119)
+  is its mechanism**: every file this paragraph used to cite as proof — Tarzan,
+  Delta, ACE II, Deep Strike, Lightforce, Thanatos, Pygmies Revenge, Human
+  Race — now measures **0% out**, packed exactly via the multiplier (Delta's
+  row is 5/2 at `-S2`, Deep Strike's 8/3 at `-S3`). Corpus today: of 63 timed
+  files, **47 exact and 50 within 2%**. What is left is **one unread idiom** —
+  an outer gate ending in `RTS` rather than `JMP past-the-gate`, which
+  `OUTER_GATE` does not match, in 8 files including Warhawk (11% out, and its
+  own least-squares fit lands on `(R+1)/R` = 8/7). See § 7.rrrr; it changes
+  packing, so it is `[main]` work. **This paragraph told two sessions the
+  mechanism "has to be found in the players" after it had been found** — the
+  fix landed and the note did not move. Write evidence with filenames in it:
+  it decays loudly instead of quietly. Per-file targets are in
   `build/pace.txt`; `tests/test_pace.py` pins the estimator.
 - **Update the docs as part of the build, not afterwards.** `SURVEY.md` and
   `presets.json` are generated, but `README.md`, `CLAUDE.md` and

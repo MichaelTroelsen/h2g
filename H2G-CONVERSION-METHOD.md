@@ -7890,6 +7890,140 @@ the layout always passes a real number.
 > six entries. If an invariant spans two functions, test it across both.
 
 
+### 7.pppp Bit `$80` is right in detection and three frames late in emission
+
+v0.5.244, from the census's `$80 x4`. Bangkok Knights `$8488`, and the same
+block in Mega Apocalypse, Star Paws and Thundercats:
+
+    8488  LDA effect / BPL out          ; bit 7 clear -> skip
+    848D  LDA $8936                     ; = $8934,X with X=2: voice 3's counter
+    8490  CMP #$01 / BEQ fire           ; == 1 -> hit
+    8499  CMP #$06 / BCC out            ; == the period
+    849D  LDA #$00 / STA $8936          ; at the period -> wrap
+    84A4  fire: LDA #$48 / STA $D40F    ; voice 3 frequency high
+    84A9        LDA #$81 / STA $D412    ; noise + gate
+
+A fixed-pitch noise hit on voice 3, on the note's **second** frame and every
+`period` frames after. The counter is zeroed at note start (`$80CE`) and
+incremented once per frame at the foot of the voice loop (`$84D2`), so it is
+**note-locked** -- which is what makes it expressible in a wavetable at all,
+unlike bit `$10`'s free-running arpeggio (§ 7.ttt). Measured, that holds: 226
+of Bangkok's 232 onsets share one shape, and all four files put noise at
+offset 1 on 100% of onsets.
+
+**Detection already reads it correctly** -- `sfx_pitch $48`, `sfx_voice 2`,
+`sfx_period 6/6/8/6`. The census's `flat` verdict is not a missing mechanism.
+What is wrong is the emission's phase and length:
+
+    original  pul noi pul pul pul pul pul noi pul ...   hit at 1, then every 6
+    ours      pul pul pul pul noi --  pul pul pul ...   hit at 4, two calls long
+
+The block is `41/00 02/80 81/C9 81/C9 FF/01` -- it *closes* the loop with the
+hit where the player *opens* with it, and holds noise for two calls where the
+player writes it on one frame.
+
+**Why nothing caught it before `onset`.** `nrun` compares run *lengths* and is
+position-independent by design; `noise` is a one-sided count. Under both, a
+drum three frames late and a call too long looks present and correct. This is
+the census's third mechanism found by asking what a column *cannot* see.
+
+Structural check, since the routine hard-codes voice 3 while we put the noise
+in the instrument's own wavetable: in all four files this instrument plays only
+on voice 3 (232/371/291/45 onsets, no exceptions), so the wavetable is the
+right place for it. Star Paws is the one of the four without `--sfx-drum`
+selected and emits no drum at all; re-search it *after* the phase fix, since
+the search plausibly declined it because the phase is wrong.
+
+### 7.qqqq A track dialect where `$FD` ends a voice and `$FE` is not the end
+
+v0.5.244. Rasputin's three voice pointers index **one shared stream** at
+different offsets:
+
+    v0 $C96D: 0A 0B 0B 0B 0B 0C 0C 0C 0C 0D FD | 2B 2B 08 2A 00 FD | FE 03 ...
+    v1 $C978:                                    2B 2B 08 2A 00 FD | FE 03 ...
+    v2 $C97E:                                                        FE 03 ...
+
+`tracks.py`'s version-0 branch reads `if b1 <= 0xFD: track.append(b1)`, so
+**`$FD` is stored as pattern number 253** and voice 0 reads straight on through
+voices 1 and 2's data. And voice 2's list *opens* on `$FE`, which that branch
+treats as "tune ended", so we emit an empty orderlist and the voice is silent
+in every subtune. Both verified in the bytes and in the branch.
+
+`$FE nn` recurs mid-stream (`FE 02 ... FE 03 ... FE 05`), so it is a two-byte
+command rather than a terminator -- most likely a transpose, and that reading
+is **not yet confirmed**; the operand's use in Rasputin's track reader will
+settle it.
+
+The population is not settled either. A scan of version-0 files whose lists
+run into an `$FD` gives 5 by one walk and 18 by another, and neither bounds the
+pointer table properly -- Rasputin, Tarzan (9 lists), Knucklebusters, Delta
+Mix-E-Load loader and Hollywood or Bust are in both. Tarzan and Hollywood or
+Bust are named elsewhere in these notes as under-performing.
+
+**And Rasputin's FIDELITY row is a harness artefact, not a conversion
+failure.** Its init at `$CFB5` remaps subtunes -- PSID 0 and 1 go to a different
+entry point, n>=2 maps to n-2 -- so the traced diagonal is 20% where the real
+correspondence (s1->o1) is 64%. At the right pairing we play *more* attacks
+than the original (203 against 114), and the census's `phase` verdict for its
+three instruments dissolves: our shape is the original's modal shape for two of
+them, and the original's tick offset varies per note with the remaining-duration
+counter, so no single wavetable offset can match it. It belongs on the
+`--diagnose`-first list beside Dragon's Lair II and Flash Gordon.
+
+### 7.rrrr The outer gate has a second spelling, and the old note was stale
+
+v0.5.244. The speed-gate paragraph in CLAUDE.md said the under-read "has to be
+found in the players" and named eight files. `--skip-gate` (v0.5.119) found it,
+and every one of those eight now measures **0% out** -- Delta's row is 5/2 at
+`-S2`, Deep Strike's 8/3 at `-S3`, Thanatos's 15/4 at `-S4`, all packed exactly
+via the multiplier. Corpus today: of 63 timed files, 47 exact and 50 within 2%.
+Re-measured at HEAD in a clean worktree before correcting the note, because a
+stale rule misdirects harder than a missing one.
+
+What is left is one unread idiom, at the PSID *play* address -- Warhawk
+`$1012`:
+
+    1012  DEC $15AE
+    1015  BPL $101D      ; still counting -> run the player
+    1017  LDA #$07 / STA $15AE
+    101C  RTS            ; on the underflow call, do nothing at all
+
+That is `_find_outer_gate`'s mechanism ending in **`RTS` instead of `JMP
+past-the-gate`**, and `BPL +6` rather than `+8`. `OUTER_GATE` matches only the
+`JMP` spelling, so `skip` comes back None and the uncorrected gate is used.
+Eight corpus files open their play routine this way: Warhawk, Proteus,
+International Karate, Bump Set Spike, Game Killer, Thrust, Mozart, Ninja --
+none of which measures correctly today, so reading it cannot break a file that
+is already right.
+
+`SPEED_GATE`'s own comment names this idiom, but as *the prescaler variant* in
+Mozart/Ninja/Mega Apocalypse, excluded because "no steady Goattracker tempo can
+express it". Both halves have expired: it also sits **above** a normal gate in
+four other files, where it multiplies rather than replaces; and
+`_skip_gate_multiplier` is exactly the machinery that can express such a row
+when the denominator is small.
+
+The factor from the code is `(R+1)/R` on the immediate. Warhawk 8/7 -> row
+2.286; Bump Set Spike 10/9 -> **3.33, its measured row exactly**. `--pace`'s
+median says 9/8 for Warhawk while its own least-squares fit says 0.875 = 8/7,
+and the original's gaps are whole frames, so a 2.286 row quantises to a lumpy
+2/3 mix -- which is the reported IQR spread 0.875-0.889. Settle the +/-1 by
+counting gate edges over a known row count, not by fitting.
+
+Expected reach, and why it is smaller than it looks: Warhawk and Proteus
+11% -> ~1.6% out, IK 8% -> ~1.5%, Bump Set Spike 10% -> 0%. Only Bump Set
+Spike's corrected row is *encodable* -- 10/3 needs `-S3`, inside
+`MAX_ROW_DENOMINATOR` = 6, while 16/7 and 33/10 are not. So the fix buys one
+file a correct pack and four an honest diagnosis, and it changes packing, so it
+is `[main]` work with a corpus A/B.
+
+> **The transferable lesson:** a note that names *which files prove the
+> problem* is a note that can be checked, and this one was -- three years of
+> being right and one version of being wrong, because the fix landed and the
+> paragraph did not move. Prefer evidence with filenames in it; it decays
+> loudly instead of quietly.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

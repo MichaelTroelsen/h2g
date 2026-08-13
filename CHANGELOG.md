@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.245 — 2026-08-13
+
+- record what the six forks found
+
 ## 0.5.244 — 2026-08-13
 
 - the hold column: how long a note keeps a waveform
