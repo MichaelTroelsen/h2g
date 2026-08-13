@@ -8204,6 +8204,66 @@ files rewrite it per subtune.
 > documented both hazards.
 
 
+### 7.uuuu The `hold` column's tail is three things, and one of them is a blind spot
+
+v0.5.249. § 7.ssss left the tail named and unexplained: "7 files at −2, one at
+−20, and several *positive*". Measured per instrument across the corpus — modal
+run length ours minus the original's, 415 instruments over 81 files:
+
+     -1  231      +0   90      -2  25     -3  8     -4  6
+     +5..+23  ~38        +58 +62 +163 +378 +575 +950  one each
+
+#### One: the bulk is a *call*-rate artefact, and the column cannot always see it
+
+Grouped by the rate each file packs at, without `--no-test-restart`:
+
+    -S1   106 at -1, 8 at -2, 5 at -3, 2 at -4
+    -S2    92 at -1, 16 at -2
+    -S3    31 at -1, 16 at  0
+    -S4    17 of 17 at 0
+    -S5    11 of 13 at 0
+    with the option:  44 of 45 at 0, at any rate
+
+The next-note fetch is `gatetimer & $3f` **play calls** early (gplay.c:905), so
+at `-S4` it costs a quarter of a frame and siddump — which samples once per
+frame — cannot see it at all. **A zero at `-S4` or above means "not visible",
+not "correct"**, and so does half of `-S3`. The `hold` Dimension now says this
+in its own description, because a column that reads 100% for the wrong reason
+is worse than one that reads 60%.
+
+It also predicts something checkable before looking: the preset search can
+never *see* a gain above `-S3`, so no file up there should carry
+`--no-test-restart`. All nine that carry it are `-S1` but for Delta at `-S2`.
+Pinned by `tests/test_sound_runs.py`.
+
+#### Two: the far tail is not note length at all
+
+Every instrument beyond +50 frames is a known defect wearing a length costume:
+
+    Knucklebusters $00F8   orig 9 frames x 94 notes   ours 959 x 2
+    Rasputin $0A0A/$0A0B   24 -> 47                   32/15 and 70/31 notes
+    Auf_Wiedersehen $0ADF  581 -> 959                 1 note each side
+
+Knucklebusters plays two notes where the original plays ninety-four — its voice
+never retriggers, which is the version-0 orderlist misread of § 7.qqqq (and
+Knucklebusters is on that section's list). Rasputin's subtunes are remapped by
+its init, so the two sides are different music. The rest are single held notes
+running to the window edge, where "length" is a fact about the window.
+
+#### Three: what is actually left
+
+The `-2` to `-7` group (46 instruments) and the `+5` to `+23` group (~38).
+Neither is explained by the call-rate story, and neither has been attributed.
+That is the honest remainder, and it is smaller than the raw histogram
+suggested — which is the point of separating the three.
+
+> **The transferable lesson:** a histogram of one quantity is not a population
+> of one cause. Two thirds of this tail is an artefact of the trace's
+> resolution, a handful is other defects being visible in a new place, and the
+> genuine remainder is a fifth of what the shape first suggested. Group by
+> suspected mechanism before counting, or the count will size the wrong job.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

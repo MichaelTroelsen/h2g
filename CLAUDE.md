@@ -359,6 +359,16 @@ test dependency).
   `fidelity_better` cannot select it, because it scores a melody *gain*. Two
   mechanisms now wait on a scorer that weighs oscillation and noise pitch. See
   § 7.ttt.
+- **A column can read 100% because the trace cannot see the defect.** `hold`
+  measures a note-length deficit that is a fixed number of play *calls* -- the
+  next-note fetch is `gatetimer & $3f` calls early -- so at `-S4` it is a
+  quarter of a frame and siddump, sampling once per frame, reports zero. The
+  corpus splits exactly that way: `-S1` 106 of 121 instruments at -1, `-S4`
+  17 of 17 at 0. **A zero up there means "not visible", not "correct"**, and it
+  predicts that the preset search can never take `--no-test-restart` above
+  `-S3` -- all nine files that carry it are `-S1` but for Delta. State the
+  blindness in the Dimension itself; a column reading well for the wrong reason
+  is worse than one reading badly.
 - **A census of what a column misses is a queue, not a report.** Grouping
   `onset`'s disagreeing instruments by the record byte that causes them turned
   "18% disagree" into "$01 x19, $04 x11, $80 x6, $0A x6" -- and the `$0A` entry

@@ -1459,6 +1459,33 @@ def sound_runs(voices: list[Voice], nframes: int) -> dict:
     before it loses its final frame. Every instrument of every corpus file is
     one frame short for that reason.
 
+    **The deficit is a number of play calls, not of frames, and that is what
+    makes the column's zeros ambiguous.** Over the 415 instruments the corpus
+    compares, grouped by the rate each file is packed at:
+
+        -S1  106 at -1, 8 at -2, 5 at -3, 2 at -4      (no --no-test-restart)
+        -S2   92 at -1, 16 at -2
+        -S3   31 at -1, 16 at  0
+        -S4   17 of 17 at 0
+        -S5   11 of 13 at 0
+        with --no-test-restart: 44 of 45 at 0, at any rate
+
+    The next-note fetch is `gatetimer & $3f` **calls** early, so at `-S4` it
+    costs a quarter of a frame and siddump -- which samples once per frame --
+    cannot see it at all. **A zero at `-S4` or above therefore means "not
+    visible", not "correct"**, and the same is true of half the `-S3` files.
+    The option removes it outright at every rate, which is why the preset
+    search takes it only on files below `-S4`: all nine that carry it are
+    `-S1` but for Delta at `-S2`, and that is a prediction this made before
+    the list was looked at.
+
+    The far tail is a different thing again and not note length at all: the
+    six instruments beyond +50 frames are one held note apiece, or a voice
+    whose orderlist we misread so it never retriggers (Knucklebusters `$00F8`
+    sounds 959 frames over 2 notes against the original's 9 over 94 -- the
+    version-0 dialect of § 7.qqqq), or Rasputin, whose subtunes the init
+    remaps so the two sides are different music.
+
     **Capped at the next attack, and the cap is what makes it bounded.** A
     gated-off voice keeps its waveform latched, so "until the waveform is
     deselected" would run through the rest of the tune on the original side and
@@ -2037,7 +2064,9 @@ DIMENSIONS = (
     # `sound_run_delta` beside it while the agreement is zero.
     Dimension("sound_run_agreement", "hold", ("$D404",), "fraction",
               "instruments whose notes sound for as many frames as the "
-              "original's"),
+              "original's -- **blind to the deficit it measures above `-S3`**, "
+              "because that deficit is a fixed number of play *calls* and a "
+              "call is a quarter-frame at `-S4`"),
     # The column that sees a mechanism emitted one frame out of phase. `wave`
     # averages 3000 frames, so a wrong opening on a 43-note instrument is a
     # rounding error in it; `nrun` compares run lengths and is position-

@@ -181,3 +181,28 @@ def test_the_oscillation_veto_asks_about_rate_not_direction():
     # ...and crossing over still counts as leaving it: 0.9 is 10% under the
     # original's rate and 1.4 is 40% over, which is further away, not nearer.
     assert _oscillation_lost(1.4, 0.9)
+
+
+def test_the_column_declares_where_it_cannot_see_the_deficit():
+    """The next-note fetch is `gatetimer & $3f` play *calls* early, so at -S4 a
+    call is a quarter-frame and siddump -- once per frame -- cannot see the
+    loss at all. Measured over the corpus's 415 instruments: -S1 is 106 at -1,
+    -S2 is 92 at -1, -S3 splits 31/16, and **-S4 and -S5 are 17 of 17 and 11 of
+    13 at zero**. A zero up there means "not visible", not "correct", and the
+    report has to say so or it reads as a clean bill of health."""
+    import fidelity as F
+    hold = next(d for d in F.DIMENSIONS if d.column == "hold")
+    assert "call" in hold.of and "-S4" in hold.of
+
+
+def test_the_option_is_only_ever_taken_where_the_deficit_is_visible():
+    """A prediction made from the mechanism before the list was looked at: the
+    deficit is invisible at -S4+, so the search can never see a gain there."""
+    import json
+    import pathlib
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    taken = {n: e.get("multiplier", 1) for n, e in doc["songs"].items()
+             if e.get("no_test_restart")}
+    assert taken, "no file carries the option"
+    assert not [n for n, m in taken.items() if m >= 4], taken
