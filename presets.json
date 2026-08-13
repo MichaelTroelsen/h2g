@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.235 presets.py",
+  "generator": "h2g 0.5.236 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -65,7 +65,9 @@
       "bytes": 29529,
       "subtunes": 1,
       "rows": 11070,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true,
+      "pitch_seq": true
     },
     "Arcade_Classics.sid": {
       "max_rows": 128,
@@ -530,7 +532,9 @@
       "bytes": 20832,
       "subtunes": 1,
       "rows": 9083,
-      "multiplier": 5
+      "multiplier": 5,
+      "two_stage": true,
+      "pitch_seq": true
     },
     "Nemesis_the_Warlock.sid": {
       "max_rows": 94,
@@ -575,7 +579,8 @@
       "bytes": 23869,
       "subtunes": 1,
       "rows": 12339,
-      "multiplier": 5
+      "multiplier": 5,
+      "two_stage": true
     },
     "One_Man_and_his_Droid.sid": {
       "max_rows": 128,
@@ -596,7 +601,8 @@
       "subtunes": 1,
       "rows": 5584,
       "multiplier": 1,
-      "no_test_restart": true
+      "no_test_restart": true,
+      "two_stage": true
     },
     "Pandora.sid": {
       "max_rows": 128,
@@ -651,6 +657,7 @@
       "subtunes": 1,
       "rows": 11189,
       "multiplier": 1,
+      "two_stage": true,
       "wave_program": true
     },
     "Rasputin.sid": {
@@ -683,7 +690,8 @@
       "bytes": 38382,
       "subtunes": 1,
       "rows": 14874,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true
     },
     "Rock_Tells_the_Tale.sid": {
       "max_rows": 128,
@@ -693,7 +701,8 @@
       "bytes": 22401,
       "subtunes": 1,
       "rows": 9973,
-      "multiplier": 6
+      "multiplier": 6,
+      "two_stage": true
     },
     "Saboteur_II.sid": {
       "max_rows": 128,

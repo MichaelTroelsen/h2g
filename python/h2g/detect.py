@@ -1883,8 +1883,19 @@ EFFECT_STORE_ZP = 0x85
 
 
 def _effect_byte_address(sid: SidFile, det: Detection):
-    """(address, is_zeropage) the player keeps instrument byte +7 in, or None."""
-    if det.instr_start < 0 or det.instr_stride != 8:
+    """(address, is_zeropage) the player keeps instrument byte +7 in, or None.
+
+    **No stride condition.** This probed `instr_stride == 8` until v0.5.236,
+    which silently switched off *every* effect-byte routine -- the two-stage
+    attack, bit $02's alternation, bit $40's pitch, the whole family that reads
+    +7 -- for the 9 corpus files whose records are 16 bytes. The address it
+    computes is record 0's `+7` and the search is for the player's own
+    `LDA base,Y`; neither depends on how far apart the records are, so the
+    guard excluded a dialect rather than an error. It was the census's largest
+    remaining group: `$04` x11 across five of those nine, whose block is
+    `TWO_STAGE_SHAPE` byte for byte.
+    """
+    if det.instr_start < 0:
         return None
     # Inverse of SidFile.to_offset. A relocated file (to_offset's `relocation`
     # branch) would need the relocated form instead, but no such corpus file
@@ -2667,7 +2678,20 @@ def _bound_instruments(det: Detection, log: Logger):
     (Dragon's Lair II, Kings of the Beach ingame, Lightforce, Nemesis) it is
     exactly that instrument. An accidental boundary does not land on the last
     instrument a tune plays, four times.
+
+    **Only on the dialect it was validated on.** That paragraph is a
+    measurement over the 34 *stride-8* files carrying the array, and v0.5.236
+    made the two-stage block detectable in the stride-16 dialect too -- where
+    the two bytes are inside the records (`+9` and `+11`) rather than in a
+    table after them. Eight of those nine files fail the multiple-of-stride
+    test below and are untouched; the ninth, Powerplay Hockey, passes it and is
+    the counter-example the rule promised could not exist. Its patterns name
+    instrument 8 against a bound of 6, and taking the bound costs it melody
+    72% -> 66%, seq 73% -> 68% and wave 37% -> 26%. A reduction is only
+    meaningful on the population it was measured on.
     """
+    if det.instr_stride != 8:
+        return
     base = det.two_stage_wave - 1
     span = base - det.instr_start
     if span <= 0 or span % det.instr_stride:

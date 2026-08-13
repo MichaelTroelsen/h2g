@@ -1386,12 +1386,25 @@ its sweep is checked against the budget.
 
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
-In **34 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
+In **43 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
 but a *second waveform*: an attack waveform held for a per-instrument number of
 frames, then the record's own `+2` (IK+ `$E38B`). `detect._find_two_stage` has
 read it since v0.5.66 and the writer ignored it, so all 34 played the second
 stage from frame one — and a record whose `+2` is `$00` was **silent
 altogether**, the attack being the only waveform it ever has.
+
+**Nine of those 43 arrived in v0.5.236, from one line.**
+`detect._effect_byte_address` probed `instr_stride == 8`, which switched off
+every routine that reads `+7` for the nine corpus files whose records are 16
+bytes — the two-stage attack among them. The probe computes record 0's `+7` and
+searches for the player's own `LDA base,Y`, so it never needed the stride: the
+guard excluded a dialect rather than an error. Rikky's block is
+`TWO_STAGE_SHAPE` byte for byte; what differs is that its two bytes live at
+record `+9` and `+11` instead of in a table after the records. Forced on, ours
+against the original's noise frames: After 8 **218**/210, Mr Meaner **307**/309,
+Rikky **270**/264, One on One **765**/744, Off the Cuff **1331**/1358 — five
+files within 3% from a standing start of zero, with `onset` reaching 100% on
+seven of the nine and `melody` unmoved.
 
 A listener found it: Trans-Atlantic's drums are gone, and the trace agrees —
 **0 frames of noise against the original's 1089**. Its GT 2 is `$81` noise for

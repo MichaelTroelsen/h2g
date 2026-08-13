@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.236 — 2026-08-13
+
+- the effect byte's routines reach the 16-byte-record dialect
+
 ## 0.5.235 — 2026-08-13
 
 - the wave program runs at the player's rate on a multispeed file

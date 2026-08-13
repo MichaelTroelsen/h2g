@@ -79,7 +79,15 @@ def test_the_bound_is_a_whole_number_of_records_or_is_not_applied():
             continue
         checked += 1
         span = (det.two_stage_wave - 1) - det.instr_start
-        if span > 0 and span % det.instr_stride == 0:
+        # **Stride 8 only** (v0.5.236). The rule this pins was measured over the
+        # 34 stride-8 files; the two-stage block is now detected in the 16-byte
+        # dialect too, where the attack and duration live *inside* the record at
+        # +9 and +11 and there is no trailing array to end the table at. Eight
+        # of those nine fail the multiple-of-stride test anyway; the ninth,
+        # Powerplay Hockey, passes it and is the counter-example -- its patterns
+        # name instrument 8 against a bound of 6, and taking it costs melody
+        # 72% -> 66%.
+        if det.instr_stride == 8 and span > 0 and span % det.instr_stride == 0:
             bound = span // det.instr_stride
             assert det.instr_used == min(bound, _unbounded(sid, det)), path.name
         else:

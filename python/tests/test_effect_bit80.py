@@ -32,6 +32,14 @@ CORPUS = _CORPUS
 SFX = ["ACE_II", "Auf_Wiedersehen_Monty", "Bangkok_Knights", "Delta",
        "IK_plus", "Mega_Apocalypse", "Nineteen", "Pandora", "Ricochet",
        "Star_Paws", "Thundercats", "Trans-Atlantic_Balloon_Challenge"]
+# v0.5.236: the six 16-byte-record files the stride guard in
+# `_effect_byte_address` had been hiding this routine from as well (see
+# test_two_stage.py). They report the same $48 / voice 2 / period 6 the
+# stride-8 members of their family do -- and **not one of them has a record
+# that sets bit $80**, so the drum is read and emitted nowhere, which is the
+# per-record rule working rather than a detection that spread.
+SFX += ["After_8", "Mr_Meaner", "Off_the_Cuff", "Pygmies_Revenge", "Rikky",
+        "Rock_Tells_the_Tale"]
 
 EXPECTED = {
     "ACE_II": "program",
@@ -122,7 +130,8 @@ def test_the_sfx_block_is_a_fixed_pitch_drum_on_one_voice():
             continue
         if det.effect_bit80 == "sfx" and det.sfx_pitch >= 0:
             found[path.stem] = (det.sfx_pitch, det.sfx_voice, det.sfx_period)
-    assert len(found) == 7, sorted(found)
+    # 7 until v0.5.236, when lifting the stride guard reached six more.
+    assert len(found) == 13, sorted(found)
     # Every one of them is voice 3, and the pitch is a constant of the player
     # rather than the note -- which is the whole point: the SID's noise is an
     # LFSR clocked by the frequency, so noise at the note's own low pitch

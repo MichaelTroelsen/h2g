@@ -234,3 +234,66 @@ def test_ik_plus_percussion_instrument_attacks_on_noise():
     attack = sid.data[det.two_stage_wave + 8 * det.instr_stride]
     assert attack == 0x81
     assert attack in WAVEFORMS
+
+
+# --- v0.5.236: the same block in the 16-byte-record dialect -----------------
+#
+# `_effect_byte_address` probed `instr_stride == 8` and so switched off every
+# effect-byte routine for the 9 corpus files whose records are 16 bytes. The
+# address it computes is record 0's +7 and the search is for the player's own
+# `LDA base,Y`; neither depends on the stride, so the guard excluded a dialect
+# rather than an error -- and behind it sat the onset census's largest group,
+# `$04` x11 across five of those nine.
+
+STRIDE16 = ["After_8.sid", "Kings_of_the_Beach_intro.sid", "Mr_Meaner.sid",
+            "Off_the_Cuff.sid", "One_on_One_Jordan_vs_Bird.sid",
+            "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid",
+            "Rikky.sid", "Rock_Tells_the_Tale.sid"]
+
+
+@needs_corpus
+def test_the_sixteen_byte_dialect_reads_its_effect_byte():
+    for name in STRIDE16:
+        sid = load_sid(str(CORPUS / name))
+        _, det = _detect_tables(sid, lambda *a, **k: None)
+        assert det.instr_stride == 16, name
+        assert _effect_byte_address(sid, det) is not None, name
+
+
+@needs_corpus
+def test_the_block_is_the_same_shape_and_its_bytes_are_in_the_record():
+    """Rikky $13C2 is `TWO_STAGE_SHAPE` byte for byte; what differs is where
+    the two bytes live -- record `+9` and `+11` rather than a table after the
+    records. `duration == attack + 2` holds either way, which is why the
+    existing data model needed nothing."""
+    for name in STRIDE16:
+        sid = load_sid(str(CORPUS / name))
+        _, det = _detect_tables(sid, lambda *a, **k: None)
+        assert det.effect_two_stage, name
+        assert det.two_stage_frames == det.two_stage_wave + 2, name
+    sid = load_sid(str(CORPUS / "Rikky.sid"))
+    _, det = _detect_tables(sid, lambda *a, **k: None)
+    assert det.two_stage_wave - det.instr_start == 9
+    assert det.two_stage_frames - det.instr_start == 11
+
+
+@needs_corpus
+def test_the_instrument_bound_is_not_taken_in_this_dialect():
+    """`_bound_instruments` is a measurement over the 34 stride-8 files. The
+    one stride-16 file whose two-stage offset happens to be a multiple of its
+    stride is Powerplay Hockey, and taking the bound there cuts 12 records to
+    6 -- below the instrument 8 its own patterns name -- for melody 72% -> 66%
+    and wave 37% -> 26%."""
+    sid = load_sid(str(CORPUS / "Powerplay_Hockey_USA_vs_USSR.sid"))
+    _, det = _detect_tables(sid, lambda *a, **k: None)
+    assert det.effect_two_stage
+    assert det.instr_used == 12
+
+
+@needs_corpus
+def test_the_stride_eight_dialect_still_takes_its_bound():
+    """The guard must not switch the reduction off where it was measured."""
+    sid = load_sid(str(CORPUS / "IK_plus.sid"))
+    _, det = _detect_tables(sid, lambda *a, **k: None)
+    assert det.instr_stride == 8 and det.effect_two_stage
+    assert det.instr_used == 15, "IK+ counts 30 records and has 15"

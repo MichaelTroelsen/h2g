@@ -7681,6 +7681,135 @@ would have shipped 24 measured decisions away.
 > can see the thing at all.
 
 
+### 7.nnnn One guard, nine files, and every effect-byte routine
+
+v0.5.236. § 7.jjjj's work list, after the wave program emptied `$01`, opened
+with **`$04` x11 across five files** — Mr Meaner, Off the Cuff, Pygmies
+Revenge, Rikky and Rock Tells the Tale. Bit `$04` is the two-stage attack, the
+emitter has existed since v0.5.150-something, and `presets.py --fidelity` had
+offered `--two-stage` to all five without ever selecting it. Same shape as
+§ 7.kkkk, so the same first question: does the option change any bytes?
+
+It does not, and this time not because of an encoding restriction. All five
+report `det.effect_two_stage == False` — the routine was never found. Rikky's
+player, disassembled at the one `AND #$04` in the file:
+
+    13C2  LDA $1685        ; the effect byte
+    13C5  AND #$04
+    13C7  BEQ $13DD
+    13C9  LDA $168F,X      ; per-voice countdown
+    13CC  BEQ $13D7
+    13CE  DEC $168F,X
+    13D1  LDA $1704,Y      ; the attack waveform  -- record +9
+    13D4  JMP $13DA
+    13D7  LDA $16FD,Y      ; ...or the record's own +2
+    13DA  STA $1652,X
+
+That is `TWO_STAGE_SHAPE` **byte for byte**, and the note-start push chain that
+loads the counter is `TWO_STAGE_PUSH` byte for byte:
+
+    11B7  LDA $1706,X      ; record +11, the duration
+    11BA  PHA
+    ...
+    11D8  PLA
+    11D9  STA $168F,X
+
+So both signatures match and detection still says no, because of a line in the
+probe they share:
+
+    if det.instr_start < 0 or det.instr_stride != 8:
+        return None
+
+`_effect_byte_address` computes record 0's `+7` and searches for the player's
+own `LDA base,Y`. Neither step depends on how far apart the records are. The
+guard excluded a **dialect** — the nine corpus files whose records are 16
+bytes — and with it every routine that reads `+7`: the two-stage attack, bit
+`$02`'s alternation, bit `$40`'s pitch, the lot. Nine files, six call sites,
+one condition.
+
+Removing it detects the block in all nine, with the two bytes inside the
+record at `+9` and `+11` rather than in a table after the records. The existing
+data model needed nothing: `duration == attack + 2` either way.
+
+#### What it lands
+
+`--two-stage` forced on, 60 s, ours against the original's noise frames:
+
+| file | noise before | after | original | onset | melody |
+|---|---:|---:|---:|---|---|
+| After_8 | 0 | **218** | 210 | 75% → 100% | unmoved |
+| Mr_Meaner | 0 | **307** | 309 | 86% → 100% | unmoved |
+| Rikky | 0 | **270** | 264 | 33% → 100% | unmoved |
+| One_on_One | 0 | **765** | 744 | 50% → 100% | unmoved |
+| Off_the_Cuff | 1069 | **1331** | 1358 | 40% → 100% | unmoved |
+| Rock_Tells_the_Tale | 0 | 286 | 182 | 0% → 100% | 54% → 53% |
+| Pygmies_Revenge | 303 | 303 | 611 | 67% → 100% | unmoved |
+
+Five files reach within 3% of the original's noise-frame count from a standing
+start of zero, and `onset` reaches 100% on seven of the nine. `wave` slips a
+point or two on four of them, which is the documented trade of § 7.eee: a
+conversion that renders more transitions has more of them to disagree about.
+
+It reaches one other routine, and to nothing: bit `$80`'s fixed-pitch drum is
+now detected in six of the nine, with the same `$48` / voice 2 / period 6 its
+stride-8 relatives report — and **not one of those six has a record that sets
+bit `$80`**, so it is read and emitted nowhere. Forced on, `--sfx-drum` leaves
+all nine byte-identical. That is the per-record rule working (§ 7.rrr): a
+detection flag says the player reads the bit, and only a record's own effect
+byte says it is set.
+
+#### The counter-example the bound promised could not exist
+
+`_bound_instruments` ends the instrument table where the two-stage array
+begins, and its docstring validates the rule by measurement: over the 34
+stride-8 files, "the bound never falls below the highest instrument any
+pattern references". Eight of the nine new files fail its multiple-of-stride
+test and are untouched. The ninth, Powerplay Hockey, passes it — and its
+patterns name instrument **8** against a bound of **6**. Taking the bound costs
+it melody 72% → 66%, seq 73% → 68%, wave 37% → 26%.
+
+So the reduction is now restricted to `instr_stride == 8`, the population it
+was measured on, and the whole corpus's default output is byte-identical
+across this change (83 of 83 hashed).
+
+#### Wiz, and a waveform byte that is a jump
+
+The nine files' `$01` group also had a fourth member the wave program could not
+help: Wiz, which is at `-S1` and so was emitting its program before v0.5.235 --
+and whose result `gt2reloc` refuses, silently, with exit code 0 and no output
+file. Replicating `gtable.c:1008`'s `exectable` in Python over the emitted
+tables names it in one line:
+
+    OVERFLOW: instrument 2 WTBL from ptr 6
+
+Its block is `81/00 11/80 11/80 11/80 FF/DE`, and the `FF/DE` is not a jump
+anybody wrote. Record 1's program is
+
+    slide 11 / slide 11 / slide 11 / **set $FF, 250** / slide 15 / slide 11 / hold
+
+and `_wave_program_entries` puts an opcode's waveform straight into the
+wavetable's left column, where `$F0`-`$FF` are **commands**: `$FF` is the jump
+and the note byte beside it becomes the target. `$DE` = 222 in a 112-row table,
+so execution walks off the end and `greloc.c` reports `TYPE_OVERFLOW` to a
+console that does not exist headless.
+
+Three corpus files carry opcodes in the command range: Wiz (one), Kings of the
+Beach intro (one) and Mega Apocalypse (six across three records) -- **and the
+last two ship with `wave_program` selected**, so their tables contain a jump
+where a waveform belongs and happen to land in range. Recorded here rather than
+fixed in this commit: the fix changes the bytes of two shipped conversions and
+so needs its own preset search, and the option Wiz would gain is refused today
+anyway (a candidate that will not pack is not a candidate).
+
+> **The transferable lesson:** a guard that reads like a sanity check can be a
+> population filter. `instr_stride != 8` looked like "this probe needs the
+> layout it was written for"; it meant "nine files get none of this file's
+> nine routines". When a detection probe declines, check whether it declined
+> the *file* or the *family* — and when a rule that was validated over a
+> population starts reaching outside it, expect the counter-example rather
+> than the extension.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

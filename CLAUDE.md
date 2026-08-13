@@ -296,6 +296,27 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **A byte copied from the player into a Goattracker table is in Goattracker's
+  encoding now.** `_wave_program_entries` writes a program opcode's waveform
+  into the wavetable's left column, where `$F0`-`$FF` are *commands*: an
+  opcode of `$FF` becomes a **jump** and its pitch byte becomes the jump
+  target. Wiz's is `$FF`/`$DE` -- 222 in a 112-row table -- and `gt2reloc`
+  refuses the file with exit code 0 and no message. Three corpus files carry
+  such opcodes and two of them (Kings of the Beach intro, Mega Apocalypse)
+  ship with `--wave-program` on. **Open.** Replicating `gtable.c:1008`'s
+  `exectable` over the emitted tables finds this class in one pass and is
+  worth doing whenever a pack fails silently.
+- **A guard that reads like a sanity check can be a population filter.**
+  `detect._effect_byte_address` opened with `if det.instr_stride != 8: return
+  None`, which switched off *every* routine that reads the instrument effect
+  byte -- two-stage attack, bit $02's alternation, bit $40's pitch -- for the
+  9 corpus files whose records are 16 bytes. It computes record 0's `+7` and
+  searches for `LDA base,Y`; neither step depends on the stride, so it
+  excluded a dialect rather than an error, and behind it sat the onset
+  census's largest remaining group. Lifting it took `onset` to 100% on seven
+  of the nine and landed five files within 3% of the original's noise-frame
+  count from zero. When a probe declines, ask whether it declined the *file*
+  or the *family*.
 - **A walk that steps a fixed number of bytes over an instruction has assumed
   its addressing mode.** `find_wave_program` stepped 3 for the `STX save`
   between the gate's branch and the pointer load -- `STX abs`, which 28 of the
