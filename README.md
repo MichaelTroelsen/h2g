@@ -1318,33 +1318,68 @@ noise nobody can hear. The block is five entries and loops, as the player does:
 
 ```
 41 00   the instrument's own waveform, at the played note
-02 80   hold for the rest of the period
-81 C4   noise at the drum's pitch
-81 C4
-FF nn   back to the top
+81 C4   noise at the drum's pitch — the note's SECOND frame
+41 00   the note again
+03 80   hold for the rest of the period
+FF nn   back to the noise
 ```
 
-**The note comes first, and that is not cosmetic.** The player's counter is
-free-running, so a hit lands wherever it lands relative to a note start, while
-a wavetable always begins at the note. Opening on the noise puts the drum's
-pitch on the note's own first frame and the played note never sounds at all —
-measured, that took Trans-Atlantic's melody from 94.7% to **50.4%**. Opening on
-the note keeps both: melody 94.7%, `wave` 61.1% → 62.4%, and the median noise
-pitch moves from an inaudible `$0685` to `$3744` against the original's `$302B`.
+**The note comes first, and that is not cosmetic.** Opening on the noise puts
+the drum's pitch on the note's own first frame, where siddump names the note,
+and the played note never sounds at all — measured, that took Trans-Atlantic's
+melody from 94.7% to **50.4%**. Opening on the note keeps both: melody 94.7%,
+`wave` 61.1% → 62.4%, and the median noise pitch moves from an inaudible
+`$0685` to `$3744` against the original's `$302B`.
+
+**The hit is on the second frame, not at the end of the period** (v0.5.222).
+The reason first written down for the measurement above — that the player's
+counter is per-voice and free-running, so no wavetable can place the hit — is
+wrong: it is zeroed at note start (`LDA #$00 / STA $8934,X`) and the player
+fires at `CMP #$01`. The phase is reproducible and note-locked, so the collapse
+was an argument against frame 0 and not against frame 1; the drum fired three
+frames late for as long as the misreading stood. See § 7 of the method write-up.
 
 Off by default and selected per song by `presets.py --fidelity`. Two files take
 it — **Pandora and Thundercats** — and Pandora is the one that has been
 auditioned: distinct hits, on the beat, which is what validates the encoding.
 
-An instrument whose record waveform is `$00` gets **no** drum. `(wave & 0xFE) |
-0x01` is `$01` there, and `$01`–`$0F` are *delays* in a wavetable, not waveforms
-— `readme.txt` warns against a delay in an instrument's first step for exactly
-this reason. Emitted, the instrument set no waveform at all: it inherited noise
-from whatever played before and its delay entry applied a *relative* note, so
-Bangkok Knights sounded 40 of its 79 noise frames at `freqtbl[0]` = `$0117`
-where the drum belongs at `$49E5`. That file's entire drum was one such
-instrument, and it had been selected on a 41-point melody gain the broken block
-produced; with the guard in place it is no longer selected at all.
+**An instrument whose record waveform selects nothing is the drum on its own**
+(v0.5.253). `(wave & 0xFE) | 0x01` is `$01` for a `+2` of `$00` or `$01`, and
+`$01`–`$0F` are *delays* in a wavetable, not waveforms — `readme.txt` warns
+against a delay in an instrument's first step for exactly this reason. Written
+literally the instrument set no waveform at all: it inherited noise from
+whatever played before and its delay entry applied a *relative* note, so Bangkok
+Knights sounded 40 of its 79 noise frames at `freqtbl[0]` = `$0117` where the
+drum belongs at `$49E5`.
+
+The conclusion drawn from that was to **decline** such a record, which silenced
+the drum instead of mis-pitching it — for the project's life. Nineteen's record
+4 is 58 pattern rows and 151 of its original's 267 voice-3 attacks in 60
+seconds, and it shipped as `01/00 01/00 01/00 FF/00`: three one-call delays and
+a stop. The held byte now goes through the same `$E0`–`$EF` encoding every other
+sub-`$10` waveform uses (`gplay.c:527`), so `$E1` writes the `$01` the player
+holds between hits:
+
+```
+E1 00   gate alone, at the played note      <- the record's own $01
+81 C9   noise at the drum's pitch (C#6 = $482D)   <- loop target
+E1 00
+03 80   ...for the rest of the six-frame period
+FF 1D   back to the noise
+```
+
+Five corpus files carry such a record and the change reaches exactly those five.
+Three of them play one, and none of them moved a dimension down:
+
+| file | melody | seq | retrig | onset | noise |
+|---|---|---|---|---|---|
+| Nineteen | 77% → **96%** | 78% → 97% | 0.76 → **1.00** | 80% → **100%** | 1502 → 1657 / 1865 |
+| Bangkok Knights | 96% | 88% → **97%** | 0.86 → **1.01** | 100% | 1447 → 1543 / 1640 |
+| Pandora | 96% → **98%** | 96% → 99% | 0.97 → 1.03 | 86% | 812 → **839** / 877 |
+
+The remaining two carry `+2 $00` in a record **no pattern row names**, so what a
+`$00` record's gate should do between hits is still unmeasured — the held frames
+gate on, as they do for every other record, rather than on a guess.
 
 **Trans-Atlantic was selected and then vetoed by a listening test**, which is
 what `presets.FIDELITY_VETOED` is for. `wave` rose for it and the pitch matched,

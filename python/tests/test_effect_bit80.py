@@ -200,19 +200,29 @@ def test_it_is_off_by_default_and_selected_per_song():
     assert "sfx_drum" in presets.FIDELITY_TOGGLES
 
 
-def test_an_instrument_with_no_waveform_gets_no_drum():
-    """`(wave & 0xFE) | 0x01` is `$01` for a record whose +2 is $00, and $01-$0F
-    are *delays* in a wavetable, not waveforms (readme.txt:3.4.1). Emitted, the
-    instrument set no waveform at all -- it inherited noise from whatever played
-    before, and its delay entry applied a relative note, so Bangkok Knights' GT 9
-    sounded 40 frames at `freqtbl[0]` = $0117 where the drum belongs at $49E5.
-    Half that file's noise frames were at the wrong pitch and the audibility
-    guard read the median as inaudible."""
-    from h2g.goatwriter import _sfx_drum_entries
-    assert _sfx_drum_entries(0x00, 0x48, 6) is None
-    assert _sfx_drum_entries(0x01, 0x48, 6) is None, "gate alone is not a waveform"
-    left, _r, _loop = _sfx_drum_entries(0x41, 0x48, 6)
-    assert left[0] > 0x0F, "the first entry must be a waveform, never a delay"
+def test_an_instrument_with_no_waveform_is_the_drum_on_its_own():
+    """`(wave & 0xFE) | 0x01` is `$01` for a record whose +2 is $00 or $01, and
+    $01-$0F are *delays* in a wavetable, not waveforms (readme.txt:3.4.1).
+    Written literally the instrument set no waveform at all -- it inherited
+    noise from whatever played before, and its delay entry applied a relative
+    note, so Bangkok Knights' GT 9 sounded 40 frames at `freqtbl[0]` = $0117
+    where the drum belongs at $49E5.
+
+    **The conclusion drawn from that was to decline the record**, and declining
+    it silenced the drum instead: such a record is the drum *on its own*.
+    Nineteen's record 4 is 58 pattern rows and 151 of its original's 267 attacks
+    on voice 3 in 60 s, and it emitted three one-call delays and a stop. The
+    encoding that was missing is `_wave_byte`'s -- `$E0`-`$EF` writes $00-$0F to
+    $D404 as the control bits they are (gplay.c:527) -- which is why the
+    invariant below is about the *range*, not about refusing.
+    """
+    from h2g.goatwriter import _sfx_drum_entries, WAVE_SILENT_BASE
+    for wave in (0x00, 0x01, 0x41):
+        left, _r, _loop = _sfx_drum_entries(wave, 0x48, 6)
+        assert left[0] > 0x0F, "the first entry must be a waveform, never a delay"
+    for wave in (0x00, 0x01):
+        left, _r, _loop = _sfx_drum_entries(wave, 0x48, 6)
+        assert left[0] == WAVE_SILENT_BASE | 0x01, "gate alone, via $E0-$EF"
 
 
 # --- v0.5.204: effect bit $40, decoded ---------------------------------------

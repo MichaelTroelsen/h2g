@@ -572,8 +572,10 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     if alt <= WAVE_MAX_DELAY or alt == wave or not (wave & 0xF0):
         # An alternate in the delay range is not a waveform; an alternate
         # equal to `+2` alternates with itself; and a record with no waveform
-        # of its own has nothing to alternate *from* -- the same under-read
-        # `_sfx_drum_entries` declines to guess at.
+        # of its own has nothing to alternate *from*. That last is a real
+        # under-read rather than the one `_sfx_drum_entries` used to make: a
+        # bit-$80 record with no waveform is the drum *alone* and is now
+        # encoded (v0.5.253), where an alternation genuinely needs two.
         return None
     if start is None:
         return None
@@ -865,18 +867,28 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
     """
     if pitch_hi <= 0 or period <= 0:
         return None
-    # A record whose +2 is $00 has no waveform to come back to, and `$01` --
-    # what `(wave & 0xFE) | 0x01` yields -- is a *delay* in a wavetable, not a
-    # waveform ($01-$0F, readme.txt:3.4.1). Emitting it left the instrument
-    # setting no waveform at all: it inherited noise from whatever played
-    # before and its delay entry applied a relative note, so Bangkok Knights'
-    # GT 9 sounded 40 frames at `freqtbl[0]` = $0117 where the drum belongs at
-    # $49E5. readme.txt warns about a delay in the first step for this reason.
-    # No waveform means no drum here -- an under-read, not an invention.
-    if not wave & 0xF0:
-        return None
     m = max(1, multiplier)
-    held = (wave & 0xFE) | 0x01
+    # **A record whose +2 selects no waveform is the drum on its own**, and it
+    # goes through `_wave_byte` for the reason every other such byte does:
+    # `$01`-`$0F` are *delays* in a wavetable, and the `$E0`-`$EF` encoding is
+    # what writes them to $D404 as the control bits they are (readme.txt
+    # 3.4.1, gplay.c:527). Written literally the entry set no waveform at all
+    # -- Bangkok Knights' GT 9 inherited noise from whatever played before and
+    # its delay entry applied a relative note, 40 frames at `freqtbl[0]` =
+    # $0117 where the drum belongs at $49E5 -- and this function declined the
+    # record rather than encode it, which silenced the drum instead.
+    #
+    # Nineteen is what that cost. Records 0 and 4 share ADSR $0B06 and effect
+    # $A0; 0 carries `+2 $41` and is the pulse bass with the drum over it,
+    # 4 carries `+2 $01` and is the **drum alone** -- 151 of the original's
+    # 267 attacks on voice 3 in 60 s, every one of them named C#6 at the drum's
+    # own $482D. Declining record 4 emitted `01/00 01/00 01/00 FF/00`: three
+    # one-call delays and a stop, no waveform and no drum. `$E1` writes the
+    # $01 the player holds between hits, and because $01 is below $10
+    # siddump's keyoff-keyon test fires on the `$81` that follows it, so the
+    # ticks are named as notes on our side exactly as they are on the
+    # original's.
+    held = _wave_byte((wave & 0xFE) | 0x01)
     note = _sfx_note_byte(pitch_hi)
     noise = WAVE_NOISE_GATEOFF | 0x01
 
@@ -2451,8 +2463,10 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
 
     # Effect bit $10's arpeggio, after the two-stage block because a record
     # setting both ($14 here) gets its waveform from that one -- and because a
-    # record with no waveform of its own reaches this and is declined, which is
-    # the same under-read `_sfx_drum_entries` makes for the same reason.
+    # record with no waveform of its own reaches this and is declined. That is
+    # still an under-read: `_sfx_drum_entries` stopped making it in v0.5.253
+    # by routing the held byte through `_wave_byte`, and the same encoding is
+    # available here.
     if pitch_seq and fmt == FORMAT_GTS5:
         arpseq = _pitch_seq_entries(sid, det, i, wave)
         if arpseq is not None:
