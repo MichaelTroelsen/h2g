@@ -7,6 +7,7 @@ Versioning: the single source of truth is `__version__` in
 ## 0.5.259 — 2026-08-14
 
 - regenerate the three artefacts against the four merges
+- merge the second machine's reproducibility check: SURVEY/presets/FIDELITY reproduce byte for byte there, so its own regeneration is superseded by this one rather than lost
 
 ## 0.5.258 — 2026-08-14
 
