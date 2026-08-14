@@ -1438,6 +1438,45 @@ def census_report(rows: list[dict]) -> str:
     return "\n".join(out)
 
 
+def sound_note_runs(voices: list[Voice], nframes: int) -> dict:
+    """`{adsr: [(held, slot), ...]}` -- per note, what `sound_runs` reduces.
+
+    Split out of `sound_runs` in v0.5.254 so the census below can read the
+    note's **slot** as well as the frames it sounds for. The two are different
+    questions and the histogram of § 7.uuuu conflated them: a note can be short
+    because we stop sounding inside a slot the same length as the original's
+    (a hold defect) or because the slot itself is shorter (a *timing*
+    difference, which `hold` was never meant to measure and cannot fix).
+
+    `held` is frames with a waveform selected from the attack, `slot` is frames
+    to the next attack on that voice, and `total` is frames sounding *anywhere*
+    in the slot. `sound_runs` is `held` alone, unchanged.
+
+    `total` exists because `held` stops at the first deselected frame, and a
+    player that drops the waveform for one frame and resumes has not ended its
+    note -- I_Ball's `$0909` sounds `41 41 41 40 40 40 08 40 40 ...`, which
+    reads as a twelve-frame note against our twenty-three and is a
+    twenty-three-frame note with a hole in it. That is a fact about the
+    reduction, not about the conversion, and `classify_hold` calls it `gap`.
+    """
+    out: dict = {}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        attacks = sorted(a for a in v.attack_frames if 0 <= a < nframes)
+        for i, a in enumerate(attacks):
+            stop = attacks[i + 1] if i + 1 < len(attacks) else nframes
+            if stop >= nframes:
+                continue                      # cut by the window
+            held = 0
+            while a + held < stop and wf[a + held] & 0xF0:
+                held += 1
+            total = sum(1 for k in range(stop - a) if wf[a + k] & 0xF0)
+            out.setdefault(adsr[min(a + 1, nframes - 1)],
+                           []).append((held, stop - a, total))
+    return out
+
+
 def sound_runs(voices: list[Voice], nframes: int) -> dict:
     """How many frames each note keeps a waveform selected, by instrument.
 
@@ -1498,23 +1537,11 @@ def sound_runs(voices: list[Voice], nframes: int) -> dict:
     and for its reason. The key is $D405/$D406 and the measured quantity is a
     duration, so neither can contaminate the other.
 
-    Returns `{adsr: Counter({frames: count})}`.
+    Returns `{adsr: Counter({frames: count})}`, reduced from
+    `sound_note_runs` so the column and the census below cannot drift apart.
     """
-    out: dict = {}
-    for v in voices:
-        wf = register_timeline(v.wf_events, nframes)
-        adsr = register_timeline(v.adsr_events, nframes)
-        attacks = sorted(a for a in v.attack_frames if 0 <= a < nframes)
-        for i, a in enumerate(attacks):
-            stop = attacks[i + 1] if i + 1 < len(attacks) else nframes
-            if stop >= nframes:
-                continue                      # cut by the window
-            held = 0
-            while a + held < stop and wf[a + held] & 0xF0:
-                held += 1
-            out.setdefault(adsr[min(a + 1, nframes - 1)],
-                           Counter())[held] += 1
-    return out
+    return {k: Counter(h for h, *_ in v)
+            for k, v in sound_note_runs(voices, nframes).items()}
 
 
 def sound_run_agreement(orig: list[Voice], ours: list[Voice],
@@ -1545,6 +1572,181 @@ def sound_run_agreement(orig: list[Voice], ours: list[Voice],
         "sound_run_agreement": (matched / len(shared)) if shared else None,
         "sound_run_delta": (deltas.most_common(1)[0][0] if deltas else None),
     }
+
+
+HOLD_KINDS = ("match", "fetch", "slot", "thin", "sparse", "gap",
+              "short", "long")
+
+
+def classify_hold(delta: int, slot_delta: int,
+                  orig_notes: int, our_notes: int,
+                  orig: tuple[int, int] = (0, 0),
+                  ours: tuple[int, int] = (0, 0)) -> str:
+    """Which of the four things a `hold` disagreement is.
+
+    § 7.uuuu separated the column's tail into a call-rate artefact, a handful
+    of other defects wearing a length costume, and an unattributed remainder of
+    46 instruments at -2..-7 and ~38 at +5..+23. This is that remainder asked
+    the question the histogram could not: **is the note shorter, or is its
+    slot?**
+
+    * `fetch`  -- one frame short with the slot unchanged: Goattracker's
+      next-note fetch, `gatetimer & $3f` play calls early (gplay.c:905). The
+      bulk of the column, removed outright by `--no-test-restart`.
+    * `slot`   -- the length difference is the *slot's* difference, within a
+      frame. The note is as long as the room it is given; what differs is when
+      the next note arrives, which is a timing question `hold` does not measure
+      and no wavetable edit can fix. Read `--pace` and `retrig`, not this.
+    * `sparse` -- one side plays at least twice as many notes under this ADSR,
+      so the two modes are taken over different music.
+    * `thin`   -- fewer than four notes on one side. A mode over one note is
+      that note; § 7.uuuu's far tail is mostly this, single held notes whose
+      "length" is a fact about the window.
+    * `gap`    -- one side sounds for as many frames as the other *in total*
+      but drops the waveform for a frame in the middle, and `held` stops at
+      the first hole. A limitation of the reduction, not a difference in the
+      music.
+    * `short` / `long` -- an equal slot, an equal population, an uninterrupted
+      run, and we stop sounding early or keep sounding late. This is the
+      residue that is actually about the note's length.
+
+    `slot` outranks `fetch` where both fit -- a note one frame short in a slot
+    one frame short is over-determined, and above `-S3` the fetch costs a
+    fraction of a frame, so the slot is the reading that can be true at every
+    rate.
+
+    `orig` and `ours` are each `(held, total)`; they default to zeros so the
+    four-argument form still classifies everything but `gap`.
+    """
+    if delta == 0:
+        return "match"
+    if slot_delta and abs(delta - slot_delta) <= 1:
+        return "slot"
+    if delta == -1:
+        return "fetch"
+    if min(orig_notes, our_notes) < 4:
+        return "thin"
+    if orig_notes >= 2 * our_notes or our_notes >= 2 * orig_notes:
+        return "sparse"
+    if ((orig[1] > orig[0] and abs(ours[0] - orig[1]) <= 1)
+            or (ours[1] > ours[0] and abs(orig[0] - ours[1]) <= 1)):
+        return "gap"
+    return "short" if delta < 0 else "long"
+
+
+def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
+                stamps: dict | None = None) -> list[dict]:
+    """Every instrument `hold` compared, with the kind of its disagreement.
+
+    Same population and same modal reduction as `sound_run_agreement` -- the
+    instruments both sides sound -- so the counts here add up to that column's
+    denominator and `match` is its numerator, exactly as `onset_census` stands
+    to `onset_agreement`. Computed from the traces the column just scored
+    rather than from a second pipeline, for the reason given there.
+    """
+    def modal(notes):
+        """The typical note's length, and *its own* slot.
+
+        The held length is `sound_runs`' mode, unchanged, so `match` here stays
+        the column's numerator. The slot is then the mode among the notes that
+        length was taken from, rather than an independent mode over all of
+        them -- two independent modes can report a note sounding for longer
+        than its slot, which is not a thing a note can do.
+        """
+        h = Counter(x for x, _, _ in notes).most_common(1)[0][0]
+        same = [(s, t) for x, s, t in notes if x == h]
+        return (h, Counter(s for s, _ in same).most_common(1)[0][0],
+                Counter(t for _, t in same).most_common(1)[0][0])
+
+    a = sound_note_runs(orig, nframes)
+    b = sound_note_runs(ours, nframes)
+    out = []
+    for adsr in sorted(set(a) & set(b)):
+        oh, os_, ot = modal(a[adsr])
+        uh, us, ut = modal(b[adsr])
+        rec = {"adsr": adsr, "orig_held": oh, "our_held": uh,
+               "delta": uh - oh, "orig_slot": os_, "our_slot": us,
+               "slot_delta": us - os_,
+               "orig_total": ot, "our_total": ut,
+               "orig_notes": len(a[adsr]), "our_notes": len(b[adsr])}
+        rec["kind"] = classify_hold(rec["delta"], rec["slot_delta"],
+                                    rec["orig_notes"], rec["our_notes"],
+                                    (oh, ot), (uh, ut))
+        rec.update((stamps or {}).get(adsr, {}))
+        out.append(rec)
+    return out
+
+
+def hold_census_report(rows: list[dict]) -> str:
+    """The hold census over a whole run: what the length misses are made of.
+
+    A queue rather than a measurement, like `census_report`: the report says
+    how the corpus scores, this says which instruments are still unexplained
+    once timing and population are taken out of the histogram.
+    """
+    recs = [dict(r, file=row["file"], multiplier=row.get("multiplier", 1),
+                 no_test_restart=bool((row.get("options") or {})
+                                      .get("no_test_restart")))
+            for row in rows for r in row.get("hold_census") or []]
+    files = sum(1 for r in rows if r.get("hold_census"))
+    out = ["# Hold census", "",
+           f"{len(recs)} instrument(s) compared across {files} file(s). Each "
+           "is one instrument both sides sound, keyed by its ADSR pair -- the "
+           "population the `hold` column scores, classified by *why* its modal "
+           "note length differs. `slot` and `sparse` are not length "
+           "disagreements at all; `short` and `long` are the remainder.", ""]
+    if not recs:
+        return "\n".join(out)
+    counts = Counter(r["kind"] for r in recs)
+    out += ["| kind | n | share |", "|---|---:|---:|"]
+    for k in HOLD_KINDS:
+        n = counts.get(k, 0)
+        out.append(f"| {k} | {n} | {100 * n / len(recs):.1f}% |")
+    out.append("")
+
+    by_mult: dict = {}
+    for r in recs:
+        by_mult.setdefault((r["multiplier"], r["no_test_restart"]),
+                           Counter())[r["kind"]] += 1
+    out += ["## By packed rate", "",
+            "`fetch` is invisible above `-S3` -- siddump samples once a frame "
+            "and the deficit is a number of play calls -- so a low count up "
+            "there is the trace's resolution, not the converter's.", "",
+            "| -S | --no-test-restart | " + " | ".join(HOLD_KINDS) + " |",
+            "|---:|---|" + "---:|" * len(HOLD_KINDS)]
+    for (m, opt), c in sorted(by_mult.items()):
+        out.append(f"| {m} | {'yes' if opt else 'no'} | "
+                   + " | ".join(str(c.get(k, 0)) for k in HOLD_KINDS) + " |")
+    out.append("")
+
+    rest = [r for r in recs if r["kind"] in ("short", "long")]
+    if rest:
+        by_eff = Counter(r.get("effect") for r in rest)
+        out += ["## The remainder by the record's effect byte", "",
+                "| effect | n | files |", "|---|---:|---|"]
+        for eff, n in by_eff.most_common():
+            fs = sorted({r["file"] for r in rest if r.get("effect") == eff})
+            name = "-" if eff is None else f"`${eff:02X}`"
+            out.append(f"| {name} | {n} | {', '.join(fs)} |")
+        out.append("")
+        out += ["## Every unexplained instrument", "",
+                "`held` is frames to the first deselected one, `total` every "
+                "sounding frame in the slot; where they differ the note has a "
+                "hole in it.", "",
+                "| file | -S | GT | ADSR | effect | kind | held | total | "
+                "slot | notes |", "|---|---:|---:|---|---|---|---|---|---|---:|"]
+        for r in sorted(rest, key=lambda r: (r["kind"], -abs(r["delta"]),
+                                             r["file"])):
+            eff = r.get("effect")
+            out.append(
+                f"| {r['file']} | {r['multiplier']} | {r.get('gt', '-')} | "
+                f"`${r['adsr']:04X}` | {'-' if eff is None else f'${eff:02X}'} "
+                f"| {r['kind']} | {r['orig_held']}/{r['our_held']} | "
+                f"{r.get('orig_total', '-')}/{r.get('our_total', '-')} | "
+                f"{r['orig_slot']}/{r['our_slot']} | "
+                f"{r['orig_notes']}/{r['our_notes']} |")
+        out.append("")
+    return "\n".join(out)
 
 
 def noise_run_agreement(orig: list[Voice], ours: list[Voice],
@@ -2062,6 +2264,11 @@ DIMENSIONS = (
     # long the waveform stayed. This reads the frames a note keeps a waveform
     # selected within its own slot -- see `sound_runs`, and read
     # `sound_run_delta` beside it while the agreement is zero.
+    # `--hold-census` says what the disagreements are made of, and the answer
+    # is mostly not note length: 211 of 432 are the next-note fetch, 117 are
+    # the note's *slot* differing rather than the note (a timing question, and
+    # for 94 of them the file's slot ratio is 1/`retrigger_ratio`), and the
+    # residue is nine. See `classify_hold` and section 7.xxxx.
     Dimension("sound_run_agreement", "hold", ("$D404",), "fraction",
               "instruments whose notes sound for as many frames as the "
               "original's -- **blind to the deficit it measures above `-S3`**, "
@@ -2502,6 +2709,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # different subtune and then disagreeing with the report for a
                 # reason that has nothing to do with the conversion.
                 row["onset_census"] = onset_census(
+                    a, best_dump, nframes, instrument_stamps(sng))
+            if getattr(args, "hold_census", None):
+                # Same two traces, same modal reduction, same reason.
+                row["hold_census"] = hold_census(
                     a, best_dump, nframes, instrument_stamps(sng))
             row.update(pitch_motion_compare(a, best_dump, nframes))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
@@ -4084,6 +4295,10 @@ def main(argv=None) -> int:
     p.add_argument("--census", metavar="PATH",
                    help="classify every onset disagreement by kind "
                         "and write the work list here")
+    p.add_argument("--hold-census", metavar="PATH",
+                   help="classify every note-length disagreement by kind "
+                        "(fetch / slot / sparse / short / long) and write the "
+                        "work list here")
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", default="auto",
                    help="which subtune of the original to trace: a number, or "
@@ -4322,6 +4537,10 @@ def _run(p, args, workdir: Path) -> int:
     if args.census:
         Path(args.census).write_text(census_report(rows), encoding="utf-8")
         print(f"wrote {args.census}", file=sys.stderr)
+    if getattr(args, "hold_census", None):
+        Path(args.hold_census).write_text(hold_census_report(rows),
+                                          encoding="utf-8")
+        print(f"wrote {args.hold_census}", file=sys.stderr)
 
     if args.baseline:
         try:

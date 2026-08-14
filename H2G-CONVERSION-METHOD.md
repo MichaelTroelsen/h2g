@@ -8529,3 +8529,93 @@ Run: `python -m h2g <input.sid> [-o out.sng]` from `python/`, or
 converts and opens the result in GoatTracker. See `README.md` for the options,
 and `python -m h2g --help` for the authoritative list.
 Test: `python -m pytest tests/ -q` from `python/`.
+
+### 7.xxxx The `hold` tail is mostly the *slot*, and the rest is one cut note
+
+v0.5.254, finishing § 7.uuuu. That section separated the column's tail into a
+call-rate artefact, six far outliers that are other defects wearing a length
+costume, and an unattributed remainder of 46 instruments at -2..-7 plus ~38 at
++5..+23. It could not attribute them because the histogram asked one question
+where there are two: **is the note shorter, or is its slot?**
+
+`sound_runs` measures the frames a note keeps a waveform selected *within its
+own slot*. A note that fills the room it is given is not a note-length defect
+at all -- what differs is when the next note arrives, which is a timing
+question `--pace` and `retrig` measure and no wavetable edit can fix. So
+`sound_note_runs` now reports `(held, slot, total)` per note, `sound_runs` is
+its `held` reduction and unchanged, and `fidelity.py --hold-census PATH`
+classifies every instrument the column compares:
+
+    match  90  20.8%     fetch 211  48.8%     slot 117  27.1%
+    thin    3   0.7%     sparse  1   0.2%     gap    1   0.2%
+    short   3   0.7%     long    6   1.4%                      (432 total)
+
+* `fetch` -- one frame short in an equal slot: Goattracker's next-note fetch,
+  `gatetimer & $3f` play calls early. 211 of them, and `--no-test-restart`
+  removes every one: 44 of the 46 instruments in files carrying it are `match`
+  against 2 of 190 in the files that do not.
+* `slot` -- the length difference *is* the slot's difference, within a frame.
+* `thin` -- fewer than four notes a side. A mode over one note is that note.
+* `gap` -- the sides sound for the same number of frames in total, but one of
+  them drops the waveform for a frame in the middle and `held` stops at the
+  first hole. A fact about the reduction, not about the music.
+
+Where both a `slot` and a `fetch` reading fit, `slot` wins: a note one frame
+short in a slot one frame short is over-determined, and above `-S3` the fetch
+costs a fraction of a frame, so the slot is the reading that can be true at
+every rate. That precedence moves 20 instruments out of `fetch`, all at `-S3`.
+
+#### The old groups, re-read
+
+    delta       match  fetch   slot   thin sparse    gap  short   long
+    0              90      0      0      0      0      0      0      0
+    -1              0    211     20      0      0      0      0      0
+    -2..-7          0      0     50      0      0      0      2      0
+    +5..+23         0      0     25      0      1      1      0      5
+
+**§ 7.uuuu's 84 unattributed instruments are 75 `slot`, 5 `long`, 2 `short`,
+1 `gap` and 1 `sparse`.** And `slot` is not a new mystery: it is the retrigger
+disagreement seen in the length axis. For **94 of the 117**, the file's median
+`our_slot / orig_slot` is the reciprocal of its own `retrigger_ratio` within
+25% -- Ninja's five instruments are all at 0.75 against a `retrig` of 1.33,
+Proteus's ten at 0.89 against 1.13, Warhawk's seven at 0.89, Spellbound's four
+at 0.67. A single ratio shared by every instrument of a file is a tempo
+signature, not seven independent note-length bugs.
+
+#### What is actually left: nine instruments, and five are one mechanism
+
+    file                       ADSR    eff   held    slot   notes
+    Skate_or_Die_intro        $08E7    $01   7/23   20/24  149/123
+    Arcade_Classics           $09F9    $01  10/23   24/24   73/74
+    IK_plus                   $08D8    $08   6/17   18/18   93/93
+    IK_plus                   $09F8    $08   6/17   18/18   62/64
+    Trans-Atlantic_Balloon    $0AF8    $14   5/11   12/12   70/70
+
+Equal slots, equal note counts, and we sound two to three times as long. The
+traces say why -- the original kills the waveform partway through the note and
+stays killed:
+
+    IK+ $08D8       11 81 11 40 80 80 08 08 08 08 08 08     (slot 18)
+    Arcade $09F9    11 81 41 41 81 80 80 80 80 80 00 00 ... (slot 24)
+    Trans-Atl $0AF8 11 11 11 11 11 00 00 00 00 00 00 00     (slot 12)
+    Skate $08E7     11 81 41 41 80 80 80 00 00 00 00 00 ... (slot 20)
+
+`$00` or `$08` -- no waveform selected, gate and test bit alone -- written by
+the player and held to the next note. We hold the last waveform instead. Three
+different effect bytes across four files, so this is not an effect bit: it is a
+terminating step the wavetable emitters do not write. **That is the queue item
+this census exists to produce**, and it is worth noting what it is worth: nine
+instruments of 432, where the raw histogram suggested eighty-four.
+
+The remaining four are one apiece. Pandora `$0D99` sounds one frame a note
+against our 63 in a slot eight times longer -- a retrigger question wearing a
+length costume, like the rest of `slot` but too far out for the tolerance.
+Shockway Rider `$0079`, Human_Race `$0E00` and I_Ball `$0999` all have slots
+that differ by more than their held frames do.
+
+> **The transferable lesson, and it is § 7.uuuu's sharpened:** grouping by
+> suspected mechanism is not enough if the quantity itself confounds two
+> mechanisms. `hold` measures a note's frames *and* its slot in one number, so
+> no partition of that number could separate a length defect from a tempo
+> difference. The fix was to measure the second quantity, not to bin the first
+> more cleverly.
