@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.252 — 2026-08-14
+
+- rewrite the handoff against v0.5.251
+
 ## 0.5.251 — 2026-08-14
 
 - partition the census remainder by cause
