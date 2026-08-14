@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.258 — 2026-08-14
+
+- put the four merged sections in order in the method doc
+
 ## 0.5.257 — 2026-08-14
 
 - bit $02's per-voice attack, and the instrument-to-voice map (Ninja)
