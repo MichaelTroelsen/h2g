@@ -696,6 +696,67 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     return left, right
 
 
+def _gate_calls(calls: int, gate_skip: Optional[int]) -> int:
+    """The player's own working calls expressed in ours.
+
+    A player with an outer counter above its gate does nothing at all on one
+    call in `O + 1` (`_find_outer_gate`), and Goattracker's player has no such
+    counter -- so a duration of `n` of the original's *working* calls occupies
+    `n * (O + 1) / O` of ours. The same correction `SongSpeeds.exact_row`
+    makes to a row length, made to a table entry. `gate_skip` is None where
+    the player has no counter, and None without `--skip-gate`, where the rows
+    were not corrected either.
+    """
+    if not gate_skip:
+        return calls
+    return int(round(calls * (gate_skip + 1) / gate_skip))
+
+
+def _voice_two_stage_entries(wave: int, alt: int, threshold: int,
+                             multiplier: int = 1,
+                             budget: int = WAVE_ENTRIES_PER_INSTR,
+                             written: bool = False,
+                             gate_skip: Optional[int] = None
+                             ) -> Optional[tuple]:
+    """Bit $02's attack where its parameters are per voice, or None.
+
+    The same *shape* as `_two_stage_entries` -- an attack waveform, then the
+    record's own -- so it delegates rather than re-emitting one; what is new is
+    where the two parameters come from. `detect._find_voice_two_stage` reads
+    them out of two static three-byte tables the player indexes by voice, so
+    the caller has already resolved which voice this instrument is played on
+    (`tracks.instrument_voices`) and passes that voice's pair.
+
+    **`threshold - 1`, and the `- 1` is measured rather than reasoned.** The
+    player compares a per-note frame counter against the threshold, and the
+    counter is zeroed and then incremented on the note's *first* call, which
+    is the one call that never reaches the effect block -- the note-start path
+    jumps straight past it (Ninja `$C95C`). So the second call reads 1, not 0,
+    and the attack ends `threshold - 1` calls later. Traced three ways on
+    Ninja's voice 3, whose pair is `$15`/4: the file as it ships sounds the
+    alternate for four displayed frames of which one is a skipped gate call,
+    a copy patched to `threshold = 1` sounds it for none at all, and a copy
+    with the alternate's table load redirected to the counter prints the
+    counter itself into `$D404`. The first of those alone reads as `threshold`
+    frames and is the wrong reading; it took the second to separate them.
+
+    **Then corrected for the gate the player skips calls on.** Those three
+    active calls occupy four *displayed* frames on Ninja, whose outer counter
+    (`$C806`, `DEC / BPL / reload 3 / RTS`) does nothing on one call in four,
+    and our player has no such counter -- see `_gate_calls`. Measured against
+    the uncorrected form on the one file that carries this: `slides` 947 ->
+    1026 of the original's 1338, `bend` 0.67x -> 0.75x and `vib` 0.59x ->
+    0.79x, with `onset`, `melody` and `wave` unmoved. Both readings give 4 for
+    a threshold of 4, which is every threshold this corpus actually reaches --
+    they part company at Ninja's third voice, whose 6 is `_gate_calls(5) = 7`
+    against a bare `threshold` of 6, and no instrument is played there. So the
+    ratios above are what chose the correction; the arithmetic is what makes
+    it a reading rather than a coincidence.
+    """
+    return _two_stage_entries(wave, alt, _gate_calls(threshold - 1, gate_skip),
+                              multiplier, budget=budget, written=written)
+
+
 def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
                                  notes: List[int], start: int,
                                  multiplier: int = 1,
@@ -1431,6 +1492,22 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
                 return tuple(v or None for v in vals), table
         i = sid.data.find(store, i + 1)
     return (sid.data[imm_off] or None,) * max(subtunes, 1), None
+
+
+def outer_gate_skip(sid: SidFile, subtune: int = 0) -> Optional[int]:
+    """The reload of the counter above the player's gate, or None.
+
+    `find_song_speeds` already carries this as `SongSpeeds.skip`, but only for
+    a player whose *inner* speed gate it also found -- and the two are
+    independent readings. Ninja has the outer counter (`$C806`, reload 3) and
+    no speed gate at all, so its `find_song_speeds` is None and its tempo
+    falls back to a constant; asking for the counter through that path returns
+    nothing for it. Anything that needs the counter alone should ask here.
+    """
+    vals, _ = _find_outer_gate(sid, max(sid.subtunes, 1))
+    if 0 <= subtune < len(vals):
+        return vals[subtune]
+    return None
 
 
 def find_song_speeds(sid: SidFile,
@@ -2285,7 +2362,10 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        pitch_seq: bool = False,
                        note_rows: Optional[dict] = None,
                        row_calls: int = 0,
-                       no_test_restart: bool = False) -> tuple:
+                       no_test_restart: bool = False,
+                       voice_two_stage: bool = False,
+                       voice: Optional[int] = None,
+                       gate_skip: Optional[int] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -2448,6 +2528,26 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                      written=no_test_restart)
             if two is not None:
                 return two
+
+    # The same attack with per-voice parameters (Ninja). Gated on `effects`
+    # like every other reading of +7 -- with the flag off this function still
+    # reproduces the VB6 original byte for byte, and the first version of this
+    # block broke that. Gated too on the record's own bit $02 *and* on the
+    # instrument having been resolved to a voice:
+    # the player's tables are indexed by voice and a Goattracker wavetable is
+    # per instrument, so an instrument played on two voices has two different
+    # right answers and gets neither. `voice` is None for exactly that case --
+    # see `tracks.instrument_voices` and `_record_voice`.
+    if (voice_two_stage and effects and voice is not None
+            and det.voice_two_stage_alt >= 0 and (arp_style & 0x02)):
+        alt = data[det.voice_two_stage_alt + voice]
+        threshold = data[det.voice_two_stage_frames + voice]
+        pair = _voice_two_stage_entries(wave, alt, threshold, multiplier,
+                                        budget=budget,
+                                        written=no_test_restart,
+                                        gate_skip=gate_skip)
+        if pair is not None:
+            return pair
 
     # Effect bit $10's arpeggio, after the two-stage block because a record
     # setting both ($14 here) gets its waveform from that one -- and because a
@@ -3120,6 +3220,33 @@ def _rise_speed_index(fmt: str, speed_table: List[tuple],
     return speed_table.index(entry) + 1
 
 
+def _record_voice(instr_voices: Optional[dict], instr: int) -> Optional[int]:
+    """The voice `instr` is mostly played on, or None if no pattern names it.
+
+    A per-voice effect has no single right answer for an instrument two voices
+    share, and the first version of this refused those outright -- emit
+    nothing rather than pick. **Measured, picking is better.** Ninja's GT 12
+    is played on voices 1 and 3; refusing it left `onset` at 60% and taking
+    its busier voice puts it at 80%, with `melody`, `seq`, `noise` and every
+    other dimension unmoved and `wave` inside a point. The reason the choice
+    is cheap here is visible in the tables it indexes: the alternates for
+    those two voices are `$11` and `$15`, triangle either way, so the wrong
+    half of the guess is wrong about the ring bit and right about the
+    waveform.
+
+    Weighted by rows *and* by how often the orderlists play the pattern
+    holding them (`tracks.instrument_voices`), so "mostly" is about how much
+    of the tune sounds that way rather than about how the patterns were
+    written. None only where nothing names the instrument at all.
+    """
+    if not instr_voices:
+        return None
+    per = instr_voices.get(instr)
+    if not per:
+        return None
+    return max(per, key=per.get)
+
+
 def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       effects: bool, fmt: str, speed_table: List[tuple],
                       multiplier: int, min_notes: Optional[dict],
@@ -3128,7 +3255,10 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       wave_program: bool = False, pitch_seq: bool = False,
                       note_rows: Optional[dict] = None,
                       row_calls: int = 0,
-                      no_test_restart: bool = False) -> tuple:
+                      no_test_restart: bool = False,
+                      voice_two_stage: bool = False,
+                      instr_voices: Optional[dict] = None,
+                      gate_skip: Optional[int] = None) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -3169,7 +3299,11 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          pitch_seq=pitch_seq,
                                          note_rows=note_rows,
                                          row_calls=row_calls,
-                                         no_test_restart=no_test_restart)
+                                         no_test_restart=no_test_restart,
+                                         voice_two_stage=voice_two_stage,
+                                         voice=_record_voice(instr_voices,
+                                                             i + lead + 1),
+                                         gate_skip=gate_skip)
         starts.append(start)
         entries += list(zip(left, right))
     return entries, starts
@@ -3558,7 +3692,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               cut_release: bool = False,
               pitch_seq: bool = False,
               note_rows: Optional[dict] = None,
-              row_calls: int = 0) -> bytes:
+              row_calls: int = 0,
+              voice_two_stage: bool = False,
+              instr_voices: Optional[dict] = None,
+              gate_skip: Optional[int] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -3609,7 +3746,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   sfx_drum, wave_program,
                                                   pitch_seq,
                                                   note_rows, row_calls,
-                                                  no_test_restart)
+                                                  no_test_restart,
+                                                  voice_two_stage,
+                                                  instr_voices, gate_skip)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

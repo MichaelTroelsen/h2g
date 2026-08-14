@@ -309,6 +309,19 @@ def main(argv=None) -> int:
              "where the original sounds noise the conversion has none of. "
              "presets.py --fidelity selects it per song")
     parser.add_argument(
+        "--voice-two-stage", action="store_true",
+        help="write the attack waveform effect bit $02 selects where that "
+             "player keeps its parameters per VOICE. One corpus file (Ninja) "
+             "reads bit $02 as a two-stage attack whose waveform and duration "
+             "come from two static three-byte tables indexed by the voice "
+             "being serviced, not by the instrument "
+             "(detect._find_voice_two_stage). A Goattracker wavetable is per "
+             "instrument, so this is emitted only for an instrument the "
+             "orderlists play on exactly one voice (tracks.instrument_voices); "
+             "an instrument shared between voices is left alone. Needs "
+             "--effects. Off by default; presets.py --fidelity selects it per "
+             "song")
+    parser.add_argument(
         "--no-test-restart", action="store_true",
         help="stop silencing the oscillator on every note's first frame. Each "
              "instrument's first-frame waveform has always been $09 -- testbit "
@@ -382,6 +395,7 @@ def main(argv=None) -> int:
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--two-stage", "two_stage"),
+                          ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
                           ("--wave-program", "wave_program"),
                           ("--vibrato-command", "vibrato_command"),
@@ -452,6 +466,7 @@ def main(argv=None) -> int:
                       no_hard_restart=args.no_hard_restart,
                       no_test_restart=args.no_test_restart,
                       two_stage=args.two_stage,
+                      voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,
                       wave_program=args.wave_program,
                       vibrato_command=args.vibrato_command,

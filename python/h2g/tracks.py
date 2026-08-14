@@ -594,6 +594,57 @@ def apply_initial_instruments(tracks: List[List[int]],
     return fixed
 
 
+def instrument_voices(tracks: List[List[int]],
+                      patterns: List[List[int]]) -> Dict[int, Dict[int, int]]:
+    """{Goattracker instrument: {voice: rows}} over the finished song.
+
+    Read from the converted orderlists and patterns rather than from the
+    player, because that is where the answer is: a Hubbard record says nothing
+    about which voice plays it, and the tune's own orderlists say it exactly.
+    Every voice a pattern is played on counts, and the row count is weighted by
+    how often the orderlists play that pattern -- an instrument named in a
+    pattern played sixteen times is not one occurrence, the same weighting
+    `goatwriter._drum_max_steps` takes over note durations.
+
+    The carry-forward rule does not leak across voices, which is what makes a
+    single-voice answer trustworthy: Goattracker holds the last non-zero
+    instrument column until another row sets one (gplay.c:914), but that
+    column can only have been set by a pattern *this* voice played, so an
+    instrument sounding on a voice always has a set-site on it.
+
+    Written for the one mechanism whose parameters are per voice
+    (`detect._find_voice_two_stage`), and general because the next one will
+    want it too: a wavetable is per instrument, so an instrument played on two
+    voices cannot carry a per-voice effect at all.
+    """
+    plays: Dict[int, Dict[int, int]] = {}
+    for ti, track in enumerate(tracks):
+        voice = ti % 3
+        operand = False
+        for entry in track:
+            if operand:                 # $FF's restart position, not a pattern
+                operand = False
+            elif entry == GT_ORDER_RESTART:
+                operand = True
+            elif entry < MAX_PATTERNS:
+                plays.setdefault(entry, {})[voice] = \
+                    plays.setdefault(entry, {}).get(voice, 0) + 1
+    out: Dict[int, Dict[int, int]] = {}
+    for pattern, voices in plays.items():
+        if pattern >= len(patterns):
+            continue
+        rows = patterns[pattern]
+        counts: Dict[int, int] = {}
+        for k in range(1, len(rows), 4):
+            if rows[k]:
+                counts[rows[k]] = counts.get(rows[k], 0) + 1
+        for instr, n in counts.items():
+            per = out.setdefault(instr, {})
+            for voice, times in voices.items():
+                per[voice] = per.get(voice, 0) + n * times
+    return out
+
+
 def _initial_for(det: Detection, voice: int) -> Optional[int]:
     """The Goattracker instrument number `voice` starts on, or None.
 

@@ -46,6 +46,13 @@ which is what Hubbard's "tune ended" marker becomes; and `--slides` /
 `--effects` fix mis-reads that are gated on detection finding the relevant
 routine in the player, a no-op elsewhere). None of them affects whether a
 tune converts.
+
+`--voice-two-stage` is fixed on the same terms and for the same reason, not
+because it was measured corpus-wide: its signature matches **one** corpus file
+(Ninja), forcing it on every file moves that file's bytes and nobody else's,
+and there it takes `onset` 40% -> 80% with `melody`, `seq`, `noise` and the
+rest unmoved. A sixth `--fidelity` toggle would double a four-hour search to
+settle a one-file question.
 """
 from __future__ import annotations
 
@@ -75,7 +82,8 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "sustain_exact": True, "no_hard_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
          "vibrato_command": True, "cut_release": True, "tie": True,
-         "rest_instrument": True, "compact_instruments": True}
+         "rest_instrument": True, "compact_instruments": True,
+         "voice_two_stage": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing

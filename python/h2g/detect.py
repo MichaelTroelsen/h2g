@@ -124,6 +124,13 @@ class Detection:
     # control bits -- and the counter is global rather than per voice. True
     # where that block was found; `wave_alternate` stays -1 for it.
     wave_alternate_noise: bool = False
+    # A THIRD reading of bit $02, Ninja $CAFD: a two-stage attack whose
+    # waveform and duration are per *voice* rather than per instrument -- two
+    # static three-byte tables the player indexes by the voice it is
+    # servicing. File offsets of those tables, or -1 -- see
+    # _find_voice_two_stage().
+    voice_two_stage_alt: int = -1
+    voice_two_stage_frames: int = -1
     # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
     # together or neither is. `pulse_bounds` is the file offset of an array
     # indexed by the same i * instr_stride the records are, holding the two
@@ -1000,6 +1007,17 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                 log("Instrument effect byte..: bit $02 alternates the "
                     "waveform every frame with noise at its own control bits "
                     "(not the rise)")
+        (det.voice_two_stage_alt,
+         det.voice_two_stage_frames) = _find_voice_two_stage(sid, det)
+        if det.voice_two_stage_alt >= 0:
+            alt = sid.data[det.voice_two_stage_alt:
+                           det.voice_two_stage_alt + VOICES]
+            fr = sid.data[det.voice_two_stage_frames:
+                          det.voice_two_stage_frames + VOICES]
+            log("Instrument effect byte..: bit $02 is a two-stage attack with "
+                "per-VOICE parameters -- waveform "
+                + "/".join(f"${b:02X}" for b in alt)
+                + " for " + "/".join(str(b) for b in fr) + " frames")
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
@@ -2615,6 +2633,82 @@ def _find_wave_alternate(sid: SidFile, det: Detection) -> int:
     if not (0 <= off and off + span <= len(data)):
         return -1
     return off
+
+
+# Ninja $CAFD -- bit $02 read a third way, and the first mechanism in this
+# project whose parameters are per *voice*:
+#
+#     CAFD  LDA effect / AND #$02 / BEQ out
+#     CB04  LDA counter,X        ; frames since this voice's note started
+#     CB07  CMP thresh,X         ; ...against a per-voice threshold
+#     CB0A  BCS +                ; past it -> the record's own waveform
+#     CB0C  LDA alt,X            ; ...before it -> a per-voice alternate
+#     CB0F  JMP ++
+#     CB12  + LDA wave,X         ; the voice's current waveform cell
+#     CB15  ++ AND mask,X / STA $D404,Y
+#
+# `alt` and `thresh` are three bytes each and nothing in the file writes
+# either, so they are static player data: `11 81 15` and `04 06 04`. The
+# indexed *compare* is what makes the block unambiguous -- `DD` reads a table
+# rather than an immediate, which is what says the threshold is per voice and
+# not a constant.
+VOICE_TWO_STAGE_SHAPE = ("{load} 29 02 F0 ?? BD ?? ?? DD ?? ?? B0 ?? "
+                         "BD ?? ?? 4C ?? ?? BD ?? ?? 3D ?? ??")
+# The voices are three, so the tables are three bytes. Read as such rather
+# than as `instr_used * instr_stride`: this is the one family here whose
+# effect parameters are not indexed by the instrument.
+VOICES = 3
+
+
+def _find_voice_two_stage(sid: SidFile, det: Detection):
+    """(alt table, threshold table) file offsets for bit $02, or (-1, -1).
+
+    **Per voice, not per instrument.** Every other effect table this module
+    locates is indexed by `i * instr_stride`; these two are indexed by the
+    voice the player is servicing, so one instrument sounds a different attack
+    on each voice it is played on. What that costs the emitter is a map from
+    instrument to voice, which `patterns.instrument_voices` builds from the
+    orderlists -- see `goatwriter._voice_two_stage_entries`.
+
+    **Consulted only where `_find_wave_alternate` found nothing**, the same
+    rule `find_relocation` and `INSTRUMENT_INDEX_SHAPE` follow: both read bit
+    $02 and a file matching both would be ambiguous about which one the bit
+    means. The shapes are in fact disjoint -- the alternation tests the
+    counter's low bit with `AND #$01` where this compares the whole counter
+    against a table -- so the gate has never fired; it is there so that a
+    future dialect matching both is refused rather than silently given this
+    reading.
+
+    The counter's address is checked against an `INC counter,X` somewhere in
+    the file. Without it `BD ?? ?? DD ?? ??` is just two indexed loads, and
+    what makes this a two-stage attack rather than an arbitrary comparison is
+    that the left-hand side counts frames.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return -1, -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, VOICE_TWO_STAGE_SHAPE.format(load=load))
+    if i <= -1:
+        return -1, -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 23 >= len(data):
+        return -1, -1
+    counter = data[p + 5] | data[p + 6] << 8
+    thresh = data[p + 8] | data[p + 9] << 8
+    alt = data[p + 13] | data[p + 14] << 8
+    if search_file(data, "FE %02X %02X" % (counter & 0xFF, counter >> 8)) <= -1:
+        return -1, -1                   # nothing increments it: not a counter
+    alt_off, thresh_off = sid.to_offset(alt), sid.to_offset(thresh)
+    for off in (alt_off, thresh_off):
+        # Parenthesised, for the reason `_find_two_stage` spells out: without
+        # the brackets this rejects only a negative offset that is also in
+        # range, i.e. nothing, and lets a table past EOF through.
+        if not (0 <= off and off + VOICES <= len(data)):
+            return -1, -1
+    return alt_off, thresh_off
 
 
 # The orderlist reader, anchored on the one test every dialect makes: it loads
