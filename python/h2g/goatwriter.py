@@ -2619,6 +2619,29 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         if pair is not None:
             return pair
 
+    # Bit $01's alternating waveform where its table is per voice (Ninja).
+    # Placed after the per-voice two-stage block because the player runs the
+    # two in that order and the later write wins: bit $01's block is at
+    # `$CADD` and bit $02's at `$CAFD`, both storing to `$D404`, so a record
+    # setting both sounds $02's. No corpus record sets both.
+    #
+    # Gated on `effects`, on the record's own bit $01, and on the instrument
+    # having been resolved to a voice -- `_record_voice`, the same rule the
+    # block above uses, because the table is indexed by voice and a
+    # Goattracker wavetable is not.
+    if (effects and (arp_style & 0x01) and voice is not None
+            and det.voice_wave_alternate >= 0):
+        # `alt_first`: the branch runs the opposite way from W_A_R's dialect
+        # (detect.VOICE_WAVE_ALT_SHAPE), so the note's second call sounds the
+        # alternate rather than the record's own. Read off the branch and
+        # measured on voice 1, whose onset frame is `41` and whose next frame
+        # is `81`.
+        pair = _wave_alternate_entries(
+            wave, data[det.voice_wave_alternate + voice], multiplier, start,
+            budget, written=no_test_restart, alt_first=True)
+        if pair is not None:
+            return pair
+
     # Effect bit $10's arpeggio, after the two-stage block because a record
     # setting both ($14 here) gets its waveform from that one -- and because a
     # record with no waveform of its own reaches this and is declined. That is

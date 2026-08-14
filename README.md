@@ -1664,6 +1664,31 @@ with it off no corpus file's bytes move and with it forced on every file exactly
 `Ninja.sid` does, so a sixth `--fidelity` toggle would double a four-hour search
 to settle a one-file question.
 
+#### The same player's bit `$01`: `wave_alternate` with a per-voice table
+
+25 bytes above that block, Ninja reads bit `$01` the way twenty-one other files
+read bit `$02` — the voice's waveform alternates every call between the record's
+own `+2` and a second table — except that the table is indexed by **voice**
+(`$CC60` = `81 81 81`, noise with the gate on) rather than by instrument. Three
+of its records set the bit and the conversion emitted no noise for any of them:
+`FIDELITY.md` read `noise 0/219` for the file.
+
+It rides `--effects` rather than taking a flag of its own, exactly as the
+per-instrument spelling does, and it is gated on the drum block being absent —
+bit `$01` is the percussive drum in Warhawk's dialect, which is the established
+reading of that bit and wins.
+
+**The branch runs the opposite way round from W_A_R's**, so the note's second
+call sounds the alternate here where it sounds the record's own there; that is
+`_wave_alternate_entries(alt_first=True)`, read off the branch and confirmed on
+the trace (onset frame `41`, next frame `81`). Measured at `-t 60`: `noise` 0 →
+387 of the original's 219 and `nrun` "nothing to compare" → **100%**, with
+`melody`, `seq`, `retrig`, `onset`, `adsr`, `hold`, `tail` and the rest unmoved
+and `wave` 58% → 57%. The overshoot is the file's own tempo defect — we play it
+1.33× too fast (`retrig` 1.33) — plus 30 frames on a voice the original does not
+reach inside the window; per unit of music it is 1.22×. See
+H2G-CONVERSION-METHOD.md § 7.ccccc.
+
 ### `--no-test-restart` (the silent frame on every note)
 
 Every instrument this tool has ever written carries `$09` in record byte +8, the

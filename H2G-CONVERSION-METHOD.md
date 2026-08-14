@@ -8886,6 +8886,79 @@ lengths in the same tune. It stays open.
 > instrument. Read `greloc.c` next to `player.s` before trusting a range, and
 > settle it by looking at the packed bytes.
 
+### 7.ccccc The same player's bit `$01`, and 219 noise frames it never sounded
+
+§ 7.aaaaa read Ninja's bit `$02` as a per-voice two-stage attack and built the
+instrument-to-voice map to emit it. The map's second customer was 25 bytes
+above that block, in the same player:
+
+    CADD  LDA effect / AND #$01 / BEQ out
+    CAE4  LDA counter,X / AND #$01 / BEQ own   ; the per-note frame counter
+    CAEB  LDA alt,X                            ; odd  -> a per-voice alternate
+    CAEE  JMP store
+    CAF1  own: LDA wave,X                      ; even -> the voice's own
+    CAF4  store: AND mask,X / LDY voice / STA $D404,Y
+
+    alt  $CC60   81 81 81      noise, gate on
+
+That is `wave_alternate` (§ 7.hhhh) with its table indexed by voice instead of
+by instrument -- and, like the two-stage tables beside it, never written
+anywhere in the file. Three of Ninja's records set the bit, and the conversion
+emitted **no noise at all**: `FIDELITY.md` read `noise 0/219` for the file.
+
+**The branch runs the opposite way round.** W_A_R's `AND #$01 / BEQ` jumps to
+the alternate and falls through to the record's own; this one jumps to the
+record's own and falls through to the alternate. The counter reads 1 on the
+first call that reaches the block -- the note-start path skips it, § 7.aaaaa --
+so the note's *second* call sounds the alternate here and the record's own
+there. Same instruction, opposite output, which is why
+`_wave_alternate_entries` has taken an `alt_first` parameter since the derived
+dialect needed one. Read off the branch and then measured, on the voice that
+sounds it:
+
+    2562  41   <- note onset, written by the note-start path
+    2563  81   <- the alternate, on the note's second call
+    2564  ..   <- the outer gate skips this call; the register holds
+    2565  41   2566  81   2567  41   2568  ..   2569  81
+
+**The gate does not change the duty cycle**, which is worth stating because
+§ 7.aaaaa's other derivation turned entirely on it: over any eight frames the
+original spends four with noise selected, and a wavetable alternating every
+call spends four too. A held frame repeats whichever half preceded it, and the
+two halves alternate, so the hold lands on each equally often. The correction
+that mattered for a *duration* is a no-op for a *ratio*.
+
+Measured, `-t 60`, against the shipped preset:
+
+| | noise | nrun | wave | melody |
+|---|---|---|---|---|
+| before | **0**/219 | `-` | 58% | 85% |
+| after | 387/219 | **100%** | 57% | 85% |
+
+`melody`, `seq`, `pitch`, `retrig`, `slides`, `bend`, `adsr`, `vib`, `hold`,
+`onset`, `tail`, `pul`, `filt` and `cut` are all unmoved. `nrun` going from
+"nothing to compare" to 100% is the load-bearing number: it compares noise
+*run lengths* and is position-independent, so it says the shape is right
+independently of how many of them there are.
+
+**The overshoot is two known things and not a third.** 387 against 219 is
+1.77x, and it decomposes: 30 of our frames are on a voice the original sounds
+no noise on *in this window* -- the third bit-$01 record, which our conversion
+reaches inside 60 s and the original does not -- and the remaining 357 against
+219 is 1.63x on the voice both play, against a tune we play **1.33x too fast**
+(`retrig` 1.33, § 7.xxxx's tempo signature, and Ninja's own `find_song_speeds`
+returning None). Per unit of music that is 1.22x, and no dimension here
+separates the last of it from the note lengths `hold` cannot see on this file.
+The honest summary is that the mechanism is now present and its rate is bounded
+by a tempo defect recorded elsewhere, not that the emission is 77% too eager.
+
+> **The transferable lesson:** two blocks in one player, 25 bytes apart,
+> reading the same counter into the same register -- and the correction that
+> was essential for one of them (the skipped call) cancels exactly for the
+> other. A derivation is about a *quantity*, not about a player: ask whether
+> the thing being measured is a duration or a ratio before carrying a
+> correction across.
+
 
 ---
 
