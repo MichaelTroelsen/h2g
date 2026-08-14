@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.260 — 2026-08-14
+
+- the wave program's terminating step, and the byte the packed player will not write
+
 ## 0.5.259 — 2026-08-14
 
 - regenerate the three artefacts against the four merges

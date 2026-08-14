@@ -647,11 +647,15 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     so the attack is the only waveform it ever has and the instrument was
     silent for all 70 of its notes.
 
-    A record whose `+2` is zero gets the attack waveform with the gate cleared
-    as its second stage. The player writes `$00` there, which is "no waveform
-    selected" and stops the sound outright; a Goattracker wavetable cannot say
-    that -- `$00`-`$0F` are delays, not waveforms -- so the nearest it has is
-    the same waveform released.
+    A record whose `+2` is zero has **no** second stage: the player writes
+    `$00` there, which selects no waveform and stops the sound outright. That
+    used to be emitted as the attack waveform released, on the grounds that a
+    wavetable cannot say `$00` -- `$00`-`$0F` are delays. It can: `$18` is the
+    test bit with a waveform selected, and the test bit holds the oscillator at
+    zero, so it is silent in both players (`_wave_byte`). Trans-Atlantic's
+    `$0AF8` is the one corpus record that reaches this: the original sounds
+    five frames and stops, and the released attack kept sounding for the whole
+    slot -- 11 frames on a twelve-frame note, and 23 on a twenty-four.
 
     `frames` is a per-frame count and the table steps per *call*, so it is
     scaled by `multiplier`; and a delay entry holds for `value + 1` calls, with
@@ -660,7 +664,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     if attack == 0 or frames <= 0:
         return None
     calls = max(1, frames) * max(1, multiplier)
-    second = (wave & 0xFE) or (attack & 0xFE)
+    second = _wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE
     # `attack_note` is effect bit $40: the attack does not play the pattern's
     # note at all, it plays a fixed pitch out of the player's own note table
     # (detect._find_effect_bit40). Without it the attack sounded at whatever the
@@ -839,7 +843,11 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
         notes = notes[turn:] + notes[:turn]
     hold = max(1, multiplier)
     calls = max(1, frames) * hold
-    second = (wave & 0xFE) or (attack & 0xFE)
+    # Same rule as `_two_stage_entries`, and this is the path that reaches the
+    # record it was written for: a `+2` selecting no waveform is silence, not
+    # the attack released. Trans-Atlantic's `$0AF8` carries `$14`, so with
+    # `--pitch-seq` on -- which its preset has -- it comes here.
+    second = _wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE
     tail = second | (wave & 0x01)
     loop = len(notes) * hold
     # The note's first frame is the record's own waveform (`_first_frame_entry`)
@@ -1036,6 +1044,13 @@ WAVE_SILENT_BASE = 0xE0
 # gcommon.h:60. $F0-$FE are Goattracker's wavetable commands and $FF is the
 # jump, so no byte from $F0 up can be a waveform.
 WAVECMD_BASE = 0xF0
+# $D404 bit 3. With it set the oscillator is held in reset and outputs nothing
+# whatever the four select bits say -- which is why `FIRSTWAVE_TESTBIT` ($09)
+# is a silent frame. `$18` is that bit with triangle selected, and it is the
+# **only** way to reach silence from a wavetable in the packed player: see
+# `_wave_byte` for why `$E0` is not.
+WAVE_TEST_BIT = 0x08
+WAVE_SILENT_TESTBIT = 0x18
 
 
 def _wave_byte(wave: int) -> int:
@@ -1060,9 +1075,31 @@ def _wave_byte(wave: int) -> int:
     in reset and the four select bits AND to silence on a real chip, so what
     the player sounds there is nothing. `$E0 | (wave & $0F)` keeps gate, ring,
     sync and test exactly and drops a nibble that produces no output.
+
+    **Except for `$E0` itself, which the packed player never writes.**
+    `gplay.c:527` is the editor; `gt2reloc` re-encodes the range on the way out
+    (`greloc.c:1270-1271`): `$E0`-`$EF` becomes its low nibble, and then `+$10`
+    is added back **only if the song uses a wavetable delay at all**
+    (`nowavedelay`, set from the used rows at `greloc.c:829`). A song without
+    one therefore ships `$E0` as a literal `$00`, and the player it is built
+    with reads a zero byte as *no wave change* (`player.s:944`, the
+    `NOWAVEDELAY != 0` branch) -- so the entry writes nothing and the previous
+    waveform keeps sounding. Every other value in the range survives, because
+    `$01`-`$0F` are stored as themselves.
+    Traced, not reasoned: Skate or Die intro's GT 7 ends its wave program on
+    `slide $00`, its packed table carries that entry as `00`, and its trace
+    holds the `$80` before it for the rest of the note where the original goes
+    silent. Nineteen's `$E1`, in a song that does use delays, comes out as
+    `$11` in the packed file and writes the `$01` it means (§ 7.zzzz).
+    So a waveform of `$00` is emitted as `$18` instead -- triangle with the
+    **test bit**, which the packed player does write and which sounds nothing,
+    because the test bit holds the oscillator at zero. `$F0` takes the same
+    route for the same reason.
     """
     if 0x10 <= wave < WAVECMD_BASE:
         return wave
+    if not wave & 0x0F:
+        return WAVE_SILENT_TESTBIT
     return WAVE_SILENT_BASE | (wave & 0x0F)
 
 
@@ -1176,6 +1213,20 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     left: List[int] = list(lead_l)
     right: List[int] = list(lead_r)
     seed = len(left)
+    # **The two opcode kinds write different cells, and the hold reverts to the
+    # one the `< $80` opcodes own.** IK+ `$E348`: a `>= $80` opcode stores to
+    # `$E5E7,X` -- the cell the per-frame writer copies to `$D404` -- while a
+    # `< $80` opcode stores to `$E58F,X`, the voice's *stored* waveform. On
+    # `$85` the interpreter jumps to `$E44C`, which is
+    # `LDA $E58F,X / AND gate,X / STA $E5E7,X`: the voice goes back to the last
+    # `< $80` opcode's waveform, not to the record's `+2`. Its `$08D8` is the
+    # proof -- program `81 11 40 80 80 80 80 80`, and the original reads
+    # `11 81 11 40 80 80 80 80 80 40 40 40`, three frames of the `$40` that
+    # opcode 2 stored, where we wrote the record's `$11` released.
+    # Seeded with `+2` because that is what the note-start code puts in the
+    # cell, so a program of nothing but `>= $80` opcodes restores what it
+    # always did.
+    persist = data[rec + 2]
     # What one opcode costs: its own entry, plus the hold that makes it last a
     # whole frame above -S1. The guard below has to count both, or a program
     # that fills the table overruns the budget by one entry and takes it from
@@ -1204,6 +1255,7 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         left.append(_wave_byte(wave))
         right.append(WAVE_NOTE_KEEP)
         _hold_wave_program_entry(left, right, wave, multiplier)
+        persist = wave              # a `< $80` opcode owns the stored cell
     # `seed` alone is not a program: a record whose interpreter holds on its
     # first opcode has nothing to say here and falls through to the shapes
     # below, exactly as it did before the seed entry existed.
@@ -1218,7 +1270,13 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # noise when the note ends. Holding it instead let the noise run into the
     # gap: Trans-Atlantic's snare had runs of 30, 54 and 78 frames where the
     # original's are 8.
-    left.append(data[rec + 2] & ~WAVE_GATE_BIT & 0xFF)
+    #
+    # **What is restored is the stored cell, not the record's `+2`** -- see
+    # `persist` above. Where the program's last `< $80` opcode selects no
+    # waveform (Skate or Die intro and Arcade Classics both end on `slide
+    # $00`) that restore is silence, which is what the original sounds for the
+    # rest of the note; `_wave_byte` is what makes it reach the packed player.
+    left.append(_wave_byte(persist & ~WAVE_GATE_BIT & 0xFF))
     right.append(WAVE_NOTE_KEEP)
     left.append(0xFF)
     right.append(0x00)
