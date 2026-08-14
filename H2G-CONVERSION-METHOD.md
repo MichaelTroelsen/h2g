@@ -8331,6 +8331,69 @@ defect, and following that back reached the orderlist.
 > are even looked at.
 
 
+### 7.wwww The census's remainder, partitioned
+
+v0.5.251. After the `$01`, `$04` and `$80` groups closed, thirteen `flat`
+instruments were left with no attribution. Grouped by *cause* rather than by
+effect byte, they are four different situations and only one is a new
+mechanism.
+
+**Three are already decoded and deliberately unemitted.** Chicken Song `$0900`
+and Hollywood or Bust `$0800` and `$0A00` all read `tri noi tri noi` against
+our `tri tri tri tri`, and all three files report `wave_alternate_noise` — bit
+`$02`'s *derived* dialect of § 7.iiii, which gains Chicken Song and costs
+Hollywood or Bust eleven points of melody. Nothing new here; the census is
+re-reporting a decision.
+
+**Four are an option detected and not selected.** IK+ `$0A56` (`+7 $14`) has
+`effect_two_stage` and no `--two-stage` in its preset — forcing it raises
+`onset` and costs 13 points of melody, which `keeps_notes` refuses. Wiz's two
+`$01` instruments are its wave-program gate, declined on the same grounds
+(§ 7.nnnn). These are the search disagreeing with the census, which is the
+search's prerogative.
+
+**One is a detection gap in a file that has the routine elsewhere.** Mega
+Apocalypse `$0848` carries `+7 $44` — bit `$04`, the two-stage attack — and
+`effect_two_stage` is False for that file.
+
+**Three are one new mechanism, in one player.** Ninja has no effect routine
+detected at all, and its `$CAFD`:
+
+    CAFD  LDA effect / AND #$02 / BEQ out
+    CB04  LDA $CC5A,X          ; per-voice frame counter
+    CB07  CMP $CC66,X          ; ...against a per-voice threshold
+    CB0A  BCS +                ; past it -> the record's own waveform
+    CB0C  LDA $CC63,X          ; ...before it -> an alternate
+    CB12  + LDA $CC2B,X
+    CB15  AND $CC5D,X / STA $D404,Y
+
+Neither table is ever written — they are static player data, three bytes each,
+one per voice:
+
+    alt    $CC63   11 81 15      triangle, noise, triangle+pulse
+    thresh $CC66   04 06 04      frames
+    mask   $CC5D   FE FE FE      the gate cleared
+
+So bit `$02` here is **a two-stage attack whose parameters are per *voice*, not
+per instrument**: for the first `thresh[voice]` frames the voice sounds
+`alt[voice]` with the gate off, then the record's own. It matches the trace
+exactly — `$083A` plays on voice 0, `alt[0]` is `$11`, and the original reads
+`pul tri tri tri` with the triangle lasting four frames.
+
+**Emitting it needs something this converter does not have.** A wavetable is
+per instrument and these parameters are per voice, so the entries can only be
+written for an instrument that plays on exactly one voice — the argument
+§ 7.pppp made for the bit-`$80` drum, where the routine hard-codes voice 3 and
+the check was one query. Here it needs a general instrument-to-voice map built
+from the patterns, and no such map exists. One file, three instruments, and a
+new capability: recorded rather than built.
+
+> **The transferable lesson:** "unattributed" is not a work item, it is an
+> unsorted pile. Sorting thirteen of them by cause left exactly one that needed
+> a disassembler, and told the difference between a mechanism nobody has read,
+> a mechanism read and declined, and a search doing its job.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
