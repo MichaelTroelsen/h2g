@@ -294,6 +294,23 @@ is. Knucklebusters' middle voice is exactly that case — 261 bytes packing to
 
 ### `--legal-restart` (packing back to `.sid`)
 
+**Except in one player.** Rasputin reads `$FE nn` as a two-byte command that
+*continues* the list — its operand reloads the counter above the speed gate,
+so it scales the row rate from that step on — and `$FD` as the end of a
+voice's list. That is read from each player's own orderlist reader rather than
+from the file's version number: applying it to the whole of version 0 rewrote
+23 files and broke the byte-exact fixture. Three corpus files test `$FD`
+(Knucklebusters, Rasputin, Tarzan) and only Rasputin has the two-byte `$FE`.
+
+The tempo change is emitted as a `CMD_SETTEMPO` in the pattern played at that
+step — Goattracker's orderlist has no tempo command — into a *copy* of that
+pattern, since the same pattern is played at other tempos elsewhere. Rasputin
+gains `melody` 71% → 75%, `retrig` 1.81 → 1.66 and `wave` 43% → 46%, with no
+dimension worse and no other file's bytes moved. See
+H2G-CONVERSION-METHOD.md § 7.ddddd, which also records why the operand is
+*not* the row length: read that way its `$FE 78` would be 121 frames a row
+against its neighbours' 3.
+
 Hubbard's `$FE` track byte means *this tune has ended*. Every dialect
 implements it the same way — it calls the player's jump-table entry +3, which
 is `LDA #$C0` / `STA flag` / `RTS`, and the `BIT flag` / `BMI` at the top of

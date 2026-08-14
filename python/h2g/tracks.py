@@ -43,13 +43,21 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                  transpose_operand: bool = False,
                  transposes: Optional[Dict[int, int]] = None,
                  fd_ends: bool = False,
-                 fe_command: bool = False) -> List[int]:
+                 fe_command: bool = False,
+                 tempos: Optional[Dict[int, int]] = None) -> List[int]:
     """One voice's orderlist. `transposes` records what was clamped away.
 
     The emitted byte cannot say whether it is a real +14 or a clamped +48, so
     a caller that wants to undo the clamp (fold_transposes) needs the value
     the player actually stores. Keyed by position in the returned list, and
     filled only by the dialects that have a transpose command at all.
+
+    `tempos` is the same shape for the other command this reader can drop:
+    `$FE nn`'s operand, keyed by the orderlist position it takes effect at --
+    which is the position of the *next* entry, since the command itself
+    occupies no step. Goattracker's orderlist has no tempo command, so
+    expressing it means a `CMD_SETTEMPO` in the pattern played there; see
+    `patterns.reindex_tracks`.
     """
     track: List[int] = []
     i2 = 0
@@ -249,7 +257,12 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             # broke the byte-exact fixture; these two flags are read from each
             # player's own reader (`detect._find_track_terminators`).
             if b1 == 0xFE and fe_command:
-                i2 += 1                     # the operand: a tempo, not a note
+                # The operand is a tempo, not a pattern. It reloads the gate
+                # at `$C539`/`$C53A` -- so a row lasts `nn + 1` frames from
+                # here on, and the list continues at the next byte.
+                if tempos is not None and addr + i2 < len(data):
+                    tempos[len(track)] = data[addr + i2]
+                i2 += 1
                 continue
             if b1 == 0xFE:
                 track += [0xFF, 0xFD]  # tune ended; see legalise_restarts
@@ -295,7 +308,8 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
 
 
 def convert_tracks(sid: SidFile, det: Detection, log,
-                   transposes: Optional[List[Dict[int, int]]] = None
+                   transposes: Optional[List[Dict[int, int]]] = None,
+                   tempos: Optional[List[Dict[int, int]]] = None
                    ) -> List[List[int]]:
     """Every subtune's three orderlists, in voice order.
 
@@ -304,6 +318,9 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     for fold_transposes. Filled here rather than re-derived later because the
     passes that follow (reindexing, packing, merging, splitting) all move
     orderlist positions around.
+
+    `tempos` receives one {position: gate reload} map per track on the same
+    terms, for the one dialect whose orderlist carries a tempo command.
     """
     data = sid.data
     tracks: List[List[int]] = []
@@ -333,6 +350,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     n_voices = min(3, det.track_voices)
     built: List[List[List[int]]] = []   # per subtune, per voice
     tmaps: List[List[Dict[int, int]]] = []
+    smaps: List[List[Dict[int, int]]] = []
     addr_ok: List[List[bool]] = []
     subtunes = sid.subtunes
     if det.subtunes_available:
@@ -343,19 +361,24 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     for i in range(subtunes):
         voices: List[List[int]] = []
         maps: List[Dict[int, int]] = []
+        speeds: List[Dict[int, int]] = []
         flags: List[bool] = []
         for voice in range(3):
             addr = None if voice >= det.track_voices else _voice_addr(sid, det, i, voice)
             flags.append(addr is not None)
             tmap: Dict[int, int] = {}
             maps.append(tmap)
+            smap: Dict[int, int] = {}
+            speeds.append(smap)
             voices.append(list(DEFAULT_TRACK) if addr is None else
                           _build_track(data, addr, det.read_track_version, None,
                                        det.transpose_operand, tmap,
                                        fd_ends=det.track_fd_ends,
-                                       fe_command=det.track_fe_command))
+                                       fe_command=det.track_fe_command,
+                                       tempos=smap))
         built.append(voices)
         tmaps.append(maps)
+        smaps.append(speeds)
         addr_ok.append(flags)
 
     usable = [all(flags[:n_voices]) for flags in addr_ok]
@@ -380,6 +403,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
             log(f"*** SUBTUNE ${i:X} PLAYS NO EXISTING PATTERN, DROPPED ***")
             built[i] = [list(DEFAULT_TRACK) for _ in range(3)]
             tmaps[i] = [{} for _ in range(3)]
+            smaps[i] = [{} for _ in range(3)]
 
     keep = max((i + 1 for i, ok in enumerate(playable) if ok), default=0)
     if keep < subtunes:
@@ -393,6 +417,8 @@ def convert_tracks(sid: SidFile, det: Detection, log,
             tracks.append(built[i][voice])
             if transposes is not None:
                 transposes.append(tmaps[i][voice])
+            if tempos is not None:
+                tempos.append(smaps[i][voice])
 
     # No fabricated placeholder subtune when nothing survived. Returning one
     # kept the .sng structurally valid, but it also referenced pattern 0, which

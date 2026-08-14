@@ -5,7 +5,8 @@ from typing import Callable, List
 
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
-                         build_sng, derived_group_tempos, outer_gate_skip)
+                         build_sng, derived_group_tempos, orderlist_tempo_values,
+                         outer_gate_skip)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -250,7 +251,13 @@ def convert(sid_path: str, log: Logger = print,
     log("----------------------------------------------------CONVERTING---")
 
     raw_transposes: List[dict] | None = [] if fold_transpose else None
-    tracks = convert_tracks(sid, det, log, raw_transposes)
+    # Unconditional, like the terminators they come from: `$FE nn` is a tempo
+    # change the player really makes, and dropping it plays the rest of the
+    # tune at the tempo its init happened to set. Only one corpus player has
+    # the command at all (detect._find_track_terminators), so this is empty
+    # for every other file and the pass below never runs.
+    raw_tempos: List[dict] = []
+    tracks = convert_tracks(sid, det, log, raw_transposes, raw_tempos)
     # These three all read orderlists that are still in Hubbard numbering, so
     # they need the dialect's command boundary rather than Goattracker's.
     floor = command_floor(det.read_track_version)
@@ -301,8 +308,18 @@ def convert(sid_path: str, log: Logger = print,
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
+    # Resolved before reindexing because that is where the substitution has to
+    # happen -- see patterns._apply_orderlist_tempos for why it cannot wait
+    # until after packing.
+    step_tempos = (orderlist_tempo_values(sid, det, raw_tempos, tempo, skip_gate)
+                   if any(raw_tempos) else None)
     tracks = reindex_tracks(tracks, track_index, pack, floor, log,
-                            patterns=new_patterns, max_rows=max_rows)
+                            patterns=new_patterns, max_rows=max_rows,
+                            tempos=step_tempos)
+    if step_tempos:
+        n = sum(len(m) for m in step_tempos)
+        log(f"Orderlist tempo.........: {n} mid-song tempo change(s) from the "
+            "track dialect's $FE nn")
     # Unconditional, and before the restart pass: a voice whose orderlist
     # holds nothing but an end marker makes greloc.c skip its whole subtune,
     # and every subtune past the resulting count is never written to the
@@ -361,6 +378,26 @@ def convert(sid_path: str, log: Logger = print,
         values, mult, note = derived_group_tempos(sid, det, groups,
                                                   skip_gate)
         multiplier = mult
+        # A tempo command at orderlist position 0 *is* that subtune's opening
+        # tempo -- the player's init loads the counter from its own table and
+        # the voice's first step overwrites it before a row is played. Both
+        # writes would otherwise land on row 0 of the song, one from
+        # apply_tempo on voice 0's pattern and one from the orderlist pass on
+        # voice 2's, and which won would come down to the order gplay services
+        # the channels in. Agreeing the two is not a tie-break, it is the
+        # reading: Rasputin's subtune 0 opens `$FE 02`, which is 3 frames a
+        # row against the table's 2.
+        # Only where the numbering still lines up: `step_tempos` is parallel
+        # to the tracks as `convert_tracks` emitted them, and a split has
+        # inserted groups since.
+        if step_tempos and groups == subtunes_before:
+            for k in range(groups):
+                for v in range(3):
+                    if 3 * k + v >= len(step_tempos):
+                        continue
+                    opening = step_tempos[3 * k + v].get(0)
+                    if opening is not None:
+                        values[k] = opening
         if groups != subtunes_before:
             # A split subtune shifted the numbering, so per-subtune
             # attribution is unsafe; every group gets subtune 0's timebase.
