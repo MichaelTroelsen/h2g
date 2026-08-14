@@ -131,6 +131,12 @@ class Detection:
     # _find_voice_two_stage().
     voice_two_stage_alt: int = -1
     voice_two_stage_frames: int = -1
+    # Bit $01 in the same player, and the per-voice spelling of
+    # `wave_alternate`: the voice's waveform alternates every call between the
+    # record's own +2 and a three-byte table indexed by voice rather than by
+    # instrument. File offset of that table, or -1 -- see
+    # _find_voice_wave_alternate().
+    voice_wave_alternate: int = -1
     # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
     # together or neither is. `pulse_bounds` is the file offset of an array
     # indexed by the same i * instr_stride the records are, holding the two
@@ -1018,6 +1024,17 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                 "per-VOICE parameters -- waveform "
                 + "/".join(f"${b:02X}" for b in alt)
                 + " for " + "/".join(str(b) for b in fr) + " frames")
+
+    # Bit $01's per-voice alternation. Outside the `else` above because it is
+    # a different bit: a file can carry the bit-$02 reading and this one, and
+    # Ninja carries both.
+    det.voice_wave_alternate = _find_voice_wave_alternate(sid, det)
+    if det.voice_wave_alternate >= 0:
+        alt = sid.data[det.voice_wave_alternate:
+                       det.voice_wave_alternate + VOICES]
+        log("Instrument effect byte..: bit $01 alternates the waveform every "
+            "call with a per-VOICE table -- "
+            + "/".join(f"${b:02X}" for b in alt) + " (not the drum)")
 
     det.effect_bit80, det.effect_program = _find_effect_bit80(sid, det)
     if det.effect_bit80 == "sfx":
@@ -2720,6 +2737,70 @@ def _find_voice_two_stage(sid: SidFile, det: Detection):
         if not (0 <= off and off + VOICES <= len(data)):
             return -1, -1
     return alt_off, thresh_off
+
+
+# Ninja $CADD, 25 bytes above the block above and the same idea in the other
+# axis: this is `wave_alternate` with a per-*voice* table.
+#
+#     CADD  LDA effect / AND #$01 / BEQ out
+#     CAE4  LDA counter,X / AND #$01 / BEQ own   ; the per-note frame counter
+#     CAEB  LDA alt,X                            ; odd  -> a per-voice alternate
+#     CAEE  JMP store
+#     CAF1  own: LDA wave,X                      ; even -> the voice's own
+#     CAF4  store: AND mask,X / LDY voice / STA $D404,Y
+#
+#     alt  $CC60   81 81 81      noise, gate on
+#
+# **The branch runs the other way round from W_A_R's.** There `AND #$01 / BEQ`
+# jumps to the alternate and falls through to the record's own; here it jumps
+# to the record's own and falls through to the alternate. The counter reads 1
+# on the first call that reaches the block (the note-start path skips it), so
+# the note's second call sounds the *alternate* -- which is what
+# `_wave_alternate_entries(alt_first=True)` encodes, and what Ninja's voice 1
+# measures: `41` on the onset frame and `81` on the next.
+VOICE_WAVE_ALT_SHAPE = ("{load} 29 01 F0 ?? BD ?? ?? 29 01 F0 ?? "
+                        "BD ?? ?? 4C ?? ?? BD ?? ?? 3D ?? ??")
+
+
+def _find_voice_wave_alternate(sid: SidFile, det: Detection) -> int:
+    """File offset of bit $01's per-voice alternate table, or -1.
+
+    The sibling of `_find_voice_two_stage`, and read on the same terms: two
+    indexed loads off a per-note frame counter that something in the file
+    increments, with the table three bytes long because the voices are three.
+
+    **Consulted only where the drum block is absent.** Bit $01 is the
+    percussive drum in Warhawk's dialect (`det.effect_drum`), which is a
+    decoded, emitted and measured reading of the same bit; a file matching
+    both would be ambiguous and the established one wins. No corpus file
+    matches both -- the shapes are disjoint, this one testing the counter's
+    low bit where the drum block tests nothing -- so the gate has never
+    fired. It is there so a future dialect is refused rather than silently
+    given this reading, the rule `_find_voice_two_stage` follows against
+    `wave_alternate`.
+    """
+    if det.effect_drum:
+        return -1
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, VOICE_WAVE_ALT_SHAPE.format(load=load))
+    if i <= -1:
+        return -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 22 >= len(data):
+        return -1
+    counter = data[p + 5] | data[p + 6] << 8
+    alt = data[p + 12] | data[p + 13] << 8
+    if search_file(data, "FE %02X %02X" % (counter & 0xFF, counter >> 8)) <= -1:
+        return -1                       # nothing increments it: not a counter
+    off = sid.to_offset(alt)
+    if not (0 <= off and off + VOICES <= len(data)):
+        return -1
+    return off
 
 
 # The orderlist reader, anchored on the one test every dialect makes: it loads

@@ -16,6 +16,13 @@ turn the player's threshold into a number of our play calls -- the `- 1` for
 the call the note-start path never lets reach the effect block, and the
 `(O + 1) / O` for the calls the player's outer counter skips and ours does
 not.
+
+The same player reads bit `$01` the same way -- `wave_alternate` with a
+per-voice table instead of a per-instrument one -- and the tests for that sit
+below, because it shares the map and the one file. What it does *not* share is
+the branch direction: W_A_R's `AND #$01 / BEQ` jumps to the alternate, Ninja's
+jumps to the record's own, so the note's second call sounds opposite things in
+the two dialects.
 """
 import pathlib
 import sys
@@ -25,9 +32,11 @@ from corpus import CORPUS, needs_corpus  # noqa: E402
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from h2g.convert import _detect_tables, convert  # noqa: E402
-from h2g.detect import VOICES, _find_voice_two_stage, detect  # noqa: E402
+from h2g.detect import (VOICES, _find_voice_two_stage,  # noqa: E402
+                        _find_voice_wave_alternate, detect)
 from h2g.goatwriter import (_gate_calls, _record_voice,  # noqa: E402
-                            _voice_two_stage_entries, outer_gate_skip)
+                            _voice_two_stage_entries, _wave_alternate_entries,
+                            outer_gate_skip)
 from h2g.sidfile import load_sid  # noqa: E402
 from h2g.tracks import instrument_voices  # noqa: E402
 
@@ -204,3 +213,72 @@ def test_the_option_needs_effects_like_every_other_reading_of_plus_7():
     src = str(CORPUS / "Ninja.sid")
     assert (convert(src, log=lambda *a, **k: None)
             == convert(src, log=lambda *a, **k: None, voice_two_stage=True))
+
+
+# --- bit $01, the same table shape in the other block ----------------------
+
+@needs_corpus
+def test_ninja_carries_the_per_voice_alternation():
+    sid, det = _det("Ninja")
+    assert det.voice_wave_alternate > 0
+    alt = sid.data[det.voice_wave_alternate:det.voice_wave_alternate + VOICES]
+    assert bytes(alt) == bytes([0x81, 0x81, 0x81])      # $CC60, noise, gate on
+
+
+@needs_corpus
+def test_the_alternation_table_is_never_written_either():
+    sid, det = _det("Ninja")
+    off = det.voice_wave_alternate
+    addr = off - sid.to_offset(sid.load_addr) + sid.load_addr
+    for store in (0x9D, 0x8D):
+        assert bytes([store, addr & 0xFF, addr >> 8]) not in sid.data
+
+
+@needs_corpus
+def test_only_ninja_has_the_per_voice_alternation():
+    found = [p.name for p in sorted(CORPUS.glob("*.sid"))
+             if _detect_tables(load_sid(str(p)),
+                               lambda *a, **k: None)[1].voice_wave_alternate >= 0]
+    assert found == ["Ninja.sid"]
+
+
+@needs_corpus
+def test_a_drum_player_is_refused_rather_than_read_this_way():
+    """Bit $01 is the percussive drum in the other dialect, and that wins."""
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        sid, det = _detect_tables(sid, lambda *a, **k: None)
+        if det.effect_drum:
+            assert det.voice_wave_alternate < 0, path.name
+            assert _find_voice_wave_alternate(sid, det) == -1, path.name
+
+
+def test_the_note_s_second_call_sounds_the_alternate():
+    """`alt_first`, which is the whole difference from W_A_R's dialect.
+
+    Measured on Ninja's voice 1: the onset frame writes `41` from the
+    note-start path and the next frame writes `81`.
+    """
+    left, right = _wave_alternate_entries(0x41, 0x81, 1, start=10,
+                                          written=True, alt_first=True)
+    assert left[0] == 0x81
+    assert left[1] == 0x41
+    assert left[2] == 0xFF and right[2] == 10   # loops to the pair, not the lead
+
+
+@needs_corpus
+def test_ninja_s_three_bit_01_records_all_resolve_to_one_voice():
+    """A per-voice table is unusable for an instrument that has no one voice."""
+    sid, det = _det("Ninja")
+    data = sid.data
+    flagged = [i for i in range(det.instr_used)
+               if data[det.instr_start + i * det.instr_stride + 7] & 0x01]
+    assert flagged == [1, 5, 12]
+    src = str(CORPUS / "Ninja.sid")
+    import songview
+    from h2g.tracks import instrument_voices
+    song = songview.parse_sng(convert(src, log=lambda *a, **k: None,
+                                      effects=True, compact_instruments=True))
+    voices = instrument_voices(song.tracks, song.patterns)
+    for i in flagged:
+        assert _record_voice(voices, i + 1) is not None
