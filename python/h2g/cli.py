@@ -299,7 +299,7 @@ def main(argv=None) -> int:
     parser.add_argument(
         "--two-stage", action="store_true",
         help="write the attack waveform this player's effect bit $04 selects. "
-             "In 34 corpus files bit $04 is not an arpeggio but a second "
+             "In 44 corpus files bit $04 is not an arpeggio but a second "
              "waveform held for a per-instrument number of frames before the "
              "record's own +2 (detect._find_two_stage). Detection has read it "
              "since v0.5.66 and the writer ignored it, so those files played "

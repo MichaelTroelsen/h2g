@@ -2533,7 +2533,9 @@ def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
 # single bits, and **no file does both**. In that second family +7 is eight
 # flags, and bit $04 is not an arpeggio at all.
 #
-# IK+ $E38B, which 34 files share byte-for-byte in shape:
+# IK+ $E38B, which 43 files share byte-for-byte in shape -- a 44th, Mega
+# Apocalypse, spells the same block with its per-voice cells in zero page
+# (TWO_STAGE_SHAPE_ZP below):
 #
 #     E38B  29 04     AND #$04
 #     E38D  F0 14     BEQ out
@@ -2561,8 +2563,8 @@ def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
 #     ...
 #     E18A  68 / 9D FC E7                PLA / STA counter,X
 #
-# Corpus-wide that push chain names exactly `attack + 2` in **34 files out of
-# 34**. Requiring both is what makes this a reading rather than an inference:
+# Corpus-wide that push chain names exactly `attack + 2` in **44 files out of
+# 44**. Requiring both is what makes this a reading rather than an inference:
 # a player that matches the block but keeps its duration elsewhere is skipped
 # instead of being given a made-up one.
 TWO_STAGE_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
@@ -2825,11 +2827,19 @@ def _bound_instruments(det: Detection, log: Logger):
     Challenge, W.A.R.) do not, and keep the count they had.
 
     Checked against what the music asks for rather than against the
-    arithmetic: over the 34 corpus files with this array, the bound never
-    falls below the highest instrument any pattern references, and in four
-    (Dragon's Lair II, Kings of the Beach ingame, Lightforce, Nemesis) it is
-    exactly that instrument. An accidental boundary does not land on the last
-    instrument a tune plays, four times.
+    arithmetic. The bound adds no dangling reference that was not already
+    there -- five files reference instruments they never contained at any
+    count, from unreachable patterns full of bytes that were never note data,
+    and the bound moves how many are unmet rather than which byte is at the
+    top (`test_the_bound_adds_no_dangling_reference`). And over the 35
+    stride-8 files carrying the array, 32 of which convert, in **five** the
+    bound is exactly the highest record any pattern names: Auf Wiedersehen
+    Monty, Kings of the Beach ingame, Lightforce, Nemesis the Warlock and
+    Saboteur II. An accidental boundary does not land on the last instrument
+    a tune plays, five times. (The note here used to claim the bound never
+    falls below any reference, and to name Dragon's Lair II among the exact
+    landings; the first overstated what the test pins, and the second no
+    longer converts at all.)
 
     Mega Apocalypse, which v0.5.253's zero-page spelling adds to that
     population, was checked the same way before it was let in: 43 records

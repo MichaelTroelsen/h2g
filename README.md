@@ -1511,14 +1511,14 @@ its sweep is checked against the budget.
 
 ### `--two-stage` (the attack waveform, and the drums that were missing)
 
-In **43 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
+In **44 corpus files** the instrument effect byte's bit `$04` is not an arpeggio
 but a *second waveform*: an attack waveform held for a per-instrument number of
 frames, then the record's own `+2` (IK+ `$E38B`). `detect._find_two_stage` has
 read it since v0.5.66 and the writer ignored it, so all 34 played the second
 stage from frame one — and a record whose `+2` is `$00` was **silent
 altogether**, the attack being the only waveform it ever has.
 
-**Nine of those 43 arrived in v0.5.236, from one line.**
+**Nine of those 44 arrived in v0.5.236, from one line.**
 `detect._effect_byte_address` probed `instr_stride == 8`, which switched off
 every routine that reads `+7` for the nine corpus files whose records are 16
 bytes — the two-stage attack among them. The probe computes record 0's `+7` and
@@ -2350,7 +2350,7 @@ by the source record's effect byte.
 |---|---|---|
 | `match` | the four opening frames agree | — |
 | `phase` | the original's sequence, one frame out | move the emitter, not its waveforms (§ 7.www) |
-| `short` | our note stops selecting a waveform inside the window | a note-*length* difference, which no column here measures |
+| `short` | our note stops selecting a waveform inside the window | a note-*length* difference — `hold` measures it and `--hold-census` classifies it |
 | `flat` | we hold one waveform where the original moves | a mechanism we do not render — read the player |
 | `invented` | we move where the original holds | emitter quality |
 | `partial` / `wrong` | some or no frames agree | emitter quality |
@@ -2367,6 +2367,45 @@ detection pass is involved.
 The document goes to the path given and nothing else about the run changes; it
 is written beside `-o`/`--json` rather than inside the report, because a report
 says how the corpus scores and this says which file to open next.
+
+### The hold census — `--hold-census`
+
+```sh
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json --hold-census ../build/HOLDCENSUS.md
+```
+
+The same idea for the `hold` column: the same two traces and the same modal
+reduction, so its `match` count *is* the column's numerator, with each
+instrument classified by **why** its modal note length differs.
+
+The distinction the column itself cannot draw is whether the note is shorter or
+its *slot* is. `sound_runs` measures the frames a note keeps a waveform selected
+within its own slot, so a note that fills the room it is given is not a
+note-length defect at all — what differs is when the next note arrives, which is
+a timing question.
+
+| kind | what it means | what to do |
+|---|---|---|
+| `match` | the same number of frames | — |
+| `fetch` | one frame short, equal slot | Goattracker's next-note fetch; `--no-test-restart` removes it |
+| `slot` | the length difference *is* the slot's | a timing question — read `--pace` and `retrig` |
+| `thin` | fewer than four notes a side | a mode over one note is that note |
+| `sparse` | one side plays twice the notes | two modes over different music |
+| `gap` | equal total frames, one side holed | the reduction stops at the first hole, not a real difference |
+| `short` / `long` | equal slot, equal population, wrong length | the residue that is actually about note length |
+
+Corpus at v0.5.259, 433 instruments across 81 files: `fetch` 211, `slot` 117,
+`match` 92, and a residue of nine — `short` 3 and `long` 6. Five of those nine
+are one mechanism, a terminating `$00`/`$08` wavetable step the emitters do not
+write. See H2G-CONVERSION-METHOD.md § 7.xxxx.
+
+**`fetch` is invisible above `-S3`**, and the report says so in its own
+per-rate table: the deficit is a fixed number of play *calls*, and siddump
+samples once a frame, so a low count up there is the trace's resolution rather
+than the converter's. The same blindness `hold` itself carries.
+
+The document goes to the path given and nothing else about the run changes, as
+with `--census`.
 
 ### A/B against a previous run
 

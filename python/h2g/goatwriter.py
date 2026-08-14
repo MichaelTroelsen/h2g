@@ -635,7 +635,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
                        written: bool = False) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
-    The dialect `detect._find_two_stage` reads, in 34 corpus files: effect bit
+    The dialect `detect._find_two_stage` reads, in 44 corpus files: effect bit
     $04 is not an arpeggio but an *attack waveform*, held for a per-instrument
     number of frames and then dropped to the record's own +2. Detection has
     located both arrays since it was written and nothing consumed them, so

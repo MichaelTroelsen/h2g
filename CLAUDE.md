@@ -109,8 +109,9 @@ test dependency).
 - **Do not treat `FIDELITY.md` as the last word on fidelity.** It compares note
   *attacks* and, since v0.5.78, every SID register beside them — waveform
   class, noise frames, the envelope pair, duty-cycle movement, filtered
-  frames, cutoff travel and (v0.5.83) pitch travel. It still cannot see tempo,
-  note length or the volume nibble, and none of the register columns is a
+  frames, cutoff travel and (v0.5.83) pitch travel. It still cannot see tempo
+  or the volume nibble — note *length* it does see, since v0.5.196's `hold`,
+  though only below `-S4` — and none of the register columns is a
   listening test: `pul`
   counts movement without judging the sweep, `adsr` scores a register value
   and not when it arrives. **Prefer a travel measure to a count whenever the

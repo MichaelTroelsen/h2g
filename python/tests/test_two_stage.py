@@ -261,7 +261,7 @@ def test_every_detected_file_resolves_inside_the_data():
         span = max(det.instr_used, 0) * det.instr_stride
         assert 0 <= det.two_stage_wave
         assert det.two_stage_frames + span <= len(sid.data)
-    # 34 files at the time of writing; assert the family, not the digit.
+    # 44 files at the time of writing; assert the family, not the digit.
     assert n >= 30, n
 
 
@@ -328,7 +328,7 @@ def test_the_block_is_the_same_shape_and_its_bytes_are_in_the_record():
 
 @needs_corpus
 def test_the_instrument_bound_is_not_taken_in_this_dialect():
-    """`_bound_instruments` is a measurement over the 34 stride-8 files. The
+    """`_bound_instruments` is a measurement over the 35 stride-8 files. The
     one stride-16 file whose two-stage offset happens to be a multiple of its
     stride is Powerplay Hockey, and taking the bound there cuts 12 records to
     6 -- below the instrument 8 its own patterns name -- for melody 72% -> 66%

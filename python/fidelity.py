@@ -1128,7 +1128,8 @@ def release_tail_agreement(orig: list[Voice], ours: list[Voice],
 # How many frames of a note's opening the `onset` dimension compares. Short on
 # purpose: the defect it exists for is a one-frame shift at the attack, and a
 # longer window starts charging for note *length*, which is a different thing
-# and one no column here can see (CLAUDE.md).
+# and one this window is the wrong instrument for -- `hold` is the column that
+# measures it.
 ONSET_FRAMES = 4
 
 
@@ -1212,7 +1213,7 @@ def onset_shift(orig: tuple, ours: tuple) -> str | None:
     *ends* inside the window -- `noi noi noi --` against `noi noi noi noi` --
     read as a one-frame phase error, and three of the corpus's six did. That is
     a note-length difference, which is a different defect in a different place
-    and one no column here measures; `classify_onset` calls it `short`. The
+    and the one `hold` measures; `classify_onset` calls it `short`. The
     inequality is what distinguishes evidence of a shift from a shift that
     explains nothing.
     """
@@ -1306,8 +1307,11 @@ def classify_onset(orig: tuple, ours: tuple) -> str:
       the test, shared with the report's own `onset_ours_early`/`_late` so that
       the two readings of one corpus cannot drift apart.
     * `short` -- our note stops selecting a waveform inside the window while
-      the original still does. A note-*length* difference, which no column here
-      measures, and not the missing-mechanism defect the others are.
+      the original still does. A note-*length* difference, not the
+      missing-mechanism defect the others are. It was the one thing no column
+      measured when this kind was written (v0.5.234); `sound_runs` and the
+      `hold` column are that observation as a measurement (v0.5.196), and
+      `--hold-census` classifies the same population by cause.
     * `invented`, `partial`, `wrong` -- we move where the original holds, or we
       move differently. Emitter quality rather than a missing mechanism.
 

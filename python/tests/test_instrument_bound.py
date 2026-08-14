@@ -2,8 +2,10 @@
 
 `detect()` counts instruments by walking the records in `instr_stride` steps
 and stopping at the first +2 byte that is not a waveform. Nothing in that walk
-knows where the records stop. In the 34 corpus files that carry the two-stage
-attack array (see test_two_stage.py) a second table of the same 8-byte rows
+knows where the records stop. In the 35 stride-8 corpus files that carry the
+two-stage attack array (see test_two_stage.py; 44 files carry the block, but
+in nine the two bytes live inside a 16-byte record and there is no trailing
+array at all) a second table of the same 8-byte rows
 begins immediately after the records, and its own +2 -- the low byte of a
 frame count -- is a legal waveform often enough to carry the walk straight
 through it. The result was roughly twice the truth: IK+ 30 records where 15
@@ -80,7 +82,7 @@ def test_the_bound_is_a_whole_number_of_records_or_is_not_applied():
         checked += 1
         span = (det.two_stage_wave - 1) - det.instr_start
         # **Stride 8 only** (v0.5.236). The rule this pins was measured over the
-        # 34 stride-8 files; the two-stage block is now detected in the 16-byte
+        # stride-8 files (34 then, 35 since v0.5.255's zero-page spelling); the two-stage block is now detected in the 16-byte
         # dialect too, where the attack and duration live *inside* the record at
         # +9 and +11 and there is no trailing array to end the table at. Eight
         # of those nine fail the multiple-of-stride test anyway; the ninth,

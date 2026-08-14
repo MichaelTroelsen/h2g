@@ -340,8 +340,9 @@ terminator, but cannot be — because Bangkok Knights and Thundercats share 29
 byte-identical 8-byte records, so the table must be a shared Hubbard bank
 appended to the player, of which any tune uses a subset.
 
-The recurrence is real. It is not evidence for the count. In the 34 files that
-carry the two-stage attack array (§7), a second table of the same 8-byte rows
+The recurrence is real. It is not evidence for the count. In the 35 stride-8
+files that carry the two-stage attack array (§7), a second table of the same
+8-byte rows
 begins immediately after the records, and the walk goes straight through it:
 its own `+2` is the low byte of a frame counter, which is a legal waveform
 often enough to keep going. So the count came out at roughly twice the truth —
@@ -1303,7 +1304,8 @@ exactly:
 Zero overlap is the finding. These are two formats, not one format read two
 ways, and they are told apart by the player's own code rather than by the
 dialect number. In the second one bit `$04` is not an arpeggio at all. IK+
-`$E38B`, a shape 34 files share:
+`$E38B`, a shape 43 files share -- and a 44th, Mega Apocalypse, spells with
+its per-voice cells in zero page (§ 7.yyyy):
 
 ```
 E38B  29 04     AND #$04
@@ -1322,7 +1324,7 @@ array** parallel to the records, indexed by the same `Y = i * stride`: attack
 at its `+1`, duration at its `+3`. The duration is corroborated independently
 from the note-start push chain, whose last `PHA` is the first `PLA` into the
 very counter this block decrements — and corpus-wide that names `attack + 2`
-in **34 files out of 34**.
+in **44 files out of 44**.
 
 Two details make this format hostile to a naive reader. Bit `$08` reuses the
 same field as the *high byte of a pointer* to a per-instrument byte-code
@@ -1333,7 +1335,7 @@ one of them lies in the parallel array itself, which the instrument-count
 sniffer (§4.1) walked straight into and reported as extra instruments until
 v0.5.66. Locating the array is what made that boundary knowable: the reading
 below is not written to the output, but it ended a miscount that had every
-one of these 34 files carrying roughly twice the instruments it has.
+one of these files carrying roughly twice the instruments it has.
 
 ### Reading it is not the same as being able to write it
 
