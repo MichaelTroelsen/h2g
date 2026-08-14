@@ -2549,6 +2549,17 @@ def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
 # instead of being given a made-up one.
 TWO_STAGE_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
                    "B9 ?? ?? 4C ?? ?? B9 ?? ?? 9D ?? ??")
+# Mega Apocalypse $4DDA is the same block with its three per-voice cells in
+# zero page, so those instructions are a byte shorter -- `B5 E0` / `D6 E0` /
+# `95 C6` where the shape above reads `BD ?? ??` / `DE ?? ??` / `9D ?? ??`.
+# Nothing else moves: both `LDA table,Y` loads are still absolute and the push
+# chain still names attack+2, so the file passes the same second reading every
+# other member of the family does. It is the *only* corpus file this spelling
+# matches and it matches none of the absolute one, which is what makes it a
+# second spelling rather than a looser pattern. The attack operand sits at +11
+# instead of +13, hence `attack_at` below.
+TWO_STAGE_SHAPE_ZP = ("{load} 29 04 F0 ?? B5 ?? F0 ?? D6 ?? "
+                      "B9 ?? ?? 4C ?? ?? B9 ?? ?? 95 ??")
 # LDA instr+0,X / STA .. / PHA / LDA instr+1,X / STA .. / PHA / LDA dur,X / PHA
 TWO_STAGE_PUSH = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48 BD ?? ?? 48"
 
@@ -2664,13 +2675,17 @@ def _find_two_stage(sid: SidFile, det: Detection):
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     i = search_file(sid.data, TWO_STAGE_SHAPE.format(load=load))
+    attack_at = 13
+    if i <= -1:
+        i = search_file(sid.data, TWO_STAGE_SHAPE_ZP.format(load=load))
+        attack_at = 11
     if i <= -1:
         return False, -1, -1
     data = sid.data
     p = i + len(load.split())
     if p + 20 >= len(data):
         return False, -1, -1
-    attack = data[p + 13] | data[p + 14] << 8
+    attack = data[p + attack_at] | data[p + attack_at + 1] << 8
 
     j = search_file(data, TWO_STAGE_PUSH)
     if j <= -1 or j + 16 >= len(data):
@@ -2721,6 +2736,13 @@ def _bound_instruments(det: Detection, log: Logger):
     (Dragon's Lair II, Kings of the Beach ingame, Lightforce, Nemesis) it is
     exactly that instrument. An accidental boundary does not land on the last
     instrument a tune plays, four times.
+
+    Mega Apocalypse, which v0.5.253's zero-page spelling adds to that
+    population, was checked the same way before it was let in: 43 records
+    counted, 21 before the array, and the highest instrument its patterns name
+    is 18. (Its patterns also carry six rows naming instrument $43, which is
+    beyond either count and was dangling before this too -- a bound is only
+    answerable for the references that were resolvable without it.)
 
     **Only on the dialect it was validated on.** That paragraph is a
     measurement over the 34 *stride-8* files carrying the array, and v0.5.236

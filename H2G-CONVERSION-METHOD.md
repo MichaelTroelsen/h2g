@@ -8394,6 +8394,98 @@ new capability: recorded rather than built.
 > a mechanism read and declined, and a search doing its job.
 
 
+### 7.xxxx The two-stage block in zero page: Mega Apocalypse's `$44`
+
+The census's remainder (§ 7.wwww) left one entry filed as a plain detection
+gap: Mega Apocalypse's instrument at `+7 = $44` sets bit `$04`, the file has
+every other effect routine, and `det.effect_two_stage` was `False`. It is the
+same block, spelled shorter.
+
+`TWO_STAGE_SHAPE` (§ 7.hh) is IK+ `$E38B`, and the corpus files that match it
+share it byte for byte, per-voice counter and all, in **absolute,X** (43 files
+before this change, 44 after — the "34" several older notes quote predates
+v0.5.236's stride-16 lift and is stale wherever it still appears):
+
+```
+E38F  BD FC E7  LDA counter,X
+E394  DE FC E7  DEC counter,X
+E3A0  9D 8F E5  STA wavslot,X
+```
+
+Mega Apocalypse `$4DDA` keeps those three cells in **zero page**, so each
+instruction is a byte shorter and the pattern misses from its fourth opcode
+on:
+
+```
+4DDA  A5 EC     LDA $EC
+4DDC  29 04     AND #$04
+4DDE  F0 11     BEQ $4DF1
+4DE0  B5 E0     LDA $E0,X        ; BD ?? ?? in the other 34
+4DE2  F0 08     BEQ $4DEC
+4DE4  D6 E0     DEC $E0,X        ; DE ?? ??
+4DE6  B9 A4 54  LDA $54A4,Y      ; still running -> the attack waveform
+4DE9  4C EF 4D  JMP $4DEF
+4DEC  B9 FD 53  LDA $53FD,Y      ; expired -> the instrument's own +2
+4DEF  95 C6     STA $C6,X        ; 9D ?? ??
+```
+
+Nothing else moves. Both table loads are still absolute, `$53FD` is still the
+records' `+2` (the byte goatwriter already emits as the waveform), and the
+note-start push chain still names `$54A6 = attack + 2` — so the file passes
+the same *independent* second reading every other member of the family does,
+which is what makes this a spelling rather than a looser pattern.
+`TWO_STAGE_SHAPE_ZP` is that block; the attack operand sits at `+11` rather
+than `+13`, hence `attack_at` in `_find_two_stage`.
+
+**The blast radius is the check, and it is one file.** Run over the corpus
+beside the old shape, the new one matches `Mega_Apocalypse.sid` and nothing
+else, and matches no file the absolute shape already had — pinned in
+`tests/test_two_stage.py` as a count, not merely as a match, because a second
+spelling is a claim about which files it reaches. Byte-hashing all 95
+conversions under the shipped presets moves exactly that one file.
+
+**What it bought, and what it did not.** The reading alone changes the file's
+bytes and moves no dimension of `FIDELITY.md`: `_bound_instruments` ends the
+instrument table where the array begins and the count falls 43 → 21, dropping
+21 phantom records whose ADSR was read out of duration bytes. No pattern
+references them (the highest real reference is instrument 18; the one dangling
+`$43` was dangling before), so the A/B is the honest "no dimension this report
+measures can see this change" — smaller output, same music.
+
+The *emission* is behind `--two-stage`, and with it on:
+
+| | onset | wave | our noise frames | melody |
+|---|---|---|---|---|
+| without | 86% (6/7) | 76.6% | 1150 | 0.9987 |
+| with | **100% (7/7)** | 79.4% | **1354** | 0.9987 |
+
+against the original's **1444** noise frames — the deficit falls from 294 to
+90 — and `noise_run_orig_only` from 1 to 0, the missing run appearing. Three
+records carry `$44`, all three heavily played, and each opens on `$81` (noise)
+for two frames over a `$11`/`$17`/`$15` body: a noise attack transient, which
+is exactly what `onset` and the noise count are built to see.
+
+> **The transferable lesson** is § 7.qqqq's, in a fourth place: *a walk or a
+> pattern that assumes an addressing mode has assumed a dialect.* `find_wave_program`
+> stepped 3 for a `STX abs` and lost the one file that stores to zero page;
+> `_burst_cutoff_start` did the same; this pattern spelled three cells
+> absolute and lost the one file that keeps them in zero page. The tell is
+> identical every time — a file that has the surrounding machinery and reads
+> as having none of it — and so is the check: run the old pattern beside the
+> new one over the corpus and require the difference to be exactly the files
+> you meant.
+>
+> A second one, cheaper: **a test can encode a defect as an invariant.**
+> `test_a_flag_that_changes_nothing_is_not_recorded` asserted that Mega
+> Apocalypse's `two_stage` is inert, with "its player sets no
+> `effect_two_stage`" written into the docstring as the reason. The greedy
+> preset walk had selected that flag and `prune_inert` had dropped it; the
+> walk was right and the detection was missing. The test now pins the
+> behaviour (`prune_inert` drops what the bytes cannot tell from a default)
+> on `initial_instrument`, which is inert on that file, and asserts that
+> `two_stage` survives.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

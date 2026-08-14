@@ -78,7 +78,7 @@ def test_the_expired_branch_reads_the_record_s_own_waveform():
     """
     if not CORPUS.is_dir():
         return
-    from h2g.detect import TWO_STAGE_SHAPE
+    from h2g.detect import TWO_STAGE_SHAPE, TWO_STAGE_SHAPE_ZP
     from h2g.search import search_file
 
     checked = 0
@@ -90,13 +90,62 @@ def test_the_expired_branch_reads_the_record_s_own_waveform():
         addr, zp = _effect_byte_address(sid, det)
         load = (f"A5 {addr:02X}" if zp
                 else f"AD {addr & 0xFF:02X} {addr >> 8:02X}")
+        # The zero-page spelling is two bytes shorter by the time the second
+        # `LDA table,Y` is reached, which is the whole difference between the
+        # two offsets below.
         i = search_file(sid.data, TWO_STAGE_SHAPE.format(load=load))
+        expired_at = 19
+        if i <= -1:
+            i = search_file(sid.data, TWO_STAGE_SHAPE_ZP.format(load=load))
+            expired_at = 17
+        assert i > -1, path.name
         p = i + len(load.split())
-        expired = sid.data[p + 19] | sid.data[p + 20] << 8
+        expired = sid.data[p + expired_at] | sid.data[p + expired_at + 1] << 8
         instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
         assert expired == instr_cpu + 2, path.name
         checked += 1
     assert checked >= 30, checked
+
+
+def test_the_zero_page_spelling_is_one_file_and_reads_the_same_block():
+    """v0.5.253. Mega Apocalypse keeps the block's three per-voice cells in
+    zero page, so `BD ?? ??` / `DE ?? ??` / `9D ?? ??` are `B5 ??` / `D6 ??` /
+    `95 ??` and `TWO_STAGE_SHAPE` misses it -- the file had the routine, the
+    array and the push chain, and read as having none of them.
+
+    Pinned as a *count* as well as a match: a second spelling is a claim about
+    which files it reaches, and the check that catches a pattern loosened too
+    far is running it over the corpus and requiring the difference to be
+    exactly the file it was written for.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import TWO_STAGE_SHAPE, TWO_STAGE_SHAPE_ZP
+    from h2g.search import search_file
+
+    matched = []
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        sid, det = _detect_tables(sid, lambda *a, **k: None)
+        found = _effect_byte_address(sid, det)
+        if not found or det.instr_start < 0:
+            continue
+        addr, zp = found
+        load = (f"A5 {addr:02X}" if zp
+                else f"AD {addr & 0xFF:02X} {addr >> 8:02X}")
+        if search_file(sid.data, TWO_STAGE_SHAPE_ZP.format(load=load)) > -1:
+            matched.append(path.name)
+            # ...and it is not a file the absolute shape already had.
+            assert search_file(
+                sid.data, TWO_STAGE_SHAPE.format(load=load)) <= -1, path.name
+    assert matched == ["Mega_Apocalypse.sid"], matched
+
+    sid = load_sid(str(CORPUS / "Mega_Apocalypse.sid"))
+    sid, det = _detect_tables(sid, lambda *a, **k: None)
+    assert det.effect_two_stage is True
+    # The duration table is the push chain's, not the block's, exactly as in
+    # the absolute dialect -- attack $54A4, duration $54A6.
+    assert det.two_stage_frames == det.two_stage_wave + 2
 
 
 def test_it_is_off_by_default_and_kept_out_of_always():

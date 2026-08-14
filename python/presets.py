@@ -732,9 +732,16 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # once and is not fixed here. What *is* fixed is the consequence: a
     # combination can win carrying a flag that changes nothing, and the entry
     # then records a decision that was never measured. Mega Apocalypse
-    # selected `two_stage sfx_drum wave_program` where `two_stage` is inert
-    # (its player sets no `effect_two_stage`) and produced byte-identical
-    # output without it.
+    # selected `two_stage sfx_drum wave_program` and produced byte-identical
+    # output without `two_stage`, so the flag was dropped.
+    #
+    # **That example expired in v0.5.253, and it is worth saying why.** The
+    # flag was inert because detection missed the block -- this player spells
+    # it with its per-voice cells in zero page -- not because the walk had
+    # picked up a passenger. Read the right way round, `prune_inert` was
+    # reporting a detection gap: a flag the search keeps selecting and the
+    # bytes cannot tell from its default is either noise or something unread,
+    # and it is worth checking which before assuming the first.
     #
     # Tested by the bytes rather than by re-scoring: a flag whose removal
     # leaves the conversion identical cannot have been what any measurement
