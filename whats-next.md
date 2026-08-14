@@ -23,8 +23,9 @@ one new tool (`python/dis6502.py`). The VB6 original was not touched.
 
 ## Summary
 
-**18 commits, v0.5.234 → v0.5.251, all pushed.** HEAD is `f136cf2`, master in
-sync with `origin/master`. `977 passed, 2 skipped` at v0.5.250 (the two skips
+**18 commits, v0.5.234 → v0.5.251, all pushed.** The two commits after them are
+documentation only: v0.5.252 rewrote this handoff, v0.5.253 closed four gaps
+between the docs and the code (below). `977 passed, 2 skipped` at v0.5.250 (the two skips
 are environment-gated on `H2G_GT2RELOC`). `Commando.sng` byte-exact throughout.
 Working tree clean but for the deliberately untracked `6581.pdf`.
 
@@ -410,12 +411,32 @@ notes against the original's 267, so the modal shape is thin evidence.
 
 ## Repository
 
-* **HEAD `f136cf2` (v0.5.251), pushed; master in sync with `origin/master`.**
+* **HEAD is v0.5.253, pushed; master in sync with `origin/master`.** The code
+  is v0.5.251's: v0.5.252 and v0.5.253 are documentation-only commits.
 * Working tree clean but for untracked `6581.pdf`.
-* `SURVEY.md`, `presets.json`, `FIDELITY.md` all regenerated at v0.5.251.
+* `SURVEY.md`, `presets.json`, `FIDELITY.md` all regenerated at v0.5.251 — and
+  still current, since nothing since has changed what the converter emits.
 * `Commando.sng` byte-exact.
-* Last full suite: **977 passed, 2 skipped** (at v0.5.250; v0.5.251 changed no
-  code).
+* Last full suite: **977 passed, 2 skipped** (re-run at v0.5.252; the two skips
+  are environment-gated on `H2G_GT2RELOC`).
+
+### The v0.5.253 doc pass
+
+Four claims in the docs were no longer true of the code:
+
+* `--wave-program`'s `--help` text still said it "needs ... multiplier 1" and
+  that the mechanism had "never been emitted" — v0.5.235 lifted the multiplier
+  restriction and 21 songs now ship the option. CLAUDE.md calls `--help` the
+  authoritative option list, so this was the worst of the four.
+* README documented every option with a `###` section except
+  `--compact-instruments`, `--rest-instrument`, `--skip-gate` and
+  `--wave-program`. All four now have one; three of them are in
+  `presets.json`'s `always` block, i.e. on for every conversion made through
+  `--presets`.
+* README's speed-gate paragraph still presented the under-read as an open
+  finding pointing at CLAUDE.md "for what remains" — `--skip-gate` (v0.5.119)
+  closed it. The measurement is kept, labelled as the evidence that found the
+  mechanism.
 
 ## New surface added this session
 

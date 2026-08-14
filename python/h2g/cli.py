@@ -279,12 +279,15 @@ def main(argv=None) -> int:
         help="run the player's per-instrument byte-code wave program. 29 corpus "
              "files carry an interpreter with three opcodes -- $85 holds, a byte "
              ">= $80 sets a waveform and an absolute frequency, a byte < $80 "
-             "sets a waveform and subtracts a 16-bit pitch step -- and none of "
-             "it has ever been emitted. It is what carries Trans-Atlantic's "
-             "snare (`81 30`: noise at $30xx, 43 notes). Needs --format gts5 "
-             "and multiplier 1: the player advances an opcode per frame where a "
-             "wavetable advances an entry per call. Off by default; "
-             "presets.py --fidelity selects it per song")
+             "sets a waveform and subtracts a 16-bit pitch step. It is what "
+             "carries Trans-Atlantic's snare (`81 30`: noise at $30xx, 43 "
+             "notes). Needs --format gts5. The player advances an opcode per "
+             "frame where a wavetable advances an entry per call, so each "
+             "opcode takes a hold entry and the program runs at the player's "
+             "rate at every -S; until v0.5.235 this refused a multiplier above "
+             "1 outright and so emitted nothing for seven of the nine files the "
+             "onset census wanted it for. Off by default; presets.py "
+             "--fidelity selects it per song")
     parser.add_argument(
         "--sfx-drum", action="store_true",
         help="write the fixed-pitch noise hit the effect byte's bit $80 fires. "

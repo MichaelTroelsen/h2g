@@ -477,6 +477,41 @@ Two shapes were tried and rejected on the corpus rather than on argument:
 Off by default: it changes the output bytes of the files it reaches, the
 fixture among them.
 
+### `--compact-instruments` (the wasted instrument slot)
+
+The VB6 original reserved instrument 1 for a hardcoded **Clear Voice**
+placeholder — `AD $00 / SR $00` with a wavetable of `$09`, gate plus testbit —
+and started the player's own records at instrument 2. Goattracker reserves
+nothing: its format stores instruments from 1, and a pattern column of 0
+already means "no change". The placeholder therefore costs an instrument slot,
+five wavetable entries, and one of offset between every Goattracker instrument
+number and the player's own record number.
+
+With this flag the player's record 0 goes into slot 1 (`goatwriter`'s
+`instr_base`) and the numbering matches the player's. Off by default: it
+renumbers every instrument in every file, the byte-exact `Commando.sng` fixture
+included. `presets.json`'s `always` block sets it, so every conversion made
+through `--presets` is compacted. Added in v0.5.161, after the listening
+session that established what the placeholder sounds like
+(`H2G-CONVERSION-METHOD.md` § 7.bbb).
+
+### `--rest-instrument` (the instrument change that clicked)
+
+An instrument change landing on a rest used to be emitted as a fake `C-0` on
+instrument 1 — the Clear Voice above — on the assumption that Goattracker
+cannot latch an instrument without a note. It can: `gplay.c:912-914` latches
+the instrument column whenever it is non-zero, *before and independently of*
+the note test, so a rest row carries the change and sounds nothing. The
+placeholder is an all-zero envelope with the testbit set, i.e. a click **and a
+retrigger of whatever was sounding** — and 12 rows of Commando played it, 1422
+rows across 64 corpus files.
+
+With this flag the change rides the rest itself. Off by default because it
+moves the output bytes, the fixture among them — which is the anchor doing its
+job, since the VB6 original is what emitted the placeholder. In
+`presets.json`'s `always` block. It was found by ear rather than by a column:
+no dimension of `FIDELITY.md` reports it (§ 7.bbb).
+
 ### `--status-bit6` (the skipped operand and note)
 
 In 61 of the 95 corpus players the status-byte fetch tests **bit 6 first,
@@ -524,6 +559,31 @@ any clean subtune's orderlist; 7 of the 10 are digi-engine files whose
 flagged entries already decoded to the placeholder, so bytes actually change
 only for `Last_V8`, `Last_V8_C128_version` and `Kings_of_the_Beach_ingame`.
 Off by default: it changes the output bytes of those files.
+
+### `--skip-gate` (the row length the gate alone under-reads)
+
+The speed gate is a counter reloaded once per row, so a row looks like
+`reload + 1` frames. Most Hubbard players decrement it on only *some* frames —
+a second counter jumps past the gate, or returns from the play call outright —
+so a row really lasts `(reload + 1) × (O + 1) / O` frames. Reading the gate
+alone under-reads the row, and the corpus said so before the mechanism was
+found: measured against the original, tunes whose gate says 2 played 2.5–3.0
+and tunes whose gate says 3 played 3.5–4.5.
+
+This flag reads the outer counter too (`goatwriter.OUTER_GATE`, and since
+v0.5.248 the `RTS` spelling `OUTER_GATE_RTS` that nine files use), and applies
+it only where the corrected row is expressible — a whole number, or a fraction
+Goattracker can carry through the `-S` multiplier (`effective_frames`,
+`MAX_ROW_DENOMINATOR`). Tarzan goes from 0.67 of the original's pace to 1.00
+and its melody from 73% to 96%; Delta's row is 5/2 at `-S2`, Deep Strike's 8/3
+at `-S3`.
+
+**It moves the recommended `-S` value**, so whatever packs the result has to
+pack it at the new one — the converter logs it and `presets.json` records it
+per song. On by default via `presets.json`'s `always` block: v0.5.119 shipped
+it opt-in and v0.5.120 turned it on, once the regression that had held it back
+turned out to be a harness bug. See §§ 7.rrrr and 7.tttt, and `--pace` below
+for how the row length is measured against the original.
 
 ### `--fold-transpose` (transposes past Goattracker's ceiling)
 
@@ -1198,6 +1258,36 @@ column could not see this fix** as it stood — it sampled one frame per onset,
 and a sweep that restarts with the note is at the same place on every onset
 however far it travels. It now reports the band each note covers on both sides,
 judged on median travel *within* one note; see § *The instrument map*.
+
+### `--wave-program` (the player's byte-code wave program)
+
+29 corpus files give an instrument a **byte-code program** rather than a plain
+waveform, run by an interpreter with three opcodes: `$85` holds (the program's
+end), a byte `>= $80` sets a waveform and an absolute frequency, and a byte
+`< $80` sets a waveform and subtracts a 16-bit pitch step. It is what carries
+Trans-Atlantic's snare — `81 30`, noise at `$30xx`, 43 notes.
+
+Each opcode becomes wavetable entries: one for the absolute form (the pitch
+quantised to the nearest semitone, since a wavetable names notes where the
+player writes `$D401` directly), one for a `< $80` opcode with a zero operand,
+and two where its operand is nonzero — the waveform, then a portamento whose
+speed-table entry is the operand itself, taken as `CMD_PORTAUP` with the two's
+complement where the player's subtraction is a rise. Needs `--format gts5`.
+
+**One opcode is one frame, and one frame is `multiplier` play calls**, so every
+opcode takes a hold entry after it and the program runs at the player's rate at
+every `-S`. Until v0.5.235 the emitter refused a multiplier above 1 outright,
+which left the option selectable, measured and **inert** for seven of the nine
+files that most needed it — they pack at `-S2`, `-S3` or `-S5`. Emitting it
+took `onset` to 100% on five files and brought Shockway Rider (404/404) and
+Saboteur II (748/753) within 3% of the original's noise-frame count.
+
+An opcode's waveform is copied into the wavetable's left column, where
+`$F0`–`$FF` are Goattracker *commands*: Wiz's `$FF` opcode became a jump to row
+222 of a 112-row table, which `gt2reloc` refused silently until v0.5.237 routed
+the command range through the same `$E0`–`$EF` encoding waveforms below `$10`
+already use. Off by default; `presets.py --fidelity` selects it per song, and
+21 songs carry it in `presets.json`. See §§ 7.fff and 7.kkkk.
 
 ### `--sfx-drum` (the drum that was filed as a game sound effect)
 
@@ -2080,7 +2170,16 @@ right for most files — 26 of 43 at multiplier 1 and 10 of 32 at multiplier 2
 are within 5% — and where it is wrong the error is a tune-specific factor
 between 1.1 and 1.5, never 2. Our own row length is not in question: Ricochet's
 gaps land on exactly 8 and 16 frames, so Goattracker honours the tempo as
-written. See CLAUDE.md and `whats-next.md` for what remains.
+written.
+
+**That finding is closed.** The mechanism is the counter above the gate, and
+[`--skip-gate`](#--skip-gate-the-row-length-the-gate-alone-under-reads)
+(v0.5.119, on via `presets.json`) reads it: every file named above as evidence
+of the under-read — Tarzan, Delta, ACE II, Deep Strike, Lightforce, Thanatos,
+Pygmies Revenge, Human Race — now measures 0% out, packed exactly via the `-S`
+multiplier. As recorded in CLAUDE.md at v0.5.248: of 63 timed files, **47 exact
+and 50 within 2%**. The paragraph above is kept because it is how the mechanism
+was found — a number measured before anything in the players explained it.
 
 A short trace is its own hazard in the same family. `BMX_Kidz.sid` opens with
 about thirteen seconds of rest, so at `-t 10` neither side has played a note
