@@ -1001,6 +1001,14 @@ def main(argv=None) -> int:
                    # median retrigger ratio 1.008 -> 0.999 and mean melody
                    # 82.3% -> 84.1%, 19 files better and 5 worse.
                    "tie": FIXED["tie"],
+                   # Bit $02's per-voice attack. Fixed on the same terms as
+                   # `effects` above rather than because it was measured
+                   # corpus-wide: its signature matches one file, forcing it
+                   # on every file moves that file's bytes and nobody else's,
+                   # and there it takes `onset` 40% -> 80% with melody, seq,
+                   # noise and the rest unmoved. A sixth --fidelity toggle
+                   # would double a four-hour search to settle it.
+                   "voice_two_stage": FIXED["voice_two_stage"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.

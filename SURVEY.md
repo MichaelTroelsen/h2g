@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.252**
+- Converter: `h2g` **0.5.259**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -104,7 +104,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 18) | 34 | 56 | 154 | 17385 | y |  |
 | `Lightforce.sid` | Lightforce | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 23 | 64 | - | 19805 | y |  |
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 | y |  |
-| `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 43 | 60 | 85 | 18102 | y |  |
+| `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 22 | 60 | 85 | 17283 | y |  |
 | `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 19 | 21 | 164 | 14 | 48660 | y |  |
 | `Mozart.sid` | Mozart | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 20 | 118 | - | 36219 | y |  |
 | `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 | y | digi channel dropped |
