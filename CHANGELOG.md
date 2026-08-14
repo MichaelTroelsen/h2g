@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.265 — 2026-08-14
+
+- regenerate the artefacts against the four merges
+
 ## 0.5.264 — 2026-08-14
 
 - emit the orderlist's $FE nn as a tempo change
