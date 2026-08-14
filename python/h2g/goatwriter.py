@@ -1648,6 +1648,59 @@ def tempo_command_value(sid: SidFile, subtune: int = 0,
     return min(max(int(f * multiplier), TEMPO_FASTEST_STEADY), 0x7F)
 
 
+def orderlist_tempo_values(sid: SidFile, det: Detection,
+                           reloads: List[dict],
+                           tempo: int | str | None = None,
+                           skip_gate: bool = False) -> List[dict]:
+    """Each orderlist tempo command's operand, as a CMD_SETTEMPO value.
+
+    One map per track, keyed by orderlist position, exactly as
+    `tracks.convert_tracks` filled them. The track index says which subtune a
+    map belongs to (three tracks each, in order), because the operand is only
+    half of the answer -- the other half is that subtune's own row length.
+
+    **The operand is the OUTER counter's reload, not a row length.** Rasputin
+    `$C012` is
+
+        DEC $C53A / BPL work / LDA $C539 / STA $C53A / JMP exit
+
+    -- the shape § 7.rrrr calls the outer gate, spelled with a *cell* reload
+    where `OUTER_GATE` expects an immediate, which is why `find_song_speeds`
+    reports no `skip` for this file. It works on `R` calls in every `R + 1`,
+    so a row of `frames` working calls lasts `frames * (R + 1) / R` real
+    frames: exactly `SongSpeeds.exact_row`'s factor, with `R` changing
+    mid-song. The inner gate, and so `frames`, is `$C062` and does not move.
+
+    Read as a row length instead, Rasputin's `$FE 78` would be 121 frames a
+    row against its neighbours' 3 -- ten seconds on a pattern the same list
+    plays at speed twenty entries earlier. That implausibility is what sent
+    this back to the disassembler; the ratio form gives 2.017 frames against
+    2.033, which is the accelerando it sounds like.
+
+    Rounded, because the product rarely lands on a whole number of calls and
+    Goattracker has no fractional tempo: 2.667 frames at `-S2` is 5.33 calls
+    and is written as 5. The alternative to a rounded change is the *absent*
+    one, which is what this file had -- every row 4 calls where the truth
+    ranges from 4.03 to 6.
+    """
+    speeds = find_song_speeds(sid, det)
+    mult = 1
+    if tempo == "auto" and det.frames_per_row <= 1:
+        mult = recommended_multiplier(speeds, 0, skip_gate)
+    out: List[dict] = []
+    for ti, m in enumerate(reloads):
+        # `frames_for`, not `effective_frames`: the outer counter's factor is
+        # what the operand *is*, so taking a correction for it out of the file
+        # image as well would apply it twice.
+        base = None if speeds is None else speeds.frames_for(ti // 3)
+        if base is None:
+            base = TEMPO_FASTEST_STEADY
+        out.append({at: min(max(int(round(base * (r + 1) / r * mult)),
+                                TEMPO_FASTEST_STEADY), 0x7F)
+                    for at, r in m.items() if r})
+    return out
+
+
 def derived_group_tempos(sid: SidFile, det: Detection, groups: int,
                          skip_gate: bool = False) -> Tuple[List[int], int, str]:
     """Per-subtune CMD_SETTEMPO values, the -S multiplier, and a source note.

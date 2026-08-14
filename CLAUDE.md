@@ -526,6 +526,15 @@ test dependency).
   file is too loose, `CMP #$FD` occurs all over the corpus. **When a fix's
   blast radius is an order of magnitude larger than the evidence for it, the
   rule is scoped wrongly**, and that is visible before any score is read.
+- **A value written into a counter is not a quantity until you know what the
+  counter does.** Rasputin's orderlist `$FE nn` writes the counter *above* its
+  speed gate, not the gate -- so the operand scales the row by `(R+1)/R` where
+  reading it as the row itself gives 121 frames against a neighbour's 3, a 60x
+  error on the same byte. The two gates sit 78 bytes apart and differ only in
+  where the reload comes from (`LDA abs` against `LDA #imm`, which is also why
+  `OUTER_GATE` does not match this one). What separated the readings was not
+  more disassembly: it was asking whether the music the operand implies could
+  be the music the patterns around it contain. See § 7.ccccc.
 - **A constant read from one player is a constant about one player.**
   `TRIANGLE_VIBRATO_GATE = 8` was read from a single file's `CMP #$08` and used
   for all 25 in the dialect; 5 compare against something else, and Commando --

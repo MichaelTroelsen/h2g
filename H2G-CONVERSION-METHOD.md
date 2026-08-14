@@ -8289,6 +8289,9 @@ ended". The operand goes to a second gate --
 
 -- so it is a **tempo change mid-orderlist**, decoded here and not emitted:
 Goattracker would need a tempo command in the pattern to express it.
+(Emitted since v0.5.261, § 7.ccccc -- which also corrects what that gate is:
+it is the *outer* counter of § 7.rrrr, so the operand scales the row rather
+than being it.)
 
 #### The near-miss, which is the useful part
 
@@ -8794,6 +8797,108 @@ would double a four-hour search to settle a one-file question.
 > answer that looks reasonable. The probe that settled them was not a better
 > argument, it was redirecting one `LDA` so the counter printed itself.
 
+
+### 7.ccccc `$FE nn` emitted, and the gate it actually writes
+
+§ 7.vvvv decoded Rasputin's two-byte orderlist command and left it unemitted:
+"the operand goes to a second gate, so it is a tempo change mid-orderlist;
+Goattracker would need a tempo command in the pattern to express it." Both
+halves of that turn out to need work — the pattern command is straightforward,
+and the *arithmetic* was wrong.
+
+#### The operand is the outer counter, not the row
+
+Rasputin has two counters, and the command writes the one § 7.vvvv did not
+identify:
+
+    C012  DEC $C53A / BPL work / LDA $C539 / STA $C53A / JMP exit   ; outer
+    C062  DEC $C536 / BPL +    / LDA $C53B / STA $C536              ; the row
+    C074  LDA $C536 / CMP $C53B / BNE skip        ; ...advance on the reload
+
+The second is the speed gate `find_song_speeds` already reads, with the
+per-subtune table at `$C537`; a row lasts `reload + 1` of the calls that reach
+it. The first is the **outer gate of § 7.rrrr**, spelled with a *cell* reload
+where `OUTER_GATE` expects an immediate — which is why `outer_gate_skip` is
+None for this file and `SongSpeeds.skip` is empty. It runs the whole routine
+on `R` calls in every `R + 1`, so a row lasts
+
+    frames * (R + 1) / R
+
+real frames, which is exactly `SongSpeeds.exact_row`'s factor with `R` moving
+mid-song.
+
+**The implausibility is what caught it.** Read as a row length, subtune 0's
+eight commands are 3, 4, 6, 11, 61, 121, 7 and 3 frames a row — and the
+patterns after the 121 are the same `01 01 01 03 03 01 05 02 31` the same list
+plays at 3 twenty entries earlier. Ten seconds a row on material that had just
+gone past at a quarter of a second is not a tempo, it is a misreading. Under
+the ratio it is 3.0, 2.67, 2.4, 2.2, 2.03, 2.02, 2.33, 3.0 — a slow open, an
+accelerando that flattens out, and a return to the opening tempo for the last
+four bars.
+
+#### Where a tempo change can be said
+
+Goattracker's orderlist carries no command, so the only place is a pattern row,
+which `apply_tempo` already uses for a subtune's opening tempo. Three things
+that are not obvious:
+
+* **Always into a copy.** All three of subtune 0's first changes land on its
+  pattern `$01`, at three different tempos. Patching the shared pattern would
+  apply the last one everywhere. Copies are keyed `(pattern, value)` so a tune
+  alternating between two tempos costs two patterns, not one per step.
+* **Before `pack_repeats`, and that is why the pass lives inside
+  `reindex_tracks`.** A tempo change in the middle of a run of one repeated
+  pattern is a boundary the packer would fold away. Substituting a copy — a
+  different pattern number — splits the run as a side effect of saying the
+  thing, so no packing rule had to learn about tempo.
+* **A command at position 0 is the subtune's opening tempo**, and
+  `derived_group_tempos`' value for that subtune is overridden with it. Both
+  writes land on row 0 of the song otherwise, one on voice 0's pattern and one
+  on voice 2's, and which won would come down to the order `gplay` services
+  the channels in. Agreeing them is the reading, not a tie-break: the player's
+  init loads the counter from its table and the voice's first step overwrites
+  it before a row is played.
+
+Rounded, because `frames * (R + 1) / R * multiplier` rarely lands on a whole
+number of calls: 2.67 frames at `-S2` is 5.33 and is written as 5. The
+alternative to a rounded change is the absent one, which is what this file had
+— every row 4 calls where the truth ranges from 4.03 to 6.
+
+#### Measured
+
+`-t 60`, shipped preset, and `Rasputin.sid` is the only file whose bytes move
+(a corpus SHA-1 either side; the other two `$FD` players carry no `$FE nn`):
+
+| | melody | seq | pitch | retrig | wave | noise | adsr | bend | pul |
+|---|---|---|---|---|---|---|---|---|---|
+| without | 71% | 71% | 76% | 1.81 | 43% | 1693 | 25% | 1.19x | 5012 |
+| with | **75%** | **75%** | **78%** | **1.66** | **46%** | **1775** | **27%** | **1.17x** | **4887** |
+
+Every dimension that moved, moved toward the original; `vib`, `nrun`, `hold`,
+`onset`, `tail`, `filt` and `cut` did not move. The original's noise is 2190
+frames and its `pul` 3155, so both of those are approaches from the same side.
+
+**`--pace` cannot adjudicate this one**, which is worth recording because the
+repo's rule is to use it for anything about tempo. It fits *one* rate to a
+file, and this file's rate changes eight times: it declines both sides for
+disagreeing matched notes, and its IQR widens from 18% to 29% — which is what
+a correct tempo *change* looks like to a constant-rate estimator, not a
+regression. The subtune correspondence was checked instead
+(`--diagnose`): `s0 -> o0` at 86% on the diagonal, "the correspondence is the
+identity where it is legible", so the traced pair is the right music and the
+movement is about the conversion.
+
+What is left is a level, not a direction: `retrig` 1.66 is still well above 1,
+and the rounding cannot explain more than a few percent of it. The remaining
+suspect is the same one Ninja has — this file's melody has been capped since
+long before this change.
+
+> **The transferable lesson:** a value written into a *counter* is not a
+> quantity until you know what the counter does. The same byte is a row length
+> in one gate and a scale factor in the one 78 bytes above it, and the two
+> readings differ by 60x on the same operand. The check that separated them
+> was not in the disassembly — it was asking whether the music the operand
+> implies could be the music the patterns around it contain.
 
 ---
 

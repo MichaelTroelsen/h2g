@@ -14,7 +14,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 from __future__ import annotations
 
 from math import gcd
-from typing import List, Optional, Set
+from typing import Dict, List, Optional, Set
 
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN,
                      SLIDE_HIGH_FIRST_MASK)
@@ -1824,6 +1824,67 @@ def min_played_notes(tracks: List[List[int]],
     return out
 
 
+def _apply_orderlist_tempos(new_track: List[int], moved: dict,
+                            tempos: dict, patterns: List[List[int]],
+                            copies: dict, log=None) -> int:
+    """Write each mid-orderlist tempo change into the pattern it lands on.
+
+    Goattracker's orderlist carries no tempo command, so the only place a
+    tempo change can be said is a pattern row -- which means the pattern
+    played at that step, entered at row 0. `apply_tempo` does the same thing
+    for a subtune's opening tempo; this is the same trick at an arbitrary
+    step.
+
+    **Always into a copy, never in place.** The pattern a tempo change lands
+    on is played elsewhere too, at whatever tempo is current there: Rasputin
+    changes tempo three times in one voice's list and all three land on its
+    pattern `$01`. Patching the shared pattern would apply the last one
+    everywhere. Copies are shared between steps that ask for the same
+    (pattern, value), so a tune with one tempo alternating between two values
+    costs two patterns rather than one per step.
+
+    Skipped rather than approximated where the row is not free -- a
+    portamento or vibrato this converter emitted has to keep its column, and
+    a tempo one row late is a change the player did not make. Returns how many
+    were written.
+    """
+    written = 0
+    for at in sorted(tempos):
+        value = tempos[at]
+        i = moved.get(at)
+        if i is None or i >= len(new_track):
+            continue
+        entry = new_track[i]
+        if entry >= MAX_PATTERNS or entry >= len(patterns):
+            continue                    # a command byte, or a dangling number
+        pattern = patterns[entry]
+        if len(pattern) < 4:
+            continue
+        if pattern[2] == CMD_SETTEMPO and pattern[3] == value:
+            written += 1                # already says it
+            continue
+        if pattern[2] != 0:
+            if log:
+                log(f"*** ORDERLIST TEMPO ${value:02X} AT STEP {at} FALLS ON "
+                    f"PATTERN ${entry:X} ROW 0, WHOSE COMMAND COLUMN IS "
+                    "TAKEN -- NOT WRITTEN ***")
+            continue
+        key = (entry, value)
+        if key not in copies:
+            if len(patterns) >= MAX_PATTERNS:
+                if log:
+                    log("*** NO ROOM FOR AN ORDERLIST-TEMPO PATTERN COPY (AT "
+                        f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                break
+            copy = list(pattern)
+            copy[2], copy[3] = CMD_SETTEMPO, value
+            copies[key] = len(patterns)
+            patterns.append(copy)
+        new_track[i] = copies[key]
+        written += 1
+    return written
+
+
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
                    floor: int = GT_COMMAND_FLOOR,
@@ -1831,7 +1892,8 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    dropped: Optional[List[int]] = None,
                    split: Optional[List[int]] = None,
                    patterns: Optional[List[List[int]]] = None,
-                   max_rows: int = GT_DEFAULT_ROWS) -> List[List[int]]:
+                   max_rows: int = GT_DEFAULT_ROWS,
+                   tempos: Optional[List[dict]] = None) -> List[List[int]]:
     """Rewrite each orderlist's pattern numbers to their post-slicing indices.
 
     The length check runs at the end of each track so that `pack` -- which only
@@ -1861,10 +1923,16 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     """
     new_tracks: List[List[int]] = []
     merge_cache: dict = {}      # shared, so one merged pattern serves every voice
-    for track in tracks:
+    tempo_copies: dict = {}     # (pattern, value) -> the copy carrying it
+    for ti, track in enumerate(tracks):
         new_track: List[int] = []
+        # Where each of this track's own positions ended up, for the tempo
+        # pass below. One old entry can become several (a sliced pattern), and
+        # the tempo belongs on the first of them.
+        moved: Dict[int, int] = {}
         expect_operand = False
-        for b in track:
+        for at, b in enumerate(track):
+            moved[at] = len(new_track)
             if expect_operand:
                 # Restart position following $FF: an ordinary small number that
                 # must NOT be re-indexed as a pattern reference.
@@ -1888,6 +1956,14 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 new_track.append(b)
             else:
                 new_track.extend(track_index[b] if b < len(track_index) else [])
+        # Before packing, and that is the whole reason it is here rather than
+        # in a pass of its own: the tempo rides in a *copy* of the pattern it
+        # lands on, so substituting the copy's number is what keeps
+        # `pack_repeats` from folding that step back into the run around it.
+        # A pass after packing would have to undo a repeat to say anything.
+        if tempos and ti < len(tempos) and tempos[ti] and patterns is not None:
+            _apply_orderlist_tempos(new_track, moved, tempos[ti], patterns,
+                                    tempo_copies, log)
         packed = pack_repeats(new_track) if pack else new_track
         # Merging is attempted only for a track that would otherwise cost its
         # subtune, so no track that already fits is rewritten and the fixture
