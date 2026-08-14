@@ -239,8 +239,34 @@ def test_a_waveform_below_ten_uses_the_inaudible_range():
     `slide $01` -- and GT 11's program is three of them in a row."""
     from h2g.goatwriter import WAVE_SILENT_BASE, _wave_byte
     assert _wave_byte(0x01) == WAVE_SILENT_BASE | 0x01
-    assert _wave_byte(0x00) == WAVE_SILENT_BASE
     assert _wave_byte(0x10) == 0x10, "a real waveform is written literally"
+
+
+def test_the_one_value_that_range_cannot_carry_is_zero():
+    """`$E0` is the exception, and it is a fact about the *packed* player.
+
+    gt2reloc rewrites the range on the way out (greloc.c:1270-1271): it takes
+    the low nibble, then adds `$10` back only if the song uses a wavetable
+    delay at all. A song without one therefore ships `$E0` as a literal `$00`,
+    which player.s:944 reads as *no wave change* -- the entry writes nothing
+    and the previous waveform keeps sounding. Traced: Skate or Die intro's
+    GT 7 ends its program on `slide $00`, its packed table carries `00`, and
+    its trace holds the `$80` before it for the rest of the note.
+
+    `$18` is the way out: triangle with the **test bit**, which holds the
+    oscillator at zero, so it is written by both players and sounds nothing.
+    Every other value in the range survives, which is why only the zero one
+    moves here -- Nineteen's `$E1` reaches the packed file as `$11` and writes
+    the `$01` it means.
+    """
+    from h2g.goatwriter import (WAVE_SILENT_BASE, WAVE_SILENT_TESTBIT,
+                                _wave_byte)
+    assert _wave_byte(0x00) == WAVE_SILENT_TESTBIT
+    assert _wave_byte(0xF0) == WAVE_SILENT_TESTBIT
+    assert not WAVE_SILENT_TESTBIT & 0x01, "the gate stays closed"
+    assert WAVE_SILENT_TESTBIT & 0xF0, "...and it is written, not a delay"
+    for low in range(1, 0x10):
+        assert _wave_byte(low) == WAVE_SILENT_BASE | low
 
 
 def test_a_speed_entry_is_reused_rather_than_duplicated():
@@ -377,25 +403,79 @@ def test_a_slide_opcode_costs_one_entry_so_the_program_keeps_its_length():
 
 
 @needs_corpus
-def test_the_record_waveform_is_restored_before_the_program_stops():
-    """The player's note-end routine writes the *stored* waveform with the gate
-    cleared (`LDA $54F8,X / AND #$FE`), so a program ending on noise stops
-    sounding noise. Holding it instead let Trans-Atlantic's snare run 30, 54 and
-    78 frames where the original's runs are 8.
+def test_the_stored_waveform_is_restored_before_the_program_stops():
+    """The program's end restores the cell the `< $80` opcodes own.
+
+    `$85` does not freeze the last waveform. The two opcode kinds write
+    different cells -- IK+ `$E348`: `>= $80` stores to `$E5E7,X`, the one the
+    per-frame writer copies to `$D404`, and `< $80` stores to `$E58F,X`, the
+    voice's *stored* waveform -- and the hold jumps to `$E44C`, which is
+    `LDA $E58F,X / AND gate,X / STA $E5E7,X`. So the voice reverts to the last
+    `< $80` opcode's waveform, not to the record's `+2`.
+
+    Holding the program's last value instead let Trans-Atlantic's snare run
+    30, 54 and 78 frames where the original's runs are 8 (v0.5.203, and that
+    much was right); restoring `+2` was the wrong value for it, worth `wave`
+    on 16 files at a mean +1.2pp once corrected.
     """
     if not CORPUS.is_dir():
         return
-    from h2g.goatwriter import _wavetable_entries
+    from h2g.goatwriter import _wavetable_entries, _wave_byte
+    from h2g.detect import decode_wave_program
     sid, det = _detect_tables(
         load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
         lambda *a, **k: None)
     left, _r = _wavetable_entries(sid, det, 2, True, "gts5", [], 1,
                                   start=1, budget=30, wave_program=True)
     rec = det.instr_start + 2 * det.instr_stride
+    off = det.wave_program + 2 * det.instr_stride
+    at = sid.to_offset(sid.data[off] | (sid.data[off + 1] << 8))
+    stored = sid.data[rec + 2]
+    for kind, wave, _arg in decode_wave_program(sid.data, at):
+        if kind == "hold":
+            break
+        if kind != "set":
+            stored = wave
     assert left[-1] == 0xFF
-    assert left[-2] == sid.data[rec + 2] & 0xFE, [hex(x) for x in left[-3:]]
+    assert left[-2] == _wave_byte(stored & 0xFE), [hex(x) for x in left[-3:]]
     assert not left[-2] & 0x80, "the restore must not itself be noise"
     assert left[-3] & 0x80, "...and it must follow the program's noise"
+
+
+@needs_corpus
+def test_ik_plus_restores_the_opcode_that_stored_the_cell():
+    """The file that separates the two readings, because its program never
+    ends on a `< $80` opcode: `81 11 40 80 80 80 80 80`. The stored cell is
+    the `$40` opcode 2 left there, and the original plays three frames of it
+    before the note ends -- `11 81 11 40 80 80 80 80 80 40 40 40`.
+    """
+    from h2g.goatwriter import _wavetable_entries
+    sid, det = _detect_tables(load_sid(str(CORPUS / "IK_plus.sid")),
+                              lambda *a, **k: None)
+    left, _r = _wavetable_entries(sid, det, 6, True, "gts5", [], 1,
+                                  start=1, budget=30, wave_program=True,
+                                  lead=0)
+    rec = det.instr_start + 6 * det.instr_stride
+    assert sid.data[rec + 2] == 0x11, "the record's own waveform is triangle"
+    assert left[-2] == 0x40, [hex(x) for x in left]
+
+
+@needs_corpus
+def test_a_program_ending_on_no_waveform_ends_silent():
+    """Skate or Die intro's GT 7 and Arcade Classics' GT 3 both end on
+    `slide $00`, and the original is silent from that frame to the end of the
+    note. Both the opcode and the restore have to say so, and `$E0` does not
+    reach the packed player -- see the zero-value test above."""
+    from h2g.goatwriter import WAVE_SILENT_TESTBIT, _wavetable_entries
+    for name, rec_i in (("Skate_or_Die_intro", 6), ("Arcade_Classics", 2)):
+        sid, det = _detect_tables(load_sid(str(CORPUS / f"{name}.sid")),
+                                  lambda *a, **k: None)
+        left, _r = _wavetable_entries(sid, det, rec_i, True, "gts5", [], 1,
+                                      start=1, budget=30, wave_program=True,
+                                      lead=0)
+        assert left[-1] == 0xFF
+        assert left[-2] == WAVE_SILENT_TESTBIT, (name, [hex(x) for x in left])
+        assert left[-3] == WAVE_SILENT_TESTBIT, (name, [hex(x) for x in left])
 
 
 def test_the_listening_confirmation_is_recorded_with_its_reason():

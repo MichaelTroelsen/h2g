@@ -1286,8 +1286,25 @@ An opcode's waveform is copied into the wavetable's left column, where
 `$F0`–`$FF` are Goattracker *commands*: Wiz's `$FF` opcode became a jump to row
 222 of a 112-row table, which `gt2reloc` refused silently until v0.5.237 routed
 the command range through the same `$E0`–`$EF` encoding waveforms below `$10`
-already use. Off by default; `presets.py --fidelity` selects it per song, and
-21 songs carry it in `presets.json`. See §§ 7.fff and 7.kkkk.
+already use.
+
+**`$85` does not freeze the last waveform**, which is what this emitter assumed
+until v0.5.260. The two opcode kinds write different cells — `>= $80` writes the
+one the player copies to `$D404` each frame, `< $80` writes the voice's *stored*
+waveform — and the hold reverts to the stored one, i.e. to the last `< $80`
+opcode. IK+'s `$08D8` is the proof: its program is `81 11 40 80 80 80 80 80` and
+the original plays `11 81 11 40 80 80 80 80 80 40 40 40`, three frames of the
+`$40` that opcode 2 stored, where the conversion restored the record's own `$11`
+released. Restoring the stored cell instead moves `wave` on 16 files for a mean
+**+1.2 pp** (ACE II 83 → 87%, Saboteur II 84 → 88%, Bangkok Knights 40 → 43%).
+
+Where that stored waveform selects nothing — Skate or Die intro and Arcade
+Classics both end on `slide $00` — the original goes **silent** for the rest of
+the note, and saying so needs `$18` rather than `$E0`: see § 7.bbbbb for why the
+packed player never writes the `$E0`–`$EF` range as a waveform.
+
+Off by default; `presets.py --fidelity` selects it per song, and
+21 songs carry it in `presets.json`. See §§ 7.fff, 7.kkkk and 7.bbbbb.
 
 ### `--sfx-drum` (the drum that was filed as a game sound effect)
 

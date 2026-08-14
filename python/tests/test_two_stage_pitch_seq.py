@@ -64,7 +64,10 @@ def test_the_composed_block_carries_both_mechanisms():
     # Five frames of the attack waveform, one entry each because a delay entry
     # cannot carry a note that changes on the frames it covers, then the
     # sustain stage, then a jump back to the sustain stage's first entry.
-    assert left == [0x11, 0x11, 0x11, 0x11, 0x11, 0x10, 0x10, 0x10, 0xFF]
+    # The sustain stage is `$18` -- the test bit -- because this record's `+2`
+    # selects no waveform at all and the original goes silent there; see
+    # test_two_stage.py's `..._goes_silent` and goatwriter._wave_byte.
+    assert left == [0x11, 0x11, 0x11, 0x11, 0x11, 0x18, 0x18, 0x18, 0xFF]
     assert right == [0x00, 0x00, 0x18, 0x00, 0x00, 0x18, 0x00, 0x00, 0x06]
     # `+24` is the record's own step: the note, two octaves up.
     assert right[2] == 0x18

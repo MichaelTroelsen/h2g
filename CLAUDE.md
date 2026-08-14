@@ -297,6 +297,19 @@ test dependency).
   identify the cell before trusting a hit: `BIT addr / BVC` is everywhere, so the
   address only counts as the effect byte if the player also tests it with masks
   whose meaning is already known.
+- **An encoding is only as good as the *packer's* reading of it.** `$E0`-`$EF`
+  is "set the waveform to `$00`-`$0F`" in the editor (`gplay.c:527`) and this
+  converter believed that for the packed player too. `gt2reloc` rewrites the
+  range (`greloc.c:1270-1271`): low nibble, then `+$10` back **only if the song
+  uses a wavetable delay at all** (`nowavedelay`, over the rows an instrument
+  reaches). A song without one ships `$E0` as a literal `$00`, which
+  `player.s:944` reads as *no wave change* -- so the entry writes nothing and
+  the previous waveform keeps sounding, while the identical entry in a song
+  that does use delays works. Skate or Die intro's terminating `slide $00` and
+  Nineteen's `$E1` drum tick are the two outcomes. Silence from a wavetable is
+  `$18` -- triangle with the test bit, which both players write and which
+  outputs nothing. Read `greloc.c` beside `player.s` before trusting a range,
+  and settle it on the packed bytes. See § 7.bbbbb.
 - **A byte copied from the player into a Goattracker table is in Goattracker's
   encoding now.** `_wave_program_entries` writes a program opcode's waveform
   into the wavetable's left column, where `$F0`-`$FF` are *commands*: an

@@ -215,15 +215,20 @@ def test_the_first_frame_is_the_records_own_waveform():
         0x81, 0x02, 0x41, 0xFF]
 
 
-def test_a_record_with_no_waveform_of_its_own_releases_the_attack():
+def test_a_record_with_no_waveform_of_its_own_goes_silent():
     """Trans-Atlantic's GT 4 has `+2` of $00 -- the player writes "no waveform
-    selected" and the sound stops, which a Goattracker wavetable cannot say
-    ($00-$0F are delays). The nearest it has is the attack waveform released,
-    and without any of it that instrument was silent for all 70 of its notes.
+    selected" and the sound stops.
+
+    That used to be emitted as the attack waveform *released*, on the grounds
+    that a wavetable cannot say $00 ($00-$0F are delays). It can: $18 is the
+    test bit with a waveform selected, and the test bit holds the oscillator at
+    zero, so it makes no sound in either player (goatwriter._wave_byte). The
+    released attack kept sounding for the whole slot -- 11 frames on a
+    twelve-frame note where the original sounds 5.
     """
     from h2g.goatwriter import _two_stage_entries
     left, _ = _two_stage_entries(0x00, 0x11, 5)
-    assert left == [0x11, 0x03, 0x10, 0xFF]
+    assert left == [0x11, 0x03, 0x18, 0xFF]
 
 
 def test_nothing_is_written_where_the_record_names_no_attack():

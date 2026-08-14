@@ -8797,6 +8797,96 @@ would double a four-hour search to settle a one-file question.
 > argument, it was redirecting one `LDA` so the counter printed itself.
 
 
+### 7.bbbbb The terminating step: what `$85` restores, and the one byte the packed player will not write
+
+§ 7.xxxx's hold census left nine instruments, and named five of them as one
+kind: an equal slot, an equal note count, and **we sound two to three times as
+long** because the original kills the waveform partway through and stays
+killed. Read rather than inferred, they are two different things, and the fix
+for the larger one is a byte the encoding could not deliver.
+
+**What the original actually plays.** Traced per note, both sides, at the
+instrument's own ADSR:
+
+    IK+ $08D8   orig  11 81 11 40 80 80 80 80 80 40 40 40 08 08 08 ...
+                ours  11 81 11 40 80 80 80 80 80 10 10 10 10 10 10 ...
+    Skate $08E7 orig  11 81 41 41 80 80 80 00 00 00 00 00 00 00 00 ...
+                ours  11 81 41 41 80 80 80 80 10 10 10 10 10 10 10 ...
+
+Both diverge at the frame the wave program ends, and they diverge differently.
+
+**`$85` does not freeze the last waveform.** The interpreter writes two
+different cells (IK+ `$E348`): a `>= $80` opcode stores to `$E5E7,X`, the cell
+the per-frame writer copies to `$D404`, while a `< $80` opcode stores to
+`$E58F,X`, the voice's *stored* waveform. The hold jumps to `$E44C`, which is
+`LDA $E58F,X / AND gate,X / STA $E5E7,X` -- so the voice reverts to the last
+`< $80` opcode's waveform. IK+'s program is `81 11 40 80 80 80 80 80`, and the
+three frames of `$40` after it are opcode 2's, not the record's `+2`. v0.5.203
+restored `+2` there, which is right only for a program that never ran a `< $80`
+opcode at all.
+
+That is the measurable half: restoring the stored cell moves `wave` on **16 of
+21 files** for a mean **+1.2 pp** -- ACE II 83 -> 87%, Saboteur II 84 -> 88%,
+Bangkok Knights 40 -> 43%, Thundercats 83 -> 85%, Shockway Rider 80 -> 82%,
+Nineteen 43 -> 45%, Mega Apocalypse 79 -> 81% -- with `melody`, `seq`,
+`retrig`, `pitch`, `adsr`, `onset`, `hold` and everything else unmoved on every
+file.
+
+**And where that stored cell selects no waveform, the original goes silent.**
+Skate or Die intro and Arcade Classics both end on `slide $00`; Trans-Atlantic's
+`$0AF8` carries `+2 $00` and reaches the same state through
+`_two_stage_pitch_seq_entries`. All three sounded a released waveform for the
+rest of the note where the original sounds nothing.
+
+**The byte that says so is not `$E0`.** The editor reads `$E0`-`$EF` as "set
+the waveform to `$00`-`$0F`" (gplay.c:527), and that is what this converter had
+been told. `gt2reloc` rewrites the range on the way out
+(`greloc.c:1270-1271`): it takes the low nibble, and then adds `$10` back
+**only if the song uses a wavetable delay at all** (`nowavedelay`, computed at
+`greloc.c:829` over the rows an instrument actually reaches). A song without one
+therefore ships `$E0` as a literal `$00`, and the player it is built with reads
+a zero byte as *no wave change* (`player.s:944`). The entry writes nothing and
+the previous waveform keeps sounding.
+
+That is not a reading of the source, it is what the two files do. Skate's packed
+table carries the entry as `00` and its trace holds the `$80` before it;
+Nineteen -- whose song does use delays -- carries `$E1` as `$11` and writes the
+`$01` it means, which is why § 7.zzzz's drum works. One encoding, two outcomes,
+decided by a property of the whole song.
+
+So a waveform of `$00` is emitted as **`$18`**: triangle with the test bit,
+which holds the oscillator in reset and outputs nothing. Both players write it,
+no song-wide flag can quietly discard it, and it is the same argument
+`FIRSTWAVE_TESTBIT` (`$09`) already rests on.
+
+**No column in FIDELITY.md can confirm that half.** `hold` counts frames with a
+*waveform nibble* selected, and `$18` has one; `wave` compares the waveform
+class, and triangle-against-nothing is a disagreement whichever silent form we
+write. The five instruments' `hold` figures are unchanged -- 0 files moved --
+and they are supposed to be. What moved is `noise`, on the two files whose
+spurious frames were noise: Arcade Classics 1085 -> **1011** against the
+original's 1004, and Skate or Die intro 1231 -> 1122 against 1283. The second
+looks like a regression and is the shape CLAUDE.md already warns about: `noise`
+is a one-sided *count*, the frames removed are frames the original does not
+have, and a count moving away from a total says nothing about where its frames
+sit.
+
+**Two of the five are not this mechanism at all.** IK+'s two instruments end
+their notes *before* the program ends -- the trace goes to `$08`, and `$08` is
+what `$E138` writes into the stored cell on a rest, six or twelve frames into an
+eighteen-frame slot. That is a note-*length* difference, and no per-instrument
+wavetable can express it: the same instrument is played with two different
+lengths in the same tune. It stays open.
+
+> **The transferable lesson:** an encoding is only as good as the *packer's*
+> reading of it. Both halves of this were beliefs about a table byte -- one
+> taken from the interpreter's own store instruction, one taken from the
+> editor -- and the second was true in the editor and silently false in every
+> packed `.sid`, conditional on a property of the song rather than of the
+> instrument. Read `greloc.c` next to `player.s` before trusting a range, and
+> settle it by looking at the packed bytes.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
