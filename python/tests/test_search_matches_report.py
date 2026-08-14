@@ -146,18 +146,31 @@ def test_a_flag_that_changes_nothing_is_not_recorded():
     `fidelity_better` is not a total order -- each term can improve while
     another degrades -- so the 31-combination walk is greedy and where it stops
     depends on iteration order. Mega Apocalypse stopped on
-    `two_stage sfx_drum wave_program` where `two_stage` is inert: its player
-    sets no `effect_two_stage`, and the conversion is byte-identical without
-    it. Nothing measured that flag, so the entry must not claim it.
+    `two_stage sfx_drum wave_program` where `two_stage` was inert, and the
+    entry must not claim a flag nothing measured.
+
+    **The inert flag here is no longer `two_stage`.** v0.5.253 read the block
+    in this player's own spelling (its per-voice cells are in zero page, so
+    `TWO_STAGE_SHAPE`'s `BD ?? ??` / `DE ?? ??` / `9D ?? ??` are `B5 ??` /
+    `D6 ??` / `95 ??`), and with the reading in place the flag moves onset
+    86% -> 100% and 204 noise frames -- the greedy walk that recorded it was
+    right and the detection was missing. `initial_instrument` is inert on this
+    file instead, so the example moved rather than the assertion: what is
+    being pinned is `prune_inert` dropping a flag the bytes cannot tell from
+    its default, whichever flag that currently is.
     """
     P = presets
     sid = CORPUS / "Mega_Apocalypse.sid"
     if not sid.is_file():
         return
     base = {"max_rows": 128, "pack": True, "prune": False, "dedup": True}
-    kept = P.prune_inert(sid, base, {"two_stage": True, "sfx_drum": True,
+    kept = P.prune_inert(sid, base, {"initial_instrument": True,
+                                     "sfx_drum": True,
                                      "wave_program": True})
     assert set(kept) == {"sfx_drum", "wave_program"}
+    # The flag this test was written about, now that it is read: it changes
+    # the bytes, so it survives.
+    assert set(P.prune_inert(sid, base, {"two_stage": True})) == {"two_stage"}
     # ...and it drops nothing that does change the bytes, which is what stops
     # this from being a blanket "record less".
     assert set(P.prune_inert(sid, base, {"wave_program": True})) == {

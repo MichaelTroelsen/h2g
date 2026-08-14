@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.255 — 2026-08-14
+
+- the two-stage block, spelled in zero page (Mega Apocalypse's $44)
+
 ## 0.5.254 — 2026-08-14
 
 - the hold census: fidelity.py --hold-census, and the tail is mostly the slot
