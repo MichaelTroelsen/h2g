@@ -11,6 +11,7 @@ these chains -- see CLAUDE.md.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
@@ -107,6 +108,9 @@ class Detection:
     # drops to the record's own +2. Both file offsets are indexed by the same
     # i * instr_stride the effect byte itself is.
     effect_two_stage: bool = False
+    # Set from the player's own orderlist reader; see _find_track_terminators.
+    track_fd_ends: bool = False
+    track_fe_command: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform
@@ -966,6 +970,12 @@ def detect(sid: SidFile, log: Logger) -> Detection:
                 f"(step & $E0, delay & $1F)"
                 + ("" if det.pulse_tri_gated
                    else " -- every record, no bit $08 test"))
+
+    det.track_fd_ends, det.track_fe_command = _find_track_terminators(sid)
+    if det.track_fd_ends:
+        log("Track reader............: $FD ends a voice's orderlist"
+            + (" and $FE nn is a two-byte tempo command"
+               if det.track_fe_command else ""))
 
     (det.effect_two_stage, det.two_stage_wave,
      det.two_stage_frames) = _find_two_stage(sid, det)
@@ -2605,6 +2615,39 @@ def _find_wave_alternate(sid: SidFile, det: Detection) -> int:
     if not (0 <= off and off + span <= len(data)):
         return -1
     return off
+
+
+# The orderlist reader, anchored on the one test every dialect makes: it loads
+# a byte through a zero-page pointer and compares it with `$FF`.
+#
+#     C094  LDY index,X / LDA (ptr),Y / CMP #$FF / BEQ stop      (Rasputin)
+#
+# What it tests *next* is the dialect. Three corpus files -- Knucklebusters,
+# Rasputin and Tarzan -- also compare `#$FD`, and for them that byte ends the
+# voice's list rather than naming pattern 253. The other version-0 players
+# never mention `$FD`, and reading it as a pattern is what let a voice run
+# straight on into the next voice's data.
+#
+# **Anchored on the reader and not on the file**, because `CMP #$FD` occurs
+# somewhere in plenty of players -- the window is the 48 bytes after the `$FF`
+# test, which is where a dialect's other terminators live.
+TRACK_READER = re.compile(rb"\xb1(.)\xc9\xff", re.DOTALL)
+TRACK_FD_TEST = b"\xc9\xfd"
+# Rasputin only: `$FE nn` is a two-byte command that *continues* the list --
+# `CMP #$FE / BNE + / INC index,X / INY / LDA (ptr),Y / STA .. / STA ..`, the
+# operand becoming a second gate's reload, i.e. a tempo change mid-orderlist.
+# Everywhere else `$FE` ends the tune, which is what `legalise_restarts` is
+# for; applying Rasputin's reading to all of version 0 rewrote 23 files and
+# broke the byte-exact fixture.
+TRACK_FE_COMMAND = re.compile(
+    rb"\xc9\xfe\xd0(.)\xfe(..)\xc8\xb1(.)\x8d(..)\x8d(..)", re.DOTALL)
+
+
+def _find_track_terminators(sid: SidFile) -> tuple:
+    """(does `$FD` end a list, is `$FE` a two-byte command) for this player."""
+    fd = any(TRACK_FD_TEST in sid.data[m.start():m.start() + 48]
+             for m in TRACK_READER.finditer(sid.data))
+    return fd, bool(TRACK_FE_COMMAND.search(sid.data))
 
 
 def _find_two_stage(sid: SidFile, det: Detection):

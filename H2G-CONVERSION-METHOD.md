@@ -8264,6 +8264,73 @@ suggested — which is the point of separating the three.
 > suspected mechanism before counting, or the count will size the wrong job.
 
 
+### 7.vvvv `$FD` ends a voice's list, in the three players that say so
+
+v0.5.250, finishing § 7.qqqq. Rasputin's orderlist step, read with the
+disassembler committed in v0.5.242:
+
+    C094  LDY index,X / LDA (ptr),Y / CMP #$FF / BEQ stop
+    C09D  CMP #$FE / BNE +
+    C0A1    INC index,X / INY / LDA (ptr),Y        ; ...the operand
+    C0A7    STA $C539 / STA $C53A
+    C0AD    INC index,X / JMP $C094                ; and keep reading
+    C0B3  + CMP #$FD / BNE + ; JSR $C003 ; JMP $C3C5   ; this voice is done
+
+Two corrections in one reader. **`$FD` ends a voice's list**, where
+`tracks.py` read anything `<= $FD` as a pattern number; and **`$FE nn` is a
+two-byte command that *continues* the list**, where it read `$FE` as "tune
+ended". The operand goes to a second gate --
+
+    C012  DEC $C53A / BPL + / LDA $C539 / STA $C53A / JMP $C3C5
+
+-- so it is a **tempo change mid-orderlist**, decoded here and not emitted:
+Goattracker would need a tempo command in the pattern to express it.
+
+#### The near-miss, which is the useful part
+
+Applied to all of versions 0/1/3, this rewrote **23 files and broke the
+byte-exact `Commando.sng`**. `$FE` really is "tune ended" in the rest of the
+family -- that is what `legalise_restarts` exists for -- and Rasputin is a
+variant. Exactly the trap CLAUDE.md states as *a constant read from one player
+is a constant about one player*, arrived at from the other direction: not a
+constant this time but a **terminator**.
+
+Gated on each player's own reader instead. Anchoring on the file was not
+enough -- `CMP #$FD` appears somewhere in plenty of players -- so the probe is
+the 48 bytes after the reader's `CMP #$FF`, which is where a dialect keeps its
+other terminators. Three corpus files test `$FD` there: **Knucklebusters,
+Rasputin and Tarzan**, and of those only Rasputin has the two-byte `$FE`.
+Three files' bytes change and no other file moves by a byte.
+
+    Rasputin        melody 39 -> 71%   seq 38 -> 71%   wave 32 -> 43%
+    Knucklebusters  unchanged on its traced subtune
+    Tarzan          unchanged at 99%
+
+Rasputin's three voices index **one shared stream** at different offsets, so
+voice 0 was reading straight through voices 1 and 2's data -- 106 bytes emitted
+for a ten-entry list -- and voice 2, whose list *opens* with `$FE`, came out
+empty and silent in every subtune. Two things to hold against the 32-point
+gain: its `retrig` is now 1.81 (1332 attacks against 735) where it was 197, so
+it has gone from far under to somewhat over; and its traced subtune is the
+remapped one of § 7.qqqq, so the *level* is unreliable even though the
+movement, measured identically both times, is not.
+
+No preset moved, corpus-wide -- 0 gained, 0 lost.
+
+#### How it was found
+
+Not by looking for it. `hold` (§ 7.uuuu) reported Knucklebusters' `$00F8`
+sounding 959 frames over **2 notes** against the original's 9 over **94**, in a
+histogram of note lengths. A voice that never retriggers is not a note-length
+defect, and following that back reached the orderlist.
+
+> **The transferable lesson:** a terminator is a dialect, like a constant. And
+> when a fix's blast radius is an order of magnitude larger than the evidence
+> for it -- 23 files changed on a reading taken from one -- that is the
+> measurement telling you the rule is scoped wrongly, before any of the numbers
+> are even looked at.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

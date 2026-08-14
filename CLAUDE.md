@@ -499,6 +499,17 @@ test dependency).
   believing a rate**: the same behaviour measured 20.7% read at the gate-off
   edge frame and 100% read as a minimum over the gap, because the player does
   not write on the edge frame. See H2G-CONVERSION-METHOD.md § 7.mmm.
+- **So is a terminator.** `tracks.py` read `$FE` as "tune ended" for all of
+  versions 0/1/3 and anything below it as a pattern number. Rasputin's reader
+  says otherwise -- `$FD` ends a voice's list, and `$FE nn` is a two-byte
+  tempo command that *continues* it -- and applying that reading to the whole
+  version rewrote **23 files and broke the byte-exact fixture**. Only three
+  players test `$FD` at all (Knucklebusters, Rasputin, Tarzan) and only
+  Rasputin has the two-byte `$FE`, so both are flags read from each player's
+  own reader, anchored on the 48 bytes after its `CMP #$FF` -- anchoring on the
+  file is too loose, `CMP #$FD` occurs all over the corpus. **When a fix's
+  blast radius is an order of magnitude larger than the evidence for it, the
+  rule is scoped wrongly**, and that is visible before any score is read.
 - **A constant read from one player is a constant about one player.**
   `TRIANGLE_VIBRATO_GATE = 8` was read from a single file's `CMP #$08` and used
   for all 25 in the dialect; 5 compare against something else, and Commando --

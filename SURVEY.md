@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.249**
+- Converter: `h2g` **0.5.250**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -55,8 +55,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 - **2 files lose a subtune to Goattracker's 254-byte orderlist limit.** The rest of the tune converts: one over-long subtune used to abort the whole file, discarding every good subtune with it. The subtune is dropped rather than truncated, because cutting one voice short while its neighbours play on makes it loop early and drift — a subtune that sounds wrong is worse than one plainly absent. Affected: `Chicken_Song.sid` (1), `Knucklebusters.sid` (1).
 - **80 of 80 converted files pack back to a `.sid`** with `gt2reloc`, the standalone form of Goattracker's F9 packer. That is what makes a fidelity test possible: the packed `.sid` can be `siddump`ed against the file it was converted from. A failure here is not a conversion failure — the `.sng` is fine in the editor — but it blocks that comparison. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md). These numbers are with `--legal-restart`; without it `greloc.c:244` rejects every tune that ends on Hubbard's `$FE` marker, because the stop it maps to is an out-of-range restart position.
 - **3 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
-- **19 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing. There are two distinct causes, separated by whether subtune 0 — always a real subtune — is affected.
-  - **1 are a decode fault** (dangling refs in subtune 0). Most are version-2 players, where a byte with the high bit set is a per-voice **transpose command**, not a pattern number: the player branches `BPL` past the $FF/$FE checks, then `AND #$7F` / `STA transpose,X`, and the stored value is read back as `CLC` / `ADC transpose,X` on the note before the frequency-table lookup. The track reader groups version 2 with versions 0/1/3, which have no such branch, so it emits those command bytes as pattern numbers $80-$FD. Affected: .
+- **18 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
   - **18 are phantom subtunes** (subtune 0 clean, later subtunes dangling). The track table has no length field and the PSID header routinely over-claims, so a pointer that happens to land inside the file is read as an orderlist. Only pointers resolving *outside* the file, and subtunes that play no existing pattern at all, are rejected -- a threshold on the rest would also discard real subtunes, which run as low as one bad reference in a hundred good ones.
 
 ## Converted (80)
@@ -99,7 +98,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Kentilla.sid` | Kentilla | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 28 | 161 | - | 38271 | y |  |
 | `Kings_of_the_Beach_ingame.sid` | Kings of the Beach (ingame) | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 7 | 6 | 106 | - | 35541 | y |  |
 | `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 | y | digi channel dropped |
-| `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 192 | **1** (sub0 1) | 55992 | y | 1 subtune(s) too long |
+| `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 186 | - | 54309 | y | 1 subtune(s) too long |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 | y |  |
 | `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 17) | 34 | 66 | 113 | 21248 | y |  |
 | `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 18) | 34 | 56 | 154 | 17385 | y |  |
@@ -120,7 +119,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 13 | 67 | - | 15817 | y | digi channel dropped |
 | `Proteus.sid` | Proteus | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 18 | 46 | - | 12143 | y |  |
 | `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 | y | digi channel dropped |
-| `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 17 (hdr 18) | 15 | 65 | 23 | 15994 | y |  |
+| `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 17 (hdr 18) | 15 | 65 | 22 | 16221 | y |  |
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 17 | 138 | - | 45642 | y |  |
 | `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 | y | digi channel dropped |
 | `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 | y | digi channel dropped |
@@ -132,7 +131,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Skate_or_Die_intro.sid` | Skate or Die (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 9 | 53 | - | 13703 | y |  |
 | `Spellbound.sid` | Spellbound | PSID v2 | Rob_Hubbard | Warhawk | 0 | 13 | 26 | 111 | 25 | 36687 | y |  |
 | `Star_Paws.sid` | Star Paws | PSID v2 | Rob_Hubbard | IK+ | 7 | 3 | 21 | 53 | - | 13534 | y |  |
-| `Tarzan.sid` | Tarzan | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Warhawk | 0 | 11 (hdr 12) | 20 | 53 | 2 | 12488 | y |  |
+| `Tarzan.sid` | Tarzan | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Warhawk | 0 | 11 (hdr 12) | 20 | 53 | 1 | 12470 | y |  |
 | `Thanatos.sid` | Thanatos | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 6 | 25 | - | 8198 | y |  |
 | `Thing_on_a_Spring.sid` | Thing on a Spring | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 13 (hdr 17) | 16 | 66 | 30 | 19549 | y |  |
 | `Thrust.sid` | Thrust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 29 | 63 | - | 17613 | y |  |

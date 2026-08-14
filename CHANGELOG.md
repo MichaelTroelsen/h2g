@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.250 — 2026-08-14
+
+- $FD ends a voice's list in the three players that test it
+
 ## 0.5.249 — 2026-08-13
 
 - the hold tail is three things, and one is a blind spot

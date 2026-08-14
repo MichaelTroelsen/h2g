@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.249 presets.py",
+  "generator": "h2g 0.5.250 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -435,11 +435,11 @@
     "Knucklebusters.sid": {
       "max_rows": 128,
       "pack": true,
-      "prune": false,
+      "prune": true,
       "dedup": true,
-      "bytes": 42362,
+      "bytes": 39397,
       "subtunes": 3,
-      "rows": 66780,
+      "rows": 49775,
       "multiplier": 1,
       "two_stage": true
     },
@@ -667,9 +667,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14196,
+      "bytes": 16070,
       "subtunes": 10,
-      "rows": 30848,
+      "rows": 37857,
       "multiplier": 2
     },
     "Ricochet.sid": {
@@ -806,9 +806,9 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12337,
+      "bytes": 12319,
       "subtunes": 11,
-      "rows": 9422,
+      "rows": 8376,
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true

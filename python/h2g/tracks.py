@@ -41,7 +41,9 @@ def _transpose_byte(semitones: int) -> int:
 
 def _build_track(data: bytes, addr: int, version: int, log=None,
                  transpose_operand: bool = False,
-                 transposes: Optional[Dict[int, int]] = None) -> List[int]:
+                 transposes: Optional[Dict[int, int]] = None,
+                 fd_ends: bool = False,
+                 fe_command: bool = False) -> List[int]:
     """One voice's orderlist. `transposes` records what was clamped away.
 
     The emitted byte cannot say whether it is a real +14 or a clamped +48, so
@@ -220,11 +222,43 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             i2 += 1
 
         elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox
+            # **`$FD` ends a voice's list in the three players that test it.**
+            # Rasputin `$C094`, and the same shape in Knucklebusters and
+            # Tarzan:
+            #
+            #     C094  LDY index,X / LDA (ptr),Y / CMP #$FF / BEQ stop
+            #     C09D  CMP #$FE / BNE +
+            #     C0A1    INC index,X / INY / LDA (ptr),Y     ; the operand
+            #     C0A7    STA $C539 / STA $C53A               ; a gate's reload
+            #     C0AD    INC index,X / JMP $C094             ; keep reading
+            #     C0B3  + CMP #$FD / BNE + ; JSR .. ; this voice is done
+            #
+            # Read as a pattern number, `$FD` let a voice run straight on into
+            # the next voice's data: Rasputin's three voices index **one shared
+            # stream** at different offsets, and voice 0 emitted 106 bytes for
+            # a ten-entry list. Knucklebusters shows the audible end of it --
+            # `$00F8` sounds 959 frames over 2 notes where the original sounds
+            # 9 over 94, because the voice never reaches a retrigger
+            # (section 7.uuuu, found from the `hold` column).
+            #
+            # **Gated on the player, not on the version.** `$FE` really is
+            # "tune ended" in the other version-0 players -- that is what
+            # `legalise_restarts` exists for -- and Rasputin alone reads
+            # `$FE nn` as a two-byte tempo command that *continues* the list.
+            # Applying its reading to all of version 0 rewrote 23 files and
+            # broke the byte-exact fixture; these two flags are read from each
+            # player's own reader (`detect._find_track_terminators`).
+            if b1 == 0xFE and fe_command:
+                i2 += 1                     # the operand: a tempo, not a note
+                continue
             if b1 == 0xFE:
                 track += [0xFF, 0xFD]  # tune ended; see legalise_restarts
                 break
             if b1 == 0xFF:
                 track += [0xFF, 0x00]
+                break
+            if b1 == 0xFD and fd_ends:
+                track += [0xFF, 0xFD]
                 break
             if b1 <= 0xFD:
                 track.append(b1)
@@ -317,7 +351,9 @@ def convert_tracks(sid: SidFile, det: Detection, log,
             maps.append(tmap)
             voices.append(list(DEFAULT_TRACK) if addr is None else
                           _build_track(data, addr, det.read_track_version, None,
-                                       det.transpose_operand, tmap))
+                                       det.transpose_operand, tmap,
+                                       fd_ends=det.track_fd_ends,
+                                       fe_command=det.track_fe_command))
         built.append(voices)
         tmaps.append(maps)
         addr_ok.append(flags)
