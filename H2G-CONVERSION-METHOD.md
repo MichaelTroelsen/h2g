@@ -2374,7 +2374,11 @@ difference nobody can hear. Five entries, looping as the player does:
 FF nn   back to the top
 ```
 
-**The note comes first, and the first attempt did not.** The player's counter
+**The note comes first, and the first attempt did not.** (The reason given here
+for it is wrong and was corrected three sections on: the counter is *not*
+free-running, it is zeroed at note start, and the hit belongs on the note's
+second frame rather than at the end of the period. The measurement below is
+real; only its explanation was. See § 7.pppp.) The player's counter
 is per voice and free-running, so a hit falls wherever it falls relative to a
 note start; a wavetable always begins at the note. Opening on the noise put the
 drum's pitch on the note's own first frame, where the played note never sounded
@@ -8392,6 +8396,121 @@ new capability: recorded rather than built.
 > unsorted pile. Sorting thirteen of them by cause left exactly one that needed
 > a disassembler, and told the difference between a mechanism nobody has read,
 > a mechanism read and declined, and a search doing its job.
+
+### 7.xxxx The census's only `wrong` was two records sharing an ADSR pair
+
+v0.5.253. `fidelity.py --census` reported one instrument in the whole corpus as
+`wrong` — Nineteen's `$0B06`, effect `$A0`, original `noi -- -- --` against our
+`pul noi pul pul`, on 267 of the original's attacks against 115 of ours. The
+handoff filed it as "a second placement rule for the bit-`$80` drum: its hit
+lands at offset 0, not 1", with the caveat that the modal shape was thin
+evidence. It was thinner than that: **the shape is not one population.**
+
+Split by shape rather than reduced to a mode, the original's voice 3 has
+
+| shape | n | notes |
+|---|---:|---|
+| `noi -- -- --` | 151 | `C#6` ×151 |
+| `pul noi pul pul` | 113 | `F-2` ×52, `A#2` ×18, `C-3` ×15, … |
+
+Two things, not one. The 113 are bass notes and their shape is **exactly what
+we emit**. The 151 are all one note — `C#6`, which is `$482D`, which is the
+drum's own `$48` pitch high byte. They are not note onsets at all; they are the
+drum ticking, named as notes by siddump because of its keyoff-keyon rule
+(`siddump.c:434-437`): a bare note is printed when the waveform reaches `>= $10`
+with the gate set and the *previous* frame's waveform was below `$10`. Between
+hits this instrument holds `$01` — gate on, no waveform — so every `$81` tick
+satisfies it.
+
+The census keys by ADSR pair, and the instrument table says why that merged
+them:
+
+```
+rec 0  80 02 41 0B 06 00 84 A0     <- +2 $41, pulse bass with the drum over it
+rec 4  80 04 01 0B 06 00 84 A0     <- +2 $01, the drum ALONE
+```
+
+Same envelope, same effect byte, two instruments. `instrument_stamps` already
+detects this on our side and records `ambiguous`; the census does not print it,
+and the original's side is not checked at all. The mode picked the larger of the
+two populations (151 > 113) on one side and the only one we emit on the other,
+and reported the comparison as a wrong waveform.
+
+**What was actually wrong is that record 4 emitted nothing.**
+`_sfx_drum_entries` opened with
+
+```python
+    if not wave & 0xF0:
+        return None
+```
+
+on the reasoning — recorded in the docstring, and correct as far as it went —
+that `(wave & 0xFE) | 0x01` is `$01` for such a record, that `$01`-`$0F` are
+*delays* in a wavetable rather than waveforms, and that emitting one had made
+Bangkok Knights' GT 9 inherit noise from whatever played before at
+`freqtbl[0]` = `$0117`. True; and the conclusion drawn from it — decline the
+record — silenced a drum rather than mis-pitching one. Nineteen's record 4 is
+58 pattern rows, and its GT 5 shipped as `01/00 01/00 01/00 FF/00`: three
+one-call delays and a stop, no waveform, no drum, for the project's life.
+
+The encoding that was missing is the one `_wave_byte` has provided since
+v0.5.237: `$E0`-`$EF` writes `$00`-`$0F` to `$D404` as the control bits they
+are (`gplay.c:527`). `$E1` is the `$01` the player holds. The table becomes
+
+```
+  28: E1 00     gate alone, the played note
+  29: 81 C9     noise at C#6 -- $482D, the drum's own pitch      <- loop target
+  30: E1 00
+  31: 03 80     ...for the rest of the six-frame period
+  32: FF 1D     jump to 29
+```
+
+which is the original's `$81 $01 $01 $01 $01 $01` frame for frame, and — because
+`$01` is below `$10` — makes siddump name our ticks as notes exactly as it names
+the original's.
+
+Five corpus files carry a bit-`$80` record with no waveform of its own; the
+change reaches exactly those five and no others (byte-hash over all 95). Three
+have such a record in a played pattern:
+
+| file | melody | seq | retrig | onset | noise |
+|---|---|---|---|---|---|
+| Nineteen | 77% → **96%** | 78% → 97% | 0.76 → **1.00** | 80% → **100%** | 1502 → 1657 / 1865 |
+| Bangkok Knights | 96% → 96% | 88% → **97%** | 0.86 → **1.01** | 100% | 1447 → 1543 / 1640 |
+| Pandora | 96% → **98%** | 96% → 99% | 0.97 → 1.03 | 86% | 812 → **839** / 877 |
+
+No dimension moved down on any file. The note counts move *toward* the
+original's rather than away (Nineteen 495 → 650 against 652), which is the check
+CLAUDE.md asks for whenever an agreement column rises: a change that deletes
+events the column scores raises it too.
+
+The other two files — Mega Apocalypse's records 33 and 37 and Trans-Atlantic's
+record 18 — carry `+2 $00` and **are named by no pattern row**, so their bytes
+changed and nothing about them was measured. `$00` is the one case this section
+does not settle: `(wave & 0xFE) | 0x01` gates the held frames on, and whether
+the player leaves such a record's gate *off* between hits is a question no
+corpus file can answer, because no corpus file plays one. Left as the
+pre-existing rule rather than changed on a guess.
+
+Three lessons, and the first two are the reason the fix took a session rather
+than a paragraph:
+
+> **A modal reduction over a key two records share is a comparison between two
+> different instruments.** `onset`'s ADSR key is a verbatim copy of the record,
+> which makes it a good key and not a unique one. The census flags this on our
+> side already; it should read the original's the same way and say so in the
+> table, rather than emitting a `wrong` that names neither record.
+
+> **siddump's "notes" are not all note onsets.** A drum whose instrument holds
+> no waveform between hits produces one printed note per hit, because the
+> keyoff-keyon test is about the waveform register and not about the gate alone.
+> Any population read off `attack_frames` can contain them.
+
+> **A refusal is not a neutral default** — the second instance in six versions,
+> after `_wave_program_entries` refusing every multispeed file (§ 7.kkkk). Both
+> were written down honestly in the function's own docstring; both read as a
+> caveat rather than as the missing feature they were. The docstring says what
+> the code does, which is exactly why it cannot be the thing that notices.
 
 
 ---

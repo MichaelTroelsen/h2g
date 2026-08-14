@@ -381,6 +381,22 @@ test dependency).
   this one had to be rewritten from scratch a session after it earned its keep.
   Promoting it found a defect in the column beneath it: `$01 x19` is one cause
   and one fix, and the census is what says so.
+- **A modal shape over a key two records share compares two instruments.**
+  `onset`'s key is the ADSR pair, which is a verbatim copy of the record and so
+  a good key -- but not a unique one. Nineteen's records 0 and 4 both carry
+  `$0B06`/`$A0`; split by shape the original's voice 3 is 113 bass notes
+  (`pul noi pul pul`, exactly ours) and 151 drum ticks (`noi -- -- --`, all one
+  note), and the mode picked the drum on one side and the bass on the other and
+  called it the census's only `wrong`. Two things follow. **Split a population
+  before reducing it** -- `instrument_stamps` already flags `ambiguous` on our
+  side and the census does not print it, and the original's side is not checked
+  at all. And **siddump's "notes" are not all note onsets**: its keyoff-keyon
+  test fires when the waveform reaches `>= $10` with the gate set after a frame
+  below `$10` (`siddump.c:434-437`), so a drum whose instrument holds `$01`
+  between hits prints one note per hit. Underneath it was a real defect --
+  `_sfx_drum_entries` *declined* a record with no waveform of its own, which is
+  the drum alone, and Nineteen's 58 pattern rows of percussion emitted three
+  delays and a stop. See H2G-CONVERSION-METHOD.md § 7.xxxx.
 - **A degenerate match is not evidence.** `onset`'s phase test asks whether
   `ours[:-1] == orig[1:]`, which on a shape the original holds *constant* is
   true of anything agreeing in its first three frames -- so a note of ours that
