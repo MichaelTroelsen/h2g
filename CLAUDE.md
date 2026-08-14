@@ -633,6 +633,19 @@ test dependency).
   Off by default because it changes the bytes and the fixture carries three
   such tracks; `presets.json`'s `always` block sets it. See README.md
   § `--legal-restart`.
+- **`multiplier` is not the only thing between the player's calls and ours.**
+  Two more stand there, they point in opposite directions, and Ninja's bit
+  `$02` had both. A call the player *skips* -- the outer gate, `RTS` spelling
+  or not -- is a call our wavetable steps anyway, so `n` of its working calls
+  occupy `n * (O + 1) / O` of ours (`goatwriter._gate_calls`; **not**
+  conditional on `--skip-gate`, which is about how long a row lasts). And a
+  call it *makes without running the block* -- the note-start path jumping
+  past the effect code -- means a per-note counter reads 1, not 0, on the
+  first call that reaches it, so a threshold of `t` buys `t - 1` calls. Both
+  readings look reasonable and both were settled by tracing patched copies of
+  the file rather than by reading the 6502 again: `threshold = 1` sounds the
+  attack for zero frames, and redirecting one `LDA` printed the counter into
+  `$D404`, where it read `1 1 2 3 4 4 5` and named the gate. See § 7.aaaaa.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
   and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a

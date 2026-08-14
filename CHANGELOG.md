@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.257 — 2026-08-14
+
+- bit $02's per-voice attack, and the instrument-to-voice map (Ninja)
+
 ## 0.5.256 — 2026-08-14
 
 - a bit-$80 record with no waveform is the drum alone (Nineteen's $0B06)

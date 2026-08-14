@@ -5,7 +5,7 @@ from typing import Callable, List
 
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
-                         build_sng, derived_group_tempos)
+                         build_sng, derived_group_tempos, outer_gate_skip)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -16,7 +16,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
-                     legalise_restarts)
+                     instrument_voices, legalise_restarts)
 
 Logger = Callable[[str], None]
 
@@ -119,6 +119,7 @@ def convert(sid_path: str, log: Logger = print,
             no_hard_restart: bool = False,
             no_test_restart: bool = False,
             two_stage: bool = False,
+            voice_two_stage: bool = False,
             sfx_drum: bool = False,
             wave_program: bool = False,
             vibrato_command: bool = False,
@@ -382,6 +383,17 @@ def convert(sid_path: str, log: Logger = print,
         short_row_calls = resolved_tempo
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
 
+    # The outer counter's reload, where the player has one. A call it skips is
+    # a call our wavetable steps anyway, so a duration read out of that player
+    # in *its* working calls occupies (O + 1) / O of ours -- see
+    # goatwriter._gate_calls. **Not conditional on `--skip-gate`**, which is
+    # about how long a *row* lasts: a wavetable entry lasts a play call, a play
+    # call is a frame at -S1 whatever the tempo says, and the mechanism it
+    # encodes lasts a number of the original's frames. Ninja is the file that
+    # separates the two -- it has the counter, no speed gate at all, and so a
+    # fallback constant tempo that no correction reaches.
+    gate_skip = outer_gate_skip(sid)
+
     # Last, so it sees every command any earlier stage emitted. It rewrites the
     # data column in place, so nothing downstream may read it as a value again.
     scaled = 0
@@ -416,6 +428,9 @@ def convert(sid_path: str, log: Logger = print,
                      no_hard_restart=no_hard_restart,
                      no_test_restart=no_test_restart,
                      two_stage=two_stage,
+                     voice_two_stage=voice_two_stage,
+                     instr_voices=instrument_voices(tracks, new_patterns),
+                     gate_skip=gate_skip,
                      sfx_drum=sfx_drum,
                      wave_program=wave_program,
                      vibrato_command=vibrato_command,

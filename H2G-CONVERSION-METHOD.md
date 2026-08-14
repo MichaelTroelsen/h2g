@@ -8605,6 +8605,105 @@ is exactly what `onset` and the noise count are built to see.
 > `two_stage` survives.
 
 
+### 7.aaaaa A mechanism whose parameters are per *voice*, and the map it needed
+
+§ 7.wwww ended with one instrument in one player recorded rather than built:
+Ninja's bit `$02`, an attack waveform held for a threshold number of frames
+where **both parameters are per voice**. Every other effect table this
+converter reads is indexed by `i * instr_stride`; these two are three bytes
+each, indexed by the voice the player happens to be servicing:
+
+    CAFD  LDA effect / AND #$02 / BEQ out
+    CB04  LDA $CC5A,X          ; frames since this voice's note started
+    CB07  CMP $CC66,X          ; ...against a per-voice threshold
+    CB0A  BCS +                ; past it -> the record's own waveform
+    CB0C  LDA $CC63,X          ; ...before it -> a per-voice alternate
+    CB12  + LDA $CC2B,X
+    CB15  ++ AND $CC5D,X / STA $D404,Y
+
+    alt    $CC63   11 81 15      triangle, noise, triangle+ring
+    thresh $CC66   04 06 04
+
+Neither table is written anywhere in the file, so both are player data. The
+`DD` at `$CB07` is what makes the block unambiguous -- an indexed *compare*,
+not an immediate, which is the instruction that says the threshold is per
+voice and not a constant. Corpus-wide the signature matches exactly one file.
+
+**The map.** A Goattracker wavetable belongs to an instrument and there is no
+per-voice one, so an instrument played on two voices has two right answers.
+`tracks.instrument_voices` builds `{instrument: {voice: rows}}` from the
+finished orderlists and patterns -- every voice whose orderlist reaches a
+pattern, weighted by how often it reaches it, which is the same weighting
+`_drum_max_steps` takes over durations (§ 7.ccc). It is sound because
+Goattracker's instrument column carries forward *within* a voice
+(`gplay.c:914`): an instrument sounding on a voice always has a set-site on
+that voice's own patterns, so the map cannot under-report.
+
+The first version then refused any instrument the map gave more than one
+voice. Measured, that was the wrong rule: Ninja's GT 12 is played on voices 1
+and 3 and refusing it left `onset` at 60% where taking its busier voice puts
+it at 80%, with `melody`, `seq`, `noise`, `adsr` and the rest unmoved. The
+reason the guess is cheap is visible in the table it indexes -- the two
+alternates are `$11` and `$15`, triangle either way, so the wrong half of the
+guess is wrong about the ring bit and right about the waveform.
+
+**Two derivations turn the threshold into a number of our play calls, and
+neither is the threshold.**
+
+*The `- 1`.* The counter is zeroed at note start and incremented once per
+call, and the note-start path **jumps straight past the effect block**
+(`$C95C JMP $CB51`, the increment itself). So the first call that reaches the
+comparison reads 1, not 0, and the attack lasts `threshold - 1` of the
+player's calls. Three traces separate that from the obvious reading: the file
+as it ships sounds the alternate for four displayed frames on voice 3
+(`threshold` 4 -- which reads as "threshold frames" and is wrong), a copy
+patched to `threshold = 1` sounds it for **none at all**, and a copy with the
+alternate's table load redirected to the counter (`BD 63 CC` -> `BD 5A CC`)
+prints the counter itself into `$D404`. The second is what refutes the first.
+
+*The `(O + 1) / O`.* That probe printed `1 1 2 3 4 4 5` on consecutive frames,
+which is not a counter incremented once a frame. It is the **outer gate**:
+`$C806 DEC $CC59 / BPL / LDA #$03 / STA / RTS`, the `RTS` spelling § 7.tttt
+added, doing nothing at all on one call in four. Our player has no such
+counter, so `n` of the original's working calls occupy `n * (O + 1) / O` of
+ours -- the correction `SongSpeeds.exact_row` makes to a row length, made to a
+table entry (`_gate_calls`). It is **not** conditional on `--skip-gate`: that
+option is about how long a *row* lasts, while a wavetable entry lasts a play
+call and a play call is a frame whatever the tempo says.
+
+Ninja is also the file that forced `outer_gate_skip` to exist beside
+`SongSpeeds.skip_for`. The two gates are independent readings and this player
+has only the outer one, so `find_song_speeds` returns None for it, its tempo
+falls back to a constant, and the counter is unreachable through that path.
+
+**Measured**, `-t 60`, against its shipped preset:
+
+| | onset | slides | bend | vib | wave | melody |
+|---|---|---|---|---|---|---|
+| without | 40% | 986/1338 | 0.71x | 0.58x | 59% | 85% |
+| with | **80%** | **1026**/1338 | **0.75x** | **0.79x** | 58% | 85% |
+
+`melody`, `seq`, `pitch`, `retrig`, `noise`, `adsr`, `nrun`, `hold`, `tail`,
+`pul`, `filt` and `cut` are all unmoved to the printed precision. The three
+ratio columns are what chose the gate correction over the bare `threshold`:
+both give 4 for a threshold of 4, which is every threshold this corpus reaches
+-- they part company only at Ninja's third voice, whose 6 is `_gate_calls(5) =
+7` against 6, and no instrument is played there. So the arithmetic is what
+makes the correction a reading and the ratios are what make it a measurement.
+
+Blast radius, both directions: with the option off no corpus file's bytes
+move; with it forced on every file, exactly `Ninja.sid` moves. That is why it
+is in `presets.FIXED` rather than in `FIDELITY_TOGGLES` -- a sixth toggle
+would double a four-hour search to settle a one-file question.
+
+> **The transferable lesson:** a duration read out of a player is in that
+> player's calls, and two things can stand between those and ours -- a call
+> the player skips, and a call it makes without running the block. Both were
+> present here, in opposite directions, and each on its own gives a wrong
+> answer that looks reasonable. The probe that settled them was not a better
+> argument, it was redirecting one `LDA` so the counter printed itself.
+
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

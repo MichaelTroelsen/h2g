@@ -1613,6 +1613,40 @@ Saboteur_II −3). The one number that moves away from the original is
 Trans-Atlantic's noise-frame count, for the reason given under `--wave-program`
 above. See H2G-CONVERSION-METHOD.md § 7.www.
 
+### `--voice-two-stage` (the same attack, with per-voice parameters)
+
+**One corpus file**, and the first mechanism here whose parameters are indexed
+by *voice* rather than by instrument. Ninja's bit `$02` is a two-stage attack
+like `--two-stage`'s bit `$04`, but its waveform and duration come from two
+static three-byte tables the player indexes by whichever voice it is servicing
+(`$CC63` = `11 81 15`, `$CC66` = `04 06 04`, neither ever written).
+
+```sh
+python -m h2g song.sid --effects --voice-two-stage
+```
+
+A Goattracker wavetable belongs to an instrument, so emitting this needs a map
+from instrument to voice, which `tracks.instrument_voices` builds from the
+finished orderlists and patterns. An instrument two voices share takes its
+busier one — refusing those outright was tried first and is 20 points of `onset`
+worse, and the wrong half of the guess here is wrong about a ring-mod bit and
+right about the waveform.
+
+Two corrections turn the player's threshold into a number of our play calls,
+and neither is the threshold itself: `- 1`, because the note's first call jumps
+straight past the effect block, and `× (O + 1) / O`, because the player's outer
+gate does nothing at all on one call in four while ours has no such gate. Both
+were settled by tracing patched copies of the file rather than by reading the
+6502 twice — see H2G-CONVERSION-METHOD.md § 7.aaaaa.
+
+Measured at `-t 60`: `onset` **40% → 80%**, `slides` 986 → 1026 of the original's
+1338, `bend` 0.71x → 0.75x, `vib` 0.58x → 0.79x, `wave` 59% → 58%, and `melody`,
+`seq`, `pitch`, `retrig`, `noise`, `adsr`, `nrun`, `hold`, `tail`, `pul`, `filt`
+and `cut` unmoved. **On by default** (`presets.FIXED`), unlike `--two-stage`:
+with it off no corpus file's bytes move and with it forced on every file exactly
+`Ninja.sid` does, so a sixth `--fidelity` toggle would double a four-hour search
+to settle a one-file question.
+
 ### `--no-test-restart` (the silent frame on every note)
 
 Every instrument this tool has ever written carries `$09` in record byte +8, the
