@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.266 — 2026-08-14
+
+- re-measure the fidelity presets against the terminating-step fix
+
 ## 0.5.265 — 2026-08-14
 
 - regenerate the artefacts against the four merges

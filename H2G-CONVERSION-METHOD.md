@@ -8889,6 +8889,34 @@ lengths in the same tune. It stays open.
 > instrument. Read `greloc.c` next to `player.s` before trusting a range, and
 > settle it by looking at the packed bytes.
 
+#### The settings this changed under, re-measured
+
+v0.5.265 shipped the corpus artefacts with a caveat: the 45 `--fidelity`
+settings in `presets.json` were **carried forward**, and 21 of them are
+`--wave-program` songs whose emitter this section had just changed. A setting
+chosen against an emitter that no longer exists is not a measurement, so the
+four-hour search was re-run at v0.5.266 -- 83 songs, 31 combinations each, at
+the 60 s window the report is published at.
+
+It reproduces the shipped file **byte for byte apart from the generator
+stamp**: 0 settings gained, 0 lost, the same 45 songs, the same structural
+choices (`max_rows`, `pack`, `prune`, `dedup`, `multiplier`) on every one of
+the 83, and no song's search failed. The distribution is `two_stage` 36,
+`wave_program` 21, `pitch_seq` 10, `no_test_restart` 9, `sfx_drum` 7.
+
+That is a result rather than a formality, and specifically it is *this*
+result: all 21 `--wave-program` songs keep the option. The correction changed
+what those files emit and did not change what the search wants for any of
+them -- the terminating step is right where the option was already selected,
+and it is not enough to make the option worth selecting anywhere it was not.
+
+**A file cannot say which of the two it is.** `presets.json` records the same
+bytes whether a setting was measured this hour or inherited from a converter
+six versions old, so the distinction only ever lives in a commit message and
+in a paragraph like this one. Check the diff, not the file: `0 gained, 0 lost`
+is the only shape that says a carry-forward was safe, and v0.5.235's search
+came back `1 gained, 7 lost` from the same-looking file.
+
 ### 7.ccccc The same player's bit `$01`, and 219 noise frames it never sounded
 
 § 7.aaaaa read Ninja's bit `$02` as a per-voice two-stage attack and built the
