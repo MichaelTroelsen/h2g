@@ -1709,11 +1709,18 @@ See H2G-CONVERSION-METHOD.md §§ 7.ccccc and 7.eeeee.
 
 ### `--rest-keyoff` (the rest that silences)
 
-A status byte with bit 6 set is a **rest**, and in 21 of the 61 corpus files
-whose player tests that bit with `BIT`/`BVS`, the branch it takes silences the
-voice — the testbit written into the stored waveform (IK+ `$E138`) or the
-envelope pair zeroed (Ricochet `$914A`). The other 40 write no register there
-and really do hold. This writer emitted a hold row for all 61.
+A status byte with bit 6 set is a **rest**, in all 61 corpus files whose
+player tests that bit with `BIT`/`BVS`, and this writer emitted a *hold* row
+for every one of them — sustaining a note the original had let go.
+
+21 of the 61 silence the voice in the branch itself: the testbit written into
+the stored waveform (IK+ `$E138`) or the envelope pair zeroed (Ricochet
+`$914A`). The other 40 reach the same released state by the ordinary
+end-of-note path a frame earlier. v0.5.269 gated the fix on the first group
+and v0.5.273 dropped that gate, because the difference is where the player
+writes and not whether the voice is released: measured on `gate` across the
+40, keying off for them too is **26 up, 0 down, 14 unchanged** with `melody`
+and `retrig` unmoved on every one.
 
 ```sh
 python -m h2g song.sid --effects --rest-keyoff
@@ -1726,7 +1733,7 @@ program length plus the silence after it adds up exactly to the next onset,
 and the split varies between notes of the same instrument, which is why it
 could never have been a property of the instrument.
 
-19 files' bytes move, exactly the ones detection flags. It was off by default
+It reaches every file with the shape, and no other. It was off by default
 for one release, for an unusual reason: **no column of the report could see
 it.** A Goattracker KEYOFF clears the gate bit and nothing else; `wave`
 ignores that bit by construction, `hold` counts frames with a waveform

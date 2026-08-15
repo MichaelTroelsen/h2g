@@ -198,9 +198,12 @@ class Detection:
     # (`BIT status / BVS`), branching past the operand read AND the note read
     # -- so a $C0-$FE status byte consumes only itself. See STATUS_BIT6_SHAPE.
     status_bit6: bool = False
-    # ...and whether the branch it takes *silences* the voice rather than
-    # holding it. 21 of the 61 files with the shape do; see
-    # _find_rest_silences.
+    # ...and whether the branch it takes silences the voice *itself* rather
+    # than leaving it to the ordinary end-of-note path. 21 of the 61 files
+    # with the shape do. Read and logged; **not** a gate on anything, because
+    # the voice ends up released across the rest either way -- see
+    # _find_rest_silences, which explains why gating `--rest-keyoff` on it
+    # was wrong.
     rest_silences: bool = False
     # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
     # note-duration lookup table, how many operand bytes each $8x command
@@ -1924,6 +1927,16 @@ def _find_rest_silences(data: bytes) -> bool:
     file rather than by this function. `#$08` is the testbit constant and it
     appears in no other reachable role here, but the honest statement is that
     this recognises the *load*, not the store.
+
+    **And it is no longer a gate on anything.** v0.5.269 emitted the rest's
+    `KEYOFF` only where this returned True, on the reading that the other 40
+    players "really do hold". That was a reading of the *branch*: those
+    players release the voice across the rest anyway, by the ordinary
+    end-of-note path. Measured on the `gate` column over all 40, keying off
+    regardless is **26 up, 0 down, 14 unchanged** with `melody` and `retrig`
+    unmoved on every one. This stays because the distinction is real and
+    worth logging -- one family cuts the sound in the branch, the other a
+    frame earlier -- but nothing depends on it.
     """
     i = search_file(data, STATUS_BIT6_SHAPE)
     if i <= -1:

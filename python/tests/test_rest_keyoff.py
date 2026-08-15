@@ -19,13 +19,18 @@ second zeroes the envelope pair; the third writes the testbit into the stored
 waveform. Both of those stop the sound, and `KEYOFF` is the only row
 Goattracker has that ends a note without starting one.
 
-**No column of FIDELITY.md can see this.** A KEYOFF clears the gate and
-nothing else, and `wave` ignores the gate bit by construction while `hold`
-counts frames with a waveform *selected* -- which a gate-off does not change.
-Measured on the one axis that can see it, frames where the original has the
-voice gated off and we do not: IK+ voice 1 330 -> 141, Arcade Classics voice 1
-250 -> 89. That is why the option is off by default and in
-`presets.EXCLUDED_FROM_ALWAYS`: it is a reading, not a scored improvement.
+No column could see this when it was written -- a KEYOFF clears the gate and
+nothing else, `wave` ignores that bit by construction, `hold` counts frames
+with a waveform *selected*. v0.5.270 built `gate` for it, and on that column
+the option moves 12 files and all 12 upward.
+
+**The `silences` split is not a gate on the emission**, though v0.5.269 made
+it one and that cost 40 files. Those 40 release the voice across the rest by
+the ordinary end-of-note path instead of in the branch, so the *gate* is off
+either way; keying off for them too is 26 up, 0 down, 14 unchanged on `gate`
+with `melody` and `retrig` unmoved on every one. What the split still names
+is real -- one family cuts the sound in the branch, the other a frame
+earlier -- so detection keeps reading it and nothing depends on it.
 """
 import pathlib
 import sys
@@ -139,16 +144,22 @@ def test_an_event_that_carries_a_note_is_untouched():
 
 
 @needs_corpus
-def test_it_reaches_only_the_files_whose_rest_silences():
-    """A reading gated on the player must not move a player it does not fit."""
-    moved, flagged = [], []
-    for name in ("IK_plus", "Ricochet", "Commando", "Warhawk", "Delta"):
+def test_it_reaches_the_players_with_the_shape_and_no_others():
+    """The gate is the BIT/BVS shape, not what the branch happens to write.
+
+    Both families are here: IK+ and Ricochet silence in the branch, Commando
+    and Warhawk reach the same state by the end-of-note path. All four are
+    rests and all four key off. A player without the shape must not move.
+    """
+    moved, shaped = [], []
+    for name in ("IK_plus", "Ricochet", "Commando", "Warhawk", "Delta",
+                 "Zoolook", "Rock_Tells_the_Tale"):
         path = CORPUS / f"{name}.sid"
         if not path.exists():
             continue
         data = load_sid(str(path)).data
-        if _find_rest_silences(data):
-            flagged.append(name)
+        if _find_status_bit6(data):
+            shaped.append(name)
         try:
             a = convert(str(path), log=lambda *x, **k: None, effects=True,
                         status_bit6=True)
@@ -158,5 +169,7 @@ def test_it_reaches_only_the_files_whose_rest_silences():
             continue
         if a != b:
             moved.append(name)
-    assert set(moved) <= set(flagged)
-    assert "IK_plus" in moved
+    assert set(moved) <= set(shaped)
+    # One from each family, and one silencer that is not in the other list.
+    assert "IK_plus" in moved and "Commando" in moved
+    assert not _find_rest_silences(load_sid(str(CORPUS / "Commando.sid")).data)

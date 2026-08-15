@@ -248,15 +248,25 @@ def _build_raw_pattern(data: bytes, addr: int,
         # BVS -- and the event emits its hold rows like any other no-note one.
         if status_bit6 and no_note:
             get_next = 0
-            # ...and in 21 of the 61 players with the shape, that branch also
-            # *silences* the voice -- `LDA #$08` into the stored waveform, or
-            # the envelope pair zeroed (detect._find_rest_silences). A hold
-            # row sustains the note the original cut: IK+'s $08D8 sounds its
-            # wave program for 6 or 12 frames of an 18-frame slot and rests
-            # for the remainder, and we played straight through. `KEYOFF` is
-            # the only row this format has that ends a note without starting
-            # one; the instrument column goes with it, since a bit-6 event
-            # reads no operand and can carry no instrument change.
+            # ...and a bit-6 event is a **rest**: the voice is released for
+            # its duration in every player with the shape. `KEYOFF` is the
+            # only row this format has that ends a note without starting one,
+            # and the instrument column goes with it, since the event reads
+            # no operand and can carry no instrument change.
+            #
+            # **Not gated on the branch writing a silencing value**, which is
+            # what v0.5.269 did and what kept this to 19 files. 21 of the 61
+            # players cut the voice in the branch itself -- the testbit into
+            # the stored waveform (IK+ `$E138`), or the envelope pair zeroed
+            # (Ricochet `$914A`) -- and the other 40 reach the same state by
+            # the ordinary end-of-note path a frame earlier. The branch was
+            # read; what it *means* for the gate was inferred from it, and
+            # the trace says the gate is off across the rest either way.
+            # Forced on for those 40 and measured against the `gate` column:
+            # **26 up, 0 down, 14 unchanged**, with `melody` and `retrig`
+            # unmoved on every one -- Battle of Britain 21 -> 90%, Gremlins
+            # 25 -> 89%, Thrust 47 -> 87%. See H2G-CONVERSION-METHOD.md
+            # section 7.ggggg.
             if rest_keyoff:
                 g_note = GT_KEYOFF
                 g_instrument = 0
@@ -774,7 +784,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               rest_instrument=rest_instrument,
-                              rest_keyoff=rest_keyoff and det.rest_silences,
+                              rest_keyoff=rest_keyoff,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,

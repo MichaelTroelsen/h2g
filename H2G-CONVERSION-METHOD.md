@@ -9406,6 +9406,37 @@ halves of the bucket's account -- why it is small (siddump samples once a
 frame, so an edge inside a frame leaves none) and how small -- had to be
 measured rather than reasoned.
 
+#### What the queue paid, immediately
+
+The `held` list is led by files whose player has the `BIT`/`BVS` shape and
+whose branch does *not* silence -- Thrust, Deep Strike, Knucklebusters. Those
+are the 40 that v0.5.269 deliberately excluded from `--rest-keyoff`, on the
+reading that they "really do hold".
+
+That reading was about the branch. Thrust's picture says what the voices do:
+at frame 109 all three gate off together and stay off for 320 frames, both
+sides re-attack on the same frame at 429, and in between we hold three notes
+the original had let go. The rest is a rest whatever the branch writes; the
+40 reach the released state by the ordinary end-of-note path a frame earlier
+instead of in the branch itself.
+
+Forced on for all 40 and measured on `gate`: **26 up, 0 down, 14 unchanged**,
+with `melody` and `retrig` unmoved on every one. Battle of Britain 21 -> 90%,
+Gremlins 25 -> 89%, Thrust 47 -> 87%, Confuzion 43 -> 77%, Monty on the Run
+46 -> 72%, W_A_R 0.4 -> 41%, Flash Gordon 0 -> 32%. So the gate on
+`_find_rest_silences` is dropped: the emission is gated on the *shape*, which
+is what says the event is a rest.
+
+Corpus after: mean gate overlap **39% -> 44%**, ringing frames 160717 ->
+142073, mean pitch 93 -> 94%, and 28 rows move with **no file worse on
+`melody`, `seq` or `wave`**.
+
+**The first measurement of this said the opposite** -- 4 of 6 better and
+Knucklebusters worse -- and it was the probe of the section above, with the
+original traced at the multiplier. Properly traced, Knucklebusters is 6.3 ->
+13.2%, up. One bad probe produced a false finding *and* a false refutation of
+the fix for it.
+
 > **The transferable lesson:** the tool and the probe disagreed, and the
 > probe was wrong in a way that *looked* like a finding -- a clean bimodal
 > distribution with a mechanism-shaped story attached. What caught it was
