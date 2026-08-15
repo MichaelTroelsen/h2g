@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.268 — 2026-08-15
+
+- regenerate the artefacts against the speed-gate fix
+
 ## 0.5.267 — 2026-08-15
 
 - read the speed gate's immediate-reload spelling
