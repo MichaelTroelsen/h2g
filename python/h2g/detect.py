@@ -2991,11 +2991,26 @@ def _find_two_stage(sid: SidFile, det: Detection):
         return False, -1, -1
     attack = data[p + attack_at] | data[p + attack_at + 1] << 8
 
-    j = search_file(data, TWO_STAGE_PUSH)
-    if j <= -1 or j + 16 >= len(data):
-        return False, -1, -1
-    duration = data[j + 15] | data[j + 16] << 8
-    if duration != attack + 2:
+    # **Every match, not the first.** The push chain is here to confirm the
+    # block independently -- `duration == attack + 2` in 44 of 44 files -- and
+    # taking only the first match turns that confirmation into a coincidence
+    # of file order. Powerplay Hockey carries the player twice (section
+    # 7.iiiii): the block above matches the engine that owns the patterns and
+    # names `$4A09`, the first push chain is the *other* engine's and names
+    # `$3C03`, and the pair disagreed for a reason that has nothing to do
+    # with this file's two-stage attack. Its second push chain names `$4A0B`.
+    #
+    # The check itself is unchanged and still has to pass; what changes is
+    # that a file may offer it more than one candidate.
+    duration = -1
+    for j in _search_all(data, TWO_STAGE_PUSH):
+        if j + 16 >= len(data):
+            continue
+        cand = data[j + 15] | data[j + 16] << 8
+        if cand == attack + 2:
+            duration = cand
+            break
+    if duration < 0:
         return False, -1, -1
 
     # Same inverse of SidFile.to_offset _effect_byte_address uses.
@@ -3060,12 +3075,22 @@ def _bound_instruments(det: Detection, log: Logger):
     measurement over the 34 *stride-8* files carrying the array, and v0.5.236
     made the two-stage block detectable in the stride-16 dialect too -- where
     the two bytes are inside the records (`+9` and `+11`) rather than in a
-    table after them. Eight of those nine files fail the multiple-of-stride
-    test below and are untouched; the ninth, Powerplay Hockey, passes it and is
-    the counter-example the rule promised could not exist. Its patterns name
-    instrument 8 against a bound of 6, and taking the bound costs it melody
-    72% -> 66%, seq 73% -> 68% and wave 37% -> 26%. A reduction is only
-    meaningful on the population it was measured on.
+    table after them. **All nine of those files fail the multiple-of-stride
+    test below and are untouched**, so the guard above is what the dialect
+    rests on rather than the arithmetic.
+
+    That sentence used to name Powerplay Hockey as the ninth file *passing*
+    the test -- "the counter-example the rule promised could not exist", with
+    a bound of 6 against the instrument 8 its patterns name, costing melody
+    72% -> 66%. The counter-example was an artefact of reading the wrong copy
+    of the player. That file carries the engine twice (section 7.iiiii), the
+    block found for it was the cue engine's, and its two bytes sat in a table
+    after the records the way the stride-8 dialect has them. Read from the
+    engine its patterns belong to (section 7.jjjjj) they are inside record 0
+    at `+9`/`+11` like the rest of the dialect, `span` is 8 against a stride
+    of 16, and the test declines it. A reduction is still only meaningful on
+    the population it was measured on -- but the file that appeared to
+    disprove the boundary was measuring a table nobody plays.
     """
     if det.instr_stride != 8:
         return

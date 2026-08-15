@@ -299,13 +299,14 @@ def test_ik_plus_percussion_instrument_attacks_on_noise():
 # rather than an error -- and behind it sat the onset census's largest group,
 # `$04` x11 across five of those nine.
 
-# Powerplay Hockey was here until v0.5.277, and the entry
-# described the wrong engine: the file carries the player
-# twice and the block found for it belonged to the copy its
-# patterns do not come from (section 7.iiiii).
+# Powerplay Hockey left this list in v0.5.277 and is back in v0.5.278. It was
+# never a question about the dialect: the file carries the player twice, the
+# block v0.5.277 stopped finding was the cue engine's, and the one the tune
+# actually uses is found once the push chain is allowed to match the same
+# engine the block did (section 7.jjjjj).
 STRIDE16 = ["After_8.sid", "Kings_of_the_Beach_intro.sid", "Mr_Meaner.sid",
             "Off_the_Cuff.sid", "One_on_One_Jordan_vs_Bird.sid",
-            "Pygmies_Revenge.sid",
+            "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid",
             "Rikky.sid", "Rock_Tells_the_Tale.sid"]
 
 
@@ -337,22 +338,28 @@ def test_the_block_is_the_same_shape_and_its_bytes_are_in_the_record():
 
 @needs_corpus
 def test_the_instrument_bound_is_not_taken_in_this_dialect():
-    """`_bound_instruments` is a measurement over the 35 stride-8 files. The
-    one stride-16 file whose two-stage offset happens to be a multiple of its
-    stride is Powerplay Hockey, and taking the bound there cuts 12 records to
-    6 -- below the instrument 8 its own patterns name -- for melody 72% -> 66%
-    and wave 37% -> 26%.
+    """`_bound_instruments` is a measurement over the 35 stride-8 files, and
+    the `instr_stride != 8` guard is what keeps it there.
 
-    **That measurement was taken on the wrong engine.** v0.5.277 moved this
-    file's instrument table to the copy of the player its patterns belong to
-    (section 7.iiiii), and no two-stage block is found from there, so the
-    bound cannot be taken and the file no longer demonstrates the rule. The
-    rule stands on the 35 stride-8 files it was measured over; what is pinned
-    here now is that a stride-16 file is still refused."""
+    Powerplay Hockey was cited for years as the one stride-16 file whose
+    two-stage offset lands on a multiple of its stride -- the counter-example
+    that made the guard necessary rather than merely cautious, at a cost of
+    melody 72% -> 66%. It was not one. That file carries the player twice, and
+    the block being measured belonged to the copy its patterns do not come
+    from (sections 7.iiiii, 7.jjjjj). Read from the right engine its two bytes
+    are inside record 0 at `+9`/`+11`, like every other file in the dialect:
+    `span` is 8 against a stride of 16, so the multiple-of-stride test
+    declines it and the guard is not even reached.
+
+    So this pins both halves -- the block *is* found (it is the dialect's own
+    spelling), and the bound is still not taken."""
     sid = load_sid(str(CORPUS / "Powerplay_Hockey_USA_vs_USSR.sid"))
     _, det = _detect_tables(sid, lambda *a, **k: None)
     assert det.instr_stride == 16
-    assert not det.effect_two_stage
+    assert det.effect_two_stage
+    assert det.instr_used == 20, "the bound must not have been applied"
+    # Not by the guard alone: the arithmetic declines it too.
+    assert (det.two_stage_wave - 1 - det.instr_start) % det.instr_stride
 
 
 @needs_corpus

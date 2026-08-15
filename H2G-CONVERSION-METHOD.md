@@ -9814,3 +9814,133 @@ Run: `python -m h2g <input.sid> [-o out.sng]` from `python/`, or
 converts and opens the result in GoatTracker. See `README.md` for the options,
 and `python -m h2g --help` for the authoritative list.
 Test: `python -m pytest tests/ -q` from `python/`.
+
+### 7.jjjjj Two probes, two engines, and a cross-check that voted against itself
+
+Section 7.iiiii moved Powerplay Hockey's instrument table from the cue engine's
+`$3BA0` to `$4A00`, the copy of the player its patterns belong to, and took the
+file from `adsr` 0% to 99.9%. It also cost the file its drum. Our noise frames
+went **434 to 0** against the original's **215**, and the commit wrote that
+down honestly as a defect it had introduced:
+
+> The two-stage block is no longer found for this file -- it was the cue
+> engine's -- and the effect-byte probes, which anchor on the record base, do
+> not reach the second engine's.
+
+Half of that is wrong, and the wrong half is the diagnosis. Asked directly,
+`_effect_byte_address` returns `$4998` for this file without complaint: the
+single `LDA $4A07,Y` at `$45D1` names record `+7`, and the cell is located.
+Engine two's consumers of it are exactly where they should be:
+
+    4705  LDA $4998 / AND #$01 / BEQ $4762
+    4762  LDA $4998 / AND #$04 / BEQ $477D      <-- the two-stage attack
+    477D  BIT $4998 / BVC $47A6
+
+And the block at `$4762` is `TWO_STAGE_SHAPE` byte for byte:
+
+    4762  AD 98 49  LDA $4998
+    4765  29 04     AND #$04
+    4767  F0 14     BEQ $477D
+    4769  BD A2 49  LDA $49A2,X     ; the per-voice attack counter
+    476C  F0 09     BEQ $4777       ; expired -> the record's own waveform
+    476E  DE A2 49  DEC $49A2,X
+    4771  B9 09 4A  LDA $4A09,Y     ; ...before that, the attack waveform
+    4774  4C 7A 47  JMP $477A
+    4777  B9 02 4A  LDA $4A02,Y     ; record +2
+
+Record `+9` for the attack waveform, `+11` for its length: the stride-16
+dialect's own spelling, the one v0.5.236 added. The probe was not failing to
+reach the engine. It was reaching it and being overruled.
+
+#### The cross-check
+
+`_find_two_stage` locates the block, reads the attack table out of it, and then
+confirms the reading independently against a second shape -- the push chain
+that stacks the record's two bytes -- by requiring
+
+    duration == attack + 2
+
+which holds in every file that has the mechanism. It is a good check. What it
+is not is a check that can survive a file containing the player twice, because
+both probes take `search_file`'s **first** match and the two engines are at
+different addresses in the same file:
+
+    block  matched engine two   ->  attack   $4A09
+    push   matched engine one   ->  duration $3C03      $3C03 != $4A0B
+
+The two probes were reading different copies of the same routine, so the check
+compared engine two's attack table against engine one's duration table, found
+them unequal, and reported *no mechanism*. Powerplay's second push chain is at
+`$4562` and names `$4A0B`, which is `attack + 2` exactly.
+
+The fix is one word: **every** match, not the first. The condition is unchanged
+and still has to pass; a file may now offer it more than one candidate.
+
+#### What it is worth
+
+The option has to be selected before it emits anything, and it is: the
+`--fidelity` search takes `two_stage` for this file on its own, alongside the
+`no_test_restart` it already carried.
+
+| | 7.iiiii | with the block |
+|---|---|---|
+| our noise frames | **0** | **217** (original: 215) |
+| `nrun` | `-` (1 instrument, orig only) | **1/1 matched** |
+| `onset` | 75% (3/4) | **100%** (4/4) |
+| `onset` frame agreement | 93.75% | 100% |
+| melody / seq / adsr / gate / retrig / tail | | *all unchanged* |
+
+Detection alone moves **0 of 95** corpus files; the file's own preset entry is
+what carries it, and that entry is otherwise byte-identical to the one it
+replaces.
+
+#### The one column that falls, and why it is not evidence
+
+`wave` goes 97.6% to 95.5%, all of it on voice 2 (92.8% to 86.5%). Before the
+block, *every one* of voice 2's 215 disagreements was a frame where the
+original sounds noise and we sound something else -- `(1 - 0.9282) x 2993 =
+215`, exactly. Afterwards we sound 217 noise frames and only about 28 of them
+overlap the original's.
+
+The obvious reading is that the drum is landing in the wrong place. It is not.
+Laid side by side, our noise runs and the original's begin together and then
+separate by one frame at a time:
+
+    orig   3   27   75  124  160  172  184  196  220  269  317  353 ...
+    ours   3   27   75  123  159  171  183  195  219  267  315  351 ...
+    delta  0    0    0   -1   -1   -1   -1   -1   -1   -2   -2   -2 ...
+
+and our *note attacks* drift by precisely the same amount, in the same places:
+
+    orig   2   26   74  123  159  171  183  195  219  268  316  352 ...
+    ours   2   26   74  122  158  170  182  194  218  266  314  350 ...
+
+Those attack frames are **identical with the block switched off**, because
+`two_stage` changes a waveform and never a duration. The drift is pre-existing
+and belongs to the row rate: about one frame lost per 150, which `--pace`
+reports as a median of 1.000 with an IQR of 0.980-1.000 over 348 gaps -- most
+rows exact, an occasional one a frame short. It is not caused by this change
+and this change cannot fix it.
+
+What it means for the report is narrower and worth stating plainly. `melody`
+and `seq` are difflib ratios and position-independent; `nrun` compares run
+*lengths*; `onset` reads each side at its own attack frames. **`wave` is the
+only column here aligned on absolute frames**, so it is the only one that
+charges a slow drift -- and it charges it in proportion to how *distinctive*
+the waveform is. Emitting a correct drum gave voice 2 a class the original does
+not hold on the neighbouring frames, which converted an existing timing error
+into a visible timbre disagreement. The 2.1 points are the drift becoming
+measurable, not the drum becoming wrong.
+
+> **The transferable lesson, and it is the second one this file has taught:**
+> when two probes for one mechanism disagree, ask whether they are reading the
+> same *code* before concluding anything about the mechanism. A cross-check
+> between two shapes is only a cross-check if both matched in the same place --
+> otherwise it is two readings of two routines, and its verdict is about
+> neither. The failure mode is silent by construction, because a disagreement
+> is exactly what such a check is built to report.
+>
+> And the corollary for the column that fell: **a change that makes a voice
+> more distinctive will be charged for every timing error already under it.**
+> Read a frame-aligned agreement next to a pace measurement before reading it
+> as a defect in what you just emitted.

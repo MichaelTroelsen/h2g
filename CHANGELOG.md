@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.278 — 2026-08-15
+
+- the push chain matches the engine the block did
+
 ## 0.5.277 — 2026-08-15
 
 - two copies of one player, and a table taken from each
