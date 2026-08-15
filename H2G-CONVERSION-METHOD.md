@@ -9559,6 +9559,42 @@ Every one of the five files that gained melody was *under*-triggering --
 `retrig` 0.64 to 0.80 -- and every one lands within 0.22 of 1.0. A release
 long enough to sample is what lets a re-struck note be a re-struck note.
 
+#### Which of the three numbers actually decides
+
+`HARD_RESTART_FRAMES = 2` was chosen and not measured, so: swept, on the
+converted bytes rather than on a derived row.
+
+| | files whose bytes move | effect |
+|---|---|---|
+| 1 frame | 15 of 83 | mean `gate` 0.465 -> 0.453 |
+| 3 frames | 3 (Chicken Song, Mr Meaner, Rock Tells the Tale) | no dimension moves |
+| 4, 6 frames | the same 3 | the same |
+
+So the constant is nearly inert, and the reason is that the two bounds decide
+almost everywhere: the floor of 2 for the single-speed files, `row // 2` for
+the multispeed ones. The row is the lever, and it was swept too:
+
+| bound | mean melody | mean gate | against the shipped row/2 |
+|---|---|---|---|
+| `row // 3` | 0.901 | 0.448 | nothing better, nothing worse |
+| **`row // 2`** | **0.901** | **0.465** | -- |
+| `2 * row // 3` | 0.897 | 0.481 | Saboteur II melody 98 -> 67% |
+| `row - 1` | 0.896 | 0.498 | Saboteur II melody 98 -> 62% |
+
+`gate` rises monotonically with the bound and melody falls off a cliff at one
+file. That is worth stating plainly: **`row // 2` is not a corpus optimum, it
+is the last value before Saboteur II breaks.** A per-song choice could take
+`2 * row // 3` everywhere else -- `gate` +1.6pp -- and `fidelity_better`'s
+`keeps_notes` would refuse it on that one file. It is not offered as one
+because a sixth `--fidelity` toggle doubles a four-hour search to buy 1.6pp
+of a column no listener has yet confirmed.
+
+**Two derived-row scripts got this wrong before the bytes settled it.** The
+first parsed the tempo out of a log line and swept up the "in N pattern(s)"
+count with it; the second took the row from the header's subtune count rather
+than the emitted one. They reported 0 responding files and then 2, against
+the true 3. Converting twice and hashing needs no row at all.
+
 > **The transferable lesson:** the option that removes a defect is not
 > always the fix for it. `--no-test-restart` deletes the frame that stands in
 > for a missing release; what was wanted was the release. And the constant

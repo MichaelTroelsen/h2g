@@ -24,6 +24,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+from corpus import CORPUS, needs_corpus  # noqa: E402
 from h2g.goatwriter import (HARD_RESTART_FRAMES,  # noqa: E402
                             _hard_restart_ticks)
 
@@ -74,6 +75,38 @@ def test_it_is_never_zero():
     for row in range(0, 40):
         for mult in (1, 2, 3, 5, 8):
             assert _hard_restart_ticks(mult, row) >= 1
+
+
+def test_the_two_bounds_decide_almost_everywhere():
+    """Why the frame count barely matters, at the level of the rule.
+
+    On the bytes, raising `HARD_RESTART_FRAMES` from 2 to 3 changes 3 of the
+    83 corpus files and moves no dimension of the report; 4 and 6 change the
+    same three. Lowering it to 1 changes 15 and costs 1.2pp of mean `gate`.
+    The reason is here: over the (multiplier, row) pairs this corpus spans,
+    one of the two bounds is binding almost every time, and `want` reaches
+    the answer only where the row is long relative to the multiplier.
+
+    A corpus version of this test measured the wrong row twice -- the
+    header's subtune count instead of the emitted one, then a log line whose
+    "in N pattern(s)" digits joined the tempo values -- and reported first 0
+    responding files and then 2, against the true 3. The rule is testable
+    without either.
+    """
+    import h2g.goatwriter as G
+
+    binding = {"floor": 0, "row": 0, "want": 0}
+    for mult in (1, 2, 3, 5):
+        for row in range(2, 14):
+            want = G.HARD_RESTART_FRAMES * mult
+            got = _hard_restart_ticks(mult, row)
+            if got == 2 and want != 2 and row // 2 != 2:
+                binding["floor"] += 1
+            elif got == want:
+                binding["want"] += 1
+            else:
+                binding["row"] += 1
+    assert binding["row"] > binding["want"], binding
 
 
 def test_it_fits_the_six_bits_it_is_written_into():

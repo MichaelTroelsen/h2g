@@ -718,6 +718,15 @@ test dependency).
   where the absolute form found nothing: 35 files carry its shape and 33 of
   them already read a gate, and a wrong tempo is worse than the old constant.
   See § 7.eeeee.
+- **To ask whether a constant matters, hash the output -- do not re-derive
+  the quantity it is bounded by.** Two scripts asked whether
+  `HARD_RESTART_FRAMES` changes anything by reconstructing each song's row:
+  one parsed it out of a log line and swept up the "in N pattern(s)" count,
+  the other took the header's subtune count where the converter uses the
+  emitted one. They answered 0 files and 2 files; converting at each value
+  and hashing answers 3, needs no row, and cannot drift. Same shape as the
+  probe of § 7.ggggg: a re-derivation has to get every input right, and the
+  tool already has them.
 - **The option that removes a defect is not always the fix for it.**
   `--no-test-restart` deletes the testbit frame on every note's first frame,
   and that frame is the only one our conversions spend below `$10` -- which

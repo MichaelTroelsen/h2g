@@ -177,11 +177,18 @@ DRUM_DEEPEN_MARGIN = 32
 # gate census. Measured in frames it is `frames * multiplier` calls, the same
 # conversion every other rate in this file makes.
 #
-# 2 rather than the measured 3.3 because the row is a hard ceiling and a
-# ceiling that binds everywhere teaches nothing: at 3 frames the cap decides
-# for almost every file, at 2 it decides for about half, and the sweep that
-# chose it shows gate rising and `melody`, `retrig` and the attack count
-# unmoved at both.
+# **2 because 1 is worse and 3 buys nothing**, on the bytes rather than on a
+# derived row: raising it to 3 changes 3 of 83 corpus files (Chicken Song,
+# Mr Meaner, Rock Tells the Tale) and moves no dimension of the report, and
+# 4 and 6 change exactly the same three. Lowering it to 1 changes 15 and
+# costs 1.2pp of mean gate. So the constant is nearly inert, and the reason
+# is that the two bounds below decide almost everywhere -- the floor for the
+# single-speed files, the row for the multispeed ones.
+#
+# The lever is the row bound. Swept over the corpus: `row // 3` costs 1.7pp
+# of gate for nothing, `2 * row // 3` and `row - 1` buy 1.6pp and 3.3pp and
+# take Saboteur II's melody from 98% to 67% and 62%. `row // 2` is the
+# optimum, and its ceiling is set by that single file rather than a trend.
 HARD_RESTART_FRAMES = 2
 
 
