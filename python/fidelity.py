@@ -863,6 +863,87 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def gate_compare(orig: list[Voice], ours: list[Voice],
+                 nframes: int, lag: int = 0) -> dict:
+    """Per-frame agreement of the GATE bit -- $D404 bit 0 -- and its direction.
+
+    **The bit every other column here ignores.** `wave_compare` says so
+    outright and gives a good reason: a gated-off voice keeps its waveform
+    latched, so folding the gate into a timbre comparison would double-count
+    every note-length disagreement as a wrong waveform. `hold` counts frames
+    with a waveform *selected*, `adsr` reads the envelope registers, `tail`
+    reads them after the gate closes. The consequence went unnoticed until
+    v0.5.269: a change that only opens or closes the gate is invisible to the
+    whole report, and `--rest-keyoff` -- 19 files' bytes -- moved one number
+    on one file.
+
+    **Scored over the frames that say anything.** Both sides hold the gate on
+    for most of a tune, and counting those would put every file in the high
+    nineties and move for nothing. This is the overlap of the *gate-off*
+    frames -- `|both off| / |either off|`, the same Jaccard shape `pitch`
+    uses -- so a conversion that never releases a note scores 0 and one that
+    releases at the original's moments scores 1.
+
+    **The direction is reported because the two errors have different fixes.**
+    `gate_ours_ringing` is the original silent while we sustain, which is a
+    missing note end (a rest we did not read, a release too long). Its
+    opposite, `gate_ours_silent`, is a note we ended early or never played.
+
+    Frames neither side has written at all are dropped, the rule
+    `wave_compare` states for class 0: an idle voice reads `$00`, which is
+    gate-off on both sides, and three silent voices would otherwise score a
+    perfect trace.
+
+    **What it can be gamed by**, stated here rather than found later: a
+    conversion that plays *fewer notes* has more gate-off frames and can score
+    higher for it, exactly as `wave` rises when attacks are deleted. Read it
+    next to `retrig` and both sides' note counts, and never alone.
+
+    Aligned by `lag` like the other per-frame columns, because a gate edge is
+    an event in time and the packed player reaches its first note several
+    frames after the original.
+    """
+    both = either = ringing = silent = 0
+    per_voice = []
+    for a, b in zip(orig, ours):
+        ta = register_timeline(a.wf_events, nframes)
+        tb = register_timeline(b.wf_events, nframes)
+        ta, tb = _aligned(ta, tb, lag)
+        vb = ve = vr = vs = 0
+        for x, y in zip(ta, tb):
+            # A voice neither side has ever written reads $00 on every frame,
+            # which is "gate off" on both -- and would score as perfect
+            # agreement for the whole trace. `wave_compare` drops the
+            # equivalent frames for the same reason; without this a file with
+            # one silent voice scored a third of its frames for free, and a
+            # conversion that played nothing at all would have scored 1.00.
+            if x == 0 and y == 0:
+                continue
+            ox, oy = not (x & 0x01), not (y & 0x01)
+            if not (ox or oy):
+                continue
+            ve += 1
+            if ox and oy:
+                vb += 1
+            elif ox:
+                vr += 1                      # original silent, we sustain
+            else:
+                vs += 1                      # we are silent, original sounds
+        per_voice.append({"gate": (vb / ve) if ve else None, "frames": ve,
+                          "ringing": vr, "silent": vs})
+        both += vb
+        either += ve
+        ringing += vr
+        silent += vs
+    return {
+        "gate": (both / either) if either else None,
+        "gate_frames": either,
+        "gate_ours_ringing": ringing,
+        "gate_ours_silent": silent,
+        "gate_voices": per_voice,
+    }
+
+
 def adsr_compare(orig: list[Voice], ours: list[Voice],
                  nframes: int, lag: int = 0) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
@@ -2248,6 +2329,15 @@ DIMENSIONS = (
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
               "per-frame agreement of the envelope pair"),
+    # $D404's bit 0, which `wave` excludes by construction and nothing else
+    # read. That exclusion is right for a timbre column and it made a whole
+    # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
+    # number on one file. Scored over the gate-*off* frames only -- both sides
+    # hold it on most of the time -- so it is the overlap of the silences.
+    Dimension("gate", "gate", ("$D404",), "fraction",
+              "overlap of the frames each side has the voice released -- "
+              "**rises when notes are removed**, so read it next to `retrig` "
+              "and both sides' note counts"),
     # The only column that can see how *long* a drum sounds. Every other
     # reading of the drum anchors on a gate-edge attack, and that anchor moves
     # when the run's length changes -- which made two corpus comparisons come
@@ -2699,6 +2789,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row["startup_lag_raw"] = raw
             row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
             row.update(adsr_compare(a, best_dump, nframes, lag=lag))
+            row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
@@ -3000,6 +3091,7 @@ def report(rows: list[dict], args) -> str:
         "* **noise** -- frames on which the voice's waveform included noise "
         "(bit 7), ours over the original's. A nonzero left of a zero right "
         "is a drum tick the conversion invented.",
+        "* **gate** -- overlap of the frames on which each side has the voice *released*: `|both off| / |either off|`. Every other register column here ignores $D404's gate bit, and **wave** says why -- a gated-off voice keeps its waveform latched, so folding the gate into a timbre score would count every note-length disagreement twice. The cost of that exclusion was invisible until a change that only opens and closes the gate (`--rest-keyoff`, 19 files) moved one number on one file. Scored over the gate-off frames alone because both sides hold it on most of the time. It **rises when notes are removed** -- fewer attacks, more silence -- so read it beside **retrig** and the two attack counts, never on its own.",
         "* **adsr** -- per-frame agreement of the envelope registers "
         "($D405/$D406, the whole 16-bit pair), carried forward between "
         "writes exactly as **wave** is. Frames where neither side has ever "
@@ -3020,13 +3112,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | hold | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 18 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 19 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -3044,6 +3136,7 @@ def report(rows: list[dict], args) -> str:
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
             f"{_fmt_pct(r.get('sound_run_agreement'))} | "
+            f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
@@ -3077,6 +3170,16 @@ def report(rows: list[dict], args) -> str:
                 + (f"; **{len(invented)}** file(s) play noise where the "
                    "original never does (marked `!` above)" if invented else ""),
             ]
+        gated = [r for r in measured if r.get("gate") is not None]
+        if gated:
+            ringing = sum(r.get("gate_ours_ringing", 0) for r in gated)
+            silent = sum(r.get("gate_ours_silent", 0) for r in gated)
+            out.append(
+                f"- mean gate overlap: "
+                f"**{_fmt_pct(sum(r['gate'] for r in gated) / len(gated))}**"
+                f" ({len(gated)} file(s)); **{ringing}** frame(s) sustaining a "
+                f"voice the original released, **{silent}** the other way "
+                "round")
         adsred = [r for r in measured if r.get("adsr") is not None]
         if adsred:
             out.append(

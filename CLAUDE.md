@@ -250,9 +250,11 @@ test dependency).
   write. The blindness is structural rather than accidental, and it made a
   whole class of change unscoreable without anyone deciding that. **When a
   column documents what it ignores, read that list as a list of things you
-  will not be able to ship on evidence** -- and measure the ignored quantity
-  by hand before concluding either way (here: frames where the original has
-  the voice gated off and we do not, IK+ voice 1 330 -> 141). See § 7.fffff.
+  will not be able to ship on evidence** -- and then *build the column*
+  rather than shipping on a hand-rolled probe. `gate` (v0.5.270) took
+  `--rest-keyoff` from "flat on 18 of 19 files" to "12 files, all 12 upward"
+  and moved it into `presets.FIXED`. The gap between correct-by-the-player
+  and shippable was one dimension, not a listening session. See § 7.fffff.
 - **Do not conclude a change did nothing from a flat table — make the tool
   say it.** Since v0.5.77 every dimension declares the SID registers it reads,
   every row records which dimensions it actually compared, and the report ends

@@ -1726,15 +1726,15 @@ program length plus the silence after it adds up exactly to the next onset,
 and the split varies between notes of the same instrument, which is why it
 could never have been a property of the instrument.
 
-19 files' bytes move, exactly the ones detection flags. **Off by default, and
-not because it measures badly — because it cannot be measured here at all.** A
-Goattracker KEYOFF clears the gate bit and nothing else; `wave` ignores that
-bit by construction, `hold` counts frames with a waveform *selected*, and
-`adsr` reads registers this does not write. The corpus A/B is flat on 18 of
-the 19 files and 3 points of `pitch` worse on the 19th. On the one axis that
-does see it — frames where the original has the voice gated off and we do not
-— IK+ voice 1 goes 330 → 141 and Arcade Classics voice 1 250 → 89. See
-H2G-CONVERSION-METHOD.md § 7.fffff.
+19 files' bytes move, exactly the ones detection flags. It was off by default
+for one release, for an unusual reason: **no column of the report could see
+it.** A Goattracker KEYOFF clears the gate bit and nothing else; `wave`
+ignores that bit by construction, `hold` counts frames with a waveform
+*selected*, and `adsr` reads registers this does not write. The answer was to
+build the missing column — `gate`, v0.5.270 — and on it the option moves
+**12 files, all 12 upward**: BMX Kidz 4% → 85%, Auf Wiedersehen Monty
+18% → 45%, Shockway Rider 52% → 75%, IK+ 42% → 48%. Nothing moves down. On by
+default now. See H2G-CONVERSION-METHOD.md § 7.fffff.
 
 ### `--no-test-restart` (the silent frame on every note)
 

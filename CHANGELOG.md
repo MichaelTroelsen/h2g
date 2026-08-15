@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.270 — 2026-08-15
+
+- the gate dimension, and --rest-keyoff on by default
+
 ## 0.5.269 — 2026-08-15
 
 - --rest-keyoff, the rest that silences

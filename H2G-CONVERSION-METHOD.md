@@ -9284,20 +9284,51 @@ voice gated off and we still have it gated on:
 | five files, all voices | 10762 | 4606 | **3931** |
 
 So the change does what it says, on a quantity this project has never
-measured. It ships **off by default** and in `presets.EXCLUDED_FROM_ALWAYS`
-for the reason that follows from all of the above: a `--fidelity` search
-cannot select it, because `fidelity_better` has nothing to compare. What
-settles it is a listener, or a gate dimension.
+measured -- which is an argument for measuring it rather than for shipping on
+a hand-rolled probe.
+
+#### The gate dimension, and what it then said
+
+v0.5.270 adds `gate`: the overlap of the frames each side has the voice
+*released*, `|both off| / |either off|`, the Jaccard shape `pitch` already
+uses. Scored over the gate-off frames alone, because both sides hold the gate
+on for most of a tune and counting those would put every file in the high
+nineties and move for nothing. Two properties written into the column rather
+than discovered later -- it reports its direction (`gate_ours_ringing` against
+`gate_ours_silent`, a missing note end and a note ended early being different
+defects), and it **rises when notes are removed**, so it belongs beside
+`retrig` and the two attack counts like every other one-sided reading here.
+
+One flaw was caught by its own tests before it ever ran: a voice neither side
+writes reads `$00` on every frame, which is gate-off on both, and three silent
+voices would have scored a perfect trace. `wave_compare` drops the equivalent
+frames for the identical reason and the rule was simply not carried across.
+
+Re-run, the option it was built to see moves **12 files and all 12 upward**:
+
+| | | | |
+|---|---|---|---|
+| BMX Kidz 4% -> **85%** | Auf Wiedersehen Monty 18 -> 45% | Shockway Rider 52 -> 75% | Nineteen 45 -> 56% |
+| IK+ 42 -> 48% | ACE II 62 -> 68% | Trans-Atlantic 30 -> 36% | Arcade Classics 42 -> 47% |
+| Thundercats 66 -> 68% | Bangkok Knights 61 -> 63% | Star Paws 25 -> 26% | I Ball 39 -> 40% |
+
+Nothing moves down. Every other column stays flat except the 3 points of
+`pitch` on Auf Wiedersehen Monty that were there before. So `--rest-keyoff` is
+in `presets.FIXED` after all, and the sequence is worth keeping as the
+sequence: read the player, emit it, find no column can see it, **build the
+column**, then let it decide.
 
 > **The transferable lesson:** "no column moved" has two causes and they need
 > different answers -- the change reached nothing, or every column is blind to
 > the register it reached. This project built four dimensions the last time it
-> hit the second (§ 7.78), and `--baseline` exists to tell the two apart. The
-> new part here is that the blindness is *structural*: the gate bit is
-> deliberately excluded from `wave`, for a good reason, and that decision
-> silently made an entire class of change unscoreable. When a column documents
-> what it ignores, read that list as a list of things you will not be able to
-> ship on evidence.
+> hit the second (§ 7.78) and did it again here. The new part is that the
+> blindness was *structural*: the gate bit is deliberately excluded from
+> `wave`, for a good reason, and that decision silently made an entire class
+> of change unscoreable for as long as nobody made a change in that class.
+> **When a column documents what it ignores, read that list as a list of
+> things you cannot yet ship on evidence** -- and treat it as a queue, because
+> the gap between "correct by the player's own code" and "shippable" was one
+> afternoon's dimension, not a listening session.
 
 ---
 

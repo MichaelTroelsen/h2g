@@ -585,7 +585,8 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert "| vib | wave | onset | noise | nrun | hold | tail | adsr |" in text
+    assert ("| vib | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+            in text)
     assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
@@ -741,6 +742,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  onset_agreement=melody, onset_matched=1,
                  onset_instruments=1, onset_first_matched=1,
                  onset_ours_early=0, onset_ours_late=0,
+                 gate=melody, gate_frames=100,
+                 gate_ours_ringing=0, gate_ours_silent=0,
                  orig_pulse_changes=0, our_pulse_changes=0,
                  orig_pulse_span=0, our_pulse_span=0,
                  pulse_span=1.0,

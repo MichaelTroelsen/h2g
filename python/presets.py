@@ -47,6 +47,13 @@ which is what Hubbard's "tune ended" marker becomes; and `--slides` /
 routine in the player, a no-op elsewhere). None of them affects whether a
 tune converts.
 
+`--rest-keyoff` is fixed on the same terms, and it is the one option here
+whose evidence is a dimension built for it: v0.5.270 added `gate`, the $D404
+bit every other column ignores, precisely because the option moved 19 files'
+bytes and one number. Scored on it, 12 files move and all 12 improve. A
+mechanism that cannot be measured is not the same as one that does not work,
+and the fix for the first is an instrument.
+
 `--voice-two-stage` is fixed on the same terms and for the same reason, not
 because it was measured corpus-wide: its signature matches **one** corpus file
 (Ninja), forcing it on every file moves that file's bytes and nobody else's,
@@ -83,7 +90,7 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "filters": True, "pulse": True, "vibrato": True,
          "vibrato_command": True, "cut_release": True, "tie": True,
          "rest_instrument": True, "compact_instruments": True,
-         "voice_two_stage": True}
+         "voice_two_stage": True, "rest_keyoff": True}
 
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing
@@ -97,20 +104,6 @@ EXCLUDED_FROM_ALWAYS = {
     # array is mutable player state, and a snapshot of a multi-subtune file
     # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
     "initial_instrument",
-    # A reading nothing here can score. 21 of the 61 files whose player tests
-    # status bit 6 with BIT/BVS *silence* the voice on that branch -- the
-    # testbit into the stored waveform, or the envelope pair zeroed -- where
-    # this writer emits a hold row and sustains the note. `KEYOFF` is the
-    # right row and it moves 19 files' bytes, and **no column of FIDELITY.md
-    # can see it**: a keyoff clears the gate and nothing else, `wave` ignores
-    # the gate bit by construction, and `hold` counts frames with a waveform
-    # selected, which a gate-off does not change. The corpus A/B is flat on
-    # 18 of the 19 and 3 points of `pitch` worse on the 19th. On the one axis
-    # that can see it -- frames where the original has the voice gated off
-    # and we do not -- IK+ voice 1 goes 330 -> 141 and Arcade Classics voice 1
-    # 250 -> 89. Off until a listener or a gate dimension settles it; a search
-    # cannot, because there is nothing for `fidelity_better` to compare.
-    "rest_keyoff",
     # Measured and rejected as a default. Removing the testbit frame from every
     # note's first frame deletes a register write the originals do not make
     # (9179 frames of ours against their 4273, in 79 files against 12) and
@@ -1023,6 +1016,15 @@ def main(argv=None) -> int:
                    # noise and the rest unmoved. A sixth --fidelity toggle
                    # would double a four-hour search to settle it.
                    "voice_two_stage": FIXED["voice_two_stage"],
+                   # The bit-6 rest, in the 21 players that silence on it
+                   # rather than holding. Fixed rather than searched, on the
+                   # dimension built to see it: `gate` moves on 12 files and
+                   # **upward on all 12** -- BMX Kidz 4% -> 85%, Auf
+                   # Wiedersehen Monty 18% -> 45%, Shockway Rider 52% -> 75%
+                   # -- with every other column flat but 3 points of `pitch`
+                   # on Auf Wiedersehen Monty. Gated on the player's own
+                   # branch, so a no-op in the 40 that hold.
+                   "rest_keyoff": FIXED["rest_keyoff"],
                    # The packing step of the conversion. Recorded here rather
                    # than searched: it takes no per-song decision, it just
                    # turns the .sng into something a SID player can play.
