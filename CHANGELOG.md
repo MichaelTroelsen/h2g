@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.280 — 2026-08-15
+
+- the subtune census, and what it closed
+
 ## 0.5.279 — 2026-08-15
 
 - --engine rips the second player a file carries

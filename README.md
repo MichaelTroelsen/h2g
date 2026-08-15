@@ -2142,6 +2142,41 @@ changes, and a second copy goes stale silently.
 does **not** mean the output is musically correct. That question is
 [`FIDELITY.md`](FIDELITY.md)'s, below.
 
+### The subtune census
+
+`SURVEY.md` says which *files* convert. It has never said what became of the
+subtunes inside them, and the gap is wide: across the corpus the PSID headers
+declare **553** and the converter emits **312**.
+
+```sh
+cd python
+python survey.py <sid_dir> --subtune-census ../SUBTUNES.md
+```
+
+[`SUBTUNES.md`](SUBTUNES.md) is the committed census. It is generated on demand
+rather than every commit, like `FIDELITY.md`, and it reads the record
+`convert_tracks` fills in as it decides each subtune's fate — not a second pass
+re-deriving the same decision from a `Detection`.
+
+Its result is a **negative** one, and that is the useful kind. A PSID header
+count is not a promise: the track table has no length field, Hubbard rips
+routinely declare more subtunes than the table holds, and reading past the end
+yields whatever bytes follow. 167 of the 227 lost subtunes have no voice
+pointer that resolves inside the file at all.
+
+The remaining 59 resolve one or two pointers of three, which reads like a queue
+of partly recoverable music and is not. The census prints the raw pointers
+because the counts cannot settle it — BMX_Kidz's subtune 1 "resolves" on
+`$B4FF`, which is subtune 0's own voice 0, and Warhawk's subtune 9 on `$1840`,
+seven bytes below the first real orderlist. Their pattern-reference counts are
+clean (56 and 86, none dangling) because a garbage pointer reads bytes that
+happen to be small, and a small number is a valid pattern index.
+
+So the converter is already right here and `SURVEY.md`'s subtune counts are not
+a shortfall to be closed. The one file that really did hide music behind a
+readable table hid it behind a second *player* — see [`--engine`](#--engine-n-a-file-that-carries-two-players)
+and H2G-CONVERSION-METHOD.md § 7.lllll.
+
 ## Fidelity — does it play like the original?
 
 `python/fidelity.py` answers the question every other check in this repo

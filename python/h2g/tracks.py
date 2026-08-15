@@ -309,7 +309,8 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
 
 def convert_tracks(sid: SidFile, det: Detection, log,
                    transposes: Optional[List[Dict[int, int]]] = None,
-                   tempos: Optional[List[Dict[int, int]]] = None
+                   tempos: Optional[List[Dict[int, int]]] = None,
+                   census: Optional[List[Dict]] = None
                    ) -> List[List[int]]:
     """Every subtune's three orderlists, in voice order.
 
@@ -321,6 +322,24 @@ def convert_tracks(sid: SidFile, det: Detection, log,
 
     `tempos` receives one {position: gate reload} map per track on the same
     terms, for the one dialect whose orderlist carries a tempo command.
+
+    `census` receives one record per subtune the header declares, saying what
+    became of it and why. It is an out-parameter for the same reason the other
+    two are: the answer is a by-product of decisions taken here, and the
+    alternative -- a second pass re-deriving `_voice_addr`, `command_floor`
+    and `pattern_references` from a `Detection` -- would be a re-derivation
+    that has to get every input right where this one cannot be wrong without
+    the conversion being wrong too. Keys:
+
+        subtune   index as the PSID header numbers it
+        fate      "emitted" | "placeholder" | "trimmed" | "beyond_table"
+        why       the single reason, for grouping
+        voices_ok how many of the three pointers resolved inside the file
+        refs      pattern numbers named across the three voices
+        dangling  how many of those name a pattern that does not exist
+
+    "placeholder" is an interior subtune that is emitted but plays nothing --
+    it still occupies a slot in the .sng, which is why it is not "trimmed".
     """
     data = sid.data
     tracks: List[List[int]] = []
@@ -358,6 +377,11 @@ def convert_tracks(sid: SidFile, det: Detection, log,
         if subtunes < sid.subtunes:
             log(f"Header claims ${sid.subtunes:X} subtune(s); the track table holds "
                 f"${subtunes:X}")
+    if census is not None:
+        for i in range(subtunes, sid.subtunes):
+            census.append({"subtune": i, "fate": "beyond_table",
+                           "why": "track table is shorter than the header",
+                           "voices_ok": 0, "refs": 0, "dangling": 0})
     for i in range(subtunes):
         voices: List[List[int]] = []
         maps: List[Dict[int, int]] = []
@@ -398,6 +422,35 @@ def convert_tracks(sid: SidFile, det: Detection, log,
         ok and any(r <= det.pattern_used for r in pattern_references(voices, floor))
         for ok, voices in zip(usable, built)
     ]
+    # Taken before the reset below, which replaces a dropped subtune's
+    # orderlists with DEFAULT_TRACK: reading `built` afterwards reports that
+    # placeholder's three bytes as the subtune's own references, which is how
+    # the first run of this census showed Commando's subtune 14 as "3 voices,
+    # 3 refs, 0 dangling" -- a row that cannot exist, since such a subtune
+    # would have been emitted.
+    stats = []
+    if census is not None:
+        for i in range(subtunes):
+            live = [v for v, ok in zip(built[i], addr_ok[i]) if ok]
+            refs = list(pattern_references(live, floor)) if live else []
+            # The raw 16-bit pointers as the table holds them. Recorded
+            # because the *count* of resolving voices cannot tell a partly
+            # readable subtune from one past the end of the table whose stray
+            # bytes happen to form an in-range address, and the pointers can:
+            # a real row is ordered and close to its neighbours (Warhawk's
+            # subtunes 0-8 run $1847..$1A14) and a false one is not ($6C16,
+            # $984F, $63B1).
+            ptrs = []
+            for v in range(3):
+                so = ((v + i * det.track_voices) * 2 if det.table_stride == 2
+                      else v + i * (det.track_voices * 2))
+                lo_i, hi_i = det.track_lo + so, det.track_hi + so
+                ptrs.append(data[hi_i] << 8 | data[lo_i]
+                            if 0 <= min(lo_i, hi_i) and
+                            max(lo_i, hi_i) < len(data) else None)
+            stats.append((sum(addr_ok[i][:n_voices]), len(refs),
+                          sum(1 for r in refs if r > det.pattern_used), ptrs))
+
     for i, (ok, play) in enumerate(zip(usable, playable)):
         if ok and not play:
             log(f"*** SUBTUNE ${i:X} PLAYS NO EXISTING PATTERN, DROPPED ***")
@@ -406,6 +459,29 @@ def convert_tracks(sid: SidFile, det: Detection, log,
             smaps[i] = [{} for _ in range(3)]
 
     keep = max((i + 1 for i, ok in enumerate(playable) if ok), default=0)
+    if census is not None:
+        for i in range(subtunes):
+            # Only the voices that resolved: an unusable one holds
+            # DEFAULT_TRACK, whose bytes would otherwise be counted as this
+            # subtune naming patterns it never named.
+            n_ok, n_refs, bad, ptrs = stats[i]
+            if n_ok == 0:
+                why = "no voice pointer resolves inside the file"
+            elif n_ok < n_voices:
+                why = f"only {n_ok} of {n_voices} voice pointers resolve"
+            else:
+                why = "names no pattern that exists"
+            if i >= keep:
+                fate = "trimmed"
+            elif not playable[i]:
+                fate = "placeholder"
+            else:
+                fate, why = "emitted", ""
+            census.append({"subtune": i, "fate": fate, "why": why,
+                           "voices_ok": n_ok, "refs": n_refs,
+                           "dangling": bad, "pointers": ptrs,
+                           "resolved": list(addr_ok[i][:3])})
+        census.sort(key=lambda r: r["subtune"])
     if keep < subtunes:
         log(f"Header claims ${subtunes:X} subtune(s); last usable is "
             f"${keep - 1:X}, dropping {subtunes - keep} phantom")

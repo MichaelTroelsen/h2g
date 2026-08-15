@@ -10074,3 +10074,107 @@ approximate and a cue that ends in the original loops in the conversion.
 > `--tempo auto`, which lives in `presets.json`'s `always` block and which a
 > direct `convert()` call does not get. Measure a new output path with the
 > options the shipped path uses, or measure something that is not shipped.
+
+### 7.lllll The subtune census, and a negative result worth having
+
+Section 7.kkkkk closed with an arithmetic that looked like a large open
+problem: comparing each corpus file's PSID header count against the subtunes
+`presets.json` records, **173 subtunes were missing across 30 files**, with
+Powerplay Hockey's nine only the sixth largest entry. Gerry the Germ was
+missing 16, Gremlins and the C64 Music Examples 10 each.
+
+`survey.py --subtune-census` answers what became of them. It is the shape
+`fidelity.py --census` established -- a mode that writes to a path rather than
+into the standard report -- and it reads the record `convert_tracks` now fills
+in as it decides each subtune's fate, an out-parameter beside `transposes` and
+`tempos`. Deliberately not a second pass: re-deriving `_voice_addr`,
+`command_floor` and `pattern_references` from a `Detection` is the
+re-derivation this repo has shipped wrong twice (§ 7.ggggg, and the
+`HARD_RESTART_FRAMES` probes), and the decision is a by-product of the
+conversion itself.
+
+The real total is larger than the arithmetic suggested, because that
+subtraction only saw the *trailing* run a conversion trims. Interior subtunes
+that play nothing are emitted as placeholders and counted:
+
+    declared by the PSID headers   553
+    emitted                        312
+    lost                           227   in 39 files
+
+| subtunes | files | fate | cause |
+|---:|---:|---|---|
+| 97 | 17 | `placeholder` | no voice pointer resolves inside the file |
+| 70 | 28 | `trimmed` | no voice pointer resolves inside the file |
+| 31 | 14 | `placeholder` | only 1 of 3 voice pointers resolve |
+| 13 | 9 | `trimmed` | only 1 of 3 voice pointers resolve |
+| 12 | 2 | `beyond_table` | track table is shorter than the header |
+| 11 | 10 | `placeholder` | only 2 of 3 voice pointers resolve |
+| 4 | 3 | `trimmed` | only 2 of 3 voice pointers resolve |
+| 1 | 1 | `placeholder` | names no pattern that exists |
+
+167 of the 227 have no resolving pointer at all: header padding, nothing to
+find, and the converter is right to drop them. That leaves 59 where "only 1
+of 3" or "only 2 of 3" resolve, which reads like a queue of partially
+recoverable music.
+
+#### It is not a queue
+
+The count of resolving voices cannot tell a partly readable subtune from a row
+*past the end of the table* whose stray bytes happen to form one address
+inside the file. The pointers can, and the census now prints them:
+
+    BMX_Kidz    0   $B4FF  $B53C  $B56B      emitted
+                1   $3CA5! $6BB5! $B4FF      "one voice resolves"
+                2   $B5B5  $DDB5! $DBA5!
+                3   $B5DF  $E1B5! $B5B5
+
+    Warhawk   0-8   $1847 $1897 $18FA $19B7 ... $1A0E $1A11 $1A14
+                9   $6C16! $1840  $3C56!
+
+BMX_Kidz's subtune 1 "resolves" on `$B4FF`, which is **subtune 0's own voice
+0**. Warhawk's subtune 9 resolves on `$1840`, seven bytes below the first real
+orderlist -- it is pointing into the track table. A real row is ordered and
+sits beside its neighbours; these are the bytes that follow a table with no
+length field.
+
+**And the reference counts agree with the wrong answer.** Warhawk's subtune 9
+reads 86 pattern references with *none* dangling; BMX_Kidz's three read 56, 35
+and 36, all clean. That is not evidence of music. A garbage pointer into
+pattern or instrument data reads bytes that happen to be small, and a small
+number is a valid pattern index. Selecting the "0 dangling" rows produced a
+tidy list of 12 subtunes in 7 files that looked exactly like a work queue, and
+every one of them dissolved on reading its pointers.
+
+So the answer to "173 missing subtunes" is that the converter was already
+right, and `SURVEY.md`'s subtune counts are not a shortfall to be closed. The
+one file that really did hide music behind a readable table hid it behind a
+*second player*, not behind these pointers, and `--engine` reaches it.
+
+> **The transferable lesson:** a census can be worth building to be *closed*.
+> This one cost an afternoon and removed 30 files from the queue rather than
+> adding them, which is the better outcome and the one a summary statistic
+> could not have reached -- the subtraction that started it was measuring the
+> wrong quantity in both directions at once.
+>
+> And the narrower one, which is a rule about statistics and not about this
+> player: **a validity check computed from the same bytes as the thing being
+> validated cannot fail independently of it.** `dangling` counts references
+> above `pattern_used`; a random byte is below it far more often than above,
+> so a clean count is the *expected* reading of garbage, not a surprise. When
+> a filter selects a suspiciously tidy subset, ask what the null hypothesis
+> would have produced.
+
+#### One defect in the census, found the way this repo now expects
+
+The first corpus run reported Commando's subtune 14 as "3 of 3 voices resolve,
+3 references, 0 dangling" and lost. That row cannot exist -- a subtune with all
+three pointers resolving and no dangling reference is exactly the definition of
+one that gets emitted. `convert_tracks` replaces a dropped subtune's orderlists
+with `DEFAULT_TRACK` *before* the census block runs, so the placeholder's three
+bytes were being read as the subtune's own references. Its true reading is 3
+references and 3 dangling. Measured before the reset, pinned by
+`test_refs_are_read_before_the_placeholder_reset`.
+
+Same shape as § 7.jjjjj's `wave` drop and the `tail` column's key: reading a
+quantity at a point where the code has already modified what you are reading.
+What caught it was not a test but an impossible combination of numbers.
