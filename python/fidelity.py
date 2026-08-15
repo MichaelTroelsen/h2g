@@ -944,6 +944,123 @@ def gate_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+GATE_KINDS = ("retrigger", "matched", "short", "held")
+
+
+def gate_runs(timeline: list[int]) -> list[tuple[int, int]]:
+    """(start, length) of every stretch the voice is released.
+
+    A frame the voice has never been written at all reads `$00`, which is
+    gate-off and is not a release; `gate_compare` drops those for the same
+    reason and so does this.
+    """
+    out, start = [], None
+    for i, x in enumerate(timeline):
+        released = x and not (x & 1)
+        if released and start is None:
+            start = i
+        elif not released and start is not None:
+            out.append((start, i - start))
+            start = None
+    if start is not None:
+        out.append((start, len(timeline) - start))
+    return out
+
+
+def gate_census(orig: list[Voice], ours: list[Voice], nframes: int,
+                lag: int = 0) -> list[dict]:
+    """Every release the ORIGINAL makes, classified by what we did there.
+
+    The `gate` column says the overlap is 39% corpus-wide; this says what the
+    other 61% is, which is the difference between a number and a queue. One
+    record per release the original makes, on the frames it makes it:
+
+    * `retrigger` -- one frame long, the edge a player makes closing the gate
+      at the end of an untied note where the next note follows immediately.
+      **944 of the corpus's 46996, 2.0%**, and that share is a statement
+      about the instrument rather than the players: siddump samples the
+      registers once per frame, so a gate that falls and rises inside one
+      frame leaves no edge at all, and only the edges that happen to span a
+      frame boundary survive. `--vice` traces at 312 samples a frame and
+      would fill this bucket properly. Two files I checked first read zero
+      and I nearly wrote that down as the corpus figure.
+
+      This bucket is also where a hand-rolled probe of mine put 170 of
+      Zoolook's 210 releases, by tracing the *original* at `-m3` -- the
+      multiplier belongs to our side only (`_measure` traces the original at
+      `-m1`), and running a 50 Hz tune three times too fast manufactures
+      exactly the short edges it then reported. Take the measurement from the
+      tool.
+    * `matched` -- longer than a frame, and we release for at least half of
+      it. The rest is a rest on both sides.
+    * `short` -- we release, but for less than half. A note whose end we place
+      right and whose silence we cut short.
+    * `held` -- we never release at all. This is the queue: the original rests
+      and we sustain straight through it.
+
+    Aligned by `lag`, like the column.
+    """
+    recs = []
+    for v, (a, b) in enumerate(zip(orig, ours)):
+        ta = register_timeline(a.wf_events, nframes)
+        tb = register_timeline(b.wf_events, nframes)
+        ta, tb = _aligned(ta, tb, lag)
+        for start, length in gate_runs(ta):
+            if start + length > len(tb):
+                break                       # runs past the aligned window
+            ours_off = sum(1 for i in range(start, start + length)
+                           if tb[i] and not (tb[i] & 1))
+            if length == 1:
+                kind = "retrigger"
+            elif ours_off == 0:
+                kind = "held"
+            elif ours_off * 2 >= length:
+                kind = "matched"
+            else:
+                kind = "short"
+            recs.append({"voice": v + 1, "frame": start, "frames": length,
+                         "ours_off": ours_off, "kind": kind})
+    return recs
+
+
+def gate_census_report(rows: list[dict]) -> str:
+    """The gate census over a whole run -- a queue, not a measurement."""
+    recs = [dict(r, file=row["file"]) for row in rows
+            for r in row.get("gate_census") or []]
+    files = sum(1 for r in rows if r.get("gate_census"))
+    out = ["# Gate census", "",
+           f"{len(recs)} release(s) the original makes, across {files} "
+           "file(s), classified by what the conversion did on those frames. "
+           "`retrigger` is the one-frame edge a player makes at the end of "
+           "an untied note; it is a small share because siddump samples once "
+           "a frame and an edge inside a frame leaves none. `short` is a "
+           "release we make and cut off early; `held` is the queue -- the "
+           "original rests and we sustain straight through it.", ""]
+    if not recs:
+        return "\n".join(out)
+    counts = Counter(r["kind"] for r in recs)
+    frames = Counter()
+    for r in recs:
+        frames[r["kind"]] += r["frames"] - r["ours_off"]
+    out += ["| kind | runs | share | frames we ring |", "|---|---:|---:|---:|"]
+    for k in GATE_KINDS:
+        n = counts.get(k, 0)
+        out.append(f"| {k} | {n} | {100 * n / len(recs):.1f}% | {frames[k]} |")
+    out += ["", "## Where the held ones are", "",
+            "| file | runs | frames | longest |", "|---|---:|---:|---:|"]
+    per = {}
+    for r in recs:
+        if r["kind"] != "held":
+            continue
+        e = per.setdefault(r["file"], [0, 0, 0])
+        e[0] += 1
+        e[1] += r["frames"]
+        e[2] = max(e[2], r["frames"])
+    for name, (n, f, longest) in sorted(per.items(), key=lambda kv: -kv[1][1]):
+        out.append(f"| {name} | {n} | {f} | {longest} |")
+    return "\n".join(out) + "\n"
+
+
 def adsr_compare(orig: list[Voice], ours: list[Voice],
                  nframes: int, lag: int = 0) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
@@ -2805,6 +2922,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # reason that has nothing to do with the conversion.
                 row["onset_census"] = onset_census(
                     a, best_dump, nframes, instrument_stamps(sng))
+            if getattr(args, "gate_census", None):
+                # Same two traces and the same alignment the column used.
+                row["gate_census"] = gate_census(a, best_dump, nframes,
+                                                 lag=lag)
             if getattr(args, "hold_census", None):
                 # Same two traces, same modal reduction, same reason.
                 row["hold_census"] = hold_census(
@@ -4406,6 +4527,10 @@ def main(argv=None) -> int:
                    help="classify every note-length disagreement by kind "
                         "(fetch / slot / sparse / short / long) and write the "
                         "work list here")
+    p.add_argument("--gate-census", metavar="PATH",
+                   help="classify every release the original makes by what "
+                        "we did there (retrigger / matched / short / held) "
+                        "and write the work list here")
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", default="auto",
                    help="which subtune of the original to trace: a number, or "
@@ -4648,6 +4773,10 @@ def _run(p, args, workdir: Path) -> int:
         Path(args.hold_census).write_text(hold_census_report(rows),
                                           encoding="utf-8")
         print(f"wrote {args.hold_census}", file=sys.stderr)
+    if getattr(args, "gate_census", None):
+        Path(args.gate_census).write_text(gate_census_report(rows),
+                                          encoding="utf-8")
+        print(f"wrote {args.gate_census}", file=sys.stderr)
 
     if args.baseline:
         try:

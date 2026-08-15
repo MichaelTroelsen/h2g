@@ -396,6 +396,17 @@ test dependency).
   `-S3` -- all nine files that carry it are `-S1` but for Delta. State the
   blindness in the Dimension itself; a column reading well for the wrong reason
   is worse than one reading badly.
+- **The multiplier belongs to our side only.** `_measure` traces the original
+  at `-m1` and the conversion at `-m{multiplier}`, because the original is a
+  50 Hz VBI tune and the `-S` factor is a property of what `gt2reloc` packed.
+  A probe of mine traced *both* at the multiplier, which plays the original
+  three times too fast, and reported a clean bimodal distribution of
+  one-frame gate edges that does not exist -- with a mechanism-shaped story
+  already attached to it. The tool's own census says zero such edges on that
+  file. **What caught it was that two numbers could not both be true**, not
+  that either looked wrong. Add the question to the harness, which already
+  resolves the subtune, the multiplier and the startup lag; a probe
+  re-derives all three and need only get one wrong. See § 7.ggggg.
 - **A census of what a column misses is a queue, not a report.** Grouping
   `onset`'s disagreeing instruments by the record byte that causes them turned
   "18% disagree" into "$01 x19, $04 x11, $80 x6, $0A x6" -- and the `$0A` entry

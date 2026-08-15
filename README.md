@@ -2488,6 +2488,30 @@ Corpus at v0.5.259, 433 instruments across 81 files: `fetch` 211, `slot` 117,
 are one mechanism, a terminating `$00`/`$08` wavetable step the emitters do not
 write. See H2G-CONVERSION-METHOD.md § 7.xxxx.
 
+### The gate census — `--gate-census`
+
+```sh
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json --gate-census ../build/GATECENSUS.md
+```
+
+The same idea for `gate`. One record per release the **original** makes, on
+the frames it makes it, classified by what the conversion did there.
+
+| kind | what it means | what to do |
+|---|---|---|
+| `matched` | we release for at least half of it | — |
+| `short` | we release, but cut it off early | we re-attack too soon; the next-note fetch, from the other side |
+| `held` | we never release at all | the queue: the original rests and we sustain through it |
+| `retrigger` | one frame long | the edge at an untied note's end; mostly invisible at one sample a frame |
+
+Corpus at v0.5.272, 46996 releases across 83 files: `matched` 50.2%, `held`
+24.2%, `short` 23.5%, `retrigger` 2.0%. **Half of every release the originals
+make, we already make** — which reframes the 39% mean overlap, since a
+release made one frame late costs a frame-overlap at both ends. The queue is
+the 11385 `held`, led by Deep Strike (415 runs, 2136 frames), Thrust (36 runs
+but a 320-frame rest among them), Samantha Fox and Knucklebusters. See
+H2G-CONVERSION-METHOD.md § 7.ggggg.
+
 **`fetch` is invisible above `-S3`**, and the report says so in its own
 per-rate table: the deficit is a fixed number of play *calls*, and siddump
 samples once a frame, so a low count up there is the trace's resolution rather

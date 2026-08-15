@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.272 — 2026-08-15
+
+- the gate census, and the probe that lied about it
+
 ## 0.5.271 — 2026-08-15
 
 - gate as a search term, and the two settings it and the speed gate found

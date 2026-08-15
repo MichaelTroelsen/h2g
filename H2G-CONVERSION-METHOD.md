@@ -9352,6 +9352,68 @@ them, and the two properties that matter were written in rather than found:
 > the gap between "correct by the player's own code" and "shippable" was one
 > afternoon's dimension, not a listening session.
 
+### 7.ggggg What the 39% is made of, and a probe that lied about it
+
+§ 7.fffff's column arrived with a corpus number: **mean gate overlap 39%**,
+160717 frames sustaining a voice the original had released against 38789 the
+other way. That is a measurement, not a work item -- so, exactly as `onset`
+became `--census` and `hold` became `--hold-census`, `gate` becomes
+`--gate-census`. One record per release the *original* makes, classified by
+what the conversion did on those frames.
+
+Corpus, 46996 releases across 83 files:
+
+| kind | runs | share | frames we ring |
+|---|---:|---:|---:|
+| matched | 23607 | 50.2% | 34149 |
+| held | 11385 | 24.2% | 49046 |
+| short | 11060 | 23.5% | 69684 |
+| retrigger | 944 | 2.0% | 936 |
+
+**Half of every release the originals make, we already make.** That reframes
+39% considerably: the column is a frame-overlap and a release we make one
+frame late costs it on both ends, so a 50% *event* match reads as a 39%
+*frame* overlap. The queue is the 11385 `held` -- the original rests and we
+play straight through -- led by Deep Strike (415 runs, 2136 frames), Thrust
+(36 runs but 1914 frames, the longest a 320-frame rest), Samantha Fox (390 /
+1766) and Knucklebusters (285 / 1756).
+
+`short` is the larger frame count and the less interesting kind: we do let
+go, at roughly the right moment, and re-attack too early. That is the
+next-note fetch `hold`'s census already attributes (§ 7.xxxx's `fetch`, 211
+of 432), seen from the other side.
+
+#### The probe that lied
+
+Before the census existed I read the same question off a hand-written probe,
+and it said something entirely different: that the originals release for one
+frame between most notes -- 170 of Zoolook's 210 runs -- and for 4-5 frames
+at rests. The census says Zoolook has **no** one-frame releases at all.
+
+The probe traced *both* sides at the song's `-S` multiplier. The multiplier
+belongs to our side only: `_measure` traces the original at `-m1`, because it
+is a 50 Hz VBI tune and the multiplier is a property of what `gt2reloc`
+packed. Tracing Zoolook's original at `-m3` calls its play routine three
+times a frame, which plays it three times too fast and manufactures exactly
+the short gate edges the probe then reported. Two files' worth of that
+analysis went into a section draft before the discrepancy with the tool's own
+number forced the check.
+
+The corrected `retrigger` figure carries its own version of the lesson. The
+first two files I ran the census on both read zero, and "it measures zero on
+this corpus" went into the docstring; over 83 files it is 944, 2.0%. Both
+halves of the bucket's account -- why it is small (siddump samples once a
+frame, so an edge inside a frame leaves none) and how small -- had to be
+measured rather than reasoned.
+
+> **The transferable lesson:** the tool and the probe disagreed, and the
+> probe was wrong in a way that *looked* like a finding -- a clean bimodal
+> distribution with a mechanism-shaped story attached. What caught it was
+> that the two numbers could not both be true, not that either looked
+> suspicious. Build the census into the harness that already resolves the
+> subtune, the multiplier and the startup lag correctly; a probe re-derives
+> all three and only has to get one wrong.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail
