@@ -362,6 +362,10 @@ def fidelity_better(cand: tuple, ref: tuple,
                     margin: float = FIDELITY_MARGIN) -> bool:
     """Is `cand` a better-playing (melody, sequence, attacks, noise) than `ref`?
 
+    Seven one-sided questions and two vetoes. Any one question is enough to
+    accept, which is a sound acceptance rule and an unsound *replacement*
+    rule -- see `gave_back`, and CLAUDE.md.
+
     Two ways to win, and both are one-sided questions rather than agreement
     percentages.
 
@@ -551,6 +555,33 @@ def fidelity_better(cand: tuple, ref: tuple,
     # `onset` survives it because each side is read at its *own* attack frames
     # and scored per instrument, so it does not grow with the frames a setting
     # adds; and losing the noise outright is a fact, not an estimate.
+    # **Ends the note where the original ends it.** `gate` (v0.5.270) is the
+    # only column that reads $D404's gate bit: `wave` excludes it by
+    # construction, `hold` counts frames with a waveform *selected*, `adsr`
+    # and `tail` read the envelope pair. Until it existed, an option that only
+    # opened and closed the gate was invisible to this whole function --
+    # `--rest-keyoff` moved 19 files' bytes and one number on one file, and
+    # had to be shipped on a hand-rolled probe.
+    #
+    # **The gaming vector is real and `keeps_notes` already closes it.** A
+    # conversion with fewer notes has more gate-off frames and scores higher
+    # for it, exactly as `wave` rises when attacks are deleted (section
+    # 7.eee). The raw attack count in `keeps_notes` is what refuses that, and
+    # it is the same guard that has protected every term here since the first.
+    #
+    # **Acceptance only, never a veto**, for the reason the clause below
+    # states about the oscillation and the noise pitch: `gate` is scored over
+    # the frames *either side* has the voice released, so a setting that adds
+    # releases changes the denominator it is judged by. A term whose sample a
+    # setting resizes cannot also be the thing that rejects it.
+    def gates(state):
+        return state[7] if len(state) > 7 else None
+
+    g_c, g_r = gates(cand), gates(ref)
+    gates_right = (g_c is not None and g_r is not None
+                   and g_c > g_r + margin
+                   and not _oscillation_lost(osc(cand), osc(ref)))
+
     def worse(c, r) -> bool:
         return c is not None and r is not None and c < r - margin
 
@@ -562,7 +593,7 @@ def fidelity_better(cand: tuple, ref: tuple,
                  or bool(ref[3][0] and not cand[3][0]))
     return keeps_notes and not gave_back and bool(
         plays_more or finds_noise or moves_oscillation
-        or moves_noise_pitch or opens_right or holds_right)
+        or moves_noise_pitch or opens_right or holds_right or gates_right)
 
 
 def _oscillation_lost(cand: float | None, ref: float | None,
@@ -708,7 +739,9 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                  _noise_pitch(dump, nf), _noise_pitch(orig, nf)),
                 pm.get("reversal_ratio"),
                 F.onset_agreement(orig, dump, nf)["onset_frame_agreement"],
-                F.sound_run_agreement(orig, dump, nf)["sound_run_agreement"])
+                F.sound_run_agreement(orig, dump, nf)["sound_run_agreement"],
+                F.gate_compare(orig, dump, nf,
+                               lag=F.startup_lag(orig, dump)[0])["gate"])
 
     # Fix `ours_sub` before any scoring, on the default conversion, by the same
     # rule `_measure` uses: the window is the traced subtune and one either

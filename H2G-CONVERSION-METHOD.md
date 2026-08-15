@@ -9318,6 +9318,28 @@ in `presets.FIXED` after all, and the sequence is worth keeping as the
 sequence: read the player, emit it, find no column can see it, **build the
 column**, then let it decide.
 
+And the corpus number the column arrived with is the largest thing it said:
+**mean gate overlap 39%** over 83 files, 160722 frames sustaining a voice the
+original had released against 38790 the other way. That is a standing error
+axis rather than any one file's defect, and nothing measured it for the
+project's whole life.
+
+#### And then a seventh term, so the search can see it too
+
+A column the report prints is not yet a column the *search* reads.
+`fidelity_better` takes seven one-sided questions now, `gates_right` among
+them, and the two properties that matter were written in rather than found:
+
+* **Guarded by `keeps_notes`.** A conversion with fewer notes has more
+  gate-off frames and scores higher for it -- the same shape as § 7.eee's
+  candidate reaching `wave` 99.5% by deleting 79 notes. The raw attack count
+  refuses that, and it is the guard every term here has always had.
+* **Acceptance only, never a veto.** `gate` is scored over the frames *either*
+  side has the voice released, so a setting that adds releases changes the
+  denominator it is judged by -- exactly the reason the oscillation ratio and
+  the noise pitch are kept out of `gave_back`, where a widened veto once cost
+  seven measured settings.
+
 > **The transferable lesson:** "no column moved" has two causes and they need
 > different answers -- the change reached nothing, or every column is blind to
 > the register it reached. This project built four dimensions the last time it

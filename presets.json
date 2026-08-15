@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.270 presets.py",
+  "generator": "h2g 0.5.271 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -574,7 +574,8 @@
       "bytes": 5491,
       "subtunes": 1,
       "rows": 4715,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "Off_the_Cuff.sid": {
       "max_rows": 94,
@@ -641,7 +642,8 @@
       "bytes": 15207,
       "subtunes": 1,
       "rows": 9310,
-      "multiplier": 2
+      "multiplier": 2,
+      "no_test_restart": true
     },
     "Proteus.sid": {
       "max_rows": 128,
