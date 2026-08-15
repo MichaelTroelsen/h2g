@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.275 presets.py",
+  "generator": "h2g 0.5.277 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -639,10 +639,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 15207,
+      "bytes": 15519,
       "subtunes": 1,
       "rows": 9310,
-      "multiplier": 2,
+      "multiplier": 1,
       "no_test_restart": true
     },
     "Proteus.sid": {

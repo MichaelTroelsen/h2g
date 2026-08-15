@@ -265,7 +265,10 @@ def test_the_sweep_is_found_in_the_corpus_and_the_rate_is_record_plus_six():
         found += 1
         assert det.pulse_rate_field == 6, path.name
         assert 0 <= det.pulse_bounds < len(sid.data)
-    assert found == 43, "the sweep block's reach changed -- re-measure"
+    # 43 until v0.5.277, which moved Powerplay Hockey's instrument table to
+    # the copy of the player its patterns belong to (section 7.iiiii). The
+    # sweep was found from the other copy's table; from this one it is not.
+    assert found == 42, "the sweep block's reach changed -- re-measure"
 
 
 def test_both_halves_of_the_signature_are_required():

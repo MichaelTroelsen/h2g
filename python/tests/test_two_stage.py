@@ -299,9 +299,13 @@ def test_ik_plus_percussion_instrument_attacks_on_noise():
 # rather than an error -- and behind it sat the onset census's largest group,
 # `$04` x11 across five of those nine.
 
+# Powerplay Hockey was here until v0.5.277, and the entry
+# described the wrong engine: the file carries the player
+# twice and the block found for it belonged to the copy its
+# patterns do not come from (section 7.iiiii).
 STRIDE16 = ["After_8.sid", "Kings_of_the_Beach_intro.sid", "Mr_Meaner.sid",
             "Off_the_Cuff.sid", "One_on_One_Jordan_vs_Bird.sid",
-            "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid",
+            "Pygmies_Revenge.sid",
             "Rikky.sid", "Rock_Tells_the_Tale.sid"]
 
 
@@ -337,11 +341,18 @@ def test_the_instrument_bound_is_not_taken_in_this_dialect():
     one stride-16 file whose two-stage offset happens to be a multiple of its
     stride is Powerplay Hockey, and taking the bound there cuts 12 records to
     6 -- below the instrument 8 its own patterns name -- for melody 72% -> 66%
-    and wave 37% -> 26%."""
+    and wave 37% -> 26%.
+
+    **That measurement was taken on the wrong engine.** v0.5.277 moved this
+    file's instrument table to the copy of the player its patterns belong to
+    (section 7.iiiii), and no two-stage block is found from there, so the
+    bound cannot be taken and the file no longer demonstrates the rule. The
+    rule stands on the 35 stride-8 files it was measured over; what is pinned
+    here now is that a stride-16 file is still refused."""
     sid = load_sid(str(CORPUS / "Powerplay_Hockey_USA_vs_USSR.sid"))
     _, det = _detect_tables(sid, lambda *a, **k: None)
-    assert det.effect_two_stage
-    assert det.instr_used == 12
+    assert det.instr_stride == 16
+    assert not det.effect_two_stage
 
 
 @needs_corpus

@@ -9602,6 +9602,83 @@ the true 3. Converting twice and hashing needs no row at all.
 > in *calls* where the player's is in frames, written before the multiplier
 > existed and never revisited when it did.
 
+### 7.iiiii Two copies of one player, and a table taken from each
+
+Powerplay Hockey has been the corpus's least measurable file for as long as
+the report has existed: melody 72%, `retrig` 1.76, `adsr` **0%**, and
+`onset`, `nrun`, `hold` and `tail` all printing `-`. It also decided a
+criterion question it had no business deciding -- v0.5.271's gate term
+selected exactly one setting corpus-wide and it was this file's.
+
+`--diagnose` says the traced pair is right: `s0 -> o0`, 83%, "the
+correspondence is the identity where it is legible". So the notes are the
+right notes. The four dead columns say why they are dead when asked
+directly: the original sounds envelope pairs `$0A9B`, `$0AA9`, `$0AC9` and
+`$0CF7`, the conversion sounds `$0140`, `$0898`, `$0979`, `$0A09`, `$0AF8`,
+and **the two sides share none**. Every one of those columns keys
+instruments by their ADSR pair, so with no shared key there is nothing to
+compare -- and `adsr` compares the registers frame by frame and reads 0%.
+
+Not one of the original's four pairs appears at *any* offset of *any* record
+in the table detection found. They are all in a different table.
+
+#### The file carries the player twice
+
+    4200  CMP #$00 / BEQ $4234        ; A = 0 -> JSR $43EA
+          SBC #$01 / JSR $3603        ; A >= 1 -> the cue engine
+
+    3779  LDA $3BA3,X / STA $D405,Y   ; envelopes, engine one
+    4574  LDA $4A03,X / STA $D405,Y   ; envelopes, engine two
+
+Two copies of the same code at different bases, each with its own tables:
+instruments at `$3BA0` and `$4A00`, and state at `$3Bxx` and `$49xx`. The
+first drives nine short game cues, whose orderlists sit in a table at
+`$3C66` the init copies six bytes at a time -- three pointers per cue, in
+the classic lo,lo,lo / hi,hi,hi layout, nine rows that decode cleanly and a
+tenth whose pointers leave the file. The second drives the tune the PSID
+header starts on: `startSong 1` calls init with A = 0, which is the `$43EA`
+path.
+
+The orderlist and pattern chains matched the second engine (`$4B40`,
+`$4B4A`); the instrument chain takes whichever store-shape matches first in
+the file, which is the first engine's `$3BA0`. Right notes, wrong
+instruments.
+
+#### The rule
+
+Where the winning signature matches more than once, take the table nearest
+the pattern pointers. That is the rule `find_song_speeds` already applies to
+speed gates -- "the gate nearest the detected instrument table is the
+detected player's own" -- in the other direction. A file whose signature
+matches once cannot move, which is what keeps this to one file: over the
+corpus, every other file either has a single match or already has the
+nearest one.
+
+| | before | after |
+|---|---|---|
+| melody | 72% | **99.3%** |
+| sequence | 73% | 99.4% |
+| retrig | 1.76 | **1.01** |
+| wave | 39% | 98% |
+| adsr | **0%** | **99.9%** |
+| gate | 21% | 44% |
+| onset / hold / tail | `-` | 75% / 75% / 100% |
+
+**And one thing got worse, in the way a one-sided count does.** Our noise
+frames go 434 to **0** against the original's 215: with the cue engine's
+instruments we invented drums at twice the rate, and with the right ones we
+sound none at all. A drum that is missing is not an improvement on a drum
+that is wrong, and the file still invents 2224 filtered frames against zero.
+Both are now visible defects on a file that could not be read at all before.
+
+> **The transferable lesson:** "the notes are right, so the tables are
+> right" does not follow. Four columns had been printing `-` for this file
+> since they were written, and `-` is not a small number -- it is the report
+> saying it could not compare, which is a fact about the *conversion* worth
+> chasing rather than a gap in the corpus. The thing that turned it into a
+> reading was asking where the original's envelope pairs are, and finding
+> them all in a table nobody had looked at.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

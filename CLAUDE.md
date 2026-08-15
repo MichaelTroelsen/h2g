@@ -336,6 +336,18 @@ test dependency).
   `tests/test_table_validation.py`**, which replicates `exectable` over every
   corpus conversion. When a pack fails silently, walk the tables: it turns
   "gt2reloc will not pack it" into an instrument and a row.
+- **A `-` in the report is a finding, not a gap.** Powerplay Hockey printed
+  `-` for `onset`, `nrun`, `hold` and `tail` from the day each was written,
+  and `adsr` 0%, while `melody` said 72% and `--diagnose` confirmed the
+  traced pair was the right music. Those four columns key instruments by
+  their ADSR pair, so `-` means *no shared key*: the original sounded four
+  envelope pairs that appear at no offset of any record in the table
+  detection had found. The file carries **two copies of the player** and the
+  chains took the orderlists from one and the instruments from the other --
+  right notes, wrong instruments. Picking the table nearest the pattern
+  pointers (the rule `find_song_speeds` already uses for gates) takes it to
+  melody 99%, `adsr` 99.9%, `retrig` 1.01, and moves no other file. See
+  § 7.iiiii.
 - **A guard that reads like a sanity check can be a population filter.**
   `detect._effect_byte_address` opened with `if det.instr_stride != 8: return
   None`, which switched off *every* routine that reads the instrument effect

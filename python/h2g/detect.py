@@ -635,15 +635,39 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     # and played silence. INSTRUMENT_INDEX_SHAPE below fingerprints the *load*
     # instead, which is common to both.
     idx = _find_instrument_index(sid, det, log)
-    i = find("BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4")       # Chimera
+    shape_used = "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4"    # Chimera
+    i = find(shape_used)
     if i <= -1:
-        i = find("BD ?? ?? 99 02 D4 BD ?? ?? 99 03 D4")      # ACE2
+        shape_used = "BD ?? ?? 99 02 D4 BD ?? ?? 99 03 D4"   # ACE2
+        i = find(shape_used)
     if i <= -1:
-        i = find("BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48")  # IK+
+        shape_used = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48"   # IK+
+        i = find(shape_used)
     addr = -1
     if i > -1:
         addr = _addr16(data, i + 1, i + 2)
-        log(f"Found Instruments at....: ${addr:X}")
+        # **A file can carry two copies of the player.** Powerplay Hockey has
+        # one at $36xx driving nine short game cues and another at $43F0
+        # driving the tune the PSID header starts on, the same code at a
+        # different base -- and the chain above takes whichever match comes
+        # first in the file, which is the cue engine's. Its orderlist and
+        # pattern signatures matched the *other* copy, so the conversion
+        # played the right notes through the wrong instruments: `adsr` 0%,
+        # not one envelope pair shared with the original, and the four
+        # columns keyed by instrument (`onset`, `nrun`, `hold`, `tail`) all
+        # unmeasurable.
+        #
+        # So where the same signature matches more than once, take the table
+        # nearest the pattern pointers -- the rule `find_song_speeds` already
+        # uses to pick between several speed gates, in the other direction.
+        # A single-match file cannot move.
+        near = _nearest_table(data, shape_used, det.pattern_lo, sid)
+        if near >= 0 and near != addr:
+            log(f"Found Instruments at....: ${near:X} (nearest the patterns; "
+                f"${addr:X} belongs to another copy of the player)")
+            addr = near
+        else:
+            log(f"Found Instruments at....: ${addr:X}")
     elif idx >= 0:
         # Last, and only consulted once every store-shaped signature has
         # failed, so it can rescue a file that finds nothing and can never
@@ -1892,6 +1916,42 @@ def _find_triangle_gate(sid: SidFile, at: int) -> Optional[int]:
     if match_at(sid.data, k, TRIANGLE_GATE_SHAPE):
         return sid.data[k + TRIANGLE_GATE_IMMEDIATE]
     return None
+
+
+def _search_all(data: bytes, pattern: str, limit: int = 8):
+    """Every offset `pattern` matches, not just the first."""
+    out, at = [], 0
+    while len(out) < limit:
+        i = search_file(data[at:], pattern)
+        if i <= -1:
+            break
+        out.append(at + i)
+        at += i + 1
+    return out
+
+
+def _nearest_table(data: bytes, shape: str, pattern_lo: int,
+                   sid: SidFile) -> int:
+    """The address `shape` names whose table sits nearest the patterns, or -1.
+
+    Only meaningful where the shape matches more than once, which on this
+    corpus means a file carrying two copies of one player. See the call site.
+    """
+    if pattern_lo < 0 or not shape:
+        return -1
+    hits = _search_all(data, shape)
+    if len(hits) < 2:
+        return -1
+    best, dist = -1, None
+    for i in hits:
+        addr = _addr16(data, i + 1, i + 2)
+        off = sid.to_offset(addr)
+        if not 0 <= off < len(data):
+            continue
+        d = abs(off - pattern_lo)
+        if dist is None or d < dist:
+            best, dist = addr, d
+    return best
 
 
 def _find_status_bit6(data: bytes) -> bool:
