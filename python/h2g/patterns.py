@@ -35,6 +35,30 @@ GT_MAX_PATTERN_LEN = GT_DEFAULT_ROWS * 4  # 376 bytes
 # Silencing a voice is $BE, which clears cptr->gate.
 GT_NO_NOTE = 0xBD
 GT_KEYOFF = 0xBE
+
+# **Which commands survive into a hold row.** An event with wait W occupies
+# W+1 rows, and a Goattracker command byte is executed on the row it appears
+# on -- so a *continuous* effect has to be repeated on every one of them,
+# which is how a portamento keeps stepping (gplay.c:740 re-reads the speed
+# each tick), while a *one-shot* effect must appear once or a single intent
+# becomes W+1 of them.
+#
+# Only three commands are emitted from here: CMD_PORTAUP (1) and
+# CMD_PORTADOWN (2), which are continuous, and CMD_TONEPORTA (3), which is
+# not -- with parameter 0 it assigns `freq = targetfreq` in one call
+# (gplay.c:811), and repeating it would re-assign the same value on every
+# hold row. CMD_SETTEMPO reaches patterns through `apply_tempo` and never
+# this loop.
+#
+# A set rather than the `if cmd1 == 3` this replaces, because **the default
+# of the hold loop is repeat** and a one-shot command added later inherits
+# that silently. v0.5.284's CMD_SETWAVE experiment did exactly that: 61 rows
+# were designed and 673 command bytes were written, so its corpus A/B
+# measured something other than the change it described, and the -43pp it
+# produced was attributed to a mechanism that occurs nowhere in the affected
+# files (H2G-CONVERSION-METHOD.md sections 7.ooooo and 7.ppppp). Anything
+# added here that acts once belongs in this set.
+ONE_SHOT_COMMANDS = frozenset({3})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
 GT_FIRSTNOTE = 0x60
@@ -398,7 +422,7 @@ def _build_raw_pattern(data: bytes, addr: int,
             cmd1, cmd2 = 3, 0x00
         pending_tie = tie and bool(no_adsr)
         events += [g_note, g_instrument, cmd1, cmd2]
-        if cmd1 == 3:
+        if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, cmd1, cmd2]
