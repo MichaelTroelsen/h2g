@@ -10527,3 +10527,67 @@ genuinely cannot silence a waveform, and the 17 files are genuinely the
 population. What is now also known is that the row-level fix cannot work while
 a tie or slide can follow the rest — which points at the instrument's own
 table, not the pattern, as the place to put the silence.
+
+### 7.ppppp The TONEPORTA diagnosis was wrong, and the experiment that showed it
+
+§ 7.ooooo reverted `CMD_SETWAVE $08` on a bit-6 rest and attributed the
+regression to `gplay.c`'s note-start:
+
+    if (cptr->newcommand != CMD_TONEPORTA) {
+        if (iptr->firstwave) { cptr->wave = iptr->firstwave; ... }
+        cptr->ptr[WTBL] = iptr->ptr[WTBL];
+    }
+
+-- a slide or tie landing after the rest never taking the `$08` back. That
+reading is in a commit message and was written into CLAUDE.md as a rule. **It
+is wrong.**
+
+Tested directly: re-apply the `SETWAVE`, and additionally suppress
+`CMD_TONEPORTA` on any note following a bit-6 rest, scoped to the same
+population so the experiment varies one thing. The result:
+
+    SETWAVE-only vs SETWAVE + no-TONEPORTA-after-rest:
+    files differing = 0
+
+**Zero bytes.** No note in any of the fifteen affected files follows a bit-6
+rest with a portamento, so the mechanism named as the cause never occurs in
+the population it was supposed to explain. Every fidelity number is identical
+to three decimal places, on the worst regressor and the best gainer alike.
+
+The claim was plausible, it was read correctly out of `gplay.c`, and it
+explained the *shape* of the damage (worst on the files that slide most). It
+was still not what happened. The corpus A/B that motivated it could not
+distinguish it from any other explanation, and no check was run that could
+have falsified it before it was published.
+
+#### What the real cause is not yet known to be
+
+Two facts, both measured, neither yet assembled into an account:
+
+* Auf Wiedersehen Monty's voice 2 holds `$41` -- pulse with the **gate on** --
+  continuously where the original drops to `$40` at each note end. Our
+  conversion stops gating off, which is the opposite of what writing `$08` on
+  a rest should do, and it takes that voice from 194 attacks to 14.
+* The emission was **wider than intended**. 61 KEYOFF rows carry the command,
+  and **612 hold rows do too**: a bit-6 event emits `wait` further rows and
+  they reuse `cmd1`/`cmd2`, so 673 command bytes were written where 61 were
+  designed. Whatever the A/B measured, it was not the change as described.
+
+The second of those invalidates the experiment on its own terms, and it is why
+this section stops rather than proposing a fourth attempt. A measurement of
+something other than the intended change is not evidence about the intended
+change, however clean its numbers look -- and this one produced a decisive
+-43pp with a confident causal story attached.
+
+> **The transferable lesson, which is not about rests:** an explanation that
+> accounts for the *shape* of a regression is not thereby the cause of it. The
+> TONEPORTA reading predicted "worst where slides are most common", the data
+> agreed, and the mechanism occurs zero times in the affected files. The check
+> that settles such a claim is not more reading -- it is turning the proposed
+> cause off and seeing whether the effect survives, which took one run and
+> would have taken one run before publishing.
+>
+> And the older rule, restated because it caught this too: **count what you
+> emitted.** 673 rows against 61 designed is visible from the output in one
+> query, needs no emulator and no trace, and would have stopped the A/B from
+> being run at all.

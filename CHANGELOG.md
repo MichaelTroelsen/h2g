@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.285 — 2026-08-15
+
+- the TONEPORTA diagnosis was wrong
+
 ## 0.5.284 — 2026-08-15
 
 - CMD_SETWAVE on a rest, refuted by the note that follows
