@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m pytest *)",
+      "Bash(python -m h2g *)",
+      "Bash(python fidelity.py *)",
+      "Bash(python presets.py *)",
+      "Bash(python survey.py *)",
+      "Bash(python songview.py *)",
+      "Bash(python dis6502.py *)",
+      "Bash(python listen.py *)",
+      "Bash(python instrmap.py *)",
+      "Bash(python bump_version.py *)",
+      "Bash(python python/bump_version.py *)",
+      "Read(//c/Users/mit/AppData/Local/Temp/claude/**)",
+      "Edit(//c/Users/mit/AppData/Local/Temp/claude/**)",
+      "Write(//c/Users/mit/AppData/Local/Temp/claude/**)",
+      "Read(//c/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob/**)",
+      "Read(//c/Users/mit/Downloads/GoatTracker_2.77/src/**)",
+      "Bash(rtk git *)",
+      "Bash(rtk ls *)",
+      "Bash(rtk read *)",
+      "Bash(rtk gain *)"
+    ]
+  }
+}

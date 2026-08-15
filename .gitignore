@@ -1,3 +1,9 @@
 # Converted songs staged by play.ps1. Deliberately not written next to the
 # input: Commando.sng at the repo root is the byte-exact regression fixture.
 build/
+
+# Per-machine permission grants, written by Claude Code as they are approved.
+# `.claude/settings.json` beside it is the shared allowlist and IS tracked:
+# every rule there is one a fork would otherwise have to ask a human about,
+# and a fork that has to ask is a fork nobody can leave running.
+.claude/settings.local.json
