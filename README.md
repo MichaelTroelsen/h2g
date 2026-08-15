@@ -2452,6 +2452,53 @@ Goattracker-tuned, so nothing on our side moves. A row that needed it says so.
 This is a naming correction, not an allowance: a table whose *index* is shifted
 rather than its tuning is a converter defect and is fixed in the converter.
 
+#### Drift — the error `--pace` cannot see
+
+`--pace` compares one gap to one gap. That is exactly right for a row of the
+wrong *length*, and structurally unable to see a row that is a **fraction** of
+a frame wrong: a Goattracker row is a whole number of play calls, so a
+sub-frame error lands as zero on most gaps and one whole frame on the
+occasional one. Powerplay Hockey reads `median 1.000, IQR 0.980–1.000 over 348
+gaps` while its notes arrive 24 frames early across the window. Both numbers
+are right about what they measure.
+
+So `--pace` also prints a `drift` line, which integrates instead of averaging —
+a Theil–Sen fit of the *offset* between difflib-matched onsets against elapsed
+time, per voice, over the voices whose match is thick enough to be reading the
+same music. The slope is the drift; the intercept is the startup lag, so the
+lag falls out of the fit rather than having to be estimated and subtracted.
+`MAD` beside it says whether the offset is accumulating (small — a straight
+line) or merely wandering (large).
+
+Measured at each file's packed rate, **37 corpus files drift by exactly zero
+and 29 drift.** Where `--pace` can also see the error the two agree to three
+figures — and they agree on its *least-squares fit* rather than its median,
+which is independent support for the "read the fit, not the median" rule
+above.
+
+The group `--pace` calls correct has an exact cause: **`drift = −1 / (skip +
+1)`**, where `skip` is the outer gate — the counter that makes the player miss
+one call in `skip + 1`.
+
+| skip | true row | emitted | predicted | measured | files |
+|---:|---:|---:|---:|---:|---|
+| 108 | 3.0278 | 3 | −9.174 | **−9.17** | Sanxion, Sigma Seven |
+| 112 | 3.0268 | 3 | −8.850 | **−8.85** | IK+, Nineteen, Bangkok Knights, Pandora, I_Ball |
+| 127 | 2.0157 | 2 | −7.813 | **−7.81** | Ricochet, Star Paws, Wiz, Nemesis, BMX Kidz … |
+
+`goatwriter.effective_frames` already corrects a row for that skip **when the
+corrected value can be packed** — Delta's 5/2 ships at `-S2`, Thrust's 10/3 at
+`-S3`, and both read 0.00 — and falls back to the raw gate when it cannot,
+because `3 × 113/112` wants 339 calls at `-S112`. The drift is exactly the
+correction that was declined, so this puts a number on a known limitation
+rather than reporting a new defect. Its honest fix is re-gridding the rows,
+not a tempo.
+
+Scale: 0.8–0.9% on seventeen files — about 25 frames, half a second, of
+accumulated lead over a 60-second window — and 8–25% on the eight files
+`--pace` already flagged, of which International Karate (−90.91, ≈9% fast) is
+the worst that still converts cleanly.
+
 ### What a run says it compared
 
 Every report ends with a **What this run compared** section, generated from the

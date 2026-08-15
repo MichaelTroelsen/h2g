@@ -4098,6 +4098,20 @@ MAX_PACE_IQR = 0.10
 # it rather than of whichever fragment happened to survive the conversion.
 MIN_PACE_COVERAGE = 0.30
 
+# Two onsets close together say nothing about a drift of a frame per hundred:
+# the difference of their offsets is quantised to whole frames, so a short
+# baseline turns rounding into a slope of any size. Only pairs at least this
+# far apart contribute to the Theil-Sen estimate.
+MIN_DRIFT_BASELINE = 250
+
+# A voice contributes only if difflib matched enough of it, and enough of what
+# the original plays there, to be reading the same music. Both gates are the
+# lesson of Powerplay's voice 1: 17 matched onsets is not few in absolute
+# terms, but against 68 of the original's it is a quarter, and the offsets it
+# reports are hundreds of frames.
+MIN_DRIFT_ONSETS = 12
+MIN_DRIFT_COVERAGE = 0.30
+
 
 def matched_gaps(orig: Voice, ours: Voice,
                  floor: int = 4) -> list[tuple[int, int]]:
@@ -4120,6 +4134,134 @@ def matched_gaps(orig: Voice, ours: Voice,
         if a1 - a0 >= floor:
             out.append((a1 - a0, b1 - b0))
     return out
+
+
+def matched_onsets(orig: Voice, ours: Voice) -> list[tuple[int, int]]:
+    """(their frame, our frame) for every note both sides play, absolute.
+
+    `matched_gaps` differences these and throws the absolute positions away,
+    which is right for a row-length ratio and wrong for anything cumulative.
+    """
+    sm = difflib.SequenceMatcher(None, orig.attacks, ours.attacks,
+                                 autojunk=False)
+    return [(orig.attack_frames[i + k], ours.attack_frames[j + k])
+            for i, j, n in sm.get_matching_blocks() for k in range(n)]
+
+
+def drift(orig: Trace, ours: Trace) -> dict:
+    """Accumulated phase error: frames gained or lost per 1000 frames.
+
+    **What `pace` cannot see, and why it is not a defect in `pace`.** That
+    measure compares one gap to one gap, which is exactly right for a row of
+    the wrong *length* -- such an error shows up in every gap and the median
+    reports it. But a row that is a fraction of a frame wrong cannot appear in
+    a gap at all: a Goattracker row is a whole number of play calls, so the
+    error is zero on most gaps and one whole frame on the occasional one, and
+    the median of those ratios is 1.000 exactly. Powerplay Hockey reads
+    `median 1.000, IQR 0.980-1.000` over 348 gaps while its notes arrive four
+    frames early by the tenth second, and both readings are correct.
+
+    Integrating is what makes it visible. This regresses the *offset* between
+    the two sides against elapsed time over difflib-matched onsets:
+
+        ours[k] - orig[k]  =  intercept + slope * orig[k]
+
+    `slope` is the drift and `intercept` is the startup lag, so the lag falls
+    out rather than having to be estimated and subtracted -- which is worth
+    saying plainly, because every per-frame column in this report *does* have
+    to estimate it and one of them was charged for it until v0.5.175.
+
+    Reported as `per_1000` (frames per 1000 frames, positive = we run late)
+    and `total` (the offset accumulated across the traced window, which is
+    what a listener would hear as the two copies parting company).
+
+    **What it found, and it is not a new defect.** On this corpus the drift is
+    the *outer gate's skipped call*, and the relation is exact:
+
+        drift  =  -1 / (skip + 1)
+
+        Sanxion   skip 108   true row 3.0278   emitted 3   -9.174 vs -9.17
+        IK+       skip 112   true row 3.0268   emitted 3   -8.850 vs -8.85
+        Ricochet  skip 127   true row 2.0157   emitted 2   -7.813 vs -7.81
+
+    `effective_frames` corrects the row for that skip when the corrected value
+    can be packed -- Delta's 5/2 at -S2, Thrust's 10/3 at -S3 -- and falls back
+    to the raw gate when it cannot, because 3 x 113/112 wants 339 calls at
+    -S112. Those files drift by exactly the correction that was declined:
+    about 0.8-0.9%, some 25 frames -- half a second -- across a 60 s window.
+    Files whose skip is small (Tarzan 2, Delta 4, Thrust 9) read 0.00.
+
+    So this measures a *known* limitation rather than finding a new one; what
+    it adds is that the limitation now has a number, per file. The honest fix
+    is re-gridding the rows, not a tempo.
+
+    Pools the qualifying voices' pairs for the offset statistics: they share
+    one clock, and a voice resting through a section simply contributes no
+    onsets rather than a long gap that would dominate a ratio.
+    """
+    # **Per voice, and only the voices difflib actually matched.** Pooling
+    # all three was the first design and it is wrong twice over. Cross-voice
+    # pairs are meaningless -- two voices' notes have no fixed relationship,
+    # so the difference of their offsets is not a drift over any baseline --
+    # and one badly matched voice destroys the estimate for the others.
+    # Powerplay's voice 1 matches 17 of the original's 68 notes at offsets of
+    # +845 and +1036 frames, which is difflib pairing unrelated notes; its
+    # voice 2 matches 45 of 215 and reads a clean straight line from +4 to
+    # -29. Pooled, the intercept came out +17.8 frames where the harness's own
+    # `startup_lag` says 5 -- the disagreement being the signal that the
+    # estimate was reporting the wrong voice.
+    per_voice, pairs = [], []
+    for v in range(3):
+        got = matched_onsets(orig[v], ours[v])
+        total = len(orig[v].attacks)
+        if len(got) < MIN_DRIFT_ONSETS or not total:
+            continue
+        if len(got) / total < MIN_DRIFT_COVERAGE:
+            continue
+        got.sort()
+        per_voice.append(got)
+        pairs += got
+    if not per_voice:
+        return {"n": 0}
+    n = len(pairs)
+    pairs.sort()
+    # **Theil-Sen, not least squares.** difflib matches notes over the whole
+    # window, and once the two sides diverge -- a cue that ends where ours
+    # loops, a section we drop -- the late pairs carry offsets of hundreds of
+    # frames. A least-squares fit is not robust to those: on Powerplay it
+    # returned -12.5 frames/1000 with a residual of 27 against a total of 37,
+    # and an intercept of +38 frames where the harness's own `startup_lag`
+    # estimator says 5. An estimator whose intercept contradicts a measured
+    # quantity is reporting the outliers, not the drift.
+    #
+    # The median of pairwise slopes ignores them by construction, and the
+    # spread of those slopes is the honest statement of how straight the
+    # line is.
+    slopes = []
+    for got in per_voice:
+        for i in range(len(got)):
+            ai, di = got[i][0], got[i][1] - got[i][0]
+            for j in range(i + 1, len(got)):
+                dx = got[j][0] - ai
+                if dx >= MIN_DRIFT_BASELINE:
+                    slopes.append(((got[j][1] - got[j][0]) - di) / dx)
+    if not slopes:
+        return {"n": n}
+    slopes.sort()
+    slope = slopes[len(slopes) // 2]
+    q1 = slopes[len(slopes) // 4]
+    q3 = slopes[3 * len(slopes) // 4]
+    span = pairs[-1][0] - pairs[0][0]
+    # Offsets about the fitted line, median absolute deviation. Robust for the
+    # same reason the slope is, and it is what says whether the offset is
+    # accumulating (small) or wandering (large).
+    offs = [(b - a) - slope * a for a, b in pairs]
+    med = sorted(offs)[len(offs) // 2]
+    mad = sorted(abs(o - med) for o in offs)[len(offs) // 2]
+    return {"n": n, "voices": len(per_voice),
+            "per_1000": slope * 1000, "total": slope * span,
+            "span": span, "mad": mad, "intercept": med,
+            "q1_per_1000": q1 * 1000, "q3_per_1000": q3 * 1000}
 
 
 def pace(orig: Trace, ours: Trace) -> dict:
@@ -4263,6 +4405,19 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
             f"ours/theirs {got['median']:.3f}  (IQR {got['q1']:.3f}-"
             f"{got['q3']:.3f} over {got['n']} gaps; least-squares fit "
             f"{got['slope']:.3f})")
+        # The cumulative reading of the same two traces. A row that is a
+        # fraction of a frame wrong is invisible above -- Goattracker rows are
+        # whole play calls, so the error lands as zero on most gaps and one
+        # frame on the occasional one, and the median comes out 1.000 exactly.
+        dr = drift(a, b)
+        if dr.get("per_1000") is not None:
+            sign = "late" if dr["total"] > 0 else "early"
+            out.append(
+                f"       drift {dr['per_1000']:+.2f} frames/1000 "
+                f"(IQR {dr['q1_per_1000']:+.2f}..{dr['q3_per_1000']:+.2f}) -- "
+                f"{abs(dr['total']):.1f} frames {sign} across "
+                f"{dr['span']} frames; MAD {dr['mad']:.1f}, "
+                f"lag {dr['intercept']:+.1f}")
     if seen:
         trues = [t for _, _, t in seen if t]
         spread = min(g["spread"] for _, g, _ in seen)

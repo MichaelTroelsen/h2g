@@ -10178,3 +10178,110 @@ references and 3 dangling. Measured before the reset, pinned by
 Same shape as § 7.jjjjj's `wave` drop and the `tail` column's key: reading a
 quantity at a point where the code has already modified what you are reading.
 What caught it was not a test but an impossible combination of numbers.
+
+### 7.mmmmm The drift, and the row length nobody could encode
+
+Section 7.jjjjj measured Powerplay Hockey's `wave` falling 2.1 points when a
+correct drum was emitted, and traced it to something that was not the drum:
+our note attacks arrive progressively earlier than the original's, by about a
+frame every hundred and thirty. That was noted as a pre-existing defect of
+unknown extent. This is its extent.
+
+#### `--pace` is not blind by accident
+
+`pace` compares one gap to one gap, which is exactly right for a row of the
+wrong *length*: such an error is present in every gap and the median reports
+it. It cannot see a row that is a *fraction* of a frame wrong, and the reason
+is structural rather than statistical. A Goattracker row is a whole number of
+play calls, so a sub-frame error lands as zero on most gaps and one whole
+frame on the occasional one. Powerplay reads
+
+    median 1.000, IQR 0.980-1.000 over 348 gaps
+
+while its notes arrive 24 frames early across the window. Both readings are
+correct about what they measure.
+
+Integrating is what makes it visible. `drift` regresses the *offset* between
+matched onsets against elapsed time:
+
+    ours[k] - orig[k]  =  intercept + slope * orig[k]
+
+The slope is the drift and the intercept is the startup lag -- so the lag
+falls out of the fit instead of having to be estimated and subtracted, which
+is worth saying plainly given that every per-frame column in `FIDELITY.md`
+does have to estimate it, and one of them was charged for it until v0.5.175.
+
+#### Two of my own probes were wrong before the measurement was
+
+Worth recording because both failures were silent and both were caught by a
+number disagreeing with a number, not by a test.
+
+**Least squares reported the outliers.** difflib matches onsets over the whole
+window, and where the two sides diverge the late pairs carry offsets of
+hundreds of frames. The first fit gave -12.5 frames/1000 with a residual of 27
+against a total of 37, and an intercept of **+38 frames** where the harness's
+own `startup_lag` estimator says 5. An estimator whose intercept contradicts a
+separately measured quantity is not measuring the thing it names. Theil-Sen --
+the median of pairwise slopes -- and a median-absolute-deviation in place of
+the residual; MAD then reads 0.2-0.5 frames on almost every file, which is the
+statement that the offset really is a straight line.
+
+**Pooling the three voices was wrong twice over.** Cross-voice pairs are
+meaningless -- two voices' notes have no fixed relationship, so the difference
+of their offsets is not a drift over any baseline -- and one badly matched
+voice destroys the estimate for the others. Per voice now, with a coverage
+gate.
+
+And the probe that *found* the second of those was itself wrong: it omitted
+the frequency-table calibration `pace_report` applies, so Powerplay's original
+was traced a semitone out, difflib matched a quarter of its notes, and voice 1
+looked like garbage. With `calibration(ft.detune)` all three voices match
+100% of the original's onsets. Same shape as § 7.kkkkk's `--tempo auto`: a
+probe that does not reproduce the harness's setup is not measuring the
+harness's subject.
+
+#### What it found
+
+Measured at each file's packed rate: **37 files drift by exactly zero, 29
+drift.** Where `--pace` can also see the error the two agree to three figures,
+and specifically they agree on `--pace`'s *least-squares fit* rather than its
+median -- Human_Race's 0.750 against -250.00, Warhawk's 0.875 against
+-125.00. That is a third instrument confirming the rule this project already
+had written down, arrived at by integration rather than by averaging ratios.
+
+The interesting group is the one `--pace` calls correct, and the cause is
+exact:
+
+    drift  =  -1 / (skip + 1)
+
+| file | skip | true row | emitted | predicted | measured |
+|---|---:|---:|---:|---:|---:|
+| Sanxion, Sigma Seven | 108 | 3.0278 | 3 | -9.174 | **-9.17** |
+| IK+, Nineteen, Bangkok Knights, Pandora, I_Ball | 112 | 3.0268 | 3 | -8.850 | **-8.85** |
+| Ricochet, Star Paws, Wiz, Nemesis, BMX Kidz, ... | 127 | 2.0157 | 2 | -7.813 | **-7.81** |
+
+`skip` is the outer gate -- the counter that makes the player miss one call in
+`skip + 1`. `effective_frames` already corrects the row for it *when the
+corrected value can be packed*: Delta's 5/2 goes out at `-S2`, Thrust's 10/3
+at `-S3`, and both read 0.00 here. It falls back to the raw gate when it
+cannot, and `3 x 113/112` wants 339 calls at `-S112`. **The drift is exactly
+the correction that was declined.**
+
+So this quantifies a known limitation rather than finding a new one. What is
+new is that it now has a number per file: 0.8-0.9% on seventeen files, which
+is some 25 frames -- half a second -- of accumulated lead across a 60 s
+window, and 8-25% on the eight files `--pace` already flagged.
+
+> **The transferable lesson:** a measure's blindness can be structural, and
+> then no amount of care with that measure will reach past it. `pace` averages
+> ratios and a quantised error has an expected ratio of exactly 1; the fix was
+> not a better reduction of the same quantity but a different quantity --
+> integrate instead of average. When a column is documented as unable to see a
+> class of error, the question is what *other* statistic of the same two
+> traces would see it.
+>
+> And the narrower one: **an estimator that also reports a quantity you have
+> measured independently is one you can check.** The drift fit reports a
+> startup lag as a free by-product, the harness estimates that lag by a
+> completely different route, and the two disagreeing by 33 frames is what
+> exposed the outlier problem. Prefer estimators with a checkable by-product.

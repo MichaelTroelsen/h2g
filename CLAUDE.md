@@ -670,7 +670,22 @@ test dependency).
   0.92 from 1.28 and 1.26. See §§ 7.rrrr and 7.tttt. **Read `--pace`'s
   least-squares fit, not its median**: the original's gaps are whole frames,
   so a row of 2.286 quantises to a mix whose median reads 2.25, and that
-  gap looked like a refutation of the factor twice. **And a file packed
+  gap looked like a refutation of the factor twice. **And neither can see a
+  row wrong by a *fraction* of a frame** — a Goattracker row is whole play
+  calls, so such an error is zero on most gaps and one whole frame on the
+  occasional one, and the median of those ratios is exactly 1.000. That is
+  structural, not a threshold to tune: the fix was a different statistic of
+  the same two traces, `--pace`'s `drift` line, which integrates the offset
+  instead of averaging ratios. 37 corpus files drift by zero and 29 drift,
+  and the cause is exact — **`drift = -1/(skip + 1)`**, the outer gate's
+  skipped call, which `effective_frames` corrects only when the corrected
+  row can be packed (Delta 5/2 at `-S2`) and declines when it cannot (IK+'s
+  3 x 113/112 wants 339 calls at `-S112`). So it is a known limitation with
+  a number on it, not a new defect; the fix is re-gridding, not a tempo.
+  Its intercept is the startup lag as a free by-product, and **that
+  by-product is what caught two wrong estimators** — a least-squares fit
+  reporting +38 frames of lag where the harness measures 5 was the signal
+  it was fitting difflib's outliers. See § 7.mmmmm. **And a file packed
   above `-S4` cannot be judged on a normal trace** — Bump Set Spike reads
   68% at `-S5` and 97% under `--equal-calls`, which is the first time that
   caveat has decided a ship-or-refuse. Both of those reversals were
