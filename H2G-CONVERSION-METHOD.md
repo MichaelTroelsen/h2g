@@ -10389,3 +10389,47 @@ The rule that catches all three: **a probe wrapping `convert()` must assert
 its own success rate before anything reads its output.** The script now
 refuses to write a result where most conversions failed, and that guard fired
 on the very next use.
+
+#### The second write path, found
+
+§ 7.nnnnn ended by saying the mechanism was never located and the next attempt
+starts from `$E58F`'s other writer. It is `$E135`, and it is not a note-end
+path at all:
+
+    E0E1  LDA ($42),Y       ; the pattern byte
+    E0E6  STA $E5F8
+    E0E9  AND #$1F          ; low five bits are the duration
+    E0EE  BIT $E5F8
+    E0F1  BVS $E135         ; bit 6 set -> the rest handler
+
+    E135  DEC $E5E0,X       ; step the gate mask down
+    E13B  LDA #$00 / STA $E5E9,Y / STA $E5E8,Y    ; pulse width = 0
+    E143  LDA #$08
+    E145  JMP $E19B         ; -> STA $E58F,X, the stored waveform
+
+`$E44C` then restores `stored AND mask` = `$08 AND $FE` = `$08`. So the `$08`
+is **pattern status bit 6** -- a rest -- reached by the `BIT`/`BVS` idiom this
+document already warns is invisible to an `AND #$xx` scan. Read correctly, the
+trace says:
+
+    ORIG f44: 11 81 11 40 80 80 | 08 08 08 08 08 08 08 08 08 08 08 08
+              ^--- the note ---^  ^--- a REST row, twelve frames ---^
+
+The note is not cut short by a duration counter; it ends because a rest row
+arrives. Which is exactly why the blanket trailing silence failed: it fired at
+every wave program's end, where the mechanism fires only on rests, and Nemesis
+the Warlock -- whose programs end without one -- lost forty-five points for it.
+
+**And the converter already reads the bit.** `--status-bit6` is in the `always`
+block and logs "skips operand and note (BIT/BVS) and silences the voice"; with
+`--rest-keyoff` such a row emits `GT_KEYOFF` and instrument 0. But a
+Goattracker KEYOFF clears the *gate* and nothing else (§ 7.fffff, which is why
+the `gate` column had to exist at all), so the waveform stays latched at
+whatever the wavetable last wrote. The player sets it to `$08`.
+
+So the gap is one sentence wide: **a bit-6 rest should silence the waveform,
+not only the gate.** That is a narrower and better-targeted change than the one
+this section refutes -- it fires on rest rows rather than on every program's
+end -- and it needs a way to write a waveform on a row that carries no note,
+which Goattracker's KEYOFF does not provide. Read `gplay.c`'s KEYOFF handling
+before assuming an instrument column alone will do it.

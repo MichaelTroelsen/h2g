@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.283 — 2026-08-15
+
+- IK+'s $08 is a bit-6 rest, not a note end
+
 ## 0.5.282 — 2026-08-15
 
 - the trailing silence, measured and refuted
