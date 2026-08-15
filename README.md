@@ -2511,13 +2511,16 @@ the frames it makes it, classified by what the conversion did there.
 | `held` | we never release at all | the queue: the original rests and we sustain through it |
 | `retrigger` | one frame long | the edge at an untied note's end; mostly invisible at one sample a frame |
 
-Corpus at v0.5.272, 46996 releases across 83 files: `matched` 50.2%, `held`
-24.2%, `short` 23.5%, `retrigger` 2.0%. **Half of every release the originals
-make, we already make** — which reframes the 39% mean overlap, since a
-release made one frame late costs a frame-overlap at both ends. The queue is
-the 11385 `held`, led by Deep Strike (415 runs, 2136 frames), Thrust (36 runs
-but a 320-frame rest among them), Samantha Fox and Knucklebusters. See
-H2G-CONVERSION-METHOD.md § 7.ggggg.
+Corpus at v0.5.274, 46996 releases across 83 files: `matched` 51.4%, `held`
+23.7%, `short` 22.9%, `retrigger` 2.0%. **Half of every release the originals
+make, we already make** — which reframes the 44% mean overlap, since a
+release made one frame late costs a frame-overlap at both ends.
+
+`held` has no tail left: its longest run in the corpus is 29 frames, and
+11145 runs over 36851 frames average **3.3**. Those are not rests we failed
+to read — v0.5.273 reads them — but notes ending a few frames before the next
+one starts, which is the axis `hold` already measures from the other side.
+See H2G-CONVERSION-METHOD.md § 7.ggggg.
 
 **`fetch` is invisible above `-S3`**, and the report says so in its own
 per-rate table: the deficit is a fixed number of play *calls*, and siddump

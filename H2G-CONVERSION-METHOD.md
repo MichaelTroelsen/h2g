@@ -9437,6 +9437,50 @@ original traced at the multiplier. Properly traced, Knucklebusters is 6.3 ->
 13.2%, up. One bad probe produced a false finding *and* a false refutation of
 the fix for it.
 
+#### The census disagreed with its own column
+
+Re-run after that fix, the `held` list was led by runs of a shape nothing
+else in it had: Pygmies Revenge 1024 frames, Master of Magic 768, Phantoms of
+the Asteroid 768, Rock Tells the Tale 752 -- all starting at frame 0, all far
+longer than the 3-frame rests around them. The obvious reading was a voice
+the original enters late while we play from the start.
+
+We play nothing there. Our `$D404` reads `$00` for every one of those frames:
+no waveform, no gate, a voice the conversion never writes either. `gate`
+scores that against the original's release as **agreement**, and the census
+called it `held`, because the nonzero guard `gate_runs` needs on the
+*original's* side -- a voice it never plays is not a release it makes -- had
+been copied onto ours as well. 38 runs and 8889 frames, every one of them a
+voice neither side had entered.
+
+The rule the repo already states for `--census` is that its `match` count
+*is* the column's numerator. This broke the same rule in the other
+direction, and nothing failed: the census's own tests passed straight through
+it, because none of them had a voice on our side that was never written. That
+test exists now.
+
+#### What the queue is, after both fixes
+
+| kind | runs | share | frames we ring |
+|---|---:|---:|---:|
+| matched | 24165 | 51.4% | 35502 |
+| short | 10742 | 22.9% | 50631 |
+| held | 11145 | 23.7% | 36851 |
+| retrigger | 944 | 2.0% | 865 |
+
+**And `held` no longer has a tail.** Its longest run across the corpus is 29
+frames (Deep Strike); Samantha Fox's longest is 4, Kings of the Beach's 4,
+Dragons Lair's 3. 11145 runs over 36851 frames is an average of **3.3
+frames**, which is not a rest we failed to read -- the bit-6 rests are read
+now -- but a note that ends a few frames before the next one begins.
+
+That is the note-*length* axis, which `hold` already owns and whose own
+census attributes 211 of 432 instruments to Goattracker's next-note fetch
+(§ 7.xxxx). The two columns are looking at one defect from opposite sides:
+`hold` sees a note a frame short, `gate` sees the silence after it missing.
+So the gate queue is not a separate mechanism to find, and saying so is worth
+more than another list of files.
+
 > **The transferable lesson:** the tool and the probe disagreed, and the
 > probe was wrong in a way that *looked* like a finding -- a clean bimodal
 > distribution with a mechanism-shaped story attached. What caught it was

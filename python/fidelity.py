@@ -1008,8 +1008,18 @@ def gate_census(orig: list[Voice], ours: list[Voice], nframes: int,
         for start, length in gate_runs(ta):
             if start + length > len(tb):
                 break                       # runs past the aligned window
+            # `not (tb[i] & 1)` and **not** `tb[i] and not (tb[i] & 1)`:
+            # a voice we have never written reads `$00`, which is no waveform
+            # and no gate -- released, and silent. `gate_compare` scores that
+            # as agreement, and the census has to say the same thing or it is
+            # explaining a different number from the one printed. Copying the
+            # nonzero guard from `gate_runs`, where it belongs (a voice the
+            # *original* never plays is not a release it makes), put 8889
+            # frames across 38 runs into `held` -- Pygmies Revenge's 1024,
+            # Master of Magic's 768 -- every one of them a voice the original
+            # had not entered and we had not either.
             ours_off = sum(1 for i in range(start, start + length)
-                           if tb[i] and not (tb[i] & 1))
+                           if not (tb[i] & 1))
             if length == 1:
                 kind = "retrigger"
             elif ours_off == 0:

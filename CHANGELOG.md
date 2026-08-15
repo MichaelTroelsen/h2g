@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.274 — 2026-08-15
+
+- the gate census disagreed with its own column
+
 ## 0.5.273 — 2026-08-15
 
 - the bit-6 rest keys off in every player with the shape

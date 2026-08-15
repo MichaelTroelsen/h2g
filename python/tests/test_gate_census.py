@@ -79,6 +79,20 @@ def test_half_counts_as_matched_and_a_hair_under_does_not():
         == "short"                                    # two of six
 
 
+def test_a_voice_we_never_write_is_released_not_held():
+    """The census has to agree with the column it explains.
+
+    A voice we never write reads `$00` -- no waveform, no gate. `gate_compare`
+    scores that against the original's release as agreement. The census
+    shipped with the nonzero guard `gate_runs` needs on the *original's* side
+    copied onto ours, which called 8889 frames across 38 runs `held` --
+    Pygmies Revenge's 1024 among them, a voice neither side had entered.
+    """
+    recs = _census([(0, 0x41), (4, 0x40), (10, 0x41)], [])
+    assert recs and recs[0]["kind"] == "matched"
+    assert recs[0]["ours_off"] == recs[0]["frames"]
+
+
 def test_it_is_aligned_like_the_column():
     # Six frames released at 4..9; ours the same shape four frames later, so
     # unaligned they overlap on two of six and aligned on all six.
