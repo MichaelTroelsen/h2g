@@ -173,7 +173,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        note_base: int = 0,
                        slide_high_first: bool = False,
                        steps: Optional[List[int]] = None,
-                       tie: bool = False) -> Optional[List[int]]:
+                       tie: bool = False,
+                       rest_keyoff: bool = False) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -247,6 +248,18 @@ def _build_raw_pattern(data: bytes, addr: int,
         # BVS -- and the event emits its hold rows like any other no-note one.
         if status_bit6 and no_note:
             get_next = 0
+            # ...and in 21 of the 61 players with the shape, that branch also
+            # *silences* the voice -- `LDA #$08` into the stored waveform, or
+            # the envelope pair zeroed (detect._find_rest_silences). A hold
+            # row sustains the note the original cut: IK+'s $08D8 sounds its
+            # wave program for 6 or 12 frames of an 18-frame slot and rests
+            # for the remainder, and we played straight through. `KEYOFF` is
+            # the only row this format has that ends a note without starting
+            # one; the instrument column goes with it, since a bit-6 event
+            # reads no operand and can carry no instrument change.
+            if rest_keyoff:
+                g_note = GT_KEYOFF
+                g_instrument = 0
 
         if get_next:
             i2 += 1
@@ -729,7 +742,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  status_bit6: bool = False,
                  steps: Optional[List[int]] = None,
                  rest_instrument: bool = False,
-                 instr_base: int = 2, tie: bool = False) -> Optional[List[int]]:
+                 instr_base: int = 2, tie: bool = False,
+                 rest_keyoff: bool = False) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -760,6 +774,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
                               rest_instrument=rest_instrument,
+                              rest_keyoff=rest_keyoff and det.rest_silences,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
@@ -1099,7 +1114,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      variants: Optional[List[tuple]] = None,
                      steps: Optional[List[int]] = None,
                      rest_instrument: bool = False,
-                     instr_base: int = 2, tie: bool = False):
+                     instr_base: int = 2, tie: bool = False,
+                     rest_keyoff: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1161,7 +1177,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
 
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
-                              rest_instrument, instr_base, tie=tie)
+                              rest_instrument, instr_base, tie=tie,
+                              rest_keyoff=rest_keyoff)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)

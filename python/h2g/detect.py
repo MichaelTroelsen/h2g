@@ -198,6 +198,10 @@ class Detection:
     # (`BIT status / BVS`), branching past the operand read AND the note read
     # -- so a $C0-$FE status byte consumes only itself. See STATUS_BIT6_SHAPE.
     status_bit6: bool = False
+    # ...and whether the branch it takes *silences* the voice rather than
+    # holding it. 21 of the 61 files with the shape do; see
+    # _find_rest_silences.
+    rest_silences: bool = False
     # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
     # note-duration lookup table, how many operand bytes each $8x command
     # takes, and which command index sets the instrument.
@@ -947,7 +951,9 @@ def detect(sid: SidFile, log: Logger) -> Detection:
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
-        log("Pattern status bit 6....: skips operand and note (BIT/BVS)")
+        det.rest_silences = _find_rest_silences(data)
+        log("Pattern status bit 6....: skips operand and note (BIT/BVS)"
+            + (" and silences the voice" if det.rest_silences else ""))
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
@@ -1887,6 +1893,54 @@ def _find_triangle_gate(sid: SidFile, at: int) -> Optional[int]:
 
 def _find_status_bit6(data: bytes) -> bool:
     return search_file(data, STATUS_BIT6_SHAPE) >= 1
+
+
+# How far into the bit-6 branch to look for the silencing write. IK+'s is 13
+# bytes in, behind a `LDY voice` and a two-cell zeroing; Ricochet's is 6.
+REST_SILENCE_WINDOW = 24
+
+
+def _find_rest_silences(data: bytes) -> bool:
+    """Whether a bit-6 rest cuts the voice or merely holds it.
+
+    Our decoder emits a hold row for such an event, which sustains the note
+    that was playing. That is right for 40 of the 61 files with the shape --
+    Commando's branch target goes straight on to the effect path and touches
+    no register. The other 21 silence, in two different ways, and the branch
+    target says which:
+
+        914A  DEC .. / LDY voice / LDA #$00 / STA $D406,Y / STA $D405,Y
+                                                        (Ricochet, 4 files)
+        E138  LDY voice / LDA #$00 / STA .. / STA .. / LDA #$08 / JMP store
+                                                        (IK+, 17 files)
+
+    The first zeroes the envelope pair, the second writes the testbit into the
+    voice's stored waveform. Both stop the sound; both are a Goattracker
+    `KEYOFF`, which is the only row this format has that ends a note without
+    starting one.
+
+    **What the probe does not follow** is IK+'s `JMP` -- the `$08` is loaded
+    in the rest path and stored one jump away, which was read by hand on that
+    file rather than by this function. `#$08` is the testbit constant and it
+    appears in no other reachable role here, but the honest statement is that
+    this recognises the *load*, not the store.
+    """
+    i = search_file(data, STATUS_BIT6_SHAPE)
+    if i <= -1:
+        return False
+    at = i + len(STATUS_BIT6_SHAPE.split())     # the BVS's own operand
+    if at >= len(data):
+        return False
+    rel = data[at] - 256 if data[at] > 127 else data[at]
+    target = at + 1 + rel
+    if not 0 <= target < len(data):
+        return False
+    window = data[target:target + REST_SILENCE_WINDOW]
+    if b"\xa9\x08" in window:                   # LDA #$08, the testbit
+        return True
+    # LDA #$00 into the envelope pair: `STA $D405,Y` / `STA $D406,Y`.
+    return (b"\xa9\x00" in window
+            and (b"\x99\x05\xd4" in window or b"\x99\x06\xd4" in window))
 
 
 # --- The instrument effect byte (+7) ---------------------------------------

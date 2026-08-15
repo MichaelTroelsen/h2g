@@ -322,6 +322,19 @@ def main(argv=None) -> int:
              "--effects. Off by default; presets.py --fidelity selects it per "
              "song")
     parser.add_argument(
+        "--rest-keyoff", action="store_true",
+        help="end a note where the player's own rest ends it. A status byte "
+             "with bit 6 set is a rest in the 61 files with the BIT/BVS "
+             "shape, and in 21 of them the branch it takes *silences* the "
+             "voice -- the testbit written into the stored waveform (IK+ "
+             "$E138) or the envelope pair zeroed (Ricochet $914A). This "
+             "writer emitted a hold row for it, which sustains the note the "
+             "original cut: IK+'s $08D8 plays its wave program for 6 or 12 "
+             "frames of an 18-frame slot and rests for the rest. Emits "
+             "Goattracker's KEYOFF instead, gated on "
+             "detect._find_rest_silences so the 40 players that really do "
+             "hold are untouched")
+    parser.add_argument(
         "--no-test-restart", action="store_true",
         help="stop silencing the oscillator on every note's first frame. Each "
              "instrument's first-frame waveform has always been $09 -- testbit "
@@ -394,6 +407,7 @@ def main(argv=None) -> int:
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
+                          ("--rest-keyoff", "rest_keyoff"),
                           ("--two-stage", "two_stage"),
                           ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
@@ -465,6 +479,7 @@ def main(argv=None) -> int:
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
                       no_test_restart=args.no_test_restart,
+                      rest_keyoff=args.rest_keyoff,
                       two_stage=args.two_stage,
                       voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,

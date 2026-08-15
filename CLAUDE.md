@@ -242,6 +242,17 @@ test dependency).
   catches this class is: run the new instrument under the old instrument's
   rule and confirm it reproduces the old number first. See
   H2G-CONVERSION-METHOD.md section 7.nn.
+- **"No column moved" has two causes, and a third: the register is one every
+  column deliberately ignores.** `--rest-keyoff` moves 19 files' bytes and one
+  file's report row, because a Goattracker KEYOFF clears the *gate* and
+  nothing else -- and `wave` excludes the gate bit by construction, `hold`
+  counts frames with a waveform selected, `adsr` reads registers it does not
+  write. The blindness is structural rather than accidental, and it made a
+  whole class of change unscoreable without anyone deciding that. **When a
+  column documents what it ignores, read that list as a list of things you
+  will not be able to ship on evidence** -- and measure the ignored quantity
+  by hand before concluding either way (here: frames where the original has
+  the voice gated off and we do not, IK+ voice 1 330 -> 141). See § 7.fffff.
 - **Do not conclude a change did nothing from a flat table — make the tool
   say it.** Since v0.5.77 every dimension declares the SID registers it reads,
   every row records which dimensions it actually compared, and the report ends

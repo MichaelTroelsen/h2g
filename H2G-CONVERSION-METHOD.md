@@ -8883,6 +8883,12 @@ eighteen-frame slot. That is a note-*length* difference, and no per-instrument
 wavetable can express it: the same instrument is played with two different
 lengths in the same tune. It stays open.
 
+> **Closed by § 7.fffff, and the second clause is where it went wrong.** The
+> length is not the instrument's: bit 6 of the status byte is a *rest*, this
+> player silences on it, and the pattern data carried the cut all along. What
+> could not express it was the wavetable, which is where this section was
+> looking.
+
 > **The transferable lesson:** an encoding is only as good as the *packer's*
 > reading of it. Both halves of this were beliefs about a table byte -- one
 > taken from the interpreter's own store instruction, one taken from the
@@ -9200,6 +9206,98 @@ rows.
 > reported a ratio with zero spread, which is a claim no mechanism can make.
 > A tight ratio is a constant; a loose one is a mechanism. Read the spread
 > before reading the number.
+
+### 7.fffff The rest that silences, and a change no column can score
+
+§ 7.bbbbb left two of its five instruments open: IK+'s `$08D8` and `$09F8`
+"end their notes before the program ends", filed as a note-length difference
+no per-instrument wavetable could express, because the same instrument is
+played at two lengths in one tune. Both halves of that are right and the
+conclusion was wrong -- the length is not the instrument's, and the
+information was already in our pattern data.
+
+#### The rest is an event, and its position varies
+
+Voice 2's first six notes, traced, with the slot to the next gate edge:
+
+    onset  2  slot 24:  11 81 11 40 80 80 80 80 80 40 40 40 08 08 ...
+    onset 26  slot 18:  11 81 11 40 80 80 08 08 ...
+    onset 62  slot 12:  11 81 11 40 80 80 08 08 ...
+    onset 74  slot 24:  11 81 11 40 80 80 08 08 ...
+
+The program is one program -- the six-frame reading is its first half. What
+varies is *when* the `08` arrives, and it does not track the slot: 24 frames
+of slot with 12 frames of program at onset 2, and 24 with 6 at onset 74. So
+the cut is its own event, and every note's program length plus the silence
+that follows adds up exactly to the next onset. It is a **rest**, and the
+pattern data has always carried it.
+
+#### Bit 6 is a rest, and 21 players make it a silence
+
+`status_bit6` has been read for a long time: a status byte of `$C0`-`$FE`
+consumes only itself, because the player tests bit 6 first and alone. What was
+never read is *what the branch does*. Three answers across the 61 corpus files
+with the shape:
+
+    5118  DEC .. / LDY voice / LDA instr,X / ...          Commando, 40 files
+    914A  DEC .. / LDY voice / LDA #$00 / STA $D406,Y / STA $D405,Y
+                                                          Ricochet, 4 files
+    E138  LDY voice / LDA #$00 / STA / STA / LDA #$08 / JMP store
+                                                          IK+, 17 files
+
+The first writes no register and goes on to the effect path -- a genuine hold,
+which is what this writer already emitted. The second zeroes the envelope
+pair. The third writes the testbit into the voice's stored waveform. Both of
+those stop the sound, and Goattracker's `KEYOFF` is the only row this format
+has that ends a note without starting one.
+
+`--rest-keyoff` emits it, gated on `detect._find_rest_silences`. 19 corpus
+files' bytes move and they are exactly the flagged population -- the other two
+flagged files have no bit-6 rest in any pattern their orderlists play, and no
+unflagged file moves at all. Commando is a holder, so the byte-exact fixture
+cannot move.
+
+#### And then nothing happened
+
+| | |
+|---|---|
+| files whose bytes moved | 19 |
+| files whose report row moved | **1**, and 3 points of `pitch` worse |
+
+That is not a flat table to be squinted at, it is a property of the encoding:
+**a Goattracker KEYOFF clears the gate bit and changes nothing else.** `wave`
+ignores the gate bit by construction ("with the gate/sync/ring/test bits
+ignored"). `hold` counts frames on which a voice keeps a *waveform selected*,
+which a gate-off does not change. `adsr` compares the envelope registers,
+which we do not rewrite. Every column that could have seen this reads a
+register the change does not touch, and `--baseline` says so in as many words:
+*18 of the 19 files whose converted output changed moved no number at all.*
+
+Measured on the one axis that can see it -- frames where the original has the
+voice gated off and we still have it gated on:
+
+| file, voice | original's gate-off frames | ours ringing, before | after |
+|---|---|---|---|
+| IK+ v1 | 372 | 330 | **141** |
+| Arcade Classics v1 | 693 | 250 | **89** |
+| IK+ v2 | 1266 | 267 | 243 |
+| five files, all voices | 10762 | 4606 | **3931** |
+
+So the change does what it says, on a quantity this project has never
+measured. It ships **off by default** and in `presets.EXCLUDED_FROM_ALWAYS`
+for the reason that follows from all of the above: a `--fidelity` search
+cannot select it, because `fidelity_better` has nothing to compare. What
+settles it is a listener, or a gate dimension.
+
+> **The transferable lesson:** "no column moved" has two causes and they need
+> different answers -- the change reached nothing, or every column is blind to
+> the register it reached. This project built four dimensions the last time it
+> hit the second (§ 7.78), and `--baseline` exists to tell the two apart. The
+> new part here is that the blindness is *structural*: the gate bit is
+> deliberately excluded from `wave`, for a good reason, and that decision
+> silently made an entire class of change unscoreable. When a column documents
+> what it ignores, read that list as a list of things you will not be able to
+> ship on evidence.
 
 ---
 

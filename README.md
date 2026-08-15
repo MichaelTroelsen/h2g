@@ -1707,6 +1707,35 @@ original does not reach inside the window. Reading the gate (§ 7.eeeee) took
 the same emission to **205 frames against 219**, without touching the emitter.
 See H2G-CONVERSION-METHOD.md §§ 7.ccccc and 7.eeeee.
 
+### `--rest-keyoff` (the rest that silences)
+
+A status byte with bit 6 set is a **rest**, and in 21 of the 61 corpus files
+whose player tests that bit with `BIT`/`BVS`, the branch it takes silences the
+voice — the testbit written into the stored waveform (IK+ `$E138`) or the
+envelope pair zeroed (Ricochet `$914A`). The other 40 write no register there
+and really do hold. This writer emitted a hold row for all 61.
+
+```sh
+python -m h2g song.sid --effects --rest-keyoff
+```
+
+What that cost is visible in IK+'s `$08D8`: it sounds its wave program for 6
+or 12 frames of an 18- or 24-frame slot and rests for the remainder, and the
+conversion played straight through. The rest is an event of its own — the
+program length plus the silence after it adds up exactly to the next onset,
+and the split varies between notes of the same instrument, which is why it
+could never have been a property of the instrument.
+
+19 files' bytes move, exactly the ones detection flags. **Off by default, and
+not because it measures badly — because it cannot be measured here at all.** A
+Goattracker KEYOFF clears the gate bit and nothing else; `wave` ignores that
+bit by construction, `hold` counts frames with a waveform *selected*, and
+`adsr` reads registers this does not write. The corpus A/B is flat on 18 of
+the 19 files and 3 points of `pitch` worse on the 19th. On the one axis that
+does see it — frames where the original has the voice gated off and we do not
+— IK+ voice 1 goes 330 → 141 and Arcade Classics voice 1 250 → 89. See
+H2G-CONVERSION-METHOD.md § 7.fffff.
+
 ### `--no-test-restart` (the silent frame on every note)
 
 Every instrument this tool has ever written carries `$09` in record byte +8, the

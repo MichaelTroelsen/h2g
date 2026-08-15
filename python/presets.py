@@ -97,6 +97,20 @@ EXCLUDED_FROM_ALWAYS = {
     # array is mutable player state, and a snapshot of a multi-subtune file
     # caught it mid-tune (Commodore 64 Music Examples, wave 29% -> 0%).
     "initial_instrument",
+    # A reading nothing here can score. 21 of the 61 files whose player tests
+    # status bit 6 with BIT/BVS *silence* the voice on that branch -- the
+    # testbit into the stored waveform, or the envelope pair zeroed -- where
+    # this writer emits a hold row and sustains the note. `KEYOFF` is the
+    # right row and it moves 19 files' bytes, and **no column of FIDELITY.md
+    # can see it**: a keyoff clears the gate and nothing else, `wave` ignores
+    # the gate bit by construction, and `hold` counts frames with a waveform
+    # selected, which a gate-off does not change. The corpus A/B is flat on
+    # 18 of the 19 and 3 points of `pitch` worse on the 19th. On the one axis
+    # that can see it -- frames where the original has the voice gated off
+    # and we do not -- IK+ voice 1 goes 330 -> 141 and Arcade Classics voice 1
+    # 250 -> 89. Off until a listener or a gate dimension settles it; a search
+    # cannot, because there is nothing for `fidelity_better` to compare.
+    "rest_keyoff",
     # Measured and rejected as a default. Removing the testbit frame from every
     # note's first frame deletes a register write the originals do not make
     # (9179 frames of ours against their 4273, in 79 files against 12) and

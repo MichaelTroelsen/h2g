@@ -131,6 +131,7 @@ def convert(sid_path: str, log: Logger = print,
             pulse: bool = False,
             vibrato: bool = False,
             rest_instrument: bool = False,
+            rest_keyoff: bool = False,
             compact_instruments: bool = False,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
@@ -304,6 +305,7 @@ def convert(sid_path: str, log: Logger = print,
                   if reject_phantoms else None),
         variants=variants, steps=slide_steps,
         rest_instrument=rest_instrument,
+        rest_keyoff=rest_keyoff,
         instr_base=1 if compact_instruments else 2, tie=tie)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
