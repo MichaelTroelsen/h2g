@@ -426,9 +426,10 @@ def convert(sid_path: str, log: Logger = print,
     # goatwriter._gate_calls. **Not conditional on `--skip-gate`**, which is
     # about how long a *row* lasts: a wavetable entry lasts a play call, a play
     # call is a frame at -S1 whatever the tempo says, and the mechanism it
-    # encodes lasts a number of the original's frames. Ninja is the file that
-    # separates the two -- it has the counter, no speed gate at all, and so a
-    # fallback constant tempo that no correction reaches.
+    # encodes lasts a number of the original's frames. The two stayed separate
+    # when v0.5.267 gave Ninja -- the file that used to demonstrate the
+    # difference -- a readable inner gate: the row correction and the table
+    # correction are the same ratio applied to different quantities.
     gate_skip = outer_gate_skip(sid)
 
     # Last, so it sees every command any earlier stage emitted. It rewrites the

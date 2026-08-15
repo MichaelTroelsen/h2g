@@ -669,6 +669,22 @@ test dependency).
   the file rather than by reading the 6502 again: `threshold = 1` sounds the
   attack for zero frames, and redirecting one `LDA` printed the counter into
   `$D404`, where it read `1 1 2 3 4 4 5` and named the gate. See § 7.aaaaa.
+- **Read `--pace`'s spread before its number: a tight ratio is a constant, a
+  loose one is a mechanism.** Ninja measured `0.750` with an interquartile
+  range of `0.750-0.750` over 858 gaps -- three quarters on *every* gap, which
+  no musical irregularity can produce and only a wrong constant can. It was
+  the fallback tempo, taken because `SPEED_GATE` missed the player's gate by
+  **one byte of branch offset**: `DEC / BPL +5 / LDA #$02 / STA` against the
+  pattern's `BPL +6 / LDA abs`, because `LDA #imm` is two bytes where
+  `LDA abs` is three. A signature that encodes an addressing mode encodes an
+  instruction length, and that length is in every branch offset around it --
+  so two spellings of one idiom differ in two places at once, and matching
+  neither is indistinguishable from the player not having the feature.
+  Reading it took Ninja to melody/seq/pitch 100% and `retrig` 1.00 from
+  85/86/79% and 1.33. `SPEED_GATE_IMM` is a **fallback**, consulted only
+  where the absolute form found nothing: 35 files carry its shape and 33 of
+  them already read a gate, and a wrong tempo is worse than the old constant.
+  See § 7.eeeee.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
   and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a

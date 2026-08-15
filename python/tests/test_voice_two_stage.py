@@ -158,12 +158,24 @@ def test_the_outer_counter_stretches_the_players_calls_into_ours():
 
 
 @needs_corpus
-def test_ninja_s_outer_counter_is_readable_where_its_speed_gate_is_not():
-    """The reason `outer_gate_skip` exists beside `SongSpeeds.skip_for`."""
+def test_ninja_s_two_counters_agree():
+    """This asserted `find_song_speeds(...) is None` until v0.5.267.
+
+    That was true, and it was the defect: Ninja's inner gate reloads from an
+    *immediate* and `SPEED_GATE` only matched the absolute spelling, so the
+    tune took a fallback constant tempo and ran 4/3 too fast. Reading it moved
+    the file to 100% melody. What the test pins now is that the two counters
+    are read consistently -- `outer_gate_skip` alone and through `SongSpeeds`
+    -- because `_gate_calls` and the row length both scale by this number and
+    disagreeing would put the wavetable on a different timebase from the rows.
+    """
     from h2g.goatwriter import find_song_speeds
     sid, det = _det("Ninja")
-    assert find_song_speeds(sid, det) is None
-    assert outer_gate_skip(sid) == 3
+    speeds = find_song_speeds(sid, det)
+    assert speeds is not None
+    assert speeds.frames_for(0) == 3            # DEC / BPL +5 / LDA #$02
+    assert outer_gate_skip(sid) == 3 == speeds.skip_for(0)
+    assert speeds.exact_row(0) == 4             # 3 * 4/3, a whole number
 
 
 def test_the_attack_is_threshold_minus_one_of_the_players_calls():

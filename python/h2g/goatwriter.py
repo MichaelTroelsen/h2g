@@ -1377,6 +1377,18 @@ TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
 # command-table dialect, whose row length comes from its duration table's
 # common factor instead (patterns.cmdtable_frames_per_row).
 SPEED_GATE = re.compile(rb"\xce(..)\x10\x06\xad(..)\x8d(..)", re.DOTALL)
+# The same gate with an *immediate* reload -- `BPL +5` rather than `+6`,
+# because `LDA #imm` is two bytes where `LDA abs` is three:
+#
+#     C83D  DEC $CC46 / BPL +5 / LDA #$02 / STA $CC46      (Ninja)
+#     C84E  LDA $CC46 / CMP #$02 / BNE skip    ; work on the reload frame
+#
+# 35 corpus files carry this shape and 33 of them already read a gate through
+# the absolute spelling, so it is consulted **only where that one found
+# nothing** -- the rule `find_relocation` and `INSTRUMENT_INDEX_SHAPE` follow.
+# What the other 33 count is not established, and a wrong tempo is worse than
+# the old constant.
+SPEED_GATE_IMM = re.compile(rb"\xce(..)\x10\x05\xa9(.)\x8d(..)", re.DOTALL)
 SPEED_TABLE_LOAD = b"\xbd"       # LDA abs,X -- X is the subtune number
 SPEED_RELOAD_STORE = b"\x8d"     # STA abs
 
@@ -1497,14 +1509,36 @@ class SongSpeeds:
         return f"static reload byte at ${self.reload_addr:04X}"
 
 
-def _gate_hits(data: bytes):
-    """(match offset, reload address) for every speed-gate shape in the file."""
+def _gate_hits(sid: SidFile):
+    """(match offset, reload address) for every speed-gate shape in the file.
+
+    The immediate-reload spelling is a *fallback*: it is consulted only where
+    the absolute one matched nothing, because 33 of the 35 corpus files
+    carrying it also carry the absolute form, and reading both would hand two
+    candidates to a chooser with no way to tell them apart. It rescues Ninja
+    and Mega Apocalypse, whose players have only this one.
+
+    For that spelling the "reload address" is the address of the *immediate's
+    own operand byte*, which is what makes `_speeds_for_reload` work
+    unchanged: a per-subtune table is written into that operand by the init
+    (`LDA table,X / STA <the immediate>`, the self-modifying idiom
+    `_find_outer_gate` reads for the same reason), and where no init writes it
+    the byte sitting there is the value.
+    """
+    data = sid.data
     hits = []
     for m in SPEED_GATE.finditer(data):
         ctr, rel, ctr2 = m.group(1), m.group(2), m.group(3)
         if ctr != ctr2:
             continue
         hits.append((m.start(), rel[0] | rel[1] << 8))
+    if hits:
+        return hits
+    base = sid.load_addr - sid.to_offset(sid.load_addr)
+    for m in SPEED_GATE_IMM.finditer(data):
+        if m.group(1) != m.group(3):
+            continue
+        hits.append((m.start(), m.start() + 6 + base))
     return hits
 
 
@@ -1569,10 +1603,16 @@ def outer_gate_skip(sid: SidFile, subtune: int = 0) -> Optional[int]:
 
     `find_song_speeds` already carries this as `SongSpeeds.skip`, but only for
     a player whose *inner* speed gate it also found -- and the two are
-    independent readings. Ninja has the outer counter (`$C806`, reload 3) and
-    no speed gate at all, so its `find_song_speeds` is None and its tempo
-    falls back to a constant; asking for the counter through that path returns
-    nothing for it. Anything that needs the counter alone should ask here.
+    independent readings. Anything that needs the counter alone should ask
+    here rather than through a `SongSpeeds` that may be None for a reason
+    having nothing to do with the counter.
+
+    **The file this was written for no longer needs it.** Ninja had the outer
+    counter and no readable inner gate until v0.5.267 read its immediate
+    reload spelling (`SPEED_GATE_IMM`), and `find_song_speeds` answers for it
+    now. The separation still holds -- a player can have either counter
+    without the other -- so this stays, with its justification re-stated
+    rather than its example.
     """
     vals, _ = _find_outer_gate(sid, max(sid.subtunes, 1))
     if 0 <= subtune < len(vals):
@@ -1592,7 +1632,7 @@ def find_song_speeds(sid: SidFile,
     tempo is worse than the old constant.
     """
     candidates = []
-    for pos, rel_addr in _gate_hits(sid.data):
+    for pos, rel_addr in _gate_hits(sid):
         speeds = _speeds_for_reload(sid, rel_addr)
         if speeds is not None:
             candidates.append((pos, speeds))

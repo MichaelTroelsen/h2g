@@ -8768,9 +8768,11 @@ option is about how long a *row* lasts, while a wavetable entry lasts a play
 call and a play call is a frame whatever the tempo says.
 
 Ninja is also the file that forced `outer_gate_skip` to exist beside
-`SongSpeeds.skip_for`. The two gates are independent readings and this player
-has only the outer one, so `find_song_speeds` returns None for it, its tempo
-falls back to a constant, and the counter is unreachable through that path.
+`SongSpeeds.skip_for`. The two gates are independent readings, and at the time
+this player appeared to have only the outer one -- `find_song_speeds` returned
+None for it, so the counter was unreachable through that path. It had the
+inner gate all along, spelled with an immediate reload; § 7.eeeee reads it,
+and the separation stands on its own terms rather than on this example.
 
 **Measured**, `-t 60`, against its shipped preset:
 
@@ -8983,6 +8985,13 @@ separates the last of it from the note lengths `hold` cannot see on this file.
 The honest summary is that the mechanism is now present and its rate is bounded
 by a tempo defect recorded elsewhere, not that the emission is 77% too eager.
 
+> **Closed by § 7.eeeee.** That tempo defect was the unread immediate-reload
+> speed gate, and reading it took the file to `retrig` 1.00. This mechanism's
+> rate came with it: 387 noise frames against 219 became **205** against 219,
+> i.e. 0.94x, with no change to the emitter. The paragraph above is left as
+> written because the decomposition is what predicted this -- 1.22x per unit
+> of music, and what remained after the tempo fix was 0.94x.
+
 > **The transferable lesson:** two blocks in one player, 25 bytes apart,
 > reading the same counter into the same register -- and the correction that
 > was essential for one of them (the skipped call) cancels exactly for the
@@ -9092,6 +9101,105 @@ long before this change.
 > readings differ by 60x on the same operand. The check that separated them
 > was not in the disassembly — it was asking whether the music the operand
 > implies could be the music the patterns around it contain.
+
+### 7.eeeee One byte of branch offset, and a tune that was 25% fast
+
+The handoff carried "the missing inner speed gate" as the largest defect that
+could be named: Ninja's `find_song_speeds` returned None, so its tempo took the
+fallback constant, and § 7.xxxx's hold census had already identified the
+signature — one ratio shared by every instrument of a file is a tempo, not a
+length. `--pace` says it exactly:
+
+    our row ours/theirs 0.750  (IQR 0.750-0.750 over 858 gaps; fit 0.750)
+
+Not approximately three quarters. Three quarters on **every gap**, with an
+interquartile range of zero width. A wrong constant looks like this; irregular
+pacing does not.
+
+#### The gate was there, one byte off the pattern
+
+    C83D  DEC $CC46 / BPL +5 / LDA #$02 / STA $CC46
+    C84E  LDA $CC46 / CMP #$02 / BNE skip      ; work on the reload frame
+
+Against `SPEED_GATE`, which is
+
+    DEC ctr / BPL +6 / LDA reload / STA ctr
+
+The only differences are the branch offset and the addressing mode of one
+load, and the second causes the first: `LDA #imm` is two bytes where `LDA abs`
+is three, so the branch that skips the reload is `+5` instead of `+6`. That is
+the whole defect. `SPEED_GATE_IMM` is the same shape with `\xa9(.)` where the
+other has `\xad(..)`.
+
+The reload is 2, so a duration unit is three of the calls that reach the
+sequencer. Ninja also has the outer counter of § 7.rrrr (`$C806`, reload 3,
+the `RTS` spelling), which works on 3 calls in every 4 — so the row is
+`3 * 4/3 = 4` real frames. Four exactly: one of the few files where the
+corrected row is a whole number and `encodable_frames` can return it. We were
+emitting the fallback constant of 3.
+
+#### What one byte was worth
+
+`-t 60`, shipped preset, and the corpus byte-hash moves **only this file**:
+
+| | melody | seq | pitch | retrig | wave | adsr | noise | pspan |
+|---|---|---|---|---|---|---|---|---|
+| before | 85% | 86% | 79% | 1.33 | 57% | 45% | 387/219 | 1.46x |
+| after | **100%** | **100%** | **100%** | **1.00** | **88%** | **62%** | **205**/219 | **1.00x** |
+
+`--pace` goes to `1.000`, IQR `1.000-1.000`, "0% out". The file moves from the
+report's *close (80-95%)* band to *plays the same music*.
+
+**Two of those numbers are other people's work being unblocked, not this
+fix.** § 7.ccccc's per-voice noise alternation was measured at 387 frames
+against the original's 219 and its author decomposed the 1.77x into 30 frames
+on an unreached voice plus 1.63x on a tune played 1.33x too fast — predicting
+1.22x per unit of music. The emitter is untouched here and it now reads 205
+against 219, i.e. **0.94x**. A decomposition that survives the removal of one
+of its terms is worth more than the number it was defending.
+
+And `pul` moved the wrong way, 972 to 426 against the original's 1050 — which
+is the count-versus-rate trap from the other side. We were striking a third
+more notes than the original, each restarting a pulse program, and the surplus
+was flattering a column that counts duty-cycle *movements*. `pspan`, the ratio
+form of the same question, went 1.46x to exactly 1.00. **Read a count next to
+both sides' note counts** (CLAUDE.md); this is that rule with the sign
+reversed, where removing invented events makes a count look worse.
+
+#### Why it is a fallback and not a competitor
+
+35 corpus files carry `SPEED_GATE_IMM`'s shape and **33 of them already read a
+gate through the absolute spelling**. What that counter does in those 33 is not
+established, and `find_song_speeds` has no way to choose between two candidates
+it cannot tell apart — its own docstring says a wrong tempo is worse than the
+old constant. So the immediate form is consulted only where the absolute one
+matched nothing: the rule `find_relocation` and `INSTRUMENT_INDEX_SHAPE`
+already follow, and it is what keeps this to two files.
+
+The second is Mega Apocalypse, which lands on **3 frames a row — the value the
+fallback constant was already guessing**. Its bytes do not move. That is worth
+having anyway: the tempo is now read rather than assumed, and if the constant
+is ever wrong for it, the reading will say so.
+
+#### A test was pinning the defect
+
+`test_ninja_s_outer_counter_is_readable_where_its_speed_gate_is_not` asserted
+`find_song_speeds(sid, det) is None`, two days old, written by the same hand as
+the fix. It was true, and it was documenting the bug as though it were a
+property of the player. It is now `test_ninja_s_two_counters_agree`, which
+pins what actually has to hold: `outer_gate_skip` and `SongSpeeds.skip_for`
+return the same number, because `_gate_calls` and the row length both scale by
+it and disagreeing would put the wavetable on a different timebase from the
+rows.
+
+> **The transferable lesson:** a signature that encodes an *addressing mode*
+> encodes an instruction length, and an instruction length is in every branch
+> offset around it. Two spellings of one idiom differ by a byte in two places
+> at once, and matching neither looks exactly like the player not having the
+> feature. The way this was found is worth more than the fix: `--pace`
+> reported a ratio with zero spread, which is a claim no mechanism can make.
+> A tight ratio is a constant; a loose one is a mechanism. Read the spread
+> before reading the number.
 
 ---
 

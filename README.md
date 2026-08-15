@@ -1701,10 +1701,11 @@ call sounds the alternate here where it sounds the record's own there; that is
 the trace (onset frame `41`, next frame `81`). Measured at `-t 60`: `noise` 0 →
 387 of the original's 219 and `nrun` "nothing to compare" → **100%**, with
 `melody`, `seq`, `retrig`, `onset`, `adsr`, `hold`, `tail` and the rest unmoved
-and `wave` 58% → 57%. The overshoot is the file's own tempo defect — we play it
-1.33× too fast (`retrig` 1.33) — plus 30 frames on a voice the original does not
-reach inside the window; per unit of music it is 1.22×. See
-H2G-CONVERSION-METHOD.md § 7.ccccc.
+and `wave` 58% → 57%. The overshoot was the file's own tempo defect — an
+unread speed gate that played it 1.33× too fast — plus 30 frames on a voice the
+original does not reach inside the window. Reading the gate (§ 7.eeeee) took
+the same emission to **205 frames against 219**, without touching the emitter.
+See H2G-CONVERSION-METHOD.md §§ 7.ccccc and 7.eeeee.
 
 ### `--no-test-restart` (the silent frame on every note)
 
