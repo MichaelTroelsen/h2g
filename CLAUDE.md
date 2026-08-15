@@ -654,6 +654,19 @@ test dependency).
   write a result where most conversions failed, and prefer a *test* over a
   probe: v0.5.279's identical claim was sound because
   `test_engine_zero_is_byte_identical_across_the_corpus` is a test.
+- **Verifying a write is not verifying its lifetime.** A bit-6 rest parks
+  `$08` in the stored waveform on 17 files and a Goattracker KEYOFF cannot
+  express that (it is a gate mask, `wave & gate`), so the rest emitted
+  `CMD_SETWAVE $08` -- verified in the editor, in `player.s`, and in
+  `greloc.c`'s optimiser, with the operand clear of the `$E0`-`$EF` trap, the
+  17-file scope measured and the 15-file blast radius predicted before the
+  run. It cost **melody -43pp over 8 files** and Trans-Atlantic's 912 slide
+  frames went to zero. Cause: `gplay.c`'s note-start reloads `firstwave` and
+  the wavetable pointer only `if (cptr->newcommand != CMD_TONEPORTA)`, and
+  this converter emits TONEPORTA for slides *and* ties -- so a note landing
+  after the rest never took the `$08` back. None of the three verifications
+  touched the question that decided it. When a change leaves state for a
+  later row to clear, enumerate the rows that clear nothing. See § 7.ooooo.
 - **A trace that shows what is wrong does not tell you what writes it.** IK+'s
   wave-program instruments end their notes on `$08` where ours latch `$40`,
   visible frame by frame -- and emitting that silence directly took Nemesis

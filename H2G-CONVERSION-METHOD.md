@@ -10433,3 +10433,97 @@ this section refutes -- it fires on rest rows rather than on every program's
 end -- and it needs a way to write a waveform on a row that carries no note,
 which Goattracker's KEYOFF does not provide. Read `gplay.c`'s KEYOFF handling
 before assuming an instrument column alone will do it.
+
+### 7.ooooo `CMD_SETWAVE` on a rest, and the note that will not take it back
+
+§ 7.nnnnn's addendum located IK+'s note-end silence: pattern status bit 6, a
+*rest*, whose handler parks `$08` in the voice's stored waveform (`$E135`). A
+Goattracker `KEYOFF` cannot express that — it is a gate mask and nothing else,
+`sidreg[0x4] = cptr->wave & cptr->gate` — so our rests leave the waveform
+latched at whatever the wavetable last wrote. This is the attempt to close
+that, and its measurement.
+
+#### The mechanism is real and both players agree on it
+
+`CMD_SETWAVE` (gcommon.h:11) writes the waveform with **no note required**:
+
+| | editor `gplay.c` | packed `player.s` |
+|---|---|---|
+| set | `cptr->wave = cptr->newcmddata` (:432) | `mt_tick0_7: sta mt_chnwave,x` |
+| output | `sidreg[0x4] = wave & gate` | `lda mt_chnwave,x / and mt_chngate,x` |
+
+`greloc.c:856` clears `nosetwave` when it sees the command, so the optimiser
+keeps the code, and the operand is not remapped — SETWAVE sits above greloc's
+"Remap table commands" block, so `$08` passes through literally rather than
+through the `$E0`-`$EF` route that made Skate or Die's `slide $00` inert
+(§ 7.bbbbb).
+
+`gplay.c` also closes off the approach one would reach for first: the
+wavetable pointer is reloaded only inside `if (cptr->newnote)`, so an
+*instrument column* on a rest row latches `cptr->instr` and never runs its
+table. A "silence instrument" would have been inert in the quiet way that
+looks like a working feature.
+
+So a bit-6 rest emitted `KEYOFF` **and** `CMD_SETWAVE $08`, giving
+`$08 & $FE` = `$08`, byte-for-byte the player. Scoped by a new probe
+splitting the testbit family out of `rest_silences` — that flag bundles IK+'s
+testbit-into-waveform with Ricochet's zeroed envelope pair, and only the first
+is a waveform. It found **17 files**, matching the count the existing
+docstring states independently, and **15** of them changed bytes with nothing
+outside the set. The prediction was written down before the measurement and it
+held.
+
+#### And the corpus says no, twice as loudly as last time
+
+| dimension | files moved | mean delta | largest |
+|---|---:|---:|---|
+| melody | 8 | **-43.0 pp** | 96% → 29% (Bangkok Knights) |
+| seq | 8 | -38.4 pp | 93% → 40% (Auf Wiedersehen Monty) |
+| pitch | 7 | -30.7 pp | 97% → 38% (Thundercats) |
+| retrig | 8 | -0.49 | 1.01 → **0.28** (Auf Wiedersehen Monty) |
+| slides | 7 | -31.0 | 912 → **0** (Trans-Atlantic) |
+| wave | 12 | -9.2 pp | 85% → 63% (Thundercats) |
+
+**Reverted.**
+
+#### Why — and it is not visible from the rest row
+
+The song does not stop; it plays to the end of the window. What collapses is
+the *attacks*: Auf Wiedersehen Monty's three voices go 106/149/194 to
+57/56/14. Two hypotheses died first — that `$08` persists into notes whose
+instrument re-establishes no waveform (every instrument in both files has a
+non-zero `firstwave` **and** a wavetable), and that the packed player was
+crashing.
+
+It is `gplay.c`'s note-start:
+
+    if (cptr->newcommand != CMD_TONEPORTA) {
+        if (iptr->firstwave) { cptr->wave = iptr->firstwave; cptr->gate = 0xff; }
+        cptr->ptr[WTBL] = iptr->ptr[WTBL];      // the wavetable restart
+    }
+
+**A `CMD_TONEPORTA` note re-establishes neither the first waveform nor the
+wavetable.** So a slide or a tie landing after a bit-6 rest inherits the `$08`
+and stays silent until some later note arrives without the command. `--slides`
+and `--tie` are both in the `always` block, so the damage scales with how much
+a file slides — which is exactly the shape of the table, Trans-Atlantic's 912
+slide frames going to zero.
+
+> **The transferable lesson:** a value written on one row is a claim about
+> every row after it, and the rows that *do not* re-establish it are the ones
+> to enumerate before writing it. The mechanism here was verified in three
+> files — editor, packed player and relocator all agreed, the operand survived
+> the encoding trap, the scope was measured and the blast radius predicted —
+> and none of that touches the question that decided it, which was what the
+> *next* note does. Verifying a write is not verifying its lifetime.
+>
+> The narrower one: this repo emits `CMD_TONEPORTA` for slides *and* for ties
+> (§ 7.mmm), so any future change that leaves state for a following note to
+> clear must account for a note that deliberately clears nothing. That is a
+> standing hazard, not a fact about rests.
+
+What survives, again unchanged: IK+'s rests are genuinely wrong, `KEYOFF`
+genuinely cannot silence a waveform, and the 17 files are genuinely the
+population. What is now also known is that the row-level fix cannot work while
+a tie or slide can follow the rest — which points at the instrument's own
+table, not the pattern, as the place to put the silence.
