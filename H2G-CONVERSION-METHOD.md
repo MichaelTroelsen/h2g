@@ -9489,6 +9489,83 @@ more than another list of files.
 > subtune, the multiplier and the startup lag correctly; a probe re-derives
 > all three and only has to get one wrong.
 
+### 7.hhhhh The next-note fetch, and the two calls that were a whole frame short
+
+`hold`'s census attributes 211 of 432 instruments to it and `gate`'s the bulk
+of 11145 held runs averaging 3.3 frames: Goattracker fetches the next note
+`gatetimer & $3f` calls early and holds the gate off for them. Two columns'
+residue, one mechanism.
+
+The option that removes it, `--no-test-restart`, has been off since it was
+measured: 21 points of melody across 68 files. Re-measured now that `gate`
+and `hold` exist, forced corpus-wide, it is stranger than that:
+
+| | melody | seq | pitch | onset | hold | gate | wave | nrun |
+|---|---|---|---|---|---|---|---|---|
+| files | 68 | 68 | 64 | 25 | 49 | 63 | 72 | 22 |
+| mean | -26.3pp | -26.7pp | -15.6pp | -40pp | **+69.9pp** | +3.1pp | +3.0pp | +32.4pp |
+
+Delta Mix-E-Load goes melody 100% -> **0%**. Not a rounding of a naming rule:
+siddump prints a note when the waveform reaches `>= $10` with the gate set
+*after a frame below `$10`* (siddump.c:434-437), and the testbit frame this
+option removes is the only frame our conversions spend below `$10`. Take it
+away and every attack becomes invisible to the instrument, which is why four
+columns collapse while four others leap.
+
+The originals need no such frame because they **gate off at the end of every
+untied note** -- the fact the whole gate story rests on. Our conversion does
+not, so the testbit frame is standing in for a release we never make. The
+option is not the lever; the release is.
+
+#### The release we do make is two calls long
+
+Goattracker has one, and this writer has always set it to **2 calls**. At
+`-S1` that is 2 frames. At `-S3` it is two thirds of one, and at `-S5` two
+fifths -- against the players' own 3.3. It was a constant where every other
+rate in this file is `frames * multiplier`, and the multispeed half of the
+corpus has been getting a release too short to sample.
+
+`HARD_RESTART_FRAMES` is 2 frames, converted like everything else, and
+bounded twice:
+
+* **gplay.c:334 stops the song outright** when the gatetimer exceeds the
+  channel's tick. It is a correctness bound and the failure is total: swept
+  past it, Commando reports 3 attacks against 716 and Sanxion 1 against 956.
+* **Half the row**, which is a claim about music rather than the player.
+  Bounded only by the player's limit, Saboteur II takes 6 calls of an 8-call
+  row and melody falls 98% -> 62% with `retrig` 1.00 -> 0.81 -- alone among
+  the files that moved. Half its row is 4, and the gains survive it.
+
+Floored at the historical 2, so no single-speed file moves at all: Commando's
+row is 3 calls and half of that is 1.
+
+#### Measured
+
+| | melody | seq | retrig | gate |
+|---|---|---|---|---|
+| Off the Cuff | 51 -> **95%** | 25 -> 96% | 0.64 -> 1.03 | 26 -> 55% |
+| Kings of the Beach intro | 67 -> **100%** | 54 -> 100% | 0.67 -> 0.99 | 59 -> 71% |
+| Mr Meaner | 72 -> 97% | 58 -> 97% | 0.68 -> 1.07 | 44 -> 63% |
+| Bump Set Spike | 68 -> 97% | 67 -> 97% | 0.76 -> 0.94 | 45 -> 45% |
+| Rock Tells the Tale | 53 -> 89% | 55 -> 90% | 0.80 -> 1.22 | 39 -> 48% |
+
+`gate` moves on 15 files (+12.2pp mean), `hold` and `tail` on one each, and
+**no file in the corpus is worse by half a point on melody, sequence, pitch,
+wave, adsr, onset or hold**. The cost is `vib` on five files, mixed in
+direction (Off the Cuff 0.80 -> 0.58, Mr Meaner 1.20 -> 1.02), and about
+eight frames of `slides`.
+
+Every one of the five files that gained melody was *under*-triggering --
+`retrig` 0.64 to 0.80 -- and every one lands within 0.22 of 1.0. A release
+long enough to sample is what lets a re-struck note be a re-struck note.
+
+> **The transferable lesson:** the option that removes a defect is not
+> always the fix for it. `--no-test-restart` deletes the frame that stands in
+> for a missing release; what was wanted was the release. And the constant
+> that produced it had the shape CLAUDE.md warns about twice over -- a rate
+> in *calls* where the player's is in frames, written before the multiplier
+> existed and never revisited when it did.
+
 ---
 
 ## 10. Failure modes, ranked by how quietly they fail

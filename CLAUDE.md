@@ -718,6 +718,19 @@ test dependency).
   where the absolute form found nothing: 35 files carry its shape and 33 of
   them already read a gate, and a wrong tempo is worse than the old constant.
   See § 7.eeeee.
+- **The option that removes a defect is not always the fix for it.**
+  `--no-test-restart` deletes the testbit frame on every note's first frame,
+  and that frame is the only one our conversions spend below `$10` -- which
+  is what siddump requires to print a note at all (siddump.c:434-437). Forced
+  corpus-wide it takes `hold` +69.9pp and `melody` **-26.3pp on 68 files**,
+  Delta Mix-E-Load to 0%: four columns collapse because the instrument can no
+  longer see our attacks, not because the music changed. The frame is
+  standing in for the release the players make at the end of every untied
+  note and we never made. What was wanted was the release --
+  `HARD_RESTART_FRAMES`, Goattracker's own gate-off before a note, which was
+  **2 calls** where every other rate here is `frames * multiplier` and is now
+  2 frames. Five files gain 25-45 points of melody and none loses half a
+  point on anything. See § 7.hhhhh.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
   and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a

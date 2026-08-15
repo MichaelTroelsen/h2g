@@ -167,6 +167,57 @@ DRUM_DEEPEN_MARGIN = 32
 # `cptr->wave` alone. So `$FF` opens the gate -- the note still attacks -- and
 # the frame keeps whatever waveform was already there instead of going quiet.
 # Anything below `$FE` is written to the waveform and forces the gate on.
+# How long the gate is closed before each note, in *frames*. It is the low
+# six bits of the instrument's gatetimer: Goattracker fetches the next note
+# that many calls early and holds the gate off for them (gplay.c:905), which
+# is this writer's only release between two adjacent notes.
+#
+# It was 2 **calls**, which is 2 frames at `-S1` and two thirds of one at
+# `-S3`, against the players' own releases -- 3.3 frames on average, from the
+# gate census. Measured in frames it is `frames * multiplier` calls, the same
+# conversion every other rate in this file makes.
+#
+# 2 rather than the measured 3.3 because the row is a hard ceiling and a
+# ceiling that binds everywhere teaches nothing: at 3 frames the cap decides
+# for almost every file, at 2 it decides for about half, and the sweep that
+# chose it shows gate rising and `melody`, `retrig` and the attack count
+# unmoved at both.
+HARD_RESTART_FRAMES = 2
+
+
+def _hard_restart_ticks(multiplier: int, row_calls: int) -> int:
+    """Calls to hold the gate off before a note, bounded by the row.
+
+    **gplay.c:334 stops the song outright** when the gatetimer exceeds the
+    channel's tick, so this can never reach the row length -- and the failure
+    is total, not graceful: swept past the bound, Commando drops from 716
+    attacks to 3 and Sanxion from 956 to 1. `row_calls` is the *shortest* row
+    the file writes (convert passes `short_row_calls`), because a pattern
+    shared between two tempos is short in the faster one.
+
+    **At most half the row**, which is a claim about the music rather than
+    about the player: a note that spends more of its slot released than
+    sounding is not the note. Bounded only by `row_calls - 1` -- the
+    player's own limit -- Saboteur II gets 6 calls of an 8-call row and
+    melody falls 98% -> 62% with `retrig` 1.00 -> 0.81, while every other
+    file that moved gained. Half of its row is 4, and the same sweep that
+    found the collapse shows the gain surviving it.
+
+    **Floored at 2**, the value this writer wrote for its whole life, so no
+    single-speed file moves: Commando's row is 3 calls, half of which is 1,
+    and dropping to 1 would rewrite every `-S1` conversion in the corpus to
+    fix a defect the multispeed files have.
+
+    Falls back to that constant where the row is unknown, which is what a
+    caller building instruments without a tempo pass has.
+    """
+    want = max(1, HARD_RESTART_FRAMES * max(1, multiplier))
+    if not row_calls or row_calls <= 1:
+        return min(want, 2)
+    ticks = min(want, max(1, row_calls // 2))
+    ticks = max(ticks, min(2, row_calls - 1))
+    return min(ticks, row_calls - 1)
+
 FIRSTWAVE_TESTBIT = 0x09
 FIRSTWAVE_GATE_ONLY = 0xFF
 
@@ -1882,7 +1933,9 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        lead: int = 1,
                        wave_starts: Optional[List[int]] = None,
                        no_test_restart: bool = False,
-                       cut_release: bool = False) -> int:
+                       cut_release: bool = False,
+                       multiplier: int = 1,
+                       row_calls: int = 0) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -1953,7 +2006,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # for one frame before every note. Hubbard's players never do that:
         # $0F00 appears in none of the corpus originals and is the most common
         # ADSR value in every conversion without this flag.
-        gatetimer = 0x82 if no_hard_restart else 0x02
+        gatetimer = ((0x80 if no_hard_restart else 0)
+                     | (_hard_restart_ticks(multiplier, row_calls) & 0x3F))
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
         # (gsong.c:224-225) and the same pair the other way round, packed, in a
@@ -3941,7 +3995,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,
                        lead=lead, wave_starts=wave_starts,
-                       no_test_restart=no_test_restart)
+                       no_test_restart=no_test_restart,
+                       multiplier=multiplier, row_calls=row_calls)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
