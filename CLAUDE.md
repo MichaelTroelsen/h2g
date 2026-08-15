@@ -640,6 +640,32 @@ test dependency).
   `python <path>`. This is the same fix as the heredoc-mangling rule below and
   the permission-allowlist one: a short command with a fixed script name is
   also the only shape an allowlist entry can generalise over.
+- **A probe that wraps `convert()` must assert its own success rate.** A
+  scratch byte-hash script passed `quiet=True`, which `convert` does not
+  accept, so it recorded `ERR TypeError` for all 95 files and every comparison
+  was between two identical sets of error strings -- publishing "0 of 95 files
+  move" as evidence in **two** commits that had measured nothing. Both claims
+  turned out to be true (re-verified from clean worktrees with presets held
+  constant), which is exactly why it survived: a vacuous check and a correct
+  conclusion look identical from the outside. It is the third probe in one
+  session to fail by not reproducing the harness's calling convention -- the
+  others omitted `--tempo auto` (§ 7.kkkkk) and the frequency-table
+  calibration (§ 7.mmmmm), each producing a confident wrong reading. Refuse to
+  write a result where most conversions failed, and prefer a *test* over a
+  probe: v0.5.279's identical claim was sound because
+  `test_engine_zero_is_byte_identical_across_the_corpus` is a test.
+- **A trace that shows what is wrong does not tell you what writes it.** IK+'s
+  wave-program instruments end their notes on `$08` where ours latch `$40`,
+  visible frame by frame -- and emitting that silence directly took Nemesis
+  the Warlock's `wave` from 75% to 30% while gaining at most 3 points on four
+  files. The mechanism was never located (`$E44C` restores
+  `LDA $E58F,X / AND $E5E0,X`, and `$40 AND anything` is not `$08`, so a
+  second write path exists and was not found); what shipped would have been an
+  approximation standing in for it. Reverted. See § 7.nnnnn -- and note the
+  related trap that **`$18` is not `$08`**: both are silent to the ear, but
+  `wave` scores the waveform class, `hold` counts frames with a waveform
+  selected, and siddump needs a frame below `$10` to name the next attack, so
+  the `$18` version moved not one column on any file.
 - **A scripted edit must assert its match.** `str.replace` with a search string
   that does not match returns the input unchanged and raises nothing, so a
   `python - <<PY` rewrite can report success while changing no bytes. v0.5.192

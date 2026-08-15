@@ -10285,3 +10285,107 @@ window, and 8-25% on the eight files `--pace` already flagged.
 > startup lag as a free by-product, the harness estimates that lag by a
 > completely different route, and the two disagreeing by 33 frames is what
 > exposed the outlier problem. Prefer estimators with a checkable by-product.
+
+### 7.nnnnn A trailing silence: right for one file, refuted on the corpus
+
+A listening session reported IK+ as not sounding right — the first listening
+verdict in thirty-odd commits, and it found something four columns had been
+reporting all along: `hold` 0%, `gate` 48%, `wave` 49%, `retrig` 0.68, against
+a `melody` of 99% that hides it because it collapses consecutive repeats.
+`seq` 77% is the honest column.
+
+`--diagnose` cleared the harness (subtune correspondence the identity, all
+three voices matching at ratio 0.98–0.99), so it is the right music played
+wrong. The hold census named the population exactly: five instruments
+compared, **zero matching**, three the known `fetch` deficit and two `long` —
+GT 3 and GT 7, both carrying effect byte `$08`, the byte-code wave program.
+
+#### What the traces say
+
+Three notes of the `$08D8` instrument, `$D404` frame by frame:
+
+    ORIG  f44:  11 81 11 40 80 80 | 08 08 08 08 08 08 08 08 08 08 08 08
+    ORIG  f98:  11 81 11 40 80 80 80 80 80 | 40 40 40 | 08 08 08 08
+    OURS f104:  11 81 11 40 80 80 80 80 80 | 40 40 40 40 40 40 40 ...
+
+The program frames are **byte-identical on both sides**. Every hypothesis
+offered before this trace was wrong, including a confident one about the gate
+bit not surviving into the `.sng`: it survives exactly. `songview` confirms
+the emitted wavetable carries `$40` — pulse with the gate clear — on call 4,
+where the player's third opcode has it.
+
+The difference is the tail. The player restores the stored waveform (v0.5.203's
+`LDA $E58F,X / AND $E5E0,X`) and then, at the note's end, writes **`$08`** —
+test bit, no waveform selected — and holds silence. We restore and latch
+forever. Note also that the original's own length varies (6 frames at f44, 12
+at f98): the player *truncates the program* when the note's duration expires,
+which a Goattracker wavetable cannot do at all, since it runs to completion.
+
+#### `$18` is not `$08`
+
+The first attempt emitted `$18` — triangle plus the test bit, which this
+project's notes already name as "silence from a wavetable" — and **moved not
+one column on any file**. It is silent to the ear and is not silent to the
+instruments: `wave` scores the waveform *class* and `$18` is class `$10` where
+`$08` is class `$00`; `hold` counts frames with a waveform selected; and
+siddump needs a frame below `$10` to name the next attack at all
+(siddump.c:434-437). `$08` cannot be written literally either — `$01`-`$0F`
+are wavetable *delays* — so it has to go through `_wave_byte`'s `$E0`-`$EF`
+encoding, and it does then survive `gt2reloc`.
+
+With `$08`, IK+ improves: `wave` 49% → 52%, and the two long instruments go
+from 17 frames against the original's 6 to **10 and 13**.
+
+#### And the corpus refuses it
+
+| | wave |
+|---|---|
+| files moved | 18, mean **-3.0pp** |
+| worst | Nemesis the Warlock **75% → 30%** (slides 3070 → 658, bend 0.71 → 0.35) |
+| also down | Saboteur II -5, Kings of the Beach intro -4 (`hold` 100% → 67%), Chain Reaction -4, Nineteen -2, Pandora -2 |
+| up | IK+ +3, Arcade Classics +3, Skate or Die intro +2, Mega Apocalypse +1 |
+
+`hold` moved on two files, mean **-21.7pp**, both downward. Four files gain at
+most three points; one loses forty-five. **Reverted.**
+
+The reason is visible in IK+'s own player and should have been checked first:
+`$E44C` restores `LDA $E58F,X / AND $E5E0,X`, and `$40 AND anything` cannot
+produce `$08`. So IK+'s note-end silence comes from a *second write path*
+that was never located — the mechanism was never actually identified, only its
+effect on one file's trace. Generalising it to every wave-program instrument
+was generalising a behaviour from one player, which the rest of this document
+warns about repeatedly.
+
+> **The transferable lesson:** a trace that shows exactly what is wrong does
+> not tell you what writes it. Two sides diverging at a known frame is a
+> *symptom* localised to the frame; the mechanism is still in the 6502, and
+> "emit the thing the other side shows" is a guess with a plausible shape.
+> Here the guess helped the file it was derived from and cost another file
+> forty-five points, which is the signature of an approximation standing in
+> for a mechanism.
+>
+> What survives is worth keeping: IK+'s tail is genuinely wrong, the note-end
+> silence is real and unmodelled, and the next attempt starts from `$E58F`'s
+> other writer rather than from the wavetable.
+
+#### A probe that had been vacuous for three commits
+
+Found while measuring this. The scratch script byte-hashing the corpus called
+`convert(path, quiet=True, ...)`, and `convert` has no `quiet` parameter — so
+every run recorded `ERR TypeError` for all 95 files and every comparison was
+between two identical sets of error strings. The "0 of 95 files move" evidence
+in **v0.5.278** and **v0.5.280** was therefore vacuous when it was published.
+
+Both claims are in fact true, re-verified afterwards from clean worktrees with
+presets held constant, and v0.5.279's identical claim was always sound because
+it rests on `test_engine_zero_is_byte_identical_across_the_corpus` rather than
+on the probe. But *true* and *verified* are different states, and three commit
+messages asserted the second while holding the first.
+
+This is the third probe in one session to fail by not reproducing the
+harness's calling convention — after one that omitted `--tempo auto` (§
+7.kkkkk) and one that omitted the frequency-table calibration (§ 7.mmmmm).
+The rule that catches all three: **a probe wrapping `convert()` must assert
+its own success rate before anything reads its output.** The script now
+refuses to write a result where most conversions failed, and that guard fired
+on the very next use.

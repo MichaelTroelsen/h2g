@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.282 — 2026-08-15
+
+- the trailing silence, measured and refuted
+
 ## 0.5.281 — 2026-08-15
 
 - drift: the row error --pace cannot see
