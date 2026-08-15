@@ -97,6 +97,14 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
 # nothing, which is how --slides and --filter each shipped dead.
 # test_preset_passthrough.py checks this set covers the difference.
 EXCLUDED_FROM_ALWAYS = {
+    # Not a setting for a song: it selects a DIFFERENT song out of the same
+    # file. `--engine 1` rips the second player a .sid carries, where it
+    # carries one -- Powerplay Hockey's nine game cues against the tune its
+    # PSID header starts on (section 7.kkkkk). A preset records the best way
+    # to convert *the* tune, and there is no sense in which the cues are a
+    # better conversion of it, so this belongs on a command line. Nothing in
+    # SURVEY.md, presets.json or FIDELITY.md is generated with it.
+    "engine",
     # Changes the bytes of every file and the byte-exact Commando fixture
     # encodes the original tool's unterminated patterns.
     "terminate_patterns",

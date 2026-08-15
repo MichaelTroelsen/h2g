@@ -9944,3 +9944,133 @@ measurable, not the drum becoming wrong.
 > more distinctive will be charged for every timing error already under it.**
 > Read a frame-aligned agreement next to a pace measurement before reading it
 > as a defect in what you just emitted.
+
+### 7.kkkkk Nine subtunes behind one guard
+
+Powerplay Hockey's PSID header declares ten subtunes. The converter emitted
+one, and had for the whole life of the project. Sections 7.iiiii and 7.jjjjj
+were both about the tune; this one is about the other nine.
+
+They are game cues -- a siren, a whistle, an organ sting -- driven by the
+second player the file carries. `$4200` dispatches on the subtune index:
+
+    4200  CMP #$00 / BEQ $4234        ; A = 0  -> JSR $43EA, the tune
+          SBC #$01 / JSR $3603        ; A >= 1 -> cue A-1
+
+and the cue engine's init copies six bytes per cue into its working set:
+
+    4198  BD 66 3C  LDA $3C66,X       ; X = cue * 6
+    419B  99 60 3C  STA $3C60,Y
+    419E  E8 C8 C0 06 D0 F4           ; six of them
+
+Three orderlist pointers, lo,lo,lo then hi,hi,hi -- confirmed by the reader
+taking them as `LDA $3C60,X` / `LDA $3C63,X` with X the voice. Patterns come
+from `$3C9C`/`$3CBB`, instruments from `$3BA0`, and the orderlist byte reads
+`< $80` pattern, `$80-$FD` transpose (`AND #$7F`), `$FE` end, `$FF` restart.
+All nine rows decode, every pattern number is in range, and `$3C9C - $3C66`
+is 54 -- nine rows of six exactly, so the count falls out of the gap between
+the two tables rather than out of the header.
+
+#### The whole thing was already detectable
+
+The instinct was to write signatures for a second engine. None were needed.
+Run the classic chains over this file and they find all of it:
+
+| chain | signature already in `detect()` | finds |
+|---|---|---|
+| tracks | IK+/Warhawk | `$3C60` / `$3C63` |
+| selector | Rasputin | `$3C66`, 3 voices |
+| patterns | Delta Mix-E-Load | `$3C9C` / `$3CBB` |
+| instruments | the store shape, via `_nearest_table` | `$3BA0` |
+
+They never ran, because `detect()` guards every one of them on the digi probe:
+`i = -2 if digi else find(...)`, five times over. The digi engine matches this
+file, so the classic chains were skipped -- and the guard is *right*, as its
+own comment records: a selector match had once replaced the tune's perfectly
+good digi tables with one that resolves nowhere. The guard was protecting the
+tune from the cues.
+
+So `--engine` is one line:
+
+    digi = False if engine else _detect_digi(sid, det, log)
+
+`engine=0` cannot move a byte, because the probe runs exactly as it did --
+pinned across all 95 corpus files. `engine=1` reaches **one** file that
+converts, and *refuses* the eight that carry a digi player and nothing else,
+which is the honest answer for them and the reason a silent fallback would
+have been the wrong design.
+
+#### They are not two copies of one player
+
+Section 7.iiiii called them "the same code at two bases", from a pair of
+parallel-looking envelope stores at `$3779` and `$4574`. Read side by side
+they are two *variants*:
+
+| | the tune's engine | the cue engine |
+|---|---|---|
+| record size | 16 bytes | 8 bytes |
+| voices | 4 (one digi) | 3 |
+| orderlist tables | interleaved lo,hi | separate lo / hi |
+| pattern dialect | `digi` | `classic` |
+
+Which is exactly why one boolean separates them, and why 7.jjjjj's
+`_bound_instruments` correction lands where it does -- the cue engine is
+stride 8 and *does* take the bound (24 records counted, 12 real), while the
+tune's is stride 16 and does not.
+
+#### What they sound like
+
+All nine convert, pack, and play the right music. Against the original's
+subtunes 1-9 over 12 seconds, with the `always` options and `--tempo auto`:
+
+| cue | ours | orig | melody |
+|---|---|---|---|
+| 0 | 33 | 69 | 65% |
+| 1 | 72 | 18 | 40% |
+| 2 | 61 | 70 | 92% |
+| 3 | 43 | 26 | 77% |
+| 4 | 41 | 41 | **100%** |
+| 5 | 30 | 27 | 95% |
+| 6 | 56 | 119 | 64% |
+| 7 | 66 | 128 | 70% |
+| 8 | 43 | 83 | 69% |
+
+Mean 75%. The per-cue tempos come through exactly: `find_song_speeds` reads
+`$3B2E,X` through the gate's reload at `$3B40` and returns 2, 2, 3, 2, 2, 3,
+3, 2, 3 frames a row, which is the table byte-for-byte.
+
+#### The one mechanism still unread
+
+Every remaining miss is a note *count*, in both directions, and one counter
+explains the shape of it. Each cue has a length byte at `$3B37,X` that the
+init patches into an immediate:
+
+    418A  8D 5C 36  STA $365C         ; patches the operand of...
+    365B  A9 70     LDA #$70          ; ...this
+    365D  8D 41 3B  STA $3B41
+
+    3656  DEC $3B41
+    3659  10 08     BPL $3663         ; normal -> run the speed gate
+    365B  (reload)  / JMP $366E       ; underflow -> SKIP the gate this call
+    ...
+    3675  LDA $3B41
+    3678  F0 1A     BEQ $3694         ; zero -> do NOT advance the orderlist
+
+`find_song_speeds` reads the first half of that correctly and lands the table
+as the outer-gate `skip` -- 112, 8, 8, 126, 3, 2, 126, 126, 126, which is
+`$3B37` exactly. The second half is a further stall of one call per cycle, on
+top of the skip, and no Goattracker tempo expresses it. So cue lengths are
+approximate and a cue that ends in the original loops in the conversion.
+
+> **The transferable lesson:** before writing a signature for a mechanism you
+> have just disassembled, check whether the chains you already have would find
+> it if they were allowed to run. Four separate tables here were one guard
+> away, and the guard was doing a job it should keep doing. What was missing
+> was not detection — it was a way to ask for the other answer.
+>
+> And the corollary that cost the first measurement: a converter option can be
+> inert because a *different* option is unset. The cues first measured as
+> running at half speed, which read as an unmodelled tempo; it was
+> `--tempo auto`, which lives in `presets.json`'s `always` block and which a
+> direct `convert()` call does not get. Measure a new output path with the
+> options the shipped path uses, or measure something that is not shipped.

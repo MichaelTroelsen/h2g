@@ -48,7 +48,7 @@ def _tables_readable(det: Detection) -> bool:
     return det.can_convert and det.pattern_used > 0
 
 
-def _detect_tables(sid: SidFile, log: Logger):
+def _detect_tables(sid: SidFile, log: Logger, engine: int = 0):
     """(image, detection), re-reading the file with init's writes if needed.
 
     The re-read is a strict fallback: a file whose operands already name real
@@ -58,12 +58,12 @@ def _detect_tables(sid: SidFile, log: Logger):
     SEARCHING block either way.
     """
     lines: List[str] = []
-    det = detect(sid, lines.append)
+    det = detect(sid, lines.append, engine)
     if not _tables_readable(det):
         staged = sid.with_init_writes()
         if staged is not None:
             staged_lines: List[str] = []
-            staged_det = detect(staged, staged_lines.append)
+            staged_det = detect(staged, staged_lines.append, engine)
             if _tables_readable(staged_det):
                 for line in staged_lines:
                     log(line)
@@ -133,6 +133,7 @@ def convert(sid_path: str, log: Logger = print,
             rest_instrument: bool = False,
             rest_keyoff: bool = False,
             compact_instruments: bool = False,
+            engine: int = 0,
             tempo: int | str | None = None) -> bytes:
     """Convert a .sid to .sng bytes.
 
@@ -242,7 +243,7 @@ def convert(sid_path: str, log: Logger = print,
             f"-> ${r.dst:X} at init")
 
     log("-----------------------------------------------------SEARCHING---")
-    sid, det = _detect_tables(sid, log)
+    sid, det = _detect_tables(sid, log, engine)
 
     log("--------------------------------------------------------STATUS---")
     if not det.can_convert:

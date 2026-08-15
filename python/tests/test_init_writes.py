@@ -153,7 +153,7 @@ def test_a_file_that_already_reads_its_tables_is_never_patched():
     """The whole safety argument: the fallback is unreachable for a working file."""
     seen = []
 
-    def fake_detect(sid, log):
+    def fake_detect(sid, log, engine=0):
         seen.append(sid)
         return Detection(track_lo=1, track_hi=2, pattern_lo=3, pattern_hi=4,
                          pattern_used=9)

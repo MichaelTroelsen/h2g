@@ -672,6 +672,58 @@ subtune starts from. Turning the flag on there raises melody 15% → 19% and
 drops waveform agreement 29% → 0%. Use it on single-tune rips; the two files
 it was derived from are both of those.
 
+### `--engine N` (a file that carries two players)
+
+A `.sid` can hold more than one player. Powerplay Hockey holds two: the tune
+its PSID header starts on, and a second engine driving nine short game cues —
+a goal siren, an organ sting, a whistle. The header declares **ten** subtunes
+for exactly that reason, and until v0.5.279 this converter emitted one.
+
+`--engine 0` (the default) rips the player `startSong` selects, which is the
+tune every other option here is about and the only thing `SURVEY.md`,
+`presets.json` and `FIDELITY.md` are generated from. `--engine 1` declines the
+digi engine, so the classic detection chains run over the same file and find
+the other player's tables:
+
+```sh
+python -m h2g Powerplay_Hockey_USA_vs_USSR.sid --engine 1 -o cues.sng
+```
+
+Nothing new had to be fingerprinted for this. The cue engine's orderlist table
+at `$3C66` is matched by the Rasputin *track selector* signature, its patterns
+at `$3C9C`/`$3CBB` by the Delta Mix-E-Load shape, and its instruments at
+`$3BA0` by the store shape `_nearest_table` already ranks — all three were
+being skipped because `detect()` guards every classic chain on the digi probe
+having failed. The option is that one guard.
+
+**It is not a setting, it is a different song.** A preset records the best way
+to convert *the* tune, and the cues are not a better conversion of it, so
+`engine` is in `presets.EXCLUDED_FROM_ALWAYS` and never appears in a generated
+artefact. Put it on a command line.
+
+**Where there is only one player, `--engine 1` refuses.** Eight corpus files
+carry a digi player and nothing else; for them declining it leaves the classic
+chains nothing to find, and the converter raises rather than assembling a
+plausible wrong song out of whatever matched. That refusal is the useful half
+of the option's behaviour on the other 94 files.
+
+**What the cues sound like.** All nine convert, pack with `gt2reloc`, and play
+the right music: measured against the original's subtunes 1–9 over 12 seconds,
+mean melody 75%, with cue 4 exact (41 notes against 41) and cues 2 and 5 at
+92% and 95%.
+
+The residue is one mechanism this converter does not model. Each cue carries a
+length byte at `$3B37,X` which the init patches into the immediate at `$365C`;
+the counter it feeds both skips a speed-gate tick *and*, on the call it reads
+zero, declines to advance the orderlist at all. `find_song_speeds` reads the
+first half correctly — the table lands as the outer-gate `skip`, and the
+per-cue tempos at `$3B2E,X` come through exactly as 2, 2, 3, 2, 2, 3, 3, 2, 3
+frames a row — but the second half is an extra stall per cycle that no
+Goattracker tempo expresses. So cue *lengths* are approximate, and a cue that
+ends in the original loops in the conversion. Remember `--tempo auto` (or
+`--presets`): without it Goattracker's startup default of 6 calls a row makes
+every cue crawl.
+
 ### `--filter` (the filter, which was never emitted at all)
 
 Hubbard drives the SID filter in **32 of the 95 corpus files**, and every one

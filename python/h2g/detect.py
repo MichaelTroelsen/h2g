@@ -609,7 +609,17 @@ def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     return True
 
 
-def detect(sid: SidFile, log: Logger) -> Detection:
+def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
+    """Read one player's tables out of `sid`.
+
+    `engine` selects *which* player, for a file that carries more than one.
+    0 is the one the PSID header's `startSong` plays and the only one anything
+    here converts by default; 1 is "not the digi engine", which is what
+    separates the two copies in the only corpus file where they differ (see
+    § 7.kkkkk). On a file with a single classic player the two are identical
+    by construction -- `_detect_digi` returns False either way -- so the
+    option can only ever change a file that has something else to find.
+    """
     data = sid.data
     det = Detection()
 
@@ -624,7 +634,15 @@ def detect(sid: SidFile, log: Logger) -> Detection:
     # Probed before anything else: it sets the instrument record size the
     # instrument pass below depends on, and its tables are read from their own
     # signatures rather than the classic chains.
-    digi = _detect_digi(sid, det, log)
+    #
+    # `engine` is asked here because this one probe is what forks the whole
+    # rest of the function: every chain below is guarded on `digi`, so
+    # declining it runs the classic chains over the same file and they find
+    # the other player unaided. Powerplay Hockey's nine cues need no new
+    # signature at all -- tracks $3C60/$3C63, selector $3C66, patterns
+    # $3C9C/$3CBB and instruments $3BA0 all fall out of chains that were
+    # already there and were simply never reached (§ 7.kkkkk).
+    digi = False if engine else _detect_digi(sid, det, log)
 
     # --- Instruments ---------------------------------------------------
     # Every signature in this chain fingerprints the *store* into the SID:

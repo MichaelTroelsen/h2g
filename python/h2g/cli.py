@@ -132,6 +132,19 @@ def main(argv=None) -> int:
              "downward frequency sweep, then noise. Off by default: it "
              "changes the output bytes")
     parser.add_argument(
+        "--engine", type=int, default=0, metavar="N",
+        help="rip player N, for a .sid that carries more than one. 0 (the "
+             "default) is the player the PSID header's startSong selects, "
+             "which is the tune every other option here is about. 1 declines "
+             "the digi engine, so the classic chains run over the same file "
+             "and find the other player's tables. It is not a better setting "
+             "for a song -- it is a DIFFERENT song out of the same file, so "
+             "it belongs on a command line and never in presets.json. "
+             "Powerplay Hockey is the one corpus file it reaches: its header "
+             "declares ten subtunes, one is the tune and the other nine are "
+             "short game cues driven by a second player whose orderlist "
+             "table is at $3C66")
+    parser.add_argument(
         "--compact-instruments", action="store_true",
         help="drop the empty \"Clear Voice\" slot the VB6 original reserved at "
              "instrument 1 and put the player's record 0 there instead. "
@@ -473,6 +486,7 @@ def main(argv=None) -> int:
                       status_bit6=args.status_bit6,
                       rest_instrument=args.rest_instrument,
                       compact_instruments=args.compact_instruments,
+                      engine=args.engine,
                       reject_phantoms=args.reject_phantoms,
                       fold_transpose=args.fold_transpose,
                       initial_instrument=args.initial_instrument,
