@@ -1,20 +1,27 @@
 <original_task>
 Continuation of long-running work on **H2G**, a signature-based ripper that
 converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
-`C:\Users\mit\claude\h2g`. The run covered here opened at **v0.5.253** — by
-being asked to "read what next", where the handoff described v0.5.251 — and
-ran to **v0.5.297**, 52 commits.
+`C:\Users\mit\claude\h2g`. This document covers **two** runs:
 
-> **Provenance.** This handoff is *reconstructed*, from the 52 commit messages,
-> the generated artefacts and the tree, by a session that did none of the work.
-> The previous ones were written by the session that did it and could record
-> what left no trace — a directive, an approach abandoned before it reached a
-> file, a listening verdict given in chat. Everything below is checkable; what
-> is missing is whatever was never committed. Treat `<attempted_approaches>`
-> as "refutations that reached a commit message", not as the full list.
+* **v0.5.253 → v0.5.297**, 52 commits, *reconstructed* — see the provenance
+  note below.
+* **v0.5.298 → v0.5.304**, 8 commits, written by the session that did them.
+  It opened by being asked to "read what next", found the handoff 52 commits
+  stale, rewrote it, and then followed one thread out of it to the end.
 
-There was no up-front task. The work was driven by short directives and by
-three rounds of forked subagents. The working mode is the project's established
+> **Provenance, for the first run only.** That part is reconstructed from the
+> 52 commit messages, the generated artefacts and the tree, by a session that
+> did none of the work. The previous handoffs were written by the session that
+> did it and could record what left no trace — a directive, an approach
+> abandoned before it reached a file, a listening verdict given in chat.
+> Everything is checkable; what is missing is whatever was never committed.
+> Treat its `<attempted_approaches>` entries as "refutations that reached a
+> commit message", not as the full list. The v0.5.298–304 entries carry no
+> such caveat.
+
+Neither run had an up-front task. The first was driven by short directives and
+three rounds of forked subagents; the second by short directives alone, no
+forks, everything in one session. The working mode is the project's established
 one:
 
 > measure the conversion against the original, find where they differ, read the
@@ -31,21 +38,26 @@ was not touched.
 
 ## Summary
 
-**52 commits, v0.5.253 → v0.5.297, all pushed.** `Commando.sng` byte-exact
+**60 commits, v0.5.253 → v0.5.304, all pushed.** `Commando.sng` byte-exact
 throughout. Working tree clean but for the deliberately untracked `6581.pdf`.
 
-Corpus movement over the run, from `FIDELITY.md`'s own summary blocks:
+Corpus movement, from `FIDELITY.md`'s own summary blocks:
 
-| | v0.5.252 | v0.5.294 (current) |
-|---|---|---|
-| mean melody | 88% | **91%** |
-| mean sequence | 87% | **90%** |
-| mean wave | 78% | **79%** |
-| mean ADSR | 63% | **65%** |
-| noise frames ours/orig | 75904 / 82742 | **76332 / 82742** |
-| *plays the same music* (95–100%) | 46 files | **54 files** |
-| mean gate overlap | (no such column) | **47%** |
-| drift | (no such column) | **46 of 79 exact** |
+| | v0.5.252 | v0.5.297 | v0.5.304 (current) |
+|---|---|---|---|
+| mean melody | 88% | 91% | **91%** |
+| mean sequence | 87% | 90% | **90%** |
+| mean wave | 78% | 79% | **79%** |
+| mean ADSR | 63% | 65% | **65%** |
+| noise frames ours/orig | 75904 | 76332 | **76332** / 82742 |
+| *plays the same music* (95–100%) | 46 files | 54 | **54 files** |
+| mean gate overlap | (no such column) | 47% | **50%** |
+| frames we sustain, they released | — | 134630 | **129106** |
+| drift | (no such column) | 46 of 79 exact | **46 of 79 exact** |
+
+The second run moved one column: `gate`, by 3pp, on 12 files, by making the
+hard restart's row bound a per-song choice. Everything else it did was to the
+*harness* and the *record* — which is what the run was mostly about.
 
 Four report columns and four census modes did not exist at the start of the
 run. Two of them — `gate` and `drift` — were built specifically because a
@@ -69,7 +81,7 @@ each inflating a bucket and producing a plausible queue item; two were reported
 as findings and withdrawn. The catch was available the whole time — its
 instrument counts disagreed with `onset`'s on the same files.
 
-## By thread
+## By thread — the first run (v0.5.253–297)
 
 ### The fork rounds and their merges — v0.5.254–266
 
@@ -330,6 +342,82 @@ delaying scores.
   because `test_preset_passthrough`'s guard is armed only while presets.json's
   stamp equals `__version__`.
 
+
+## The second run (v0.5.298–304), commit by commit
+
+It started as bookkeeping and turned into a feature, which is the whole shape
+worth carrying: **an unmeasured cost figure had been refusing work for 26
+versions.**
+
+### v0.5.298 — the handoff, rewritten
+The previous one described v0.5.251 and was read 46 versions later — the
+second consecutive handoff consumed stale, which its own opening paragraph
+records about *its* predecessor. Reconstructed from commit messages with every
+figure re-taken from the tree, because a message states what was true when it
+was written.
+
+### v0.5.299 — one stamp across all five artefacts
+`SURVEY.md`, `presets.json`, `FIDELITY.md` and `SUBTUNES.md` had drifted three
+versions behind `__version__`, because v0.5.295–297 were census corrections
+that each regenerated only the report they touched. Every one came back with a
+**one-line diff, the version stamp**; `VIBRATO.md` carries no stamp and came
+back byte-identical. The substantive effect: `test_preset_passthrough`'s guard
+re-armed after four versions of silently skipping — so the check that no
+`convert()` option escapes into `presets.py` had not been running.
+
+### v0.5.300 — the carried settings, re-measured
+The 47 `--fidelity` settings had been carried since v0.5.271, across three
+changes to what the converter emits. Re-run: **1 gained, 0 lost**, structural
+choices identical on all 83. Kings of the Beach intro takes `two_stage`; its
+independent A/B is `slides` and `vib` toward the original, `wave` and `bend`
+away, twelve columns flat. Adopted rather than hand-picked, per v0.5.271.
+
+### v0.5.301 — the search is 8 minutes, not four hours
+Timed twice: **8m11s** and ~8m, 83 songs, zero failures. The documented figure
+had never been timed and was wrong by ~30×; CLAUDE.md carried *two* different
+values for the same command 400 lines apart. The second run also seeded itself
+with the adopted output and returned **0 gained, 0 lost**, so the search is
+deterministic and idempotent and v0.5.300's gain was a convergence.
+
+Ten sites corrected — and **three of them were using the cost as a reason**,
+so they were rewritten rather than renumbered. `--voice-two-stage`'s refusal
+kept its sound reason (a one-file signature belongs in `FIXED`) and lost the
+clock; the per-song `HARD_RESTART` row bound had no second reason and was
+reopened.
+
+### v0.5.302 — `--wide-hard-restart`
+The reopened item. `_hard_restart_ticks` gains a bound of `2 * row // 3`.
+Forced off it changes no corpus byte; forced on it reaches 19 files; the search
+takes it for **9 and refuses it on Saboteur II** — the file v0.5.276's sweep
+said breaks. That refusal was the premise the option was built on and
+`keeps_notes` did it unprompted. Mean gate 47 → 48%, W_A_R Preview 63 → 99%,
+nothing falling anywhere.
+
+### v0.5.303 — `presets.py --shard I/N` and `--merge`
+A seventh toggle makes the search 127 combinations a song — about a minute a
+song, 80 minutes serially, which is what the serial run was measurably tracking
+toward when it was killed. Nothing about it is sequential. Six shards:
+**80 minutes → 11m20s.** The equivalence is checked, not asserted: three
+structural shards merged reproduce the unsharded run's `songs` dict exactly.
+`--merge` refuses rather than resolves — a song claimed twice, shards
+disagreeing on `always`/`criteria`, or nothing to merge (an empty
+`presets.json` reads exactly like a corpus that converts nothing).
+
+### v0.5.304 — `--max-hard-restart`, and the bound is a three-way choice
+`row - 1`, the last value before `gplay.c:334` stops the song. Offered because
+the gentler option's guard had been *seen* to catch the case rather than merely
+expected to. It outranks `wide` where both are given, verified on the corpus
+(forcing both is byte-identical to forcing `max`) and not only in a unit test.
+
+**The corpus splits three ways**: 11 files take `row - 1`, **ACE II keeps
+`2 * row // 3` having tried the wider value and rejected it**, 71 keep
+`row // 2` — Saboteur II among them, refused at both. No file carries both
+flags. Delta 42 → 84%, Flash Gordon 59 → 85%. Mean gate 48 → 50%.
+
+That one file keeps the middle value is the finding: a sweep of a single
+constant, which is what v0.5.276 did, can only ask which value is least bad for
+everyone, and could never have shown it.
+
 </work_completed>
 
 <work_remaining>
@@ -384,22 +472,23 @@ cause is exact — `-1/(skip+1)`, the outer-gate correction `effective_frames`
 declines when the corrected row cannot be packed (IK+'s 3 × 113/112 wants
 `-S112`). The fix is re-gridding, not a tempo. **Changes packing, so `[main]`.**
 
-### 5. The gate axis's remaining 134630 frames — `[subagent]`
-Mean gate overlap 47%; 134630 frames sustain a voice the original released.
-v0.5.274 established that `held` has no long tail and is the same mechanism
-`hold`'s `fetch` owns. So this is not a new mechanism to find — it is whether
-the next-note fetch can be compensated at all, and that question has one
-measured non-answer (`--no-test-restart`, −26.3pp melody) and one measured
-partial (`HARD_RESTART_FRAMES`). The unexplored lever is the `row // 2` bound:
-`2 * row // 3` is +1.6pp of gate everywhere except Saboteur II, which breaks.
-Per-song toggles settled it: `--wide-hard-restart` (v0.5.302) and
-`--max-hard-restart` (v0.5.304) offer `2 * row // 3` and `row - 1`. v0.5.276
-had declined the first on the cost of doubling "a four-hour search" — a cost
-never timed and actually 8 minutes. Twelve files take one of them, Saboteur II
-is refused by `keeps_notes` both times, and mean gate goes 47% → 50% with
-nothing falling. **What remains of this item is the rest of the 129106
-frames**, which `hold`'s `fetch` owns and which no bound on the hard restart
-can reach.
+### 5. The gate axis's remaining 129106 frames — `[main]`
+Mean gate overlap **50%**; 129106 frames still sustain a voice the original
+released. v0.5.274 established that `held` has no long tail and is the same
+mechanism `hold`'s `fetch` owns, so this is not a new mechanism to find.
+
+**The hard-restart bound is now exhausted as a lever.** v0.5.302 and v0.5.304
+made it a three-way per-song choice (`row // 2`, `2 * row // 3`, `row - 1`);
+12 files moved, mean gate 47% → 50%, and `row - 1` is the player's own ceiling
+— there is no fourth value. What is left needs the next-note fetch itself,
+which has one measured non-answer (`--no-test-restart`, −26.3pp melody) and
+nothing else tried.
+
+Two things a next attempt should know. `keeps_notes` has now refused a
+candidate on Saboteur II **twice**, unprompted, so the guard is trustworthy for
+a bolder experiment than would otherwise be defensible. And a seventh toggle
+costs 11 minutes sharded, so the objection that killed this item for 26
+versions no longer applies to anything.
 
 ### 6. Powerplay's cue-length stall — `[subagent]`
 § 7.kkkkk. Each cue's length byte at `$3B37,X` feeds a counter that skips a
@@ -432,7 +521,7 @@ happened twice this run with `7.bbbbb`.
 
 <attempted_approaches>
 
-## Refuted, reverted, or corrected during this run
+## Refuted, reverted, or corrected — the first run
 
 1. **The trailing silence on a wave program's end** (v0.5.282) — mean `wave`
    −3.0pp, Nemesis the Warlock −45. Reverted. The mechanism had never been
@@ -474,6 +563,26 @@ happened twice this run with `7.bbbbb`.
     1323 instruments that genuinely differ only in release. `paired_keys`
     instead.
 
+## Refuted or blocked — the second run
+
+1. **"About four hours" for a corpus `--fidelity` search** — never timed, and
+   wrong by ~30×. It had refused a feature for 26 versions. Two of the ten
+   sites carrying it were *arguments* rather than reports.
+2. **My own estimate that seven toggles would take ~30 minutes** — from
+   doubling the six-toggle run. The real serial rate is about a minute a song,
+   80 minutes; the run was killed at 15 songs in 15 minutes and re-done
+   sharded. Doubling a measured time is not measuring the next one.
+3. **The TONEPORTA-style trap avoided rather than repeated** — `--max-hard-
+   restart` outranking `--wide-hard-restart` was checked on the corpus (forcing
+   both is byte-identical to forcing `max`) instead of resting on the unit
+   test, because the first run has an entry for a reading that was correct
+   about `gplay.c` and still not what happened.
+4. **Rewriting history to re-file two `presets.py` lines** — the seventh
+   toggle's entries landed in v0.5.303, whose message is about `--shard`. A
+   `git reset --soft` was blocked by auto mode's classifier and **not worked
+   around**; the misfiling is recorded in v0.5.304's message instead. Costs a
+   bisect for those two lines and nothing else.
+
 ## Not pursued
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
@@ -511,15 +620,32 @@ happened twice this run with `7.bbbbb`.
   holds for that build (`-m1` byte-identical to stock siddump on Commando.sid,
   507 lines).
 * `build/` is gitignored; `6581.pdf` untracked deliberately.
-* **Timings**: `presets.py --fidelity` over the corpus ≈ **4 hours** (60 s
-  window); `fidelity.py` over the corpus ≈ 5 minutes; the test suite ≈ 3
-  minutes.
+* **Timings, measured rather than assumed** (v0.5.301/303/304). A corpus
+  `--fidelity` search costs about a minute a song and scales with the toggle
+  count: **8 min** at five toggles, **15** at six, **80** at seven — or
+  **11 min** at seven with `--shard 0..5/6` across six processes. `fidelity.py`
+  over the corpus ≈ 3 min; a full regeneration of all five artefacts ≈ 7 min;
+  the test suite ≈ 4 min (8 under load). The "about four hours" that stood for
+  26 versions was never timed and refused a feature.
 * `python -m pytest` must be run from `python/` — from the repo root it silently
   finds no tests.
 * `.claude/settings.json` now carries a **shared** permission allowlist; the
   per-machine `.claude/settings.local.json` is gitignored.
+* **Auto mode's classifier blocks `git reset --soft` and some compound
+  commands containing `cp`.** Not a repo rule — a harness one — but it decides
+  what a session can do unattended: history rewriting needs a human, and
+  compound shell lines get denied where the same steps run fine separately.
+  Split commands rather than fighting the denial.
 
-## Rules added to CLAUDE.md during this run
+## Rules added to CLAUDE.md during the second run
+
+15. **A cost written down but never timed is a planning input** — and this one
+    refused a feature for 26 versions. Time a cost before it decides anything.
+16. **`--shard I/N` / `--merge`**, and the correction of the line that said
+    there is "no reason to run them in parallel" — true of two whole searches
+    contending, wrong about shards.
+
+## Rules added to CLAUDE.md during the first run
 
 1. Which side the multiplier belongs to (ours, never the original's).
 2. Keep the *command* short; put the long text in a file — past a length the
@@ -583,32 +709,34 @@ happened twice this run with `7.bbbbb`.
 
 ## Repository
 
-* **HEAD is v0.5.299; master in sync with `origin/master`.** The last commit to
-  change an executable line is **v0.5.294**; v0.5.295–297 are census
-  corrections, v0.5.298 is this handoff and v0.5.299 the regeneration.
+* **HEAD is `f4b5e32` v0.5.304; master in sync with `origin/master`.** The last
+  commit to change what the converter *emits* is **v0.5.304**; before it,
+  v0.5.302. v0.5.300 changed one song's options, v0.5.301 and v0.5.303 are
+  harness and docs, v0.5.298–299 the handoff and a regeneration.
 * Working tree clean but for untracked `6581.pdf`.
 * `Commando.sng` byte-exact.
-* Last suite at HEAD: **1136 passed, 2 skipped**. The count rose by one
-  because v0.5.299's regeneration re-armed `test_preset_passthrough`'s stamp
-  guard, which had been skipping since v0.5.295 — so the check that no
-  `convert()` option escapes into `presets.py` was not running for four
-  versions.
+* Last suite at HEAD: **1152 passed, 2 skipped**. It was 1135/3 at v0.5.297;
+  the 17 new tests are the two hard-restart bounds (7), the shard/merge
+  partition and its three refusals (9), and one derived-count fix. The 3 → 2
+  skips are v0.5.299 re-arming `test_preset_passthrough`'s stamp guard, which
+  had been silently skipping since v0.5.295 — so the check that no `convert()`
+  option escapes into `presets.py` had not run for four versions.
 
 ## Generated artefacts
 
 | file | stamp | current? |
 |---|---|---|
-| `SURVEY.md` | 0.5.299 | yes |
-| `presets.json` | 0.5.299 | yes |
-| `FIDELITY.md` | 0.5.299 | yes |
-| `SUBTUNES.md` | 0.5.299 | yes (on demand) |
+| `SURVEY.md` | 0.5.304 | yes |
+| `presets.json` | 0.5.304 | yes |
+| `FIDELITY.md` | 0.5.304 | yes |
+| `SUBTUNES.md` | 0.5.304 | yes (on demand) |
 | `VIBRATO.md` | *none* | yes (on demand) |
 
-All five regenerated at v0.5.299, and **every one came back with a one-line
-diff — the version stamp** — which is what a regeneration after a run of
-census-only commits should look like. `VIBRATO.md` carries no stamp at all, so
-it regenerated byte-identical; that is worth knowing before reading its mtime
-as evidence of anything.
+All five regenerated at v0.5.304 against a converter change, so `FIDELITY.md`
+moves five rows as well as its stamp and the rest move stamps only.
+`VIBRATO.md` carries no stamp at all and regenerates byte-identical whenever
+nothing it measures moved; that is worth knowing before reading its mtime as
+evidence of anything.
 
 `presets.json`'s `--fidelity` settings were **re-measured at v0.5.300** and are
 current. They had been carried forward since v0.5.271 across three changes to
@@ -623,23 +751,38 @@ adopted output returned 0 gained / 0 lost, so the search is deterministic and
 idempotent. That figure had never been timed, and it was load-bearing: it is
 the stated reason two features were refused. Both are reopened above.
 
-## Corpus at v0.5.294
+## Corpus at v0.5.304
 
 * 95 files; **83 measured**, 80 of 83 in reach converted, 3 failed, 12 out of
   scope (not a Hubbard player).
 * mean melody **91%**, sequence **90%**, pitch **94%**, wave **79%**,
-  ADSR **65%**, gate **47%**.
+  ADSR **65%**, gate **50%**.
 * noise frames ours/original **76332 / 82742**.
+* gate: **129106** frames sustaining a voice the original released, **40825**
+  the other way round.
 * *plays the same music* (95–100%) **54 files**; close 18; recognisable 7;
   plays something else 4 (Commodore_64_Music_Examples, Dragons_Lair_Part_II,
   Geoff_Capes_Strongman_Challenge, Kings_of_the_Beach_ingame).
 * drift: 46 of 79 exact; 33 part company at a median 9.2 frames per 1000.
-* `presets.json`: 83 songs, 22 `always` keys, 47 carrying a `--fidelity`
-  setting.
+* `presets.json`: 83 songs, 22 `always` keys, **48** carrying a `--fidelity`
+  setting, re-measured at v0.5.300 and v0.5.304 against the current converter.
+* Hard restart bound: 11 files at `row - 1`, 1 at `2 * row // 3`, 71 at
+  `row // 2`.
 * Vibrato census: 136 instruments, 42618 reversals missing, **114 emitting no
   oscillation at all**.
 
-## New surface added during the run
+## New surface added during the second run
+
+* `goatwriter.py` — `_hard_restart_ticks(..., wide, full)`, the three-way row
+  bound; `--wide-hard-restart` / `--max-hard-restart` threaded through
+  `_write_instruments`, `build_sng`, `convert()` and `cli.py`
+* `presets.py` — `--shard I/N`, `--merge`, `merge_shards()`; `FIDELITY_TOGGLES`
+  at seven
+* New tests: `tests/test_preset_shard.py` (9), seven in `test_hard_restart.py`,
+  and `test_preset_passthrough`'s combination counts derived from
+  `len(FIDELITY_TOGGLES)` rather than written down
+
+## New surface added during the first run
 
 * `fidelity.py` — the `gate` and `drift` dimensions; `--gate-census`,
   `--hold-census`, `--vib-census`; `paired_keys`, `pitch_effect_bits`,
@@ -670,16 +813,33 @@ current scheme.
 
 ## Open questions for the user
 
-1. **Listening material is 44 versions stale** (13 Aug, v0.5.238) — re-stage?
-2. Is the bit-6 rest worth a fourth attempt now that its emitter is fixed, or
-   should it be parked?
-3. What scheme should method-doc sections use past § 7.zzzzz?
+1. **Listening material is 66 versions stale** (13 Aug, v0.5.238), and the
+   corpus has moved 3pp of `gate` and 3pp of melody since. Re-stage?
+2. Is the bit-6 rest worth a fourth attempt now that its emitter is fixed
+   (v0.5.286), or should it be parked?
+3. What scheme should method-doc sections use past § 7.zzzzz? Still unresolved
+   and now overdue — v0.5.302 and v0.5.304 both shipped without a section
+   because there was no name to give one.
+4. The v0.5.303/304 misfiling (two `presets.py` lines in the wrong commit) is
+   recorded in prose rather than rebased, because the fix was blocked. Fine to
+   leave, or worth a force-push?
 
 ## Immediate next action
 
-**Re-stage and listen.** Mean melody has moved 88 → 91% and *plays the same
-music* 46 → 54 files since anything was auditioned, and the two verdicts that
-did arrive mid-run each opened a productive thread. Everything else on the queue
-is a ship-or-refuse decision, and this run contains four instances of a
-measurement instrument confidently reporting a mechanism that did not exist.
+**Re-stage and listen.** Unchanged from the last handoff, and more overdue: the
+staged pairs are from v0.5.238, since when mean melody has moved 88 → 91%,
+*plays the same music* 46 → 54 files, and `gate` has gone from not existing to
+50%. The two verdicts that did arrive mid-run each opened a productive thread
+(IK+ → §§ 7.nnnnn–ppppp, Knucklebusters → the vibrato census).
+
+Everything else on the queue is a ship-or-refuse decision, and between the two
+runs this document records **four** instruments confidently reporting a
+mechanism that did not exist and **one** cost figure that refused a real
+feature for 26 versions. A listener is the only instrument here that has never
+been wrong.
+
+**Second, and cheap now:** two method-doc sections are owed (v0.5.302's row
+bound, v0.5.304's three-way split) and cannot be written until § 7.zzzzz's
+successor scheme is chosen. That is a five-minute decision blocking a
+documentation debt that grows with every commit.
 </current_state>
