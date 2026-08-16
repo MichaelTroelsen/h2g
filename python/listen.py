@@ -45,6 +45,10 @@ from h2g import __version__
 from h2g.convert import convert
 
 SID2WAV = r"C:\Users\mit\claude\c64server\SIDM2\tools\SID2WAV.EXE"
+# libsidplayfp's own frontend. sid2wav is a 1997 build of the same lineage;
+# this is the current one, and the only renderer here that reads the whole
+# corpus with one engine. Needs the C64 ROMs in sidplayfp.ini for RSIDs.
+SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
 
 # The bands FIDELITY.md reports, and what a listener is being asked to decide
 # in each. Ordered worst-first: the interesting listening is at the bottom of
@@ -109,6 +113,65 @@ def render_vsid(sid: Path, out: Path, seconds: int, subtune: int,
     except (subprocess.TimeoutExpired, OSError):
         return False
     return out.exists() and out.stat().st_size > EMPTY_WAV
+
+
+def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
+                     exe: str = SIDPLAYFP) -> bool:
+    """One .sid to one WAV via libsidplayfp's own frontend.
+
+    The preferred renderer, and the only one that reads the whole corpus with
+    one engine. `SID2WAV` is version 1.8 from 1997: it refuses every RSID (18
+    of the 95 corpus files) and **fades the last seconds out**, which quietly
+    corrupts the end of any comparison. VICE's `vsid` reads everything but is
+    driven by `-limitcycles`, which overshot a 20 s request by 1.76 s in
+    testing, so its output is not the length asked for.
+
+    `-fo0` is the fade-off that sid2wav has no switch for; `-o<n>` is 1-based
+    like sid2wav's; `-p16 -m -f44100` fixes the format the rest of the harness
+    assumes.
+
+    **RSID files need the C64 ROMs.** Without them libsidplayfp runs the tune
+    with no KERNAL and dies on an illegal instruction, having written a 44-byte
+    header -- so a missing ROM looks exactly like a tune that renders silence.
+    Point `Kernal Rom` / `Basic Rom` / `Chargen Rom` in `sidplayfp.ini` at
+    VICE's `C64/` directory; the file-size check below is what turns the
+    failure into a fallback rather than a silent empty pair.
+    """
+    out.unlink(missing_ok=True)
+    try:
+        subprocess.run([exe, f"-t{seconds}", "-f44100", "-p16", "-m", "-fo0",
+                        f"-o{subtune + 1}", f"-w{out}", str(sid)],
+                       capture_output=True, timeout=seconds * 6 + 120,
+                       stdin=subprocess.DEVNULL)
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    return out.exists() and out.stat().st_size > EMPTY_WAV
+
+
+def pick_renderer(sid: Path, args):
+    """One renderer for both sides of a pair, and the reason for it.
+
+    Chosen by trying the preferred engine on the *original* -- the harder of
+    the two, since `gt2reloc` always writes a PSID and the original may be an
+    RSID. Returning one callable is what makes it impossible to render the two
+    sides with different emulations, which was reachable before by fallback.
+    """
+    probe = args.workdir_probe if hasattr(args, "workdir_probe") else None
+    if Path(args.sidplayfp).exists():
+        out = (probe or Path(args.outdir)) / "_probe.wav"
+        if render_sidplayfp(sid, out, 1, args.subtune, args.sidplayfp):
+            out.unlink(missing_ok=True)
+            return (lambda s, o, sec, sub: render_sidplayfp(
+                s, o, sec, sub, args.sidplayfp)), ""
+        out.unlink(missing_ok=True)
+        why = "sidplayfp refused it (C64 ROMs configured?)"
+    else:
+        why = ""
+    if _sid2wav_can_read(sid, args.sid2wav):
+        return (lambda s, o, sec, sub: render(
+            s, o, sec, sub, args.sid2wav)), (why and why + ", using sid2wav")
+    return (lambda s, o, sec, sub: render_vsid(s, o, sec, sub)), \
+           "rendered by VICE (RSID)"
 
 
 def _sid2wav_can_read(sid: Path, exe: str = SID2WAV) -> bool:
@@ -273,6 +336,10 @@ def main(argv=None) -> int:
                                                  / "build" / "listen"))
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
+    p.add_argument("--sidplayfp", default=SIDPLAYFP,
+                   help="libsidplayfp's frontend, the preferred renderer: one "
+                        "engine for the whole corpus, no fade-out, and it "
+                        "reads the RSIDs sid2wav refuses")
     p.add_argument("--sid2wav", default=SID2WAV)
     p.add_argument("--gt2reloc", default=GT2RELOC)
     p.add_argument("--siddump", default=SIDDUMP)
@@ -282,8 +349,13 @@ def main(argv=None) -> int:
     p.add_argument("--workdir", default=WORKDIR)
     args = p.parse_args(argv)
 
-    if not Path(args.sid2wav).exists():
-        print(f"error: sid2wav not found: {args.sid2wav}", file=sys.stderr)
+    # sidplayfp is preferred but sid2wav and vsid still stand behind it, so
+    # requiring only that *some* renderer exists is what lets a machine with
+    # one of them stage a pass.
+    if not any(Path(x).exists() for x in (args.sidplayfp, args.sid2wav, VSID)):
+        print("error: no renderer found. Tried sidplayfp "
+              f"({args.sidplayfp}), sid2wav ({args.sid2wav}) and vsid "
+              f"({VSID}).", file=sys.stderr)
         return 1
 
     rows: list[dict] = []
@@ -365,18 +437,15 @@ def main(argv=None) -> int:
         ours_sid = outdir / f"{stem}.h2g.sid"
         shutil.copyfile(packed, ours_sid)
 
-        # Both sides through one renderer. Where the original is an RSID only
-        # VICE can read it, and gt2reloc always writes a PSID -- so a naive
-        # fallback would put sid2wav on one side of the pair and vsid on the
-        # other. Two emulations differ in level and filter enough to colour a
-        # listening judgement, which is the one thing this staging exists to
-        # support.
-        ok_a = render(src, outdir / f"{stem}.original.wav", args.seconds,
-                      args.subtune, args.sid2wav)
-        both_vice = ok_a and not _sid2wav_can_read(src, args.sid2wav)
-        render_pair = render_vsid if both_vice else render
-        if both_vice:
-            print(f"  {name:44} rendered by VICE (RSID)", file=sys.stderr)
+        # Both sides through one renderer, which is the one thing this staging
+        # exists to support: two emulations differ in level and filter enough
+        # to colour a listening judgement. `pick_renderer` returns a single
+        # callable used for both sides, so the pair can never be split.
+        render_pair, why = pick_renderer(src, args)
+        if why:
+            print(f"  {name:44} {why}", file=sys.stderr)
+        ok_a = render_pair(src, outdir / f"{stem}.original.wav", args.seconds,
+                           args.subtune)
         ok_b = render_pair(ours_sid, outdir / f"{stem}.h2g.wav", args.seconds,
                            args.subtune)
 

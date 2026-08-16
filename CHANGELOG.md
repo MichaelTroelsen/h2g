@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.308 — 2026-08-16
+
+- listen.py renders through sidplayfp, one engine for the whole corpus
+
 ## 0.5.307 — 2026-08-16
 
 - listen.py --all: stage every tune that converts

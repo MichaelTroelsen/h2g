@@ -2883,14 +2883,30 @@ saying what the measurement predicts for each. Needs `SID2WAV.EXE`
 (`--sid2wav`); output is gitignored, because it is for ears rather than for
 review.
 
-**RSID originals render through VICE.** `SID2WAV` is from 1997 and predates
-RSID, so it refused 18 of the 95 corpus files — including all four NTSC ones
-and `Skate_or_Die_intro`. Since v0.5.92 those fall back to VICE's `vsid`, and
-both sides of the pair then go through *it* rather than one renderer each,
-because two emulations differ in level and filter enough to colour a listening
-judgement. The trick, after three earlier attempts produced a 44-byte
-header-only file, is that **`-warp` suppresses the sound device's output**
-whatever `-soundwarpmode` says; without warp it renders, in realtime.
+**The renderer is `sidplayfp`, libsidplayfp's own frontend** (v0.5.308).
+`SID2WAV` is a 1997 build of that same lineage, and being twenty-eight years
+old costs three things: it refuses every RSID (18 of the 95 corpus files,
+including all four NTSC ones and `Skate_or_Die_intro`), it **fades the last
+seconds out**, which quietly corrupts the end of any comparison, and it exposes
+no chip model — Hubbard is 6581-era and the difference is audible. `sidplayfp`
+renders the whole corpus with one engine, at exactly the length asked for, with
+`-fo0` for no fade.
+
+**RSID files need the C64 ROMs**, and the failure is silent-looking: without a
+KERNAL, libsidplayfp runs the tune to an illegal instruction having already
+written a 44-byte header, which reads as a tune that renders silence. Point
+`Kernal Rom` / `Basic Rom` / `Chargen Rom` in `sidplayfp.ini` at VICE's `C64/`
+directory (`kernal-901227-03.bin`, `basic-901226-01.bin`,
+`chargen-901225-01.bin`). `listen.py` checks the output size and falls back
+rather than staging an empty pair.
+
+`SID2WAV` and VICE's `vsid` remain behind it, so a machine with either can
+still stage a pass. **The choice is made once per pair, never per side**
+(`pick_renderer`): two emulations differ in level and filter enough to colour a
+listening judgement, so a pair split across two engines is worse than one that
+fails to render. If you do fall back to `vsid`, note it is driven by
+`-limitcycles` and overshot a 20 s request by 1.76 s in testing — its output is
+not the length you asked for.
 
 The reason it exists: `fidelity.py` compares note attacks and nothing else. It
 cannot hear an envelope, a filter, a tempo or a timbre, and it scored *zero*
