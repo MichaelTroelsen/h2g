@@ -94,6 +94,30 @@ def test_the_probe_file_is_cleaned_up(tmp_path, monkeypatch):
     assert not (tmp_path / "_probe.wav").exists()
 
 
+def test_the_probe_goes_in_the_private_dir_not_the_shared_one(tmp_path, monkeypatch):
+    """The probe is a fixed filename. Written into the *output* directory --
+    which sharded passes share -- two shards race on it and one silently
+    stages nothing, which is what happened before this argument existed. It
+    belongs in the per-run workdir, the same isolation make_workdir provides.
+    """
+    Path(tmp_path / "sidplayfp.exe").write_text("x")
+    private = tmp_path / "private"
+    private.mkdir()
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    where = []
+
+    def fake(s, o, sec, sub, exe=None):
+        where.append(Path(o).parent)
+        Path(o).write_bytes(b"RIFF" + b"\x00" * 200)
+        return True
+
+    monkeypatch.setattr(L, "render_sidplayfp", fake)
+    L.pick_renderer(_psid(tmp_path), _args(tmp_path, outdir=str(shared)), private)
+    assert where == [private]
+    assert not list(shared.glob("*.wav"))
+
+
 def test_the_probe_is_one_second_not_the_whole_render(tmp_path, monkeypatch):
     """Choosing a renderer must not cost a full pass per tune."""
     Path(tmp_path / "sidplayfp.exe").write_text("x")

@@ -2925,9 +2925,23 @@ and lands on the same instant of the music.
 
 ```sh
 cd python
+# stage the pairs -- ~95 min for the corpus at 120 s, or ~16 across six shards
+python listen.py <sid_dir> --all -t 120 --presets ../presets.json
+
+# or sharded, one process per shard, then join their notes
+python listen.py <sid_dir> --all -t 120 --presets ../presets.json --shard 0/6
+python listen.py --merge-notes
+
 python abpage.py                    # one page per tune + build/listen/index.html
 python abpage.py --embed W_A_R      # one self-contained page, WAVs inlined
 ```
+
+**A sharded pass writes `LISTENING.part<I>.md`, not `LISTENING.md`.** Every run
+writes the whole notes document, so shards sharing an output directory would
+leave only the last one's -- and `abpage.py` reads that file for each tune's
+"what to listen for", so the loss is silent and reads as tunes that were never
+staged. `--merge-notes` joins the parts and folds in whatever was already
+there, so adding a few tunes to an existing pass keeps the notes it had.
 
 Open `build/listen/index.html`, or any `<tune>.html` beside the WAVs. <kbd>Space</kbd>
 plays, <kbd>1</kbd>/<kbd>2</kbd> switch, <kbd>L</kbd> loops. **Blind mode**

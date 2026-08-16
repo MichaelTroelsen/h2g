@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -148,17 +149,22 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
     return out.exists() and out.stat().st_size > EMPTY_WAV
 
 
-def pick_renderer(sid: Path, args):
+def pick_renderer(sid: Path, args, probe_dir: Path | None = None):
     """One renderer for both sides of a pair, and the reason for it.
 
     Chosen by trying the preferred engine on the *original* -- the harder of
     the two, since `gt2reloc` always writes a PSID and the original may be an
     RSID. Returning one callable is what makes it impossible to render the two
     sides with different emulations, which was reachable before by fallback.
+
+    **`probe_dir` must be private to the run.** The probe is a fixed filename,
+    and the first draft put it in the output directory -- which two sharded
+    passes share, so they raced on it and one shard silently staged nothing.
+    That is the same defect `make_workdir` was added for in v0.5.66, reached
+    by a different route.
     """
-    probe = args.workdir_probe if hasattr(args, "workdir_probe") else None
     if Path(args.sidplayfp).exists():
-        out = (probe or Path(args.outdir)) / "_probe.wav"
+        out = (probe_dir or Path(args.outdir)) / "_probe.wav"
         if render_sidplayfp(sid, out, 1, args.subtune, args.sidplayfp):
             out.unlink(missing_ok=True)
             return (lambda s, o, sec, sub: render_sidplayfp(
@@ -290,6 +296,49 @@ def listen_notes(r: dict, orig, ours) -> list[str]:
     return notes
 
 
+def split_notes(text: str) -> tuple[str, dict[str, str], str]:
+    """A LISTENING.md as (preamble, {tune: section}, closing section)."""
+    parts = re.split(r"(?m)^(## .+)$", text)
+    head, out, tail = parts[0], {}, ""
+    for title, body in zip(parts[1::2], parts[2::2]):
+        name = title[3:].split(" —")[0].strip()
+        if name.lower().startswith("what to write"):
+            tail = title + body
+        else:
+            out[name] = title + body
+    return head, out, tail
+
+
+def merge_notes(outdir: Path) -> int:
+    """Fold a sharded run's LISTENING.part*.md into one LISTENING.md.
+
+    Every `listen.py` run writes the whole document, so shards sharing an
+    output directory would leave only the last one's notes -- and `abpage.py`
+    reads that file for each tune's "what to listen for", so the loss is
+    silent and looks like tunes that were never staged. Sharded runs therefore
+    write parts, and this joins them.
+
+    An existing LISTENING.md is merged in rather than replaced, so staging a
+    few more tunes into a directory does not discard the notes already there.
+    """
+    parts = sorted(outdir.glob("LISTENING.part*.md"))
+    if not parts:
+        return 0
+    head, merged, tail = "", {}, ""
+    for src in [outdir / "LISTENING.md"] + parts:
+        if not src.exists():
+            continue
+        h, secs, t = split_notes(src.read_text(encoding="utf-8"))
+        head = head or h
+        tail = t or tail
+        merged.update(secs)
+    body = "".join(merged[k] for k in sorted(merged, key=str.lower))
+    (outdir / "LISTENING.md").write_text(head + body + tail, encoding="utf-8")
+    for src in parts:
+        src.unlink()
+    return len(merged)
+
+
 def select_names(files, stage_all: bool, presets: str) -> list[str]:
     """Which tunes to stage, from `--files` and `--all`.
 
@@ -336,6 +385,17 @@ def main(argv=None) -> int:
                                                  / "build" / "listen"))
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
+    p.add_argument("--shard", default=None, metavar="I/N",
+                   help="stage only every Nth tune, starting at I (0-based), "
+                        "so a pass can be split across processes. Each shard "
+                        "writes its notes to LISTENING.part<I>.md rather than "
+                        "to LISTENING.md, because otherwise the last shard to "
+                        "finish would be the only one whose notes survived; "
+                        "run --merge-notes afterwards. The whole corpus at "
+                        "-t 120 is about 95 minutes serially and 16 across six")
+    p.add_argument("--merge-notes", action="store_true",
+                   help="combine the LISTENING.part*.md a sharded run left "
+                        "into one LISTENING.md, and delete the parts")
     p.add_argument("--sidplayfp", default=SIDPLAYFP,
                    help="libsidplayfp's frontend, the preferred renderer: one "
                         "engine for the whole corpus, no fade-out, and it "
@@ -358,6 +418,12 @@ def main(argv=None) -> int:
               f"({VSID}).", file=sys.stderr)
         return 1
 
+    if args.merge_notes:
+        n = merge_notes(Path(args.outdir))
+        print(f"merged notes for {n} tune(s) -> {Path(args.outdir)/'LISTENING.md'}"
+              if n else "no LISTENING.part*.md to merge", file=sys.stderr)
+        return 0 if n else 1
+
     rows: list[dict] = []
     if args.from_json:
         rows = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
@@ -374,6 +440,20 @@ def main(argv=None) -> int:
     else:
         p.error("give --from-json (to pick by band), --files or --all")
 
+    shard = None
+    if args.shard:
+        try:
+            shard = tuple(int(x) for x in args.shard.split("/"))
+            index, count = shard
+        except ValueError:
+            p.error(f"--shard {args.shard}: expected I/N")
+        if not 0 <= index < count:
+            p.error(f"--shard {args.shard}: I must be in 0..N-1")
+        # Sliced off the list every shard builds, so the union of 0/N..N-1/N
+        # is exactly the unsharded pass and no two overlap.
+        chosen = chosen[index::count]
+        print(f"shard {index}/{count}: {len(chosen)} tune(s)", file=sys.stderr)
+
     sid_dir = Path(args.sid_dir) if args.sid_dir else None
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
@@ -384,7 +464,9 @@ def main(argv=None) -> int:
         "# Listening pass",
         "",
         f"Staged by `python/listen.py` (h2g {__version__}), {args.seconds} s of "
-        f"subtune {args.subtune}, rendered by `SID2WAV` at 44.1 kHz/16-bit.",
+        f"subtune {args.subtune}, at 44.1 kHz/16-bit mono. Each pair is "
+        f"rendered by one engine -- `sidplayfp` where it reads the original, "
+        f"otherwise the fallback named beside that tune below.",
         "",
         "Play `<name>.original.wav` and `<name>.h2g.wav` back to back. Both "
         "come from the same emulator at the same settings, so every difference "
@@ -441,7 +523,7 @@ def main(argv=None) -> int:
         # exists to support: two emulations differ in level and filter enough
         # to colour a listening judgement. `pick_renderer` returns a single
         # callable used for both sides, so the pair can never be split.
-        render_pair, why = pick_renderer(src, args)
+        render_pair, why = pick_renderer(src, args, workdir)
         if why:
             print(f"  {name:44} {why}", file=sys.stderr)
         ok_a = render_pair(src, outdir / f"{stem}.original.wav", args.seconds,
@@ -489,8 +571,12 @@ def main(argv=None) -> int:
         "reports defects the attack comparison is structurally blind to.",
         "",
     ]
-    (outdir / "LISTENING.md").write_text("\n".join(lines), encoding="utf-8")
+    notes = (outdir / f"LISTENING.part{shard[0]}.md") if shard else (outdir / "LISTENING.md")
+    notes.write_text("\n".join(lines), encoding="utf-8")
     print(f"staged {staged} tune(s) -> {outdir}", file=sys.stderr)
+    if shard:
+        print(f"notes -> {notes.name}; run --merge-notes when every shard is "
+              f"done", file=sys.stderr)
     if owned_workdir:
         shutil.rmtree(workdir, ignore_errors=True)
     return 0
