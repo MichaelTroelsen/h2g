@@ -1,6 +1,6 @@
 # Vibrato census
 
-454 instrument(s) across 82 file(s) whose pitch oscillates on either side. `vib` is a whole-file ratio; this is the same count split by the instrument sounding it, so the rows add to that column rather than re-measuring it.
+455 instrument(s) across 82 file(s) whose pitch oscillates on either side. `vib` is a whole-file ratio; this is the same count split by the instrument sounding it, so the rows add to that column rather than re-measuring it.
 
 **Why this is asked before anything is tuned.** The balloon song read `vib` 0.17x and it was taken for a vibrato-rate defect. The one instrument carrying a vibrato byte was within 20% of the original; the missing 1812 reversals were an arpeggio on a global counter that no wavetable can hold (section 7.ttt). A rate that looks wrong may be a mechanism that is absent.
 
@@ -83,9 +83,9 @@
 | Sanxion.sid | `$0B03` | 2 | $2B | alt | 286 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$06A6` | 2 | $44 | atkpitch | 282 | 0 |
 | Proteus.sid | `$090F` | 4 | $F5 | arp | 281 | 0 |
-| Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 109 |
 | Chain_Reaction.sid | `$00F8` | 3 | $10 | plain | 277 | 0 |
 | Gremlins.sid | `$2968` | 2 | $02 | plain | 273 | 0 |
+| Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 114 |
 | Warhawk.sid | `$0F08` | 8 | $95 | arp | 266 | 0 |
 | Game_Killer.sid | `$0A9A` | 2 | $0A | plain | 262 | 0 |
 | Knucklebusters.sid | `$0AAD` | 25 | $44 | atkpitch | 261 | 0 |
@@ -94,7 +94,7 @@
 | Geoff_Capes_Strongman_Challenge.sid | `$195F` | 1 | $08 | plain | 220 | 0 |
 | Spellbound.sid | `$0FFA` | 4 | $C5 | drum | 219 | 0 |
 | Monty_on_the_Run.sid | `$3FFF` | 13 | $02 | plain | 218 | 0 |
-| Phantoms_of_the_Asteroid.sid | `$0786` | 1 | $02 | plain | 335 | 121 |
+| Phantoms_of_the_Asteroid.sid | `$0786` | 1 | $02 | plain | 335 | 125 |
 | Warhawk.sid | `$090E` | 11 | $C5 | drum | 210 | 0 |
 | Formula_1_Simulator.sid | `$2C8F` | 6 | $00 | plain | 209 | 0 |
 | Flash_Gordon.sid | `$0F07` | 3 | $0B | alt | 208 | 0 |
@@ -203,7 +203,7 @@
 
 | cause | absent | slow | instruments | reversals missing |
 |---|---:|---:|---:|---:|
-| plain | 85 | 9 | 94 | 28642 |
+| plain | 85 | 9 | 94 | 28633 |
 | drum | 31 | 3 | 34 | 8843 |
 | alt | 20 | 1 | 21 | 14615 |
 | program | 13 | 2 | 15 | 2923 |

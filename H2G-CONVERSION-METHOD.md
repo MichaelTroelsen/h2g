@@ -11001,3 +11001,59 @@ wants its own A/B.
 > against and quietly wrong for the others -- which is the same failure as a
 > constant read from one player and applied to twenty-five (§ 7.lll), in a
 > place nobody thinks of as a constant.
+
+### 7.wwwww The command pass gates; the delay must not gate again
+
+§ 7.vvvvv left the largest vibrato bucket as `plain absent` -- 85 instruments
+the original oscillates and we do not move at all -- and a lead: Chimera's
+`$7989` has effect `$00`, a non-zero vibrato byte at `+5`, an emitted vibrato
+(`vib_ptr 8`), and **no reversals**.
+
+The first reading was that `vibdelay` was standing in for the player's
+duration gate. That is what § 7.lll describes, and it is out of date: since
+v0.5.199 `_vibrato_command_pass` expresses the gate per note. Chimera emits
+**264** `CMD_VIBRATO` enables against **1864** suppressing zeroes, with
+speed-table rows `$82 $03` and `$82 $04` carrying real note-relative entries.
+The gate is there.
+
+**Both mechanisms were gating at once.** Behind the command pass
+`_vibrato_delay` still returned the file's threshold, so a note the command
+*enabled* was then postponed 8 calls -- and this oscillator's half-period is
+`cmp + 2` = 4 calls. Chimera's GT 6 has eight commanded-on notes, **no**
+uncommanded ones, and traces zero reversals against the original's 98: the
+delay consumed the whole swing.
+
+The function's own docstring has said the design needs `vibdelay 1` since
+v0.5.199. The measurement it cites -- 92.1% against 90.3% -- compared the
+file's own threshold against the constant 8, two *ways of delaying*, and never
+asked what not delaying scores. **A choice measured between two options is not
+a measurement of the third.**
+
+Measured over the 25 files of this dialect, which is exactly the blast radius
+and was predicted before the run:
+
+| | |
+|---|---|
+| `vib` moved on | 20 files |
+| closer to 1.0 | **19** |
+| further | 1 (Geoff Capes, already 2.29 -> 2.32) |
+| median distance from 1.0, log space | 0.795 -> **0.668** |
+| other columns moved | **none** |
+
+`slides` and `bend` rise on 21 files, which is the same movement counted two
+other ways. Nothing touches melody, seq, pitch, retrig, wave, adsr, gate,
+hold, onset or tail -- the spurious wobble a bare `vibdelay 1` causes when it
+does the gating itself (826 of 2052 still notes, § 7.lll's sweep) does not
+appear when the commands do the suppressing, which is precisely the argument
+that docstring made for why `commanded` exists.
+
+The vibrato census barely moves (`plain` 28642 -> 28633 reversals) because it
+counts instruments under *half* the original's rate, and most remain there.
+The ratios improved; the population did not cross the line. That is the honest
+reading and the reason the census is not the scoreboard for this change.
+
+> **The transferable lesson:** when two mechanisms can express the same rule,
+> check whether both are expressing it. The delay and the command pass were
+> each individually correct and individually measured, and nobody measured
+> them together -- the parameter that exists to keep them apart (`commanded`)
+> selected *which delay* rather than *whether to delay*.

@@ -2209,13 +2209,21 @@ def _vibrato_delay(det: Detection, multiplier: int,
       drops corpus agreement from 85.5% to **78.9%**, more than doubling the
       spurious vibratos (207 to 417): a lower threshold gives up the
       suppression without buying a correct onset.
-    * Behind the command pass, the file's own threshold, because the commands
-      now do the suppressing and the residue is only notes with no free command
-      column. Measured that way it is the better number -- 92.1% against 90.3%,
-      129 misses against 173, almost all of it Ninja, whose gate is 2.
+    * Behind the command pass, **no delay at all** (v0.5.294). v0.5.198
+      compared the file's own threshold against the constant 8 here -- two
+      ways of delaying -- and chose between them at 92.1% against 90.3%.
+      Neither is right. The commands already write CMD_VIBRATO on the notes
+      that qualify and a suppressing 0 on the rest, so any delay postpones the
+      notes they just enabled: Chimera's GT 6 has eight commanded-on notes, no
+      uncommanded ones, and traced zero reversals against the original's 98,
+      because the oscillator's half-period is `cmp + 2` = 4 calls and the delay
+      was 8. Measured over the 25 files of this dialect, `vib` moves on 20 and
+      **19 of them closer to 1.0**, median distance in log space 0.795 ->
+      0.668, with no other column moving.
 
-    The same constant is therefore right in one role and wrong in the other,
-    which is why `commanded` is a parameter and not a convenience.
+    The constant is therefore right as a plain delay and has no role behind
+    the commands, which is why `commanded` is a parameter and not a
+    convenience.
 
     v0.5.198 measured that last sentence rather than asserting it, across the
     25 corpus files this gate reaches, over 2487 notes of instruments whose
@@ -2238,13 +2246,30 @@ def _vibrato_delay(det: Detection, multiplier: int,
     threshold, so it is the one value here that is read rather than fitted.
 
     Getting both halves needs the gate expressed per *note*, which means a
-    pattern-level vibrato command on qualifying notes with `vibdelay 1` --
-    not a change to this function.
+    pattern-level vibrato command on qualifying notes with `vibdelay 1`. That
+    is what `_vibrato_command_pass` does, and this function stopped fighting
+    it in v0.5.294 -- the sentence had been here since v0.5.199 while the code
+    below still delayed.
     """
     if det.triangle_vibrato is None:
         return VIBRATO_DELAY
-    gate = (det.triangle_gate or TRIANGLE_VIBRATO_GATE) if commanded         else TRIANGLE_VIBRATO_GATE
-    return min(0xFF, max(1, gate * multiplier))
+    if commanded:
+        # **The commands express the gate; the delay must not express it
+        # again.** `_vibrato_command_pass` writes CMD_VIBRATO on the notes
+        # that qualify and a suppressing 0 on the rest -- on Chimera 264
+        # enables against 1864 suppressions, and its GT 6 has *no*
+        # uncommanded note at all. Leaving `vibdelay` at the threshold then
+        # postpones the enabled notes too: the oscillator's half-period here
+        # is `cmp + 2` = 4 calls, so 8 calls of delay costs a note its whole
+        # first swing, and that instrument traces zero reversals against the
+        # original's 98.
+        #
+        # This is what the docstring above has always said the design needs
+        # ("with `vibdelay 1`"). The 92.1%-against-90.3% measurement it cites
+        # compared the file's own threshold against the constant 8 -- two
+        # ways of delaying -- and never asked what not delaying scores.
+        return VIBRATO_DELAY
+    return min(0xFF, max(1, TRIANGLE_VIBRATO_GATE * multiplier))
 
 
 def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:

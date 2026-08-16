@@ -349,23 +349,37 @@ def test_match_at_checks_one_position_and_does_not_search():
     assert not match_at(data, -1, "BD")
 
 
-def test_the_delay_uses_the_files_gate_only_behind_the_command_pass():
-    """The same constant is right in one role and wrong in the other, which is
-    the whole reason `commanded` exists. As a plain delay the assumed 8 scores
-    85.5% where the file's own threshold scores 78.9%, because a delay is also
-    doing the suppressing and a lower threshold gives that up. Behind the
-    commands the residue is only un-commandable notes and the file's own
-    threshold wins, 92.1% against 90.3%.
+def test_the_delay_does_not_gate_again_behind_the_command_pass():
+    """As a plain delay the assumed 8 scores 85.5% where the file's own
+    threshold scores 78.9%, because a delay is also doing the suppressing and
+    a lower threshold gives that up. That is why `commanded` exists.
+
+    **Behind the commands the answer is not to delay at all.** v0.5.198
+    compared the file's own threshold against the constant 8 there -- two ways
+    of delaying -- and 92.1% against 90.3% chose between them. Neither is
+    right: `_vibrato_command_pass` already writes CMD_VIBRATO on the notes
+    that qualify and a suppressing 0 on the rest, so any delay postpones the
+    notes it just enabled. Chimera's GT 6 has eight commanded-on notes, no
+    uncommanded ones, and traced **zero** reversals against the original's 98
+    -- the oscillator's half-period is `cmp + 2` = 4 calls and the delay was 8.
+
+    Measured over the 25 files of this dialect: `vib` moves on 20, **19 of
+    them closer to 1.0** and one further (Geoff Capes, already at 2.29), the
+    median distance from 1.0 in log space falling 0.795 -> 0.668. No other
+    column moves at all -- the spurious wobble a bare `vibdelay 1` causes when
+    it does the gating itself does not appear when the commands do it.
     """
     from h2g.detect import Detection, TRIANGLE_VIBRATO_GATE
-    from h2g.goatwriter import _vibrato_delay
+    from h2g.goatwriter import VIBRATO_DELAY, _vibrato_delay
     own = Detection(triangle_vibrato=5, triangle_gate=2)
     assert _vibrato_delay(own, 1) == TRIANGLE_VIBRATO_GATE
-    assert _vibrato_delay(own, 1, commanded=True) == 2
-    assert _vibrato_delay(own, 3, commanded=True) == 6
-    # a file whose gate could not be read falls back to the constant in both
+    assert _vibrato_delay(own, 1, commanded=True) == VIBRATO_DELAY
+    # and the multiplier does not reintroduce it
+    assert _vibrato_delay(own, 3, commanded=True) == VIBRATO_DELAY
     unread = Detection(triangle_vibrato=5)
-    assert _vibrato_delay(unread, 1, commanded=True) == TRIANGLE_VIBRATO_GATE
+    assert _vibrato_delay(unread, 1, commanded=True) == VIBRATO_DELAY
+    # Uncommanded still scales with the multiplier, which is untouched.
+    assert _vibrato_delay(own, 2) == TRIANGLE_VIBRATO_GATE * 2
 
 
 def _pattern(*rows):
