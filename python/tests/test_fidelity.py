@@ -585,7 +585,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
             in text)
     assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
@@ -750,7 +750,13 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
-                 cutoff_sweep=1.0, bend_ratio=1.0)
+                 cutoff_sweep=1.0, bend_ratio=1.0,
+                 # `drift` reports frames per 1000; 0.0 is a real, common
+                 # reading (37 corpus files are exact) and None means the fit
+                 # had too little matched material, so a synthetic full row
+                 # carries the number rather than omitting it.
+                 drift_per_1000=0.0, drift_total=0.0, drift_mad=0.0,
+                 drift_lag=0.0, drift_span=1000, drift_voices=3)
     return r
 
 

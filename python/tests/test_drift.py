@@ -123,3 +123,68 @@ def test_the_drift_is_the_outer_gates_skipped_call():
                                         "Sanxion.sid"}
     assert all(s > 100 for _, s in declined), declined
     assert all(s < 100 for _, s in corrected), corrected
+
+
+# --- the report column -----------------------------------------------------
+
+def test_drift_is_a_declared_dimension():
+    """`fidelity.py`'s rule: a printed column has a Dimension declaring the
+    registers it is derived from, and `test_fidelity` fails if the registry
+    and the header disagree. Pinned here too, because the interesting claim
+    is *which* registers -- drift is computed from note onsets, so it reads
+    the pitch pair and $D404 like `melody`, and differs from it only in using
+    the frame positions `melody` throws away."""
+    d = next(x for x in F.DIMENSIONS if x.key == "drift_per_1000")
+    assert d.column == "drift"
+    assert d.kind == "ratio"
+    assert set(d.reads) == {"$D400/$D401", "$D404"}
+
+
+def test_a_file_can_score_perfect_melody_and_still_drift():
+    """Why the column had to exist. `melody` is a difflib ratio over a note
+    sequence and discards when the notes arrive; a conversion can reproduce
+    every note in order and still walk away from the original."""
+    o, u = _pair(rate=-0.008, n=200)
+    got = F.drift(o, u)
+    assert got["per_1000"] < -7
+    assert F.compare(o, u)["melody"] == 1.0
+
+
+def test_zero_and_missing_print_differently():
+    """`0.0` is a measurement -- 37 corpus files hold the original's timing
+    exactly -- and `-` is the absence of one. A formatter that collapsed them
+    would report the corpus as untimed."""
+    assert F._fmt_drift({"drift_per_1000": 0.0}) == "+0.0"
+    assert F._fmt_drift({"drift_per_1000": -12.34}) == "-12.3"
+    assert F._fmt_drift({"drift_per_1000": 7.81}) == "+7.8"
+    assert F._fmt_drift({}) == "-"
+
+
+def test_a_wandering_offset_is_not_reported_as_a_rate():
+    """The gate that keeps a fit out of the table when it explains nothing.
+
+    Knucklebusters printed the corpus-worst `+1151` from one voice whose
+    offsets scattered 82 frames about the line, and Rock Tells the Tale
+    printed `0.0` at MAD 93. `mad` had been computed since the first version
+    and simply not consulted.
+    """
+    o, u = _pair(rate=0.0, n=200)
+    # Offsets alternating +-400 frames: no line describes them.
+    u[0].attack_frames = [x + (400 if i % 2 else -400)
+                          for i, x in enumerate(o[0].attack_frames)]
+    u[1].attack_frames = list(u[0].attack_frames)
+    u[2].attack_frames = list(u[0].attack_frames)
+    got = F.drift(o, u)
+    assert got["per_1000"] is None
+    assert "wander" in got["unfitted"]
+    # The diagnostics survive, so --pace can still say what it saw.
+    assert got["mad"] > 100 and got["span"] > 0
+
+
+def test_a_real_drift_survives_the_gate():
+    """The other half: a bound that rejected the true positives would be
+    worse than none. Spellbound's -298 sits at 0.67% scatter and must pass."""
+    o, u = _pair(rate=-0.29, n=300)
+    got = F.drift(o, u)
+    assert got["per_1000"] is not None
+    assert abs(got["per_1000"] + 290) < 10

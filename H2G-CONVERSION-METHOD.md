@@ -10591,3 +10591,76 @@ change, however clean its numbers look -- and this one produced a decisive
 > emitted.** 673 rows against 61 designed is visible from the output in one
 > query, needs no emulator and no trace, and would have stopped the A/B from
 > being run at all.
+
+### 7.qqqqq `drift` becomes a column, and the number it first got wrong
+
+§ 7.mmmmm built `drift` as a `--pace` line. This promotes it to a
+`FIDELITY.md` dimension, which is what this project's own rule asks for: when
+a column documents what it ignores, that list is what you cannot ship on
+evidence, and *timing is not measured at all* had stood in the report's "What
+this does not say" since it was written.
+
+It is a declared `Dimension`, so it joins `dimensions_present`, the
+register-coverage footer, and the `--baseline` A/B ranking, and
+`tests/test_fidelity.py` fails if the registry and the printed header
+disagree. It declares the pitch registers and `$D404` — the same inputs as
+`melody`, because its material is difflib-matched note *onsets*. The
+difference is that it uses their frame positions, which `melody` discards, and
+a test pins exactly that: a synthetic pair scores `melody` 1.00 and `drift`
+−8.
+
+#### The headline was an artefact, and the diagnostic for it already existed
+
+The first regeneration reported the corpus-worst as **`+1151.4`
+(Knucklebusters)**. That figure came from **one** voice, at a median absolute
+deviation of **82 frames** about the fitted line, on a file whose `melody` is
+50% and whose conversion plays 156 of the original's 404 attacks. Rock Tells
+the Tale printed **`0.0`** at a scatter of **93**. Neither is a rate of
+divergence; both are two sides wandering.
+
+`drift()` had returned `mad` since its first version, and its docstring said
+what it was for -- "a large residual means the offset is wandering rather than
+accumulating, which is a different fault and not one this number describes".
+Nothing consulted it. **Writing the caveat is not enforcing it**, which is the
+same shape as `_wave_program_entries`' docstring describing a rule that three
+sibling emitters did not follow (§ CLAUDE.md), and as `hold`'s blindness above
+`-S3` being stated for versions before a column measured it.
+
+#### The bound, and why it is not fitted
+
+Scatter as a share of the traced window, capped at **1%**: about 30 frames in
+a 3000-frame trace, some 0.6 s, past which the two copies are not in a stable
+phase relationship at all. That is a claim about audibility rather than a
+constant tuned to this corpus -- and the corpus then agrees without having
+been asked:
+
+| | MAD / span |
+|---|---:|
+| 90% of files | < 0.02% |
+| Rasputin, real −355.8 | 0.33% |
+| Spellbound, real −298.4 | 0.67% |
+| **Rock Tells the Tale, artefact** | **3.1%** |
+| **Knucklebusters, artefact** | **5.2%** |
+
+A 4.6x gap between the worst true positive and the best false one. Two tests
+pin it in both directions, because a bound that rejected the true positives
+would be worse than none.
+
+A refused row keeps `drift_mad`, `drift_span`, `drift_voices` and a sentence
+saying why -- `drift_per_1000` alone is withheld, so `dimensions_present`
+reports the dimension as not compared while the `-` still explains itself.
+
+#### What the column found on its first honest run
+
+**45 of 79 files hold the original's timing exactly.** The other 34 part
+company at a median 12.3 frames per 1000, and the worst of them is a finding
+in its own right: **Mozart at `+1000.0` with a scatter of 0.0** -- a
+perfectly linear accumulation of one frame of lag per frame, which is a
+conversion running at exactly **half speed**. `--pace` had reported the same
+file at the same figure and it had never been read as a defect.
+
+> **The transferable lesson:** a new column's first output is the one most
+> worth distrusting, because nothing has yet been shipped that would have
+> caught its failure modes. Both artefacts here were visible in a quantity the
+> function already returned; what was missing was any code path that could
+> fail because of it.

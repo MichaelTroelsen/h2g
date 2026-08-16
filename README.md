@@ -2452,6 +2452,49 @@ Goattracker-tuned, so nothing on our side moves. A row that needed it says so.
 This is a naming correction, not an allowance: a table whose *index* is shifted
 rather than its tuning is a converter defect and is fixed in the converter.
 
+#### `drift` — the report's first timing column
+
+Every other column compares *what* is played at aligned frames. None of them
+can see two copies of the right music parting company, and this report said so
+in its own "What this does not say" for its whole life. `drift` is that gap
+closed, in one respect: the accumulated phase error between the two sides, in
+frames per 1000.
+
+It is a Theil–Sen fit of `ours[k] − orig[k]` against `orig[k]` over
+difflib-matched onsets, per voice, over the voices whose match is thick enough
+to be the same music. Negative is early. The slope is the drift; **the
+intercept is the startup lag**, so unlike every frame-aligned column above it
+needs no lag correction — the lag falls out of the fit rather than having to be
+estimated and subtracted.
+
+`0.0` and `-` mean different things and both are common. Zero is a measurement:
+45 files hold the original's timing exactly. A dash is one of two refusals —
+too little matched material to fit a line, or a fit that explains nothing.
+
+**The second refusal is what makes the column trustworthy.** A rate of
+divergence is only a reading if the divergence is a *line*. The first
+regeneration printed a corpus-worst `+1151` for Knucklebusters, derived from
+one voice whose offsets scattered 82 frames about the fit, and `0.0` for Rock
+Tells the Tale at a scatter of 93. Both are two sides wandering. The bound is
+the scatter as a share of the traced window, capped at 1% — about 30 frames in
+a 3000-frame trace, past which the two copies are not in a stable phase
+relationship at all. The corpus agrees without being asked: 90% of files sit
+under 0.02%, the genuine large drifts (Rasputin 0.33%, Spellbound 0.67%) well
+inside it, and the two artefacts at 3.1% and 5.2%. A refused row keeps its
+diagnostics and says why.
+
+Corpus: **45 of 79 files hold the original's timing exactly**; the other 34
+part company at a median 12.3 frames per 1000. On 17 of them the figure is
+exactly `−1/(skip + 1)` — the outer gate's skipped call, which
+`goatwriter.effective_frames` corrects when the corrected row can be packed
+(Delta's 5/2 at `-S2`) and declines when it cannot, because 3 × 113/112 wants
+339 calls at `-S112`.
+
+What it cannot do: separate *why*. A row a fraction too short and a row of the
+right length played from the wrong place read alike. It is a rate of
+divergence, not a tempo — `--pace` scores the row length, and `--audio` and
+`--register` settle the rest.
+
 #### Drift — the error `--pace` cannot see
 
 `--pace` compares one gap to one gap. That is exactly right for a row of the

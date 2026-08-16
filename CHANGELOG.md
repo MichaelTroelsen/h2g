@@ -4,6 +4,14 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.288 — 2026-08-16
+
+- drift becomes a report column
+
+## 0.5.287 — 2026-08-16
+
+- drift becomes a report column
+
 ## 0.5.286 — 2026-08-15
 
 - one-shot commands do not survive into a hold row

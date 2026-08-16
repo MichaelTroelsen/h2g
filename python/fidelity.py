@@ -2370,9 +2370,15 @@ NOT_MEASURED = (
     "default: `--equal-calls` drops the frame-aligned dimensions, and "
     "`--vice` costs two emulator runs a row",
     "**tempo and row rate** -- no column here scores how long a row "
-    "lasts. `--pace` is the mode that does, and on this corpus it finds "
-    "row-length errors of 10-33% that every column below is blind to. "
-    "What "
+    "*lasts*, and `--pace` is the mode that does: on this corpus it "
+    "finds row-length errors of 10-33%. What the table now does see "
+    "is the *accumulated* consequence -- `drift` is the phase error "
+    "between the two sides in frames per 1000, which is a different "
+    "question from the row length and catches the errors too small to "
+    "show up in one gap. A row wrong by a fraction of a frame is "
+    "invisible to `--pace` by construction, since a Goattracker row "
+    "is whole play calls and the error is zero on most gaps and one "
+    "whole frame on the occasional one. What "
     "did change in v0.5.99 is that a conversion is now *played* at the rate "
     "it was packed for: stock siddump calls the play routine `seconds x 50` "
     "times whatever the PSID speed field says (siddump.c:309/325), so a tune "
@@ -2530,6 +2536,28 @@ DIMENSIONS = (
               "selected", source="our_filtered_frames"),
     Dimension("cutoff_sweep", "cut", ("$D415/$D416",), "ratio",
               "how far the cutoff travels, over the original's travel"),
+    # **The first column here that measures *when* rather than *what*.** Every
+    # dimension above compares content at aligned frames; none of them can see
+    # two copies of the right music parting company, and this report said so
+    # in its own "What this does not say" for the whole of its life.
+    #
+    # `--pace` was the answer to the tempo half of that and is structurally
+    # blind to the rest: it averages gap ratios, a Goattracker row is a whole
+    # number of play calls, so a row wrong by a *fraction* of a frame is zero
+    # on most gaps and one whole frame on the occasional one -- an expected
+    # ratio of exactly 1.000. Powerplay reads `median 1.000, IQR 0.980-1.000
+    # over 348 gaps` while its notes arrive 24 frames early. Integrating sees
+    # it; averaging cannot.
+    #
+    # Reads the pitch registers because its input is difflib-matched note
+    # *onsets*, which is what `melody` is built from -- but it uses their
+    # frame positions, which `melody` discards. A file can therefore score
+    # 100% melody and drift badly, and 17 of them do.
+    Dimension("drift_per_1000", "drift", _PITCH_REGS, "ratio",
+              "frames of lead (negative) or lag we accumulate per 1000, from "
+              "a Theil-Sen fit over matched onsets -- **the startup lag is "
+              "the fit's intercept**, so unlike every column above it needs "
+              "no lag correction"),
 )
 
 
@@ -2925,6 +2953,26 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # startup latency cancels rather than needing correcting. See
             # onset_shapes.
             row.update(onset_agreement(a, best_dump, nframes))
+            # No `lag` here either, and for a stronger reason than onset's:
+            # the fit's *intercept* is the startup lag, so it falls out of the
+            # slope rather than needing to be estimated and subtracted. It is
+            # also the by-product that caught two wrong estimators (§ 7.mmmmm).
+            dr = drift(a, best_dump)
+            # The diagnostics go in whether or not the fit was accepted: a
+            # refused row prints `-` in the table, and a `-` that cannot say
+            # why is the gap this project keeps warning about. `drift_per_1000`
+            # stays absent, so `dimensions_present` correctly reports the
+            # dimension as not compared for that row.
+            if dr.get("span"):
+                row["drift_mad"] = dr["mad"]
+                row["drift_span"] = dr["span"]
+                row["drift_voices"] = dr["voices"]
+                row["drift_lag"] = dr["intercept"]
+            if dr.get("unfitted"):
+                row["drift_unfitted"] = dr["unfitted"]
+            elif dr.get("per_1000") is not None:
+                row["drift_per_1000"] = dr["per_1000"]
+                row["drift_total"] = dr["total"]
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a
@@ -3033,6 +3081,19 @@ def _fmt_sweep(row: dict) -> str:
     """
     v = row.get("cutoff_sweep")
     return "-" if v is None else f"{v:.2f}x"
+
+
+def _fmt_drift(row: dict) -> str:
+    """`drift` as the table prints it: frames per 1000, signed.
+
+    Negative is *early* -- we run ahead of the original -- which is the sign
+    of every drifting file in this corpus, because the correction declined is
+    always one the player makes and we do not. `0.00` and `-` mean different
+    things and both occur: zero is a file measured and found exact (37 of
+    them), `-` is one where too little matched to fit a line.
+    """
+    v = row.get("drift_per_1000")
+    return "-" if v is None else f"{v:+.1f}"
 
 
 def _one_sided(row: dict, key: str) -> str:
@@ -3243,13 +3304,13 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 19 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 20 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -3263,6 +3324,7 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
+            f"{_fmt_drift(r)} | "
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
@@ -3311,6 +3373,29 @@ def report(rows: list[dict], args) -> str:
                 f" ({len(gated)} file(s)); **{ringing}** frame(s) sustaining a "
                 f"voice the original released, **{silent}** the other way "
                 "round")
+        drifted = [r for r in measured
+                   if r.get("drift_per_1000") is not None]
+        if drifted:
+            # A **median** of the magnitudes, not a mean: the distribution is
+            # 37 exact zeros and a tail out to -298, so a mean reports the
+            # tail and a median reports the corpus. Counted separately because
+            # "how many files drift at all" is the useful number and an
+            # average over mostly-zeros hides it.
+            moving = [r for r in drifted if abs(r["drift_per_1000"]) >= 0.005]
+            mags = sorted(abs(r["drift_per_1000"]) for r in moving)
+            worst = max(drifted, key=lambda r: abs(r["drift_per_1000"]))
+            med = mags[len(mags) // 2] if mags else 0.0
+            out.append(
+                f"- drift: **{len(drifted) - len(moving)}** of {len(drifted)} "
+                f"file(s) hold the original's timing exactly; the other "
+                f"**{len(moving)}** part company at a median "
+                f"**{med:.1f}** frame(s) per 1000, worst "
+                f"**{worst['drift_per_1000']:+.1f}** "
+                f"({worst['file']}, {abs(worst.get('drift_total', 0)):.0f} "
+                f"frame(s) across the window). Negative is early. On 17 files "
+                f"this is exactly `-1/(skip+1)`, the outer gate's skipped "
+                f"call, which `effective_frames` declines to correct when the "
+                f"corrected row cannot be packed")
         adsred = [r for r in measured if r.get("adsr") is not None]
         if adsred:
             out.append(
@@ -3502,9 +3587,14 @@ def report(rows: list[dict], args) -> str:
         "- The harness legalises song restart positions before packing "
         "(SNG2SID-FIDELITY.md §2), so a file counted here may still be "
         "unpackable as the converter writes it.",
-        "- Timing is not measured at all. Two files can agree on every note "
-        "and play at different speeds; that is what `--audio` and `--register` "
-        "are for.",
+        "- Timing is measured in one respect only. `drift` is how far "
+        "the two sides have parted company, in frames per 1000, and it "
+        "is silent about *why*: a row a fraction too short and a row "
+        "the right length played from the wrong place read alike. Two "
+        "files can still agree on every note and every drift figure "
+        "and play at different speeds -- `drift` is a rate of "
+        "divergence, not a tempo. `--pace` scores the row length, and "
+        "`--audio` and `--register` are what settle the rest.",
         "- **wave** compares the waveform class only. It cannot see pitch, "
         "so a noise class agreeing on both sides says nothing about which "
         "notes are under it; and because it ignores the gate bit, a note held "
@@ -4112,6 +4202,10 @@ MIN_DRIFT_BASELINE = 250
 MIN_DRIFT_ONSETS = 12
 MIN_DRIFT_COVERAGE = 0.30
 
+# How far the matched offsets may scatter about the fitted line, as a share of
+# the traced window, before the line stops being a description of them.
+DRIFT_MAX_SCATTER = 0.01
+
 
 def matched_gaps(orig: Voice, ours: Voice,
                  floor: int = 4) -> list[tuple[int, int]]:
@@ -4258,10 +4352,34 @@ def drift(orig: Trace, ours: Trace) -> dict:
     offs = [(b - a) - slope * a for a, b in pairs]
     med = sorted(offs)[len(offs) // 2]
     mad = sorted(abs(o - med) for o in offs)[len(offs) // 2]
-    return {"n": n, "voices": len(per_voice),
-            "per_1000": slope * 1000, "total": slope * span,
-            "span": span, "mad": mad, "intercept": med,
-            "q1_per_1000": q1 * 1000, "q3_per_1000": q3 * 1000}
+    out = {"n": n, "voices": len(per_voice),
+           "per_1000": slope * 1000, "total": slope * span,
+           "span": span, "mad": mad, "intercept": med,
+           "q1_per_1000": q1 * 1000, "q3_per_1000": q3 * 1000}
+    # **A rate of divergence is only a reading if the divergence is a line.**
+    # `mad` was computed from the first version of this and then not used,
+    # which let two rows into the report that describe nothing: Knucklebusters
+    # printed the corpus-worst `+1151` from one voice at MAD 82 with melody
+    # 50%, and Rock Tells the Tale printed `0.0` at MAD 93. Both are two
+    # sides wandering, not parting company at a rate.
+    #
+    # The bound is the scatter as a share of the traced window, and 1% is a
+    # musical claim rather than a constant fitted here: 30 frames in a
+    # 3000-frame trace, about 0.6 s: past that the two copies are not in a
+    # stable phase relationship at all. The corpus agrees without being asked
+    # to -- 90% of files sit under 0.02%, the genuine large drifts (Rasputin
+    # 0.33%, Spellbound 0.67%) well inside it, and the two artefacts at 3.1%
+    # and 5.2%.
+    #
+    # Known weak spot, stated rather than gated on one file: Kings of the
+    # Beach ingame matches onsets over only 320 frames of a 3000-frame window
+    # and passes this, so its figure rests on a tenth of the trace.
+    if mad > DRIFT_MAX_SCATTER * span:
+        out["per_1000"] = None
+        out["unfitted"] = (f"offsets scatter {mad:.0f} frame(s) about the fit "
+                           f"over {span} -- the two sides wander rather than "
+                           f"drift, so no rate describes them")
+    return out
 
 
 def pace(orig: Trace, ours: Trace) -> dict:
@@ -4410,7 +4528,9 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
         # whole play calls, so the error lands as zero on most gaps and one
         # frame on the occasional one, and the median comes out 1.000 exactly.
         dr = drift(a, b)
-        if dr.get("per_1000") is not None:
+        if dr.get("unfitted"):
+            out.append(f"       drift: {dr['unfitted']}")
+        elif dr.get("per_1000") is not None:
             sign = "late" if dr["total"] > 0 else "early"
             out.append(
                 f"       drift {dr['per_1000']:+.2f} frames/1000 "
