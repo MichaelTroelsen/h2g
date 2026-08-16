@@ -998,9 +998,18 @@ tag each item with how it can be run.** The three tags, and what qualifies:
   them corrupting a shared working tree. The choice to make is subagent vs
   workflow — one report, or many.
 * **`[main]`** — this session only. Anything that regenerates an artefact, runs
-  `presets.py --fidelity` (serial, **about 8 minutes**, and it writes
-  `presets.json`), or commits. Two searches at once are deterministic but
-  contend; there is no reason to run them in parallel.
+  `presets.py --fidelity` (it writes `presets.json`), or commits. Cost scales
+  with the toggle count: **8 minutes** at five toggles, 15 at six, and about a
+  minute a song at seven (127 combinations), which is 80 serially.
+  **`--shard I/N` splits it across processes** and `--merge` recombines them —
+  each song's walk is independent of every other's, and `fidelity.py` has had
+  a private scratch directory per run since v0.5.66 precisely so concurrent
+  runs cannot read each other's intermediates. Six shards take the
+  seven-toggle search from 80 minutes to about 15. This paragraph used to say
+  "there is no reason to run them in parallel", which was true of two whole
+  searches contending and wrong about shards; the equivalence is checked
+  rather than assumed (three structural shards merged reproduce the unsharded
+  run's `songs` dict exactly).
 * **`[user]`** — needs a human. Every listening verdict, and any decision about
   what a tune should sound like. Stage the material with `listen.py` so the ask
   is a link rather than a task.

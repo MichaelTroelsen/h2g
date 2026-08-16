@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.303 — 2026-08-16
+
+- presets.py --shard and --merge: split a corpus search across processes
+
 ## 0.5.302 — 2026-08-16
 
 - --wide-hard-restart, the row bound reopened and searched

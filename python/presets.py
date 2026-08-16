@@ -136,6 +136,15 @@ EXCLUDED_FROM_ALWAYS = {
     # 67% at the same value. A bound whose ceiling is set by a single file is
     # the definition of a per-song question. Searched, not fixed.
     "wide_hard_restart",
+    # The same bound taken to the player's own limit, `row - 1`. Twice the
+    # corpus gain of `wide` in v0.5.276's sweep (3.3pp of mean gate against
+    # 1.6) and twice the damage on the one file that breaks (Saboteur II
+    # melody 98% -> 62% against 67%). Offered because `keeps_notes` has now
+    # been *seen* to refuse the gentler value on exactly that file rather than
+    # merely being expected to -- a guard with a demonstrated catch is
+    # evidence for offering the next value along, which a guard on paper is
+    # not.
+    "max_hard_restart",
     # Also measured and rejected as a default, twice: the first attempt (before
     # v0.5.66's variable-length wavetable) cost 82 points of wave agreement
     # across 18 files, and re-measuring under v0.5.175's aligned harness -- the
@@ -352,8 +361,10 @@ def best_options(sid_path: Path) -> dict | None:
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
-                    "wave_program", "pitch_seq", "wide_hard_restart")
-# Six toggles is 63 combinations a song, each a convert, a pack and two traces.
+                    "wave_program", "pitch_seq", "wide_hard_restart",
+                    "max_hard_restart")
+# Seven toggles is 127 combinations a song, each a convert, a pack and two
+# traces -- about 30 minutes over the corpus, measured.
 # `wide_hard_restart` was refused at v0.5.276 as a sixth toggle that "would
 # double a four-hour search"; the search is 8 minutes (timed twice, v0.5.301),
 # so the cost argument was never real. It raises the hard restart's row bound
@@ -837,7 +848,9 @@ def build_parser() -> argparse.ArgumentParser:
     published at, and it silently was not for forty versions.
     """
     parser = argparse.ArgumentParser(prog="presets")
-    parser.add_argument("sid_dir", help="directory of .sid files (searched recursively)")
+    parser.add_argument("sid_dir", nargs="?",
+                        help="directory of .sid files (searched recursively); "
+                             "omitted only with --merge")
     parser.add_argument("-o", "--output", default="presets.json")
     parser.add_argument(
         "--fidelity", action="store_true",
@@ -857,15 +870,65 @@ def build_parser() -> argparse.ArgumentParser:
              "because the structural search cannot see them and dropping them "
              "silently would turn a measured decision into an absent one on "
              "the next routine regeneration")
+    parser.add_argument(
+        "--shard", default=None, metavar="I/N",
+        help="search only every Nth song, starting at I (0-based), so a "
+             "corpus search can be split across processes. Each song's walk "
+             "is independent of every other's, which is what makes this "
+             "sound; the shards are disjoint by construction and --merge "
+             "refuses overlapping ones. A 127-combination search runs about a "
+             "minute a song serially, so this is the difference between 80 "
+             "minutes and 15")
+    parser.add_argument(
+        "--merge", nargs="+", metavar="FILE",
+        help="combine sharded runs into one presets file: reads each FILE, "
+             "checks they agree on `always` and `criteria`, and writes the "
+             "union of their songs to -o. Refuses if two shards claim the "
+             "same song, which is the only way a split can go wrong quietly")
     parser.add_argument("--siddump", default=None)
     parser.add_argument("--gt2reloc", default=None)
     return parser
+
+
+def merge_shards(paths, out_path) -> int:
+    """Union the `songs` of several sharded runs into one presets file."""
+    docs = []
+    for path in paths:
+        with open(path, encoding="utf-8") as fh:
+            docs.append(json.load(fh))
+    if not docs:
+        print("--merge: nothing to merge", file=sys.stderr)
+        return 2
+    head = docs[0]
+    for other in docs[1:]:
+        for key in ("always", "criteria"):
+            if other.get(key) != head.get(key):
+                print(f"--merge: shards disagree on `{key}` -- they were not "
+                      f"produced by one version", file=sys.stderr)
+                return 2
+    songs: dict[str, dict] = {}
+    for path, doc in zip(paths, docs):
+        for name, entry in doc.get("songs", {}).items():
+            if name in songs:
+                print(f"--merge: {name} appears in two shards ({path}) -- "
+                      f"the split was not disjoint", file=sys.stderr)
+                return 2
+            songs[name] = entry
+    out = dict(head)
+    out["songs"] = dict(sorted(songs.items(), key=lambda kv: kv[0].lower()))
+    with open(out_path, "w", encoding="utf-8") as fh:
+        json.dump(out, fh, indent=2)
+        fh.write("\n")
+    print(f"merged {len(paths)} shard(s), {len(songs)} song(s) -> {out_path}")
+    return 0
 
 
 def main(argv=None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
+    if args.merge:
+        return merge_shards(args.merge, args.output)
     sid_dir = Path(args.sid_dir)
     if not sid_dir.is_dir():
         print(f"error: not a directory: {sid_dir}", file=sys.stderr)
@@ -898,6 +961,15 @@ def main(argv=None) -> int:
 
     songs: dict[str, dict] = {}
     paths = sorted(sid_dir.rglob("*.sid"), key=lambda p: p.name.lower())
+    if args.shard:
+        index, count = (int(x) for x in args.shard.split("/"))
+        if not 0 <= index < count:
+            print(f"--shard {args.shard}: I must be in 0..N-1", file=sys.stderr)
+            return 2
+        # Sliced off the same sorted list every shard builds, so the union of
+        # 0/N .. N-1/N is exactly the unsharded corpus and no two overlap.
+        paths = paths[index::count]
+        print(f"shard {index}/{count}: {len(paths)} song(s)", file=sys.stderr)
     for path in paths:
         found = best_options(path)
         if found:
