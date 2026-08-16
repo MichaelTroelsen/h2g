@@ -11164,3 +11164,64 @@ instruments, every one of them emitting nothing**, 9656 reversals.
 > commits, each plausible, each shipped. The fix was not a fourth careful
 > reading -- it was quoting `detect.py`'s own comments into the map so the two
 > cannot disagree without the disagreement being visible on the page.
+
+### 7.zzzzz The census counted one instrument twice, and it inflated everything
+
+Going after the `arp` bucket -- 22 instruments carrying bit `$04`, every one
+of them reported as emitting no oscillation at all -- found the emitter
+working. Las Vegas Video Poker's GT 1 carries exactly what its player does:
+
+    row 1  $41 $00   pulse, gate on -- the pattern's note
+    row 2  $41 $00   the pattern's note
+    row 3  $41 $7C   note -4 semitones
+    row 4  $FF $02   jump back to entry 2
+
+An alternation of note and note-4, looping every call. It cannot fail to
+produce reversals, and the census said it produced none.
+
+**`vib_census` was unioning raw ADSR keys.** `--cut-release` rewrites the
+release nibble, so the original's `$0A0C` and our `$0A00` are the same
+instrument under two keys; a union counts them separately and reports the
+original's as absent while our identical one sits beside it contributing
+nothing to the comparison. § 7.uuuuu routed the six *column* intersections
+through `paired_keys` in v0.5.292 and left this census on the union it was
+written with, three commits earlier.
+
+| cause | absent | slow | reversals | before |
+|---|---:|---:|---:|---|
+| `plain` | **34** | 14 | **17912** | 82 / 27963 |
+| `drum` | 26 | 3 | 9847 | unchanged |
+| `arp` | 18 | 0 | **4786** | 22 / 9656 |
+| `pitchseq` | 13 | 1 | 5782 | 16 / 7577 |
+| `program` | 13 | 2 | 2923 | unchanged |
+| `unknown` | 3 | 0 | 705 | 5 / 1424 |
+
+Totals fall from **188 instruments and 60053 reversals to 136 and 42618**.
+Fifty-two instruments and seventeen thousand reversals were the same
+instruments counted twice. `plain`'s *absent* group -- the headline of three
+commits -- falls from 82 to 34, and its `slow` group grows, because many of
+the instruments filed as emitting nothing were emitting correctly under a key
+nobody joined.
+
+#### What this says about the four corrections before it
+
+This is the fourth defect found in the same census in five commits: a wrong
+join (§ 7.ttttt), a hardcoded bit table wrong three separate ways (§§ 7.vvvvv,
+7.xxxxx, 7.yyyyy), and now a union where every neighbouring function pairs.
+Every one of them inflated a bucket, every one produced a plausible queue
+item, and two of them were reported here as findings before being withdrawn.
+
+The common shape is that **the census was written as a new thing rather than
+as a sibling of the four that already existed**. `onset_census`,
+`hold_census` and `gate_census` all take their population from an
+intersection of two traces; this one took a union, and none of the shared
+machinery -- the pairing, the stamp join, the cause map -- was reused because
+none of it had been factored out to reuse. It is now.
+
+> **The transferable lesson:** a measurement tool that disagrees with the
+> thing it measures is worse than no tool, because its output has the shape of
+> evidence. The way to catch it is not more care -- four careful readings
+> produced four wrong tables -- but to make the new instrument answer a
+> question the existing ones already answer, and check the two agree. Las
+> Vegas's `onset` had compared 6 instruments since v0.5.292 while this census
+> saw eleven; that discrepancy was visible the whole time.

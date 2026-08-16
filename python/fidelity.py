@@ -1815,9 +1815,19 @@ def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
     """
     a = reversals_by_instrument(orig, nframes)
     b = reversals_by_instrument(ours, nframes)
+    # **Paired, not unioned.** `--cut-release` rewrites the release nibble, so
+    # the original's `$0A0C` is our `$0A00`; a union counts them as two
+    # instruments and reports the first as emitting nothing. Las Vegas Video
+    # Poker's five arpeggio instruments each showed `ours 0` that way while
+    # the conversion carried a correct alternation -- `note, note, note-4,
+    # jump` -- in its wavetable. v0.5.292 routed the six column intersections
+    # through `paired_keys` and left this census on the union it was written
+    # with.
+    pairs = dict(paired_keys(a, b))
     out = []
-    for adsr in sorted(set(a) | set(b)):
-        o, u = a.get(adsr, 0), b.get(adsr, 0)
+    for adsr in sorted(set(a) | (set(b) - set(pairs.values()))):
+        o = a.get(adsr, 0)
+        u = b.get(pairs.get(adsr, adsr), 0)
         if not o and not u:
             continue
         rec = {"adsr": adsr, "orig": o, "ours": u,

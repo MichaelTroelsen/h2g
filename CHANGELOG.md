@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.297 — 2026-08-16
+
+- the vibrato census pairs its keys like every other column
+
 ## 0.5.296 — 2026-08-16
 
 - the cause map is read from Detection's declarations
