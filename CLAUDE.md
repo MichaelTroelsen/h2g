@@ -998,7 +998,7 @@ tag each item with how it can be run.** The three tags, and what qualifies:
   them corrupting a shared working tree. The choice to make is subagent vs
   workflow — one report, or many.
 * **`[main]`** — this session only. Anything that regenerates an artefact, runs
-  `presets.py --fidelity` (serial, about an hour, and it writes
+  `presets.py --fidelity` (serial, **about 8 minutes**, and it writes
   `presets.json`), or commits. Two searches at once are deterministic but
   contend; there is no reason to run them in parallel.
 * **`[user]`** — needs a human. Every listening verdict, and any decision about
@@ -1031,9 +1031,16 @@ holds one comparable instrument and zero noise frames against eight and 1669 at
 60 s — two of `fidelity_better`'s terms are noise terms and a third is `onset`,
 so the criterion was not disagreeing, it was blind, and five files lost a
 `two_stage` that a 60 s A/B scores at onset 40-83% -> 100% with melody unmoved.
-A corpus search now costs about four hours rather than forty minutes. When a
-window is found to be too short, the finding is about the window: grep for
-every other place the same one is chosen.
+A corpus search at 60 s is **8 minutes** — timed twice at v0.5.300, 8m11s and
+~8m, both over 83 songs with zero failures. The figures this paragraph carried
+for forty versions ("about four hours rather than forty minutes") were never
+timed and were wrong by a factor of about thirty; the 10 s cost has still not
+been measured, so no ratio is claimed here. **A cost written down but never
+timed is a planning input, and this one refused a feature** — see
+`presets.py`'s sixth-toggle note. When a window is found to be too short, the
+finding is about the window: grep for every other place the same one is
+chosen — and when a cost is quoted as a reason, time it before it decides
+anything.
 
 **Forcing one option on top of a preset measures the pair.** Star Paws with
 `--wave-program` forced over its shipped settings loses 39 points of melody and

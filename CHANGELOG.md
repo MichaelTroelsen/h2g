@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.301 — 2026-08-16
+
+- the fidelity search is 8 minutes, and two refusals rested on it being four hours
+
 ## 0.5.300 — 2026-08-16
 
 - adopt the fidelity search: Kings of the Beach intro takes two_stage

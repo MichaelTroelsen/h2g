@@ -1730,8 +1730,10 @@ Measured at `-t 60`: `onset` **40% → 80%**, `slides` 986 → 1026 of the origi
 `seq`, `pitch`, `retrig`, `noise`, `adsr`, `nrun`, `hold`, `tail`, `pul`, `filt`
 and `cut` unmoved. **On by default** (`presets.FIXED`), unlike `--two-stage`:
 with it off no corpus file's bytes move and with it forced on every file exactly
-`Ninja.sid` does, so a sixth `--fidelity` toggle would double a four-hour search
-to settle a one-file question.
+`Ninja.sid` does, so a search would spend 82 songs proving it changes nothing.
+(This used to say a sixth `--fidelity` toggle "would double a four-hour search".
+That cost was never timed and is **8 minutes**, measured twice at v0.5.300, so
+it never was the reason — the one-file scope is.)
 
 #### The same player's bit `$01`: `wave_alternate` with a per-voice table
 
@@ -1936,7 +1938,9 @@ its own default for forty versions. Sanxion's 10 s window holds one comparable
 instrument and zero noise frames against eight and 1669 at 60 s, so two of the
 criterion's five terms had nothing to read; five files lost a `two_stage` that a
 60 s A/B scores at `onset` 40–83% → 100% with `melody` unmoved. A full corpus
-search now takes about four hours.
+search at 60 s takes **about 8 minutes** — timed twice at v0.5.300 (8m11s and
+~8m, 83 songs, no failures). This sentence read "about four hours" for forty
+versions; that figure was never timed.
 
 Those three criteria are all structural, and some options change no structure at
 all — same subtunes, same rows, **same byte count**. `_score` cannot tell them

@@ -58,8 +58,16 @@ and the fix for the first is an instrument.
 because it was measured corpus-wide: its signature matches **one** corpus file
 (Ninja), forcing it on every file moves that file's bytes and nobody else's,
 and there it takes `onset` 40% -> 80% with `melody`, `seq`, `noise` and the
-rest unmoved. A sixth `--fidelity` toggle would double a four-hour search to
-settle a one-file question.
+rest unmoved.
+
+This used to carry a second reason -- that a sixth `--fidelity` toggle "would
+double a four-hour search". **That cost was never timed and is wrong.** A
+corpus search is 8 minutes (v0.5.300, timed twice), so doubling it buys a
+one-file question for 8 minutes, which is not a reason to refuse anything. The
+decision stands on the first reason alone: a toggle whose signature reaches one
+file is a fixed option, not a search dimension, because a search would spend 82
+songs proving it changes nothing. Anyone reopening this should reopen it on
+that argument, not on the clock.
 """
 from __future__ import annotations
 
@@ -1054,8 +1062,11 @@ def main(argv=None) -> int:
                    # corpus-wide: its signature matches one file, forcing it
                    # on every file moves that file's bytes and nobody else's,
                    # and there it takes `onset` 40% -> 80% with melody, seq,
-                   # noise and the rest unmoved. A sixth --fidelity toggle
-                   # would double a four-hour search to settle it.
+                   # noise and the rest unmoved. A search would spend 82 songs
+                   # proving it changes nothing. (This used to cite the cost of
+                   # a sixth --fidelity toggle instead; that cost was never
+                   # timed and is 8 minutes, not four hours -- see the module
+                   # docstring.)
                    "voice_two_stage": FIXED["voice_two_stage"],
                    # The bit-6 rest, in the 21 players that silence on it
                    # rather than holding. Fixed rather than searched, on the
