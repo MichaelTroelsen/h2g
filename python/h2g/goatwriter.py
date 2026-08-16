@@ -1695,6 +1695,38 @@ def find_song_speeds(sid: SidFile,
         if speeds is not None:
             candidates.append((pos, speeds))
     if not candidates:
+        # **No inner gate is a reading, not a refusal -- if there is an outer
+        # one.** The two counters are independent (`outer_gate_skip` says so
+        # in as many words), and a player with only the outer one advances its
+        # pattern exactly once per working call: the row *is* one tick, and
+        # the skip is the whole of the timing.
+        #
+        # Mozart is the one corpus file shaped that way, and returning None
+        # for it cost a factor of two. Its play entry point at $0829 is the
+        # gate itself, in the inverted spelling `OUTER_GATE_RTS` matches:
+        #
+        #     0829  DEC $0C33
+        #     082C  BPL $0834        ; >= 0 -> do the update
+        #     082E  LDA #$02 / STA $0C33
+        #     0833  RTS              ; underflow -> reload and skip this call
+        #
+        # Two updates every three calls, so a tick is 1.5 frames. Its waits
+        # are 3 and 7, giving 4 and 8 updates, and the original's note gaps
+        # are 6 and 12 frames exactly. With no speeds the tempo fell back to
+        # the constant 3 at `-S1` -- 3 frames a row against the player's 1.5,
+        # which `drift` reported as **+1000.0 per 1000 with a scatter of
+        # 0.0**, a conversion running at precisely half speed. As `frames=1`
+        # with `skip=2` the row is 3/2 frames, which packs exactly as tempo 3
+        # at `-S2`.
+        #
+        # Scoped by construction to a file that has an outer gate and no inner
+        # one: 10 corpus files lack the inner gate and 9 of them lack both, so
+        # they are untouched and keep the fallback constant.
+        skip, skip_table = _find_outer_gate(sid, max(sid.subtunes, 1))
+        if skip and skip[0]:
+            n = max(sid.subtunes, 1)
+            return SongSpeeds((1,) * n, -1, None,
+                              skip=skip, skip_table_addr=skip_table)
         return None
     skip, skip_table = _find_outer_gate(sid, max(sid.subtunes, 1))
     candidates = [(pos, replace(sp, skip=skip, skip_table_addr=skip_table))

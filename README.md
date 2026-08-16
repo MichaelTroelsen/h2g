@@ -2483,7 +2483,7 @@ under 0.02%, the genuine large drifts (Rasputin 0.33%, Spellbound 0.67%) well
 inside it, and the two artefacts at 3.1% and 5.2%. A refused row keeps its
 diagnostics and says why.
 
-Corpus: **45 of 79 files hold the original's timing exactly**; the other 34
+Corpus: **46 of 79 files hold the original's timing exactly**; the other 34
 part company at a median 12.3 frames per 1000. On 17 of them the figure is
 exactly `−1/(skip + 1)` — the outer gate's skipped call, which
 `goatwriter.effective_frames` corrects when the corrected row can be packed

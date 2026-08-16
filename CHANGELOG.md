@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.289 — 2026-08-16
+
+- an outer gate without an inner one is a row of one tick
+
 ## 0.5.288 — 2026-08-16
 
 - drift becomes a report column

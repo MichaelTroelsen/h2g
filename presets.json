@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.288 presets.py",
+  "generator": "h2g 0.5.289 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -524,10 +524,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 36041,
+      "bytes": 36043,
       "subtunes": 1,
       "rows": 12698,
-      "multiplier": 1
+      "multiplier": 2
     },
     "Mr_Meaner.sid": {
       "max_rows": 94,

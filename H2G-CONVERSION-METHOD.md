@@ -10664,3 +10664,79 @@ file at the same figure and it had never been read as a defect.
 > caught its failure modes. Both artefacts here were visible in a quantity the
 > function already returned; what was missing was any code path that could
 > fail because of it.
+
+### 7.rrrrr Mozart at half speed, and the gate that was found but not asked
+
+The `drift` column's first honest run (§ 7.qqqqq) reported Mozart at
+**+1000.0 frames per 1000 with a scatter of 0.0** -- one frame of lag per
+frame, perfectly linear, a conversion running at exactly half speed. `--pace`
+had been printing the same figure for that file and it had never been read as
+a defect, because nothing put it beside the other columns.
+
+#### The player
+
+Mozart's PSID *play* entry point is the gate, in the inverted spelling:
+
+    0829  DEC $0C33
+    082C  BPL $0834        ; >= 0 -> do the update
+    082E  LDA #$02
+    0830  STA $0C33
+    0833  RTS              ; underflow -> reload and skip this call
+
+The counter runs 2, 1, 0, then underflows: **two updates every three calls**,
+so a tick is 1.5 frames. Its pattern waits are 3 and 7, giving 4 and 8
+updates, and the original's note-gap histogram is 6 frames (535 of them) and
+12 (248) -- which is that arithmetic exactly.
+
+#### The bug is a question never asked, not a signature never written
+
+`OUTER_GATE_RTS` has matched this shape since v0.5.248. What failed is that
+`find_song_speeds` returns `None` as soon as `_gate_hits` finds no *inner*
+gate, and `None` means the tempo falls back to the constant 3 at `-S1`: three
+frames a row against the player's one and a half.
+
+`outer_gate_skip`'s own docstring already stated the principle --
+"`find_song_speeds` already carries this as `SongSpeeds.skip`, but only for a
+player whose *inner* speed gate it also found -- **and the two are independent
+readings**". The reading it licenses was simply never taken: a player with
+only the outer counter advances its pattern once per working call, so the row
+*is* one tick and the skip is the whole of the timing. As `frames=1, skip=2`
+that is 3/2 frames, which packs exactly as tempo 3 at `-S2`.
+
+| Mozart | before | after |
+|---|---:|---:|
+| attacks, ours/original | 490/881 | **881/881** |
+| retrig | 0.56 | **1.00** |
+| melody | 62% | **100%** |
+| seq | 71% | **100%** |
+| pitch | 77% | **100%** |
+| drift | +1000.0 | **+0.0** |
+| adsr | 66% | 90% |
+| gate | 8% | 41% |
+
+`--pace` agrees independently at the packed rate: ratio **1.000**, IQR
+1.000-1.000 over 862 gaps, "their row is 1.50 frames, where the gate was read
+as 3/2".
+
+Scoped by construction and predicted before measuring: **1 of 95 files
+changes**. Ten corpus files have no inner gate and nine of them have no outer
+one either, so they keep the fallback constant, and a test pins that they
+still decline.
+
+Corpus: mean melody 90 -> **91%**, mean ADSR 64 -> 65%, *plays the same music*
+53 -> **54** files, all from one file's timing.
+
+> **The transferable lesson:** a detector that has already matched is not the
+> same as a reading that has been taken. The shape was in the file, the regex
+> matched it, and the function that owned the answer discarded it because a
+> *different* probe came back empty -- with the note explaining why that was
+> wrong sitting in a neighbouring docstring. Before writing a new signature
+> for a file that reads nothing, check what the existing ones already found
+> and who is throwing it away.
+>
+> And the smaller one: my first reading of Mozart's pattern bytes was that it
+> used `(note, duration)` pairs -- the stream `48 03 48 07 48 03 45 03` looks
+> exactly like one. Disassembling the player's reader (`AND #$1F`, `BIT`/
+> `BVS`, `BPL` for the operand) showed the decoder had been right all along.
+> A byte stream that "obviously" has a format is a hypothesis, and this
+> project has a disassembler.

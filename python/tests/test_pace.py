@@ -20,8 +20,13 @@ import pytest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+from fractions import Fraction                                # noqa: E402
+
+from corpus import CORPUS, needs_corpus                       # noqa: E402
+
 import fidelity                                               # noqa: E402
 from fidelity import Voice, matched_gaps, pace                # noqa: E402
+from h2g.sidfile import load_sid                              # noqa: E402
 
 
 def voice(notes, frames):
@@ -141,3 +146,39 @@ def test_too_little_shared_material_is_not_timed():
     got = pace(trace(a, voice([], []), voice([], [])),
                trace(b, voice([], []), voice([], [])))
     assert "median" not in got and got["n"] < fidelity.MIN_PACE_GAPS
+
+
+@needs_corpus
+def test_an_outer_gate_without_an_inner_one_is_a_row_of_one_tick():
+    """Mozart: the play entry point *is* the gate, in the inverted spelling.
+
+        0829  DEC $0C33
+        082C  BPL $0834        ; >= 0 -> do the update
+        082E  LDA #$02 / STA $0C33
+        0833  RTS              ; underflow -> reload and skip this call
+
+    Two updates every three calls, so a tick is 1.5 frames. Returning None
+    because no *inner* gate was found made the tempo fall back to the constant
+    3 at `-S1` -- 3 frames a row against the player's 1.5 -- and the file
+    played at exactly half speed for the life of the project.
+    """
+    from h2g.goatwriter import (effective_frames, find_song_speeds,
+                                recommended_multiplier)
+    sid = load_sid(str(CORPUS / "Mozart.sid"))
+    sp = find_song_speeds(sid)
+    assert sp is not None, "an outer gate alone is still a reading"
+    assert sp.frames[0] == 1 and sp.skip[0] == 2
+    assert sp.true_frames(0) == 1.5
+    assert effective_frames(sp, 0, True) == Fraction(3, 2)
+    assert recommended_multiplier(sp, 0, True) == 2
+
+
+@needs_corpus
+def test_a_file_with_neither_gate_still_declines():
+    """The scope. Ten corpus files have no inner gate and nine of them have
+    no outer one either; those keep the fallback constant rather than being
+    told their row is one tick."""
+    from h2g.goatwriter import find_song_speeds
+    for name in ("Chicken_Song.sid", "Task_Force.sid", "Robs_Life.sid",
+                 "Up_up_and_Away.sid"):
+        assert find_song_speeds(load_sid(str(CORPUS / name))) is None, name
