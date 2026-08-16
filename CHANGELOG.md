@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.299 — 2026-08-16
+
+- regenerate the artefacts, one stamp across all five
+
 ## 0.5.298 — 2026-08-16
 
 - rewrite the handoff against v0.5.297
