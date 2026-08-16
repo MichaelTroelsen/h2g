@@ -10740,3 +10740,70 @@ Corpus: mean melody 90 -> **91%**, mean ADSR 64 -> 65%, *plays the same music*
 > `BVS`, `BPL` for the operand) showed the decoder had been right all along.
 > A byte stream that "obviously" has a format is a hypothesis, and this
 > project has a disassembler.
+
+### 7.sssss The vibrato census: the shortfall is absence, not rate
+
+A listening session on Knucklebusters reported "the vibration is not fidelity
+and slides are not fidelity". Both were already in the table -- `vib` 0.16x
+and `bend` 0.35x -- and `vib` is bad far beyond that file: median **0.66**
+across 80 files, only 22 within 20% of the original's rate.
+
+The obvious move is to tune the vibrato rate. § 7.ttt exists because that move
+was already made once and was wrong: the balloon song's 0.17x was read as a
+rate defect when the one instrument carrying a vibrato byte was within 20% of
+the original and the missing 1812 reversals were an arpeggio never read at
+all. So the rule is to attribute the ratio per instrument first, and
+`--vib-census` is that rule as a tool -- the same traces and the same
+reduction `pitch_motion` uses, split by the instrument sounding each note, so
+the rows add to the column rather than re-measuring it.
+
+#### Knucklebusters is 86% not vibrato
+
+| cause | instruments | reversals missing |
+|---|---:|---:|
+| `alt` -- effect bit `$02` | 2 | **1614** |
+| the record's own vibrato | 2 | 270 |
+
+Two instruments carrying effect byte `$2B` emit **zero** oscillation. Tuning
+the vibrato constant would have chased 14% of that file's problem.
+
+#### And corpus-wide the defect is not a rate at all
+
+| cause | absent | slow | reversals missing |
+|---|---:|---:|---:|
+| `unknown` | 67 | 0 | **21232** |
+| `plain` | 68 | 13 | 17839 |
+| `alt` | 22 | 3 | 15151 |
+| `arp` | 14 | 1 | 5840 |
+
+**171 of 188 instruments emit no oscillation whatever; 17 merely run slow.**
+The shortfall is a movement that never reached the file. v0.5.129's rate
+correction -- which doubled the vibrato period across 49 files and which no
+column could adjudicate at the time, because none measured an oscillation
+rate -- was working on the smaller half.
+
+The largest single bucket is `unknown`: instruments whose effect byte cannot
+be recovered because `instrument_stamps` keys on the ADSR pair and two
+instruments can share one (§ 7.zzzz). A third of the missing oscillation is
+therefore unattributed, and a better key -- `songview` already recovers a GT
+instrument number, unique where the pair is not -- is the cheapest next step.
+
+#### Two corrections the census made to itself
+
+`plain` originally absorbed the unattributable rows. It asserts "no
+oscillating bit is set", which is a claim about a record, and making it for 67
+instruments whose byte was never read would have filed 21232 reversals under
+"the record's own vibrato" on no evidence. `unknown` is now its own cause --
+and the test written to guard that property had pinned the defect instead, the
+third time in one session that a test encoded the bug it was meant to catch.
+
+The closing paragraph is also **derived from the rows** rather than written
+down. Its first draft said "135 of 148"; splitting `unknown` out made the true
+figures 68 of 81 and the sentence quietly became false, in a document whose
+whole purpose is to be believed over a remembered number.
+
+> **The transferable lesson:** a ratio names a symptom and a census names a
+> cause, and the gap between them is where the wasted work lives. `vib` said
+> "oscillation too slow" on every one of these files. The census says 91% of
+> them oscillate *not at all*, which is a different defect with a different
+> fix, and no amount of care with the ratio would have said so.

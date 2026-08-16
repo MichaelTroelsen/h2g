@@ -1595,6 +1595,152 @@ def onset_census(orig: list[Voice], ours: list[Voice], nframes: int,
     return out
 
 
+def reversals_by_instrument(voices: list[Voice], nframes: int) -> dict:
+    """`{ADSR: reversals}`, the same count `pitch_motion` totals.
+
+    Split by the instrument sounding the note, on the key every other census
+    here uses. Deliberately the *same* reduction as `pitch_motion` -- the same
+    attack-adjacent frames skipped, the same sign-change test -- so the
+    per-instrument numbers add to the column's own totals rather than being a
+    second measurement of the same thing.
+    """
+    out: dict = {}
+    for v in voices:
+        fq = register_timeline(v.freq_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        skip = set()
+        for a in v.attack_frames:
+            skip |= {a - 1, a, a + 1}
+        atk = sorted(v.attack_frames)
+        for j, a in enumerate(atk):
+            nxt = atk[j + 1] if j + 1 < len(atk) else nframes
+            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
+            if len(seg) < 2:
+                continue
+            deltas = [seg[k + 1] - seg[k] for k in range(len(seg) - 1)]
+            signs = [d > 0 for d in deltas if d]
+            n = sum(1 for k in range(1, len(signs)) if signs[k] != signs[k - 1])
+            key = adsr[a] if a < nframes else 0
+            out[key] = out.get(key, 0) + n
+    return out
+
+
+# Effect-byte bits that make a voice's pitch oscillate, and what each means
+# for whether we can reproduce it.
+VIB_CAUSES = (
+    (0x10, "arp", "bit $10, a pitch sequence on a **global** phase counter -- "
+                  "a wavetable restarts at every note, so no rotation of it is "
+                  "right more than 1/steps of the time (section 7.ttt)"),
+    (0x02, "alt", "bit $02's alternating waveform, which moves the pitch as a "
+                  "side effect"),
+)
+
+
+def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
+               stamps: dict | None = None) -> list[dict]:
+    """Every instrument both sides oscillate, and how much of it we reproduce.
+
+    `vib` is a whole-file ratio, and a whole-file ratio cannot say *which*
+    instrument is missing its movement -- which matters because the answer
+    decides what to fix. The balloon song read 0.17x and was taken for a
+    vibrato-rate defect; the one instrument that actually carries a vibrato
+    byte was within 20% of the original, and the missing 1812 reversals
+    belonged to an arpeggio never read at all (section 7.ttt). That is the
+    mistake this exists to prevent: attribute the ratio before tuning the
+    mechanism assumed to produce it.
+    """
+    a = reversals_by_instrument(orig, nframes)
+    b = reversals_by_instrument(ours, nframes)
+    out = []
+    for adsr in sorted(set(a) | set(b)):
+        o, u = a.get(adsr, 0), b.get(adsr, 0)
+        if not o and not u:
+            continue
+        rec = {"adsr": adsr, "orig": o, "ours": u,
+               "ratio": (u / o) if o else None}
+        rec.update((stamps or {}).get(adsr, {}))
+        eff = rec.get("effect")
+        # `plain` asserts that no oscillating bit is set, which is a claim
+        # about the record. Where the stamp could not be recovered -- two
+        # instruments sharing an ADSR pair, the ambiguity of section 7.zzzz --
+        # there is nothing to make that claim from, and calling it `plain`
+        # would put 67 of the corpus's 148 into a bucket labelled "the
+        # record's own vibrato" on no evidence.
+        rec["cause"] = ("unknown" if eff is None else
+                        next((n for bit, n, _ in VIB_CAUSES if eff & bit),
+                             "plain"))
+        out.append(rec)
+    return out
+
+
+def vib_census_report(rows: list[dict]) -> str:
+    """The vibrato census over a run: where the missing oscillation lives."""
+    from collections import Counter
+    recs = [dict(r, file=row["file"])
+            for row in rows for r in row.get("vib_census") or []]
+    short = [r for r in recs if r["orig"] and (r["ours"] / r["orig"]) < 0.5]
+    out = ["# Vibrato census", "",
+           f"{len(recs)} instrument(s) across "
+           f"{len({r['file'] for r in recs})} file(s) whose pitch oscillates "
+           "on either side. `vib` is a whole-file ratio; this is the same "
+           "count split by the instrument sounding it, so the rows add to "
+           "that column rather than re-measuring it.", "",
+           "**Why this is asked before anything is tuned.** The balloon song "
+           "read `vib` 0.17x and it was taken for a vibrato-rate defect. The "
+           "one instrument carrying a vibrato byte was within 20% of the "
+           "original; the missing 1812 reversals were an arpeggio on a global "
+           "counter that no wavetable can hold (section 7.ttt). A rate that "
+           "looks wrong may be a mechanism that is absent.", "",
+           "## Instruments reproducing under half the original's oscillation",
+           "", "| file | ADSR | GT | effect | cause | orig | ours |",
+           "|---|---|---:|---|---|---:|---:|"]
+    for r in sorted(short, key=lambda r: -(r["orig"] - r["ours"])):
+        eff = r.get("effect")
+        out.append(
+            f"| {r['file']} | `${r['adsr']:04X}` | {r.get('gt', '-')} | "
+            f"{('$%02X' % eff) if eff is not None else '-'} | {r['cause']} | "
+            f"{r['orig']} | {r['ours']} |")
+    # **Absent and slow are different defects and must not share a row.**
+    # `plain` reads as "a vibrato-rate shortfall", and 135 of its 148
+    # instruments emit *no* oscillation at all -- nothing to speed up. Tuning
+    # a rate would move the 13 that are merely slow.
+    out += ["", "## By cause", "",
+            "`absent` is an instrument the original oscillates and we do not "
+            "move at all; `slow` is one that moves too little. They have "
+            "different fixes, so they are counted apart.", "",
+            "| cause | absent | slow | instruments | reversals missing |",
+            "|---|---:|---:|---:|---:|"]
+    by = Counter()
+    absent = Counter()
+    lost = Counter()
+    for r in short:
+        by[r["cause"]] += 1
+        absent[r["cause"]] += (r["ours"] == 0)
+        lost[r["cause"]] += r["orig"] - r["ours"]
+    for cause, n in by.most_common():
+        out.append(f"| {cause} | {absent[cause]} | {n - absent[cause]} | "
+                   f"{n} | {lost[cause]} |")
+    # Derived from the rows rather than written down, so it cannot go stale
+    # the way the first draft did -- it said "135 of 148" after `unknown` was
+    # split out of `plain` and the numbers had become 68 of 81.
+    n_absent = sum(absent.values())
+    out += ["",
+            f"**{n_absent} of these {len(short)} instruments emit no "
+            f"oscillation at all**, against {len(short) - n_absent} that "
+            "merely run slow. That is the reading to take from this table: "
+            "the shortfall is overwhelmingly a movement that never reached "
+            "the file, not a rate to tune.", "",
+            "`plain` is an instrument whose effect byte is known and carries "
+            "no oscillating bit, so its movement is the record's own vibrato "
+            "byte. `unknown` is one whose byte could not be recovered -- "
+            "`instrument_stamps` keys on the ADSR pair and two instruments "
+            "can share one (section 7.zzzz) -- so no mechanism is claimed "
+            "for it. `alt` and `arp` are mechanisms; `arp` runs on a global "
+            "phase counter and a per-note wavetable cannot hold it at all "
+            "(section 7.ttt).", ""]
+    return "\n".join(out)
+
+
 def census_report(rows: list[dict]) -> str:
     """The onset census over a whole run: what the misses are made of.
 
@@ -2980,6 +3126,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # reason that has nothing to do with the conversion.
                 row["onset_census"] = onset_census(
                     a, best_dump, nframes, instrument_stamps(sng))
+            if getattr(args, "vib_census", None):
+                # Same two traces and the same reduction the column used.
+                row["vib_census"] = vib_census(a, best_dump, nframes,
+                                               instrument_stamps(sng))
             if getattr(args, "gate_census", None):
                 # Same two traces and the same alignment the column used.
                 row["gate_census"] = gate_census(a, best_dump, nframes,
@@ -4812,6 +4962,10 @@ def main(argv=None) -> int:
                    help="classify every note-length disagreement by kind "
                         "(fetch / slot / sparse / short / long) and write the "
                         "work list here")
+    p.add_argument("--vib-census", metavar="PATH",
+                   help="split the `vib` ratio by the instrument sounding it "
+                        "and classify each shortfall by the effect bit that "
+                        "causes the movement, then write the work list here")
     p.add_argument("--gate-census", metavar="PATH",
                    help="classify every release the original makes by what "
                         "we did there (retrigger / matched / short / held) "
@@ -5062,6 +5216,10 @@ def _run(p, args, workdir: Path) -> int:
         Path(args.gate_census).write_text(gate_census_report(rows),
                                           encoding="utf-8")
         print(f"wrote {args.gate_census}", file=sys.stderr)
+    if getattr(args, "vib_census", None):
+        Path(args.vib_census).write_text(vib_census_report(rows),
+                                         encoding="utf-8")
+        print(f"wrote {args.vib_census}", file=sys.stderr)
 
     if args.baseline:
         try:
