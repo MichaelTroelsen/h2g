@@ -10871,3 +10871,69 @@ and needs its own A/B.
 > correctly concluded it did not apply to them, and kept a key the conversion
 > silently rewrites. The general form -- *a key must not contain a field the
 > conversion alters* -- would have caught all four.
+
+### 7.uuuuu One instrument key, paired exactly first
+
+§ 7.ttttt found that `onset`, `hold` and `nrun` key instruments on the whole
+`$D405/$D406` pair while `--cut-release` rewrites its release nibble, so the
+two sides stop matching: Las Vegas Video Poker joined **1** of the 6 envelope
+pairs its original sounds, and `onset` printed 100% from that one instrument.
+
+The obvious fix is to mask the nibble everywhere, as `release_tails` already
+did. Measured, that is a bad trade: masking merges instruments that genuinely
+differ only in release -- **126 of the corpus's 1323, 9.5%**, Thrust losing 6
+of 22 -- and a merged key is what § 7.zzzz cost, a modal shape over two
+instruments describing neither. Thrust's `nrun` fell from 4 instruments to 3
+under it.
+
+`paired_keys` instead matches **exactly first**, then falls back to the masked
+key only for the leftovers on each side, and only where exactly one candidate
+remains in both directions. An instrument keeps its own identity wherever the
+conversion preserved it, and the fallback fires only where the conversion
+really did rewrite the nibble.
+
+| file | `onset` | `nrun` | `hold` | `tail` |
+|---|---|---|---|---|
+| Las Vegas Video Poker | 1 -> **6** | 0 | 1 -> **6** | 6 |
+| Kentilla | 2 -> **6** | 1 | 2 -> **6** | 6 |
+| Thrust | 5 -> **9** | 4 | 4 -> **8** | 6 |
+| Commando | 6 -> **8** | 6 | 6 -> **8** | 8 |
+
+Strictly better than blanket masking on every file measured -- Thrust reaches
+9 rather than 8 and keeps its fourth `nrun` instrument. Corpus totals of
+instruments compared:
+
+| column | was | now |
+|---|---:|---:|
+| `onset` | 443 | **528** |
+| `hold` | 440 | **525** |
+| `nrun` | 206 | 208 |
+| `tail` | 488 | 488 |
+
+`tail` unchanged is the control: it already masked, so the change must be a
+no-op there, and is.
+
+All six ADSR-keyed sites now call the one helper -- the three columns, the two
+censuses and `release_tails`, whose own inline mask is gone. The same lesson
+as `_first_frame_lead`: when a fix is really a rule, give it a name every
+caller has to invoke, or the next site written will not know.
+
+#### What it did to the printed numbers
+
+Nine files move, all of them converting to identical bytes -- so the movement
+is in the harness, which is what a measurement fix should look like. Only the
+three keyed columns move at all: `nrun` on 2 files, `hold` on 3, `onset` on 6,
+largest Spellbound's `onset` 100% -> 88%.
+
+**Those are numbers becoming honest, not regressions.** An `onset` of 100%
+over one instrument said nothing about the other five; at six it says
+something, and sometimes what it says is worse. Read any of the three
+alongside its instrument count from here on -- the count is in the JSON and
+was always the thing that decided what the percentage meant.
+
+> **The transferable lesson:** measure what a fix *costs*, not only what it
+> recovers. Blanket masking recovers every instrument the release nibble
+> hides and would have shipped on that number alone; counting the instruments
+> it merges is what turned a plausible fix into a better one. The same
+> discipline this project already applies to register agreements read beside
+> note counts.

@@ -1124,6 +1124,67 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+# The ADSR bits an instrument key may be built from.
+#
+# `$D405/$D406` is a verbatim per-instrument copy of the record on the
+# original's side and **not** on ours: `--cut-release` -- in `presets.json`'s
+# `always` block -- zeroes the release nibble wherever the player ends a note
+# by writing both envelope registers, and `--sustain-exact` off additionally
+# clears the sustain's low bit. A key holding a field the conversion alters
+# cannot match across the two sides, and the columns keyed this way were
+# silently comparing a fraction of what they could: Las Vegas Video Poker
+# joined **1** of the 6 envelope pairs its original sounds, so `onset` printed
+# 100% and `hold` 0% from a single instrument.
+#
+# `release_tails` has masked from the start, because it *measures* the release
+# and § 7.xxxx caught it that way. Three neighbours read that lesson,
+# correctly concluded it did not apply to them -- they do not measure the
+# release -- and kept a key the conversion rewrites underneath them. The rule
+# is wider than the case that produced it: **a key must not contain a field
+# the conversion alters, whether or not the column measures it.** Named here
+# so there is one of it (§ 7.uuuuu).
+INSTRUMENT_KEY_MASK = 0xFFF0
+
+
+def instrument_key(adsr: int) -> int:
+    """An ADSR pair reduced to the bits both sides are known to preserve."""
+    return adsr & INSTRUMENT_KEY_MASK
+
+
+def paired_keys(a: dict, b: dict) -> list[tuple[int, int]]:
+    """(their key, our key) for every instrument the two sides share.
+
+    **Exact first, masked only as a fallback, and only when unambiguous.**
+    Keying both sides masked would recover the instruments `--cut-release`
+    hides -- Las Vegas Video Poker joins 1 of 6 exactly and 6 of 6 masked --
+    but it also merges instruments that genuinely differ only in their
+    release: 126 of the corpus's 1323, 9.5%, with Thrust losing 6 of 22. That
+    is trading one attribution error for another, and § 7.zzzz is what a
+    merged key costs -- a modal shape taken over two instruments compares
+    neither.
+
+    So an exact match wins wherever there is one, and a masked match is taken
+    only for keys left over on both sides and only where exactly one candidate
+    remains. Instruments that really do differ only in release keep their own
+    identity whenever the conversion preserved it.
+    """
+    pairs = [(k, k) for k in a if k in b]
+    rest_a = [k for k in a if k not in b]
+    rest_b = [k for k in b if k not in a]
+    for ka in rest_a:
+        hits = [kb for kb in rest_b
+                if instrument_key(kb) == instrument_key(ka)]
+        if len(hits) != 1:
+            continue
+        kb = hits[0]
+        # ...and only if no *other* leftover of theirs wants the same one.
+        if sum(1 for k in rest_a
+               if instrument_key(k) == instrument_key(kb)) != 1:
+            continue
+        pairs.append((ka, kb))
+    return pairs
+
+
 def pitch_motion(voices: list[Voice], nframes: int) -> dict:
     """Pitch movement split into oscillation and travel, without a threshold.
 
@@ -1305,7 +1366,7 @@ def release_tails(voices: list[Voice], nframes: int) -> dict:
             nxt = runs[i + 1][0] if i + 1 < len(runs) else nframes
             if nxt >= nframes:
                 continue                      # the tail runs past the window
-            key = adsr[(start + end - 1) // 2] & 0xFFF0
+            key = instrument_key(adsr[(start + end - 1) // 2])
             out.setdefault(key, Counter())[adsr[end] & 0x0F] += 1
     return out
 
@@ -1320,11 +1381,11 @@ def release_tail_agreement(orig: list[Voice], ours: list[Voice],
     `melody` already reports it.
     """
     a, b = release_tails(orig, nframes), release_tails(ours, nframes)
-    shared = sorted(set(a) & set(b))
-    matched = sum(1 for k in shared
-                  if a[k].most_common(1)[0][0] == b[k].most_common(1)[0][0])
-    longer = sum(1 for k in shared
-                 if b[k].most_common(1)[0][0] > a[k].most_common(1)[0][0])
+    shared = paired_keys(a, b)
+    matched = sum(1 for ka, kb in shared
+                  if a[ka].most_common(1)[0][0] == b[kb].most_common(1)[0][0])
+    longer = sum(1 for ka, kb in shared
+                 if b[kb].most_common(1)[0][0] > a[ka].most_common(1)[0][0])
     return {
         "release_tail_instruments": len(shared),
         "release_tail_matched": matched,
@@ -1452,13 +1513,13 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
     """
     a = onset_shapes(orig, nframes)
     b = onset_shapes(ours, nframes)
-    shared = sorted(set(a) & set(b))
-    modal = {k: (a[k].most_common(1)[0][0], b[k].most_common(1)[0][0])
-             for k in shared}
-    matched = sum(1 for k in shared if modal[k][0] == modal[k][1])
-    first = sum(1 for k in shared if modal[k][0][0] == modal[k][1][0])
-    early = sum(1 for k in shared if onset_shift(*modal[k]) == "early")
-    late = sum(1 for k in shared if onset_shift(*modal[k]) == "late")
+    shared = paired_keys(a, b)
+    modal = {ka: (a[ka].most_common(1)[0][0], b[kb].most_common(1)[0][0])
+             for ka, kb in shared}
+    matched = sum(1 for k, _ in shared if modal[k][0] == modal[k][1])
+    first = sum(1 for k, _ in shared if modal[k][0][0] == modal[k][1][0])
+    early = sum(1 for k, _ in shared if onset_shift(*modal[k]) == "early")
+    late = sum(1 for k, _ in shared if onset_shift(*modal[k]) == "late")
     # **Graded, and the ungraded form is not a substitute.** `onset_agreement`
     # demands the whole four-frame shape, which is the right thing for the
     # report -- it says "this instrument opens correctly" and nothing weaker.
@@ -1467,7 +1528,7 @@ def onset_agreement(orig: list[Voice], ours: list[Voice],
     # exact matching scores as zero, and `onset_first_matched` cannot see it
     # either because frame 0 already agreed both times. This counts frames.
     graded = sum(sum(1 for x, y in zip(*modal[k]) if x == y) / ONSET_FRAMES
-                 for k in shared)
+                 for k, _ in shared)
     return {
         "onset_instruments": len(shared),
         "onset_matched": matched,
@@ -1583,13 +1644,13 @@ def onset_census(orig: list[Voice], ours: list[Voice], nframes: int,
     a = onset_shapes(orig, nframes)
     b = onset_shapes(ours, nframes)
     out = []
-    for adsr in sorted(set(a) & set(b)):
+    for adsr, ours_key in paired_keys(a, b):
         o = a[adsr].most_common(1)[0][0]
-        u = b[adsr].most_common(1)[0][0]
+        u = b[ours_key].most_common(1)[0][0]
         rec = {"adsr": adsr, "kind": classify_onset(o, u),
                "orig": list(o), "ours": list(u),
                "orig_notes": sum(a[adsr].values()),
-               "our_notes": sum(b[adsr].values())}
+               "our_notes": sum(b[ours_key].values())}
         rec.update((stamps or {}).get(adsr, {}))
         out.append(rec)
     return out
@@ -1670,7 +1731,8 @@ def stamp_for(stamps: dict | None, adsr: int) -> dict:
         return {}
     if adsr in stamps:
         return stamps[adsr]
-    hits = [v for k, v in stamps.items() if k & 0xFFF0 == adsr & 0xFFF0]
+    hits = [v for k, v in stamps.items()
+            if instrument_key(k) == instrument_key(adsr)]
     return dict(hits[0], release_masked=True) if len(hits) == 1 else {}
 
 
@@ -1957,9 +2019,9 @@ def sound_run_agreement(orig: list[Voice], ours: list[Voice],
     """
     a = sound_runs(orig, nframes)
     b = sound_runs(ours, nframes)
-    shared = sorted(set(a) & set(b))
-    pairs = [(a[k].most_common(1)[0][0], b[k].most_common(1)[0][0])
-             for k in shared]
+    shared = paired_keys(a, b)
+    pairs = [(a[ka].most_common(1)[0][0], b[kb].most_common(1)[0][0])
+             for ka, kb in shared]
     matched = sum(1 for x, y in pairs if x == y)
     deltas = Counter(y - x for x, y in pairs)
     return {
@@ -2057,14 +2119,15 @@ def hold_census(orig: list[Voice], ours: list[Voice], nframes: int,
     a = sound_note_runs(orig, nframes)
     b = sound_note_runs(ours, nframes)
     out = []
-    for adsr in sorted(set(a) & set(b)):
+    for adsr, ours_key in paired_keys(a, b):
         oh, os_, ot = modal(a[adsr])
-        uh, us, ut = modal(b[adsr])
+        uh, us, ut = modal(b[ours_key])
         rec = {"adsr": adsr, "orig_held": oh, "our_held": uh,
                "delta": uh - oh, "orig_slot": os_, "our_slot": us,
                "slot_delta": us - os_,
                "orig_total": ot, "our_total": ut,
-               "orig_notes": len(a[adsr]), "our_notes": len(b[adsr])}
+               "orig_notes": len(a[adsr]),
+               "our_notes": len(b[ours_key])}
         rec["kind"] = classify_hold(rec["delta"], rec["slot_delta"],
                                     rec["orig_notes"], rec["our_notes"],
                                     (oh, ot), (uh, ut))
@@ -2156,9 +2219,9 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     sound it, do we sound it for as long?
     """
     a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
-    shared = sorted(set(a) & set(b))
-    matched = sum(1 for k in shared
-                  if a[k].most_common(1)[0][0] == b[k].most_common(1)[0][0])
+    shared = paired_keys(a, b)
+    matched = sum(1 for ka, kb in shared
+                  if a[ka].most_common(1)[0][0] == b[kb].most_common(1)[0][0])
     return {
         "noise_run_instruments": len(shared),
         "noise_run_matched": matched,
