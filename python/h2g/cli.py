@@ -252,6 +252,15 @@ def main(argv=None) -> int:
              "falling 98%% to 67%%. Searched per song behind --fidelity for "
              "exactly that reason, and off by default")
     parser.add_argument(
+        "--max-hard-restart", action="store_true",
+        help="take the hard restart all the way to the player's own limit, "
+             "`row - 1` calls. Worth 3.3pp of mean gate overlap in v0.5.276's "
+             "corpus sweep -- twice what --wide-hard-restart buys -- against "
+             "Saboteur II's melody falling 98%% to 62%%. Outranks "
+             "--wide-hard-restart where both are given. Searched per song "
+             "behind --fidelity, and off by default"
+    )
+    parser.add_argument(
         "--pitch-seq", action="store_true",
         help="emit the effect byte's bit-$10 arpeggio: a three-step semitone "
              "sequence the player steps with a GLOBAL phase counter (34 corpus "
@@ -430,6 +439,7 @@ def main(argv=None) -> int:
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--wide-hard-restart", "wide_hard_restart"),
+                          ("--max-hard-restart", "max_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
                           ("--two-stage", "two_stage"),
@@ -504,6 +514,7 @@ def main(argv=None) -> int:
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
                       wide_hard_restart=args.wide_hard_restart,
+                      max_hard_restart=args.max_hard_restart,
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
                       two_stage=args.two_stage,

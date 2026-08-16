@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.302 presets.py",
+  "generator": "h2g 0.5.304 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -150,7 +150,7 @@
       "multiplier": 3,
       "two_stage": true,
       "wave_program": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -223,7 +223,7 @@
       "rows": 12328,
       "multiplier": 3,
       "two_stage": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -235,7 +235,8 @@
       "rows": 36076,
       "multiplier": 2,
       "no_test_restart": true,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -278,7 +279,8 @@
       "rows": 31074,
       "multiplier": 4,
       "two_stage": true,
-      "pitch_seq": true
+      "pitch_seq": true,
+      "max_hard_restart": true
     },
     "Food_Feud.sid": {
       "max_rows": 128,
@@ -299,7 +301,8 @@
       "bytes": 10680,
       "subtunes": 1,
       "rows": 12912,
-      "multiplier": 2
+      "multiplier": 2,
+      "max_hard_restart": true
     },
     "Game_Killer.sid": {
       "max_rows": 128,
@@ -437,7 +440,7 @@
       "multiplier": 5,
       "two_stage": true,
       "wave_program": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Knucklebusters.sid": {
       "max_rows": 128,
@@ -490,7 +493,7 @@
       "rows": 19006,
       "multiplier": 2,
       "two_stage": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -869,7 +872,7 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -895,7 +898,7 @@
       "rows": 45650,
       "multiplier": 4,
       "two_stage": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -907,7 +910,7 @@
       "rows": 12130,
       "multiplier": 4,
       "two_stage": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -951,7 +954,7 @@
       "rows": 15169,
       "multiplier": 3,
       "two_stage": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     }
   }
 }

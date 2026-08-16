@@ -199,7 +199,7 @@ HARD_RESTART_FRAMES = 2
 
 
 def _hard_restart_ticks(multiplier: int, row_calls: int,
-                        wide: bool = False) -> int:
+                        wide: bool = False, full: bool = False) -> int:
     """Calls to hold the gate off before a note, bounded by the row.
 
     **gplay.c:334 stops the song outright** when the gatetimer exceeds the
@@ -223,7 +223,16 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     two thirds is the *better* one everywhere else, which is a per-song
     question rather than a constant -- so it rides `--wide-hard-restart` and
     `fidelity_better` decides it, with `keeps_notes` as the guard that is
-    meant to refuse it on files of Saboteur II's shape.
+    meant to refuse it on files of Saboteur II's shape. At v0.5.302 it did
+    exactly that: 9 of the 19 files it reaches took it and Saboteur II did
+    not.
+
+    **`full` goes to `row_calls - 1`, the player's own limit**, 3.3pp of mean
+    gate in the same sweep and 98% -> 62% on the same file. It is offered on
+    the strength of `keeps_notes` having demonstrably refused the gentler
+    value where it hurts -- a guard that has caught the case once is evidence,
+    where at v0.5.276 it was a hope. `full` outranks `wide`; see the comment
+    at the branch.
 
     **Floored at 2**, the value this writer wrote for its whole life, so no
     single-speed file moves: Commando's row is 3 calls, half of which is 1,
@@ -236,7 +245,17 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     want = max(1, HARD_RESTART_FRAMES * max(1, multiplier))
     if not row_calls or row_calls <= 1:
         return min(want, 2)
-    bound = (2 * row_calls // 3) if wide else (row_calls // 2)
+    # Ordered, not exclusive: the search tries every combination of its
+    # toggles, so `full` and `wide` can arrive together and the wider of the
+    # two has to win rather than the later-tested one. A song selecting both
+    # has `wide` removed by `presets.prune_inert`, which drops any flag whose
+    # removal leaves the bytes identical.
+    if full:
+        bound = row_calls - 1
+    elif wide:
+        bound = 2 * row_calls // 3
+    else:
+        bound = row_calls // 2
     ticks = min(want, max(1, bound))
     ticks = max(ticks, min(2, row_calls - 1))
     return min(ticks, row_calls - 1)
@@ -1991,7 +2010,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        cut_release: bool = False,
                        multiplier: int = 1,
                        row_calls: int = 0,
-                       wide_hard_restart: bool = False) -> int:
+                       wide_hard_restart: bool = False,
+                       max_hard_restart: bool = False) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -2064,7 +2084,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # ADSR value in every conversion without this flag.
         gatetimer = ((0x80 if no_hard_restart else 0)
                      | (_hard_restart_ticks(multiplier, row_calls,
-                                            wide_hard_restart) & 0x3F))
+                                            wide_hard_restart,
+                                            max_hard_restart) & 0x3F))
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
         # (gsong.c:224-225) and the same pair the other way round, packed, in a
@@ -4020,7 +4041,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               voice_two_stage: bool = False,
               instr_voices: Optional[dict] = None,
               gate_skip: Optional[int] = None,
-              wide_hard_restart: bool = False) -> bytes:
+              wide_hard_restart: bool = False,
+              max_hard_restart: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -4080,7 +4102,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        lead=lead, wave_starts=wave_starts,
                        no_test_restart=no_test_restart,
                        multiplier=multiplier, row_calls=row_calls,
-                       wide_hard_restart=wide_hard_restart)
+                       wide_hard_restart=wide_hard_restart,
+                       max_hard_restart=max_hard_restart)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

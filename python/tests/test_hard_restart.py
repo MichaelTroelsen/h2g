@@ -82,6 +82,51 @@ def test_wide_is_never_shorter_than_the_default():
                     >= _hard_restart_ticks(mult, row))
 
 
+def test_full_takes_the_player_s_own_limit():
+    """`--max-hard-restart` is `row - 1`, the value above which gplay.c:334
+    stops the song. 3.3pp of mean gate in v0.5.276's sweep against `wide`'s
+    1.6, and 98% -> 62% on Saboteur II against 67%."""
+    # Saboteur II: -S3, an 8-call row. `want` is 6, so it caps below the bound.
+    assert _hard_restart_ticks(3, 8, full=True) == 6
+    # Off the Cuff: -S5, 12 calls. Half is 6, two thirds 8, the limit 11,
+    # and `want` is 10 -- so this is the one file shape where `want` decides.
+    assert _hard_restart_ticks(5, 12, full=True) == 10
+    # A long row at -S2: `want` is 4 and every bound is above it.
+    assert _hard_restart_ticks(2, 30, full=True) == 4
+
+
+def test_full_outranks_wide_where_both_are_given():
+    """The search tries every combination of its toggles, so the two arrive
+    together on 1 candidate in 4. The wider must win rather than whichever is
+    tested last -- otherwise the pair means something different from either
+    flag alone and `fidelity_better` is choosing between three things while
+    seeing two."""
+    for row in range(2, 40):
+        for mult in (1, 2, 3, 5):
+            both = _hard_restart_ticks(mult, row, wide=True, full=True)
+            assert both == _hard_restart_ticks(mult, row, full=True)
+
+
+def test_full_still_never_reaches_the_row():
+    """The bound is the player's limit, so this is the test that matters most:
+    one call further and the song stops dead (Commando 716 attacks -> 3)."""
+    for row in range(2, 40):
+        for mult in (1, 2, 3, 5):
+            assert _hard_restart_ticks(mult, row, full=True) < row
+            assert _hard_restart_ticks(mult, row, full=True) >= 1
+
+
+def test_the_three_bounds_are_ordered():
+    """half <= wide <= full, for every rate and row the corpus packs at. If
+    that ever fails the options are not three settings of one knob."""
+    for row in range(0, 40):
+        for mult in (1, 2, 3, 5):
+            half = _hard_restart_ticks(mult, row)
+            wide = _hard_restart_ticks(mult, row, wide=True)
+            full = _hard_restart_ticks(mult, row, full=True)
+            assert half <= wide <= full
+
+
 def test_a_single_speed_file_keeps_the_historical_two():
     """Commando's row is 3 calls; half of it is 1, and 1 would move every
     `-S1` conversion in the corpus to fix a multispeed defect."""

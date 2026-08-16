@@ -1896,6 +1896,61 @@ change bytes without moving a printed figure — the criterion reads movement th
 report rounds away. Corpus: mean gate overlap 47% → **48%**, and 3012 fewer
 frames sustaining a voice the original had released.
 
+**v0.5.304 then offered the bound above this one**, `--max-hard-restart`, and
+8 of these 9 files moved up to it — ACE II is the one that stayed, having tried
+the wider value and rejected it. Read the two sections together: this one is
+the middle setting of three, not the alternative to the default.
+
+### `--max-hard-restart` (the player's own limit)
+
+The same bound as `--wide-hard-restart`, taken all the way to `row - 1` — the
+last value before `gplay.c:334` stops the song. In v0.5.276's sweep it is worth
+**3.3pp of mean gate**, twice what two thirds of the row buys, against Saboteur
+II's melody falling 98% → 62% rather than 67%.
+
+It is offered because the gentler option's guard was *seen* to work rather than
+merely expected to: at v0.5.302 the search took `--wide-hard-restart` for 9 of
+the 19 files it reaches and refused it on Saboteur II, which is the file the
+sweep said breaks. A guard with a demonstrated catch is evidence for trying the
+next value along; a guard on paper is not.
+
+**It outranks `--wide-hard-restart` where both are given.** The search tries
+every combination of its toggles, so the pair arrives on one candidate in four
+and the wider has to win rather than whichever is tested last — otherwise the
+pair is a third setting while `fidelity_better` sees two. Verified on the
+corpus, not just in a unit test: forcing both produces byte-identical output to
+forcing `--max-hard-restart` alone on all 83 files.
+
+**What the search did with it.** Forced on it reaches 31 files, against
+`wide`'s 19. Given a free choice between the three bounds, the corpus splits
+three ways:
+
+| | files |
+|---|---|
+| `row - 1` (`--max-hard-restart`) | 11 |
+| `2 * row // 3` (`--wide-hard-restart`) | 1 — ACE II, which tried `max` and rejected it |
+| `row // 2` (default) | 71, Saboteur II among them |
+
+No file carries both flags. That ACE II keeps the middle value is the result
+worth reading: the three bounds are a real per-song knob rather than a
+more-is-better ordering, which is what a sweep of a single constant could never
+have shown.
+
+Measured at `-t 60` against the shipped presets, with **no column falling on
+any file**:
+
+| file | `gate` |
+|---|---|
+| `Delta.sid` | 42% → **84%** |
+| `Flash_Gordon.sid` | 59% → **85%** |
+| `Formula_1_Simulator.sid` | 70% → 76% |
+| `Chain_Reaction.sid` | 59% → 63% |
+| `Zoolook.sid` | 28% → 33% |
+
+Corpus: mean gate overlap 48% → **50%**. Taken together with
+`--wide-hard-restart`, the two bounds move it 47% → 50% and remove **5524**
+frames sustaining a voice the original had released.
+
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
 The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`

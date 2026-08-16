@@ -392,12 +392,14 @@ the next-note fetch can be compensated at all, and that question has one
 measured non-answer (`--no-test-restart`, −26.3pp melody) and one measured
 partial (`HARD_RESTART_FRAMES`). The unexplored lever is the `row // 2` bound:
 `2 * row // 3` is +1.6pp of gate everywhere except Saboteur II, which breaks.
-A per-song toggle settled it: `--wide-hard-restart` (v0.5.302) raises the
-bound to `2 * row // 3` per song. v0.5.276 had declined one on the cost of
-doubling "a four-hour search", a cost never timed and actually 8 minutes.
-9 files take it, Saboteur II is refused by `keeps_notes`, and the corpus gains
-1pp of mean gate with nothing falling. **What remains of this item is the rest
-of the 131618 frames**, which `hold`'s `fetch` owns.
+Per-song toggles settled it: `--wide-hard-restart` (v0.5.302) and
+`--max-hard-restart` (v0.5.304) offer `2 * row // 3` and `row - 1`. v0.5.276
+had declined the first on the cost of doubling "a four-hour search" — a cost
+never timed and actually 8 minutes. Twelve files take one of them, Saboteur II
+is refused by `keeps_notes` both times, and mean gate goes 47% → 50% with
+nothing falling. **What remains of this item is the rest of the 129106
+frames**, which `hold`'s `fetch` owns and which no bound on the hard restart
+can reach.
 
 ### 6. Powerplay's cue-length stall — `[subagent]`
 § 7.kkkkk. Each cue's length byte at `$3B37,X` feeds a counter that skips a
@@ -476,10 +478,13 @@ happened twice this run with `7.bbbbb`.
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
   `fidelity_better` cannot select it).
-* ~~A per-song `HARD_RESTART` row bound~~ — **done at v0.5.302**
-  (`--wide-hard-restart`). Searched, taken by 9 of the 19 files it reaches,
-  refused on Saboteur II by `keeps_notes` as predicted; mean gate 47% → 48%
-  with no column falling anywhere.
+* ~~A per-song `HARD_RESTART` row bound~~ — **done at v0.5.302 and v0.5.304**
+  (`--wide-hard-restart`, `--max-hard-restart`). The bound is a three-way
+  per-song choice now: 11 files take `row - 1`, ACE II takes `2 * row // 3`
+  having tried and rejected the wider one, and 71 keep `row // 2` — Saboteur
+  II among them, refused by `keeps_notes` both times. Mean gate 47% → **50%**,
+  5524 fewer frames sustaining a voice the original released, and no column
+  falls on any file. Delta 42% → 84%, Flash Gordon 59% → 85%.
 * Widening `--rest-keyoff` detection to players whose bit-6 branch does not
   silence — measured at v0.5.272 on 6 sampled files, 4 better and 1 worse; not
   enough to widen a detection gate. (v0.5.273 then widened it on better
