@@ -50,6 +50,38 @@ def test_it_takes_at_most_half_the_row():
     assert _hard_restart_ticks(5, 12) == 6
 
 
+def test_wide_takes_two_thirds_of_the_row():
+    """`--wide-hard-restart` raises the ceiling from `row // 2` to
+    `2 * row // 3` -- worth 1.6pp of mean gate over the corpus in v0.5.276's
+    sweep, and the value at which Saboteur II's melody falls 98% -> 67%, which
+    is why it is searched per song rather than made the constant."""
+    # Saboteur II: -S3, an 8-call row. Half is 4; two thirds is 5.
+    assert _hard_restart_ticks(3, 8) == 4
+    assert _hard_restart_ticks(3, 8, wide=True) == 5
+    # Off the Cuff: -S5, 12 calls. `want` is 10, so the bound decides both.
+    assert _hard_restart_ticks(5, 12) == 6
+    assert _hard_restart_ticks(5, 12, wide=True) == 8
+
+
+def test_wide_still_never_reaches_the_row():
+    """gplay.c:334 stops the song outright above the channel's tick, so the
+    wider bound must stay under the row for every rate the corpus packs at."""
+    for row in range(2, 40):
+        for mult in (1, 2, 3, 5):
+            assert _hard_restart_ticks(mult, row, wide=True) < row
+            assert _hard_restart_ticks(mult, row, wide=True) >= 1
+
+
+def test_wide_is_never_shorter_than_the_default():
+    """A wider ceiling can only raise the value it bounds, never lower it --
+    otherwise the option would be a different setting rather than a wider one,
+    and `fidelity_better` would be choosing between two unrelated things."""
+    for row in range(0, 40):
+        for mult in (1, 2, 3, 5):
+            assert (_hard_restart_ticks(mult, row, wide=True)
+                    >= _hard_restart_ticks(mult, row))
+
+
 def test_a_single_speed_file_keeps_the_historical_two():
     """Commando's row is 3 calls; half of it is 1, and 1 would move every
     `-S1` conversion in the corpus to fix a multispeed defect."""

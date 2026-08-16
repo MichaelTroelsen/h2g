@@ -1844,6 +1844,58 @@ A per-frame agreement *rewards* losing notes, because fewer attacks mean fewer
 transitions to disagree about. `tests/test_first_wave.py` pins that so the
 number cannot be rediscovered as a success.
 
+### `--wide-hard-restart` (two thirds of the row, not half)
+
+Goattracker holds the gate off for `gatetimer & $3f` calls before a note, and
+this writer bounds that at **half the shortest row the file writes**. The bound
+exists because `gplay.c:334` stops the song outright when the gatetimer exceeds
+the channel's tick, and the failure is total rather than graceful: swept past
+it, Commando reports 3 attacks against 716. Half the row is a claim about the
+music on top of that — a note spending more of its slot released than sounding
+is not the note.
+
+v0.5.276 swept the bound over the corpus:
+
+| bound | mean melody | mean gate | |
+|---|---:|---:|---|
+| `row // 3` | 0.901 | 0.448 | costs 1.7pp of gate for nothing |
+| `row // 2` | 0.901 | 0.465 | the default |
+| `2 * row // 3` | 0.897 | 0.481 | Saboteur II melody 98% → 67% |
+| `row - 1` | 0.896 | 0.498 | Saboteur II melody 98% → 62% |
+
+`gate` rises monotonically with the bound and melody falls off a cliff at one
+file, so **`row // 2` is not a corpus optimum — it is the last value before
+Saboteur II breaks.** A ceiling set by a single file is the definition of a
+per-song question, and this option is that question: it raises the bound to
+`2 * row // 3`.
+
+It was **not offered for 26 versions**, on the stated ground that a sixth
+`--fidelity` toggle "would double a four-hour search". That cost had never been
+timed and is **8 minutes** (v0.5.301, timed twice), so the refusal rested on
+nothing; the option costs 15 minutes of search rather than eight.
+
+**Searched per song, off by default.** Forced off it changes no corpus byte;
+forced on it reaches 19 files. The `--fidelity` search takes it for **9** of
+them, and **Saboteur II is not one** — `keeps_notes` refuses a candidate that
+strikes fewer notes, which is exactly the shape of that file's collapse. That
+was the prediction the option was built on and it held on the first run.
+
+What moved, at `-t 60` against the shipped presets, with **no column falling on
+any file in the corpus**:
+
+| file | `gate` |
+|---|---|
+| `W_A_R_Preview.sid` | 63% → **99%** |
+| `W_A_R.sid` | 61% → **80%** |
+| `Zoolook.sid` | 22% → 28% |
+| `Chain_Reaction.sid` | 55% → 59% |
+| `Kings_of_the_Beach_intro.sid` | 74% → 77% |
+
+The other four that take it (ACE II, Deep Strike, Lightforce, Thundercats)
+change bytes without moving a printed figure — the criterion reads movement the
+report rounds away. Corpus: mean gate overlap 47% → **48%**, and 3012 fewer
+frames sustaining a voice the original had released.
+
 ### `--sustain-exact` (the sustain nibble as the SID reads it)
 
 The VB6 original masked bit `$10` out of any sustain/release byte `>= $F0`

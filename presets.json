@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.301 presets.py",
+  "generator": "h2g 0.5.302 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -47,7 +47,8 @@
       "rows": 18009,
       "multiplier": 3,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "wide_hard_restart": true
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -148,7 +149,8 @@
       "rows": 15169,
       "multiplier": 3,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "wide_hard_restart": true
     },
     "Chicken_Song.sid": {
       "max_rows": 128,
@@ -220,7 +222,8 @@
       "subtunes": 1,
       "rows": 12328,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "wide_hard_restart": true
     },
     "Delta.sid": {
       "max_rows": 94,
@@ -433,7 +436,8 @@
       "rows": 8522,
       "multiplier": 5,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "wide_hard_restart": true
     },
     "Knucklebusters.sid": {
       "max_rows": 128,
@@ -485,7 +489,8 @@
       "subtunes": 1,
       "rows": 19006,
       "multiplier": 2,
-      "two_stage": true
+      "two_stage": true,
+      "wide_hard_restart": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -863,7 +868,8 @@
       "two_stage": true,
       "sfx_drum": true,
       "wave_program": true,
-      "pitch_seq": true
+      "pitch_seq": true,
+      "wide_hard_restart": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,
@@ -888,7 +894,8 @@
       "subtunes": 8,
       "rows": 45650,
       "multiplier": 4,
-      "two_stage": true
+      "two_stage": true,
+      "wide_hard_restart": true
     },
     "W_A_R_Preview.sid": {
       "max_rows": 128,
@@ -899,7 +906,8 @@
       "subtunes": 1,
       "rows": 12130,
       "multiplier": 4,
-      "two_stage": true
+      "two_stage": true,
+      "wide_hard_restart": true
     },
     "Warhawk.sid": {
       "max_rows": 94,
@@ -942,7 +950,8 @@
       "subtunes": 1,
       "rows": 15169,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "wide_hard_restart": true
     }
   }
 }

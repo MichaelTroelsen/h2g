@@ -242,6 +242,16 @@ def main(argv=None) -> int:
              "costs Confuzion 4 points of melody similarity -- hard restart "
              "exists to make notes retrigger reliably")
     parser.add_argument(
+        "--wide-hard-restart", action="store_true",
+        help="raise the hard restart's ceiling from half the row to two "
+             "thirds of it. The gate-off before a note is bounded by the row "
+             "because gplay.c:334 stops the song outright above the channel's "
+             "tick; half the row is the safe bound and two thirds is the "
+             "better one almost everywhere -- a corpus sweep at v0.5.276 put "
+             "it at +1.6pp of mean gate overlap, against Saboteur II's melody "
+             "falling 98%% to 67%%. Searched per song behind --fidelity for "
+             "exactly that reason, and off by default")
+    parser.add_argument(
         "--pitch-seq", action="store_true",
         help="emit the effect byte's bit-$10 arpeggio: a three-step semitone "
              "sequence the player steps with a GLOBAL phase counter (34 corpus "
@@ -419,6 +429,7 @@ def main(argv=None) -> int:
                           ("--initial-instrument", "initial_instrument"),
                           ("--sustain-exact", "sustain_exact"),
                           ("--no-hard-restart", "no_hard_restart"),
+                          ("--wide-hard-restart", "wide_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
                           ("--two-stage", "two_stage"),
@@ -492,6 +503,7 @@ def main(argv=None) -> int:
                       initial_instrument=args.initial_instrument,
                       sustain_exact=args.sustain_exact,
                       no_hard_restart=args.no_hard_restart,
+                      wide_hard_restart=args.wide_hard_restart,
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
                       two_stage=args.two_stage,

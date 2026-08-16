@@ -129,6 +129,13 @@ EXCLUDED_FROM_ALWAYS = {
     # (Last_V8 both rips, Trans-Atlantic_Balloon_Challenge), which is why the
     # option exists rather than the finding being a comment.
     "no_test_restart",
+    # The hard restart's row bound raised from `row // 2` to `2 * row // 3`.
+    # Per song rather than always, because the sweep that measured it
+    # (v0.5.276) found a corpus gain of 1.6pp of mean gate AND one file --
+    # Saboteur II, whose 8-call row gives it 5 -- where melody falls 98% to
+    # 67% at the same value. A bound whose ceiling is set by a single file is
+    # the definition of a per-song question. Searched, not fixed.
+    "wide_hard_restart",
     # Also measured and rejected as a default, twice: the first attempt (before
     # v0.5.66's variable-length wavetable) cost 82 points of wave agreement
     # across 18 files, and re-measuring under v0.5.175's aligned harness -- the
@@ -345,8 +352,14 @@ def best_options(sid_path: Path) -> dict | None:
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
-                    "wave_program", "pitch_seq")
-# Five toggles is 31 combinations a song, each a convert, a pack and two traces.
+                    "wave_program", "pitch_seq", "wide_hard_restart")
+# Six toggles is 63 combinations a song, each a convert, a pack and two traces.
+# `wide_hard_restart` was refused at v0.5.276 as a sixth toggle that "would
+# double a four-hour search"; the search is 8 minutes (timed twice, v0.5.301),
+# so the cost argument was never real. It raises the hard restart's row bound
+# from `row // 2` to `2 * row // 3` -- worth 1.6pp of mean gate over the corpus
+# and the value at which Saboteur II's melody falls 98% -> 67%, which is a
+# per-song question by construction and the reason `keeps_notes` guards it.
 # `pitch_seq` earned its place by being invisible to every other criterion here:
 # it strikes no new notes and sounds no new register, so only the oscillation
 # term can recommend it. See fidelity_better.

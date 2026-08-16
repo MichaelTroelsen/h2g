@@ -360,13 +360,20 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
         P.convert, P.find_freq_table, P.load_sid = old_convert, old_freq, old_load
         shutil.copyfile, P._noise_pitch = old_copy, old_pitch
 
-    # 16 of the 31 non-empty combinations carry two_stage and raise; the walk
-    # scores the other 15 and returns rather than aborting the song.
+    # Derived from the toggle count rather than written down: with n toggles
+    # the walk tries 2**n - 1 non-empty combinations and 2**(n - 1) of them
+    # carry two_stage and raise. Hardcoded as 31/16/15/17 while n was 5, and
+    # v0.5.302's sixth toggle broke it -- a number restating what the module
+    # declares drifts from it, which is the same lesson as the vibrato
+    # census's bit table (7.yyyyy).
+    n = len(P.FIDELITY_TOGGLES)
+    raising = 2 ** (n - 1)
+    scored = (2 ** n - 1) - raising
     assert got == {}
-    assert len(skipped) == 16
+    assert len(skipped) == raising
     assert all("will not convert" in m for m in skipped)
-    # 15 scored candidates, the reference, and the subtune probe before it.
-    assert len(converted) == 17
+    # the scored candidates, the reference, and the subtune probe before it.
+    assert len(converted) == scored + 2
 
 
 def test_the_search_window_is_the_window_the_report_is_published_at():

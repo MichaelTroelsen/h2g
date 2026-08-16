@@ -392,10 +392,12 @@ the next-note fetch can be compensated at all, and that question has one
 measured non-answer (`--no-test-restart`, −26.3pp melody) and one measured
 partial (`HARD_RESTART_FRAMES`). The unexplored lever is the `row // 2` bound:
 `2 * row // 3` is +1.6pp of gate everywhere except Saboteur II, which breaks.
-A per-song toggle would settle it. v0.5.276 declined one on the cost of
-doubling "a four-hour search" — that cost was never timed and is **8 minutes**
-(v0.5.300), so the refusal has no basis left and this is live work, not a
-closed question.
+A per-song toggle settled it: `--wide-hard-restart` (v0.5.302) raises the
+bound to `2 * row // 3` per song. v0.5.276 had declined one on the cost of
+doubling "a four-hour search", a cost never timed and actually 8 minutes.
+9 files take it, Saboteur II is refused by `keeps_notes`, and the corpus gains
+1pp of mean gate with nothing falling. **What remains of this item is the rest
+of the 131618 frames**, which `hold`'s `fetch` owns.
 
 ### 6. Powerplay's cue-length stall — `[subagent]`
 § 7.kkkkk. Each cue's length byte at `$3B37,X` feeds a counter that skips a
@@ -474,9 +476,10 @@ happened twice this run with `7.bbbbb`.
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
   `fidelity_better` cannot select it).
-* A per-song `HARD_RESTART` row bound (+1.6pp gate). **Reopened** — it was
-  declined on the cost of doubling a four-hour search, and a search is 8
-  minutes.
+* ~~A per-song `HARD_RESTART` row bound~~ — **done at v0.5.302**
+  (`--wide-hard-restart`). Searched, taken by 9 of the 19 files it reaches,
+  refused on Saboteur II by `keeps_notes` as predicted; mean gate 47% → 48%
+  with no column falling anywhere.
 * Widening `--rest-keyoff` detection to players whose bit-6 branch does not
   silence — measured at v0.5.272 on 6 sampled files, 4 better and 1 worse; not
   enough to widen a detection gate. (v0.5.273 then widened it on better

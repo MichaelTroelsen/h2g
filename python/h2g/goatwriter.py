@@ -187,12 +187,19 @@ DRUM_DEEPEN_MARGIN = 32
 #
 # The lever is the row bound. Swept over the corpus: `row // 3` costs 1.7pp
 # of gate for nothing, `2 * row // 3` and `row - 1` buy 1.6pp and 3.3pp and
-# take Saboteur II's melody from 98% to 67% and 62%. `row // 2` is the
-# optimum, and its ceiling is set by that single file rather than a trend.
+# take Saboteur II's melody from 98% to 67% and 62%. `row // 2` is not a
+# corpus optimum -- it is the last value before that single file breaks.
+#
+# `--wide-hard-restart` offers `2 * row // 3` per song, which is what a
+# ceiling set by one file asks for. v0.5.276 declined to offer it, on the
+# ground that a sixth `--fidelity` toggle "would double a four-hour search";
+# that cost was never timed and is 8 minutes (v0.5.301), so the refusal had
+# no basis and the option is searched per song like the other five.
 HARD_RESTART_FRAMES = 2
 
 
-def _hard_restart_ticks(multiplier: int, row_calls: int) -> int:
+def _hard_restart_ticks(multiplier: int, row_calls: int,
+                        wide: bool = False) -> int:
     """Calls to hold the gate off before a note, bounded by the row.
 
     **gplay.c:334 stops the song outright** when the gatetimer exceeds the
@@ -210,6 +217,14 @@ def _hard_restart_ticks(multiplier: int, row_calls: int) -> int:
     file that moved gained. Half of its row is 4, and the same sweep that
     found the collapse shows the gain surviving it.
 
+    **`wide` raises that bound to `2 * row // 3`**, worth 1.6pp of mean gate
+    over the corpus in v0.5.276's sweep and the value at which Saboteur II
+    starts to break (melody 98% -> 67%). Half the row is the *safe* bound and
+    two thirds is the *better* one everywhere else, which is a per-song
+    question rather than a constant -- so it rides `--wide-hard-restart` and
+    `fidelity_better` decides it, with `keeps_notes` as the guard that is
+    meant to refuse it on files of Saboteur II's shape.
+
     **Floored at 2**, the value this writer wrote for its whole life, so no
     single-speed file moves: Commando's row is 3 calls, half of which is 1,
     and dropping to 1 would rewrite every `-S1` conversion in the corpus to
@@ -221,7 +236,8 @@ def _hard_restart_ticks(multiplier: int, row_calls: int) -> int:
     want = max(1, HARD_RESTART_FRAMES * max(1, multiplier))
     if not row_calls or row_calls <= 1:
         return min(want, 2)
-    ticks = min(want, max(1, row_calls // 2))
+    bound = (2 * row_calls // 3) if wide else (row_calls // 2)
+    ticks = min(want, max(1, bound))
     ticks = max(ticks, min(2, row_calls - 1))
     return min(ticks, row_calls - 1)
 
@@ -1974,7 +1990,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        no_test_restart: bool = False,
                        cut_release: bool = False,
                        multiplier: int = 1,
-                       row_calls: int = 0) -> int:
+                       row_calls: int = 0,
+                       wide_hard_restart: bool = False) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -2046,7 +2063,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # $0F00 appears in none of the corpus originals and is the most common
         # ADSR value in every conversion without this flag.
         gatetimer = ((0x80 if no_hard_restart else 0)
-                     | (_hard_restart_ticks(multiplier, row_calls) & 0x3F))
+                     | (_hard_restart_ticks(multiplier, row_calls,
+                                            wide_hard_restart) & 0x3F))
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
         # (gsong.c:224-225) and the same pair the other way round, packed, in a
@@ -4001,7 +4019,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               row_calls: int = 0,
               voice_two_stage: bool = False,
               instr_voices: Optional[dict] = None,
-              gate_skip: Optional[int] = None) -> bytes:
+              gate_skip: Optional[int] = None,
+              wide_hard_restart: bool = False) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -4060,7 +4079,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        cut_release=cut_release,
                        lead=lead, wave_starts=wave_starts,
                        no_test_restart=no_test_restart,
-                       multiplier=multiplier, row_calls=row_calls)
+                       multiplier=multiplier, row_calls=row_calls,
+                       wide_hard_restart=wide_hard_restart)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
