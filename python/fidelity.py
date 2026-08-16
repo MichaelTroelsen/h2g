@@ -1712,8 +1712,14 @@ def pitch_effect_bits(sid_path) -> dict:
     out = {}
     if det.effect_drum:
         out[0x01] = "drum"
-    if det.wave_alternate >= 0:
-        out[0x02] = "alt"
+    # **Bit $02 is not here.** It alternates a *waveform* and cannot move a
+    # pitch: Knucklebusters $0782 reads its per-voice counter, picks record
+    # `+2` or the alternate table, and stores to the voice's waveform cell at
+    # $094F,X. Nothing in the block touches a frequency. It was listed as a
+    # pitch cause in v0.5.290 and, because effect `$2B` carries both bits and
+    # the classifier took the highest, it claimed 14615 reversals that belong
+    # to bit $01's drum -- the block two tests above, which writes noise to
+    # the waveform and $FE to $0958,X.
     if det.effect_arp:
         out[0x10] = "arp"
     if det.effect_bit40:
@@ -1726,6 +1732,11 @@ def pitch_effect_bits(sid_path) -> dict:
         out.setdefault(det.wave_program_gate, "program")
     return out
 
+
+# Pitch-moving mechanisms in the order they dominate a record that carries
+# several. An arpeggio restates the note every few frames, a drum sweeps it,
+# a wave program slides it, and a fixed attack pitch moves it twice a note.
+VIB_CAUSE_ORDER = (0x10, 0x01, 0x08, 0x80, 0x40, 0x04, 0x02)
 
 # Fallback meanings, used only where detection could not be run. Kept so the
 # census still classifies something on a file whose tables cannot be read, and
@@ -1812,10 +1823,13 @@ def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
         if eff is None:
             rec["cause"] = "unknown"
         elif bits:
-            # Detection's own reading, highest bit first so a record carrying
-            # several names the loudest.
-            hit = [n for bit, n in sorted(bits.items(), reverse=True)
-                   if eff & bit]
+            # Detection's own reading, in order of how much pitch each
+            # mechanism moves -- **not** by bit value. A record carrying both
+            # the drum and the arpeggio is named for whichever dominates, and
+            # sorting numerically picked `$02` over `$01` on every `$2B`
+            # record in the corpus.
+            hit = [n for bit in VIB_CAUSE_ORDER
+                   if (n := bits.get(bit)) and eff & bit]
             rec["cause"] = hit[0] if hit else "plain"
         else:
             rec["cause"] = next((n for bit, n, _ in VIB_CAUSES if eff & bit),

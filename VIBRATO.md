@@ -9,29 +9,29 @@
 | file | ADSR | GT | effect | cause | orig | ours |
 |---|---|---:|---|---|---:|---:|
 | Las_Vegas_Video_Poker.sid | `$0A0C` | 1 | $44 | plain | 2698 | 0 |
-| Nemesis_the_Warlock.sid | `$0C0A` | 3 | $2A | alt | 2195 | 134 |
+| Nemesis_the_Warlock.sid | `$0C0A` | 3 | $2A | plain | 2195 | 134 |
 | Kentilla.sid | `$0D5F` | 1 | $C4 | plain | 1894 | 0 |
 | W_A_R_Preview.sid | `$4AAD` | 2 | $14 | plain | 1717 | 0 |
 | IK_plus.sid | `$0A56` | 5 | $14 | plain | 1600 | 0 |
 | Chimera.sid | `$0060` | 5 | $0D | drum | 1511 | 0 |
-| W_A_R_Preview.sid | `$0900` | 1 | $0A | alt | 1332 | 0 |
-| Tarzan.sid | `$7840` | 1 | $2A | alt | 1244 | 0 |
-| Knucklebusters.sid | `$0F09` | 20 | $2B | alt | 1107 | 0 |
+| W_A_R_Preview.sid | `$0900` | 1 | $0A | plain | 1332 | 0 |
+| Tarzan.sid | `$7840` | 1 | $2A | plain | 1244 | 0 |
+| Knucklebusters.sid | `$0F09` | 20 | $2B | drum | 1107 | 0 |
 | Spellbound.sid | `$AFFF` | 18 | $56 | arp | 981 | 0 |
-| Flash_Gordon.sid | `$486F` | 4 | $0A | alt | 936 | 0 |
+| Flash_Gordon.sid | `$486F` | 4 | $0A | plain | 936 | 0 |
 | Spellbound.sid | `$180A` | 8 | $25 | drum | 911 | 0 |
 | Thrust.sid | `$9FFF` | 21 | $00 | plain | 882 | 0 |
-| Zoolook.sid | `$0F67` | 1 | $0B | alt | 840 | 0 |
+| Zoolook.sid | `$0F67` | 1 | $0B | drum | 840 | 0 |
 | Crazy_Comets.sid | `$0FFF` | 11 | $02 | plain | 827 | 0 |
-| W_A_R.sid | `$0900` | 1 | $0A | alt | 821 | 0 |
-| Dragons_Lair_Part_II.sid | `$8C00` | 19 | $2A | alt | 764 | 0 |
+| W_A_R.sid | `$0900` | 1 | $0A | plain | 821 | 0 |
+| Dragons_Lair_Part_II.sid | `$8C00` | 19 | $2A | plain | 764 | 0 |
 | Ricochet.sid | `$07E7` | 7 | $01 | program | 762 | 0 |
 | Thrust.sid | `$C08D` | 24 | $F6 | arp | 756 | 0 |
 | Delta_Mix-E-Load_loader.sid | `$3A98` | 4 | $04 | plain | 742 | 0 |
 | Warhawk.sid | `$8D9F` | 1 | $00 | plain | 714 | 0 |
 | Last_V8.sid | `$0409` | 2 | $05 | drum | 702 | 0 |
 | Last_V8_C128_version.sid | `$0409` | 2 | $05 | drum | 702 | 0 |
-| Zoolook.sid | `$0F09` | 2 | $0B | alt | 674 | 0 |
+| Zoolook.sid | `$0F09` | 2 | $0B | drum | 674 | 0 |
 | Bump_Set_Spike.sid | `$0A09` | - | - | unknown | 661 | 0 |
 | Chicken_Song.sid | `$0A00` | 6 | $01 | drum | 644 | 0 |
 | Commodore_64_Music_Examples.sid | `$5C3A` | - | - | unknown | 623 | 0 |
@@ -39,11 +39,11 @@
 | One_Man_and_his_Droid.sid | `$077F` | 1 | $0A | plain | 612 | 0 |
 | One_Man_and_his_Droid.sid | `$088F` | 2 | $0A | plain | 612 | 0 |
 | Kings_of_the_Beach_intro.sid | `$0998` | 6 | $00 | plain | 599 | 0 |
-| Deep_Strike.sid | `$0F07` | 8 | $0B | alt | 534 | 0 |
-| Chain_Reaction.sid | `$6600` | 9 | $0A | alt | 525 | 0 |
-| Zoolook.sid | `$6600` | 9 | $0A | alt | 525 | 0 |
+| Deep_Strike.sid | `$0F07` | 8 | $0B | drum | 534 | 0 |
+| Chain_Reaction.sid | `$6600` | 9 | $0A | plain | 525 | 0 |
+| Zoolook.sid | `$6600` | 9 | $0A | plain | 525 | 0 |
 | Bump_Set_Spike.sid | `$0F9E` | 3 | $00 | plain | 518 | 0 |
-| Knucklebusters.sid | `$0F0A` | 21 | $2B | alt | 507 | 0 |
+| Knucklebusters.sid | `$0F0A` | 21 | $2B | drum | 507 | 0 |
 | Las_Vegas_Video_Poker.sid | `$6B9A` | 7 | $00 | plain | 498 | 0 |
 | Human_Race.sid | `$3C9F` | 1 | $00 | plain | 486 | 0 |
 | Powerplay_Hockey_USA_vs_USSR.sid | `$0AC9` | 3 | $00 | plain | 486 | 0 |
@@ -57,16 +57,16 @@
 | Monty_on_the_Run.sid | `$4A69` | 10 | $00 | plain | 416 | 0 |
 | Devils_Galop.sid | `$0909` | 4 | $05 | drum | 411 | 0 |
 | Monty_on_the_Run.sid | `$0909` | 4 | $05 | drum | 411 | 0 |
-| Food_Feud.sid | `$0A0A` | 5 | $2B | alt | 401 | 0 |
+| Food_Feud.sid | `$0A0A` | 5 | $2B | drum | 401 | 0 |
 | Proteus.sid | `$0D6D` | 5 | $25 | drum | 397 | 0 |
 | Dragons_Lair_Part_II.sid | `$097A` | 2 | $00 | plain | 505 | 111 |
 | Powerplay_Hockey_USA_vs_USSR.sid | `$0AA9` | 2 | $00 | plain | 393 | 0 |
-| Chain_Reaction.sid | `$7900` | 8 | $0A | alt | 382 | 0 |
-| Zoolook.sid | `$7900` | 8 | $0A | alt | 382 | 0 |
-| Delta.sid | `$0F09` | 18 | $0B | alt | 375 | 0 |
+| Chain_Reaction.sid | `$7900` | 8 | $0A | plain | 382 | 0 |
+| Zoolook.sid | `$7900` | 8 | $0A | plain | 382 | 0 |
+| Delta.sid | `$0F09` | 18 | $0B | drum | 375 | 0 |
 | Star_Paws.sid | `$09E8` | 3 | $01 | program | 364 | 0 |
-| Sanxion.sid | `$0909` | 3 | $2B | alt | 356 | 0 |
-| Deep_Strike.sid | `$0F09` | 4 | $0B | alt | 355 | 0 |
+| Sanxion.sid | `$0909` | 3 | $2B | drum | 356 | 0 |
+| Deep_Strike.sid | `$0F09` | 4 | $0B | drum | 355 | 0 |
 | Off_the_Cuff.sid | `$09C7` | 4 | $04 | plain | 433 | 95 |
 | Powerplay_Hockey_USA_vs_USSR.sid | `$0A9B` | 8 | $00 | plain | 330 | 0 |
 | Nineteen.sid | `$0797` | 7 | $01 | program | 483 | 156 |
@@ -80,7 +80,7 @@
 | Samantha_Fox_Strip_Poker.sid | `$1A0F` | 6 | $00 | plain | 298 | 0 |
 | Last_V8_C128_version.sid | `$1B6F` | 8 | $00 | plain | 296 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$09F8` | 3 | $01 | program | 295 | 0 |
-| Sanxion.sid | `$0B03` | 2 | $2B | alt | 286 | 0 |
+| Sanxion.sid | `$0B03` | 2 | $2B | drum | 286 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$06A6` | 2 | $44 | atkpitch | 282 | 0 |
 | Proteus.sid | `$090F` | 4 | $F5 | arp | 281 | 0 |
 | Chain_Reaction.sid | `$00F8` | 3 | $10 | plain | 277 | 0 |
@@ -97,7 +97,7 @@
 | Phantoms_of_the_Asteroid.sid | `$0786` | 1 | $02 | plain | 335 | 125 |
 | Warhawk.sid | `$090E` | 11 | $C5 | drum | 210 | 0 |
 | Formula_1_Simulator.sid | `$2C8F` | 6 | $00 | plain | 209 | 0 |
-| Flash_Gordon.sid | `$0F07` | 3 | $0B | alt | 208 | 0 |
+| Flash_Gordon.sid | `$0F07` | 3 | $0B | drum | 208 | 0 |
 | Zoids.sid | `$0B0C` | 4 | $05 | drum | 208 | 0 |
 | Kentilla.sid | `$096F` | 8 | $00 | plain | 205 | 0 |
 | Rasputin.sid | `$0A0A` | 7 | $05 | drum | 204 | 0 |
@@ -203,9 +203,8 @@
 
 | cause | absent | slow | instruments | reversals missing |
 |---|---:|---:|---:|---:|
-| plain | 85 | 9 | 94 | 28633 |
-| drum | 31 | 3 | 34 | 8843 |
-| alt | 20 | 1 | 21 | 14615 |
+| plain | 94 | 10 | 104 | 37605 |
+| drum | 42 | 3 | 45 | 14486 |
 | program | 13 | 2 | 15 | 2923 |
 | arp | 10 | 0 | 10 | 2952 |
 | atkpitch | 5 | 1 | 6 | 569 |

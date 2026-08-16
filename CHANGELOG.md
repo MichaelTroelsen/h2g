@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.295 — 2026-08-16
+
+- bit $02 alternates a waveform and cannot move a pitch
+
 ## 0.5.294 — 2026-08-16
 
 - the command pass gates; the delay must not gate again

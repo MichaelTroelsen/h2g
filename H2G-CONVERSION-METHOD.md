@@ -11057,3 +11057,55 @@ reading and the reason the census is not the scoreboard for this change.
 > each individually correct and individually measured, and nobody measured
 > them together -- the parameter that exists to keep them apart (`commanded`)
 > selected *which delay* rather than *whether to delay*.
+
+### 7.xxxxx There is no `alt` bucket: bit $02 cannot move a pitch
+
+§ 7.sssss reported that Knucklebusters' `vib` of 0.16x was "86% effect bit
+`$02`" and § 7.vvvvv carried a corpus `alt` bucket of 21 instruments and
+**14615** reversals -- the second largest mechanism in the census. Both are
+wrong. Bit `$02` alternates a **waveform**, and a waveform cannot produce a
+frequency reversal.
+
+Knucklebusters `$0782`, the block its own effect byte selects with `AND #$02`:
+
+    0782  LDY $0983          ; the instrument index
+    0785  LDA $099E,X        ; the per-voice alternation counter
+    0788  AND #$01
+    078A  BEQ $0792
+    078C  LDA $09B7,Y        ; odd  -> record +2, the normal waveform
+    078F  JMP $0795
+    0792  LDA $0A9F,Y        ; even -> the alternate table
+    0795  STA $094F,X        ; ...into the voice's WAVEFORM cell
+
+Nothing in it touches a frequency. What does, on the same records, is bit
+`$01` two tests earlier -- this player's drum, which writes `$80` to that same
+waveform cell and `$FE` to `$0958,X`.
+
+The census picked the wrong one for a mechanical reason worth recording: its
+classifier iterated the bits **numerically, highest first**, so a record
+carrying `$2B` -- both `$01` and `$02` -- was named for `$02` every time. The
+order now runs by how much pitch each mechanism moves, and `$02` is not in the
+map at all.
+
+| cause | absent | slow | reversals missing |
+|---|---:|---:|---:|
+| `plain` | 94 | 10 | **37605** |
+| `drum` | 42 | 3 | 14486 |
+| `arp` | 10 | 0 | 2952 |
+| `program` | 13 | 2 | 2923 |
+| `unknown` | 5 | 0 | 1424 |
+| `atkpitch` | 5 | 1 | 569 |
+| `bit80` | 2 | 1 | 94 |
+
+The 21 `alt` instruments split 11 to `drum` and 10 to `plain`. Nothing was
+recovered and nothing lost -- the same 188 instruments and 60063 reversals,
+attributed differently -- but a queue item that read "the second largest
+mechanism, 20 instruments emitting nothing" was work that did not exist.
+
+> **The transferable lesson:** a classifier that orders its candidates by
+> anything other than the question being asked will answer a different one.
+> Sorting effect bits by value is sorting by nothing; the census wanted "which
+> of these moves the pitch most" and got "which has the larger numeric bit".
+> The failure is invisible in the output -- `alt` looked like a finding, had a
+> plausible mechanism attached, and survived two commits and a listening
+> session before anyone read the block it named.
