@@ -1633,7 +1633,45 @@ VIB_CAUSES = (
                   "right more than 1/steps of the time (section 7.ttt)"),
     (0x02, "alt", "bit $02's alternating waveform, which moves the pitch as a "
                   "side effect"),
+    # Both of these move the pitch and both were being filed as `plain` --
+    # "the record's own vibrato" -- until the release-nibble join started
+    # returning effect bytes at all. Las Vegas Video Poker's largest row, 2698
+    # reversals, is `$44`.
+    (0x80, "drum", "bit $80's drum, whose block sweeps the frequency down and "
+                   "repeats -- the sweep is movement and the repeat reverses "
+                   "it"),
+    (0x40, "atkpitch", "bit $40's fixed attack pitch from the note table: the "
+                       "voice is pulled to one pitch and returns, which is two "
+                       "reversals a note"),
 )
+
+
+def stamp_for(stamps: dict | None, adsr: int) -> dict:
+    """The provenance stamp for an ADSR pair, joined on the bits we keep.
+
+    **The release nibble cannot be part of this key.** `instrument_stamps`
+    reads our own `.sng`, and `--cut-release` -- in `presets.json`'s `always`
+    block -- rewrites that nibble, so an exact join drops every instrument
+    whose release the conversion changed. Las Vegas Video Poker matched 1 of
+    the 6 envelope pairs its original sounds and Thrust 6 of 9; masking takes
+    both to all of them, and the 67 unattributed rows of the corpus vibrato
+    census were that and not an unread record.
+
+    Same trap as `release_tails`, which keyed a release measurement on the
+    pair containing it (§ 7.xxxx) -- except the rule is broader than that
+    docstring states. A key must not contain a field the *conversion* alters,
+    whether or not the column measures it.
+
+    Masking can make two instruments collide that the full pair separated, so
+    an exact hit is preferred and a masked one is taken only when it is
+    unique.
+    """
+    if not stamps:
+        return {}
+    if adsr in stamps:
+        return stamps[adsr]
+    hits = [v for k, v in stamps.items() if k & 0xFFF0 == adsr & 0xFFF0]
+    return dict(hits[0], release_masked=True) if len(hits) == 1 else {}
 
 
 def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
@@ -1658,7 +1696,7 @@ def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
             continue
         rec = {"adsr": adsr, "orig": o, "ours": u,
                "ratio": (u / o) if o else None}
-        rec.update((stamps or {}).get(adsr, {}))
+        rec.update(stamp_for(stamps, adsr))
         eff = rec.get("effect")
         # `plain` asserts that no oscillating bit is set, which is a claim
         # about the record. Where the stamp could not be recovered -- two

@@ -10807,3 +10807,67 @@ whole purpose is to be believed over a remembered number.
 > "oscillation too slow" on every one of these files. The census says 91% of
 > them oscillate *not at all*, which is a different defect with a different
 > fix, and no amount of care with the ratio would have said so.
+
+### 7.ttttt The release nibble is in four keys and belongs in none
+
+§ 7.sssss's vibrato census left its largest bucket unattributed: 67
+instruments carrying 21232 reversals whose effect byte could not be recovered
+at all. The stated reason was the ADSR-pair collision of § 7.zzzz. It was not.
+
+`instrument_stamps` reads our own `.sng`, and **`--cut-release` -- in
+`presets.json`'s `always` block -- rewrites the release nibble**. So the
+original's `$0A0C` is our `$0A00`, and an exact join finds nothing:
+
+    Las Vegas Video Poker   original attack pairs   6
+                            exact join to our .sng  1
+                            ignoring the release    6
+    Thrust                                          6 of 9  ->  9 of 9
+
+Masking that nibble takes the census's `unknown` bucket from **67 instruments
+and 21232 reversals to 5 and 1424**, and the 62 recovered rows immediately
+showed two more mechanisms that had been filed as "the record's own vibrato":
+bit `$80`'s drum, whose block sweeps the frequency and repeats, and bit
+`$40`'s fixed attack pitch, which pulls a voice to one pitch and back -- two
+reversals a note. Las Vegas's largest single row, 2698 reversals, is `$44`.
+
+| cause | absent | slow | reversals missing |
+|---|---:|---:|---:|
+| `plain` | 96 | 11 | 25802 |
+| `alt` | 31 | 3 | 18747 |
+| `arp` | 16 | 1 | 7577 |
+| `atkpitch` | 9 | 1 | 3446 |
+| `drum` | 14 | 1 | 3066 |
+| `unknown` | 5 | 0 | 1424 |
+
+#### And three report columns have the same hole
+
+`release_tails` already masks, because keying a release *measurement* on the
+pair containing it made every one of our keys move and the column report
+"nothing to compare" (§ 7.xxxx). The lesson written down there was about
+measuring the field. **The rule is broader: a key must not contain a field the
+conversion alters, whether or not the column measures it.** `onset_shapes`,
+`sound_runs` and `noise_runs` all key on the full pair and all say in their
+docstrings that this is safe because they do not measure the release.
+
+Instruments each column actually compares:
+
+| file | `onset` | `nrun` | `hold` | `tail` |
+|---|---:|---:|---:|---:|
+| Las Vegas Video Poker | 1 | 0 | 1 | **6** |
+| Kentilla | 2 | 1 | 2 | **6** |
+| Thrust | 5 | 4 | 4 | **6** |
+| Commando | 6 | 6 | 6 | **8** |
+
+`tail` sees more than the other three on every file, and it is the only one
+that masks. Corpus totals: onset 443, hold 440, nrun 206, tail 488. So Las
+Vegas's `onset` of **100%** is one instrument of six, printed as perfect.
+
+Not fixed here: changing those keys moves three columns on most of the corpus
+and needs its own A/B.
+
+> **The transferable lesson:** when a fix is really a rule, the rule has to be
+> written wider than the case that produced it. § 7.xxxx said "mask the
+> measured field out of the key" and three neighbouring functions read that,
+> correctly concluded it did not apply to them, and kept a key the conversion
+> silently rewrites. The general form -- *a key must not contain a field the
+> conversion alters* -- would have caught all four.

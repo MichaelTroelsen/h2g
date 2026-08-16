@@ -70,8 +70,12 @@ def test_the_cause_comes_from_the_effect_byte():
                     F.Voice(), F.Voice()], F.FilterState())
     ours = F.Trace([_voice([0], [(0, 0x1000)], 0x0A0B),
                     F.Voice(), F.Voice()], F.FilterState())
-    for eff, want in ((0x10, "arp"), (0x02, "alt"), (0x44, "plain"),
-                      (0x00, "plain")):
+    # `$44` was `plain` until bit $40 joined the cause list: it pulls the
+    # voice to a fixed attack pitch and back, which is two reversals a note.
+    # Las Vegas Video Poker's largest row -- 2698 reversals -- carries it.
+    for eff, want in ((0x10, "arp"), (0x02, "alt"), (0x80, "drum"),
+                      (0x40, "atkpitch"), (0x44, "atkpitch"),
+                      (0x05, "plain"), (0x00, "plain")):
         rows = F.vib_census(orig, ours, 60,
                             {0x0A0B: {"gt": 3, "effect": eff}})
         assert rows[0]["cause"] == want, hex(eff)
