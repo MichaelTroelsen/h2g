@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.293 — 2026-08-16
+
+- the vibrato census asks detection which bits this player reads
+
 ## 0.5.292 — 2026-08-16
 
 - one instrument key, paired exactly first

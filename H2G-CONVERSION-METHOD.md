@@ -10937,3 +10937,67 @@ was always the thing that decided what the percentage meant.
 > it merges is what turned a plausible fix into a better one. The same
 > discipline this project already applies to register agreements read beside
 > note counts.
+
+### 7.vvvvv A bit's meaning is a fact about a player
+
+§ 7.sssss's vibrato census classified each instrument's missing oscillation by
+the effect bits its record carries, from a table written into the census. That
+table is wrong by construction, and this document is largely a record of why:
+`$04` is an arpeggio in some players and a two-stage attack in others, `$01` is
+a drum in one dialect and a wave-program selector in another. Detection exists
+to read those meanings out of each player; the census was not asking it.
+
+Chimera is the case. Its largest missing instrument -- GT 5, 1511 reversals,
+none of them ours -- carries effect `$0D`, and the census filed it as `plain`,
+"the record's own vibrato". Its `$01` is the **drum** its player sweeps the
+frequency with (`det.effect_drum`), and the record's actual vibrato byte at
+`+5` is `$00`. The classification named the one mechanism the instrument does
+not use.
+
+`pitch_effect_bits` now builds `{bit: name}` from `Detection` per file, and a
+bit is named only where the player is known to act on it. Bits `$04` and `$08`
+are deliberately absent -- they move a waveform and a duty cycle, not a pitch.
+The maps really do differ:
+
+    Chimera                {$01: drum}
+    Knucklebusters         {$01: drum, $02: alt, $40: atkpitch}
+    Las Vegas Video Poker  {$01: drum, $10: arp}
+
+Chimera's own split becomes 1995 reversals to `drum` and 364 to `plain`, from
+2359 filed entirely as `plain`. Corpus-wide:
+
+| cause | absent | slow | reversals missing |
+|---|---:|---:|---:|
+| `plain` | 85 | 9 | 28642 |
+| `alt` | 20 | 1 | 14615 |
+| `drum` | 31 | 3 | 8843 |
+| `arp` | 10 | 0 | 2952 |
+| `program` | 13 | 2 | 2923 |
+| `unknown` | 5 | 0 | 1424 |
+| `atkpitch` | 5 | 1 | 569 |
+| `bit80` | 2 | 1 | 94 |
+
+`plain` remains the largest and now means what it says.
+
+#### The lead it opens
+
+Chimera's `$7989` is `plain` with effect `$00` and a **non-zero** vibrato byte
+(`+5 = $02`), and we emit a vibrato for it -- `vib_ptr 8` -- and still produce
+no reversals. Its instrument also carries **`vibdelay = 8`**, and that is the
+suspect: this player's rule is a *duration gate*, "no vibrato below duration
+8", which the converter approximates with a *delay* of 8 calls. A gate lets a
+qualifying note vibrate from the start; a delay removes the first 8 calls of
+**every** note, so a note of exactly the gate length gets none where the
+player gives it a full swing.
+
+§ 7.lll already records that `_vibrato_delay` and the pattern-command path
+trade against each other and that the constants left behind must be re-measured
+when work moves between them. Not attempted here: it changes emitted bytes and
+wants its own A/B.
+
+> **The transferable lesson:** a classifier is a claim about meaning, and
+> meaning is where this format is least uniform. Any table of effect bits
+> written outside `detect.py` will be right for the dialect it was written
+> against and quietly wrong for the others -- which is the same failure as a
+> constant read from one player and applied to twenty-five (§ 7.lll), in a
+> place nobody thinks of as a constant.

@@ -1686,8 +1686,50 @@ def reversals_by_instrument(voices: list[Voice], nframes: int) -> dict:
     return out
 
 
-# Effect-byte bits that make a voice's pitch oscillate, and what each means
-# for whether we can reproduce it.
+def pitch_effect_bits(sid_path) -> dict:
+    """`{bit: name}` for the pitch-moving effect bits *this player reads*.
+
+    **A bit's meaning is a fact about a player, not about the format.** This
+    project's whole detection layer exists because `$04` is an arpeggio in
+    some players and a two-stage attack in others, and `$01` is a drum in one
+    dialect and a wave-program selector in another. A census that hardcodes
+    the meanings will mis-attribute exactly the files whose dialect differs --
+    Chimera's largest missing instrument carries `$0D`, and its `$01` is the
+    drum its player sweeps the frequency with, which a fixed table filed as
+    "the record's own vibrato".
+
+    So the bits come from `Detection`, which read them out of the player, and
+    a bit is named only where the player is known to act on it. Bits `$04`
+    (two-stage waveform) and `$08` (pulse width) are deliberately absent: they
+    move a waveform and a duty cycle, not a pitch.
+    """
+    from h2g.convert import _detect_tables
+    from h2g.sidfile import load_sid
+    try:
+        _, det = _detect_tables(load_sid(str(sid_path)), lambda *a, **k: None)
+    except Exception:                                          # noqa: BLE001
+        return {}
+    out = {}
+    if det.effect_drum:
+        out[0x01] = "drum"
+    if det.wave_alternate >= 0:
+        out[0x02] = "alt"
+    if det.effect_arp:
+        out[0x10] = "arp"
+    if det.effect_bit40:
+        out[0x40] = "atkpitch"
+    if det.effect_bit80:
+        out[0x80] = "bit80"
+    # The wave-program selector is whichever bit the player tests, and a
+    # program carries slide opcodes -- movement of its own.
+    if det.wave_program >= 0 and det.wave_program_gate:
+        out.setdefault(det.wave_program_gate, "program")
+    return out
+
+
+# Fallback meanings, used only where detection could not be run. Kept so the
+# census still classifies something on a file whose tables cannot be read, and
+# ordered by how much of the corpus's movement each accounts for.
 VIB_CAUSES = (
     (0x10, "arp", "bit $10, a pitch sequence on a **global** phase counter -- "
                   "a wavetable restarts at every note, so no rotation of it is "
@@ -1737,7 +1779,8 @@ def stamp_for(stamps: dict | None, adsr: int) -> dict:
 
 
 def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
-               stamps: dict | None = None) -> list[dict]:
+               stamps: dict | None = None, bits: dict | None = None
+               ) -> list[dict]:
     """Every instrument both sides oscillate, and how much of it we reproduce.
 
     `vib` is a whole-file ratio, and a whole-file ratio cannot say *which*
@@ -1766,9 +1809,17 @@ def vib_census(orig: list[Voice], ours: list[Voice], nframes: int,
         # there is nothing to make that claim from, and calling it `plain`
         # would put 67 of the corpus's 148 into a bucket labelled "the
         # record's own vibrato" on no evidence.
-        rec["cause"] = ("unknown" if eff is None else
-                        next((n for bit, n, _ in VIB_CAUSES if eff & bit),
-                             "plain"))
+        if eff is None:
+            rec["cause"] = "unknown"
+        elif bits:
+            # Detection's own reading, highest bit first so a record carrying
+            # several names the loudest.
+            hit = [n for bit, n in sorted(bits.items(), reverse=True)
+                   if eff & bit]
+            rec["cause"] = hit[0] if hit else "plain"
+        else:
+            rec["cause"] = next((n for bit, n, _ in VIB_CAUSES if eff & bit),
+                                "plain")
         out.append(rec)
     return out
 
@@ -3230,7 +3281,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             if getattr(args, "vib_census", None):
                 # Same two traces and the same reduction the column used.
                 row["vib_census"] = vib_census(a, best_dump, nframes,
-                                               instrument_stamps(sng))
+                                               instrument_stamps(sng),
+                                               pitch_effect_bits(sid))
             if getattr(args, "gate_census", None):
                 # Same two traces and the same alignment the column used.
                 row["gate_census"] = gate_census(a, best_dump, nframes,
