@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.299 presets.py",
+  "generator": "h2g 0.5.300 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -432,6 +432,7 @@
       "subtunes": 1,
       "rows": 8522,
       "multiplier": 5,
+      "two_stage": true,
       "wave_program": true
     },
     "Knucklebusters.sid": {
