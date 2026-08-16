@@ -1710,24 +1710,34 @@ def pitch_effect_bits(sid_path) -> dict:
     except Exception:                                          # noqa: BLE001
         return {}
     out = {}
+    # **Every bit below is read from `Detection`'s own field comment**, not
+    # from memory. Getting this table from anywhere else has now been wrong
+    # three times: `$02` was listed as a pitch mover when it was a waveform
+    # alternation (§ 7.xxxxx), then removed entirely when `effect_rise` makes
+    # it one, and `effect_arp` was mapped to `$10` when detect.py:98 says it
+    # is `$04`.
+    #
+    #   effect_drum      $01  "pitch sweep down, then noise"
+    #   effect_rise      $02  "+1 semitone every 4 frames"
+    #   effect_arp       $04  "alternate with note - (byte >> 4)"
+    #   effect_pulse_lo  $08  "accumulate +6 into pulse width LO"   <- not pitch
+    #
+    # `$02` is the instructive one: it moves a pitch under `effect_rise` and a
+    # waveform under `wave_alternate`, and no player has both.
     if det.effect_drum:
         out[0x01] = "drum"
-    # **Bit $02 is not here.** It alternates a *waveform* and cannot move a
-    # pitch: Knucklebusters $0782 reads its per-voice counter, picks record
-    # `+2` or the alternate table, and stores to the voice's waveform cell at
-    # $094F,X. Nothing in the block touches a frequency. It was listed as a
-    # pitch cause in v0.5.290 and, because effect `$2B` carries both bits and
-    # the classifier took the highest, it claimed 14615 reversals that belong
-    # to bit $01's drum -- the block two tests above, which writes noise to
-    # the waveform and $FE to $0958,X.
+    if det.effect_rise:
+        out[0x02] = "rise"
     if det.effect_arp:
-        out[0x10] = "arp"
+        out[0x04] = "arp"
+    # Bit $10 has no detection flag: `goatwriter.EFFECT_PITCH_SEQ_MASK` is
+    # applied to the record unconditionally, so the project already treats its
+    # meaning as stable across the family.
+    out[0x10] = "pitchseq"
     if det.effect_bit40:
         out[0x40] = "atkpitch"
     if det.effect_bit80:
         out[0x80] = "bit80"
-    # The wave-program selector is whichever bit the player tests, and a
-    # program carries slide opcodes -- movement of its own.
     if det.wave_program >= 0 and det.wave_program_gate:
         out.setdefault(det.wave_program_gate, "program")
     return out
@@ -1736,7 +1746,7 @@ def pitch_effect_bits(sid_path) -> dict:
 # Pitch-moving mechanisms in the order they dominate a record that carries
 # several. An arpeggio restates the note every few frames, a drum sweeps it,
 # a wave program slides it, and a fixed attack pitch moves it twice a note.
-VIB_CAUSE_ORDER = (0x10, 0x01, 0x08, 0x80, 0x40, 0x04, 0x02)
+VIB_CAUSE_ORDER = (0x10, 0x04, 0x01, 0x02, 0x80, 0x40, 0x08)
 
 # Fallback meanings, used only where detection could not be run. Kept so the
 # census still classifies something on a file whose tables cannot be read, and

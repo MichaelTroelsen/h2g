@@ -11109,3 +11109,58 @@ mechanism, 20 instruments emitting nothing" was work that did not exist.
 > The failure is invisible in the output -- `alt` looked like a finding, had a
 > plausible mechanism attached, and survived two commits and a listening
 > session before anyone read the block it named.
+
+### 7.yyyyy The cause map belongs in `Detection`, and it took three tries
+
+Going after the `plain` bucket -- 94 instruments whose movement should be the
+record's own vibrato byte -- found that most of it was not that at all. The
+census's map from effect bit to mechanism had been wrong three separate ways,
+each time because it was written from memory beside the census rather than
+read from the declarations in `detect.py`:
+
+| written | actual | source |
+|---|---|---|
+| `$02` moves pitch | it alternates a *waveform* under `wave_alternate` | § 7.xxxxx |
+| `$02` never moves pitch | it **does** under `effect_rise`, "+1 semitone every 4 frames" | detect.py:97 |
+| `effect_arp` is `$10` | `effect_arp` is **`$04`**, "alternate with note - (byte >> 4)" | detect.py:98 |
+
+Las Vegas Video Poker is the case that exposed the third. Its `$0A0C`
+instruments carry `+5 = $00` -- no vibrato byte at all -- and 2698 reversals,
+and were filed as `plain`. Its player tests bit `$04` at `$53AC` and reads the
+effect byte's **high nibble** at `$53B3` (`LDA / LSR / LSR`) as the arpeggio's
+interval, which is the classic reading this project has always had. The map
+simply asked the wrong bit.
+
+The map is now built from the field comments themselves, quoted in place:
+
+    effect_drum      $01  "pitch sweep down, then noise"
+    effect_rise      $02  "+1 semitone every 4 frames"
+    effect_arp       $04  "alternate with note - (byte >> 4)"
+    effect_pulse_lo  $08  "accumulate +6 into pulse width LO"   <- not a pitch
+
+with `$10` unconditional (`EFFECT_PITCH_SEQ_MASK` is applied to the record
+without a detection gate, so the project already treats it as stable), `$40`
+and `$80` behind their own flags, and the wave-program selector at whichever
+bit its player tests.
+
+| cause | absent | slow | reversals missing |
+|---|---:|---:|---:|
+| `plain` | 82 | 9 | 27963 |
+| `drum` | 26 | 3 | 9847 |
+| `arp` (`$04`) | **22** | 0 | **9656** |
+| `pitchseq` (`$10`) | 16 | 1 | 7577 |
+| `program` | 13 | 2 | 2923 |
+| `unknown` | 5 | 0 | 1424 |
+| `atkpitch` | 5 | 1 | 569 |
+| `bit80` | 2 | 1 | 94 |
+
+`plain` falls from 104 instruments and 37605 reversals to 91 and 27963. What
+comes out of it is a bucket that was never visible: **bit `$04`'s arpeggio, 22
+instruments, every one of them emitting nothing**, 9656 reversals.
+
+> **The transferable lesson:** a lookup table that restates something the
+> codebase already declares will drift from it, and the drift is silent
+> because the table still returns an answer. Three corrections in three
+> commits, each plausible, each shipped. The fix was not a fourth careful
+> reading -- it was quoting `detect.py`'s own comments into the map so the two
+> cannot disagree without the disagreement being visible on the page.
