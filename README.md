@@ -2899,6 +2899,40 @@ number is a floor on how wrong a conversion is, never a ceiling. Each staged
 entry states what the numbers predict precisely so that a listen can contradict
 them — a contradiction is the useful outcome.
 
+#### `abpage.py` — A/B the staged pairs in a browser
+
+Playing two WAVs in a media player is not an A/B: the switch costs a click and
+a seek, and by the time the other file starts you are comparing a sound to a
+memory of one. `python/abpage.py` builds a page per staged tune that plays
+**both renders at once and swaps which one is audible**, so a switch is gapless
+and lands on the same instant of the music.
+
+```sh
+cd python
+python abpage.py                    # one page per tune + build/listen/index.html
+python abpage.py --embed W_A_R      # one self-contained page, WAVs inlined
+```
+
+Open `build/listen/index.html`, or any `<tune>.html` beside the WAVs. <kbd>Space</kbd>
+plays, <kbd>1</kbd>/<kbd>2</kbd> switch, <kbd>L</kbd> loops. **Blind mode**
+hides which side is which, randomises the assignment, asks you to name the
+original and keeps a tally — if you cannot beat chance over a dozen tries on a
+tune, that is a stronger result than any column in `FIDELITY.md`.
+
+Each page quotes that tune's row from `FIDELITY.md` and its bullets from the
+`LISTENING.md` `listen.py` wrote, rather than restating them, so a page cannot
+tell a listener to listen for something the report does not say. A `-` column
+is dropped rather than printed, because in that report it means *no shared
+instrument key* and not zero.
+
+The default pages reference the WAVs beside them, so a page is about 13 KB and
+carries a tune of any length — which is the mode to use, since 30 s is rarely
+enough to judge a tune and two minutes of inlined audio exceeds what any single
+file should carry. `--embed` inlines both renders for publishing somewhere the
+WAVs cannot follow, at 4/3 the size of the audio: about 14 MB for a minute a
+side at 44.1 kHz mono, which is the practical ceiling. If a browser refuses
+`file://` media, serve `build/listen/` over http.
+
 ### The instrument map — `instrmap.py`
 
 Every other instrument-level check in this project reads the *player's own
@@ -3003,6 +3037,7 @@ shared code could not disagree with the writer, and disagreeing is the value.
 | `python/survey.py`, `python/presets.py`, `python/bump_version.py` | tooling |
 | `python/fidelity.py` | measures a conversion against the .sid it came from |
 | `python/listen.py` | stages WAV pairs and a guide for a listening pass |
+| `python/abpage.py` | builds gapless A/B pages from what `listen.py` staged |
 | `convert.ps1`, `play.ps1` | PowerShell wrappers: convert, and convert + open in GoatTracker |
 | `build/` | converted output (gitignored); never written next to an input |
 | `VB6 Sourcecode/h2g.frm` | the original VB6 tool; still the ground truth for behaviour |
