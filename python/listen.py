@@ -227,12 +227,43 @@ def listen_notes(r: dict, orig, ours) -> list[str]:
     return notes
 
 
+def select_names(files, stage_all: bool, presets: str) -> list[str]:
+    """Which tunes to stage, from `--files` and `--all`.
+
+    `--all` reads the song list out of `presets.json` rather than the corpus
+    directory, because that list is exactly the tunes that *convert*: reading
+    the directory would queue the twelve files no player is detected in and
+    render a silent conversion side for each, which looks like a fidelity
+    catastrophe rather than an absent player.
+
+    The two combine rather than compete -- `--files X --all` is every song
+    plus X, which is how a tune outside the presets (a second rip, a file
+    under test) joins a full pass.
+    """
+    names = list(files)
+    if not stage_all:
+        return names
+    try:
+        doc = json.loads(Path(presets).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValueError(f"--all needs {presets}; run presets.py first") from exc
+    songs = doc.get("songs") or {}
+    if not songs:
+        raise ValueError(f"{presets} records no songs")
+    return sorted(set(names) | set(songs), key=str.lower)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="listen", description=__doc__.splitlines()[0])
     p.add_argument("sid_dir", nargs="?", help="directory holding the originals")
     p.add_argument("--from-json", help="a fidelity.py --json run, used to pick "
                                        "representatives and to state the numbers")
     p.add_argument("--files", nargs="+", default=[], help="stage these instead")
+    p.add_argument("--all", action="store_true",
+                   help="stage every tune `--presets` records, which is every "
+                        "one that converts. The whole corpus at -t 120 is "
+                        "about 1.7 GB and a couple of hours; --files is the "
+                        "way to stage the handful a question is about")
     p.add_argument("-n", "--per-band", type=int, default=1)
     p.add_argument("-t", "--seconds", type=int, default=30,
                    help="how much to render (default 30: long enough to reach "
@@ -259,13 +290,17 @@ def main(argv=None) -> int:
     if args.from_json:
         rows = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
     chosen: list[tuple[str, dict]] = []
-    if args.files:
+    try:
+        names = select_names(args.files, args.all, args.presets)
+    except ValueError as exc:
+        p.error(str(exc))
+    if names:
         by_name = {r["file"]: r for r in rows}
-        chosen = [("named", by_name.get(f, {"file": f})) for f in args.files]
+        chosen = [("named", by_name.get(f, {"file": f})) for f in names]
     elif rows:
         chosen = pick(rows, args.per_band)
     else:
-        p.error("give --from-json (to pick by band) or --files")
+        p.error("give --from-json (to pick by band), --files or --all")
 
     sid_dir = Path(args.sid_dir) if args.sid_dir else None
     outdir = Path(args.outdir)
