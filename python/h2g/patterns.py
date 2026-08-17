@@ -58,7 +58,14 @@ GT_KEYOFF = 0xBE
 # produced was attributed to a mechanism that occurs nowhere in the affected
 # files (H2G-CONVERSION-METHOD.md sections 7.ooooo and 7.ppppp). Anything
 # added here that acts once belongs in this set.
-ONE_SHOT_COMMANDS = frozenset({3})
+CMD_SETWAVE = 7                 # gcommon.h:11
+# Test bit set, no waveform selected: the value IK+'s player parks in the
+# voice's stored waveform on a bit-6 rest. `$18` would also be silent to the
+# ear but is class `$10` to every register column and stays above the `$10`
+# siddump needs to name the next attack, which is why v0.5.282's `$18`
+# attempt moved no column on any file.
+REST_SILENT_WAVE = 0x08
+ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
 GT_FIRSTNOTE = 0x60
@@ -198,7 +205,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        slide_high_first: bool = False,
                        steps: Optional[List[int]] = None,
                        tie: bool = False,
-                       rest_keyoff: bool = False) -> Optional[List[int]]:
+                       rest_keyoff: bool = False,
+                       rest_wave: bool = False) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -294,6 +302,23 @@ def _build_raw_pattern(data: bytes, addr: int,
             if rest_keyoff:
                 g_note = GT_KEYOFF
                 g_instrument = 0
+            # A KEYOFF clears the *gate* and nothing else (`wave & gate`,
+            # gplay.c:951), so the waveform stays latched at whatever the
+            # wavetable last wrote. The testbit family's player parks `$08`
+            # in the voice's stored waveform instead -- test bit, no waveform
+            # selected, silence. CMD_SETWAVE is the only row-level way to
+            # write a waveform with no note (gplay.c:433).
+            #
+            # It survives the frame here because our tables *stop*: `$FF 00`
+            # zeroes `ptr[WTBL]` (gplay.c:711) and WAVEEXEC is guarded on that
+            # pointer, so nothing overwrites `cptr->wave` afterwards. Checked
+            # on the conversions rather than assumed -- IK+ ends 26 of 26
+            # tables that way, Auf Wiedersehen Monty 24 of 24. Where a table
+            # *loops*, WAVEEXEC runs every frame at gplay.c:525 and would
+            # clobber this within the frame; that is why the claim is about
+            # these files and not about the format.
+            if rest_wave:
+                cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
 
         if get_next:
             i2 += 1
@@ -777,7 +802,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  steps: Optional[List[int]] = None,
                  rest_instrument: bool = False,
                  instr_base: int = 2, tie: bool = False,
-                 rest_keyoff: bool = False) -> Optional[List[int]]:
+                 rest_keyoff: bool = False,
+                 rest_wave: bool = False) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -809,6 +835,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               det.note_flag, status_bit6 and det.status_bit6,
                               rest_instrument=rest_instrument,
                               rest_keyoff=rest_keyoff,
+                              rest_wave=rest_wave,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
@@ -1149,7 +1176,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      steps: Optional[List[int]] = None,
                      rest_instrument: bool = False,
                      instr_base: int = 2, tie: bool = False,
-                     rest_keyoff: bool = False):
+                     rest_keyoff: bool = False,
+                     rest_wave: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1212,7 +1240,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
-                              rest_keyoff=rest_keyoff)
+                              rest_keyoff=rest_keyoff,
+                              rest_wave=rest_wave)
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -1605,7 +1634,26 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
             continue
         target = played[0]
         pattern = patterns[target]
-        if len(pattern) < 4 or pattern[2] != 0:
+        # The command column is one byte per row and the tempo is not its only
+        # claimant, so a subtune whose entry row already carries a command
+        # gets no tempo at all and plays at Goattracker's default. That is not
+        # a subtle loss -- on the eight files where `--rest-wave-silence`
+        # takes row 0, `drift` goes 0 -> ~1000 frames per 1000 and `melody`
+        # falls 43pp, which is the whole of that option's regression.
+        #
+        # **The tempo outranks a rest's waveform, and nothing else.** Widening
+        # this to "scan for any free row" was measured and refused: it reaches
+        # 25 corpus files, and restoring a write to files that never had one
+        # is 2 better and 3 worse on `melody` -- Knucklebusters 50 -> 81% and
+        # Geoff Capes 49 -> 60% against Warhawk 82 -> 56%, Delta Mix-E-Load's
+        # sequence 97 -> 57% and Human Race 65 -> 56%. `retrig` says why:
+        # every gain moves toward 1.0 and every loss away from it, so the
+        # *derived* tempo is wrong on those files and the missing write was
+        # accidentally protecting them. That is a real defect and it is not
+        # this one; until it is understood, the absent write stays absent.
+        if len(pattern) < 4:
+            continue
+        if pattern[2] not in (0, CMD_SETWAVE):
             continue
         pattern[2], pattern[3] = CMD_SETTEMPO, value
         written += 1

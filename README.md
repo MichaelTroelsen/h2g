@@ -1844,6 +1844,44 @@ A per-frame agreement *rewards* losing notes, because fewer attacks mean fewer
 transitions to disagree about. `tests/test_first_wave.py` pins that so the
 number cannot be rediscovered as a success.
 
+### `--rest-wave-silence` (the rest that parks a waveform)
+
+Status bit 6 is a rest. A Goattracker `KEYOFF` clears the *gate* and nothing
+else (`sidreg[0x4] = wave & gate`, `gplay.c:951`), so our rests leave the
+waveform latched at whatever the wavetable last wrote. **17 corpus players
+park the test bit instead** — IK+'s handler at `$E135` loads `#$08` and stores
+it into the voice's stored waveform, and `$E44C` then restores
+`stored AND mask` = `$08`. `CMD_SETWAVE` is the only row-level way to write a
+waveform with no note (`gplay.c:433`).
+
+**Off by default, and this is the fourth attempt at the mechanism.** The three
+before it failed for three different reasons, all now known:
+
+| version | attempt | why it failed |
+|---|---|---|
+| v0.5.282 | append silence to the wave program | mean `wave` −3.0 pp, Nemesis −45; and `$18` is not `$08` |
+| v0.5.284 | `CMD_SETWAVE $08` on the rest row | melody **−43 pp** over 8 files |
+| v0.5.285 | blamed `CMD_TONEPORTA` after the rest | suppressing it changes **zero bytes**; the mechanism occurs nowhere in the population |
+
+The −43 pp had nothing to do with waveforms. **`apply_tempo` writes
+`CMD_SETTEMPO` into the row each subtune enters on, and the command column is
+one byte per row** — a rest holding row 0 took the slot, so eight files got no
+tempo at all and ran at Goattracker's default. `drift` (added v0.5.288, after
+the attempt) reads it plainly: 0.00 → 1400.00 on Shockway Rider. The tempo now
+outranks a rest's waveform and nothing else.
+
+Measured with the tempo preserved, at `-t 60` against the shipped presets:
+
+* `melody`, `seq`, `retrig`, `adsr`, `gate`, `drift`, `hold`, `onset`, `tail`
+  and `nrun` move on **no file**
+* `wave` moves on 12, mean **+0.3 pp** — Auf Wiedersehen Monty 71 → 79%,
+  ACE II 87 → 90%, Shockway Rider 82 → 85%, against six files losing a point
+  or two
+* **IK+, the file the mechanism was decoded from, loses 5 points of `wave`**
+
+So it is safe and it is not an improvement, which is why it ships off. The
+option exists because the measurement had never once been valid before it.
+
 ### `--wide-hard-restart` (two thirds of the row, not half)
 
 Goattracker holds the gate off for `gatetimer & $3f` calls before a note, and

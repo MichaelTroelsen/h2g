@@ -32,8 +32,20 @@ import songview as SV  # noqa: E402
 CONTINUOUS = {1, 2}
 
 
-def test_toneporta_is_the_one_shot_command():
-    assert ONE_SHOT_COMMANDS == frozenset({3})
+def test_the_one_shot_commands_are_disjoint_from_the_continuous_ones():
+    """The property, not the membership. This asserted
+    `== frozenset({3})` until v0.5.311 added CMD_SETWAVE and the literal
+    failed -- a set written down in a test drifts from the module that
+    declares it, which is the same shape as the combination counts in
+    test_preset_passthrough.
+
+    What must hold is that a command is applied once or stepped every tick
+    and never both: `gplay.c:740` re-reads a portamento's speed each tick, so
+    repeating it is how it works, while CMD_TONEPORTA with parameter 0
+    assigns `freq = targetfreq` in one call (gplay.c:811) and CMD_SETWAVE
+    assigns `cptr->wave` in one (gplay.c:433).
+    """
+    assert 3 in ONE_SHOT_COMMANDS, "CMD_TONEPORTA is applied once"
     assert not (ONE_SHOT_COMMANDS & CONTINUOUS), (
         "a command cannot be both stepped every tick and applied once")
 

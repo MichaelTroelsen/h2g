@@ -261,6 +261,17 @@ def main(argv=None) -> int:
              "behind --fidelity, and off by default"
     )
     parser.add_argument(
+        "--rest-wave-silence", action="store_true",
+        help="on a bit-6 rest, write the silent waveform the player parks "
+             "(CMD_SETWAVE $08) as well as keying off. A Goattracker KEYOFF "
+             "clears the gate and nothing else, so the waveform stays latched "
+             "at whatever the wavetable last wrote; 17 corpus players park "
+             "the test bit instead. Off by default and NOT yet shippable -- "
+             "v0.5.284 measured melody -43pp over 8 files for this and the "
+             "cause is still unknown; two explanations have been refuted "
+             "since. Provided so the measurement can be re-run"
+    )
+    parser.add_argument(
         "--pitch-seq", action="store_true",
         help="emit the effect byte's bit-$10 arpeggio: a three-step semitone "
              "sequence the player steps with a GLOBAL phase counter (34 corpus "
@@ -442,6 +453,7 @@ def main(argv=None) -> int:
                           ("--max-hard-restart", "max_hard_restart"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
+                          ("--rest-wave-silence", "rest_wave_silence"),
                           ("--two-stage", "two_stage"),
                           ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
@@ -517,6 +529,7 @@ def main(argv=None) -> int:
                       max_hard_restart=args.max_hard_restart,
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
+                      rest_wave_silence=args.rest_wave_silence,
                       two_stage=args.two_stage,
                       voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,

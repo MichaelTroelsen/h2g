@@ -205,6 +205,12 @@ class Detection:
     # _find_rest_silences, which explains why gating `--rest-keyoff` on it
     # was wrong.
     rest_silences: bool = False
+    # ...and *how*, for the one caller that needs the distinction. Only the
+    # testbit family parks `$08` in the voice's stored waveform, which is the
+    # thing `--rest-wave-silence` reproduces; the envelope-zeroing family
+    # (Ricochet, 4 files) writes no waveform at all and a KEYOFF already says
+    # what it does. "" where no rest silences.
+    rest_silence_kind: str = ""
     # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
     # note-duration lookup table, how many operand bytes each $8x command
     # takes, and which command index sets the instrument.
@@ -996,7 +1002,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
 
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
-        det.rest_silences = _find_rest_silences(data)
+        det.rest_silence_kind = _rest_silence_kind(data)
+        det.rest_silences = bool(det.rest_silence_kind)
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)"
             + (" and silences the voice" if det.rest_silences else ""))
 
@@ -2016,22 +2023,36 @@ def _find_rest_silences(data: bytes) -> bool:
     worth logging -- one family cuts the sound in the branch, the other a
     frame earlier -- but nothing depends on it.
     """
+    return bool(_rest_silence_kind(data))
+
+
+def _rest_silence_kind(data: bytes) -> str:
+    """Which of the two silencing families this player belongs to, or "".
+
+    `"testbit"` writes `#$08` into the voice's stored waveform (IK+, 17
+    files); `"envelope"` zeroes the envelope pair (Ricochet, 4 files). Both
+    stop the sound and both are a Goattracker KEYOFF, which is why
+    `_find_rest_silences` collapses them -- but only the first parks a
+    *waveform*, so only it is reproducible by writing one.
+    """
     i = search_file(data, STATUS_BIT6_SHAPE)
     if i <= -1:
-        return False
+        return ""
     at = i + len(STATUS_BIT6_SHAPE.split())     # the BVS's own operand
     if at >= len(data):
-        return False
+        return ""
     rel = data[at] - 256 if data[at] > 127 else data[at]
     target = at + 1 + rel
     if not 0 <= target < len(data):
-        return False
+        return ""
     window = data[target:target + REST_SILENCE_WINDOW]
     if b"\xa9\x08" in window:                   # LDA #$08, the testbit
-        return True
+        return "testbit"
     # LDA #$00 into the envelope pair: `STA $D405,Y` / `STA $D406,Y`.
-    return (b"\xa9\x00" in window
-            and (b"\x99\x05\xd4" in window or b"\x99\x06\xd4" in window))
+    if (b"\xa9\x00" in window
+            and (b"\x99\x05\xd4" in window or b"\x99\x06\xd4" in window)):
+        return "envelope"
+    return ""
 
 
 # --- The instrument effect byte (+7) ---------------------------------------

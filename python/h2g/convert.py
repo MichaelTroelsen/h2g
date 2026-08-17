@@ -134,6 +134,7 @@ def convert(sid_path: str, log: Logger = print,
             vibrato: bool = False,
             rest_instrument: bool = False,
             rest_keyoff: bool = False,
+            rest_wave_silence: bool = False,
             compact_instruments: bool = False,
             engine: int = 0,
             tempo: int | str | None = None) -> bytes:
@@ -309,6 +310,9 @@ def convert(sid_path: str, log: Logger = print,
         variants=variants, steps=slide_steps,
         rest_instrument=rest_instrument,
         rest_keyoff=rest_keyoff,
+        # Only the testbit family parks a waveform; the envelope-zeroing
+        # four write none, and a KEYOFF already says what they do.
+        rest_wave=rest_wave_silence and det.rest_silence_kind == "testbit",
         instr_base=1 if compact_instruments else 2, tie=tie)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.

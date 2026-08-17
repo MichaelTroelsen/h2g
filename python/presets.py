@@ -128,6 +128,13 @@ EXCLUDED_FROM_ALWAYS = {
     # corpus, Zoids by 89 points and Thrust by 87. Three files gain 16-17
     # (Last_V8 both rips, Trans-Atlantic_Balloon_Challenge), which is why the
     # option exists rather than the finding being a comment.
+    # The bit-6 rest's parked waveform. Off by default and not shippable:
+    # v0.5.284 measured melody -43pp over 8 files for it, and the cause is
+    # still unknown -- the TONEPORTA explanation was refuted at v0.5.285, the
+    # emission defect behind that A/B fixed at v0.5.286, and the wavetable
+    # clobbering it at v0.5.311. The option exists so the measurement can be
+    # re-run against an emitter that does what it says.
+    "rest_wave_silence",
     "no_test_restart",
     # The hard restart's row bound raised from `row // 2` to `2 * row // 3`.
     # Per song rather than always, because the sweep that measured it

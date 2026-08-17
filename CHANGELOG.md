@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.312 — 2026-08-17
+
+- the bit-6 rest's regression was the tempo write, not the waveform
+
 ## 0.5.311 — 2026-08-17
 
 - LISTENING.md states the renderer and subtune the run used
