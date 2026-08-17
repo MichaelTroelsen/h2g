@@ -12,6 +12,10 @@ converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
   "restage the listening pairs" — the item three consecutive handoffs had
   called the immediate next action — and turned into building the listening
   apparatus that item had always assumed existed.
+* **v0.5.310 → v0.5.313**, 4 commits, same session. Took the queue's one
+  genuinely stuck item (the bit-6 rest), found its cause, and followed the
+  finding two levels down into the tempo and then into the row grid. A
+  concurrent session pushed its own v0.5.311 in the middle of it.
 
 > **Provenance, for the first run only.** That part is reconstructed from the
 > 52 commit messages, the generated artefacts and the tree, by a session that
@@ -44,7 +48,7 @@ commit in it is harness, tooling or docs.
 
 ## Summary
 
-**65 commits, v0.5.253 → v0.5.309, all pushed.** `Commando.sng` byte-exact
+**69 commits, v0.5.253 → v0.5.313, all pushed.** `Commando.sng` byte-exact
 throughout. Working tree clean but for the deliberately untracked `6581.pdf`.
 
 Corpus movement, from `FIDELITY.md`'s own summary blocks:
@@ -525,6 +529,72 @@ gitignored. 83 A/B pages plus `index.html`. Final corpus-scale run: **8m13s**
 for all 83 including merge and page generation, with 0 leftover parts and 0
 stray probes.
 
+
+## The fourth run (v0.5.310–313): one stuck item, three levels down
+
+The queue's item 2 had been stuck through three attempts. Taking it produced
+a chain, each step of which was a different defect from the one above it.
+
+### v0.5.312 — the bit-6 rest's regression was the tempo write
+`--rest-wave-silence` emits `CMD_SETWAVE $08` on a rest, reproducing what 17
+players park in the stored waveform. v0.5.284 measured **melody −43 pp over 8
+files** for this and three explanations had been refuted (the wavetable, the
+`$18` value, `CMD_TONEPORTA`).
+
+The cause is **`apply_tempo`**. It writes `CMD_SETTEMPO` into the row each
+subtune enters on, and **the command column is one byte per row** — a rest
+holding row 0 takes the slot, the write is skipped entirely, and the song runs
+at Goattracker's default. The correlation is exact: the eight files that
+collapse all lose a tempo write; three of the four inert ones keep theirs.
+
+**`drift` is why it was findable now**: added v0.5.288, four versions *after*
+the failed attempt, reading 0.00 → **1400.00** on Shockway Rider. A lost clock,
+not a timbre, and no column that existed then could have said so.
+
+With the tempo preserved: melody, seq, retrig, adsr, gate, drift, hold, onset,
+tail and nrun move on **zero files**; `wave` +0.3 pp mean over 12, and **IK+ —
+the file the mechanism was decoded from — loses 5**. Safe, not an improvement,
+ships off.
+
+A fourth defect fell out and was **refused**: widening the tempo scan to any
+free row reaches **25 files that ship with no tempo write at all**, and
+restoring one is 2 better and 3 worse. `retrig` says why — every gain moves
+toward 1.0, every loss away.
+
+### v0.5.313 — the row was not expressible, and was being rounded
+Chasing "why is the derived tempo wrong on those files" found that it is not.
+A gate-corrected row is `(reload+1)(O+1)/O` frames, a rational, and `-Sq`
+expresses denominator q exactly. `MAX_ROW_DENOMINATOR` capped q at 6.
+
+**The cap belongs where rounding stops working**, and the corpus says exactly
+where that is:
+
+    16/7  = 2.286 -> 2  12.5% out  |  81/20   = 4.050 -> 4  1.2% out
+    20/9  = 2.222 -> 2  10.0%      |  113/28  = 4.036 -> 4  0.9%
+    33/10 = 3.300 -> 3   9.1%      |  339/112 = 3.027 -> 3  0.9%
+
+A 7.5x gap with nothing between. The old comment said the rows past six "are
+within ~1.3% of a whole number anyway, so they round" — true of the right
+column, false of every shape on the left, which is the whole of what a cap of
+10 reaches. Raised to 10; six files re-grid and **every one gains**: `drift`
+0.00 on all six, `wave` +16.1 pp mean, `gate` ≈ +30 pp, `retrig` toward 1.00.
+
+  Warhawk -S2→-S7, Proteus -S2→-S7, Game Killer -S2→-S9, and Delta
+  Mix-E-Load / International Karate / Kentilla -S1→-S10.
+
+**Warhawk's melody reads 82 → 64% and that is the sampling artefact.** At -S7
+siddump discards six calls in seven; `--equal-calls` reads **90%, retrig
+1.00**. Second time that caveat has decided a ship-or-refuse — and 11 files
+are now above `-S4` where 5 were.
+
+### The version collision
+A concurrent session pushed **its own v0.5.311** (LISTENING.md naming the
+renderer, built on this session's v0.5.309) while v0.5.312 was being measured.
+Both claimed the number; mine rebased to 312. No content conflict — theirs is
+`listen.py`, mine `patterns.py` — only `CHANGELOG.md` and the version. The
+suite was **re-run after the rebase** rather than carried over, and came back
+1202 rather than the 1193 measured before it.
+
 </work_completed>
 
 <work_remaining>
@@ -571,16 +641,34 @@ To re-stage after a converter change:
     python listen.py --merge-notes
     python abpage.py
 
-### 2. The bit-6 rest's waveform — `[main]`
-§§ 7.nnnnn / 7.ooooo / 7.ppppp. Three attempts, three refutations, and the
-cause of the −43pp regression is **still unknown** — v0.5.285 falsified the
-TONEPORTA explanation by turning it off. Two facts sit unassembled: Auf
-Wiedersehen Monty's voice 2 holds `$41` continuously where the original drops to
-`$40` (194 attacks → 14), and the A/B that produced the regression measured 673
-command bytes where 61 were designed. **v0.5.286 fixed that emitter**, so the
-first move is re-running the same A/B and seeing whether the regression is even
-still there. `[main]` rather than `[subagent]` because it has burned three
-plausible readings already.
+### 2. ~~The bit-6 rest's waveform~~ — **closed at v0.5.312**
+The −43 pp was `apply_tempo` losing its write to an occupied command column,
+not anything about waveforms. `--rest-wave-silence` exists, is measured, and
+ships **off**: with the tempo preserved it moves no structural column on any
+file, `wave` +0.3 pp mean over 12, and IK+ — the file it was decoded from —
+loses 5. What is left is not a bug but a judgement, and a listener could
+settle it: `build/listen/IK_plus.html` and `Auf_Wiedersehen_Monty.html` are
+staged, and AWM is the file that gains most (+8 pp `wave`).
+
+One fact from the thread is still unassembled: **Auf Wiedersehen Monty's
+voice 2 holds `$41` continuously where the original drops to `$40`** at each
+note end, 194 attacks against 14. That is the opposite of what writing `$08`
+on a rest should do, and nothing explains it yet.
+
+### 2b. The 25 files with no tempo write — `[main]`
+Found at v0.5.312 and deliberately **not** fixed. `apply_tempo` writes into the
+row each subtune enters on and skips the subtune entirely if that row carries a
+command; 25 corpus files have no tempo write for that reason. Restoring one is
+**2 better and 3 worse** — Knucklebusters melody 50 → 81% and Geoff Capes
+49 → 60% against Warhawk 82 → 56%, Delta Mix-E-Load's sequence 97 → 57% and
+Human Race 65 → 56%.
+
+`retrig` is the tell: every gain moves toward 1.0 and every loss away from it,
+so on the losers the *value* that would be written is wrong and the missing
+write was accidentally protecting them. v0.5.313 fixed one cause of a wrong
+value (an unexpressible row) for six files — **re-run this A/B on top of it**
+before concluding anything, since three of the five files named above are in
+neither set and may now behave differently.
 
 ### 3. The vibrato shortfall, by bucket — `[subagent]` per bucket
 `VIBRATO.md`, 136 instruments / 42618 reversals missing, **114 emitting nothing
@@ -748,6 +836,27 @@ happened twice this run with `7.bbbbb`.
    dropped `audioop`) but local pages that reference the WAVs instead of
    inlining them, which removed the ceiling entirely.
 
+## Refuted, broken or blocked — the fourth run
+
+1. **A wavetable-clobbering explanation for the −43 pp.** `WAVEEXEC`
+   (gplay.c:515) writes `cptr->wave` from the table *after* commands run
+   (line 433), so a pattern `CMD_SETWAVE` should be overwritten within the
+   frame. Checked against real conversions: our tables end `$FF 00`, which
+   zeroes `ptr[WTBL]` and stops WAVEEXEC — IK+ 26 of 26, AWM 24 of 24. The
+   mechanism is real but does not fire here. Reported as a negative result
+   rather than shipped as a finding.
+2. **Widening `apply_tempo` to any free row.** 25 files, 2 better and 3
+   worse. Refused; see item 2b.
+3. **A probe with `apply_tempo`'s first two arguments reversed** — reported
+   "83 of 83 files changed", which is what a broken probe looks like. Caught
+   by the implausibility, not by a test.
+4. **A `--pace` median read as the truth.** Warhawk's headline says 2.25
+   frames; the least-squares fit says 0.875, i.e. 2.286 = 2 × 8/7 exactly.
+   The median quantises. The repo's own rule and I nearly took the median.
+5. **A denominator census keyed on `resolve_subtune(src, None)`** — that
+   helper takes `"auto"`, and `None` raised for all 83 files, which the first
+   run reported as `ERR 83`.
+
 ## Not pursued
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
@@ -808,6 +917,16 @@ happened twice this run with `7.bbbbb`.
   and refuses RSIDs, vsid does not render the requested length.
 * **Listening timings.** 83 tunes at 120 s: ~95 min serial, **~8 min** across
   six shards including merge and page generation. 1.7 GB in `build/listen/`.
+* **11 files now pack above `-S4`** (was 5), so the sampling caveat covers
+  more of the corpus than it did: siddump samples once per frame whatever the
+  call rate, and a `-S7` file has six calls in seven discarded. **Read
+  `--equal-calls` for the sequence dimensions of any such row** — Warhawk is
+  64% on a normal trace and 90% at equal sampling. `FIDELITY.md` prints the
+  warning; it has now decided a ship-or-refuse twice.
+* **`MAX_ROW_DENOMINATOR` is 10** and the cap is a property of the corpus, not
+  a tuned threshold: the rows it declines round within 0.8–1.2% and the ones it
+  reaches are 9.1–12.5% out, with nothing in between. Do not raise it to chase
+  q = 20 or 112 — those are 1–6.4 kHz call rates and they round correctly.
 * **Auto mode's classifier blocks `git reset --soft` and some compound
   commands containing `cp`.** Not a repo rule — a harness one — but it decides
   what a session can do unattended: history rewriting needs a human, and
@@ -886,14 +1005,16 @@ happened twice this run with `7.bbbbb`.
 
 ## Repository
 
-* **HEAD is `34e4945` v0.5.309; master in sync with `origin/master`.** The last
-  commit to change what the converter *emits* is **v0.5.304**; before it,
-  v0.5.302. Everything from v0.5.305 on is harness, tooling or docs —
-  v0.5.306 `abpage.py`, v0.5.307 `--all`, v0.5.308 the renderer, v0.5.309
-  sharding.
+* **HEAD is `71c067d` v0.5.313; master in sync with `origin/master`.** The last
+  commit to change what the converter *emits* is **v0.5.313** (six files
+  re-grid onto a higher multiplier); before it, v0.5.304. v0.5.305–311 are
+  harness, tooling or docs, and v0.5.312 adds an option that ships off.
+* **A concurrent session is also pushing to `master`.** It pushed its own
+  v0.5.311 during this run and both commits claimed the number. Fetch before
+  assuming HEAD is yours, and re-take any measurement after rebasing.
 * Working tree clean but for untracked `6581.pdf`.
 * `Commando.sng` byte-exact.
-* Last suite at HEAD: **1185 passed, 3 skipped**. It was 1135/3 at v0.5.297;
+* Last suite at HEAD: **1203 passed, 2 skipped**. It was 1135/3 at v0.5.297;
   the 17 new tests are the two hard-restart bounds (7), the shard/merge
   partition and its three refusals (9), and one derived-count fix. The 3 → 2
   skips are v0.5.299 re-arming `test_preset_passthrough`'s stamp guard, which
@@ -904,18 +1025,18 @@ happened twice this run with `7.bbbbb`.
 
 | file | stamp | current? |
 |---|---|---|
-| `SURVEY.md` | 0.5.304 | yes — content, not stamp |
-| `presets.json` | 0.5.304 | yes — content, not stamp |
-| `FIDELITY.md` | 0.5.304 | yes — content, not stamp |
-| `SUBTUNES.md` | 0.5.304 | yes (on demand) |
+| `SURVEY.md` | 0.5.313 | yes |
+| `presets.json` | 0.5.313 | yes |
+| `FIDELITY.md` | 0.5.313 | yes |
+| `SUBTUNES.md` | 0.5.313 | yes (on demand) |
 | `VIBRATO.md` | *none* | yes (on demand) |
 
-**The four stamps lag `__version__` by five versions and that is correct
-content-wise**: v0.5.305–309 changed no converter code, so nothing they
-measure moved. It does mean `test_preset_passthrough`'s stamp guard is
-**skipping** (it arms only while presets.json's stamp equals `__version__`) —
-that is the third skip, and the next regeneration re-arms it. Regenerating
-purely to clear the lag costs ~7 minutes and produces stamp-only diffs.
+All five regenerated at v0.5.313 against a converter change, so the stamps are
+current and `test_preset_passthrough`'s guard is armed (2 skips, not 3). The
+`--fidelity` settings were **carried forward, not re-measured** — the last full
+search was v0.5.304, and v0.5.313 changed the multiplier on six files, which is
+exactly the kind of change that can move a per-song option. Those six are due a
+`--fidelity` re-run; sharded it costs about 15 minutes.
 
 All five regenerated at v0.5.304 against a converter change, so `FIDELITY.md`
 moves five rows as well as its stamp and the rest move stamps only.
@@ -936,25 +1057,40 @@ adopted output returned 0 gained / 0 lost, so the search is deterministic and
 idempotent. That figure had never been timed, and it was load-bearing: it is
 the stated reason two features were refused. Both are reopened above.
 
-## Corpus at v0.5.304
+## Corpus at v0.5.313
 
 * 95 files; **83 measured**, 80 of 83 in reach converted, 3 failed, 12 out of
   scope (not a Hubbard player).
-* mean melody **91%**, sequence **90%**, pitch **94%**, wave **79%**,
-  ADSR **65%**, gate **50%**.
-* noise frames ours/original **76332 / 82742**.
-* gate: **129106** frames sustaining a voice the original released, **40825**
+* mean melody **91%**, sequence **91%**, pitch **94%**, wave **81%**,
+  ADSR **66%**, gate **52%**.
+* noise frames ours/original **76034 / 82742**.
+* gate: **123671** frames sustaining a voice the original released, **36952**
   the other way round.
-* *plays the same music* (95–100%) **54 files**; close 18; recognisable 7;
+* *plays the same music* (95–100%) **56 files**; close 15; recognisable 8;
   plays something else 4 (Commodore_64_Music_Examples, Dragons_Lair_Part_II,
   Geoff_Capes_Strongman_Challenge, Kings_of_the_Beach_ingame).
-* drift: 46 of 79 exact; 33 part company at a median 9.2 frames per 1000.
+* drift: **52** of 79 exact; 27 part company at a median 8.9 frames per 1000.
 * `presets.json`: 83 songs, 22 `always` keys, **48** carrying a `--fidelity`
-  setting, re-measured at v0.5.300 and v0.5.304 against the current converter.
+  setting — last full search v0.5.304, so the six files v0.5.313 re-gridded
+  are due a re-run.
+* Multipliers: **11 files above `-S4`** (three at `-S10`, one `-S9`, two
+  `-S7`, one `-S6`, four `-S5`). Read `--equal-calls` for those rows.
 * Hard restart bound: 11 files at `row - 1`, 1 at `2 * row // 3`, 71 at
   `row // 2`.
 * Vibrato census: 136 instruments, 42618 reversals missing, **114 emitting no
   oscillation at all**.
+
+## New surface added during the fourth run
+
+* `detect.rest_silence_kind` — splits the two rest-silencing families
+  ("testbit" 17, "envelope" 4); `_find_rest_silences` is `bool(kind)`
+* `patterns.CMD_SETWAVE`, `REST_SILENT_WAVE`, `ONE_SHOT_COMMANDS` extended;
+  `apply_tempo` may overwrite CMD_SETWAVE and nothing else
+* `convert(rest_wave_silence=)` / `--rest-wave-silence`, in
+  `presets.EXCLUDED_FROM_ALWAYS`
+* `MAX_ROW_DENOMINATOR` 6 → 10
+* `tests/test_rest_wave.py` (8); `test_hold_rows` and `test_skip_gate`
+  rewritten from literals to properties
 
 ## New surface added during the third run
 
@@ -1015,8 +1151,10 @@ current scheme.
    question is no longer whether to stage it but what it says. See
    `<work_remaining>` item 1 for the four tunes that each have a decision
    waiting on them.
-2. Is the bit-6 rest worth a fourth attempt now that its emitter is fixed
-   (v0.5.286), or should it be parked?
+2. The bit-6 rest is **closed** (v0.5.312): the regression was the tempo
+   write. `--rest-wave-silence` is measured and ships off, and whether it
+   *should* is now a listening question — `IK_plus.html` loses 5 pp of `wave`
+   and `Auf_Wiedersehen_Monty.html` gains 8, both staged.
 3. What scheme should method-doc sections use past § 7.zzzzz? Still unresolved
    and now overdue — v0.5.302 and v0.5.304 both shipped without a section
    because there was no name to give one.

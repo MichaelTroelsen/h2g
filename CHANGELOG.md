@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.314 — 2026-08-17
+
+- the handoff covers the fourth run, v0.5.310-313
+
 ## 0.5.313 — 2026-08-17
 
 - the corrected row is expressible up to -S10, and six files re-grid onto it
