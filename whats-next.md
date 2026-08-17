@@ -8,6 +8,10 @@ converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
 * **v0.5.298 → v0.5.304**, 8 commits, written by the session that did them.
   It opened by being asked to "read what next", found the handoff 52 commits
   stale, rewrote it, and then followed one thread out of it to the end.
+* **v0.5.305 → v0.5.309**, 5 commits, same session, same day. It began as
+  "restage the listening pairs" — the item three consecutive handoffs had
+  called the immediate next action — and turned into building the listening
+  apparatus that item had always assumed existed.
 
 > **Provenance, for the first run only.** That part is reconstructed from the
 > 52 commit messages, the generated artefacts and the tree, by a session that
@@ -19,26 +23,28 @@ converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
 > commit message", not as the full list. The v0.5.298–304 entries carry no
 > such caveat.
 
-Neither run had an up-front task. The first was driven by short directives and
-three rounds of forked subagents; the second by short directives alone, no
-forks, everything in one session. The working mode is the project's established
+None of the three had an up-front task. The first was driven by short
+directives and three rounds of forked subagents; the second and third by short
+directives alone, no forks, everything in one session. The working mode is the project's established
 one:
 
 > measure the conversion against the original, find where they differ, read the
 > 6502 to learn why, fix it, re-measure across the corpus, and ship or refuse to
 > ship on the measurement.
 
-Scope: `python/h2g/` (detect.py, goatwriter.py, tracks.py, patterns.py) and the
+Scope: `python/h2g/` (detect.py, goatwriter.py, tracks.py, patterns.py), the
 measurement harness (`fidelity.py`, `presets.py`, `survey.py`, `songview.py`),
-plus two new generated reports (`SUBTUNES.md`, `VIBRATO.md`). The VB6 original
-was not touched.
+two new generated reports (`SUBTUNES.md`, `VIBRATO.md`), and in the third run
+the listening apparatus (`listen.py`, new `abpage.py`). The VB6 original was
+not touched, and **the third run changed no converter code at all** — every
+commit in it is harness, tooling or docs.
 </original_task>
 
 <work_completed>
 
 ## Summary
 
-**60 commits, v0.5.253 → v0.5.304, all pushed.** `Commando.sng` byte-exact
+**65 commits, v0.5.253 → v0.5.309, all pushed.** `Commando.sng` byte-exact
 throughout. Working tree clean but for the deliberately untracked `6581.pdf`.
 
 Corpus movement, from `FIDELITY.md`'s own summary blocks:
@@ -418,6 +424,107 @@ That one file keeps the middle value is the finding: a sweep of a single
 constant, which is what v0.5.276 did, can only ask which value is least bad for
 everyone, and could never have shown it.
 
+
+## The third run (v0.5.305–309): the listening apparatus
+
+Three consecutive handoffs named "re-stage and listen" as the immediate next
+action, and each time it stayed undone. This run found out why: the staging
+existed but nothing made a *comparison* practical, and the renderer underneath
+it had two defects nobody had looked for. **No converter code changed in this
+run.** What changed is that a listening pass is now a thing a person can
+actually sit down and do.
+
+### v0.5.305 — the handoff covers both runs
+v0.5.298 rewrote the handoff and then the session kept going for seven more
+commits, so the document described its own starting point.
+
+### v0.5.306 — `abpage.py`, gapless A/B pages
+Playing two WAVs in a media player is not an A/B: the switch costs a click and
+a seek, and by the time the second file starts you are comparing a sound to a
+*memory* of one. That is the wrong instrument for a corpus where `melody`,
+`seq`, `pitch`, `retrig`, `onset`, `hold`, `tail` and `adsr` can all read 100%
+on a tune that still sounds wrong.
+
+`abpage.py` builds one page per staged tune that **plays both renders at once
+and swaps which one is audible** — gapless, position-matched, with a loop
+toggle and a **blind mode** that hides the labels, randomises after each guess
+and keeps a tally. A tune you cannot pick above chance is a stronger result
+than any column in the report.
+
+Two output modes and the distinction matters: local pages reference the WAVs
+beside them (~13 KB, any length); `--embed` inlines the audio at 4/3 its size
+(~14 MB a minute a side), which is the mode with a ceiling. Pages **quote**
+`FIDELITY.md` and `LISTENING.md` rather than restating them, so a page cannot
+prime a listener for a defect the report does not name. A `-` column is
+dropped rather than printed — in that report it means *no shared instrument
+key*, not zero. 11 tests, including an `html.parser` balance walk over real
+generated markup.
+
+### v0.5.307 — `listen.py --all`
+Staging the corpus needed the song list spelled out on the command line. The
+flag reads **`presets.json`, not the corpus directory**: the directory holds 95
+files and 12 have no player this converter detects, so queueing those renders a
+silent conversion side for each — which reads as a fidelity catastrophe rather
+than an absent player. `--files` and `--all` combine. `select_names()` is
+extracted so it is testable without rendering the corpus; 8 tests.
+
+### v0.5.308 — the renderer is `sidplayfp`
+**The user identified this, and it was the substantive find of the run.**
+`SID2WAV.EXE` is version 1.8 from 1997 and is a build of libsidplayfp's own
+lineage; the current frontend of that lineage is `sidplayfp`. Being
+twenty-eight years newer fixes three things, two of which this harness had
+already *measured* without recognising them as defects:
+
+* **It refuses every RSID** — 18 of 95 corpus files, so the corpus was being
+  rendered by two different emulations (sid2wav and VICE).
+* **It fades the last seconds out.** Visible as a decaying tail in an energy
+  profile of its Commando render, printed while chasing an unrelated question
+  and read past. Every comparison's ending was corrupted and nothing said so.
+  `-fo0` turns it off.
+* **It exposes no chip model.** Hubbard is 6581-era; `-mo`/`-mn` and ReSIDfp's
+  `--fcurve`/`--frange` are audible and were unavailable.
+
+And VICE, the fallback, **does not render the length it is asked for**:
+`-limitcycles` overshot a 20 s request by 1.76 s, and the staged
+Kings_of_the_Beach_intro pair was 115.6 s against 120.0. After the switch all
+83 pairs are 120.00 s on both sides, checked.
+
+The structural change is `pick_renderer`: the engine is chosen **once per
+pair, never per side**, by probing the *original* (the harder of the two, since
+`gt2reloc` always writes a PSID and the original may not be). The old code
+chose per side and fell back inside each call, so sid2wav on one side and vsid
+on the other was reachable — the one outcome this staging cannot tolerate,
+since two emulations differ in level and filter enough to colour a verdict.
+
+**RSID needs the C64 ROMs and the failure looks like silence**: without a
+KERNAL, libsidplayfp runs to an illegal instruction having already written a
+44-byte header. `sidplayfp.ini` now points at VICE's `kernal-901227-03.bin`,
+`basic-901226-01.bin`, `chargen-901225-01.bin`.
+
+### v0.5.309 — `listen.py --shard` / `--merge-notes`
+The corpus at 120 s is ~95 minutes serially and ~8 across six shards. Each
+tune's render is independent; **the notes are not**. Every run writes the whole
+`LISTENING.md`, so shards sharing an output directory leave only the last
+one's — and `abpage.py` reads that file for each tune's "what to listen for",
+so the loss is silent and reads as tunes that were never staged. Sharded runs
+write `LISTENING.part<I>.md`; `--merge-notes` joins them and folds in whatever
+was already there.
+
+**A real bug, found by running the thing rather than testing the parts.** Two
+shards concurrently produced one part file and half the tunes: v0.5.308's
+`pick_renderer` wrote its probe to a fixed `_probe.wav` in the *output*
+directory, which sharded passes share, so they raced and one shard silently
+staged nothing. This is the defect `make_workdir` was added for in v0.5.66,
+reached by a different route eight months later, in code written the same day
+as the tests meant to cover it. **Every unit test passed throughout.** What
+caught it was running three shards for real and counting the output.
+
+### The listening set as it now stands
+83 pairs, 120 s, every one rendered by one engine, `build/listen/`, 1.7 GB,
+gitignored. 83 A/B pages plus `index.html`. Final corpus-scale run: **8m13s**
+for all 83 including merge and page generation, with 0 leftover parts and 0
+stray probes.
+
 </work_completed>
 
 <work_remaining>
@@ -427,16 +534,42 @@ worktree (brief it to copy `python/tools/siddump-rt/siddump.exe` in, touch none
 of the generated files, return a `git diff`); `[main]` = this session only;
 `[user]` = needs a human.
 
-### 1. Re-stage and listen — `[user]`
-The staged pairs in gitignored `build/listen/` are from **v0.5.238, 13 Aug** —
-44 versions and every gain above them. Two listening verdicts *did* arrive
-during the run (IK+ at v0.5.282, Knucklebusters at v0.5.290) and each opened a
-thread that produced real work, which is the argument for doing it again now
-that mean melody is 91% and `gate` exists. Re-stage with
-`python listen.py <sid_dir> -t 30 --presets ../presets.json`; for interactive
-listening `.\play.ps1 <file> -Presets presets.json`, **never `goattrk2.exe`
-directly**. Worth including: Auf Wiedersehen Monty (item 2), a `-S5` file, and
-one of the four in *plays something else*.
+### 1. Listen — `[user]`, and it is **ready**
+This item has been the immediate next action in three consecutive handoffs and
+was blocked each time by the apparatus, not the will. It is not blocked now.
+
+**Open `build/listen/index.html`.** 83 tunes, 120 s each, every pair rendered
+by one engine at exactly 120.00 s, each with an A/B page that swaps sources
+gaplessly and a blind mode that keeps score. Nothing needs regenerating.
+
+The four questions worth taking first, because each has a decision waiting on
+it:
+
+* **`gate` has never been validated by ear.** It was built at v0.5.270 because
+  no other column could see the register it reads, and it has since driven
+  three shipped decisions — `--rest-keyoff` into `always`, and both
+  hard-restart bounds. `W_A_R_Preview` scores 99% on it and `W_A_R` 80%; if
+  the column is real those should sound correspondingly right.
+* **`Saboteur_II`** is the file `keeps_notes` refused at both wider bounds. If
+  it sounds fine as shipped, the guard was right twice on its own.
+* **`Auf_Wiedersehen_Monty`** carries the open bit-6 fact (item 2): voice 2
+  holds `$41` where the original drops to `$40`, 194 attacks against 14.
+* **Anything in *plays something else*** — Commodore_64_Music_Examples,
+  Dragons_Lair_Part_II, Geoff_Capes_Strongman_Challenge,
+  Kings_of_the_Beach_ingame.
+
+Two verdicts in the previous run each opened a productive thread (IK+ →
+§§ 7.nnnnn–ppppp, Knucklebusters → the vibrato census), which is the argument
+for the format. For interactive editing use `.\play.ps1 <file> -Presets
+presets.json`, **never `goattrk2.exe` directly**.
+
+To re-stage after a converter change:
+
+    cd python
+    python listen.py <sid_dir> --all -t 120 --presets ../presets.json --shard 0/6
+    ... one process per shard, 0..5 ...
+    python listen.py --merge-notes
+    python abpage.py
 
 ### 2. The bit-6 rest's waveform — `[main]`
 §§ 7.nnnnn / 7.ooooo / 7.ppppp. Three attempts, three refutations, and the
@@ -583,6 +716,38 @@ happened twice this run with `7.bbbbb`.
    around**; the misfiling is recorded in v0.5.304's message instead. Costs a
    bisect for those two lines and nothing else.
 
+## Refuted, broken or blocked — the third run
+
+1. **Investigating SIDM2 as the SID2WAV replacement.** It only wraps VICE; the
+   actual lineage is libsidplayfp. Corrected by the user. The time was not
+   wasted — the vsid comparison found the length overshoot — but the premise
+   was wrong for two exchanges.
+2. **A renderer comparison whose numbers were junk.** Cross-correlating
+   sid2wav against vsid gave ~0.000 with 400 ms lags, and envelope correlation
+   0.05–0.20 with lags pinned at the search bound. Cause: the two renders were
+   20.00 s and 21.76 s, so every correlation compared misaligned material of
+   different lengths. **The level and spectrum figures from that run are
+   sound; the correlation and beat-period figures are not evidence of
+   anything.** Reported as such rather than quietly dropped.
+3. **`_probe.wav` in the shared output directory** (v0.5.308 → fixed in
+   v0.5.309). Two shards raced on one fixed filename and one silently staged
+   nothing. All unit tests passed. Found by running three shards and counting.
+4. **Destroying 22 tunes' notes.** A smoke test — `listen.py --all` with no
+   `sid_dir` — staged 0 tunes and *wrote `LISTENING.md` anyway*, overwriting a
+   full one. Recovered by re-staging. **The guard is still unwritten**: a run
+   that stages nothing should not overwrite the record of a run that staged
+   something. Named in v0.5.307's message as owed.
+5. **The heredoc backslash trap, twice in one session**, on a rule CLAUDE.md
+   already documents and that I had quoted in a commit message an hour
+   earlier. `python - <<PY` mangles `\n` in a patch string. Use Write/Edit.
+6. **Rewriting history to re-file two `presets.py` lines** — `git reset
+   --soft` was blocked by auto mode's classifier and **not worked around**.
+   Recorded in v0.5.304's message instead. The user chose to leave it.
+7. **Two minutes of audio in one published artifact** — 28 MB against a 16 MB
+   ceiling. The answer was not compression (no ffmpeg/sox, and Python 3.14
+   dropped `audioop`) but local pages that reference the WAVs instead of
+   inlining them, which removed the ceiling entirely.
+
 ## Not pursued
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
@@ -631,6 +796,18 @@ happened twice this run with `7.bbbbb`.
   finds no tests.
 * `.claude/settings.json` now carries a **shared** permission allowlist; the
   per-machine `.claude/settings.local.json` is gitignored.
+* **Rendering.** `sidplayfp` (libsidplayfp's frontend) at
+  `C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe` is the
+  renderer. **RSIDs need the C64 ROMs**, wired in
+  `%APPDATA%\sidplayfp\sidplayfp.ini` to VICE's `C64/` directory
+  (`kernal-901227-03.bin`, `basic-901226-01.bin`, `chargen-901225-01.bin`;
+  a `.ini.bak` holds the original). Without them libsidplayfp dies on an
+  illegal instruction having written a 44-byte header — which looks exactly
+  like a tune that renders silence. `SID2WAV` (1997) and VICE's `vsid` remain
+  as fallbacks; **do not** reach for them deliberately: sid2wav fades the tail
+  and refuses RSIDs, vsid does not render the requested length.
+* **Listening timings.** 83 tunes at 120 s: ~95 min serial, **~8 min** across
+  six shards including merge and page generation. 1.7 GB in `build/listen/`.
 * **Auto mode's classifier blocks `git reset --soft` and some compound
   commands containing `cp`.** Not a repo rule — a harness one — but it decides
   what a session can do unattended: history rewriting needs a human, and
@@ -709,13 +886,14 @@ happened twice this run with `7.bbbbb`.
 
 ## Repository
 
-* **HEAD is `f4b5e32` v0.5.304; master in sync with `origin/master`.** The last
+* **HEAD is `34e4945` v0.5.309; master in sync with `origin/master`.** The last
   commit to change what the converter *emits* is **v0.5.304**; before it,
-  v0.5.302. v0.5.300 changed one song's options, v0.5.301 and v0.5.303 are
-  harness and docs, v0.5.298–299 the handoff and a regeneration.
+  v0.5.302. Everything from v0.5.305 on is harness, tooling or docs —
+  v0.5.306 `abpage.py`, v0.5.307 `--all`, v0.5.308 the renderer, v0.5.309
+  sharding.
 * Working tree clean but for untracked `6581.pdf`.
 * `Commando.sng` byte-exact.
-* Last suite at HEAD: **1152 passed, 2 skipped**. It was 1135/3 at v0.5.297;
+* Last suite at HEAD: **1185 passed, 3 skipped**. It was 1135/3 at v0.5.297;
   the 17 new tests are the two hard-restart bounds (7), the shard/merge
   partition and its three refusals (9), and one derived-count fix. The 3 → 2
   skips are v0.5.299 re-arming `test_preset_passthrough`'s stamp guard, which
@@ -726,11 +904,18 @@ happened twice this run with `7.bbbbb`.
 
 | file | stamp | current? |
 |---|---|---|
-| `SURVEY.md` | 0.5.304 | yes |
-| `presets.json` | 0.5.304 | yes |
-| `FIDELITY.md` | 0.5.304 | yes |
+| `SURVEY.md` | 0.5.304 | yes — content, not stamp |
+| `presets.json` | 0.5.304 | yes — content, not stamp |
+| `FIDELITY.md` | 0.5.304 | yes — content, not stamp |
 | `SUBTUNES.md` | 0.5.304 | yes (on demand) |
 | `VIBRATO.md` | *none* | yes (on demand) |
+
+**The four stamps lag `__version__` by five versions and that is correct
+content-wise**: v0.5.305–309 changed no converter code, so nothing they
+measure moved. It does mean `test_preset_passthrough`'s stamp guard is
+**skipping** (it arms only while presets.json's stamp equals `__version__`) —
+that is the third skip, and the next regeneration re-arms it. Regenerating
+purely to clear the lag costs ~7 minutes and produces stamp-only diffs.
 
 All five regenerated at v0.5.304 against a converter change, so `FIDELITY.md`
 moves five rows as well as its stamp and the rest move stamps only.
@@ -770,6 +955,19 @@ the stated reason two features were refused. Both are reopened above.
   `row // 2`.
 * Vibrato census: 136 instruments, 42618 reversals missing, **114 emitting no
   oscillation at all**.
+
+## New surface added during the third run
+
+* `python/abpage.py` — A/B listening pages (`--embed` for a self-contained
+  one), plus `tests/test_abpage.py` (11)
+* `listen.py` — `render_sidplayfp`, `pick_renderer`, `select_names`,
+  `split_notes`, `merge_notes`; flags `--all`, `--shard I/N`,
+  `--merge-notes`, `--sidplayfp`; plus `tests/test_renderer.py` (7),
+  `tests/test_listen_all.py` (8), `tests/test_listen_shard.py` (8)
+* `build/listen/` — 83 pairs at 120 s, 83 pages, `index.html`,
+  `LISTENING.md` (all gitignored, 1.7 GB)
+* `%APPDATA%\sidplayfp\sidplayfp.ini` — C64 ROM paths (machine config, not
+  in the repo; a fresh machine must do this itself)
 
 ## New surface added during the second run
 
@@ -813,8 +1011,10 @@ current scheme.
 
 ## Open questions for the user
 
-1. **Listening material is 66 versions stale** (13 Aug, v0.5.238), and the
-   corpus has moved 3pp of `gate` and 3pp of melody since. Re-stage?
+1. **The listening set is staged and current** — 83 pairs at v0.5.309. The
+   question is no longer whether to stage it but what it says. See
+   `<work_remaining>` item 1 for the four tunes that each have a decision
+   waiting on them.
 2. Is the bit-6 rest worth a fourth attempt now that its emitter is fixed
    (v0.5.286), or should it be parked?
 3. What scheme should method-doc sections use past § 7.zzzzz? Still unresolved
@@ -826,17 +1026,25 @@ current scheme.
 
 ## Immediate next action
 
-**Re-stage and listen.** Unchanged from the last handoff, and more overdue: the
-staged pairs are from v0.5.238, since when mean melody has moved 88 → 91%,
-*plays the same music* 46 → 54 files, and `gate` has gone from not existing to
-50%. The two verdicts that did arrive mid-run each opened a productive thread
-(IK+ → §§ 7.nnnnn–ppppp, Knucklebusters → the vibrato census).
+**Listen. Open `build/listen/index.html`.**
 
-Everything else on the queue is a ship-or-refuse decision, and between the two
-runs this document records **four** instruments confidently reporting a
-mechanism that did not exist and **one** cost figure that refused a real
-feature for 26 versions. A listener is the only instrument here that has never
-been wrong.
+This has been the immediate next action in three consecutive handoffs. The
+difference now is that nothing stands in front of it: 83 pairs at 120 s, one
+engine per pair, exact lengths, gapless A/B with blind scoring, notes quoting
+the report per tune. It needs a person and about an hour.
+
+Everything else on the queue is a ship-or-refuse decision, and across the
+three runs this document records **four** measurement instruments confidently
+reporting mechanisms that did not exist, **one** cost figure that refused a
+real feature for 26 versions, and **two** renderer defects that had been
+measured without being recognised. A listener is the only instrument here that
+has never been wrong — and the last two verdicts each opened a thread that
+produced real work.
+
+Second, if code is wanted before ears: item 2 (the bit-6 rest) is the one
+genuinely stuck problem, and v0.5.286 fixed the emitter that invalidated its
+last A/B, so the first move there is re-running a measurement that has never
+been valid.
 
 **Second, and cheap now:** two method-doc sections are owed (v0.5.302's row
 bound, v0.5.304's three-way split) and cannot be written until § 7.zzzzz's
