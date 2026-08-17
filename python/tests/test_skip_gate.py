@@ -132,26 +132,44 @@ def test_a_fractional_row_is_exact_at_the_right_multiplier():
 
 
 def test_the_denominator_is_capped_by_playability():
-    """Six calls a frame is ~9k cycles of a PAL frame's 19656 -- heavy but
-    real. Ten would be three quarters of the frame, and the rows beyond six
-    are within ~1.3% of a whole number anyway, so they round.
+    """The cap is where rounding stops being acceptable, not where q gets big.
 
-    The cap was 4 for three versions on a measurement artefact: siddump
+    This asserted 6 and declined 33/10 on the reasoning that the rows beyond
+    six "are within ~1.3% of a whole number anyway, so they round". That is
+    true of most of them and false of exactly three shapes:
+
+        16/7 -> 2   12.5% out      81/20  -> 4   1.2% out
+        20/9 -> 2   10.0%          113/28 -> 4   0.9%
+        33/10 -> 3   9.1%          339/112-> 3   0.9%
+
+    A 7.5x gap with nothing in between, so v0.5.313 raised it to 10 and the
+    six files it reaches all gained -- `drift` 0.00 on every one, `wave`
+    +16.1pp mean. Ten calls a frame is ~three quarters of a PAL frame's
+    19656 cycles: heavy, and the last value that is a call rate at all.
+
+    The cap was also 4 for three versions on a measurement artefact: siddump
     samples once per frame whatever the call rate, so a -m5 trace of a
     multiplier-5 file drops four calls in five. At equal sampling nothing
     regresses -- Kings_of_the_Beach_intro, read as 96% -> 61%, is 96%.
     """
     from fractions import Fraction
     import h2g.goatwriter as gw
-    assert gw.MAX_ROW_DENOMINATOR == 6
+    assert gw.MAX_ROW_DENOMINATOR == 10
     sp = _speeds((3,), (5,))                     # 18/5 -- reachable at -S5
     assert sp.exact_row(0) == Fraction(18, 5)
     assert effective_frames(sp, 0, skip_gate=True) == Fraction(18, 5)
     assert recommended_multiplier(sp, 0, skip_gate=True) == 5
-    # ...and 33/10 is not: that would be 500 calls a second.
+    # 33/10 is reachable now: rounding it to 3 is 9.1% out, which is a tempo
+    # error a listener hears, against 500 calls a second which is merely busy.
     sp10 = _speeds((3,), (10,))
     assert sp10.exact_row(0) == Fraction(33, 10)
-    assert effective_frames(sp10, 0, skip_gate=True) == 3
+    assert effective_frames(sp10, 0, skip_gate=True) == Fraction(33, 10)
+    assert recommended_multiplier(sp10, 0, skip_gate=True) == 10
+    # ...and 339/112 is not, because it rounds to 3 within 0.9% and 112 calls
+    # a frame is 5600 Hz.
+    sp112 = _speeds((3,), (112,))
+    assert sp112.exact_row(0) == Fraction(339, 112)
+    assert effective_frames(sp112, 0, skip_gate=True) == 3
 
 
 def test_an_integer_row_still_takes_no_multiplier():

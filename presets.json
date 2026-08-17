@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.304 presets.py",
+  "generator": "h2g 0.5.313 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -243,10 +243,10 @@
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 6523,
+      "bytes": 6765,
       "subtunes": 10,
       "rows": 17309,
-      "multiplier": 1,
+      "multiplier": 10,
       "two_stage": true
     },
     "Devils_Galop.sid": {
@@ -274,7 +274,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 45709,
+      "bytes": 45713,
       "subtunes": 9,
       "rows": 31074,
       "multiplier": 4,
@@ -309,10 +309,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 9374,
+      "bytes": 9638,
       "subtunes": 1,
       "rows": 8113,
-      "multiplier": 2
+      "multiplier": 9
     },
     "Geoff_Capes_Strongman_Challenge.sid": {
       "max_rows": 128,
@@ -403,20 +403,20 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 18663,
+      "bytes": 18685,
       "subtunes": 1,
       "rows": 30754,
-      "multiplier": 1
+      "multiplier": 10
     },
     "Kentilla.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 31432,
+      "bytes": 31630,
       "subtunes": 1,
       "rows": 36388,
-      "multiplier": 1
+      "multiplier": 10
     },
     "Kings_of_the_Beach_ingame.sid": {
       "max_rows": 128,
@@ -660,10 +660,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 11964,
+      "bytes": 12040,
       "subtunes": 1,
       "rows": 16038,
-      "multiplier": 2
+      "multiplier": 7
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
@@ -917,10 +917,10 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 16976,
+      "bytes": 16996,
       "subtunes": 12,
       "rows": 32266,
-      "multiplier": 2
+      "multiplier": 7
     },
     "Wiz.sid": {
       "max_rows": 94,

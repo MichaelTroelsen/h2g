@@ -1791,7 +1791,30 @@ def find_song_speeds(sid: SidFile,
 # `fidelity.py --equal-calls`, nothing regresses and three files gain --
 # Kings_of_the_Beach_intro, the supposed worst case at 96% -> 61%, is 96% at
 # -S5.
-MAX_ROW_DENOMINATOR = 6
+#
+# v0.5.313 raised it 6 -> 10, and the reason is not the size of q but **how
+# badly the row rounds without it**. This comment used to say the rows beyond
+# six "are within ~1.3% of a whole number anyway, so they round", which is
+# true of most of them and false of exactly the three shapes a cap of 10
+# reaches:
+#
+#     16/7   = 2.286  ->  2   12.5% out   Warhawk, Proteus
+#     20/9   = 2.222  ->  2   10.0%       Game Killer
+#     33/10  = 3.300  ->  3    9.1%       Delta Mix-E-Load, IK, Kentilla
+#     -------------------------------------------------------------------
+#     81/20  = 4.050  ->  4    1.2%       After 8, Rikky
+#     113/28 = 4.036  ->  4    0.9%       Pandora
+#     109/36 = 3.028  ->  3    0.9%       Sanxion, Sigma Seven
+#     339/112= 3.027  ->  3    0.9%       IK+, I Ball, Nineteen, ...
+#     384/127= 3.024  ->  3    0.8%       BMX Kidz, Wiz, Skate or Die, ...
+#
+# A 7.5x gap between the worst rounder and the best non-rounder, with nothing
+# in between -- so the cap is a property of the corpus rather than a number to
+# tune. Ten calls a frame is about three quarters of a PAL frame's 19656
+# cycles, which is heavy; 127 would be 6350 Hz, which is not a call rate at
+# all. The six files it reaches all gain: `drift` -> 0.00 on every one, `wave`
+# +16.1pp mean, `gate` +30pp, and `retrig` toward 1.00. See section 8.
+MAX_ROW_DENOMINATOR = 10
 
 
 def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,
