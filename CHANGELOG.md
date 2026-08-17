@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.311 — 2026-08-17
+
+- LISTENING.md states the renderer and subtune the run used
+
 ## 0.5.310 — 2026-08-17
 
 - the handoff covers the listening apparatus, v0.5.305-309
