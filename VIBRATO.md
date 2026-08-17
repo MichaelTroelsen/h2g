@@ -10,6 +10,7 @@
 |---|---|---:|---|---|---:|---:|
 | Nemesis_the_Warlock.sid | `$0C0A` | 3 | $2A | plain | 2195 | 134 |
 | W_A_R_Preview.sid | `$4AAD` | 2 | $14 | pitchseq | 1717 | 0 |
+| International_Karate.sid | `$090A` | 2 | $55 | pitchseq | 1625 | 0 |
 | IK_plus.sid | `$0A56` | 5 | $14 | pitchseq | 1600 | 0 |
 | Chimera.sid | `$0060` | 5 | $0D | drum | 1511 | 0 |
 | W_A_R_Preview.sid | `$0900` | 1 | $0A | plain | 1332 | 0 |
@@ -26,6 +27,7 @@
 | Last_V8_C128_version.sid | `$0409` | 2 | $05 | arp | 702 | 0 |
 | Zoolook.sid | `$0F09` | 2 | $0B | drum | 674 | 0 |
 | Chicken_Song.sid | `$0A00` | 6 | $01 | drum | 644 | 0 |
+| International_Karate.sid | `$0A0A` | 1 | $55 | pitchseq | 630 | 0 |
 | Commodore_64_Music_Examples.sid | `$5C3A` | - | - | unknown | 623 | 0 |
 | Battle_of_Britain.sid | `$0FFF` | 5 | $02 | plain | 616 | 0 |
 | Kings_of_the_Beach_intro.sid | `$0998` | 6 | $00 | plain | 599 | 0 |
@@ -43,7 +45,6 @@
 | Devils_Galop.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
 | Monty_on_the_Run.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
 | Food_Feud.sid | `$0A0A` | 5 | $2B | drum | 401 | 0 |
-| Proteus.sid | `$0D6D` | 5 | $25 | arp | 397 | 0 |
 | Dragons_Lair_Part_II.sid | `$097A` | 2 | $00 | plain | 505 | 111 |
 | Powerplay_Hockey_USA_vs_USSR.sid | `$0AA9` | 2 | $00 | plain | 393 | 0 |
 | Chain_Reaction.sid | `$7900` | 8 | $0A | plain | 382 | 0 |
@@ -59,34 +60,30 @@
 | Nineteen.sid | `$0797` | 7 | $01 | program | 483 | 156 |
 | Rock_Tells_the_Tale.sid | `$59C9` | 8 | $04 | plain | 326 | 0 |
 | Bangkok_Knights.sid | `$0A08` | 3 | $30 | pitchseq | 325 | 0 |
-| Proteus.sid | `$0F08` | 8 | $95 | pitchseq | 305 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$09F8` | 3 | $01 | program | 295 | 0 |
 | Sanxion.sid | `$0B03` | 2 | $2B | drum | 286 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$06A6` | 2 | $44 | atkpitch | 282 | 0 |
-| Proteus.sid | `$090F` | 4 | $F5 | pitchseq | 281 | 0 |
 | Chain_Reaction.sid | `$00F8` | 3 | $10 | pitchseq | 277 | 0 |
+| International_Karate.sid | `$0BB0` | 3 | $08 | plain | 277 | 0 |
 | Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 114 |
-| Warhawk.sid | `$0F08` | 8 | $95 | pitchseq | 266 | 0 |
 | Knucklebusters.sid | `$0AAD` | 25 | $44 | atkpitch | 261 | 0 |
 | Dragons_Lair_Part_II.sid | `$1979` | 26 | $04 | plain | 245 | 0 |
 | Spellbound.sid | `$0FFA` | 4 | $C5 | arp | 219 | 0 |
 | Phantoms_of_the_Asteroid.sid | `$0786` | 1 | $02 | plain | 335 | 125 |
-| Warhawk.sid | `$090E` | 11 | $C5 | arp | 210 | 0 |
 | Flash_Gordon.sid | `$0F07` | 3 | $0B | drum | 208 | 0 |
 | Zoids.sid | `$0B0C` | 4 | $05 | drum | 208 | 0 |
 | Rasputin.sid | `$0A0A` | 7 | $05 | drum | 204 | 0 |
-| Game_Killer.sid | `$0A9A` | 2 | $0A | plain | 262 | 62 |
 | Phantoms_of_the_Asteroid.sid | `$0A69` | 2 | $04 | plain | 196 | 0 |
-| Warhawk.sid | `$090F` | 4 | $F5 | pitchseq | 195 | 0 |
 | Rock_Tells_the_Tale.sid | `$F96E` | 10 | $04 | plain | 190 | 0 |
+| Game_Killer.sid | `$0A9A` | 2 | $0A | plain | 262 | 78 |
 | Ricochet.sid | `$09F9` | 3 | $01 | program | 184 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$0ACA` | 4 | $00 | plain | 167 | 0 |
 | Last_V8.sid | `$0A09` | 4 | $05 | arp | 163 | 0 |
 | Last_V8_C128_version.sid | `$0A09` | 4 | $05 | arp | 162 | 0 |
 | Rock_Tells_the_Tale.sid | `$09B9` | 6 | $04 | plain | 172 | 21 |
+| International_Karate.sid | `$0F0B` | 4 | $C5 | arp | 148 | 0 |
 | Thundercats.sid | `$09F9` | 3 | $01 | program | 278 | 130 |
 | Wiz.sid | `$0909` | 2 | $01 | program | 144 | 0 |
-| International_Karate.sid | `$0BB0` | 3 | $08 | plain | 277 | 136 |
 | Last_V8.sid | `$040F` | 1 | $01 | drum | 141 | 0 |
 | Last_V8_C128_version.sid | `$040F` | 1 | $01 | drum | 141 | 0 |
 | Dragons_Lair_Part_II.sid | `$A8C9` | 15 | $04 | plain | 138 | 0 |
@@ -97,11 +94,10 @@
 | Star_Paws.sid | `$08C7` | 7 | $01 | program | 122 | 0 |
 | One_Man_and_his_Droid.sid | `$0069` | 7 | $0C | plain | 112 | 0 |
 | One_Man_and_his_Droid.sid | `$0089` | 8 | $0C | plain | 112 | 0 |
+| International_Karate.sid | `$0A08` | 5 | $C5 | arp | 103 | 0 |
 | Samantha_Fox_Strip_Poker.sid | `$0909` | 2 | $C4 | arp | 101 | 0 |
 | Spellbound.sid | `$0F0A` | 13 | $25 | arp | 100 | 0 |
-| Proteus.sid | `$090E` | 11 | $C5 | arp | 96 | 0 |
 | Trans-Atlantic_Balloon_Challenge.sid | `$0CD9` | 8 | $10 | pitchseq | 139 | 45 |
-| Warhawk.sid | `$080C` | 12 | $C5 | arp | 91 | 0 |
 | Battle_of_Britain.sid | `$0C0A` | 4 | $05 | drum | 81 | 0 |
 | Zoids.sid | `$070A` | 5 | $05 | drum | 81 | 0 |
 | Spellbound.sid | `$0FFF` | - | - | unknown | 79 | 0 |
@@ -121,15 +117,11 @@
 | Zoids.sid | `$0A0C` | 8 | $05 | drum | 72 | 28 |
 | BMX_Kidz.sid | `$0998` | 1 | $06 | plain | 40 | 0 |
 | Master_of_Magic.sid | `$0A09` | 5 | $05 | drum | 35 | 0 |
-| Proteus.sid | `$080C` | 12 | $C5 | arp | 32 | 0 |
 | Pandora.sid | `$0C99` | 7 | $01 | program | 31 | 0 |
 | Auf_Wiedersehen_Monty.sid | `$09B9` | 1 | $64 | plain | 30 | 0 |
 | Rasputin.sid | `$0F0F` | 10 | $01 | drum | 46 | 16 |
 | IK_plus.sid | `$0505` | 4 | $08 | program | 28 | 0 |
 | Game_Killer.sid | `$096A` | 7 | $0D | drum | 24 | 0 |
-| Proteus.sid | `$0F4F` | 9 | $C5 | arp | 24 | 0 |
-| Proteus.sid | `$0FDA` | 16 | $95 | pitchseq | 18 | 0 |
-| Warhawk.sid | `$0FDA` | 16 | $95 | pitchseq | 16 | 0 |
 | IK_plus.sid | `$09C8` | 2 | $A4 | bit80 | 15 | 0 |
 | Master_of_Magic.sid | `$050A` | 17 | $05 | drum | 15 | 0 |
 | Saboteur_II.sid | `$0888` | 5 | $01 | program | 11 | 0 |
@@ -151,15 +143,15 @@
 
 | cause | absent | slow | instruments | reversals missing |
 |---|---:|---:|---:|---:|
-| plain | 34 | 14 | 48 | 17912 |
+| plain | 35 | 13 | 48 | 18032 |
 | drum | 26 | 3 | 29 | 9847 |
-| arp | 18 | 0 | 18 | 4786 |
 | program | 13 | 2 | 15 | 2923 |
-| pitchseq | 13 | 1 | 14 | 5782 |
+| arp | 14 | 0 | 14 | 4187 |
+| pitchseq | 9 | 1 | 10 | 6956 |
 | atkpitch | 5 | 1 | 6 | 569 |
 | bit80 | 2 | 1 | 3 | 94 |
 | unknown | 3 | 0 | 3 | 705 |
 
-**114 of these 136 instruments emit no oscillation at all**, against 22 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**107 of these 128 instruments emit no oscillation at all**, against 21 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).
