@@ -2879,9 +2879,29 @@ python listen.py <sid_dir> --from-json ../build/fidelity.json -t 30
 It picks one tune from each band of `FIDELITY.md` — the median of the band, not
 the extreme — renders the original and our packed conversion to WAV with the
 same emulator at the same settings, and writes `build/listen/LISTENING.md`
-saying what the measurement predicts for each. Needs `SID2WAV.EXE`
-(`--sid2wav`); output is gitignored, because it is for ears rather than for
+saying what the measurement predicts for each. Needs one of the three
+renderers below; output is gitignored, because it is for ears rather than for
 review.
+
+**Each tune is staged at its own subtune** -- `-a/--subtune` defaults to
+`auto`, the PSID header's own `startSong`, the same rule `fidelity.py` traces
+by. Seven corpus files name something other than 0 there, and Samantha Fox
+Strip Poker's subtune 0 is a one-note stub: staging that would ask a listener
+about music no measurement in the repo ever compared. Where a `--from-json`
+row recorded a `matched_subtune` -- our numbering shifts when `gt2reloc` drops
+a subtune -- our side follows it, so the pair is the same piece of music at two
+different indices. Pass a number to force one for every file.
+
+`LISTENING.md`'s header states the renderer and the subtune **from what the run
+did**, not from a constant. It named `SID2WAV` for four versions after the
+renderer moved to `sidplayfp`, which is the one claim in that document a
+listener has to be able to trust -- the whole premise is that a difference
+heard is a difference in the music and not in the emulator. A pass that fell
+back for some pairs names every engine it used and says the comparison holds
+within a pair rather than across the pass. Under `--shard` it states the same
+two facts as policy rather than as totals: `--merge-notes` keeps the first
+part's header, so a count taken over one shard would be published as a count
+over the whole pass.
 
 **The renderer is `sidplayfp`, libsidplayfp's own frontend** (v0.5.308).
 `SID2WAV` is a 1997 build of that same lineage, and being twenty-eight years
