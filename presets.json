@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.313 presets.py",
+  "generator": "h2g 0.5.315 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -247,7 +247,8 @@
       "subtunes": 10,
       "rows": 17309,
       "multiplier": 10,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true
     },
     "Devils_Galop.sid": {
       "max_rows": 128,
@@ -312,7 +313,8 @@
       "bytes": 9638,
       "subtunes": 1,
       "rows": 8113,
-      "multiplier": 9
+      "multiplier": 9,
+      "max_hard_restart": true
     },
     "Geoff_Capes_Strongman_Challenge.sid": {
       "max_rows": 128,
@@ -416,7 +418,8 @@
       "bytes": 31630,
       "subtunes": 1,
       "rows": 36388,
-      "multiplier": 10
+      "multiplier": 10,
+      "max_hard_restart": true
     },
     "Kings_of_the_Beach_ingame.sid": {
       "max_rows": 128,
@@ -663,7 +666,8 @@
       "bytes": 12040,
       "subtunes": 1,
       "rows": 16038,
-      "multiplier": 7
+      "multiplier": 7,
+      "max_hard_restart": true
     },
     "Pygmies_Revenge.sid": {
       "max_rows": 128,
@@ -920,7 +924,8 @@
       "bytes": 16996,
       "subtunes": 12,
       "rows": 32266,
-      "multiplier": 7
+      "multiplier": 7,
+      "max_hard_restart": true
     },
     "Wiz.sid": {
       "max_rows": 94,
