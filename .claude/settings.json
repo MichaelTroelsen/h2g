@@ -14,7 +14,6 @@
       "Bash(python python/bump_version.py *)",
       "Read(//c/Users/mit/AppData/Local/Temp/claude/**)",
       "Edit(//c/Users/mit/AppData/Local/Temp/claude/**)",
-      "Write(//c/Users/mit/AppData/Local/Temp/claude/**)",
       "Read(//c/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob/**)",
       "Read(//c/Users/mit/Downloads/GoatTracker_2.77/src/**)",
       "Bash(rtk git *)",
