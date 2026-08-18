@@ -16,6 +16,11 @@ converts Rob Hubbard `.sid` files into GoatTracker `.sng`, at
   genuinely stuck item (the bit-6 rest), found its cause, and followed the
   finding two levels down into the tempo and then into the row grid. A
   concurrent session pushed its own v0.5.311 in the middle of it.
+* **v0.5.314 → v0.5.317**, 5 commits (one carries no version), a later
+  session. It ran the queue rather than a thread: re-searched the six
+  re-gridded files' settings, regenerated the artefacts behind them, then
+  executed the listen item's *staging* half — and found a defect in the
+  staging tool by reading the artefact it had just produced.
 
 > **Provenance, for the first run only.** That part is reconstructed from the
 > 52 commit messages, the generated artefacts and the tree, by a session that
@@ -40,30 +45,37 @@ Scope: `python/h2g/` (detect.py, goatwriter.py, tracks.py, patterns.py), the
 measurement harness (`fidelity.py`, `presets.py`, `survey.py`, `songview.py`),
 two new generated reports (`SUBTUNES.md`, `VIBRATO.md`), and in the third run
 the listening apparatus (`listen.py`, new `abpage.py`). The VB6 original was
-not touched, and **the third run changed no converter code at all** — every
-commit in it is harness, tooling or docs.
+not touched, and **the third and fifth runs changed no converter code at
+all** — every commit in them is harness, tooling or docs.
 </original_task>
 
 <work_completed>
 
 ## Summary
 
-**69 commits, v0.5.253 → v0.5.313, all pushed.** `Commando.sng` byte-exact
-throughout. Working tree clean but for the deliberately untracked `6581.pdf`.
+**74 commits, v0.5.253 → v0.5.317. The last two are committed but NOT
+pushed** (`git status -sb`: ahead 2) — `ee76308` and `96298cc`. `Commando.sng`
+byte-exact throughout. Working tree clean but for the deliberately untracked
+`6581.pdf` and a stray `monlog_out.txt`.
 
 Corpus movement, from `FIDELITY.md`'s own summary blocks:
 
-| | v0.5.252 | v0.5.297 | v0.5.304 (current) |
-|---|---|---|---|
-| mean melody | 88% | 91% | **91%** |
-| mean sequence | 87% | 90% | **90%** |
-| mean wave | 78% | 79% | **79%** |
-| mean ADSR | 63% | 65% | **65%** |
-| noise frames ours/orig | 75904 | 76332 | **76332** / 82742 |
-| *plays the same music* (95–100%) | 46 files | 54 | **54 files** |
-| mean gate overlap | (no such column) | 47% | **50%** |
-| frames we sustain, they released | — | 134630 | **129106** |
-| drift | (no such column) | 46 of 79 exact | **46 of 79 exact** |
+| | v0.5.252 | v0.5.297 | v0.5.304 | v0.5.315 (current) |
+|---|---|---|---|---|
+| mean melody | 88% | 91% | 91% | **91%** |
+| mean sequence | 87% | 90% | 90% | **91%** |
+| mean wave | 78% | 79% | 79% | **81%** |
+| mean ADSR | 63% | 65% | 65% | **66%** |
+| noise frames ours/orig | 75904 | 76332 | 76332 | **76034** / 82742 |
+| *plays the same music* (95–100%) | 46 files | 54 | 54 | **56 files** |
+| mean gate overlap | (no such column) | 47% | 50% | **52%** |
+| frames we sustain, they released | — | 134630 | 129106 | **122589** |
+| drift | (no such column) | 46 of 79 exact | 46 of 79 | **52 of 79** |
+
+The current column is the artefacts as they stand, stamped 0.5.315. Its gains
+over v0.5.304 are v0.5.313's re-grid and v0.5.315's re-search of the six files
+it moved — six files out of 83, which is why the means move by a point and
+`drift` by six files.
 
 The second run moved one column: `gate`, by 3pp, on 12 files, by making the
 hard restart's row bound a per-song choice. Everything else it did was to the
@@ -595,6 +607,98 @@ Both claimed the number; mine rebased to 312. No content conflict — theirs is
 suite was **re-run after the rebase** rather than carried over, and came back
 1202 rather than the 1193 measured before it.
 
+## The fifth run (v0.5.314–317): the queue, and a tool caught by its own output
+
+No thread of its own. It took what the previous run had left owed, and the one
+finding it produced came from reading an artefact rather than from looking for
+a defect.
+
+### v0.5.315 — the re-gridded files' settings were carried, not measured
+v0.5.313 moved six files from `-S1`/`-S2` to `-S7`..`-S10`. Their `--fidelity`
+settings had been searched at v0.5.304 against the *old* multipliers, and the
+hard restart's bound is `row - 1` **calls** — so what that option is worth
+changes by a factor of five or ten when the rate does. By this project's own
+standard a carried setting is not a measurement.
+
+Re-searched, 127 combinations a song, 3 shards, **42 s**. Five gained, none
+lost, structural choices identical:
+
+    Delta_Mix-E-Load  two_stage -> two_stage max_hard_restart
+    Game_Killer / Kentilla / Proteus / Warhawk  (none) -> max_hard_restart
+    International_Karate                        unchanged
+
+    Warhawk           melody 64 -> 90%  seq 65 -> 90%  retrig 0.86 -> 1.00
+    Delta_Mix-E-Load  gate 30 -> 53%   Game_Killer gate 64 -> 72%
+    Proteus           gate 63 -> 69%   Kentilla    gate 43 -> 45%
+
+Warhawk's row is the one to read: v0.5.313 shipped it at melody 64% with a
+note that this is the `-S7` sampling artefact. It now measures 90% on a normal
+trace, which is what the caveat predicted — the artefact was real and so was
+the setting underneath it.
+
+All four stamped artefacts regenerated here (0.5.313 → 0.5.315); `gate` frames
+123671 → **122589**.
+
+### v0.5.316 — VIBRATO.md against the re-gridded rates
+Regenerated on demand. It had been two versions behind the multipliers it
+describes, which is exactly the way a per-song option goes stale unnoticed.
+
+### `ee76308` — an inert permission rule, no version
+File permission checks match `Edit(path)` rules, which cover every
+file-editing tool, so a `Write(...)` rule in `.claude/settings.json` had never
+matched anything. Dropped. No converter behaviour, so no bump and no
+regeneration — the first commit in this document to skip both deliberately.
+
+### The listening set, re-staged (no version — `build/` is gitignored)
+The staged pairs dated from before v0.5.313, so six files' WAVs were of a
+converter that no longer existed. Re-staged whole: six `listen.py` shards,
+83 tunes, 120 s a side, `sidplayfp` 2.15.2, then `--merge-notes` and
+`abpage.py`. 14+14+14+14+14+13 tunes, exit 0 each, no refusal in any shard
+log; 83 `.h2g.wav` and 83 `.original.wav`, every pair 120.0x s on both sides
+(worst within-pair difference 0.03 s, sub-frame); 84 pages; 1.7 GB.
+
+### v0.5.317 — merge_notes published the wrong run's header
+Reading the document that staging had just produced, its first sentence was:
+
+    Staged by `python/listen.py` (h2g 0.5.306), 30 s of subtune 0,
+    rendered by `SID2WAV` at 44.1 kHz/16-bit.
+
+Every fact in it was false about the run it described (0.5.316, 120 s, each
+file's own `startSong`, `sidplayfp`) — and it is the sentence the apparatus
+rests on, because a listener trusts "every difference within a pair is a
+difference in the music" only if both sides really came from one engine at one
+setting.
+
+`merge_notes` folds the parts with `for src in [outdir/"LISTENING.md"] + parts`
+and took the header as `head = head or h` — **first non-empty wins, and the
+file already there is first**. So the preamble was always the *previous*
+pass's. This is the drift v0.5.311 fixed for the single-process path
+(`document_header` derives the line from what the run did) reintroduced by the
+sharded path, which routes around that function entirely; `_policy_header` was
+written so the claim stays true "whichever part wins the merge", and the merge
+was not picking a part. `document_header`'s own docstring asserted "merge_notes
+keeps the first part's header" — that was the intent, never the behaviour, and
+the two readings differ only when an old `LISTENING.md` exists, which is every
+re-stage.
+
+    head = h or head          # was: head = head or h
+
+Last non-empty wins, always a part, matching `tail = t or tail` one line below.
+Sections still merge in the old order, so a re-staged tune's notes keep
+replacing the stale ones — only the two whole-document fields take the last
+writer.
+
+The existing merge tests could not see it: every part and the pre-existing file
+shared one `HEAD` constant, so the two candidate headers were the same string.
+The new test uses two different ones and was **confirmed to fail on the old
+line** (reverting it alone: 1 failed, 8 passed). 1203 passed, 3 skipped.
+
+**The general shape.** The tool that stages evidence is itself evidence, and
+nothing in this repo scores it. Both defects in the listening apparatus so far
+(v0.5.311's constant, v0.5.317's merge order) were found by *reading its output
+as prose*, not by a check — and both had a passing test suite over them at the
+time.
+
 </work_completed>
 
 <work_remaining>
@@ -604,13 +708,18 @@ worktree (brief it to copy `python/tools/siddump-rt/siddump.exe` in, touch none
 of the generated files, return a `git diff`); `[main]` = this session only;
 `[user]` = needs a human.
 
-### 1. Listen — `[user]`, and it is **ready**
-This item has been the immediate next action in three consecutive handoffs and
-was blocked each time by the apparatus, not the will. It is not blocked now.
+### 1. Listen — `[user]`, and it is **ready and current**
+This item has been the immediate next action in four consecutive handoffs and
+was blocked each time by the apparatus, not the will. It is not blocked now,
+and as of the fifth run it is not stale either.
 
 **Open `build/listen/index.html`.** 83 tunes, 120 s each, every pair rendered
-by one engine at exactly 120.00 s, each with an A/B page that swaps sources
-gaplessly and a blind mode that keeps score. Nothing needs regenerating.
+by one engine at exactly 120.0x s, each with an A/B page that swaps sources
+gaplessly and a blind mode that keeps score. Nothing needs regenerating: the
+set was re-staged at **v0.5.316**, after the six files v0.5.313 re-gridded and
+the settings v0.5.315 re-searched, so every pair is of the converter as it
+stands. `LISTENING.md`'s preamble now states that run rather than a previous
+one (v0.5.317).
 
 The four questions worth taking first, because each has a decision waiting on
 it:
@@ -668,7 +777,11 @@ so on the losers the *value* that would be written is wrong and the missing
 write was accidentally protecting them. v0.5.313 fixed one cause of a wrong
 value (an unexpressible row) for six files — **re-run this A/B on top of it**
 before concluding anything, since three of the five files named above are in
-neither set and may now behave differently.
+neither set and may now behave differently. Warhawk *is* in both sets and has
+moved twice since the A/B was taken: re-gridded at v0.5.313 and given
+`max_hard_restart` at v0.5.315, melody 64 → 90%. Its 82 → 56% is the loss the
+refusal rested on, and it was measured against a Warhawk that no longer
+exists.
 
 ### 3. The vibrato shortfall, by bucket — `[subagent]` per bucket
 `VIBRATO.md`, 136 instruments / 42618 reversals missing, **114 emitting nothing
@@ -687,15 +800,22 @@ at all**. The buckets are now trustworthy for the first time in the run:
 of mean melody, and `fidelity_better` cannot select it. `plain` absent is the
 largest genuine queue. One agent per bucket is the natural fan-out.
 
-### 4. Re-grid the rows for drift — `[main]`
-33 files drift, median 9.2 frames per 1000, worst Rasputin −355.8. On 17 the
-cause is exact — `-1/(skip+1)`, the outer-gate correction `effective_frames`
-declines when the corrected row cannot be packed (IK+'s 3 × 113/112 wants
-`-S112`). The fix is re-gridding, not a tempo. **Changes packing, so `[main]`.**
+### 4. ~~Re-grid the rows for drift~~ — **closed at v0.5.313**, residual below
+Raising `MAX_ROW_DENOMINATOR` to 10 re-gridded six files and every one gained;
+their settings were re-searched at v0.5.315. The corpus now reads **52 of 79
+exact**, the other 27 at a median 8.9 frames per 1000, worst Rasputin −355.8.
 
-### 5. The gate axis's remaining 129106 frames — `[main]`
-Mean gate overlap **50%**; 129106 frames still sustain a voice the original
-released. v0.5.274 established that `held` has no long tail and is the same
+What is left is the **17 files whose drift is exactly `-1/(skip+1)`** — the
+outer gate's skipped call, which `effective_frames` declines to correct when
+the corrected row cannot be packed (IK+'s 3 × 113/112 wants `-S112`). The 7.5x
+gap in the rounding table says a cap above 10 buys nothing, so the honest
+outcome here may be a committed statement that these 17 are a format limit
+rather than a fix. **Changes packing either way, so `[main]`.**
+
+### 5. The gate axis's remaining 122589 frames — `[main]`
+Mean gate overlap **52%**; 122589 frames still sustain a voice the original
+released (129106 at v0.5.313; the six re-gridded files account for the
+difference, not a change to this axis). v0.5.274 established that `held` has no long tail and is the same
 mechanism `hold`'s `fetch` owns, so this is not a new mechanism to find.
 
 **The hard-restart bound is now exhausted as a lever.** v0.5.302 and v0.5.304
@@ -727,6 +847,14 @@ latency (Chimera, 438 frames) and clamping rather than correcting. Unexamined.
 exhausted; the next section needs a scheme, and choosing one is cheaper before
 four parallel forks each invent a different one — which is exactly what
 happened twice this run with `7.bbbbb`.
+
+**Five sections are now owed**, all blocked on the same missing name:
+`--wide-hard-restart` (v0.5.302), `--max-hard-restart` and the three-way row
+bound (v0.5.304), `MAX_ROW_DENOMINATOR`'s cap and the six re-gridded files
+(v0.5.313), the re-search at the new rates (v0.5.315), and `merge_notes`'
+header order (v0.5.317). The backlog grows by one per run while the question
+stays unanswered, and each is a finding that currently exists only in a commit
+message.
 
 ### 9. Older, still open
 * `songview.py`'s **live render check**, owed since v0.5.243. Chrome extension
@@ -1025,18 +1153,22 @@ happened twice this run with `7.bbbbb`.
 
 | file | stamp | current? |
 |---|---|---|
-| `SURVEY.md` | 0.5.313 | yes |
-| `presets.json` | 0.5.313 | yes |
-| `FIDELITY.md` | 0.5.313 | yes |
-| `SUBTUNES.md` | 0.5.313 | yes (on demand) |
-| `VIBRATO.md` | *none* | yes (on demand) |
+| `SURVEY.md` | 0.5.315 | yes |
+| `presets.json` | 0.5.315 | yes |
+| `FIDELITY.md` | 0.5.315 | yes |
+| `SUBTUNES.md` | 0.5.315 | yes (on demand) |
+| `VIBRATO.md` | *none* | yes — regenerated v0.5.316 (on demand) |
 
-All five regenerated at v0.5.313 against a converter change, so the stamps are
-current and `test_preset_passthrough`'s guard is armed (2 skips, not 3). The
-`--fidelity` settings were **carried forward, not re-measured** — the last full
-search was v0.5.304, and v0.5.313 changed the multiplier on six files, which is
-exactly the kind of change that can move a per-song option. Those six are due a
-`--fidelity` re-run; sharded it costs about 15 minutes.
+All four stamped artefacts regenerated at v0.5.315 against the re-search, and
+`VIBRATO.md` at v0.5.316. **The converter is 0.5.317, so the stamps read two
+versions behind** — correctly: neither v0.5.316 nor v0.5.317 changed converter
+behaviour (a doc regeneration and a `listen.py` fix), and `ee76308` changed no
+code at all. Nothing is owed here unless a converter change lands.
+`test_preset_passthrough`'s guard is armed (2 skips, not 3).
+
+The `--fidelity` settings are **current as of v0.5.315**: the six files
+v0.5.313 re-gridded were re-searched there — 127 combinations a song, 3 shards,
+42 s — and five of the six gained a `max_hard_restart`.
 
 All five regenerated at v0.5.304 against a converter change, so `FIDELITY.md`
 moves five rows as well as its stamp and the rest move stamps only.
@@ -1057,28 +1189,41 @@ adopted output returned 0 gained / 0 lost, so the search is deterministic and
 idempotent. That figure had never been timed, and it was load-bearing: it is
 the stated reason two features were refused. Both are reopened above.
 
-## Corpus at v0.5.313
+## Corpus at v0.5.315 (the artefacts as they stand)
 
 * 95 files; **83 measured**, 80 of 83 in reach converted, 3 failed, 12 out of
   scope (not a Hubbard player).
 * mean melody **91%**, sequence **91%**, pitch **94%**, wave **81%**,
   ADSR **66%**, gate **52%**.
 * noise frames ours/original **76034 / 82742**.
-* gate: **123671** frames sustaining a voice the original released, **36952**
+* gate: **122589** frames sustaining a voice the original released, **37146**
   the other way round.
 * *plays the same music* (95–100%) **56 files**; close 15; recognisable 8;
   plays something else 4 (Commodore_64_Music_Examples, Dragons_Lair_Part_II,
   Geoff_Capes_Strongman_Challenge, Kings_of_the_Beach_ingame).
 * drift: **52** of 79 exact; 27 part company at a median 8.9 frames per 1000.
 * `presets.json`: 83 songs, 22 `always` keys, **48** carrying a `--fidelity`
-  setting — last full search v0.5.304, so the six files v0.5.313 re-gridded
-  are due a re-run.
+  setting — full search v0.5.304, plus the six re-gridded files re-searched at
+  v0.5.315. No song's settings predate its current multiplier.
 * Multipliers: **11 files above `-S4`** (three at `-S10`, one `-S9`, two
   `-S7`, one `-S6`, four `-S5`). Read `--equal-calls` for those rows.
-* Hard restart bound: 11 files at `row - 1`, 1 at `2 * row // 3`, 71 at
-  `row // 2`.
+* Hard restart bound: **16** files at `row - 1`, 1 at `2 * row // 3`, 66 at
+  `row // 2` (11/1/71 at v0.5.313; the five that moved are v0.5.315's
+  re-search of the re-gridded files).
 * Vibrato census: 136 instruments, 42618 reversals missing, **114 emitting no
   oscillation at all**.
+
+## New surface added during the fifth run
+
+* `listen.merge_notes` — the header is taken from a part, not from the
+  `LISTENING.md` already in the directory (`head = h or head`); docstrings in
+  `merge_notes` and `document_header` corrected to describe the behaviour
+  rather than the intent
+* `tests/test_listen_shard.py` —
+  `test_the_header_comes_from_a_part_not_from_the_file_already_there`, the
+  first merge test whose two candidate headers differ (9 in the file, 1203 in
+  the suite)
+* No converter surface at all: `python/h2g/` was not touched in this run
 
 ## New surface added during the fourth run
 
@@ -1143,21 +1288,24 @@ census, drift, the bit-6 rest's three refutations, the outer-gate-only row, and
 the vibrato census's four self-corrections.
 
 **The letter run is exhausted.** § 7.zzzzz is the last available name under the
-current scheme.
+current scheme, and **five sections are owed behind it** — see
+`<work_remaining>` item 8 for which. Nothing has been added to the method doc
+since; the findings live in commit messages only.
 
 ## Open questions for the user
 
-1. **The listening set is staged and current** — 83 pairs at v0.5.309. The
-   question is no longer whether to stage it but what it says. See
-   `<work_remaining>` item 1 for the four tunes that each have a decision
-   waiting on them.
+1. **The listening set is staged and current** — 83 pairs, re-rendered at
+   v0.5.316 so that the six re-gridded files and the settings re-searched at
+   v0.5.315 are what you hear. The question is no longer whether to stage it
+   but what it says. See `<work_remaining>` item 1 for the four tunes that each
+   have a decision waiting on them.
 2. The bit-6 rest is **closed** (v0.5.312): the regression was the tempo
    write. `--rest-wave-silence` is measured and ships off, and whether it
    *should* is now a listening question — `IK_plus.html` loses 5 pp of `wave`
    and `Auf_Wiedersehen_Monty.html` gains 8, both staged.
 3. What scheme should method-doc sections use past § 7.zzzzz? Still unresolved
-   and now overdue — v0.5.302 and v0.5.304 both shipped without a section
-   because there was no name to give one.
+   and now **five sections overdue** — v0.5.302, 304, 313, 315 and 317 each
+   shipped without one because there was no name to give it.
 4. The v0.5.303/304 misfiling (two `presets.py` lines in the wrong commit) is
    recorded in prose rather than rebased, because the fix was blocked. Fine to
    leave, or worth a force-push?
@@ -1166,16 +1314,18 @@ current scheme.
 
 **Listen. Open `build/listen/index.html`.**
 
-This has been the immediate next action in three consecutive handoffs. The
+This has been the immediate next action in four consecutive handoffs. The
 difference now is that nothing stands in front of it: 83 pairs at 120 s, one
 engine per pair, exact lengths, gapless A/B with blind scoring, notes quoting
-the report per tune. It needs a person and about an hour.
+the report per tune — and, since v0.5.316, rendered from the converter as it
+stands rather than from one two re-grids ago. It needs a person and about an
+hour.
 
 Everything else on the queue is a ship-or-refuse decision, and across the
-three runs this document records **four** measurement instruments confidently
+five runs this document records **four** measurement instruments confidently
 reporting mechanisms that did not exist, **one** cost figure that refused a
-real feature for 26 versions, and **two** renderer defects that had been
-measured without being recognised. A listener is the only instrument here that
+real feature for 26 versions, and **three** defects in the listening
+apparatus that had been measured or published without being recognised. A listener is the only instrument here that
 has never been wrong — and the last two verdicts each opened a thread that
 produced real work.
 

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.318 — 2026-08-18
+
+- the handoff covers the fifth run, v0.5.314-317
+
 ## 0.5.317 — 2026-08-18
 
 - merge_notes takes the parts' header, not the stale file's
