@@ -81,6 +81,34 @@ def test_a_part_wins_over_a_stale_section_for_the_same_tune(tmp_path):
     assert got.count("## Delta") == 1
 
 
+def test_the_header_comes_from_a_part_not_from_the_file_already_there(tmp_path):
+    """The preamble names the version, the window, the subtune and the
+    renderer, so carrying it over from the previous pass publishes a header
+    describing a run that no longer exists. A 0.5.316 / 120 s / sidplayfp pass
+    shipped with `0.5.306, 30 s of subtune 0, SID2WAV` over it exactly that
+    way -- the drift v0.5.311 fixed for the single-process path, reintroduced
+    by the sharded one."""
+    stale = ("# Listening pass\n\nStaged by listen.py (h2g 0.5.306), 30 s of "
+             "subtune 0, rendered by SID2WAV.\n\n")
+    (tmp_path / "LISTENING.md").write_text(
+        stale + "## Commando — *named*\n\n- **old** note\n\n" + TAIL,
+        encoding="utf-8")
+    fresh = ("# Listening pass\n\nStaged by listen.py (h2g 0.5.316), 120 s of "
+             "each file's own subtune, by sidplayfp.\n\n")
+    (tmp_path / "LISTENING.part0.md").write_text(
+        fresh + "## Delta — *named*\n\n- **new** note\n\n" + TAIL,
+        encoding="utf-8")
+
+    L.merge_notes(tmp_path)
+    got = (tmp_path / "LISTENING.md").read_text(encoding="utf-8")
+
+    assert "0.5.316" in got and "sidplayfp" in got and "120 s" in got
+    assert "0.5.306" not in got and "SID2WAV" not in got
+    # ...and the carried-over section survives, which is the other half of
+    # the merge and the reason the old file is in the loop at all.
+    assert "## Commando" in got and "## Delta" in got
+
+
 def test_merge_with_nothing_to_do_says_so(tmp_path):
     assert L.merge_notes(tmp_path) == 0
     assert not (tmp_path / "LISTENING.md").exists()

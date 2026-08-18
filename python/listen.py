@@ -342,6 +342,18 @@ def merge_notes(outdir: Path) -> int:
 
     An existing LISTENING.md is merged in rather than replaced, so staging a
     few more tunes into a directory does not discard the notes already there.
+
+    **The header comes from a part, never from the file already there.** The
+    preamble states the version, the window, the subtune and the renderer, so
+    a header carried over from a previous pass describes a run that no longer
+    exists -- and `_policy_header` is written precisely so that whichever part
+    supplies it, the claim is true of this run. Preferring the existing file's
+    published `h2g 0.5.306, 30 s of subtune 0, rendered by SID2WAV` over a
+    0.5.316 / 120 s / `startSong` / `sidplayfp` pass: the same drift v0.5.311
+    fixed for the single-process path, reintroduced by the sharded one because
+    the old file was first in the merge order and `head or h` keeps the first.
+    Sections still merge in that order, so a re-staged tune's notes replace
+    the stale ones; only the two whole-document fields take the last writer.
     """
     parts = sorted(outdir.glob("LISTENING.part*.md"))
     if not parts:
@@ -351,7 +363,7 @@ def merge_notes(outdir: Path) -> int:
         if not src.exists():
             continue
         h, secs, t = split_notes(src.read_text(encoding="utf-8"))
-        head = head or h
+        head = h or head
         tail = t or tail
         merged.update(secs)
     body = "".join(merged[k] for k in sorted(merged, key=str.lower))
@@ -420,11 +432,14 @@ def document_header(args, engines, rendered_subtunes, shard=None) -> list[str]:
     a pass that renders one number for every tune has to say which -- seven
     corpus files name something other than 0 as their own `startSong`.
 
-    **A shard counts nothing.** `merge_notes` keeps the first part's header,
-    so a count taken over one shard's tunes would be published as a count over
-    the whole pass. Under `--shard` the same two facts are therefore stated as
-    the policy rather than as totals, which stays true whichever part wins the
-    merge.
+    **A shard counts nothing.** `merge_notes` publishes one part's header for
+    the whole document, so a count taken over one shard's tunes would be
+    published as a count over the whole pass. Under `--shard` the same two
+    facts are therefore stated as the policy rather than as totals, which
+    stays true whichever part wins the merge. Which part that is was not
+    always a part at all: until v0.5.317 the merge preferred the header of the
+    LISTENING.md already in the directory, so this guarantee held for every
+    header except the one actually published.
     """
     if shard:
         return _policy_header(args)

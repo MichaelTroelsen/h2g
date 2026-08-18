@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.317 — 2026-08-18
+
+- merge_notes takes the parts' header, not the stale file's
+
 ## 0.5.316 — 2026-08-17
 
 - VIBRATO.md against the re-gridded rates -- eight instruments leave the shortfall
