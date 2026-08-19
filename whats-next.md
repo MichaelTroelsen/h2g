@@ -1723,24 +1723,25 @@ and subtunes wanting mutually incompatible multipliers — 1, 3, 8, 8, 8, 4 for
   passed, 3 skipped**. It was 1135/3 at v0.5.297;
   the 17 new tests are the two hard-restart bounds (7), the shard/merge
   partition and its three refusals (9), and one derived-count fix.
-* **The third skip is `test_preset_passthrough` disarming itself again**, and
-  it is disarmed *right now*: `SKIPPED tests/test_preset_passthrough.py:41 —
-  presets.json predates h2g 0.5.325 -- regenerate it`. The guard only runs while
-  `presets.json`'s stamp matches the converter, so the check that no `convert()`
-  option escapes into `presets.py` **has not run since v0.5.315 — ten
-  versions**. It was disarmed for four versions once before (v0.5.295–299) and
-  the previous handoff recorded re-arming it. Nothing is *wrong* with
-  `presets.json` (no converter change has landed since it was generated), but a
-  new option added now would escape silently. The other two skips are
-  `test_legal_restart.py:185`, which needs `H2G_GT2RELOC` set.
+* ~~**The third skip is `test_preset_passthrough` disarming itself again.**~~
+  **Re-armed at v0.5.327** by regenerating `SURVEY.md` and `presets.json`. It
+  had been skipping since v0.5.315 — **ten versions** — because the guard only
+  runs while `presets.json`'s stamp matches the converter, so the check that no
+  `convert()` option escapes into `presets.py` had not run in that window. (It
+  was disarmed for four versions once before, v0.5.295–299, and the previous
+  handoff recorded re-arming it: this is the second occurrence of the same
+  failure mode, and it will recur after every stretch of non-converter commits.)
+  **Suite at v0.5.327: 1204 passed, 2 skipped** — one more test running than
+  before, and the only remaining skips are `test_legal_restart.py:185`, which
+  needs `H2G_GT2RELOC` set.
 
 ## Generated artefacts
 
 | file | stamp | current? |
 |---|---|---|
-| `SURVEY.md` | 0.5.315 | yes |
-| `presets.json` | 0.5.315 | yes |
-| `FIDELITY.md` | 0.5.315 | yes |
+| `SURVEY.md` | **0.5.327** | yes — regenerated v0.5.327 |
+| `presets.json` | **0.5.327** | yes — regenerated v0.5.327 |
+| `FIDELITY.md` | 0.5.315 | yes (on demand; no converter change since) |
 | `SUBTUNES.md` | 0.5.315 | yes (on demand) |
 | `VIBRATO.md` | *none* | yes — regenerated v0.5.316 (on demand) |
 
@@ -1752,11 +1753,28 @@ v0.5.316 and v0.5.325 changed converter behaviour: docs, `listen.py`,
 handoff: `git diff v0.5.315..HEAD -- python/h2g/` is `__init__.py`'s version
 line plus comment and blank lines in `patterns.py`.
 
-**The stamp gap has a cost even though the numbers are right**:
-`test_preset_passthrough`'s guard skips while it stands (see above), so the
-option-escape check is off. That is task `artefact-stamp-realign` and it is
-`[main]` — a plain regeneration re-arms it (`survey.py`, then `presets.py`, per
-`CLAUDE.md`'s order, with `--legal-restart --gt2reloc`).
+**The stamp gap had a cost even though the numbers were right**:
+`test_preset_passthrough`'s guard skipped while it stood, so the option-escape
+check was off. **Closed at v0.5.327** (task `artefact-stamp-realign`) by
+regenerating both, per `CLAUDE.md`'s order and with `--legal-restart
+--gt2reloc`. The regeneration is itself the evidence the numbers were current:
+**one line changed in each file, the version stamp** — 80/95 converted in the
+survey, 83/95 convertible in the presets, 22 `always` keys, and **52
+`--fidelity` settings carried forward** (the run prints the count, so the fast
+path cannot silently revert a measured per-song decision).
+
+`FIDELITY.md` and `SUBTUNES.md` still read 0.5.315 and are still correct — they
+are on-demand artefacts and nothing between v0.5.316 and v0.5.327 changed what
+the converter emits. Neither gates a test, so neither costs anything the way the
+`presets.json` stamp did.
+
+**Order the bump before the regeneration, not after.** The first attempt at
+v0.5.327 regenerated both files and *then* ran `bump_version.py`, which stamped
+the artefacts 0.5.326 against a 0.5.327 converter and disarmed the guard again
+in the same commit that was meant to re-arm it. `CLAUDE.md` says to bump
+"before staging" and to "regenerate any doc embedding the version"; the two
+instructions only compose in one order. Caught by re-reading the stamp, not by
+a test — the guard's failure mode *is* silence.
 
 The `--fidelity` settings are **current as of v0.5.315**: the six files
 v0.5.313 re-gridded were re-searched there — 127 combinations a song, 3 shards,
@@ -1966,10 +1984,9 @@ alike. `[subagent]`, own worktree, `siddump.exe` copied in.
 
 **Cheap and unblocking, in this session:**
 
-1. **Regenerate the artefacts** (`survey.py` then `presets.py`, per
-   `CLAUDE.md`). The numbers will not move — nothing since v0.5.315 changed
-   converter behaviour — but it re-arms `test_preset_passthrough`, whose
-   option-escape guard has been skipping for **ten versions**. `[main]`.
+1. ~~**Regenerate the artefacts.**~~ **Done at v0.5.327.** The numbers did not
+   move (one stamp line per file) and `test_preset_passthrough` is armed again:
+   1204 passed, 2 skipped.
 2. **Choose the method-doc section scheme past § 7.zzzzz.** A five-minute
    naming decision now blocking **seven** owed sections, each of which exists
    only in a commit message. `[user]`.

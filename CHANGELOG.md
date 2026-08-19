@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.327 — 2026-08-19
+
+- the artefacts regenerated, and the passthrough guard re-armed
+
 ## 0.5.326 — 2026-08-19
 
 - the handoff covers the sixth run, v0.5.319-325
