@@ -764,7 +764,37 @@ voice 2 holds `$41` continuously where the original drops to `$40`** at each
 note end, 194 attacks against 14. That is the opposite of what writing `$08`
 on a rest should do, and nothing explains it yet.
 
-### 2b. The 25 files with no tempo write — `[main]`
+### 2b. ~~The 25 files with no tempo write~~ — **re-measured and refused again at v0.5.318**
+The A/B below was re-run on top of v0.5.313/315 as this item asked. It reaches
+exactly **25** files; **19 move no printed number**, and of the 6 that do,
+**2 gain and 4 lose** — Knucklebusters melody 50→81% and Geoff Capes 49→60%
+against Warhawk 90→**47%**, Delta Mix-E-Load seq 100→57%, Human Race 65→56%
+and Rasputin 75→73%. `retrig` remains exact: every gain moves toward 1.0,
+every loss away.
+
+**The re-measurement strengthened the refusal rather than reopening it.** The
+note below said Warhawk's loss was measured against a file that no longer
+exists — true, and the current Warhawk loses *more*: 43pp from a 90% start
+where the old figure was 26pp from 82%.
+
+**One explanation was proposed, tested and killed** before it reached the
+record: that the widened write lands on a row another subtune plays. A variant
+restricting it to patterns no other subtune references is **byte-identical on
+all six files**, so those patterns are already exclusive. The surviving lead —
+untested — is that the widened write is a tempo *change* mid-pattern rather
+than an opening tempo, re-applied every playthrough, with damage tracking the
+distance from Goattracker's default of 6: Warhawk derives 8..40 calls a row and
+Delta Mix-E-Load 20..127 against [3, 6] for Knucklebusters. Reports:
+`build/AB_TEMPO_WIDE.md`, `build/AB_TEMPO_SCOPED.md`.
+
+**Human Race is the one file worth a scoped rule**: the write takes its drift
+from **−250.00 to −7.81** and its `wave` from 63 to 89% while costing 9pp of
+melody and tripling retrig. The clock and the note stream disagree there, and
+no other file in the set does that.
+
+The original item, for the record:
+
+### 2b-orig. The 25 files with no tempo write — `[main]`
 Found at v0.5.312 and deliberately **not** fixed. `apply_tempo` writes into the
 row each subtune enters on and skips the subtune entirely if that row carries a
 command; 25 corpus files have no tempo write for that reason. Restoring one is
@@ -797,8 +827,34 @@ at all**. The buckets are now trustworthy for the first time in the run:
 | atkpitch | 5 | 1 | 569 | |
 
 `arp` is the one to *not* take: § 7.ttt measured that emitting it costs 5 points
-of mean melody, and `fidelity_better` cannot select it. `plain` absent is the
-largest genuine queue. One agent per bucket is the natural fan-out.
+of mean melody, and `fidelity_better` cannot select it. One agent per bucket is
+the natural fan-out.
+
+**`plain` is not one queue, and it is not mostly an emitter problem.** It was
+taken as "34 instruments whose own vibrato byte we ignore" and it is nothing
+of the kind. Reading each absent instrument's source record back out of the
+`.sng` we ship — the converter stamps `NN:b5-b6-b7` into the instrument name,
+and `vibrato_offset` is 5 on every file here, so **b5 is the classic vibrato
+byte** — splits the 35 absent rows (31 convertible; W_A_R and Dragons Lair are
+two of the three files that do not convert at all):
+
+| what the record says | inst | what it means |
+|---|---:|---|
+| **b5 = `$00`** | **17** | the record carries no vibrato. The original oscillates anyway, so the mechanism is undecoded and is *not* the classic pair — Flash Gordon 936 reversals, Chain Reaction and Zoolook 525 each, Hollywood or Bust 441 |
+| b5 nonzero, entry **emitted** | 6 | we already write a speed-table entry (`vib_ptr` 1, 3, 4, 19, 24, 26) and the census still scores the instrument 0. Either the depth rounds away or the attribution is wrong — a question about the *column*, not the emitter |
+| b5 nonzero, **no** entry | 3 | the only true refusals, and **all three are Powerplay Hockey** — the two-player file of § 7.iiiii |
+| no instrument at that ADSR | 5 | Battle of Britain, Game Killer, One Man and his Droid ×3 — we never emit an instrument with that envelope |
+
+So the bucket's 17912 reversals are at least four different problems, and the
+biggest of them is a **decode** job rather than an emit job. Nothing here is
+the one-agent-one-emitter change the fan-out assumed. Do not brief an agent to
+"emit the record's vibrato byte" for `plain`: on 17 of 31 there is no byte to
+emit.
+
+Two cheap follow-ups fall out. The 6 "entry emitted, still zero" rows are worth
+one look at whether `_classic_vibrato_entry`'s `rshift` can round the step to
+nothing before any emitter work is done, and Powerplay's 3 belong with the
+two-player thread rather than with vibrato.
 
 ### 4. ~~Re-grid the rows for drift~~ — **closed at v0.5.313**, residual below
 Raising `MAX_ROW_DENOMINATOR` to 10 re-gridded six files and every one gained;

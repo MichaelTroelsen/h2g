@@ -1642,15 +1642,38 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
         # falls 43pp, which is the whole of that option's regression.
         #
         # **The tempo outranks a rest's waveform, and nothing else.** Widening
-        # this to "scan for any free row" was measured and refused: it reaches
-        # 25 corpus files, and restoring a write to files that never had one
-        # is 2 better and 3 worse on `melody` -- Knucklebusters 50 -> 81% and
-        # Geoff Capes 49 -> 60% against Warhawk 82 -> 56%, Delta Mix-E-Load's
-        # sequence 97 -> 57% and Human Race 65 -> 56%. `retrig` says why:
-        # every gain moves toward 1.0 and every loss away from it, so the
-        # *derived* tempo is wrong on those files and the missing write was
-        # accidentally protecting them. That is a real defect and it is not
-        # this one; until it is understood, the absent write stays absent.
+        # this to "scan for any free row" was measured and refused twice --
+        # v0.5.312, and again at v0.5.318 after v0.5.313's re-grid and
+        # v0.5.315's re-search had moved three of the files the first refusal
+        # named. It reaches exactly 25 corpus files; 19 of them move no
+        # printed number at all, and of the 6 that do, 2 gain and 4 lose:
+        #
+        #   Knucklebusters  melody 50 -> 81%  retrig 0.39 -> 0.69   gain
+        #   Geoff Capes     melody 49 -> 60%  retrig 3.21 -> 2.40   gain
+        #   Warhawk         melody 90 -> 47%  retrig 1.00 -> 0.34   loss
+        #   Delta Mix-E-Load   seq 100 -> 57% retrig 1.00 -> 0.40   loss
+        #   Human Race      melody 65 -> 56%  retrig 2.28 -> 5.57   loss
+        #   Rasputin        melody 75 -> 73%  retrig 1.66 -> 1.72   loss
+        #
+        # `retrig` is the tell and it is exact: every gain moves toward 1.0,
+        # every loss away from it. The re-measurement did not weaken the
+        # refusal, it strengthened it -- Warhawk's loss was 26pp when it read
+        # 82 -> 56% and is 43pp now that the file starts at 90%.
+        #
+        # **One explanation has been tested and refused.** The obvious reading
+        # is that subtune k's value lands on a row another subtune also plays,
+        # since the harmlessness argument above is written for row 0 of the
+        # ENTRY pattern. A variant restricting the widened write to patterns
+        # no other subtune's orderlist references emits **byte-identical**
+        # output on all six files, so those patterns are already exclusive and
+        # sharing is not the cause. What is left as a lead, unproven: the
+        # widened write is not an opening tempo at all but a tempo *change*
+        # partway through a pattern, re-applied on every playthrough, and the
+        # damage tracks how far the derived value sits from Goattracker's
+        # default of 6 -- Warhawk derives 8..40 calls a row and Delta
+        # Mix-E-Load 20..127, against [3, 6] for Knucklebusters. That fits the
+        # direction of retrig on 5 of the 6 (Geoff Capes is the exception) and
+        # has not been tested. Until it is, the absent write stays absent.
         if len(pattern) < 4:
             continue
         if pattern[2] not in (0, CMD_SETWAVE):
