@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.322 — 2026-08-19
+
+- A/B pages correct the startup lag, with a sync slider, and abpage --serve
+
 ## 0.5.321 — 2026-08-19
 
 - abpage.py draws both sides on one canvas, and the pages declare UTF-8

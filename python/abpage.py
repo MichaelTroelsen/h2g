@@ -2,6 +2,7 @@
 """Build A/B listening pages for the tunes `listen.py` staged.
 
     python abpage.py                     # one page per tune + an index
+    python abpage.py --serve             # ...and host them on 127.0.0.1
     python abpage.py --embed W_A_R       # one self-contained page, WAVs inlined
 
 A page plays **both renders at once and swaps which one is audible**, so the
@@ -13,8 +14,9 @@ Two output modes, and the difference matters:
 
 * **Local** (default) references `<name>.original.wav` beside the page, so a
   page is ~25 KB and carries a tune of any length. Open it from
-  `build/listen/`, or serve that directory over http if the browser refuses
-  `file://` media.
+  `build/listen/` -- but `--serve` is the better way, because the envelope
+  overlay and the automatic sync read the two WAVs with `fetch()`, which no
+  browser allows over `file://`. Audio playback works either way.
 * **`--embed`** inlines both renders as data URIs, for publishing somewhere
   the WAVs cannot follow. That costs 4/3 of the audio: at 44.1 kHz mono a
   minute a side is about 14 MB, which is the practical ceiling.
@@ -192,6 +194,13 @@ th { color:var(--muted); font-weight:600; font-size:11.5px; letter-spacing:.1em;
   text-transform:uppercase; }
 td a { color:var(--ink); font-weight:600; }
 .scroll { overflow-x:auto; }
+.sync { display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+  border-top:1px solid var(--line); padding-top:16px;
+  font-family:var(--mono); font-size:12.5px; color:var(--muted); }
+.sync input[type="range"] { flex:1 1 220px; }
+.sync b { color:var(--ink); font-variant-numeric:tabular-nums; min-width:5.5em;
+  display:inline-block; text-align:right; }
+.sync .ghost { font-family:var(--mono); font-size:12px; }
 .wave { position:relative; }
 .wave canvas {
   display:block; width:100%; height:auto; border-radius:10px;
@@ -227,7 +236,48 @@ SCRIPT = r"""
   var verdict = document.getElementById("verdict"), tally = document.getElementById("tally");
   var nameA = document.getElementById("nameA"), nameB = document.getElementById("nameB");
   var srcs = Array.prototype.slice.call(document.querySelectorAll(".src"));
+  var syncr = document.getElementById("syncr"), syncv = document.getElementById("syncv");
+  var syncauto = document.getElementById("syncauto"), synczero = document.getElementById("synczero");
+  var syncwhy = document.getElementById("syncwhy");
   var side = "a", swapped = false, right = 0, total = 0;
+
+  // Seconds to ADD to A's position to get B's. The two renders do not start
+  // together: gt2reloc's packed player reaches its first note some 3-8 frames
+  // after the original (FIDELITY.md calls it startup_lag, median 6 frames),
+  // which is 60-160 ms -- comfortably audible as a flam when the sources are
+  // swapped, and the whole point of this rig is that switching does not lose
+  // your place. Positive means B's content is late and B must be run ahead.
+  var sync = 0, autoSync = null;
+  function bAt(t) {
+    var d = bu.duration;
+    var v = t + sync;
+    if (v < 0) v = 0;
+    if (d && isFinite(d) && v > d) v = d;
+    return v;
+  }
+  function setSync(ms, why) {
+    sync = ms / 1000;
+    syncr.value = String(Math.round(ms));
+    syncv.textContent = (ms > 0 ? "+" : "") + Math.round(ms) + " ms";
+    if (why) syncwhy.innerHTML = why;
+    if (!au.paused || au.currentTime) bu.currentTime = bAt(au.currentTime);
+    if (window.__abRedraw) window.__abRedraw();
+  }
+  syncr.addEventListener("input", function () {
+    setSync(Number(syncr.value), "&mdash; set by hand");
+  });
+  synczero.addEventListener("click", function () {
+    setSync(0, "&mdash; no offset: the two renders as staged");
+  });
+  syncauto.addEventListener("click", function () {
+    if (autoSync === null) {
+      syncwhy.innerHTML = "&mdash; auto needs the envelopes, which need http (see below)";
+      return;
+    }
+    setSync(autoSync, "&mdash; auto: our render's first note is "
+            + Math.round(autoSync) + " ms (" + (autoSync / 20).toFixed(1)
+            + " frames) later than the original's");
+  });
 
   au.volume = 1; bu.volume = 0;
 
@@ -251,7 +301,7 @@ SCRIPT = r"""
   }
   function toggle() {
     if (au.paused) {
-      bu.currentTime = au.currentTime;
+      bu.currentTime = bAt(au.currentTime);
       au.play(); bu.play();
       play.innerHTML = "&#10074;&#10074;"; play.setAttribute("aria-label", "Pause");
     } else {
@@ -268,14 +318,14 @@ SCRIPT = r"""
   au.addEventListener("timeupdate", function () {
     now.textContent = fmt(au.currentTime);
     if (au.duration) seek.value = String(Math.round(au.currentTime / au.duration * 1000));
-    if (Math.abs(bu.currentTime - au.currentTime) > 0.06) bu.currentTime = au.currentTime;
+    if (Math.abs(bu.currentTime - bAt(au.currentTime)) > 0.06) bu.currentTime = bAt(au.currentTime);
   });
   au.addEventListener("ended", function () {
     if (!au.loop) { play.innerHTML = "&#9654;"; play.setAttribute("aria-label", "Play"); }
   });
   seek.addEventListener("input", function () {
     var t = (Number(seek.value) / 1000) * (au.duration || 60);
-    au.currentTime = t; bu.currentTime = t; now.textContent = fmt(t);
+    au.currentTime = t; bu.currentTime = bAt(t); now.textContent = fmt(t);
   });
 
   function setNames() {
@@ -354,25 +404,77 @@ SCRIPT = r"""
       g.closePath();
       g.globalAlpha = alpha; g.fillStyle = colour; g.fill(); g.globalAlpha = 1;
     }
+    // B is drawn where it is *heard*, i.e. shifted by the sync offset, so the
+    // picture never contradicts the ears.
+    function shiftCols() {
+      var d = au.duration;
+      if (!d || !isFinite(d)) return 0;
+      return Math.round(sync / d * COLS);
+    }
+    function shifted(env, by) {
+      if (!by) return env;
+      var out = new Float32Array(COLS);
+      for (var i = 0; i < COLS; i++) {
+        var j = i + by;
+        out[i] = (j >= 0 && j < COLS) ? env[j] : 0;
+      }
+      return out;
+    }
     function paint() {
       var line = css("--line"), ink = css("--ink");
+      var envBs = shifted(envB, shiftCols());
       oc.clearRect(0, 0, COLS, H + DIFF);
       oc.strokeStyle = line; oc.lineWidth = 1;
       oc.beginPath(); oc.moveTo(0, H / 2 + 0.5); oc.lineTo(COLS, H / 2 + 0.5); oc.stroke();
       oc.beginPath(); oc.moveTo(0, H + 0.5); oc.lineTo(COLS, H + 0.5); oc.stroke();
       band(oc, envA, css("--a"), 0.62);
-      band(oc, envB, css("--b"), 0.62);
+      band(oc, envBs, css("--b"), 0.62);
       // difference strip: |peak difference| per column, same time axis.
       var sum = 0;
       oc.globalAlpha = 0.45; oc.fillStyle = ink;
       for (var i = 0; i < COLS; i++) {
-        var d = Math.abs(envA[i] - envB[i]); sum += d;
+        var d = Math.abs(envA[i] - envBs[i]); sum += d;
         oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
       }
       oc.globalAlpha = 1;
       if (stat) stat.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
       frame();
     }
+    window.__abRedraw = function () { if (envA) paint(); };
+
+    // --- automatic sync ---------------------------------------------------
+    // The two renders do not start together. gt2reloc's packed player reaches
+    // its first note some 3-8 frames after the original -- FIDELITY.md calls
+    // it startup_lag and corrects for it before scoring any per-frame column.
+    // Nothing corrected for it *here* until now, so every A/B was compared
+    // with one side 120-150 ms late: audible as a flam on the switch, and
+    // exactly the misalignment this control exists to remove.
+    //
+    // Measured as the difference between the two first onsets rather than by
+    // cross-correlating the whole file. Correlation was tried first and is the
+    // wrong instrument: over 60 s the two sides drift and often play different
+    // numbers of notes (Knucklebusters: 156 against 404), so the correlation
+    // comes out flat -- its top six lags were 41, -10, -28, 59, 52 and -17
+    // columns, all within 3% of each other. A start offset is a property of
+    // the start, and the first onset is where it lives.
+    var ONSET_FRAC = 0.05, ONSET_LOOK = 20;
+    function firstOnset(b) {
+      var ch = b.getChannelData(0), rate = b.sampleRate;
+      var n = Math.min(ch.length, Math.round(ONSET_LOOK * rate)), pk = 0;
+      for (var i = 0; i < n; i++) { var v = ch[i] < 0 ? -ch[i] : ch[i]; if (v > pk) pk = v; }
+      if (!pk) return null;
+      var thr = pk * ONSET_FRAC;
+      for (var j = 0; j < n; j++) { var w = ch[j] < 0 ? -ch[j] : ch[j]; if (w >= thr) return j / rate; }
+      return null;
+    }
+    function startupLagMs(bufA, bufB) {
+      var fa = firstOnset(bufA), fb = firstOnset(bufB);
+      if (fa === null || fb === null) return null;
+      var ms = (fb - fa) * 1000;
+      if (ms < -500 || ms > 500) return null;   // not a startup lag
+      return ms;
+    }
+
     function frame() {
       ctx.clearRect(0, 0, COLS, H + DIFF);
       ctx.drawImage(off, 0, 0);
@@ -391,7 +493,7 @@ SCRIPT = r"""
       if (!d || !isFinite(d)) return;
       var r = cv.getBoundingClientRect();
       var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
-      au.currentTime = t; bu.currentTime = t;
+      au.currentTime = t; bu.currentTime = bAt(t);
       now.textContent = fmt(t);
       seek.value = String(Math.round(t / d * 1000));
       frame();
@@ -408,16 +510,26 @@ SCRIPT = r"""
       envA = envelope(bufs[0]); envB = envelope(bufs[1]);
       if (msg) msg.hidden = true;
       cv.hidden = false;
+      var lag = startupLagMs(bufs[0], bufs[1]);
+      if (lag !== null) {
+        autoSync = lag;
+        setSync(autoSync, "&mdash; auto: our render's first note is "
+                + Math.round(lag) + " ms (" + (lag / 20).toFixed(1)
+                + " frames) later than the original's; drag to taste");
+      } else {
+        syncwhy.innerHTML = "&mdash; no first onset found; drag to align by ear";
+      }
       paint();
     }).catch(function () {
       // file:// blocks fetch of a sibling .wav in most browsers; the audio
       // elements themselves still play, so this is a missing picture and not
       // a broken page.
       cv.hidden = true;
-      if (msg) msg.textContent =
-        "The envelopes need to read both WAVs, which a browser refuses over "
-        + "file://. Serve this directory over http (or rebuild with --embed) "
-        + "and the overlay appears. Playback above is unaffected.";
+      if (msg) msg.innerHTML =
+        "The drawing and the automatic sync read both WAVs, which a browser "
+        + "refuses over file://. Run <code>python abpage.py --serve</code> and "
+        + "open the printed http:// address; playback and the sync slider "
+        + "work here either way.";
     });
   })();
 
@@ -491,6 +603,15 @@ def page(name: str, row: dict, notes: list[str], version: str,
   <div class="loop">
     <label class="toggle"><input type="checkbox" id="looping"> Loop</label>
     <span>&middot; a passage you cannot decide on is worth hearing four times, not once</span>
+  </div>
+  <div class="sync">
+    <span>Sync</span>
+    <input type="range" id="syncr" min="-500" max="500" value="0" step="1"
+           aria-label="Sync offset in milliseconds">
+    <b id="syncv">0 ms</b>
+    <button class="ghost" id="syncauto">auto</button>
+    <button class="ghost" id="synczero">0</button>
+    <span id="syncwhy">&mdash; the packed player reaches its first note a few frames after the original</span>
   </div>
   <div class="mode">
     <label class="toggle"><input type="checkbox" id="blind"> Blind &mdash; hide which is which</label>
@@ -578,6 +699,13 @@ def main() -> int:
                     help="build one self-contained page with the audio inlined")
     ap.add_argument("-o", "--output", default=None,
                     help="where to write (--embed only; default beside the WAVs)")
+    ap.add_argument("--serve", nargs="?", type=int, const=8730, default=None,
+                    metavar="PORT",
+                    help="after building, serve build/listen over http on "
+                         "127.0.0.1 (default port 8730) and print the URL. "
+                         "The envelope overlay and its automatic sync read "
+                         "both WAVs with fetch(), which browsers refuse over "
+                         "file://, so this is how the drawing works at all.")
     args = ap.parse_args()
 
     try:
@@ -618,6 +746,40 @@ def main() -> int:
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
     if missing:
         print("no FIDELITY.md row for: %s" % ", ".join(missing))
+    if args.serve is not None:
+        return serve(args.serve)
+    print("file:// hides the overlay -- `python abpage.py --serve` to draw it")
+    return 0
+
+
+def serve(port: int) -> int:
+    """Serve build/listen on 127.0.0.1 until interrupted.
+
+    A page opened as a file:// URL plays fine but cannot *draw*: the overlay
+    and the automatic sync both read the two WAVs with fetch(), and browsers
+    refuse those reads on file://. Rather than leave that as a message telling
+    the reader to go and find a web server, the tool is the web server. Bound
+    to the loopback interface, because nothing here is meant to leave the
+    machine.
+    """
+    import functools
+    import http.server
+
+    handler = functools.partial(http.server.SimpleHTTPRequestHandler,
+                                directory=str(LISTEN))
+    try:
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+    except OSError as exc:
+        print("cannot bind 127.0.0.1:%d -- %s" % (port, exc))
+        return 2
+    print("http://127.0.0.1:%d/index.html   (ctrl-c to stop)" % port)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print()
+        print("stopped")
+    finally:
+        httpd.server_close()
     return 0
 
 
