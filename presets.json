@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.329 presets.py",
+  "generator": "h2g 0.5.330 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -178,7 +178,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 15576,
+      "bytes": 15965,
       "subtunes": 14,
       "rows": 35636,
       "multiplier": 1
@@ -243,8 +243,8 @@
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 6765,
-      "subtunes": 10,
+      "bytes": 9518,
+      "subtunes": 14,
       "rows": 17309,
       "multiplier": 10,
       "two_stage": true,
@@ -261,11 +261,11 @@
       "multiplier": 2
     },
     "Dragons_Lair_Part_II.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20448,
+      "bytes": 23125,
       "subtunes": 10,
       "rows": 28723,
       "multiplier": 2
@@ -317,12 +317,12 @@
       "max_hard_restart": true
     },
     "Geoff_Capes_Strongman_Challenge.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 11124,
-      "subtunes": 16,
+      "bytes": 12970,
+      "subtunes": 21,
       "rows": 18534,
       "multiplier": 1
     },
@@ -331,7 +331,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 41556,
+      "bytes": 42078,
       "subtunes": 7,
       "rows": 32302,
       "multiplier": 1
@@ -362,7 +362,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 22943,
+      "bytes": 23209,
       "subtunes": 5,
       "rows": 21036,
       "multiplier": 1
@@ -450,7 +450,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 39397,
+      "bytes": 40052,
       "subtunes": 3,
       "rows": 49775,
       "multiplier": 1,
@@ -641,7 +641,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 26724,
+      "bytes": 26857,
       "subtunes": 4,
       "rows": 29884,
       "multiplier": 2
@@ -682,12 +682,12 @@
       "wave_program": true
     },
     "Rasputin.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
-      "dedup": true,
-      "bytes": 16879,
-      "subtunes": 10,
+      "dedup": false,
+      "bytes": 19514,
+      "subtunes": 17,
       "rows": 37857,
       "multiplier": 2
     },
@@ -798,12 +798,12 @@
       "wave_program": true
     },
     "Spellbound.sid": {
-      "max_rows": 128,
+      "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 35753,
-      "subtunes": 7,
+      "bytes": 38324,
+      "subtunes": 13,
       "rows": 65763,
       "multiplier": 2
     },
@@ -825,7 +825,7 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 12319,
+      "bytes": 12846,
       "subtunes": 11,
       "rows": 8376,
       "multiplier": 1,
@@ -921,8 +921,8 @@
       "pack": true,
       "prune": false,
       "dedup": true,
-      "bytes": 16996,
-      "subtunes": 12,
+      "bytes": 19213,
+      "subtunes": 18,
       "rows": 32266,
       "multiplier": 7,
       "max_hard_restart": true

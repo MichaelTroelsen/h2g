@@ -10,7 +10,8 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
-                       convert_patterns, apply_tempo, cmdtable_frames_per_row,
+                       convert_patterns, apply_tempo, apply_tempos,
+                       cmdtable_frames_per_row,
                        min_played_notes, median_played_durations,
                        pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks)
@@ -411,8 +412,11 @@ def convert(sid_path: str, log: Logger = print,
             # A split subtune shifted the numbering, so per-subtune
             # attribution is unsafe; every group gets subtune 0's timebase.
             values = [values[0]] * groups
-        written = sum(apply_tempo(new_patterns, tracks[3 * k:3 * k + 3],
-                                  values[k]) for k in range(groups))
+        # Per subtune in one call, because the values have to be compared with
+        # each other: a pattern two subtunes play can carry only one tempo, and
+        # writing them one at a time made the later subtune's value the earlier
+        # one's clock. See patterns.apply_tempos.
+        written = apply_tempos(new_patterns, tracks, values, log)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "

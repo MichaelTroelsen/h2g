@@ -317,6 +317,33 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **A per-subtune value written into a global structure is read by every
+  subtune that reaches it.** Goattracker's patterns are global, its orderlists
+  are per subtune, and a `CMD_SETTEMPO` under `$80` sets all three channels
+  (`gplay.c:494`) — so `apply_tempo`'s "a pattern shared by several positions
+  simply re-applies the same tempo, which is harmless" was true within one
+  subtune and false across two. Seven corpus files and eleven subtunes were
+  executing another subtune's clock, Human_Race's by 25%: **note gaps of 24
+  frames against the original's 32**, on an identical note sequence. Fixed at
+  v0.5.330 by `apply_tempos`, which compares the values before writing any of
+  them and clones a contested entry pattern. Two lessons beyond the fix. **A
+  guard tested on one variant does not cover the other**: v0.5.320 tested
+  exactly this hypothesis — "the value lands on a row another subtune plays" —
+  found the *widened* write byte-identical when restricted to exclusive
+  patterns, and concluded sharing was not the cause; the **default** write had
+  the same exposure and was never tested. And **read all three voices before
+  concluding what a subtune does**: v0.5.323 read Knucklebusters' subtune 0 as
+  "`CMD_SETTEMPO` row 0 → 6" from voice 0 alone, where the three entry patterns
+  read `[6, 3, 3]` and the player executes 3. That misreading is why its
+  50 → 81 pp melody gain stood for two sessions as a lever with "no identified
+  mechanism".
+- **A wrong clock masks the defects underneath it.** Correcting Human_Race's
+  tempo took its `drift` −250 → **0.00**, `wave` 63 → 92% and voice 0 to exact
+  (40 attacks against 40, the same gap histogram) — and its `melody` 65 → 56%,
+  because voice 1 turns out to re-strike on nearly every row and the right clock
+  is what made that audible to the trace. The subtune's pattern bytes are
+  identical either side of the change, which is how you tell an unmasked defect
+  from an introduced one: **diff the structure, not the score**.
 - **A bit tested with `BIT`/`BVC` is invisible to an `AND #$xx` scan.** Effect
   bit `$40` went unread for the whole project because detection looks for
   `AND #$40`; bit 6 (and bit 7, via `BPL`/`BMI`) have 6502 idioms of their own.

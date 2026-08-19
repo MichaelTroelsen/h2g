@@ -1607,6 +1607,94 @@ def split_subtune(group: List[List[int]], patterns: List[List[int]],
     return out
 
 
+def _entry_reference(track: List[int]) -> int | None:
+    """Index into `track` of the first byte that names a pattern, or None.
+
+    The orderlist grammar, not a scan for a small byte: `$FF` is followed by a
+    restart *position*, which is small and is not a pattern reference.
+    """
+    expect_operand = False
+    for i, b in enumerate(track):
+        if expect_operand:
+            expect_operand = False
+        elif b == GT_ORDER_RESTART:
+            expect_operand = True
+        elif b < GT_COMMAND_FLOOR:
+            return i
+    return None
+
+
+def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
+                 values: List[int], log=None) -> int:
+    """`apply_tempo` for a song whose subtunes want *different* tempos.
+
+    Patterns are global and orderlists are per subtune, so a value written for
+    subtune j is executed by every subtune that plays the same pattern -- and
+    `CMD_SETTEMPO` under $80 sets all three channels (gplay.c:494), so it does
+    not even have to be the same voice. `apply_tempo`'s docstring said "a
+    pattern shared by several positions simply re-applies the same tempo, which
+    is harmless"; that is true within one subtune and false across two.
+
+    Human_Race is the case that found it. Its subtune 2 enters voice 0 on
+    pattern 0 and is written 3; its subtune 0 enters voice 0 on pattern 1 and
+    is written 4 -- but subtune 0 also enters **voice 2** on pattern 0, so both
+    writes land on row 0 of the same call and the higher voice index wins.
+    Subtune 0 played its whole tune at 3 frames a row where its player's own
+    reload table asks for 4: 25% fast, measured as 24-frame note gaps against
+    the original's 32, and it read `retrig` 2.28 / `melody` 65% / `drift`
+    -250 for it. Seven corpus files and eleven subtunes are in that position,
+    five of them files the widened-write A/B measured without anyone noticing
+    the default write had the same exposure.
+
+    The rule here is that **a per-subtune tempo may only be written where no
+    other subtune with a different tempo can reach it**. Where the entry
+    pattern is shared with such a subtune, the pattern is cloned and this
+    subtune's *entry reference alone* is repointed at the clone: the rest of
+    its orderlist keeps playing the shared original, which is right because a
+    re-application of the same tempo mid-tune is the harmless case. Where a
+    clone will not fit under `MAX_PATTERNS`, the write is dropped rather than
+    made wrong -- the same choice the occupied-command-column case makes.
+    """
+    groups = len(tracks) // 3
+    if groups != len(values):
+        raise ValueError(f"{groups} subtune(s) but {len(values)} tempo value(s)")
+
+    def plays(k: int) -> set:
+        return set(pattern_references(tracks[3 * k:3 * k + 3],
+                                      GT_COMMAND_FLOOR))
+
+    reach = [plays(k) for k in range(groups)]
+    written = cloned = dropped = 0
+    for k in range(groups):
+        track = tracks[3 * k]
+        at = _entry_reference(track)
+        if at is None or track[at] >= len(patterns):
+            continue
+        target = track[at]
+        if any(j != k and target in reach[j] and values[j] != values[k]
+               for j in range(groups)):
+            if len(patterns) >= MAX_PATTERNS:
+                dropped += 1
+                continue
+            patterns.append(list(patterns[target]))
+            target = track[at] = len(patterns) - 1
+            reach[k].add(target)
+            cloned += 1
+        pattern = patterns[target]
+        if len(pattern) < 4:
+            continue
+        if pattern[2] not in (0, CMD_SETWAVE):
+            continue
+        pattern[2], pattern[3] = CMD_SETTEMPO, values[k]
+        written += 1
+    if log and (cloned or dropped):
+        log(f"Tempo conflicts.........: {cloned} pattern(s) cloned so a "
+            f"subtune's tempo cannot reach another's"
+            + (f"; {dropped} write(s) dropped at the {MAX_PATTERNS}-pattern "
+               f"ceiling" if dropped else ""))
+    return written
+
+
 def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
                 value: int, log=None) -> int:
     """Write CMD_SETTEMPO into the first row each subtune plays.
@@ -1619,7 +1707,11 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
 
     Written only into a row whose command column is free, so a portamento or
     vibrato this converter emitted is never overwritten. A pattern shared by
-    several positions simply re-applies the same tempo, which is harmless.
+    several positions simply re-applies the same tempo, which is harmless --
+    **true only while every subtune wants the same value**. Where they differ,
+    `apply_tempos` is the entry point, and it clones a shared entry pattern
+    rather than letting one subtune's tempo reach another's; see its docstring
+    for the seven files that were reading another subtune's clock.
 
     Returns how many rows were written.
     """

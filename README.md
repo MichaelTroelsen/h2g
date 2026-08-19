@@ -1882,6 +1882,62 @@ Measured with the tempo preserved, at `-t 60` against the shipped presets:
 So it is safe and it is not an improvement, which is why it ships off. The
 option exists because the measurement had never once been valid before it.
 
+### One subtune's tempo reaching another's clock (fixed v0.5.330)
+
+`CMD_SETTEMPO` under `$80` sets **all three channels** (`gplay.c:494`), patterns
+are global, and orderlists are per subtune. So a tempo written for subtune *j*
+is executed by any subtune that plays the same pattern — on any voice, and
+whether at its entry row or partway through. `apply_tempo`'s docstring said a
+shared pattern "simply re-applies the same tempo, which is harmless"; that holds
+only while every subtune wants the same value.
+
+`Human_Race` is the file that found it. Subtune 2 enters voice 0 on pattern 0
+and is written **3**; subtune 0 enters voice 0 on pattern 1 and is written
+**4** — but subtune 0 also enters *voice 2* on pattern 0, so both writes land on
+row 0 of the same call and the higher voice index wins. Subtune 0 played its
+whole tune 25% fast, which is visible without any scoring: its note gaps were
+**24 frames against the original's 32**, on an otherwise identical note
+sequence.
+
+`patterns.apply_tempos` takes every subtune's value at once and writes each one
+only where no other subtune with a different value can reach it, cloning the
+entry pattern and repointing that subtune's **entry reference alone** where it
+must (the rest of its orderlist keeps playing the shared original, which is the
+genuinely harmless re-application). At `MAX_PATTERNS` the write is dropped
+rather than made wrong. Where every subtune agrees, nothing is cloned — which
+is what leaves the byte-exact fixture and 71 of the 83 corpus files untouched.
+
+Seven files carried the conflict across eleven subtunes; twelve conversions
+change bytes. Measured at `-t 60` with `--baseline`, **4 files move a printed
+number**:
+
+| file | melody | retrig | drift | also |
+|---|---|---|---|---|
+| Rasputin | 75% → **100%** | 1.66 → **0.99** | −355.8 → **−4.3** | pitch 78 → 100%, gate 39 → 59% |
+| Knucklebusters | 50% → **81%** | 0.39 → 0.69 | — | pitch 45 → **91%**, seq 51 → 80% |
+| Spellbound | 79% → **93%** | 1.50 → 1.13 | −298 → −91 | |
+| Human_Race | 65% → 56% | 2.28 → 5.59 | −250 → **0.00** | wave 63 → **92%**, noise 250 → **0** |
+
+Human_Race is the one row that falls, and it falls for a reason worth stating:
+with the clock corrected its **voice 0 is exact** — 40 attacks against 40, the
+same gap histogram `[(32, 32), (256, 7)]`, every note the same pitch — while
+voice 1 turns out to re-strike on nearly every row (452 attacks against 48, 404
+gaps of one row). That runaway is a second defect the wrong tempo was masking,
+not something this change introduced: the subtune's pattern data is
+byte-identical either side of it. `melody` is a difflib ratio and cannot prefer
+a right clock with a broken voice over a wrong clock with the same broken voice.
+
+Corpus effect: mean `seq` 92 → **93%**, `pitch` 94 → **95%**, `wave` 82 →
+**83%**, `gate` 52 → **53%**, *plays the same music* 58 → **59** files, and the
+corpus's worst drift (Rasputin, −355.8) is gone.
+
+**This also answers an open question about the widened-tempo refusal.**
+Knucklebusters' 50 → 81 pp melody gain was measured twice as a lever of
+"widening `apply_tempo` to any free row" and was refused at v0.5.320 and again
+at v0.5.323 for having *no identified mechanism*. It has one, and it is not the
+widened write: the file's subtune 0 reads `[6, 3, 3]` across its three entry
+patterns and executed **3**. Re-running that A/B on top of this fix is owed.
+
 ### `--wide-hard-restart` (two thirds of the row, not half)
 
 Goattracker holds the gate off for `gatetimer & $3f` calls before a note, and

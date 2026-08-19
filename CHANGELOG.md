@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.330 — 2026-08-19
+
+- a subtune's tempo no longer reaches another subtune's clock
+
 ## 0.5.329 — 2026-08-19
 
 - the task queue is tracked, and item 10 re-scoped to its two remaining files

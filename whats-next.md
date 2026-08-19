@@ -1330,11 +1330,27 @@ two rows move**, *plays the same music* 56 → **58**, *plays something else*
 4 → **2**, mean melody 91% → 93%. Both files leave the queue.
 
 **3. What is left is genuine, and it is two files, not forty-six.**
-Human_Race really does over-trigger (voice 0: 40 attacks against 120, and its
-original plays to frame 2816, so no truncation applies) and Auf Wiedersehen
-Monty really does release short (400 frames against 585) while its note
-*counts* match within 3. Those are the note-length question, and they are what
-`hold-zero-note-length-loss` should be re-scoped to.
+Human_Race really does over-trigger and Auf Wiedersehen Monty really does
+release short (400 frames against 585) while its note *counts* match within 3.
+`hold-zero-note-length-loss` is re-scoped to those two.
+
+**Human_Race was then worked, at v0.5.330, and its over-triggering was two
+things.** Its voice 0 was **the clock**: subtune 0 executed a tempo of 3 where
+its player's row is 4, because `CMD_SETTEMPO` under `$80` sets all three
+channels and subtune 2's write had landed in a pattern subtune 0 enters voice 2
+on. Corrected, voice 0 is **exact** — 40 attacks against 40, gap histogram
+`[(32, 32), (256, 7)]` on both sides, every note the same pitch — and the file's
+`drift` goes −250 → **0.00**, `wave` 63 → 92%, `noise` 250 → **0**. Seven
+corpus files and eleven subtunes carried that conflict; see item 15.
+
+What is left on this file is **voice 1**, which re-strikes on nearly every row:
+**452 attacks against the original's 48**, with 404 gaps of exactly one row,
+starting around frame 180 in a high register (D-6/A-6/G-6) where the original
+plays a two-note flourish and rests. It is a defect the wrong clock was
+masking, not a new one — the subtune's pattern bytes are identical either side
+of the tempo fix, verified structurally. **That is the next thing to work on
+this file**, and it is what takes its `melody` from 65% to 56% and `onset` from
+100% to 67% in the v0.5.330 A/B.
 
 **Refuted on the way, cheaply, and recorded so it is not re-tried:** that the
 vibrato command displaces the tie. 91.5% of Geoff Capes' note rows carry
@@ -1342,6 +1358,22 @@ vibrato command displaces the tie. 91.5% of Geoff Capes' note rows carry
 and converting with `vibrato_command=False` leaves TONEPORTA at **10 rows
 either way**, so the column is not what drops it. The file simply has ten tied
 events.
+
+### 15. Re-run the widened-tempo A/B on top of v0.5.330 — `[main]`
+Knucklebusters' 50 → 81 pp melody gain was measured twice as a lever of
+"widening `apply_tempo` to any free row", and refused twice (v0.5.320, v0.5.323)
+for having **no identified mechanism**. It has one now and it is not the widened
+write: its subtune 0's three entry patterns read `[6, 3, 3]` and the player
+executed **3**. v0.5.330's fix delivers that file's gain outright (melody
+50 → 81%, pitch 45 → **91%**), which means the old A/B was measuring the tempo
+conflict through a second mechanism. **Re-take it**: the refusal's evidence
+predates the fix, and five of its six files (Knucklebusters, Human_Race,
+Warhawk, Delta Mix-E-Load, Rasputin) were carrying the conflict.
+
+Also owed on the same axis: a `presets.py --fidelity` re-search for the 12 files
+whose bytes moved at v0.5.330 — their settings were carried forward, not
+re-measured, and three of them changed timing substantially. 8 minutes at five
+toggles, `--shard` if wanted.
 
 ### 11. Two report rows compare different music — `[main]`
 `--diagnose` names the correspondence for both and neither is the identity:
@@ -1828,10 +1860,13 @@ the stated reason two features were refused. Both are reopened above.
 * noise frames ours/original **76034 / 82742**.
 * gate: **122589** frames sustaining a voice the original released, **37146**
   the other way round.
-* *plays the same music* (95–100%) **58 files** (56 before v0.5.328); close
-  15; recognisable 8; plays something else **2** — Commodore_64_Music_Examples
-  and Dragons_Lair_Part_II, both of them the subtune correspondence rather
-  than the conversion (item 11). Mean melody **93%**.
+* *plays the same music* (95–100%) **59 files** (56 before v0.5.328, 58 before
+  v0.5.330); close 15; recognisable 8; plays something else **2** —
+  Commodore_64_Music_Examples and Dragons_Lair_Part_II, both of them the subtune
+  correspondence rather than the conversion (item 11). Mean melody **93%**,
+  seq **93%**, pitch **95%**, wave **83%**, gate **53%**.
+* drift: **53 of 80** exact. The corpus's worst was Rasputin at −355.8 and is
+  gone (−4.3 at v0.5.330); the worst is now Knucklebusters at +285.7.
 * drift: **52** of 79 exact; 27 part company at a median 8.9 frames per 1000.
 * `presets.json`: 83 songs, 22 `always` keys, **48** carrying a `--fidelity`
   setting — full search v0.5.304, plus the six re-gridded files re-searched at
