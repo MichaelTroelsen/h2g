@@ -1297,31 +1297,51 @@ is a finding that currently exists only in a commit message. Ids
   bucket `arp` above.
 * Three corpus files fail to convert; 12 are out of scope by construction.
 
-### 10. **The note-length defect — `hold` 0% on 46 of 95 files** — `[subagent]`
-**The largest finding of the sixth run, and the one three separate
-investigations converged on.** Geoff Capes, Human_Race and Auf Wiedersehen
-Monty were each opened as a different question (a tempo lever, a drift gain, a
-gate bit) and all three ended here: we play the right notes, at the right
-moments, with the right timbres — and re-strike each one instead of holding it.
+### 10. ~~The note-length defect~~ — **worked at v0.5.328: it was three
+### different things, and the two worst were the harness**
+The item was framed as one defect behind `hold` 0% on 46 of 95 files, with
+Geoff Capes as its cleanest statement and the `retrig` ladder
+(Kings_of_the_Beach_ingame 7.82, Geoff_Capes 3.21, Human_Race 2.28) as its
+corpus signature. Worked one file at a time, per `PER-SONG-PLAN.md`, and the
+cluster split three ways:
 
-Geoff Capes is the cleanest statement of it: pitch 100%, onset 100%, tail 100%,
-`--pace` 0% out with IQR 1.000–1.000 over 153 gaps, and every voice
-over-produced by the *same* factor (3.23/3.23/3.20). AWM: releases 400 frames
-against 585. The retrig ladder tracks it corpus-wide —
-Kings_of_the_Beach_ingame 7.82, Geoff_Capes 3.21, Human_Race 2.28 — though many
-`hold`-0% files sit at retrig ~1.0 and melody 97–100%, so `hold` 0% is not fatal
-by itself; **every badly over-triggering file has it**.
+**1. `hold` 0% is mostly the one-frame next-note fetch, not a length loss.**
+`--hold-census` on Geoff Capes classifies **4 of 4** comparable instruments as
+`fetch` — `delta == -1`, one frame, Goattracker's `gatetimer & $3f` early
+fetch, the artefact `--no-test-restart` removes outright. Nothing on that file
+is `short`, `long` or `slot`. So a `hold` 0% row does not by itself mean the
+notes are the wrong length, and the corpus figure cannot be read as 46 files
+of note-length loss.
 
-The duration is present in the source and is read (Geoff Capes' status-byte
-wait field averages 9.37 over 798 bytes, many values 15–31, against ~11.6 rows
-per note). **Where it is lost is not localised.** One probe failed to localise
-it and is not evidence: counting rows-per-note out of `_build_raw_pattern`
-returned exactly 1.00 for Geoff Capes *and* for Commando, Warhawk and
-Knucklebusters, which score `hold` 100% — so the test (note column nonzero = a
-note) is wrong for that reader's output. Task id `hold-zero-note-length-loss`.
+**2. Geoff Capes and Kings of the Beach ingame were being charged for a loop
+the original never plays** — a *measurement* defect, now fixed. The original's
+subtune ends inside the window (last attack at frame 768 and 322 of 3000) and
+plays nothing after it; Hubbard's `$FE` means *tune ended*, a Goattracker
+orderlist cannot say that, so `--legal-restart` restarts at position 0 and we
+play the tune three or seven more times. Measured over the music the original
+actually has:
 
-Note `hold`'s declared blindness above `-S3` (a sub-frame deficit siddump
-cannot see): all three files here are `-S1`, so it is meaningful on them.
+    Geoff Capes (17s)      retrig 3.21 -> 1.02   melody 49% -> 100%   seq 47 -> 99%
+    Kings of the Beach (8s) retrig 7.82 -> 1.04  melody 23% -> 98%    seq 23 -> 98%
+
+`fidelity.original_ended` (v0.5.328) is the rule, `tests/test_original_ended.py`
+pins it, and the report names the rows it shortened. Corpus: **exactly those
+two rows move**, *plays the same music* 56 → **58**, *plays something else*
+4 → **2**, mean melody 91% → 93%. Both files leave the queue.
+
+**3. What is left is genuine, and it is two files, not forty-six.**
+Human_Race really does over-trigger (voice 0: 40 attacks against 120, and its
+original plays to frame 2816, so no truncation applies) and Auf Wiedersehen
+Monty really does release short (400 frames against 585) while its note
+*counts* match within 3. Those are the note-length question, and they are what
+`hold-zero-note-length-loss` should be re-scoped to.
+
+**Refuted on the way, cheaply, and recorded so it is not re-tried:** that the
+vibrato command displaces the tie. 91.5% of Geoff Capes' note rows carry
+`CMD_VIBRATO` and the tie block requires `cmd1 == 0`, which fits perfectly —
+and converting with `vibrato_command=False` leaves TONEPORTA at **10 rows
+either way**, so the column is not what drops it. The file simply has ten tied
+events.
 
 ### 11. Two report rows compare different music — `[main]`
 `--diagnose` names the correspondence for both and neither is the identity:
@@ -1808,9 +1828,10 @@ the stated reason two features were refused. Both are reopened above.
 * noise frames ours/original **76034 / 82742**.
 * gate: **122589** frames sustaining a voice the original released, **37146**
   the other way round.
-* *plays the same music* (95–100%) **56 files**; close 15; recognisable 8;
-  plays something else 4 (Commodore_64_Music_Examples, Dragons_Lair_Part_II,
-  Geoff_Capes_Strongman_Challenge, Kings_of_the_Beach_ingame).
+* *plays the same music* (95–100%) **58 files** (56 before v0.5.328); close
+  15; recognisable 8; plays something else **2** — Commodore_64_Music_Examples
+  and Dragons_Lair_Part_II, both of them the subtune correspondence rather
+  than the conversion (item 11). Mean melody **93%**.
 * drift: **52** of 79 exact; 27 part company at a median 8.9 frames per 1000.
 * `presets.json`: 83 songs, 22 `always` keys, **48** carrying a `--fidelity`
   setting — full search v0.5.304, plus the six re-gridded files re-searched at

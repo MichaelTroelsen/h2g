@@ -2351,6 +2351,29 @@ option switch has no `default:` case, so an unknown letter is dropped without a
 word. `--calls-per-frame N` overrides the rate; `1` reproduces every number
 taken before v0.5.99.
 
+**A row is compared over the music the original has, not over a fixed window**
+(v0.5.328). Hubbard's `$FE` track byte means *tune ended*; a Goattracker
+orderlist has no way to say that, so `--legal-restart` turns it into a restart
+at position 0 — which is what makes the file packable at all — and our
+conversion plays the tune again where the original has stopped. Every sequence
+column was then charged for a loop the original never plays:
+`Geoff_Capes_Strongman_Challenge` read `retrig` **3.21** and `melody` **49%**
+over 60 s and reads **1.02** and **100%** over the 17 s this rule gives it;
+`Kings_of_the_Beach_ingame` **7.82 / 23% → 1.04 / 98%** over 8 s. Both sat in the
+report's *plays something else* bucket on that arithmetic.
+
+The rule is `fidelity.original_ended`, and it is deliberately conservative in
+one direction: shortening a window can only remove *our* surplus notes, so it
+flatters every column it touches. It is therefore gated on the original
+**stopping** — a trailing silence longer than twice that tune's own largest gap
+between attacks, and five seconds outright — never on the two sides
+disagreeing, and it never shortens below five seconds (a short window is its
+own hazard: `BMX_Kidz` opens with thirteen seconds of rest). A rest is not an
+ending: `Human_Race`'s 144-frame tail keeps its full-length row. The report
+names every row it shortened, with the window used, and
+`tests/test_original_ended.py` pins the rule — including the three cases where
+it must decline.
+
 Traces set **`$02A6` to 1 (PAL)** since v0.5.110. siddump starts that cell at
 0, which is NTSC, and three corpus players branch on it to skip frames in
 compensation — tracing without it measures behaviour a PAL C64 never has, and

@@ -271,7 +271,7 @@ test dependency).
   `tests/test_fidelity.py` fails if the registry and the printed header
   disagree. See README.md § *A/B against a previous run*.
 - **A low score in `FIDELITY.md` is a claim about the harness until it is a
-  claim about the converter.** Five separate defects have now been *in the
+  claim about the converter.** Six separate defects have now been *in the
   measurement*, the largest being that **every per-frame column was charged
   for the packed player's startup lag** until v0.5.175: gt2reloc's player
   reaches its first note some 3-8 frames after the original, and comparing
@@ -292,10 +292,24 @@ test dependency).
   renumbers the subtune before the player sees it. **Run `fidelity.py
   <file> --diagnose` before calling any row a conversion bug.** It asks the
   questions in the order they have to be asked: the subtune correspondence
-  matrix first, then a per-voice cause. Three of the four files the handoff
-  filed under "plays something else" were the harness — Dragons_Lair_Part_II
-  is 7% on the diagonal and 94/98/97% at its real counterparts, and
-  Flash_Gordon's traced subtune is its worst of nine.
+  matrix first, then a per-voice cause. **All four** of the files the report
+  filed under "plays something else" were the harness, and they were three
+  different harness defects. Two were the correspondence: Dragons_Lair_Part_II
+  is 15% on the diagonal and 60% at its real counterpart o9 (**not** the
+  94/98/97% this file used to claim — re-measured at v0.5.325, and voice 2
+  still reads "different music" even there, so a defect survives the
+  correction), and Commodore_64_Music_Examples is a clean off-by-one, s1→o0 at
+  93%. Flash_Gordon's traced subtune is its worst of nine. The other two were
+  **the original ending inside the window**: Hubbard's `$FE` means *tune
+  ended*, a Goattracker orderlist cannot say that, so our conversion restarts
+  and every sequence column was charged for a loop the original never plays.
+  Geoff Capes read `retrig` 3.21 / `melody` 49% and reads **1.02 / 100%** over
+  the 17 s the rule gives it; Kings of the Beach ingame **7.82 / 23% → 1.04 /
+  98%** over 8 s. `fidelity.original_ended` is the rule, and it is gated on the
+  original *stopping* — a trailing silence longer than twice its own largest
+  gap between attacks, and 5 s outright — never on the two sides disagreeing,
+  because shortening a window can only remove our surplus and so flatters every
+  column it touches. The report names the rows it shortened. See v0.5.328.
   `--search-subtunes` cannot substitute: it varies *our* index while holding
   the original's fixed, and in these files the original's is the one that
   moved. On the per-voice question, a modal semitone delta's share degrades

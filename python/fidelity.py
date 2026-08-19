@@ -3011,6 +3011,52 @@ def _convert_options() -> tuple:
     return tuple(n for n in params if n not in ("sid_path", "log"))
 
 
+def original_ended(orig, seconds: int) -> int | None:
+    """Seconds to compare, when the original's subtune ends inside the window.
+
+    Hubbard's `$FE` track byte means *tune ended*. A Goattracker orderlist has
+    no way to say that -- `--legal-restart` turns it into a restart at position
+    0, which is what makes the file packable at all -- so where the original
+    stops inside the traced window our conversion plays the tune again, and
+    every sequence column is charged for the surplus. That is a property of the
+    target format, not of the conversion: Geoff Capes reads `retrig` 3.21 and
+    `melody` 49% over 60 s, and `retrig` 1.02 and `melody` 100% over the 17 s
+    this rule gives it (its original's last attack is frame 768). Both it and
+    Kings of the Beach ingame -- 7.82 and 23% against 1.04 and 98% over 8 s --
+    sat in
+    the report's *plays something else* bucket on that arithmetic.
+
+    **The test is against the tune's own pacing, not a fixed fraction of the
+    window**, because a rest is not an ending: a file that pauses for four
+    seconds mid-tune must not be truncated at the pause. The trailing silence
+    has to exceed twice the largest gap *between* the original's own attacks,
+    and five seconds outright, before the tune counts as over. Human_Race's
+    tail of 144 frames against its own gaps stays a full-length row; Geoff
+    Capes' 2232 does not.
+
+    Returns the window to use, in whole seconds, or None to leave it alone.
+    Truncation can only *remove* our surplus, so it flatters every column it
+    touches -- which is why it is gated on the original stopping rather than on
+    the two sides disagreeing, and why the row records `original_ends` and the
+    report names the files it applied to.
+    """
+    frames = [f for v in orig for f in v.attack_frames]
+    if not frames:
+        return None
+    window = seconds * 50
+    last = max(frames)
+    tail = window - last
+    ordered = sorted(frames)
+    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    biggest = max(gaps) if gaps else 0
+    if tail <= max(2 * biggest, 5 * 50):
+        return None
+    # One second past the last attack, so the note's own release is inside the
+    # window, and never longer than the caller asked for.
+    ended = min(seconds, last // 50 + 2)
+    return ended if ended >= 5 else None
+
+
 def _preset_opts(doc: dict, name: str) -> dict:
     entry = (doc.get("songs") or {}).get(name, {})
     always = doc.get("always", {})
@@ -3175,7 +3221,20 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
     if cal:
         row["calibration"] = {"detune": round(ft.detune, 3), "c": cal}
-    a = run_siddump(local_orig, args.seconds, sub, args.siddump, cal)
+    seconds = args.seconds
+    a = run_siddump(local_orig, seconds, sub, args.siddump, cal)
+    # Where the original's subtune ends inside the window, compare over the
+    # music it plays rather than over our restart of it. See original_ended.
+    ended = original_ended(a, seconds)
+    if ended is not None and ended < seconds:
+        # `seconds` in the row stays the run's own `-t`, because
+        # `_FATAL_SETTINGS` compares it between a baseline and the current
+        # tree: a window this file shortened for itself is a fact about the
+        # file, not a setting that differed between two runs, and writing it
+        # here would make every `--baseline` across this change refuse with
+        # `seconds 60 -> 17`. The shortening is reported as `original_ends`.
+        row["original_ends"] = seconds = ended
+        a = run_siddump(local_orig, seconds, sub, args.siddump, cal)
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
     # that is the rate its tempo values were written for. Tracing each at its
     # own rate is what puts both on one time axis -- see run_siddump.
@@ -3191,11 +3250,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # sampling. Only the sequence dimensions survive it -- see below.
     equal = bool(getattr(args, "equal_calls", False)) and multiplier > 1
     if equal:
-        b = run_siddump(packed, args.seconds * multiplier, sub, args.siddump,
+        b = run_siddump(packed, seconds * multiplier, sub, args.siddump,
                         calls=1)
         row["equal_calls"] = multiplier
     else:
-        b = run_siddump(packed, args.seconds, sub, args.siddump,
+        b = run_siddump(packed, seconds, sub, args.siddump,
                         calls=getattr(args, "calls_per_frame", None) or multiplier)
     if multiplier > 1:
         calls = getattr(args, "calls_per_frame", None) or multiplier
@@ -3207,7 +3266,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # lets the summary say which rate a file actually plays right at
             # instead of asserting that the packed one must be it.
             row["melody_at_1x"] = compare(a, run_siddump(
-                packed, args.seconds, sub, args.siddump, calls=1))["melody"]
+                packed, seconds, sub, args.siddump, calls=1))["melody"]
     row["status"] = "measured"
     row.update(compare(a, b))
     if row.get("equal_calls"):
@@ -3232,14 +3291,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         for st in range(max(0, sub - half), sub + args.search_subtunes - half):
             if st == sub:
                 continue
-            cand_dump = run_siddump(packed, args.seconds, st, args.siddump,
+            cand_dump = run_siddump(packed, seconds, st, args.siddump,
                                     calls=getattr(args, "calls_per_frame", None) or multiplier)
             cand = compare(a, cand_dump)
             if cand["melody"] > best:
                 best, best_at, row = cand["melody"], st, {**row, **cand}
                 best_dump = cand_dump
         row["matched_subtune"] = best_at
-    nframes = args.seconds * 50
+    nframes = seconds * 50
     if not row.get("equal_calls"):
         # Every one of these walks the two traces frame against frame, so a
         # stretched time axis makes them compare our frame k to the original's
@@ -3252,10 +3311,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # one bias for another: the original reads more gate edges under
             # VICE than under siddump too, so a one-sided change would make
             # the two columns of every count incomparable.
-            vo = vicetrace.run(local_orig, args.seconds, sub,
+            vo = vicetrace.run(local_orig, seconds, sub,
                                exe=args.vice_exe,
                                out=workdir / "vice_orig.txt")
-            vu = vicetrace.run(packed, args.seconds,
+            vu = vicetrace.run(packed, seconds,
                                row.get("matched_subtune", sub),
                                exe=args.vice_exe,
                                out=workdir / "vice_ours.txt")
@@ -3335,9 +3394,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # eighteen versions.
         row["status"] = "window empty" if row["orig_attacks"] == 0 else "silent"
     if args.register:
-        row["register"] = sidm2_register(local_orig, packed, args.seconds)
+        row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
-        row["audio"] = sidm2_audio(local_orig, packed, args.seconds)
+        row["audio"] = sidm2_audio(local_orig, packed, seconds)
     return row
 
 
@@ -3835,6 +3894,25 @@ def report(rows: list[dict], args) -> str:
                 "out named in another key and scores 0%. The tuning itself is "
                 "not corrected and cannot be: it is what the file plays. "
                 f"({names})")
+
+        ended = [r for r in rows if r.get("original_ends")]
+        if ended:
+            names = ", ".join(
+                f"{r['file'].replace('.sid', '')} {r['original_ends']}s"
+                for r in sorted(ended, key=lambda r: r["file"].lower()))
+            out.append(
+                f"- {len(ended)} file(s) are compared over a **shorter window "
+                "than the rest**, because the original's subtune ends inside "
+                "it. Hubbard's `$FE` track byte means *tune ended* and a "
+                "Goattracker orderlist cannot say that, so our conversion "
+                "restarts and every sequence column would otherwise be charged "
+                "for a loop the original never plays -- Geoff Capes read "
+                "`retrig` 3.21 and `melody` 49% that way, against 1.02 and 100% "
+                "over the music it actually has. The shortening can only remove "
+                "our surplus, so it flatters those rows by construction: it is "
+                "gated on the original stopping (a trailing silence longer than "
+                "twice its own largest gap between attacks, and 5s outright), "
+                f"never on the two sides disagreeing. ({names})")
 
         # The mean hides the shape, and the shape is the finding: this is not
         # a corpus that is uniformly 2/3 right, it is one where most files are
