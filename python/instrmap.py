@@ -29,6 +29,12 @@ Usage:
 
 Writes one Markdown file per song plus an index. On demand, not a build
 artefact -- it traces two emulations per song and is far too slow for that.
+
+This is the one place in the repo that makes this comparison. `songview.py`
+briefly carried a second, overlapping `--compare` mode (v0.5.243); it was
+removed rather than kept beside this tool -- it duplicated the join this
+module already makes, and it broke `songview.py`'s own "judges nothing and
+scores nothing" premise. See `songview.py`'s docstring.
 """
 from __future__ import annotations
 

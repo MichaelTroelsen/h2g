@@ -3105,7 +3105,10 @@ side at 44.1 kHz mono, which is the practical ceiling. If a browser refuses
 Every other instrument-level check in this project reads the *player's own
 instrument table* and then argues about what its bytes mean. This reads the
 other end: what the SID registers actually hold, in the original and in our
-conversion, side by side.
+conversion, side by side. **It is the one place in the repo that makes this
+comparison** — `songview.py` (below) used to carry a second, overlapping
+`--compare` mode; it was removed because it duplicated this tool and broke
+`songview.py`'s own "judges nothing and scores nothing" promise.
 
 ```sh
 cd python
