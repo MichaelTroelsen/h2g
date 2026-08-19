@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.319 — 2026-08-19
+
+- PER-SONG-PLAN.md: one song at a time, metric gaps, listening-tool additions
+
 ## 0.5.318 — 2026-08-18
 
 - the handoff covers the fifth run, v0.5.314-317
