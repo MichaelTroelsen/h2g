@@ -4,6 +4,14 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.325 — 2026-08-19
+
+- the listening pages gain a register panel and a tracker view
+
+## 0.5.324 — 2026-08-19
+
+- listen.py --voices, a voice selector, a facts card and a clickable launcher
+
 ## 0.5.323 — 2026-08-19
 
 - Knucklebusters refused for scoping -- the tempo write is not its lever

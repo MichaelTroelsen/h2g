@@ -119,7 +119,7 @@ def render_vsid(sid: Path, out: Path, seconds: int, subtune: int,
 
 
 def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
-                     exe: str = SIDPLAYFP) -> bool:
+                     exe: str = SIDPLAYFP, mute: tuple = ()) -> bool:
     """One .sid to one WAV via libsidplayfp's own frontend.
 
     The preferred renderer, and the only one that reads the whole corpus with
@@ -141,9 +141,14 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
     failure into a fallback rather than a silent empty pair.
     """
     out.unlink(missing_ok=True)
+    # `-u<n>` mutes a voice, 1-based like `-o`. It silences the emulator's
+    # OUTPUT and does not touch what the play routine writes, which is why a
+    # solo render can be compared against the full mix at all -- see the
+    # sum check in tests and the --voices note in main().
+    mutes = [f"-u{v}" for v in mute]
     try:
         subprocess.run([exe, f"-t{seconds}", "-f44100", "-p16", "-m", "-fo0",
-                        f"-o{subtune + 1}", f"-w{out}", str(sid)],
+                        f"-o{subtune + 1}", *mutes, f"-w{out}", str(sid)],
                        capture_output=True, timeout=seconds * 6 + 120,
                        stdin=subprocess.DEVNULL)
     except (subprocess.TimeoutExpired, OSError):
@@ -188,18 +193,22 @@ def pick_renderer(sid: Path, args, probe_dir: Path | None = None) -> Choice:
         out = (probe_dir or Path(args.outdir)) / "_probe.wav"
         if render_sidplayfp(sid, out, 1, sub, args.sidplayfp):
             out.unlink(missing_ok=True)
-            return Choice(lambda s, o, sec, sub: render_sidplayfp(
-                s, o, sec, sub, args.sidplayfp), "", "sidplayfp")
+            return Choice(lambda s, o, sec, sub, mute=(): render_sidplayfp(
+                s, o, sec, sub, args.sidplayfp, mute), "", "sidplayfp")
         out.unlink(missing_ok=True)
         why = "sidplayfp refused it (C64 ROMs configured?)"
     else:
         why = ""
     if _sid2wav_can_read(sid, args.sid2wav):
-        return Choice(lambda s, o, sec, sub: render(
-            s, o, sec, sub, args.sid2wav),
+        return Choice(lambda s, o, sec, sub, mute=(): (
+            not mute and render(s, o, sec, sub, args.sid2wav)),
             (why and why + ", using sid2wav"), "sid2wav")
-    return Choice(lambda s, o, sec, sub: render_vsid(s, o, sec, sub),
-                  "rendered by VICE (RSID)", "vsid")
+    # A fallback that cannot mute must REFUSE a per-voice render. Returning
+    # the full mix would stage three identical "solo" files that look like
+    # three voices and are one -- a listening pass cannot survive that.
+    return Choice(lambda s, o, sec, sub, mute=(): (
+        not mute and render_vsid(s, o, sec, sub)),
+        "rendered by VICE (RSID)", "vsid")
 
 
 def _sid2wav_can_read(sid: Path, exe: str = SID2WAV) -> bool:
@@ -329,6 +338,34 @@ def split_notes(text: str) -> tuple[str, dict[str, str], str]:
         else:
             out[name] = title + body
     return head, out, tail
+
+
+def trace_json(orig, ours, seconds: int, mult_o: int, mult_b: int,
+               sub_o: int = 0, sub_b: int = 0) -> dict:
+    """Both sides' register events, in the shape the A/B page's panel reads.
+
+    Sparse by construction -- these are siddump's own change events, so a
+    register held for 3000 frames costs one entry. A 120 s pair comes to tens
+    of KB where a per-frame table would be megabytes.
+
+    `freq` is dropped: the panel says *which capabilities are used*, and
+    frequency is the one register that changes on nearly every frame, so it
+    would dominate the file while answering nothing the panel asks.
+    """
+    def side(tr, mult):
+        return {
+            "mult": mult,
+            "voices": [{"wf": v.wf_events, "adsr": v.adsr_events,
+                        "pulse": v.pulse_events} for v in tr],
+            "filter": {"cutoff": tr.filter.cutoff_events,
+                       "ctrl": tr.filter.ctrl_events,
+                       "passband": tr.filter.passband_events,
+                       "volume": tr.filter.volume_events},
+        }
+
+    return {"seconds": seconds, "frames": seconds * 50,
+            "sub_orig": sub_o, "sub_ours": sub_b,
+            "orig": side(orig, mult_o), "ours": side(ours, mult_b)}
 
 
 def merge_notes(outdir: Path) -> int:
@@ -523,6 +560,18 @@ def main(argv=None) -> int:
                         "one that converts. The whole corpus at -t 120 is "
                         "about 1.7 GB and a couple of hours; --files is the "
                         "way to stage the handful a question is about")
+    p.add_argument("--traces-only", action="store_true",
+                   help="skip rendering and write only <name>.trace.json, the "
+                        "register data the A/B page's panel reads. Two siddump "
+                        "runs a tune against eight renders, for when the WAVs "
+                        "are already staged.")
+    p.add_argument("--voices", action="store_true",
+                   help="also stage each voice alone, both sides: six extra "
+                        "renders a tune (V1/V2/V3 x original/ours) via "
+                        "sidplayfp's -u. Per song on demand -- it quadruples "
+                        "render time and disk, and the full corpus is already "
+                        "1.7 GB. A renderer that cannot mute refuses rather "
+                        "than staging the full mix three times.")
     p.add_argument("-n", "--per-band", type=int, default=1)
     p.add_argument("-t", "--seconds", type=int, default=30,
                    help="how much to render (default 30: long enough to reach "
@@ -666,18 +715,49 @@ def main(argv=None) -> int:
         # exists to support: two emulations differ in level and filter enough
         # to colour a listening judgement. `pick_renderer` returns a single
         # callable used for both sides, so the pair can never be split.
-        choice = pick_renderer(src, args, workdir)
-        render_pair, why = choice.render, choice.why
-        engines[choice.engine] += 1
-        if why:
-            print(f"  {name:44} {why}", file=sys.stderr)
-        ok_a = render_pair(src, outdir / f"{stem}.original.wav", args.seconds,
-                           sub_orig)
-        ok_b = render_pair(ours_sid, outdir / f"{stem}.h2g.wav", args.seconds,
-                           sub_ours)
+        if getattr(args, "traces_only", False):
+            # No renderer is chosen at all: picking one probes with a 1 s
+            # render, which is exactly the cost this mode exists to avoid.
+            render_pair, why = (lambda *a, **k: True), ""
+        else:
+            choice = pick_renderer(src, args, workdir)
+            render_pair, why = choice.render, choice.why
+            engines[choice.engine] += 1
+            if why:
+                print(f"  {name:44} {why}", file=sys.stderr)
+        skip_renders = getattr(args, "traces_only", False)
+        ok_a = skip_renders or render_pair(
+            src, outdir / f"{stem}.original.wav", args.seconds, sub_orig)
+        ok_b = skip_renders or render_pair(
+            ours_sid, outdir / f"{stem}.h2g.wav", args.seconds, sub_ours)
+
+        # Each voice alone, both sides. `-u` is 1-based, so soloing voice v
+        # mutes the other two. The A/B page reads these when its voice
+        # selector is used; without them it plays the full mix as before, so
+        # staging without --voices costs nothing and loses nothing.
+        if getattr(args, "voices", False) and not getattr(args, "traces_only", False):
+            solo_ok = 0
+            for v in (1, 2, 3):
+                others = tuple(x for x in (1, 2, 3) if x != v)
+                solo_ok += bool(render_pair(
+                    src, outdir / f"{stem}.v{v}.original.wav",
+                    args.seconds, sub_orig, others))
+                solo_ok += bool(render_pair(
+                    ours_sid, outdir / f"{stem}.v{v}.h2g.wav",
+                    args.seconds, sub_ours, others))
+            if solo_ok < 6:
+                print(f"  {name:44} per-voice: {solo_ok}/6 rendered "
+                      f"({choice.engine} cannot mute)", file=sys.stderr)
 
         orig = run_siddump(src, args.seconds, sub_orig, args.siddump)
         ours = run_siddump(ours_sid, args.seconds, sub_ours, args.siddump)
+
+        # The register panel's data. Written beside the pair so `abpage.py`
+        # can build the panel without re-tracing anything.
+        (outdir / f"{stem}.trace.json").write_text(
+            json.dumps(trace_json(orig, ours, args.seconds, 1, multiplier,
+                                  sub_orig, sub_ours),
+                       separators=(",", ":")), encoding="utf-8")
 
         band = next((b for b in BANDS if b[0] == label), None)
         lines += [f"## {stem} — *{label}*", ""]

@@ -37,12 +37,16 @@ def test_sidplayfp_is_preferred_when_it_works(tmp_path, monkeypatch):
     Path(tmp_path / "sidplayfp.exe").write_text("x")
     calls = []
     monkeypatch.setattr(L, "render_sidplayfp",
-                        lambda s, o, sec, sub, exe=None: calls.append("fp") or True)
+                        lambda s, o, sec, sub, exe=None, mute=():
+                        calls.append(("fp", mute)) or True)
     c = L.pick_renderer(_psid(tmp_path), _args(tmp_path))
     assert c.why == ""
     assert c.engine == "sidplayfp"
     c.render(_psid(tmp_path), tmp_path / "o.wav", 1, 0)
-    assert calls == ["fp", "fp"]          # the probe, then the real call
+    # ...and the per-voice form reaches the renderer as a mute set, which is
+    # the whole of what `--voices` needs from this layer.
+    c.render(_psid(tmp_path), tmp_path / "v.wav", 1, 0, (1, 3))
+    assert calls == [("fp", ()), ("fp", ()), ("fp", (1, 3))]
 
 
 def test_it_falls_back_to_sid2wav_for_a_psid(tmp_path, monkeypatch):
