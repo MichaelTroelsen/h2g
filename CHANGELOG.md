@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.323 — 2026-08-19
+
+- Knucklebusters refused for scoping -- the tempo write is not its lever
+
 ## 0.5.322 — 2026-08-19
 
 - A/B pages correct the startup lag, with a sync slider, and abpage --serve

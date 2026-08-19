@@ -35,11 +35,30 @@ effect"; a per-file profile is verified on a second file before shipping.
 
 ### Which song first — a shortlist, in order
 
-1. **Knucklebusters** (melody 50%) — the tempo write is a *known* +31 pp lever
-   (50→81, retrig 0.39→0.69, measured twice). The open question is why the
-   derived value is right here and catastrophic on Warhawk; answering it on
-   this one song is exactly the "scoped per-file rule" the v0.5.318 refusal
-   left as its lead. `[main]` — likely ends in a presets/FIDELITY regeneration.
+1. ~~**Knucklebusters**~~ — **worked at v0.5.322, and the tempo write is not
+   its lever.** Refused for scoping, with the numbers, because the premise did
+   not survive the file's own bytes:
+   * Every subtune's entry pattern **already carries a tempo** — subtune 0 and
+     2 share pattern 29 at value 6, the traced subtune 1 has pattern 0 at
+     value 3, all at row 0. Nothing is missing for a widened scan to add, so
+     the A/B's 50→81 pp gain has **no identified mechanism** — the same
+     position Human_Race reached, and not a basis for shipping.
+   * The traced subtune wants **7/3 = 2.33 frames** a row and is given 3:
+     28.6% slow, which predicts about 0.78 of the original's attacks. `retrig`
+     measures **0.39**, so the row explains at most half of it.
+   * `--pace` refuses the file outright (IQR spans 56% of the median), which
+     by this repo's own rule is a mechanism rather than a constant.
+   * The subtunes want **mutually incompatible multipliers** — 1, 3, 8, 8, 8,
+     4 for subtunes 0–5 — and the file is packed `-S1`, so five of six play at
+     a rate no single `-S` can express.
+   * **Our `.sng` carries 3 subtunes against the original's 11.**
+   * On the traced pair: voice 0 **under-produced, 16 attacks against 48**;
+     voice 1 matches at ratio 0.69; voice 2 is **different music** (pitches
+     14% the same).
+
+   So this file's melody is limited by structure — dropped subtunes, a wrong
+   voice, an unexpressible rate — not by a tempo command. It should re-enter
+   the loop as a subtune/structure question, not a tempo one.
 2. **Human_Race** (melody 65%) — the same lever fixes its lost clock (drift
    −250 → −7.8, wave 63→89) while costing melody. The only file where the two
    readings point opposite ways; understanding it is understanding the lever.
