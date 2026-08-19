@@ -192,6 +192,26 @@ th { color:var(--muted); font-weight:600; font-size:11.5px; letter-spacing:.1em;
   text-transform:uppercase; }
 td a { color:var(--ink); font-weight:600; }
 .scroll { overflow-x:auto; }
+.wave { position:relative; }
+.wave canvas {
+  display:block; width:100%; height:auto; border-radius:10px;
+  background:var(--sunk); border:1px solid var(--line); cursor:crosshair;
+}
+.wave .legend {
+  display:flex; flex-wrap:wrap; gap:14px; align-items:center;
+  margin:10px 0 0; font-size:.82rem; color:var(--muted);
+}
+.wave .swatch { display:inline-flex; align-items:center; gap:6px; }
+.wave .swatch i { width:11px; height:11px; border-radius:3px; display:inline-block; }
+.wave .swatch.orig i { background:var(--a); }
+.wave .swatch.ours i { background:var(--b); }
+.wave .swatch.diff i { background:var(--ink); opacity:.45; }
+.wave .stat { margin-left:auto; font-family:var(--mono); color:var(--ink); }
+.wave .caveat { margin:12px 0 0; font-size:.86rem; color:var(--muted); }
+.wave .msg {
+  padding:26px 16px; text-align:center; color:var(--muted); font-size:.9rem;
+  border:1px dashed var(--line); border-radius:10px; background:var(--sunk);
+}
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
 @media (max-width:520px) { .sources { grid-template-columns:1fr; } }
 """
@@ -296,6 +316,111 @@ SCRIPT = r"""
       looping.checked = !looping.checked; au.loop = bu.loop = looping.checked;
     }
   });
+  // ---- amplitude overlay -------------------------------------------------
+  // Both sides' peak envelopes on one canvas. It shows dropped notes, wrong
+  // note lengths and tempo drift (the two traces shear apart); it cannot show
+  // pitch, timbre or filter, which is why the caveat is printed beside it
+  // rather than left for the reader to infer.
+  var cv = document.getElementById("wave");
+  if (cv) (function () {
+    var msg = document.getElementById("wavemsg");
+    var stat = document.getElementById("wavestat");
+    var COLS = 1400, H = 200, DIFF = 46, PAD = 6;
+    var off = document.createElement("canvas");
+    off.width = COLS; off.height = H + DIFF;
+    cv.width = COLS; cv.height = H + DIFF;
+    var ctx = cv.getContext("2d"), oc = off.getContext("2d");
+    var envA = null, envB = null;
+
+    function css(n) {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    }
+    function envelope(buf) {
+      var ch = buf.getChannelData(0), n = ch.length;
+      var out = new Float32Array(COLS), per = n / COLS;
+      for (var i = 0; i < COLS; i++) {
+        var s = Math.floor(i * per), e = Math.min(n, Math.floor((i + 1) * per));
+        var pk = 0;
+        for (var j = s; j < e; j++) { var v = ch[j] < 0 ? -ch[j] : ch[j]; if (v > pk) pk = v; }
+        out[i] = pk;
+      }
+      return out;
+    }
+    function band(g, env, colour, alpha) {
+      var mid = H / 2, half = mid - PAD;
+      g.beginPath();
+      for (var i = 0; i < COLS; i++) g.lineTo(i, mid - env[i] * half);
+      for (var k = COLS - 1; k >= 0; k--) g.lineTo(k, mid + env[k] * half);
+      g.closePath();
+      g.globalAlpha = alpha; g.fillStyle = colour; g.fill(); g.globalAlpha = 1;
+    }
+    function paint() {
+      var line = css("--line"), ink = css("--ink");
+      oc.clearRect(0, 0, COLS, H + DIFF);
+      oc.strokeStyle = line; oc.lineWidth = 1;
+      oc.beginPath(); oc.moveTo(0, H / 2 + 0.5); oc.lineTo(COLS, H / 2 + 0.5); oc.stroke();
+      oc.beginPath(); oc.moveTo(0, H + 0.5); oc.lineTo(COLS, H + 0.5); oc.stroke();
+      band(oc, envA, css("--a"), 0.62);
+      band(oc, envB, css("--b"), 0.62);
+      // difference strip: |peak difference| per column, same time axis.
+      var sum = 0;
+      oc.globalAlpha = 0.45; oc.fillStyle = ink;
+      for (var i = 0; i < COLS; i++) {
+        var d = Math.abs(envA[i] - envB[i]); sum += d;
+        oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
+      }
+      oc.globalAlpha = 1;
+      if (stat) stat.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
+      frame();
+    }
+    function frame() {
+      ctx.clearRect(0, 0, COLS, H + DIFF);
+      ctx.drawImage(off, 0, 0);
+      var d = au.duration;
+      if (d && isFinite(d)) {
+        var x = Math.round(au.currentTime / d * COLS) + 0.5;
+        ctx.strokeStyle = css("--live"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H + DIFF); ctx.stroke();
+      }
+    }
+    au.addEventListener("timeupdate", function () { if (envA) frame(); });
+    seek.addEventListener("input", function () { if (envA) frame(); });
+
+    cv.addEventListener("click", function (e) {
+      var d = au.duration;
+      if (!d || !isFinite(d)) return;
+      var r = cv.getBoundingClientRect();
+      var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+      au.currentTime = t; bu.currentTime = t;
+      now.textContent = fmt(t);
+      seek.value = String(Math.round(t / d * 1000));
+      frame();
+    });
+
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { if (msg) msg.textContent = "This browser has no Web Audio."; return; }
+    var ac = new AC();
+    function load(src) {
+      return fetch(src).then(function (r) { return r.arrayBuffer(); })
+        .then(function (ab) { return ac.decodeAudioData(ab); });
+    }
+    Promise.all([load(au.src), load(bu.src)]).then(function (bufs) {
+      envA = envelope(bufs[0]); envB = envelope(bufs[1]);
+      if (msg) msg.hidden = true;
+      cv.hidden = false;
+      paint();
+    }).catch(function () {
+      // file:// blocks fetch of a sibling .wav in most browsers; the audio
+      // elements themselves still play, so this is a missing picture and not
+      // a broken page.
+      cv.hidden = true;
+      if (msg) msg.textContent =
+        "The envelopes need to read both WAVs, which a browser refuses over "
+        + "file://. Serve this directory over http (or rebuild with --embed) "
+        + "and the overlay appears. Playback above is unaffected.";
+    });
+  })();
+
   apply(); setNames();
 })();
 """
@@ -335,7 +460,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
 
     back = ('<a href="index.html">&larr; all tunes</a> &middot; ' if index_link else "")
 
-    return """<title>%(pretty)s A/B</title>
+    return """<meta charset="utf-8">
+<title>%(pretty)s A/B</title>
 <style>%(css)s</style>
 <div class="wrap">
 <header>
@@ -375,6 +501,27 @@ def page(name: str, row: dict, notes: list[str], version: str,
   </div>
 </div>
 
+<div class="card wave">
+  <h2>Both sides, drawn</h2>
+  <div class="msg" id="wavemsg">Reading both renders&hellip;</div>
+  <canvas id="wave" hidden></canvas>
+  <div class="legend">
+    <span class="swatch orig"><i></i>original</span>
+    <span class="swatch ours"><i></i>H2G</span>
+    <span class="swatch diff"><i></i>|difference|, lower strip</span>
+    <span>click to seek both</span>
+    <span class="stat" id="wavestat"></span>
+  </div>
+  <p class="caveat"><b>This is amplitude, and amplitude is not fidelity.</b>
+  It shows dropped or extra notes, note lengths, missing drums, silence, and
+  tempo drift &mdash; the two traces shear apart as the clocks part company.
+  It cannot show <b>pitch</b>, <b>timbre</b> or <b>filter</b>: two completely
+  different notes of the same loudness draw the same shape. The
+  <code>mean&nbsp;|&Delta;|</code> beside the legend is the average gap
+  between the two envelopes, not a score &mdash; read it only as "how far
+  apart these pictures are".</p>
+</div>
+
 <div class="card">
   <h2>What to listen for</h2>
   <ul>%(bullets)s</ul>
@@ -402,7 +549,8 @@ def index(names: list[str], rows: dict, version: str) -> str:
                  % (n, n.replace("_", " "), r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
-    return """<title>H2G Listening Pass</title>
+    return """<meta charset="utf-8">
+<title>H2G Listening Pass</title>
 <style>%(css)s</style>
 <div class="wrap">
 <header>
