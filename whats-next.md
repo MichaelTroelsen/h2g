@@ -699,6 +699,361 @@ nothing in this repo scores it. Both defects in the listening apparatus so far
 as prose*, not by a check — and both had a passing test suite over them at the
 time.
 
+## The sixth run (v0.5.319–325): a per-song plan, three songs worked, and the listening rig grown into an instrument
+
+Driven by the task runner (`.claude/tasks/whattask.json` + `runs.jsonl`): 7
+runs closed in this window, 14 task ids closed in total, 38 open. **No commit
+in this run changed a converted byte.** `python/h2g/` was touched once
+(`patterns.py`, comment-only, v0.5.320); everything else is docs, `listen.py`
+and `abpage.py`.
+
+### v0.5.319 — `PER-SONG-PLAN.md`, the loop and the metric audit
+Three user questions answered in one document (`PER-SONG-PLAN.md`, 10 KB):
+
+* **The loop**, nine steps, every one a tool that already exists — score →
+  `--diagnose` (a low row is a claim about the harness until it is a claim
+  about the converter) → `--pace` (a wrong clock poisons every per-frame
+  column) → the four censuses (`--census`, `--hold-census`, `--vib-census`,
+  `--gate-census`) → `songview.py` → listen → read the player → byte-hash +
+  `--baseline` A/B at `-t 60` → ship or refuse with numbers. One song per
+  session; the corpus A/B at the end is the guard rail.
+* **A shortlist of five songs in order**, Knucklebusters first (since struck —
+  see v0.5.323).
+* **The metric audit.** Register *coverage* is closed — `FIDELITY.md`'s
+  generated tail says every SID register is read by some dimension. The gaps
+  are *inside* registers already read, and one was written down nowhere:
+  **sync and ring modulation (`$D404` bits 1–2) are scored by nothing.**
+  `wave` compares `x & 0xF0` and its own comment excludes the low nibble;
+  `gate` reads bit 0 alone. A conversion could drop every ring-mod effect in
+  the corpus and no number in the report would move. Same blindness class as
+  the gate axis before v0.5.270. Also unscored: resonance (`$D417` high
+  nibble), master volume (`$D418` low nibble), and sweep *direction* (`pul`
+  and `cut` count movement without judging it).
+* **On GT track effects and tables**: the harness scores register outcomes
+  rather than GT commands *on purpose* — a command is a means, and scoring it
+  would mark a correct-sounding alternative encoding as wrong. GT-side
+  structure is already covered by `tests/test_table_validation.py` and
+  `songview.py`.
+
+### v0.5.320 — the tempo refusal re-measured, and the `plain` bucket split
+Two findings from the task runner; comment and documentation only.
+
+**The widened `apply_tempo` A/B, re-run at `-t 60` on top of v0.5.313's
+re-grid and v0.5.315's re-search.** It reaches exactly **25 of 83** files;
+**19 move no printed number**; of the 6 that do, **2 gain and 4 lose**:
+
+    Knucklebusters    melody 50 -> 81%   retrig 0.39 -> 0.69   gain
+    Geoff Capes       melody 49 -> 60%   retrig 3.21 -> 2.40   gain
+    Warhawk           melody 90 -> 47%   retrig 1.00 -> 0.34   loss
+    Delta Mix-E-Load  seq   100 -> 57%   retrig 1.00 -> 0.40   loss
+    Human Race        melody 65 -> 56%   retrig 2.28 -> 5.57   loss
+    Rasputin          melody 75 -> 73%   retrig 1.66 -> 1.72   loss
+
+`retrig` is exact as a tell: every gain moves toward 1.0, every loss away.
+**The re-measurement strengthened the refusal.** The previous handoff had
+recorded that Warhawk's old 82→56% was measured against a file that no longer
+exists and implied the evidence was void; it is not — Warhawk now *starts* at
+90%, so the loss is 43 pp where it was 26. Reports: `build/AB_TEMPO_WIDE.md`,
+`build/AB_TEMPO_SCOPED.md`.
+
+**One explanation proposed, tested and killed before it reached the record**:
+that the widened write drops subtune *k*'s value on a row another subtune
+plays. It fits perfectly (the two worst losers have the widest per-subtune
+spread — Warhawk 8..40 calls a row at `-S7`, Delta 20..127 at `-S10`, against
+[3, 6] for Knucklebusters). A variant restricting the write to patterns no
+other subtune references is **byte-identical on all six files**, so those
+patterns are already exclusive and sharing is not the cause. The surviving
+lead, explicitly untested: the widened write is a tempo *change* mid-pattern,
+re-applied every playthrough, with damage tracking distance from
+Goattracker's default of 6.
+
+**The `plain` vibrato bucket is four problems, not one.** Read each absent
+instrument's source record back out of the shipped `.sng` — the converter
+stamps `NN:b5-b6-b7` into the instrument name and `vibrato_offset` is 5 on
+every file here, so **b5 *is* the classic vibrato byte** — and the 35 absent
+rows (31 convertible) split:
+
+    17  b5 = $00, no vibrato in the record at all. The original oscillates
+        anyway, so the mechanism is UNDECODED and is not the classic pair --
+        Flash Gordon 936 reversals, Chain Reaction and Zoolook 525 each,
+        Hollywood or Bust 441
+     6  nonzero AND a speed-table entry already emitted (vib_ptr 1, 3, 4, 19,
+        24, 26) and the census still scores 0 -- a question about the COLUMN
+     3  nonzero, no entry: the only true refusals, ALL THREE Powerplay Hockey
+     5  no instrument at that ADSR in our output at all (Battle of Britain,
+        Game Killer, One Man and his Droid x3)
+
+Also established: 17 of the 25 files **do** have a vibrato table detected
+(9797 of the reversals); 8 do not (2993). So the largest group is a *decode*
+job, not an emit job, and the one-agent-one-emitter fan-out the previous
+handoff proposed would have changed the smallest part of it.
+
+### v0.5.321 — `abpage.py` draws both sides on one canvas; the pages declare UTF-8
+`PER-SONG-PLAN.md` § 3b. Every A/B page carries a "Both sides, drawn" card:
+peak envelopes for both renders on one canvas (original in the Source A rust,
+ours in the Source B teal, 1400 columns), a `|difference|` strip on the same
+time axis, a playhead, and click-to-seek moving both players together.
+
+    Knucklebusters   canvas visible, 37.0% of pixels painted, mean |d| 8.1%
+    Human_Race       main 31.2%, difference strip 9.3%, mean |d| 6.6%
+    click-to-seek    25% -> 29.96s, 50% -> 60.00s, 90% -> 107.97s of 120s
+
+**It is deliberately not a score, and the page says so**: amplitude shows
+dropped/extra notes, note lengths, missing drums, silence and tempo drift; it
+cannot show pitch, timbre or filter, because two different notes of the same
+loudness draw the same shape. `mean |delta|` is labelled as how far apart the
+two *pictures* are.
+
+**A second defect, pre-existing and found by this one.** The pages carried no
+`<meta charset>`, so Chrome decoded them as `windows-1252`
+(`document.characterSet == "windows-1252"`). That affected **every page ever
+generated** — any non-ASCII byte in a tune name or a staged note rendered as
+mojibake — and went unnoticed because the templates emit `&mdash;` and friends
+as entities. The Δ in the new legend was the first raw non-ASCII character on
+a page and showed up as `mean |Î”|`. Both templates now declare UTF-8.
+
+**How the seek was verified, and what that does not claim.** Media elements do
+not load in the automation tab: `visibilityState` is `"hidden"`, Chrome
+throttles media there, and `readyState` stayed 0 after an explicit `load()`
+and twenty seconds of waiting — not the network (the same WAV fetches in
+19 ms) and not the page (a 0.5 s silent data-URI WAV appended by hand also
+never left `readyState` 0). The three seek positions were therefore measured
+with `duration` stubbed and `currentTime` intercepted. Whether Chrome seeks a
+*loaded* element was not tested.
+
+### v0.5.322 — the pages correct the startup lag, and `abpage.py` serves itself
+Two faults reported from listening: the renders are not in sync, and the
+envelope overlay shows an error instead of a drawing.
+
+**The sync.** They were never in sync, and by a knowable amount. gt2reloc's
+packed player reaches its first note 3–8 frames after the original —
+`startup_lag`, corrected in every per-frame column since v0.5.175 — and
+**nothing corrected for it on the listening side**, so each A/B ran with one
+side 120–155 ms late: audible as a flam on the switch, in a rig whose whole
+purpose is that switching does not lose your place. Measured from the audio,
+per tune, on load:
+
+    Knucklebusters 154 ms (7.7 frames)   Commando 150 ms (7.5)
+    Human Race     127 ms (6.3)          Warhawk  116 ms (5.8)
+    Auf Wiedersehen Monty 146 ms (7.3)
+
+— the 3–8 frame band `FIDELITY.md` documents, arrived at independently. B runs
+ahead of A at all four places the players are tied together, and the drawn B
+shifts with it so the picture cannot contradict the ears. A slider (±500 ms,
+1 ms steps) overrides by hand, with `auto` and `0` buttons.
+
+**Correlation was tried first and is the wrong instrument.** Cross-correlating
+onset envelopes over 60 s comes out flat: on Knucklebusters the top six lags
+were 41, −10, −28, 59, 52 and −17 columns, all within 3% of each other,
+because the two sides drift apart and often play different numbers of notes
+(156 against 404 there). **A start offset is a property of the START**, and
+the first onset is where it lives; the difference of first onsets is stable on
+every file tried. The first prominence guard was also wrong in a way worth
+recording: it refused a peak that did not beat the **runner-up** by 5%, and on
+any smooth correlation the runner-up is the adjacent lag — so it refused
+everything. Prominence is measured against the best score *outside a window*,
+or not at all.
+
+**The drawing.** The overlay reads both WAVs with `fetch()`, which no browser
+allows over `file://`. So the tool is now the web server: `python abpage.py
+--serve` builds the pages and hosts `build/listen` on `127.0.0.1:8730`.
+Playback and the sync slider work over `file://` either way; only the drawing
+and the automatic offset need http.
+
+### v0.5.323 — Knucklebusters refused for scoping: the tempo write is not its lever
+`PER-SONG-PLAN.md` had named it the first song to work and called the widened
+tempo write "a *known* +31 pp lever". Worked, and the premise does not survive
+the file's own bytes. Read out of the shipped `.sng` with
+`songview.parse_sng`:
+
+    subtune 0: entry pattern 29  CMD_SETTEMPO row 0 -> 6
+    subtune 1: entry pattern  0  CMD_SETTEMPO row 0 -> 3
+    subtune 2: entry pattern 29  CMD_SETTEMPO row 0 -> 6
+
+**Every subtune already has its tempo write** (two patterns hold three writes
+because 0 and 2 enter on the same pattern — that is what the converter's "in 2
+pattern(s)" counted). So there is nothing for a widened scan to add, and the
+corpus A/B's 50→81 pp gain has **no identified mechanism** — the same position
+Human_Race reached.
+
+**The rate is wrong and cannot account for it.** `--diagnose` traces subtune 1
+(the header's startSong 2), whose row is 7/3 = 2.33 frames against the 3 we
+write: 28.6% slow, predicting ~0.78 of the original's attacks where `retrig`
+measures **0.39**. `--pace` refuses the file outright ("IQR spans 56% of the
+median"), which by this repo's own rule is a mechanism rather than a constant.
+
+**What actually limits the file is structural**, each larger than the tempo:
+our `.sng` carries **3 subtunes against the header's 11**; the subtunes want
+**mutually incompatible multipliers** (1, 3, 8, 8, 8, 4 for 0–5) while the file
+packs `-S1`, so five of six play at a rate no single `-S` can express; and on
+the traced pair voice 0 is "under-produced: 16 attacks against 48", voice 1
+matches at ratio 0.69, and **voice 2 is different music** (pitches 14% the
+same). It re-enters the loop as a subtune/structure question.
+
+**A hypothesis refuted mid-task and recorded rather than dropped**: that the
+traced subtune had *no* tempo write and ran at Goattracker's default 6 against
+the 7/3 it wants, because 2.33/6 = 0.39 matches `retrig` 0.39 exactly. A clean
+arithmetic fit, and wrong — the subtune has a write, value 3.
+
+### v0.5.324/325 — per-voice A/B, a facts card, a register panel, a tracker view
+(One commit, `3894a63`; **`0.5.324` exists in `CHANGELOG.md` with no commit of
+its own** — the second version collision this document records.)
+
+**Per-voice A/B.** `listen.py --voices` stages each voice alone on both sides
+through `sidplayfp -u`, and the page gained a selector that swaps **both**
+sources to the same voice. Knucklebusters: six extra WAVs at 120.02–120.03 s;
+Voice 2 swaps to `.v2.original.wav` / `.v2.h2g.wav`; All restores the pair; the
+sync offset survives the swap (154 ms throughout) — the startup lag belongs to
+the two players, not to which voice is audible.
+
+A renderer that cannot mute **refuses** a per-voice render rather than
+returning the full mix: three identical "solo" files would poison a listening
+pass in a way nothing downstream could catch. The mute is real — the three
+solos are mutually uncorrelated (0.008, 0.024, −0.013 on the original; 0.006,
+0.011, 0.003 on ours), none byte-identical, each about a third of the energy
+(RMS 1989/1709/2249 against 3604 full).
+
+**What the sum check does NOT show, stated rather than dressed up**: v1+v2+v3
+correlates only 0.12 with the full mix at zero lag and peaks at 0.50 (original)
+/ 0.55 (ours) at about **+7 ms**, because separate `sidplayfp` runs do not
+start on the same sample and **the SID filter is shared** — a soloed voice
+passes a filter the other two no longer feed. The ~7 ms inter-run offset is
+worth carrying: switching voices in the page can jump by that much, and it is
+**not** the startup lag the sync slider corrects. Also true by construction
+rather than measurement: `-u` is a sidplayfp *output* flag and the register
+trace comes from siddump, which never sees it, so muting cannot reach the play
+routine.
+
+**A facts card**, from artefacts the page already quotes — `SURVEY.md` for the
+player identification and structure, `presets.json` for the packing rate and
+per-song options. Knucklebusters reads "SUBTUNES 3 (hdr 11)", the loss
+v0.5.323 found, now on the tune's own page.
+
+**A register panel**, modelled on the SID capability matrices analysis tools
+show, with the difference that matters: every row carries **both** sides.
+Waveform classes, test bit, hard sync, ring modulation and two "repeatedly
+changes" counts, per voice, lit live at the playhead. It earned its keep on the
+first tune — Commando:
+
+    voice 1  orig: ring w1 w4 w8       ours: ring test w1 w4 w8   ours-only: test
+    voice 2  orig: ring sync w1 w4 w8  ours: ring sync test w1 w4 w8  ours-only: test
+    voice 3  orig: w4 w8               ours: test w4 w8           ours-only: test
+
+We set the test bit on all three voices where the original never does — the
+`$09` hard-restart frame. **Hard sync and ring modulation are read by no column
+in `FIDELITY.md`**, so for those rows this panel is the only place in the repo
+the two sides are compared at all. Data is siddump's own change list;
+`listen.py` writes `<name>.trace.json`, and `--traces-only` rewrites just those
+in two siddump runs a tune instead of eight renders.
+
+**A tracker view** — GoatTracker's own pattern display of the subtune the WAVs
+are of: three channels, note/instrument/command, following our render's clock,
+current row scrolled to centre. Built from the staged `.sng` with
+`songview.parse_sng`, embedded rather than fetched so it works over `file://`.
+Verified: at 20 s it lands on row 333, which is frame 1000 over 3 frames a row.
+Two notes on it — a `CMD_SETTEMPO` below `$80` sets **all three** channels
+(`gplay.c:494`) and `apply_tempo` writes it into voice 0's entry pattern only,
+so a per-voice walk that tracked its own tempo left voices 2 and 3 on the
+fallback and drifted them to half speed (the song tempo is now found once,
+globally); and the row timing is *derived* from the tempo written into the
+file, so where the row rate is wrong **the view drifts against the audio** —
+left visible on purpose, because that is the defect this repo hunts and a view
+that silently re-synced would hide it.
+
+**A defect introduced and fixed in the same run**: `abpage` discovers tunes by
+globbing `*.original.wav`, so the per-voice files registered as three extra
+songs and got pages of their own. Discovery now skips a `.v[123]` suffix.
+Three stale pages had to be deleted by hand — **`abpage` does not prune**,
+which is latent for any renamed tune.
+
+Also `build/listen/Listen.ps1`, a double-clickable launcher that starts
+`--serve` and opens the index, written **by** `abpage.py` on every build
+because `build/` is gitignored and a hand-placed file would vanish on a clean
+checkout.
+
+### The three songs worked, and what they all turned out to be
+
+Three per-song runs and one gate probe landed on the **same** defect, which is
+the largest finding of this run:
+
+**Geoff Capes (`retrig` 3.21) — the entire deficit is note LENGTH.**
+`--diagnose`: correspondence is the identity where legible (s6→o6, s7→o7 both
+100%); at s0 all three voices are "over-produced" by the same factor — 113
+against 35, 113 against 35, 275 against 86 (3.23/3.23/3.20) — with **pitches
+100% the same on every voice**. `--pace`: our row 3.00 frames, ours/theirs
+1.000, IQR 1.000–1.000 over 153 gaps, drift +0.00, "0% out". Plus pitch 100%,
+onset 100%, tail 100% — and **hold 0%**. We play the right notes at the right
+moments with the right timbres and re-strike each one ~3.2× instead of holding
+it. The durations *are* present and read: the status byte's low-5-bit wait
+field averages 9.37 over 798 status bytes, with many values 15–31, against the
+original's ~11.6 rows per note on voice 2. Not a missing duration field.
+
+**It does not contradict the tempo-write lead.** That lead models damage to a
+*correct* baseline; Geoff Capes' baseline is already broken in the direction
+the write happens to help, so lengthening its rows cuts the attack count toward
+the original's. The "gain" is a partial masking of the note-length defect.
+
+**Corpus-wide: 46 of 95 files read `hold` 0%**, and the retrig ladder tracks it
+— Kings_of_the_Beach_ingame 7.82, Geoff_Capes 3.21, Human_Race 2.28 at the
+top, while many `hold`-0% files sit at retrig ~1.0 and melody 97–100%. So
+`hold` 0% is not fatal by itself, but **every badly over-triggering file has
+it**. (`hold` is declared blind above `-S3`; these files are `-S1`, so it is
+meaningful here.)
+
+**Human_Race — the drift/wave gain is a population artefact, and the "skip
+table" reading of it was wrong.** With the widened write: 490 attacks against
+88 (retrig 2.28→5.57), drift −250.0→−7.81, wave 63→89% — while melody 65→56%,
+seq 57→56%, onset 100→67%. `drift` is a Theil–Sen fit over **matched onsets**
+and `wave` carries a lag estimated from **first attacks**, so both are computed
+over a population those 289 extra attacks rewrite. The tell: `--pace`'s
+estimate of **the original's** row moves 5.33→4.00 frames, which is impossible
+as a fact about the original.
+
+Then a follow-up run (`human-race-skip-table-undetected`, at `3894a63`)
+**refuted the mechanism the first run proposed**: the file has *no outer gate*
+at all. Its play routine opens `INC $0DE2` — a free-running counter, where both
+`OUTER_GATE` and `OUTER_GATE_RTS` require `DEC` — and `$0DE2` is read in three
+places, all effect masks (`$0B10` `AND #$07 / CMP #$04 / BCC / EOR #$07`, a
+triangle LFO; `$0C97` `AND #$01`; `$0CB3` `AND #$07 / BEQ`). `_find_outer_gate`
+returns `()` **correctly**. The only gate is the inner one at `$09C0`
+(`DEC $0DCE / BPL +6 / LDA $0DCF / STA $0DCE`), read correctly; the per-subtune
+table at `$0DD0` is `[3,3,2,3,1,0]`, so subtune 0's row is reload+1 = **4
+frames**, and our `.sng` writes `CMD_SETTEMPO 4` at `-S1`. **Both sides run 4
+frames per row. There is no row-length error on this file.** What `--pace` was
+measuring is matched note *gaps*: 201 attacks against 88 with `hold` 0%, so our
+gaps collapse toward one row while the original's average 1.33 — 4.00 against
+5.33, ratio 0.750.
+
+**Auf Wiedersehen Monty — the queued "voice 2 holds `$41`, 194 attacks against
+14" fact does not exist in any build.** Control-register census of both sides
+at `-m1`, 3000 frames, values carried forward (siddump prints `..` for an
+unchanged field). Voice 2 original: gate-on 2413, gate-off 587, edges 194,
+histogram `$41`:2173 `$40`:585 `$81`:240. Ours: gate-on 2600, gate-off 400,
+edges **197**, histogram `$41`:2190 `$40`:393 `$81`:213 **`$09`:197**. Forcing
+`--rest-wave-silence` gives a byte-identical census. What *is* wrong on voice
+2: (1) 197 frames in `$09` (test bit + gate) the original never uses — exactly
+our gate-edge count, one test-restart frame per note, same on voice 0 (107/107)
+and voice 1 (152/152); (2) released frames 400 against 585, each release about
+a third shorter. `--diagnose` puts the traced pair at melody 100%, all three
+voices ratio 1.00, pitches 100%. **Third file in a row landing on the
+note-length defect.**
+
+**"Plays something else" — both rows compare two different pieces of music,
+and `--diagnose` says so outright.** `Dragons_Lair_Part_II` (header 10
+subtunes, startSong 1 traced as 0, our `.sng` 10, `-S2`): matches ≥50% are
+s0→o9 60%, s1→o7 70%, s5→o2 62%; the printed pair s0/o0 is **15%**. At the
+diagonal all three voices read "different music" (pitches 36/25/17%); at the
+real counterpart o9, voices 0 and 1 match (0.77/0.78, pitches 64/58%) and voice
+2 still reads different music at 26%. **CLAUDE.md's "94/98/97%" for this file
+is stale** — the best counterpart is 60%, so correcting the correspondence
+moves the row to ~60% and leaves a real defect underneath.
+`Commodore_64_Music_Examples` (header 15, our `.sng` 15, `-S1`): the only match
+≥50% in the whole matrix is **s1→o0 at 93%** — a clean off-by-one, the
+conversion is good and the numbering is shifted; its 16% row is entirely a
+harness artefact. What is *not* explained: **the original's s0 has no
+counterpart anywhere in our 15**. Full outputs in gitignored
+`build/diag_<name>.txt`.
+
 </work_completed>
 
 <work_remaining>
@@ -759,10 +1114,17 @@ loses 5. What is left is not a bug but a judgement, and a listener could
 settle it: `build/listen/IK_plus.html` and `Auf_Wiedersehen_Monty.html` are
 staged, and AWM is the file that gains most (+8 pp `wave`).
 
-One fact from the thread is still unassembled: **Auf Wiedersehen Monty's
-voice 2 holds `$41` continuously where the original drops to `$40`** at each
-note end, 194 attacks against 14. That is the opposite of what writing `$08`
-on a rest should do, and nothing explains it yet.
+~~One fact from the thread is still unassembled: Auf Wiedersehen Monty's
+voice 2 holds `$41` continuously where the original drops to `$40` at each note
+end, 194 attacks against 14.~~ **Refuted at v0.5.323's run — the split does not
+exist in any build.** A control-register census of both sides shows we drop to
+`$40` on 393 frames and our gate edges are 197 against the original's 194 (not
+14); forcing `--rest-wave-silence` gives a byte-identical census. 194 is
+recognisable as the original's voice-2 gate-edge count, but nothing in either
+build produces 14. What voice 2 *does* show: 197 frames of `$09` the original
+never uses (one test-restart frame per note), and released frames 400 against
+585 — the note-length defect, not a held gate. The item is **retired** in favour
+of `awm-release-length`.
 
 ### 2b. ~~The 25 files with no tempo write~~ — **re-measured and refused again at v0.5.318**
 The A/B below was re-run on top of v0.5.313/315 as this item asked. It reaches
@@ -868,6 +1230,16 @@ gap in the rounding table says a cap above 10 buys nothing, so the honest
 outcome here may be a committed statement that these 17 are a format limit
 rather than a fix. **Changes packing either way, so `[main]`.**
 
+**But the 17 is a hardcoded literal.** `fidelity.py:3733` emits
+`f'On 17 files this is exactly \`-1/(skip+1)\`'` as plain text inside a
+generated summary — nothing computes it, so it prints 17 whatever the corpus
+does. A real count over the current corpus is **3** (Human_Race,
+Las_Vegas_Video_Poker, Samantha_Fox_Strip_Poker), and **all three have no outer
+gate at all**, so even those three are coincidence rather than the skipped call.
+`drift-residual-17` is named after that literal; **re-scope the item before
+working it**, and fix the literal either way (task
+`fidelity-hardcoded-drift-count`, not yet in `whattask.json`).
+
 ### 5. The gate axis's remaining 122589 frames — `[main]`
 Mean gate overlap **52%**; 122589 frames still sustain a voice the original
 released (129106 at v0.5.313; the six re-gridded files account for the
@@ -904,13 +1276,16 @@ exhausted; the next section needs a scheme, and choosing one is cheaper before
 four parallel forks each invent a different one — which is exactly what
 happened twice this run with `7.bbbbb`.
 
-**Five sections are now owed**, all blocked on the same missing name:
+**Seven sections are now owed**, all blocked on the same missing name:
 `--wide-hard-restart` (v0.5.302), `--max-hard-restart` and the three-way row
 bound (v0.5.304), `MAX_ROW_DENOMINATOR`'s cap and the six re-gridded files
-(v0.5.313), the re-search at the new rates (v0.5.315), and `merge_notes`'
-header order (v0.5.317). The backlog grows by one per run while the question
-stays unanswered, and each is a finding that currently exists only in a commit
-message.
+(v0.5.313), the re-search at the new rates (v0.5.315), `merge_notes`' header
+order (v0.5.317), the widened-tempo refusal and the `plain` bucket's four-way
+split (v0.5.320), and the listening rig's startup-lag correction (v0.5.322).
+The backlog grows by one per run while the question stays unanswered, and each
+is a finding that currently exists only in a commit message. Ids
+`method-doc-section-scheme` (`[user]` — it is a naming decision) and
+`method-doc-owed-sections` (`[main]`).
 
 ### 9. Older, still open
 * `songview.py`'s **live render check**, owed since v0.5.243. Chrome extension
@@ -921,6 +1296,70 @@ message.
 * Bit `$10`'s global arpeggio, decoded and unemitted (§ 7.ttt) — same reason as
   bucket `arp` above.
 * Three corpus files fail to convert; 12 are out of scope by construction.
+
+### 10. **The note-length defect — `hold` 0% on 46 of 95 files** — `[subagent]`
+**The largest finding of the sixth run, and the one three separate
+investigations converged on.** Geoff Capes, Human_Race and Auf Wiedersehen
+Monty were each opened as a different question (a tempo lever, a drift gain, a
+gate bit) and all three ended here: we play the right notes, at the right
+moments, with the right timbres — and re-strike each one instead of holding it.
+
+Geoff Capes is the cleanest statement of it: pitch 100%, onset 100%, tail 100%,
+`--pace` 0% out with IQR 1.000–1.000 over 153 gaps, and every voice
+over-produced by the *same* factor (3.23/3.23/3.20). AWM: releases 400 frames
+against 585. The retrig ladder tracks it corpus-wide —
+Kings_of_the_Beach_ingame 7.82, Geoff_Capes 3.21, Human_Race 2.28 — though many
+`hold`-0% files sit at retrig ~1.0 and melody 97–100%, so `hold` 0% is not fatal
+by itself; **every badly over-triggering file has it**.
+
+The duration is present in the source and is read (Geoff Capes' status-byte
+wait field averages 9.37 over 798 bytes, many values 15–31, against ~11.6 rows
+per note). **Where it is lost is not localised.** One probe failed to localise
+it and is not evidence: counting rows-per-note out of `_build_raw_pattern`
+returned exactly 1.00 for Geoff Capes *and* for Commando, Warhawk and
+Knucklebusters, which score `hold` 100% — so the test (note column nonzero = a
+note) is wrong for that reader's output. Task id `hold-zero-note-length-loss`.
+
+Note `hold`'s declared blindness above `-S3` (a sub-frame deficit siddump
+cannot see): all three files here are `-S1`, so it is meaningful on them.
+
+### 11. Two report rows compare different music — `[main]`
+`--diagnose` names the correspondence for both and neither is the identity:
+`Dragons_Lair_Part_II` s0→o9 60% (the printed pair is 15%) and
+`Commodore_64_Music_Examples` s1→o0 **93%** (printed pair 14%). The second is a
+clean off-by-one — the conversion is good and only the numbering is shifted —
+so its 16% row is entirely a harness artefact. The first is only *partly*
+harness: 60% is its best counterpart and voice 2 still reads "different music"
+there, so correcting it exposes a real defect. **`CLAUDE.md`'s 94/98/97% figure
+for `Dragons_Lair_Part_II` is stale and should not be quoted again.** Ids
+`subtune-correspondence-rows`, and `c64-music-examples-missing-s0` for the
+original's s0 having no counterpart in our 15.
+
+### 12. A `ctrl` column for sync and ring modulation — `[main]`
+`$D404` bits 1–2 are scored by **nothing** (`wave` masks `& 0xF0`, `gate` reads
+bit 0). Proposed at v0.5.319 ahead of the queued noise-pitch column because it
+is cheap and closes the last unscored bits of a register everything else reads.
+v0.5.325's register panel now *shows* both sides' sync/ring per voice on the
+listening pages — which is a pair of eyes, not a column, and Commando already
+demonstrates the panel finding something no report row can (we set the test bit
+on all three voices where the original never does). Ids `ctrl-sync-ring-column`,
+`noise-pitch-column`, `sweep-direction-metric`, `resonance-volume-columns`.
+
+### 13. Knucklebusters as a structure question — `[subagent]`
+Re-entering the loop after v0.5.323's refusal, and **not** as a tempo question:
+3 subtunes shipped against the header's 11 (`knucklebusters-subtunes-11-to-3`),
+and subtunes wanting mutually incompatible multipliers — 1, 3, 8, 8, 8, 4 for
+0–5 while the file packs `-S1` — which is a general problem, not this file's
+(`per-subtune-multiplier-conflict`, `[main]`, it changes packing).
+
+### 14. Listening-rig follow-ups — `[subagent]`, cheap
+* `abpage` never prunes pages for tunes no longer staged; three stale ones had
+  to be deleted by hand this run (`abpage-prune-stale-pages`).
+* A regression test that both page templates declare a charset — the
+  `windows-1252` defect affected every page ever generated
+  (`abpage-charset-regression-test`).
+* Spectrogram overlay (the half amplitude cannot show) and a piano-roll from
+  `fidelity --json` (`abpage-spectrogram`, `abpage-piano-roll`).
 
 </work_remaining>
 
@@ -1041,6 +1480,56 @@ message.
    helper takes `"auto"`, and `None` raised for all 83 files, which the first
    run reported as `ERR 83`.
 
+## Refuted, broken or blocked — the sixth run
+
+1. **Knucklebusters' "known +31 pp tempo lever".** Written into
+   `PER-SONG-PLAN.md` as the first song to work; the file's own bytes show
+   **every subtune already carries a `CMD_SETTEMPO`**, so there is nothing for
+   a widened scan to add and the A/B's gain has no identified mechanism.
+2. **My prediction that its traced subtune had no tempo write**, because
+   2.33/6 = 0.39 matches `retrig` 0.39 exactly. A clean arithmetic fit, refuted
+   by one query against the `.sng` (the subtune has a write, value 3).
+3. **Human_Race's "undetected outer-gate skip table".** The first run read
+   `drift −250/1000 = −1/4 = −1/(skip+1)` with skip 3 and `4 × 4/3 = 5.33`
+   matching `--pace`'s estimate of the original's row — two arithmetic
+   coincidences. The file **has no outer gate**: it opens `INC $0DE2` where both
+   `OUTER_GATE` patterns require `DEC`, and `_find_outer_gate` returns `()`
+   correctly. Both sides run 4 frames per row, provably, from the player's
+   reload table and our own tempo byte.
+4. **That run's demonstration of the "fix" was mis-run** and is not evidence
+   either way: forcing `effective_frames` to return 16/3 left the multiplier
+   alone (it comes from `derived_group_tempos` in `convert.py`), so the file
+   still packed `-S1` and the fractional row rounded to 5.
+5. **The "194 attacks against 14" gate fact on AWM** — the split does not exist
+   in either build. The check was vacuous as written and the task was retired
+   rather than retried.
+6. **Cross-correlation as the A/B sync estimator** — flat over 60 s (top six
+   lags within 3% of each other on Knucklebusters, 156 notes against 404). A
+   start offset is a property of the START; first-onset difference is stable.
+   And the first prominence guard compared the peak against the **runner-up**,
+   which on any smooth correlation is the adjacent lag — it refused everything.
+7. **`v1+v2+v3 ≈ full mix` as proof the mute worked** — only 0.12 at zero lag,
+   peaking 0.50/0.55 at ~7 ms, because separate `sidplayfp` runs do not start on
+   the same sample and the SID filter is shared. Reported as not proving what it
+   was reached for; the mutual-uncorrelation check is what establishes the
+   solos are different voices.
+8. **`entry['options']` in `presets.json`** — a song's flags live at **top
+   level**, so setting `entry['options']` is silently ignored and the first
+   forced-`rest_wave_silence` run was the default build wearing a different
+   filename. `--diagnose` prints the options line; that is the cheap
+   confirmation a forced flag applied.
+9. **Three probes that guessed the record layout** during the vibrato split
+   (`detect()` arity, `Detection.vibrato` which is `vibrato_offset`, ADSR at
+   `record+2/+3` which found 0 of 23). Each printed its failure only because the
+   scripts assert their own success rate. The route that worked was the tool's
+   own reader (`songview.parse_sng` + the `NN:b5-b6-b7` name stamp).
+10. **A rows-per-note probe over `_build_raw_pattern`** — returned exactly 1.00
+    for `hold`-0% and `hold`-100% files alike, so the test was wrong rather than
+    the files alike. Nothing was concluded from it.
+11. **Shell quoting**: `"$D\$f.sid"` inside double quotes escapes the dollar and
+    produced `Hubbard_Rob$f.sid`; two runs died on `FileNotFoundError`. Forward
+    slashes fixed it.
+
 ## Not pursued
 
 * Emitting bit `$10`/`$04`'s global arpeggio (costs 5 points of mean melody;
@@ -1064,7 +1553,7 @@ message.
 
 ## Environment
 
-* Repo `C:\Users\mit\claude\h2g`, branch `master`, at **v0.5.299**, in sync with
+* Repo `C:\Users\mit\claude\h2g`, branch `master`, at **v0.5.326** (this handoff), in sync with
   `origin/master`.
 * Corpus (95 files): `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 * GoatTracker 2.77 source: `C:\Users\mit\Downloads\GoatTracker_2.77\src`.
@@ -1169,6 +1658,29 @@ message.
   commits to that (the instrument chain, then the push chain).
 * `search_file`'s first match is not always the right one, and a file can carry
   a whole second player.
+* **A tight `--pace` ratio is not always a constant.** CLAUDE.md's rule ("a
+  tight ratio is a constant, a loose one is a mechanism") holds only where both
+  sides' note populations are comparable. Human_Race's 0.750 has IQR
+  0.750–0.750 over 78 gaps and is still not a row error: where one side
+  systematically re-strikes, the ratio is tight for a reason that has nothing to
+  do with the row.
+* **`drift` and `wave` are computed over a matched population.** `drift` is a
+  Theil–Sen fit over matched onsets, `wave`'s lag comes from first attacks — so
+  a change that adds 289 attacks rewrites both without touching the clock. The
+  tell is `--pace` reporting a different row for **the original**, which is
+  impossible as a fact about the original.
+* **A song entry in `presets.json` holds its flags at top level**, not under an
+  `options` key. `entry['options'] = {...}` is silently ignored.
+* **`fidelity.py:3733`'s "On 17 files" is a hardcoded literal**, not a computed
+  count. Do not quote it; the real count is 3.
+* **`-u` is a `sidplayfp` output flag**, invisible to `siddump` — muting cannot
+  reach the play routine, so there is nothing to compare on the register side.
+* **Separate `sidplayfp` runs do not start on the same sample** (~7 ms), and the
+  SID filter is shared across voices. Distinct from the original-vs-ours startup
+  lag the pages correct.
+* **Media elements do not load in the Chrome automation tab** —
+  `visibilityState` is `"hidden"` and `readyState` stays 0. Verify page logic
+  with `duration` stubbed and `currentTime` intercepted, and say so.
 
 ## Assumptions needing validation
 
@@ -1189,21 +1701,38 @@ message.
 
 ## Repository
 
-* **HEAD is `71c067d` v0.5.313; master in sync with `origin/master`.** The last
-  commit to change what the converter *emits* is **v0.5.313** (six files
-  re-grid onto a higher multiplier); before it, v0.5.304. v0.5.305–311 are
-  harness, tooling or docs, and v0.5.312 adds an option that ships off.
+* **HEAD is this handoff commit (v0.5.326) on top of `3894a63` v0.5.325**, master
+  in sync with `origin/master`. The last
+  commit to change what the converter *emits* is still **v0.5.313** (six files
+  re-grid onto a higher multiplier); before it, v0.5.304. Everything from
+  v0.5.314 to v0.5.325 is harness, tooling or docs — `python/h2g/` was touched
+  once in the sixth run (`patterns.py`, comment-only, v0.5.320).
+* **`0.5.324` is in `CHANGELOG.md` with no commit of its own** (`3894a63` is
+  0.5.325 and covers both entries) — the second version collision this document
+  records.
 * **A concurrent session is also pushing to `master`.** It pushed its own
   v0.5.311 during this run and both commits claimed the number. Fetch before
   assuming HEAD is yours, and re-take any measurement after rebasing.
-* Working tree clean but for untracked `6581.pdf`.
+* Working tree clean but for three untracked paths: `6581.pdf` (deliberate),
+  `monlog_out.txt` (VICE monitor output, should be removed or gitignored — task
+  `untracked-monlog`), and `.claude/tasks/` (the task runner's `whattask.json`
+  and `runs.jsonl`; **38 open tasks, 14 closed**, and the run records carry
+  evidence that exists nowhere else).
 * `Commando.sng` byte-exact.
-* Last suite at HEAD: **1203 passed, 2 skipped**. It was 1135/3 at v0.5.297;
+* Last suite at HEAD (re-run for this handoff, ~4m13s from `python/`): **1203
+  passed, 3 skipped**. It was 1135/3 at v0.5.297;
   the 17 new tests are the two hard-restart bounds (7), the shard/merge
-  partition and its three refusals (9), and one derived-count fix. The 3 → 2
-  skips are v0.5.299 re-arming `test_preset_passthrough`'s stamp guard, which
-  had been silently skipping since v0.5.295 — so the check that no `convert()`
-  option escapes into `presets.py` had not run for four versions.
+  partition and its three refusals (9), and one derived-count fix.
+* **The third skip is `test_preset_passthrough` disarming itself again**, and
+  it is disarmed *right now*: `SKIPPED tests/test_preset_passthrough.py:41 —
+  presets.json predates h2g 0.5.325 -- regenerate it`. The guard only runs while
+  `presets.json`'s stamp matches the converter, so the check that no `convert()`
+  option escapes into `presets.py` **has not run since v0.5.315 — ten
+  versions**. It was disarmed for four versions once before (v0.5.295–299) and
+  the previous handoff recorded re-arming it. Nothing is *wrong* with
+  `presets.json` (no converter change has landed since it was generated), but a
+  new option added now would escape silently. The other two skips are
+  `test_legal_restart.py:185`, which needs `H2G_GT2RELOC` set.
 
 ## Generated artefacts
 
@@ -1216,11 +1745,18 @@ message.
 | `VIBRATO.md` | *none* | yes — regenerated v0.5.316 (on demand) |
 
 All four stamped artefacts regenerated at v0.5.315 against the re-search, and
-`VIBRATO.md` at v0.5.316. **The converter is 0.5.317, so the stamps read two
-versions behind** — correctly: neither v0.5.316 nor v0.5.317 changed converter
-behaviour (a doc regeneration and a `listen.py` fix), and `ee76308` changed no
-code at all. Nothing is owed here unless a converter change lands.
-`test_preset_passthrough`'s guard is armed (2 skips, not 3).
+`VIBRATO.md` at v0.5.316. **The converter is 0.5.325, so the stamps read ten
+versions behind** — and the *numbers* are still correct, because nothing between
+v0.5.316 and v0.5.325 changed converter behaviour: docs, `listen.py`,
+`abpage.py`, and one comment-only edit to `patterns.py`. Verified for this
+handoff: `git diff v0.5.315..HEAD -- python/h2g/` is `__init__.py`'s version
+line plus comment and blank lines in `patterns.py`.
+
+**The stamp gap has a cost even though the numbers are right**:
+`test_preset_passthrough`'s guard skips while it stands (see above), so the
+option-escape check is off. That is task `artefact-stamp-realign` and it is
+`[main]` — a plain regeneration re-arms it (`survey.py`, then `presets.py`, per
+`CLAUDE.md`'s order, with `--legal-restart --gt2reloc`).
 
 The `--fidelity` settings are **current as of v0.5.315**: the six files
 v0.5.313 re-gridded were re-searched there — 127 combinations a song, 3 shards,
@@ -1268,6 +1804,31 @@ the stated reason two features were refused. Both are reopened above.
   re-search of the re-gridded files).
 * Vibrato census: 136 instruments, 42618 reversals missing, **114 emitting no
   oscillation at all**.
+
+## New surface added during the sixth run
+
+* `listen.py` — `--voices` (per-voice solo staging through `sidplayfp -u`),
+  `--traces-only` (rewrite `<name>.trace.json` in two siddump runs a tune
+  instead of eight renders), `mute` threaded into the renderer
+* `abpage.py` — the "Both sides, drawn" envelope canvas with a `|difference|`
+  strip and click-to-seek; the measured **startup-lag sync offset** with a
+  ±500 ms slider, `auto` and `0`; `--serve` (builds and hosts `build/listen` on
+  `127.0.0.1:8730`); a voice selector; a facts card (from `SURVEY.md` and
+  `presets.json`); a **register panel** (waveform classes, test bit, hard sync,
+  ring modulation, per voice, both sides, live at the playhead); a **tracker
+  view** built from the staged `.sng` via `songview.parse_sng`; `<meta charset>`
+  on both templates; discovery skipping the `.v[123]` suffix; and
+  `build/listen/Listen.ps1`, written by the builder on every build
+* `tests/test_renderer.py` — the `sidplayfp` stub takes `mute` and asserts it
+  reaches the renderer (the signature change is intentional, so the test was
+  extended rather than relaxed)
+* `PER-SONG-PLAN.md` — the nine-step per-song loop, the song shortlist (entry 1
+  struck at v0.5.323), the metric audit, and the listening-tool roadmap
+* `.claude/tasks/` — `whattask.json` (38 open, 14 closed) and `runs.jsonl`
+  (12 run records). **The run records carry evidence that exists nowhere else**
+  — the per-voice mute correlations, the AWM control-register census, the
+  Human_Race gate disassembly — and the directory is *untracked*
+* No converter surface at all: `python/h2g/` took one comment-only edit
 
 ## New surface added during the fifth run
 
@@ -1360,38 +1921,74 @@ since; the findings live in commit messages only.
    *should* is now a listening question — `IK_plus.html` loses 5 pp of `wave`
    and `Auf_Wiedersehen_Monty.html` gains 8, both staged.
 3. What scheme should method-doc sections use past § 7.zzzzz? Still unresolved
-   and now **five sections overdue** — v0.5.302, 304, 313, 315 and 317 each
-   shipped without one because there was no name to give it.
+   and now **seven sections overdue** — v0.5.302, 304, 313, 315, 317, 320 and
+   322 each shipped without one because there was no name to give it.
 4. The v0.5.303/304 misfiling (two `presets.py` lines in the wrong commit) is
    recorded in prose rather than rebased, because the fix was blocked. Fine to
    leave, or worth a force-push?
+5. **`--rest-wave-silence`: ship on or off?** Still a listening question, and
+   now a better-equipped one — `IK_plus.html` loses 5 pp of `wave` and
+   `Auf_Wiedersehen_Monty.html` gains 8, and both pages now sync the two sides,
+   solo a voice and show the register panel.
+6. `6581.pdf` and `monlog_out.txt` sit untracked in the repo root. Commit,
+   gitignore, or delete?
 
 ## Immediate next action
 
-**Listen. Open `build/listen/index.html`.**
+**Listen. Open `build/listen/Listen.ps1` (double-click), or run
+`python abpage.py --serve` from `python/` and open the printed URL.**
 
-This has been the immediate next action in four consecutive handoffs. The
-difference now is that nothing stands in front of it: 83 pairs at 120 s, one
-engine per pair, exact lengths, gapless A/B with blind scoring, notes quoting
-the report per tune — and, since v0.5.316, rendered from the converter as it
-stands rather than from one two re-grids ago. It needs a person and about an
-hour.
+This has been the immediate next action in five consecutive handoffs, and the
+rig it names is no longer the same object. Since the last one it has gained:
+the **startup-lag correction** (the two sides were 120–155 ms out of sync in
+every previous listening pass — the flam a listener would have been hearing on
+every switch), a **voice selector** that solos the same voice on both sides, an
+**envelope canvas** with a difference strip and click-to-seek, a **register
+panel** comparing waveform classes, test bit, hard sync and ring modulation per
+voice, and a **tracker view** of the subtune being played. Two of those show
+things no column in `FIDELITY.md` can: hard sync and ring modulation are scored
+nowhere, and Commando's panel already reports that we set the test bit on all
+three voices where the original never does.
 
-Everything else on the queue is a ship-or-refuse decision, and across the
-five runs this document records **four** measurement instruments confidently
-reporting mechanisms that did not exist, **one** cost figure that refused a
-real feature for 26 versions, and **three** defects in the listening
-apparatus that had been measured or published without being recognised. A listener is the only instrument here that
-has never been wrong — and the last two verdicts each opened a thread that
-produced real work.
+Four decisions wait on ears, all staged: `--rest-wave-silence` on IK+ (−5 pp
+`wave`) against Auf Wiedersehen Monty (+8), and the three files whose reports
+disagree with their music. `[user]`, about an hour.
 
-Second, if code is wanted before ears: item 2 (the bit-6 rest) is the one
-genuinely stuck problem, and v0.5.286 fixed the emitter that invalidated its
-last A/B, so the first move there is re-running a measurement that has never
-been valid.
+**If code is wanted before ears — the highest-value item is item 10, the
+note-length defect.** It is new to this handoff and it is where the sixth run's
+three independent song investigations converged: 46 of 95 files read `hold` 0%,
+and every badly over-triggering file in the corpus is one of them. Geoff Capes
+states it as cleanly as it can be stated — pitch 100%, onset 100%, tail 100%,
+`--pace` 0% out — and still re-strikes every note 3.2×. The duration is present
+in the source and is read; **where it is lost is not localised**, and the one
+probe that tried returned the same answer for `hold`-0% and `hold`-100% files
+alike. `[subagent]`, own worktree, `siddump.exe` copied in.
 
-**Second, and cheap now:** two method-doc sections are owed (v0.5.302's row
-bound, v0.5.304's three-way split) and cannot be written until § 7.zzzzz's
-successor scheme is chosen. That is a five-minute decision blocking a
-documentation debt that grows with every commit.
+**Cheap and unblocking, in this session:**
+
+1. **Regenerate the artefacts** (`survey.py` then `presets.py`, per
+   `CLAUDE.md`). The numbers will not move — nothing since v0.5.315 changed
+   converter behaviour — but it re-arms `test_preset_passthrough`, whose
+   option-escape guard has been skipping for **ten versions**. `[main]`.
+2. **Choose the method-doc section scheme past § 7.zzzzz.** A five-minute
+   naming decision now blocking **seven** owed sections, each of which exists
+   only in a commit message. `[user]`.
+3. **Fix `fidelity.py:3733`'s hardcoded "On 17 files"** — it prints 17 whatever
+   the corpus does; the real count is 3, and `drift-residual-17` is named after
+   the literal. `[subagent]`.
+
+**And one thing to correct in `CLAUDE.md` before it is quoted again:** the
+"Dragons_Lair_Part_II is 7% on the diagonal and 94/98/97% at its real
+counterparts" figure is stale — measured this run, its best counterpart is 60%
+and voice 2 still reads "different music" there.
+
+What this run adds to the document's running tally: **five** more measurement
+instruments or premises that reported mechanisms which did not exist (the
+Knucklebusters tempo lever, my own arithmetic fit against it, Human_Race's skip
+table, AWM's `$41` split, the sum-of-voices check), and **two** more defects in
+the listening apparatus found by looking at its output rather than by any check
+(the missing charset on every page ever generated, the uncorrected startup lag
+in every A/B ever staged). A listener is still the only instrument here that
+has never been wrong.
+
 </current_state>

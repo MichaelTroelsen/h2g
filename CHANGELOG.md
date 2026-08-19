@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.326 — 2026-08-19
+
+- the handoff covers the sixth run, v0.5.319-325
+
 ## 0.5.325 — 2026-08-19
 
 - the listening pages gain a register panel and a tracker view
