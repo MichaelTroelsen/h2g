@@ -7,3 +7,13 @@ build/
 # every rule there is one a fork would otherwise have to ask a human about,
 # and a fork that has to ask is a fork nobody can leave running.
 .claude/settings.local.json
+
+# Agent worktrees. One checkout per concurrent agent (CLAUDE.md, "Parallel
+# work"), created and pruned by the runners rather than authored. They also
+# make `git status --porcelain` non-empty, which fidelity.py:3165 reads as a
+# dirty tree -- so leaving them untracked stamps every generated report
+# `-dirty` however clean the tracked files are.
+.claude/worktrees/
+
+# VICE monitor output, written beside the repo when a player is traced by hand.
+monlog_out.txt
