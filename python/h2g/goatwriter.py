@@ -399,7 +399,7 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
 
 
 def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
-                       wave: int) -> Optional[tuple]:
+                       wave: int, multiplier: int = 1) -> Optional[tuple]:
     """Wavetable entries for effect bit $10's arpeggio, or None.
 
     `detect.PitchSeq` reads the mechanism: `note = played note + seq[phase]` on a
@@ -407,6 +407,16 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     directly -- one entry per step, the waveform held and the right side naming a
     relative note -- and loops for as long as the note is held, as the player's
     counter does.
+
+    **The step is a rate, so it is divided by `multiplier` at the point it is
+    encoded** -- which here means multiplied, because the quantity emitted is a
+    number of table entries rather than a period: the player's phase counter
+    advances once per *frame* of a 50 Hz original, a Goattracker wavetable steps
+    once per *play call*, and one frame is `multiplier` calls, so each step holds
+    `multiplier` entries. Without it a `-S3` file arpeggiates three times too
+    fast. `_two_stage_pitch_seq_entries` has scaled its own copy of this cycle
+    since it was written and flagged this path as not doing so ("consistent with
+    this function only at multiplier 1"); the two now agree at every `-S`.
 
     Two honest limits. The player's phase is **global**, so it does not restart
     with the note; a wavetable always does, and the emitted arpeggio can sit up
@@ -426,7 +436,34 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     notes = _pitch_seq_notes(sid, det, i)
     if notes is None:
         return None
-    return [wave] * len(notes), list(notes)
+    # Spelled out rather than delayed: a delay entry's right side is applied
+    # only on its last call (gplay.c:697-723), and the note this step names has
+    # to be current from the first call of the frame it covers. The same reason
+    # `_two_stage_pitch_seq_entries` spells every frame of its cycle out.
+    hold = max(1, multiplier)
+    if hold > 1:
+        # **The attack frame's last write is entry 0 once a step is a frame
+        # long, so the step that leaves the note alone has to move there.**
+        # The packed player runs the wavetable from the note's *second* call
+        # (player.s:908-911), so entry k covers calls `k*hold+1 .. (k+1)*hold`.
+        # At `hold == 1` entry 0 lands on frame 1 and frame 0 is the firstwave,
+        # which writes no note -- so the attack keeps the pattern's own pitch
+        # whatever entry 0 says, and `_pitch_seq_notes` puts the modal (almost
+        # always zero) step at index 1. At `hold >= 2` entry 0 covers frame 0
+        # instead, and a transposing step there renames every note siddump
+        # reads: Shockway_Rider's melody 98.6% -> 83.6%, its voice 2 dropping
+        # from an exact 4-pitch match to five wrong pitches. Rotating one
+        # further -- the modal step to index 0 -- is the *same* rule applied at
+        # the multiplier, not a second one, and restores Shockway_Rider to
+        # 98.6% and Star_Paws to 96.6% while keeping the scaled rate. It also
+        # makes the option free where it was not: Chain_Reaction (-S3) forced
+        # to `--pitch-seq` reads melody 77.6% unscaled, 78.6% scaled and
+        # **99.8%** scaled-and-rotated, which is its score with the option off,
+        # at 1039 reversals against 772. See H2G-CONVERSION-METHOD.md 7.ttt.
+        notes = notes[1:] + notes[:1]
+    left = [wave] * (len(notes) * hold)
+    right = [n for n in notes for _ in range(hold)]
+    return left, right
 
 
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
@@ -768,11 +805,23 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     left, right = [attack], [attack_note if attack_note is not None else 0x00]
     extra = calls - 1             # entry 0 is already one call
     if attack_note is not None:
-        # The fixed pitch is the *first* frame's, and the rest of the attack
-        # returns to the played note -- so the remaining calls are spelled out
-        # rather than folded into a delay, which would keep the fixed pitch for
-        # all of them. Measured: held for the whole window it puts 904 frames at
-        # the fixed pitch where the original has 226, and melody collapses.
+        # **The remaining calls are spelled out rather than folded into a
+        # delay, and the reason recorded here for 130 versions was wrong.**
+        # It read "the rest of the attack returns to the played note", which
+        # `$00` cannot do: the packed player tests `lda notetbl / bne`
+        # (player.s:976-977), so `$00` is *no frequency write at all* and the
+        # fixed pitch is held either way. What separates the two forms is the
+        # other end -- a delay's right side is read on its final call, so
+        # `_first_frame_lead`'s `$80` would re-assert the base note where
+        # these `$00`s leave the pitch alone.
+        #
+        # Holding is what the player does. One_on_One's GT 2 (`$44`, frames
+        # byte 4 -> 2), 372 onsets and no distribution on any offset: the
+        # played note on frame 0, then `$4310` on frames 1, 2 **and** 3 --
+        # one frame past the attack waveform, which drops back to the
+        # record's own `+2` on frame 3. So the fixed pitch outlives the stage
+        # it belongs to, and a form that ended it early would be the wrong
+        # one.
         left += [attack] * extra
         right += [0x00] * extra
     elif extra == 1:
@@ -898,14 +947,22 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     The rate is scaled the way `_two_stage_entries` scales `frames`: the
     player's phase counter advances once per frame of a single-speed original,
     and the wavetable steps once per *play call*, so each step holds
-    `multiplier` entries. `_pitch_seq_entries` does **not** do this and is
-    consistent with this function only at multiplier 1 -- which is where it is
-    verified, Trans-Atlantic being a multiplier-1 file. Flagged rather than
-    changed here: correcting the standalone path would move three shipped
-    multispeed files this change has no measurement of. And no trace in the
-    repo can adjudicate the scaling: siddump samples once per frame whatever
-    the call rate, so on Thundercats at -S3 the scaled and unscaled blocks emit
-    different bytes and score the identical 1308 reversals.
+    `multiplier` entries. `_pitch_seq_entries` **now does the same** -- it did
+    not for as long as this function has existed, and this docstring flagged the
+    divergence rather than fixing it ("consistent with this function only at
+    multiplier 1"). It also over-counted the reach: the flag said correcting the
+    standalone path "would move three shipped multispeed files", and it moves
+    **two** (Shockway_Rider and Star_Paws). Flash_Gordon, Mr_Meaner and
+    Thundercats are multispeed with `--pitch-seq` on and emit nothing from that
+    path at all: every record that reaches it has bit $10 *clear* (28 of them
+    across the three), so their bit-$10 records were taken by an earlier branch
+    -- this block among them. Count what an option reaches before sizing a
+    change to it. Note what the scaling costs to check: no trace in the repo can
+    adjudicate it, because
+    siddump samples once per frame whatever the call rate, so on Thundercats at
+    -S3 the scaled and unscaled blocks emit different bytes and score the
+    identical 1308 reversals. The scaling is shipped because it is what the
+    player says, not because a column moved.
 
     Returns None where the block will not fit the record's budget, so the
     caller falls back to the plain two-stage shape rather than emitting a
@@ -1214,13 +1271,28 @@ def _hold_wave_program_entry(left: List[int], right: List[int],
     of that -- a repeat of the waveform at `-S2`, where no delay value exists
     for a single extra call, and a delay of `m - 2` above it.
 
-    Right side `$00`: no frequency write, so an absolute pitch set by a
-    `>= $80` opcode survives its own frame. See `_wave_program_entries`.
+    **Right side `$80`, and `$00` was the defect this fixed.** `gt2reloc`
+    inverts bit 7 of every non-command wavetable right byte on the way in --
+    `insertbyte(rtable[c][d] ^ 0x80)`, greloc.c:1339-1341 -- so the packed
+    player's `lda mt_notetbl-2,y / bne mt_wavefreq` (player.s:974-977) is
+    testing the *inverted* byte. A `.sng` `$80` becomes packed `$00` and makes
+    no frequency write at all; a `.sng` `$00` becomes packed `$80`, takes the
+    `bmi` path at `mt_wavefreq` and writes `adc mt_chnnote,x / and #$7f` --
+    the note's own pitch, every hold call.
+
+    That is what made the `program` bucket of `VIBRATO.md` read zero. At `-S2`
+    an opcode is entry + hold, so the opcode's absolute pitch was written on
+    the frame's first call and overwritten by the base note on its second;
+    siddump samples the register once a frame and saw a flat pitch. Ricochet's
+    `$09F9` measured 184 reversals in the original and 0 here, with the
+    waveforms `11 81 41 41 80 80 80` landing exactly right beside them.
+
+    See `_wave_program_entries` for the same byte on the opcode entries.
     """
     hold = _wave_hold_byte(multiplier, _wave_byte(wave))
     if hold is not None:
         left.append(hold)
-        right.append(WAVE_NOTE_BASE)
+        right.append(WAVE_NOTE_KEEP)
 
 
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
@@ -1268,12 +1340,13 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     this loop already stops on it, so an over-long program loses its trailing
     opcodes rather than another instrument's block.
 
-    **The hold entry's right side is `$00`.** In the packed player that is *no
-    frequency write at all* (`player.s:976-977`); `$80` is a no-op
-    transposition that still writes, which would re-assert the pattern's own
-    note and undo the absolute pitch a `>= $80` opcode had just set. The two
-    are equivalent on the delay entries elsewhere in this file (v0.5.233 traced
-    it) precisely because those follow entries that do not set a pitch.
+    **The hold entry's right side is `$80`, not `$00`.** It was `$00` from
+    v0.5.234, on a reading of `player.s:974-977` that had not accounted for
+    `greloc.c:1339-1341` inverting bit 7 of the right column as it packs. The
+    two bytes mean the opposite of what that reading said: `$80` makes no
+    frequency write, `$00` re-asserts the pattern's own note, and the hold was
+    therefore undoing the absolute pitch of every `>= $80` opcode one call
+    after it was set. See `_hold_wave_program_entry`.
     """
     if fmt != FORMAT_GTS5:
         return None
@@ -2584,6 +2657,10 @@ EFFECT_PITCH_SEQ_MASK = 0x10    # the effect byte's bit-$10 arpeggio
 # halves bit $04's attack -- see `_two_stage_frames`, which is where the
 # measurement behind that is recorded.
 EFFECT_FIXED_PITCH_MASK = 0x40
+# Bit $80: the sfx drum. Named here because bit $40's pitch is only emitted
+# from the two-stage block on a record that does *not* set it -- see the call
+# site, and section 7.qqq for why the two cannot share a frame.
+EFFECT_SFX_DRUM_MASK = 0x80
 WAVE_GATE_BIT = 0x01            # $D404 bit 0
 CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
@@ -2912,14 +2989,57 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         multiplier, budget, written=no_test_restart)
                     if both is not None:
                         return both
-            # `_fixed_attack_note(sid, det, i)` is deliberately NOT passed here.
-            # Effect bit $40's pitch belongs on the attack's *third* frame, not
-            # its first, and its second frame belongs to bit $80's drum -- the
-            # three bits interleave by frame rather than stacking. Applied to
-            # frame 0 it puts the drum's pitch where the played note goes and
-            # melody falls 85% -> 39% on the one file it reaches. See
-            # H2G-CONVERSION-METHOD.md section 7.qqq.
+            # Effect bit $40's fixed attack pitch, and the gate on it is bit
+            # $80 rather than the bit itself.
+            #
+            # § 7.qqq measured the balloon song's three-bit drum -- $04, $80
+            # and $40 interleaved by frame, the played note at offset 0, $80's
+            # pitch at offset 1 and $40's at offset 2 -- and concluded that
+            # `_fixed_attack_note` must never be passed here, because on that
+            # record frame 1 belongs to $80 and melody falls 85% -> 39%. That
+            # is a profile of a record carrying **all three** bits. Measured on
+            # a `$44` record -- One_on_One's GT 2, 372 onsets, no distribution
+            # at all on any offset:
+            #
+            #   offset 0   wf $43 (the record's own +2)   the PLAYED note
+            #   offset 1   wf $81 (the attack)            $4310  <- fixed
+            #   offset 2   wf $81                         $4310
+            #   offset 3   wf $43                         $4310
+            #   offset 4   wf $42 (gate off)              the next note
+            #
+            # With no $80 in the record nothing else claims frame 1, and the
+            # fixed pitch starts there -- exactly where `_two_stage_entries`
+            # puts it, since the frame-0 lead writes no note. So the gate is
+            # the *drum* bit, per record: `arp_style` is this record's own +7,
+            # the same per-record rule `_fixed_attack_note` itself applies to
+            # $40 after Thundercats.
+            #
+            # **`VIBRATO.md`'s `atkpitch` bucket cannot move on this, and it
+            # is not a defect in the emission.** That census names a row's
+            # cause from the record's effect bits, so a `$44` record with no
+            # other pitch-moving bit this player reads is filed under `$40`
+            # whatever is actually moving its pitch -- and in the two rows
+            # holding 543 of the bucket's 569 reversals it is something else
+            # entirely. One_on_One's `$06A6` walks the pitch over offsets
+            # 3-7 of every note (`$1920 $19e2 $1aa4`), and Knucklebusters'
+            # `$0AAD` runs a plain 4-5 frame vibrato (`$0f14`..`$0ff0`, 22
+            # reversals in one 84-frame note). Worse, `pitch_motion` skips
+            # frames `a-1..a+1` and this effect is a *step to a constant*, so
+            # even a perfect emission contributes ~0 reversals: wiring it
+            # leaves the vibrato census on all nine affected files
+            # byte-identical. What it does move is One_on_One's `slides`,
+            # 4325 -> 4139 against the original's 2809, with every other
+            # column on all nine files unchanged.
+            #
+            # The other four `atkpitch` rows cannot reach this code at all:
+            # Knucklebusters, Deep_Strike, Sanxion and Food_Feud all have
+            # `det.wave_program < 0`, and that array is where the note index
+            # lives, so `_fixed_attack_note` returns None for every record in
+            # them. Locating it is `detect.py` work, not this call site's.
             two = _two_stage_entries(wave, data[at], frames, multiplier,
+                                     attack_note=(
+                                         None if arp_style & EFFECT_SFX_DRUM_MASK
+                                         else _fixed_attack_note(sid, det, i)),
                                      budget=budget,
                                      written=no_test_restart)
             if two is not None:
@@ -2975,7 +3095,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # by routing the held byte through `_wave_byte`, and the same encoding is
     # available here.
     if pitch_seq and fmt == FORMAT_GTS5:
-        arpseq = _pitch_seq_entries(sid, det, i, wave)
+        arpseq = _pitch_seq_entries(sid, det, i, wave, multiplier)
         if arpseq is not None:
             left, right = arpseq
             if start is not None and len(left) + 1 <= budget:
