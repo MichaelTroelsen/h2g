@@ -1259,13 +1259,28 @@ def _hold_wave_program_entry(left: List[int], right: List[int],
     of that -- a repeat of the waveform at `-S2`, where no delay value exists
     for a single extra call, and a delay of `m - 2` above it.
 
-    Right side `$00`: no frequency write, so an absolute pitch set by a
-    `>= $80` opcode survives its own frame. See `_wave_program_entries`.
+    **Right side `$80`, and `$00` was the defect this fixed.** `gt2reloc`
+    inverts bit 7 of every non-command wavetable right byte on the way in --
+    `insertbyte(rtable[c][d] ^ 0x80)`, greloc.c:1339-1341 -- so the packed
+    player's `lda mt_notetbl-2,y / bne mt_wavefreq` (player.s:974-977) is
+    testing the *inverted* byte. A `.sng` `$80` becomes packed `$00` and makes
+    no frequency write at all; a `.sng` `$00` becomes packed `$80`, takes the
+    `bmi` path at `mt_wavefreq` and writes `adc mt_chnnote,x / and #$7f` --
+    the note's own pitch, every hold call.
+
+    That is what made the `program` bucket of `VIBRATO.md` read zero. At `-S2`
+    an opcode is entry + hold, so the opcode's absolute pitch was written on
+    the frame's first call and overwritten by the base note on its second;
+    siddump samples the register once a frame and saw a flat pitch. Ricochet's
+    `$09F9` measured 184 reversals in the original and 0 here, with the
+    waveforms `11 81 41 41 80 80 80` landing exactly right beside them.
+
+    See `_wave_program_entries` for the same byte on the opcode entries.
     """
     hold = _wave_hold_byte(multiplier, _wave_byte(wave))
     if hold is not None:
         left.append(hold)
-        right.append(WAVE_NOTE_BASE)
+        right.append(WAVE_NOTE_KEEP)
 
 
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
@@ -1313,12 +1328,13 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     this loop already stops on it, so an over-long program loses its trailing
     opcodes rather than another instrument's block.
 
-    **The hold entry's right side is `$00`.** In the packed player that is *no
-    frequency write at all* (`player.s:976-977`); `$80` is a no-op
-    transposition that still writes, which would re-assert the pattern's own
-    note and undo the absolute pitch a `>= $80` opcode had just set. The two
-    are equivalent on the delay entries elsewhere in this file (v0.5.233 traced
-    it) precisely because those follow entries that do not set a pitch.
+    **The hold entry's right side is `$80`, not `$00`.** It was `$00` from
+    v0.5.234, on a reading of `player.s:974-977` that had not accounted for
+    `greloc.c:1339-1341` inverting bit 7 of the right column as it packs. The
+    two bytes mean the opposite of what that reading said: `$80` makes no
+    frequency write, `$00` re-asserts the pattern's own note, and the hold was
+    therefore undoing the absolute pitch of every `>= $80` opcode one call
+    after it was set. See `_hold_wave_program_entry`.
     """
     if fmt != FORMAT_GTS5:
         return None
