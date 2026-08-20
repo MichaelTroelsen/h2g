@@ -1291,7 +1291,18 @@ is a finding that currently exists only in a commit message. Ids
 * `songview.py`'s **live render check**, owed since v0.5.243. Chrome extension
   reported not connected; serve `build/` over `127.0.0.1` (Chrome MCP cannot
   open `file://`). `[user]` or `[main]`.
-* `instrmap.py` still overlaps `songview.py --compare`.
+* ~~`instrmap.py` still overlaps `songview.py --compare`~~ — **closed at
+  v0.5.331.** `songview.py --compare` is removed (242 lines: `pair_by_adsr`,
+  `InstrumentDelta`, `compare_sides`, `_comparison_section`, the `deltas`
+  parameter and the `--compare`/`-t`/`--gt2reloc`/`--siddump` flags), leaving
+  `instrmap.py` as the one tool for original-vs-conversion instrument
+  comparison — it has the batch mode, the Markdown index and the annotated dual
+  dump that `--compare` never had. **`songview.py`'s `parse_sng` was not
+  touched**: it stays a from-scratch second reader of the `.sng` format, which
+  is the only thing that makes `tests/test_songview.py`'s cross-check against
+  `build_sng` and the byte-exact fixture worth anything. README already
+  documented `songview.py` as scoring nothing and never documented `--compare`,
+  so the removal closes a documentation gap rather than opening one.
 * No noise-pitch column.
 * Bit `$10`'s global arpeggio, decoded and unemitted (§ 7.ttt) — same reason as
   bucket `arp` above.
