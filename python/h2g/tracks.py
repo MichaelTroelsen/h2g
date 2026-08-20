@@ -307,6 +307,67 @@ def _voice_addr(sid: SidFile, det: Detection, i: int, voice: int):
     return addr
 
 
+def _track_cells(det: Detection, i: int) -> List[int]:
+    """The table byte indices subtune `i` reads its three pointers from."""
+    cells: List[int] = []
+    for voice in range(det.track_voices):
+        if det.table_stride == 2:
+            so = (voice + i * det.track_voices) * 2
+        else:
+            so = voice + i * (det.track_voices * 2)
+        cells += [det.track_lo + so, det.track_hi + so]
+    return cells
+
+
+def track_table_extent(sid: SidFile, det: Detection) -> Optional[int]:
+    """How many subtunes the track table has room for, on the player's layout.
+
+    The track table has no length field either -- the same hole
+    `patterns.phantom_patterns` closes for the *pattern* table, and the same
+    fix. Detection derives the pattern table's entry count from the distance
+    between its LO and HI arrays; those two arrays are therefore known extents
+    of bytes that are **not** track-table cells, and neither is a run of bytes
+    a player signature matched (`det.code_spans`, the identical vocabulary
+    phantom_patterns uses). A subtune whose pointer cells land in one of them
+    is not a subtune the player can ever have dispatched: the bytes it reads
+    belong to another structure.
+
+    This is a claim about the file's layout, never a statistical one, and it
+    is exactly the bound `Detection.subtunes_available` already carries for
+    the digi engine -- there the orderlist table is capped by the pattern
+    table that follows it, and that is the general case rather than a quirk of
+    that one engine. Commodore 64 Music Examples is the extreme: its track LO
+    array sits at $1436 and the pattern LO array begins six bytes later at
+    $143C, so the table holds **one** subtune, while its PSID header claims
+    fifteen. Subtune 14 read its "pointers" out of pattern LO entries 78 and
+    81, which happen to compose $08F2 -- inside the init dispatch's LO table
+    at $08EC (`$08CB: LDA $08EC,X / STA $0878`, self-modifying the JSR operand
+    at $0877) -- and decoded 277 pattern references out of a table of routine
+    addresses. It passed every earlier test: three voices resolved, the refs
+    were plentiful, and being the *last* declared subtune it set `keep` to 15
+    single-handed, so the twelve placeholders behind it were emitted too.
+
+    Returns None when nothing bounds the table (no pattern table located and
+    no signature spans), otherwise the count. Never looks past
+    `sid.subtunes` -- the header is still the other bound, and the answer
+    above it is not needed.
+    """
+    n = det.pattern_used + 1
+    stride = det.table_stride
+    not_track: List[Tuple[int, int]] = []
+    if det.pattern_lo >= 0 and det.pattern_hi >= 0 and n > 0:
+        not_track.append((det.pattern_lo, n * stride))
+        not_track.append((det.pattern_hi, n * stride))
+    not_track += list(det.code_spans)
+    if not not_track:
+        return None
+    for i in range(sid.subtunes):
+        cells = _track_cells(det, i)
+        if any(s <= c < s + length for c in cells for s, length in not_track):
+            return i
+    return sid.subtunes
+
+
 def convert_tracks(sid: SidFile, det: Detection, log,
                    transposes: Optional[List[Dict[int, int]]] = None,
                    tempos: Optional[List[Dict[int, int]]] = None,
@@ -372,15 +433,25 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     smaps: List[List[Dict[int, int]]] = []
     addr_ok: List[List[bool]] = []
     subtunes = sid.subtunes
+    beyond_why = "track table is shorter than the header"
     if det.subtunes_available:
         subtunes = min(subtunes, det.subtunes_available)
         if subtunes < sid.subtunes:
             log(f"Header claims ${sid.subtunes:X} subtune(s); the track table holds "
                 f"${subtunes:X}")
+    # And the same bound for every other engine, read off the file's layout --
+    # see track_table_extent. Applied after the digi bound rather than instead
+    # of it: both are upper limits and the tighter one wins.
+    extent = track_table_extent(sid, det)
+    if extent is not None and extent < subtunes:
+        log(f"Header claims ${sid.subtunes:X} subtune(s); the track table runs "
+            f"into another table after ${extent:X}")
+        subtunes = extent
+        beyond_why = "track table cells belong to another table"
     if census is not None:
         for i in range(subtunes, sid.subtunes):
             census.append({"subtune": i, "fate": "beyond_table",
-                           "why": "track table is shorter than the header",
+                           "why": beyond_why,
                            "voices_ok": 0, "refs": 0, "dangling": 0})
     for i in range(subtunes):
         voices: List[List[int]] = []
