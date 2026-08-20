@@ -345,9 +345,26 @@ def test_a_multispeed_file_holds_each_opcode_for_a_whole_frame():
 
 
 def test_a_hold_does_not_rewrite_the_pitch_the_opcode_just_set():
-    """`$00` on the right is no frequency write at all in the packed player;
-    `$80` is a no-op transposition that still writes, and would re-assert the
-    pattern's own note over a `>= $80` opcode's absolute pitch."""
+    """`$80` on the right is what leaves the opcode's pitch standing.
+
+    The obvious reading is the other way round and it is wrong, because it
+    describes the byte AFTER the packer has touched it. `greloc.c:1340-1341`
+    does `insertbyte(rtable[c][d] ^ 0x80)` -- "For normal notes, reverse all
+    right side high bits" -- so the `.sng` byte and the byte `player.s` tests
+    are bit-7 inverses:
+
+        .sng $80 -> packed $00 -> the `bne` at player.s:977 fails -> no write
+        .sng $00 -> packed $80 -> `bmi` at mt_wavefreq (player.s:1054-1058)
+                                 -> `adc mt_chnnote,x / and #$7f`
+                                 -> writes the pattern's own note
+
+    So writing `$00` here re-asserted the pattern's note over a `>= $80`
+    opcode's absolute pitch. At `-S2` an opcode is entry+hold, so the pitch
+    landed on the frame's first call and was overwritten on its second, and
+    siddump -- one sample a frame -- read a flat pitch. Confirmed on bytes
+    rather than argued: Ricochet's `.sng` right column and the same run in its
+    packed `.sid` differ by exactly bit 7 ($00<->$80, $C2->$42).
+    """
     if not CORPUS.is_dir():
         return
     from h2g.goatwriter import _wave_program_entries
@@ -355,10 +372,16 @@ def test_a_hold_does_not_rewrite_the_pitch_the_opcode_just_set():
         load_sid(str(CORPUS / "Trans-Atlantic_Balloon_Challenge.sid")),
         lambda *a, **k: None)
     left, right = _wave_program_entries(sid, det, 2, [], "gts5", 3, 60)
+    # The entry after the opcode must be a HOLD, not a command: `$F0`-`$FF` on
+    # the left is a jump or a stop, and its right byte is the jump target, not
+    # a note. The last opcode in this record is followed by the table's own
+    # `$FF` terminator, and counting that as a hold is what the first version
+    # of this assertion did.
     absolute = [k for k, (l, r) in enumerate(zip(left, right))
-                if l >= 0x10 and r >= 0x80 and k + 1 < len(left)]
+                if l >= 0x10 and r >= 0x80 and k + 1 < len(left)
+                and left[k + 1] < 0xF0]
     assert absolute, "no absolute-pitch opcode in this record"
-    assert all(right[k + 1] == 0x00 for k in absolute)
+    assert all(right[k + 1] == 0x80 for k in absolute)
 
 
 def test_the_multiplier_one_encoding_is_unchanged():

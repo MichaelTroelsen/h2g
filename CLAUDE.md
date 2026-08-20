@@ -169,18 +169,41 @@ test dependency).
   `--no-test-restart`, which writes the record's own waveform there: the
   frame-0 lead then repeats it and every effect runs one frame late. Read
   `player.s` before concluding anything about *when* a table entry lands.
-  **They also disagree about the wavetable's right-side byte.** `$00` is "the
-  base note, +0" in the editor and **no frequency write at all** in the packed
-  player (`player.s:976-977` tests `bne`); `$80` is "no change" in the editor
-  and `adc chnnote / and #$7f` -- `(128+n) & 127 == n`, a no-op transposition
-  that still writes -- in the packed one. So the byte that leaves a bend alone
-  is `$00`, not `$80`. Choosing `$80` from `gplay.c` took Hollywood or Bust's
-  melody to 25% against 47%, by re-asserting the base note every frame -- on a
-  *waveform* entry. On a **delay** entry the two are equivalent: `player.s`
-  reads as though the jump path leaves carry set (a semitone up), and tracing
-  W_A_R both ways gives 0 of 1500 frames differing on all three voices. Two
-  readings of the same file, one right and one wrong, and only the trace
-  separated them.
+  **They also disagree about the wavetable's right-side byte -- and the packer
+  inverts it, which is the half this paragraph got wrong for eight versions.**
+  In the packed player `$00` is **no frequency write at all**
+  (`player.s:976-977` tests `bne`) and `$80` is `adc chnnote / and #$7f` --
+  `(128+n) & 127 == n`, a no-op transposition that still writes. Both true,
+  and both about the byte **after** `gt2reloc` has touched it:
+  `greloc.c:1340-1341` does `insertbyte(rtable[c][d] ^ 0x80)`, commented "For
+  normal notes, reverse all right side high bits". So for anything **writing a
+  `.sng`** the mapping is inverted, and the byte that leaves a bend alone is
+  **`$80`**, not `$00`:
+
+      .sng $80 -> packed $00 -> no frequency write
+      .sng $00 -> packed $80 -> writes the pattern's own note
+
+  `_hold_wave_program_entry` wrote `$00` on the strength of the old reading, so
+  a `>= $80` opcode's absolute pitch was re-asserted away by the base note one
+  call later; at `-S2` an opcode is entry+hold, so the pitch landed on the
+  frame's first call and was gone by its second, and siddump -- one sample a
+  frame -- read a flat pitch and reported no defect. Fixed at v0.5.336: 8
+  files move, exactly `{wave_program AND multiplier > 1}`, `vib` is the only
+  dimension that moves on any of them, and the `program` bucket's missing
+  reversals go 2021 -> 549. Confirmed on bytes rather than argued -- Ricochet's
+  `.sng` right column against the same run in its packed `.sid` differs by
+  exactly bit 7 ($00<->$80, $C2->$42). This is the same lesson as the
+  `$E0`-`$EF` range two bullets down: **read `greloc.c` beside `player.s`, and
+  settle it on the packed bytes**, because every rule here is a rule about what
+  to *emit* and the packer sits in between.
+
+  The Hollywood or Bust case that produced the old wording is still real and is
+  a different one: choosing `$80` there took melody to 25% against 47% by
+  re-asserting the base note every frame -- but that was a *waveform* entry
+  reasoned from `gplay.c`, the editor, with no packer transform in the
+  argument. On a **delay** entry the two are equivalent: `player.s` reads as
+  though the jump path leaves carry set (a semitone up), and tracing W_A_R both
+  ways gives 0 of 1500 frames differing on all three voices.
 - **A fixture is not the corpus.** `_noise_tick_frames` took the modal speed
   gate over a file's subtunes; the corpus rip of Commando carries 19 (four
   songs and fourteen one-frame sound effects, which outvote the music) where
