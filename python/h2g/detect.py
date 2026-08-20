@@ -110,6 +110,14 @@ class Detection:
     # nibble. 0 means the nibble form above. See _find_effect_routines.
     arp_fixed_up: int = 0
     effect_drum: bool = False   # bit $01: pitch sweep down, then noise
+    # Instrument-record offset of the byte that enables the player's per-call
+    # re-assert of $D400/$D401 from its own note table, or None where the
+    # player has no such block. **This is what decides whether a bit-$01 drum
+    # ends back on the note's pitch or parked at the bottom of its sweep**, and
+    # it is a fact about the RECORD, not about the file -- Last V8's record 0
+    # returns while its records 9 and 10, in the same player, do not. See
+    # _find_note_reassert() and drum_returns_to_base().
+    note_reassert_offset: Optional[int] = None
     effect_pulse_lo: bool = False  # bit $08: accumulate +6 into pulse width LO
     # A SECOND, mutually exclusive reading of the same byte -- see
     # _find_two_stage(). In this family bit $04 is not an arpeggio at all: it
@@ -1098,6 +1106,18 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                                           ("pulse-lo", det.effect_pulse_lo))
                           if ok)
         log(f"Instrument effect byte..: {found}")
+
+    # After the effect chain, because the log line below names the records the
+    # gate is true for and that needs `effect_drum`.
+    det.note_reassert_offset = _find_note_reassert(sid, det)
+    if det.note_reassert_offset is not None:
+        drums = [i for i in range(det.instr_used)
+                 if drum_returns_to_base(sid, det, i)]
+        log(f"Note re-assert..........: record +{det.note_reassert_offset} "
+            "nonzero rewrites $D400/$D401 from the note table every call"
+            + (", so the bit-$01 drum returns to base on record"
+               + ("s " if len(drums) > 1 else " ")
+               + ", ".join(str(i) for i in drums) if drums else ""))
 
     det.pulse_bounds, det.pulse_rate_field = _find_pulse_sweep(sid, det)
     if det.pulse_bounds >= 0:
@@ -2133,6 +2153,158 @@ def _find_triangle_gate(sid: SidFile, at: int) -> Optional[int]:
     if match_at(sid.data, k, TRIANGLE_GATE_SHAPE):
         return sid.data[k + TRIANGLE_GATE_IMMEDIATE]
     return None
+
+
+# --- The note re-assert, and why a drum returns to base --------------------
+#
+# **The bit-$01 drum block never restores anything.** Last V8 $8309 and
+# Commando $52FA are the same twenty-five instructions modulo relocation
+# (byte-identical but for the address operands), and both only ever write the
+# swept value:
+#
+#     832A  BD 2A 85  LDA freqhi,X
+#     832D  DE 2A 85  DEC freqhi,X      ; the sweep *is* a decrement of the
+#     8330  99 01 D4  STA $D401,Y       ; voice's own running frequency
+#
+# So "does the drum come back to the note's pitch" cannot be a property of
+# that block, and it is not a property of the player either: Last V8's record
+# 0 returns on all 141 of its notes while records 9 and 10, in the same file
+# and the same player, park on all 12 of theirs.
+#
+# What restores it sits *earlier* in the same per-call pass -- the vibrato
+# routine, whose last act is to write the note's frequency straight out of the
+# player's own note table. Last V8 $81FD:
+#
+#     81FD  B9 3B 84  LDA notetbl,Y     ; the note's OWN frequency, reloaded
+#     8200  8D 1D 85  STA scratchlo     ; every call
+#     8203  B9 3C 84  LDA notetbl+1,Y
+#     8206  8D 1E 85  STA scratchhi
+#     ...   (fold the global triangle, add `phase` steps of the interval)
+#     822E  AC FE 84  LDY voice
+#     8231  AD 1D 85  LDA scratchlo
+#     8234  99 00 D4  STA $D400,Y
+#     8237  AD 1E 85  LDA scratchhi
+#     823A  99 01 D4  STA $D401,Y       ; <- the re-assert
+#
+# The drum block runs after it, so while the drum is sweeping the drum's write
+# wins; on the calls its guards switch it off, this write is what stands, and
+# the voice snaps back to the note. **And the whole block is gated on the
+# record's vibrato byte being nonzero** -- Last V8 $81C6:
+#
+#     81C6  B9 A6 85  LDA record+5,Y
+#     81C9  8D 19 85  STA shiftctr
+#     81CC  F0 6F     BEQ $823D         ; zero -> past the stores as well
+#
+# A record with a zero there gets no re-assert at all, and its drum parks
+# wherever the sweep left it. That is the entire difference, and it is exact
+# on the corpus: over the 27 files whose player has the drum, taking only
+# records whose envelope pair is claimed by no other record (a shared pair
+# compares two instruments -- Bump Set Spike's record 14 shares $090A with
+# record 1's octave arpeggio, and all 137 of its apparent "returns" are record
+# 1's), **every one of the 328 returning notes belongs to a record with a
+# nonzero byte here, and not one of the 1263 notes played by a record with a
+# zero returns.** Measured on the originals with siddump, -t60, at each file's
+# own start subtune, and confirmed for two further files by sweeping every
+# subtune: Geoff Capes' record 11 ($01) and record 6 ($03) return where its
+# records 8 and 12 ($00) park, and Gerry the Germ's record 21 ($02) returns on
+# all 125 while its records 9, 12 and 22 ($00) park on all 172.
+#
+# The store is what the signature anchors on, because the store is the claim.
+NOTE_REASSERT_TAIL = "AC ?? ?? AD ?? ?? 99 00 D4 AD ?? ?? 99 01 D4"
+NOTE_REASSERT_TAIL_LEN = 15
+
+# The two spellings of "if this record byte is zero, skip the block". They are
+# one idiom in two addressing dialects, exactly like VIBRATO_SHAPES:
+#
+#     Last V8 $81C6   B9 A6 85  8D 19 85  F0 6F         LDA/STA/BEQ past
+#     Warhawk $11E7   B9 3C 16  D0 03  4C A3 12         LDA/BNE +3/JMP past
+#
+# 24 corpus files take the first and 9 the second, and the *target* is checked
+# against the store rather than assumed: a branch that lands short of it would
+# skip the oscillator and still write the note, which is a different routine.
+NOTE_REASSERT_GATE_BEQ = (0xB9, 0x8D, 0xF0)
+NOTE_REASSERT_GATE_JMP = (0xB9, 0xD0, 0x03, 0x4C)
+# How far back from the store the gate may sit. The census is two tight
+# clusters and nothing between them: 103-104 bytes for all 24 files taking the
+# BEQ spelling and 171-173 for all 9 taking the JMP one. 200 covers both with
+# room, and the branch-target check below is what actually rejects a wrong
+# match -- in all 33 the target is the byte after the last store, exactly.
+NOTE_REASSERT_BACK = 200
+
+
+def _find_note_reassert(sid: SidFile, det: Detection) -> Optional[int]:
+    """Record offset of the byte enabling the per-call note re-assert, or None.
+
+    Anchored on the pair of stores rather than on any one vibrato dialect, so
+    it says what it means: *this player writes the note's own frequency to
+    $D400/$D401 every call unless this record byte is zero*. Returns None
+    where no such gated store is found -- an under-read, never a wrong one,
+    the same rule `find_relocation` and `_find_vibrato` follow, and the safe
+    direction here because None means "the drum parks", which is what every
+    unmatched corpus file measures.
+    """
+    data = sid.data
+    at = search_file(data, NOTE_REASSERT_TAIL)
+    if at < 1:
+        return None
+    end = at + NOTE_REASSERT_TAIL_LEN
+    for k in range(at - 1, max(0, at - NOTE_REASSERT_BACK), -1):
+        lda, sta, beq = NOTE_REASSERT_GATE_BEQ
+        if data[k] == lda and data[k + 3] == sta and data[k + 6] == beq:
+            # BEQ is relative to the byte after its operand.
+            target = k + 8 + ((data[k + 7] ^ 0x80) - 0x80)
+        elif (data[k] == NOTE_REASSERT_GATE_JMP[0]
+              and data[k + 3] == NOTE_REASSERT_GATE_JMP[1]
+              and data[k + 4] == NOTE_REASSERT_GATE_JMP[2]
+              and data[k + 5] == NOTE_REASSERT_GATE_JMP[3]):
+            target = sid.to_offset(data[k + 6] | data[k + 7] << 8)
+        else:
+            continue
+        if target < end:
+            # Lands inside the block: it skips part of the oscillator, not the
+            # store, so it is not the enable.
+            continue
+        off = sid.to_offset(data[k + 1] | data[k + 2] << 8) - det.instr_start
+        return off if 0 <= off < det.instr_stride else None
+    return None
+
+
+def drum_returns_to_base(sid: SidFile, det: Detection, index: int) -> bool:
+    """Does instrument `index`'s bit-$01 drum end back on the note's pitch?
+
+    **Per record, and both halves are needed.** `det.note_reassert_offset` is
+    the file-level half (the player has the gated store at all); the record's
+    own byte at that offset is the other, and it is the one easy to forget --
+    the same trap `det.effect_bit40` has, where a detection flag about a
+    player was read as a fact about a record and put 99 noise frames at a
+    pitch Thundercats never sounds.
+
+    Deliberately NOT a file-level boolean. Three corpus files (Commando, Geoff
+    Capes, Gerry the Germ) carry both a returning record and a parking one,
+    and Commando's returning record sounds no note in any of its 19 subtunes
+    while the drum a listener validated is a parking one -- so a per-file flag
+    would either detune that drum or lose Geoff Capes' and Gerry's.
+
+    **What the corpus census can and cannot check.** It is exact over the 38
+    records that carry bit $01 *alone* (bits $02 and $04 clear) and sound a
+    note: 328 returns, all under a true gate, and 1635 notes under a false one
+    with not a single return. A record that also carries bit $04 is outside
+    that population by construction -- its arpeggio moves the pitch down too,
+    and no reduction of the trace separates the drum's sweep from it, which is
+    why the census excludes them rather than scoring them. The gate is still
+    true for those records, because the re-assert is: Commando's record 7
+    ($05, gate byte $01) alternates AF58 with the arpeggio note and lands back
+    on AF58 on every other frame, which is this store running. What has *not*
+    been measured is a bit-$04 record's drum sweep in isolation.
+    """
+    if not det.effect_drum or det.note_reassert_offset is None:
+        return False
+    base = det.instr_start + index * det.instr_stride
+    if base + det.instr_stride > len(sid.data):
+        return False
+    if not sid.data[base + 7] & 0x01:
+        return False
+    return sid.data[base + det.note_reassert_offset] != 0
 
 
 def _search_all(data: bytes, pattern: str, limit: int = 8):
