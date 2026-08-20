@@ -1659,6 +1659,55 @@ def _speeds_for_reload(sid: SidFile, rel_addr: int) -> Optional[SongSpeeds]:
     return None
 
 
+# Any `LDA table,X` -- used only to find *other* per-subtune tables read the
+# same way, near the one `_find_outer_gate` has already found.
+_ABS_X_LOAD = re.compile(rb"\xbd(..)", re.DOTALL)
+
+# How far either side of a found `LDA table,X` to look for a second one, when
+# bounding that table's real length (see `_adjacent_table_bound`). Generous
+# enough to span the handful of instructions between two loads in the same
+# init loop (Knucklebusters and W_A_R's are 6 bytes apart); the corpus has
+# no closer false match at this width or twice it (checked at 32/64/128).
+_ADJACENT_TABLE_WINDOW = 32
+
+
+def _adjacent_table_bound(sid: SidFile, bd_pos: int,
+                          table_addr: int) -> Optional[int]:
+    """Distance to the nearest *other* per-subtune table read the same way.
+
+    `_speeds_for_reload`'s table can be over-read when a file's header
+    over-counts its subtunes, and it guards against that with
+    MAX_SANE_SPEED_RELOAD -- a magnitude bound that works because the bytes
+    past a frames table's real end are usually code. That bound is wrong for
+    the outer gate's own values: 16 corpus files carry a genuine skip
+    reload above it (Ricochet's 127 is `outer_gate_skip`'s own worked
+    example of "almost no skip, and correct for a reason"), so nulling
+    anything over MAX_SANE_SPEED_RELOAD here would falsely null real data on
+    16 files to fix one.
+
+    What actually bounds Knucklebusters' table is structural, not a value:
+    its init reads three 8-byte per-subtune tables back to back (`LDA
+    $0978,X`, `LDA $0968,X`, `LDA $0970,X`), so $0970's table is exactly 8
+    bytes before $0978's begins -- and a header that claims 11 subtunes
+    reads 3 bytes into the next table, at values ($02) too small for any
+    magnitude guard to catch. W_A_R (also a Warhawk-engine file) carries the
+    identical shape at $E90F/$E917. Searching nearby code for another `LDA
+    table,X` whose address sits just past this one's finds that boundary
+    directly, for both.
+    """
+    lo = max(0, bd_pos - _ADJACENT_TABLE_WINDOW)
+    hi = min(len(sid.data), bd_pos + _ADJACENT_TABLE_WINDOW)
+    best = None
+    for m in _ABS_X_LOAD.finditer(sid.data, lo, hi):
+        addr = m.group(1)[0] | (m.group(1)[1] << 8)
+        if addr <= table_addr:
+            continue
+        gap = addr - table_addr
+        if best is None or gap < best:
+            best = gap
+    return best
+
+
 def _find_outer_gate(sid: SidFile, subtunes: int):
     """(per-subtune reloads, table address) for the counter above the gate.
 
@@ -1685,7 +1734,11 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
             table = sid.data[i - 2] | (sid.data[i - 1] << 8)
             off = sid.to_offset(table)
             if 0 <= off < len(sid.data):
-                vals = sid.data[off:off + max(subtunes, 1)]
+                n = max(subtunes, 1)
+                bound = _adjacent_table_bound(sid, i - 3, table)
+                if bound is not None and bound < n:
+                    n = bound
+                vals = sid.data[off:off + n]
                 return tuple(v or None for v in vals), table
         i = sid.data.find(store, i + 1)
     return (sid.data[imm_off] or None,) * max(subtunes, 1), None
