@@ -23,7 +23,6 @@
 | Delta_Mix-E-Load_loader.sid | `$3A98` | 4 | $04 | plain | 742 | 0 |
 | Last_V8.sid | `$0409` | 2 | $05 | arp | 702 | 0 |
 | Last_V8_C128_version.sid | `$0409` | 2 | $05 | arp | 702 | 0 |
-| Zoolook.sid | `$0F09` | 2 | $0B | drum | 674 | 0 |
 | Chicken_Song.sid | `$0A00` | 6 | $01 | drum | 644 | 0 |
 | International_Karate.sid | `$0A0A` | 1 | $55 | pitchseq | 630 | 0 |
 | Commodore_64_Music_Examples.sid | `$5C3A` | - | - | unknown | 623 | 0 |
@@ -39,6 +38,7 @@
 | Chimera.sid | `$0F0F` | 4 | $05 | arp | 420 | 0 |
 | Devils_Galop.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
 | Monty_on_the_Run.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
+| Zoolook.sid | `$0F09` | 2 | $0B | drum | 674 | 267 |
 | Food_Feud.sid | `$0A0A` | 5 | $2B | drum | 401 | 0 |
 | Dragons_Lair_Part_II.sid | `$097A` | 2 | $00 | plain | 505 | 111 |
 | Chain_Reaction.sid | `$7900` | 8 | $0A | plain | 382 | 0 |
@@ -56,7 +56,6 @@
 | Sanxion.sid | `$0B03` | 2 | $2B | drum | 286 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$06A6` | 2 | $44 | atkpitch | 282 | 0 |
 | Star_Paws.sid | `$08E7` | 2 | $01 | program | 420 | 140 |
-| Chain_Reaction.sid | `$00F8` | 3 | $10 | pitchseq | 277 | 0 |
 | International_Karate.sid | `$0BB0` | 3 | $08 | plain | 277 | 0 |
 | Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 114 |
 | Star_Paws.sid | `$09E8` | 3 | $01 | program | 364 | 116 |
@@ -120,13 +119,13 @@
 |---|---:|---:|---:|---:|
 | plain | 25 | 13 | 38 | 16096 |
 | arp | 20 | 0 | 20 | 5005 |
-| drum | 14 | 0 | 14 | 6569 |
+| drum | 13 | 1 | 14 | 6302 |
 | program | 7 | 4 | 11 | 1449 |
-| pitchseq | 9 | 0 | 9 | 6862 |
+| pitchseq | 8 | 0 | 8 | 6585 |
 | atkpitch | 4 | 2 | 6 | 467 |
 | bit80 | 2 | 1 | 3 | 94 |
 | unknown | 2 | 0 | 2 | 626 |
 
-**83 of these 103 instruments emit no oscillation at all**, against 20 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**81 of these 102 instruments emit no oscillation at all**, against 21 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).
