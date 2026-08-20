@@ -2435,13 +2435,34 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # both halves play the same note") reads these files as having no
     # arpeggio at all. The VB6 original's flat +12 substitution was right for
     # *this* dialect and wrong for the other; h2g had it the other way round.
+    #
+    # **The counter's mask and the branch's sense vary; the interval does
+    # not.** Commando divides the counter with `AND #$01 / BEQ`, but Chimera,
+    # Battle of Britain, Game Killer and Master of Magic use `AND #$07 / BEQ`,
+    # Rasputin `AND #$02 / BEQ` and Zoids `AND #$04 / BNE` -- six files whose
+    # block is otherwise byte-for-byte this one, down to both paths converging
+    # on the same `ASL / TAY / LDA freqtable,Y` two instructions later (the
+    # `JMP` lands exactly on the `ASL`). Pinning the mask to `01` and the
+    # branch to `F0` read the dialect as absent in all six. Both bytes are
+    # wildcards here and the branch is tried in both senses, because what the
+    # emitter needs is the `ADC` operand -- the interval -- and that is `$0C`,
+    # a plain octave, in all seven files. The mask is the *rate*, which
+    # `goatwriter._wavetable_entries` does not read: it emits the one-call
+    # alternation Commando's `AND #$01` gives. So a widened mask here is a
+    # detection fix and not a rate fix; see the note in
+    # tests/test_arp_octave.py.
     arp_up = 0
-    at = search_file(
-        sid.data,
-        f"{load} 29 04 F0 ?? AD ?? ?? 29 01 F0 ?? BD ?? ?? 18 69 ??")
-    if at >= 1 and at + 19 < len(sid.data):
-        arp_up = sid.data[at + 19]      # the ADC operand: semitones up
-        arp = arp = True
+    # The load is two bytes in the zero-page spelling and three in the
+    # absolute one, and every offset past it moves with that.
+    lead = 2 if zp else 3
+    for branch in ("F0", "D0"):
+        at = search_file(
+            sid.data,
+            f"{load} 29 04 F0 ?? AD ?? ?? 29 ?? {branch} ?? BD ?? ?? 18 69 ??")
+        if at >= 1 and at + lead + 16 < len(sid.data):
+            arp_up = sid.data[at + lead + 16]   # the ADC operand: semitones up
+            arp = True
+            break
     # Warhawk $1366. Two guard loads follow the bit test -- a per-voice drum
     # counter and the note's own duration -- before the block decrements the
     # counter into $D401 (frequency high) and finally writes #$80 (noise) to
