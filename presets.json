@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.336 presets.py",
+  "generator": "h2g 0.5.337 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -48,7 +48,7 @@
       "multiplier": 3,
       "two_stage": true,
       "wave_program": true,
-      "wide_hard_restart": true
+      "max_hard_restart": true
     },
     "Action_Biker.sid": {
       "max_rows": 128,
@@ -150,6 +150,7 @@
       "multiplier": 3,
       "two_stage": true,
       "wave_program": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     },
     "Chicken_Song.sid": {
@@ -292,7 +293,8 @@
       "subtunes": 1,
       "rows": 14212,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true
     },
     "Formula_1_Simulator.sid": {
       "max_rows": 128,
@@ -959,6 +961,7 @@
       "rows": 15169,
       "multiplier": 3,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     }
   }
