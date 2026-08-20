@@ -73,15 +73,20 @@ def test_the_fe_operand_is_never_read_as_a_pattern():
 # of the eight lose slots; the other three were already right, which is what
 # makes the cap a *reading* rather than a tuning -- it agrees with the
 # resolving-pointer trim wherever that trim happened to land correctly.
+# name -> (header count, the dispatch's music count, what the LAYOUT bound
+# alone gives). The third column is `track_table_extent` with the dispatch
+# switched off, not the header: since the two bounds landed on master together
+# the old "unbounded" figure is unreachable, and the interesting comparison is
+# between the two bounds rather than between one bound and none.
 DISPATCH_TRACKS = {
-    "Crazy_Comets.sid": (17, 2, 17),
-    "Geoff_Capes_Strongman_Challenge.sid": (24, 8, 21),
+    "Crazy_Comets.sid": (17, 2, 2),
+    "Geoff_Capes_Strongman_Challenge.sid": (24, 8, 8),
     "Gerry_the_Germ.sid": (23, 7, 7),
     "Hollywood_or_Bust.sid": (10, 3, 3),
     "Knucklebusters.sid": (11, 3, 3),
-    "Spellbound.sid": (13, 3, 13),
-    "Thing_on_a_Spring.sid": (17, 1, 13),
-    "Warhawk.sid": (18, 9, 18),
+    "Spellbound.sid": (13, 3, 4),
+    "Thing_on_a_Spring.sid": (17, 1, 1),
+    "Warhawk.sid": (18, 9, 9),
 }
 
 
@@ -89,30 +94,52 @@ DISPATCH_TRACKS = {
 def test_the_dispatch_caps_the_orderlists_a_file_emits():
     """Every file the dispatch is read on emits exactly its music count.
 
-    The `before` column is what the trailing-run trim alone produced, and it
-    is right on three files and too generous on five. Recorded so that a
-    later change to either rule shows which of the two moved.
+    Two bounds now cap this count and they were derived independently -- this
+    one by reading the player's `CMP #imm / BCS / JMP` init dispatch, the
+    other (`tracks.track_table_extent`) by reading where the track table runs
+    into the pattern table. They AGREE on seven of the eight files that have
+    both, which is mutual corroboration rather than redundancy: two different
+    methods, one answer. Spellbound is the single disagreement -- the layout
+    has room for four rows and the player only ever dispatches three as music
+    -- and there the dispatch wins, because it is a statement about what the
+    player does and the extent only about what the table has room for.
+
+    So the third column is the LAYOUT bound alone, not the header. Where it
+    equals the music count the dispatch changes no bytes and earns its place
+    by attribution instead: the census fate is `sfx` rather than
+    `beyond_table`, which is what SUBTUNES.md reports. Where it differs
+    (Spellbound alone today) the dispatch is load-bearing, and this test is
+    what says which of the two moved if either rule changes.
     """
     from h2g.convert import _detect_tables
     from h2g.detect import find_music_subtunes
     from h2g.sidfile import load_sid
     from h2g.tracks import convert_tracks
 
-    for name, (declared, music, before) in DISPATCH_TRACKS.items():
+    import dataclasses
+    agreed = 0
+    for name, (declared, music, extent_only) in DISPATCH_TRACKS.items():
         sid, det = _detect_tables(load_sid(str(CORPUS / name)),
                                   lambda *a, **k: None)
         assert sid.subtunes == declared, name
         assert det.music_subtunes == music, name
         tracks = convert_tracks(sid, det, lambda *a, **k: None)
         assert len(tracks) == music * 3, name
-        # ...and the same conversion with the dispatch unread is `before`,
-        # which is the claim that the cap is what moved these files.
-        det.music_subtunes = None
-        was = convert_tracks(sid, det, lambda *a, **k: None)
-        assert len(was) == before * 3, name
+        # ...and the same conversion with the dispatch unread falls back to
+        # the layout bound alone. Switch it off on a COPY: `det` is reused
+        # below and mutating it here once made this test measure itself.
+        without = dataclasses.replace(det, music_subtunes=None)
+        was = convert_tracks(sid, without, lambda *a, **k: None)
+        assert len(was) == extent_only * 3, name
+        assert extent_only >= music, name    # the dispatch is never looser
+        agreed += extent_only == music
         # The cap only ever removes a trailing run: every orderlist it keeps
         # is the one it kept before, byte for byte. That is what says the
         # music of these files did not change, only how much of the file
         # after it was emitted.
         assert was[:music * 3] == tracks, name
         assert find_music_subtunes(sid) == music, name
+    # Two independent methods, one answer, on seven of the eight. If this
+    # number falls, the two bounds have started disagreeing and one of them
+    # has drifted -- that is the signal, not the individual file counts.
+    assert agreed == 7, agreed

@@ -69,7 +69,47 @@ def test_emitted_count_matches_the_tracks_actually_returned():
         assert kept * 3 == len(tracks), name
 
 
-@needs_corpus
+def _placeholder_fixture():
+    """Three subtunes; the middle one resolves every pointer and names only
+    patterns that do not exist. That is the shape this test needs and no
+    corpus file has any more.
+
+    It used to read Commando's subtune 14. After `tracks.track_table_extent`
+    landed, that subtune is `beyond_table` with no resolving voice -- and the
+    same pass established that NO corpus file has an interior `placeholder`
+    left, because all 139 of them were subtunes read past the end of a track
+    table. The defect below is still real, so the fixture is synthetic rather
+    than the test being deleted.
+    """
+    from h2g.detect import Detection
+    from h2g.sidfile import HLEN, SidFile
+
+    LOAD = 0x1000
+    data = bytearray(200)
+
+    def addr_of(off):
+        return LOAD + off - (HLEN - 1)
+
+    # subtune i, voice v -> orderlist at offset 60 + 10*i + 2*v
+    for i in range(3):
+        for v in range(3):
+            off = 60 + 10 * i + 2 * v
+            a = addr_of(off)
+            so = v + i * 6                     # the non-interleaved stride
+            data[10 + so] = a & 0xFF           # track LO array at 10
+            data[30 + so] = a >> 8             # track HI array at 30
+            # Subtunes 0 and 2 name pattern 0, which exists. Subtune 1 names
+            # pattern 5, which does not: pattern_used is 1.
+            data[off] = 0x00 if i != 1 else 0x05
+            data[off + 1] = 0xFF               # end of orderlist
+    sid = SidFile(path="synthetic", data=bytes(data), name="", author="",
+                  released="", load_addr=LOAD, subtunes=3)
+    det = Detection(track_lo=10, track_hi=30, track_voices=3,
+                    pattern_lo=100, pattern_hi=110, pattern_used=1,
+                    read_track_version=0, code_spans=[])
+    return sid, det
+
+
 def test_refs_are_read_before_the_placeholder_reset():
     """The defect the first run of this census had.
 
@@ -77,14 +117,17 @@ def test_refs_are_read_before_the_placeholder_reset():
     DEFAULT_TRACK before the census block is reached, so reading `built` there
     reports that placeholder's three bytes as the subtune's own references.
     Commando's subtune 14 came out as "3 voices, 3 refs, 0 dangling" -- a row
-    that cannot exist, because such a subtune would have been emitted. Its
-    real reading is 3 refs and 3 dangling.
+    that cannot exist, because such a subtune would have been emitted at all.
+    Its real reading is every reference dangling.
     """
-    _, _, rows, _ = _census("Commando.sid")
-    r = next(x for x in rows if x["subtune"] == 14)
-    assert r["fate"] != "emitted"
+    sid, det = _placeholder_fixture()
+    cen = []
+    convert_tracks(sid, det, lambda *a, **k: None, census=cen)
+    r = next(x for x in cen if x["subtune"] == 1)
+    assert r["fate"] == "placeholder", cen
     assert r["voices_ok"] == 3
-    assert r["dangling"] == r["refs"] == 3, (
+    assert r["refs"] > 0
+    assert r["dangling"] == r["refs"], (
         "a subtune with resolving voices and no dangling reference would "
         "have been emitted -- this is the placeholder being measured")
 

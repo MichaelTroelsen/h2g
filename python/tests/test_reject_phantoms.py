@@ -222,13 +222,21 @@ def test_the_bounded_files_end_exactly_where_the_pattern_table_begins(name, exte
     and its subtune 9 ($6C16 $1840 $3C56) as one that merely "resolves", and
     the bound lands on exactly that boundary without being told.
     """
+    import dataclasses
     sid = load_sid(str(CORPUS / f"{name}.sid"))
     det = detect(sid, lambda m: None)
     assert track_table_extent(sid, det) == extent
     last_cell = max(det.track_lo, det.track_hi) + \
         (det.track_voices - 1) + (extent - 1) * det.track_voices * 2
     assert last_cell + 1 == det.pattern_lo
-    assert len(convert_tracks(sid, det, lambda *a, **k: None)) // 3 == extent
+    # The emitted count is checked with the player's sfx dispatch switched
+    # OFF, because this test is about the layout bound alone. With it on,
+    # Spellbound emits 3 rather than 4 -- the dispatch is tighter there and
+    # wins, which is the composition working, not this bound failing.
+    # test_tracks.test_the_dispatch_caps_the_orderlists_a_file_emits pins
+    # the other side and their agreement.
+    layout_only = dataclasses.replace(det, music_subtunes=None)
+    assert len(convert_tracks(sid, layout_only, lambda *a, **k: None)) // 3 == extent
 
 
 @needs_corpus
@@ -254,6 +262,11 @@ def test_the_bound_reaches_no_other_corpus_file():
             continue
         assert track_table_extent(sid, det) != 0, \
             f"{path.name}: subtune 0's own cells are in a table"
+        # The player's sfx dispatch is switched off on BOTH sides: this test
+        # measures the extent's reach, and leaving the dispatch on either side
+        # would silently subtract the eight files it also bounds. With it off
+        # the seventeen below are unchanged by the merge, which is the claim.
+        det = dataclasses.replace(det, music_subtunes=None)
         unbounded = dataclasses.replace(det, pattern_lo=-1, pattern_hi=-1,
                                         code_spans=[])
         assert track_table_extent(sid, unbounded) is None
