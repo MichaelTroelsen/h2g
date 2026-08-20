@@ -805,11 +805,23 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     left, right = [attack], [attack_note if attack_note is not None else 0x00]
     extra = calls - 1             # entry 0 is already one call
     if attack_note is not None:
-        # The fixed pitch is the *first* frame's, and the rest of the attack
-        # returns to the played note -- so the remaining calls are spelled out
-        # rather than folded into a delay, which would keep the fixed pitch for
-        # all of them. Measured: held for the whole window it puts 904 frames at
-        # the fixed pitch where the original has 226, and melody collapses.
+        # **The remaining calls are spelled out rather than folded into a
+        # delay, and the reason recorded here for 130 versions was wrong.**
+        # It read "the rest of the attack returns to the played note", which
+        # `$00` cannot do: the packed player tests `lda notetbl / bne`
+        # (player.s:976-977), so `$00` is *no frequency write at all* and the
+        # fixed pitch is held either way. What separates the two forms is the
+        # other end -- a delay's right side is read on its final call, so
+        # `_first_frame_lead`'s `$80` would re-assert the base note where
+        # these `$00`s leave the pitch alone.
+        #
+        # Holding is what the player does. One_on_One's GT 2 (`$44`, frames
+        # byte 4 -> 2), 372 onsets and no distribution on any offset: the
+        # played note on frame 0, then `$4310` on frames 1, 2 **and** 3 --
+        # one frame past the attack waveform, which drops back to the
+        # record's own `+2` on frame 3. So the fixed pitch outlives the stage
+        # it belongs to, and a form that ended it early would be the wrong
+        # one.
         left += [attack] * extra
         right += [0x00] * extra
     elif extra == 1:
@@ -2645,6 +2657,10 @@ EFFECT_PITCH_SEQ_MASK = 0x10    # the effect byte's bit-$10 arpeggio
 # halves bit $04's attack -- see `_two_stage_frames`, which is where the
 # measurement behind that is recorded.
 EFFECT_FIXED_PITCH_MASK = 0x40
+# Bit $80: the sfx drum. Named here because bit $40's pitch is only emitted
+# from the two-stage block on a record that does *not* set it -- see the call
+# site, and section 7.qqq for why the two cannot share a frame.
+EFFECT_SFX_DRUM_MASK = 0x80
 WAVE_GATE_BIT = 0x01            # $D404 bit 0
 CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
@@ -2973,14 +2989,57 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         multiplier, budget, written=no_test_restart)
                     if both is not None:
                         return both
-            # `_fixed_attack_note(sid, det, i)` is deliberately NOT passed here.
-            # Effect bit $40's pitch belongs on the attack's *third* frame, not
-            # its first, and its second frame belongs to bit $80's drum -- the
-            # three bits interleave by frame rather than stacking. Applied to
-            # frame 0 it puts the drum's pitch where the played note goes and
-            # melody falls 85% -> 39% on the one file it reaches. See
-            # H2G-CONVERSION-METHOD.md section 7.qqq.
+            # Effect bit $40's fixed attack pitch, and the gate on it is bit
+            # $80 rather than the bit itself.
+            #
+            # § 7.qqq measured the balloon song's three-bit drum -- $04, $80
+            # and $40 interleaved by frame, the played note at offset 0, $80's
+            # pitch at offset 1 and $40's at offset 2 -- and concluded that
+            # `_fixed_attack_note` must never be passed here, because on that
+            # record frame 1 belongs to $80 and melody falls 85% -> 39%. That
+            # is a profile of a record carrying **all three** bits. Measured on
+            # a `$44` record -- One_on_One's GT 2, 372 onsets, no distribution
+            # at all on any offset:
+            #
+            #   offset 0   wf $43 (the record's own +2)   the PLAYED note
+            #   offset 1   wf $81 (the attack)            $4310  <- fixed
+            #   offset 2   wf $81                         $4310
+            #   offset 3   wf $43                         $4310
+            #   offset 4   wf $42 (gate off)              the next note
+            #
+            # With no $80 in the record nothing else claims frame 1, and the
+            # fixed pitch starts there -- exactly where `_two_stage_entries`
+            # puts it, since the frame-0 lead writes no note. So the gate is
+            # the *drum* bit, per record: `arp_style` is this record's own +7,
+            # the same per-record rule `_fixed_attack_note` itself applies to
+            # $40 after Thundercats.
+            #
+            # **`VIBRATO.md`'s `atkpitch` bucket cannot move on this, and it
+            # is not a defect in the emission.** That census names a row's
+            # cause from the record's effect bits, so a `$44` record with no
+            # other pitch-moving bit this player reads is filed under `$40`
+            # whatever is actually moving its pitch -- and in the two rows
+            # holding 543 of the bucket's 569 reversals it is something else
+            # entirely. One_on_One's `$06A6` walks the pitch over offsets
+            # 3-7 of every note (`$1920 $19e2 $1aa4`), and Knucklebusters'
+            # `$0AAD` runs a plain 4-5 frame vibrato (`$0f14`..`$0ff0`, 22
+            # reversals in one 84-frame note). Worse, `pitch_motion` skips
+            # frames `a-1..a+1` and this effect is a *step to a constant*, so
+            # even a perfect emission contributes ~0 reversals: wiring it
+            # leaves the vibrato census on all nine affected files
+            # byte-identical. What it does move is One_on_One's `slides`,
+            # 4325 -> 4139 against the original's 2809, with every other
+            # column on all nine files unchanged.
+            #
+            # The other four `atkpitch` rows cannot reach this code at all:
+            # Knucklebusters, Deep_Strike, Sanxion and Food_Feud all have
+            # `det.wave_program < 0`, and that array is where the note index
+            # lives, so `_fixed_attack_note` returns None for every record in
+            # them. Locating it is `detect.py` work, not this call site's.
             two = _two_stage_entries(wave, data[at], frames, multiplier,
+                                     attack_note=(
+                                         None if arp_style & EFFECT_SFX_DRUM_MASK
+                                         else _fixed_attack_note(sid, det, i)),
                                      budget=budget,
                                      written=no_test_restart)
             if two is not None:
