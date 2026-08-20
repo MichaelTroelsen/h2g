@@ -394,6 +394,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
 
         subtune   index as the PSID header numbers it
         fate      "emitted" | "placeholder" | "trimmed" | "beyond_table"
+                  | "sfx"
         why       the single reason, for grouping
         voices_ok how many of the three pointers resolved inside the file
         refs      pattern numbers named across the three voices
@@ -434,9 +435,22 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     addr_ok: List[List[bool]] = []
     subtunes = sid.subtunes
     beyond_why = "track table is shorter than the header"
+    # The player's own answer, where it has one, comes first: `find_music_
+    # subtunes` reads a `CMP #imm / BCS / JMP` dispatch at the init entry, and
+    # everything at or above the immediate is a game sound effect with its own
+    # routine and no orderlist here at all. That is a statement about the file
+    # rather than an inference from whether a pointer resolves -- which is the
+    # test the trailing-run trim below applies, and which SUBTUNES.md's
+    # headline finding says is not evidence of music either way.
+    sfx_from = sid.subtunes
+    if det.music_subtunes is not None and det.music_subtunes < subtunes:
+        sfx_from = subtunes = det.music_subtunes
+        log(f"Header claims ${sid.subtunes:X} subtune(s); the player's init "
+            f"dispatch says ${subtunes:X} are music and the rest are sound "
+            "effects")
     if det.subtunes_available:
         subtunes = min(subtunes, det.subtunes_available)
-        if subtunes < sid.subtunes:
+        if subtunes < sfx_from:
             log(f"Header claims ${sid.subtunes:X} subtune(s); the track table holds "
                 f"${subtunes:X}")
     # And the same bound for every other engine, read off the file's layout --
@@ -450,8 +464,17 @@ def convert_tracks(sid: SidFile, det: Detection, log,
         beyond_why = "track table cells belong to another table"
     if census is not None:
         for i in range(subtunes, sid.subtunes):
-            census.append({"subtune": i, "fate": "beyond_table",
-                           "why": beyond_why,
+            # Three bounds now cap the count, and a dropped subtune is
+            # attributed to the one that actually dropped it. `sfx_from` is
+            # the player's own dispatch, so anything at or above it is a
+            # sound effect whatever the layout says; below it the drop came
+            # from a table bound, and `beyond_why` says which.
+            sfx = i >= sfx_from
+            why = ("the player's init dispatches it to the sound-effect "
+                   "routine" if sfx else beyond_why)
+            census.append({"subtune": i,
+                           "fate": "sfx" if sfx else "beyond_table",
+                           "why": why,
                            "voices_ok": 0, "refs": 0, "dangling": 0})
     for i in range(subtunes):
         voices: List[List[int]] = []

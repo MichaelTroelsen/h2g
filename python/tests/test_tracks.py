@@ -66,3 +66,53 @@ def test_the_fe_operand_is_never_read_as_a_pattern():
     data = bytes([0x01, 0xFE, 0x09, 0x02, 0xFD])
     assert _build_track(data, 0, 0, fd_ends=True,
                         fe_command=True) == [1, 2, 0xFF, 0xFD]
+
+
+# The player's init dispatch, per file: header subtunes, the CMP immediate,
+# and how many orderlists convert_tracks emitted before the cap existed. Five
+# of the eight lose slots; the other three were already right, which is what
+# makes the cap a *reading* rather than a tuning -- it agrees with the
+# resolving-pointer trim wherever that trim happened to land correctly.
+DISPATCH_TRACKS = {
+    "Crazy_Comets.sid": (17, 2, 17),
+    "Geoff_Capes_Strongman_Challenge.sid": (24, 8, 21),
+    "Gerry_the_Germ.sid": (23, 7, 7),
+    "Hollywood_or_Bust.sid": (10, 3, 3),
+    "Knucklebusters.sid": (11, 3, 3),
+    "Spellbound.sid": (13, 3, 13),
+    "Thing_on_a_Spring.sid": (17, 1, 13),
+    "Warhawk.sid": (18, 9, 18),
+}
+
+
+@needs_corpus
+def test_the_dispatch_caps_the_orderlists_a_file_emits():
+    """Every file the dispatch is read on emits exactly its music count.
+
+    The `before` column is what the trailing-run trim alone produced, and it
+    is right on three files and too generous on five. Recorded so that a
+    later change to either rule shows which of the two moved.
+    """
+    from h2g.convert import _detect_tables
+    from h2g.detect import find_music_subtunes
+    from h2g.sidfile import load_sid
+    from h2g.tracks import convert_tracks
+
+    for name, (declared, music, before) in DISPATCH_TRACKS.items():
+        sid, det = _detect_tables(load_sid(str(CORPUS / name)),
+                                  lambda *a, **k: None)
+        assert sid.subtunes == declared, name
+        assert det.music_subtunes == music, name
+        tracks = convert_tracks(sid, det, lambda *a, **k: None)
+        assert len(tracks) == music * 3, name
+        # ...and the same conversion with the dispatch unread is `before`,
+        # which is the claim that the cap is what moved these files.
+        det.music_subtunes = None
+        was = convert_tracks(sid, det, lambda *a, **k: None)
+        assert len(was) == before * 3, name
+        # The cap only ever removes a trailing run: every orderlist it keeps
+        # is the one it kept before, byte for byte. That is what says the
+        # music of these files did not change, only how much of the file
+        # after it was emitted.
+        assert was[:music * 3] == tracks, name
+        assert find_music_subtunes(sid) == music, name
