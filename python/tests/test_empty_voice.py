@@ -146,4 +146,10 @@ def test_rasputin_keeps_every_subtune_without_legal_restart():
     valid = sum(1 for s in range(subtunes)
                 if all(_songlen(tracks[s * 3 + v]) for v in range(3)))
     assert valid == subtunes, "greloc.c would truncate at the first shortfall"
-    assert subtunes == 17
+    # 2, not the 17 this pinned before `tracks.track_table_extent` landed:
+    # Rasputin's track LO array is at $C72B and the pattern LO array at $C737,
+    # a 12-byte gap = 2 subtunes x 3 voices x 2 bytes. The other fifteen read
+    # their pointers out of the pattern table. The guard above -- that every
+    # emitted subtune has three non-empty voices -- is what this test is for
+    # and it passes either way; only the count was stale.
+    assert subtunes == 2

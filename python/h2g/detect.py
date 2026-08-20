@@ -42,6 +42,11 @@ class Detection:
     # or 0 when nothing bounds it. The digi engine's orderlist table is capped
     # by the pattern table that follows it.
     subtunes_available: int = 0
+    # How many of the header's subtunes are MUSIC, read from the player's own
+    # init dispatch, or None where the player has no such dispatch. The rest
+    # are the game's sound effects and have nothing in the orderlist table.
+    # See find_music_subtunes().
+    music_subtunes: Optional[int] = None
     # Version 2 only: the transpose value lives in the byte *after* the command
     # byte rather than in the command byte's own low 7 bits. See detect().
     transpose_operand: bool = False
@@ -615,6 +620,73 @@ def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     return True
 
 
+# --- The music / sound-effect split ----------------------------------------
+#
+# A PSID header's song count is not a count of tunes. Eight corpus files carry
+# a rip whose init entry is a *dispatch*: the accumulator holds the subtune
+# number, and everything below a constant is music while everything at or
+# above it is one of the game's sound effects, which has its own routine, its
+# own tables and nothing at all in the orderlist table:
+#
+#     1EC0  8D BF 1E  STA $1EBF     ; Knucklebusters, init $1EC0
+#     1EC3  C9 03     CMP #$03      ; <- the split: three tunes
+#     1EC5  B0 03     BCS $1ECA     ; >= 3 -> sound effect
+#     1EC7  4C 0D 04  JMP $040D     ; music init
+#     1ECA  38        SEC
+#     1ECB  E9 03     SBC #$03      ; effect number = A - 3
+#     1ECD  20 E1 1E  JSR $1EE1     ; -> $1EF0,X, a table of exactly 8 bytes
+#     1ED0  20 40 1A  JSR $1A40     ; ...and a second player, at $1A00
+#
+# The constant is the number this converter should emit, and it is the only
+# statement of it that comes from the player rather than from a guess about
+# the track table's extent. `convert_tracks` already trims a trailing run of
+# unusable subtunes, but that test can only see whether a pointer resolves --
+# and SUBTUNES.md's own headline finding is that a resolving pointer is not
+# evidence of music. This is: at the boundary the CMP names, every one of the
+# eight files' pointer table stops being ordered. Warhawk's rows 0-8 run
+# $1847..$1A14 and its row 9 is $6C16 $1840 $3C56, the row SUBTUNES.md
+# already singled out as "one resolves, and it is not a subtune". The
+# music init confirms the same number a second way: Warhawk's $1EF1 indexes
+# two 9-byte tables at $159A and $15A3 with the subtune number.
+#
+# Read at the init address rather than by searching the file, because
+# `CMP #imm / BCS / JMP` is a common enough shape that a free search would
+# match player code everywhere. The BCS displacement is required to be
+# exactly 3 -- the branch skips the JMP and nothing else, which is what makes
+# the pair a two-way dispatch rather than a range check with a body.
+SFX_DISPATCH_SCAN = 48          # bytes of the init routine to look through
+
+
+def find_music_subtunes(sid: SidFile) -> Optional[int]:
+    """How many subtunes are music, per the player's init dispatch, or None.
+
+    Deliberately silent on a file that does not have the shape: every other
+    player in the corpus reaches its music init unconditionally, and there is
+    then nothing to say about the header's count that this module knows.
+    """
+    data = sid.data
+    start = sid.to_offset(sid.init_addr)
+    if not 0 <= start < len(data):
+        return None
+    for k in range(SFX_DISPATCH_SCAN):
+        i = start + k
+        if i + 7 > len(data):
+            break
+        if (data[i] != 0xC9 or data[i + 2] != 0xB0
+                or data[i + 3] != 0x03 or data[i + 4] != 0x4C):
+            continue
+        n = data[i + 1]
+        if n < 1:
+            continue        # "no subtune is music" is not a reading worth having
+        # The music init has to be somewhere this file can reach; a dispatch
+        # whose JMP lands outside the image is not the shape it looks like.
+        target = sid.to_offset(data[i + 5] | data[i + 6] << 8)
+        if not 0 <= target < len(data):
+            continue
+        return n
+    return None
+
+
 def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     """Read one player's tables out of `sid`.
 
@@ -1134,6 +1206,12 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         elif abs(ft.detune) > 0.2:
             log(f"Note frequency table....: ${ft.addr:04X}, tuned "
                 f"{-100 * ft.detune:.0f} cents flat of Goattracker's")
+
+    det.music_subtunes = find_music_subtunes(sid)
+    if det.music_subtunes is not None:
+        log(f"Subtune dispatch........: init ${sid.init_addr:X} sends "
+            f"${det.music_subtunes:X} subtune(s) to the music player and the "
+            "rest to the sound-effect routine")
 
     det.filter = find_filter(sid, det)
     if det.filter is not None:
