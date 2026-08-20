@@ -17,3 +17,10 @@ build/
 
 # VICE monitor output, written beside the repo when a player is traced by hand.
 monlog_out.txt
+
+# Reference material kept beside the repo rather than in it: the 6581 datasheet.
+# Also, and this is why it is listed rather than left untracked: fidelity.py:3165
+# stamps every generated report with `git status --porcelain -- .`, which counts
+# UNTRACKED files -- so one stray file marks FIDELITY.md `-dirty` however clean
+# the tracked tree is.
+6581.pdf
