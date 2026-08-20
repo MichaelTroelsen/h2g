@@ -205,6 +205,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                        slide_high_first: bool = False,
                        steps: Optional[List[int]] = None,
                        tie: bool = False,
+                       gate_hold: bool = False,
                        rest_keyoff: bool = False,
                        rest_wave: bool = False) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
@@ -232,6 +233,12 @@ def _build_raw_pattern(data: bytes, addr: int,
     consumed (terminator included) -- what phantom_patterns needs to know
     which file bytes an entry would claim as pattern data. Nothing is
     appended when the decode fails.
+
+    `gate_hold` says this player's note-end gate-off sits behind
+    `LDA counter,X / BNE` on the *hold* path of a `DEC counter,X / BMI
+    fetch-next` sequencer, so an event whose `wait` field is zero never
+    reaches it and ties into the next note. See detect.find_gate_hold and the
+    `pending_tie` assignment below; it does nothing unless `tie` is also set.
 
     `note_base` shifts every note byte before it becomes a Goattracker note,
     for the player whose frequency table does not start where Goattracker's
@@ -445,7 +452,49 @@ def _build_raw_pattern(data: bytes, addr: int,
             # also zeroes `vibtime`, so the vibrato restarts on the landing --
             # which is what the original does at the end of a slide.
             cmd1, cmd2 = 3, 0x00
-        pending_tie = tie and bool(no_adsr)
+        # ...and so does an event whose `wait` field is **zero**, for a
+        # different reason in the same routine. The players sequence a note's
+        # end as
+        #
+        #     09E4  DEC counter,X      ; counter = status & $1F, written at
+        #     09E7  BMI fetch-next     ;   fetch time ($0A35 in Human_Race)
+        #     09E9  JMP hold-path      ; -> the gate-off test at $0AD3
+        #
+        # and the gate-off test lives on the **hold** path only:
+        #
+        #     0AD6  LDA status,X / AND #$20 / BNE skip   ; bit 5 -- the tie above
+        #     0ADD  LDA counter,X        / BNE skip      ; not the last frame
+        #     0AE2  LDA wave,X / AND #$FE / STA $D404,Y  ; gate off
+        #
+        # A `wait` of 0 loads the counter with 0, so the very first DEC
+        # underflows, `BMI` is taken, and the hold path -- and with it the
+        # only gate-off this player performs at a note's end -- is never
+        # executed at all. The next note therefore arrives with the gate
+        # still open: a frequency change and no attack, exactly what bit 5
+        # produces deliberately. Human_Race's voice 1 is 414 such rows and
+        # sounded 452 attacks against the original's 48.
+        #
+        # Whether the *player* ties there is a property of the player and not
+        # of this byte -- see detect.find_gate_hold, which reads the one
+        # branch target that decides it, and note that `gate_hold` is what
+        # keeps Saboteur_II out. This condition is not that test.
+        #
+        # A **bit-6 event is excluded**, because a bit-6 event is a rest and
+        # the rest branch closes the gate on its own, off the counter path
+        # entirely -- Human_Race `$0A7C DEC $0DBC` (the mask ANDed into $D404
+        # at $0A95), Saboteur_II `$F13C DEC $F566,X` (ANDed in at $F465). So
+        # a zero-wait *rest* ends with the gate shut and the next note really
+        # does attack. **It is byte-inert on all 83 convertible corpus files**
+        # -- measured, not assumed, by flipping it and hashing every
+        # conversion -- so nothing here rests on it and no report number is
+        # evidence for it; it is kept because the two players say so and
+        # pinned by tests/test_gate_hold.py so a file that does exercise it
+        # cannot quietly get the other reading. It was briefly believed to be
+        # what spared Saboteur_II. It is not: with it in place Saboteur_II
+        # still fell from melody 98% to 69% until `gate_hold` excluded the
+        # file outright.
+        pending_tie = tie and (bool(no_adsr)
+                               or (wait == 0 and not no_note and gate_hold))
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
@@ -839,7 +888,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
-                              steps=steps, tie=tie)
+                              steps=steps, tie=tie,
+                              gate_hold=tie and det.gate_hold)
 
 
 def pattern_top_note(events: List[int]) -> int:

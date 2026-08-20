@@ -90,6 +90,10 @@ class Detection:
     # Whether the player kills the envelope when a note ends, so the record's
     # release nibble is never audible -- find_envelope_cut().
     envelope_cut: bool = False
+    # Whether the note-end gate-off sits behind `LDA counter,X / BNE` on the
+    # hold path of a `DEC counter,X / BMI fetch` sequencer, so a zero-`wait`
+    # event never reaches it and ties into the next note -- find_gate_hold().
+    gate_hold: bool = False
     # Whether the player tests effect bit $40 -- a fixed pitch for the attack,
     # taken from its own note table. _find_effect_bit40().
     effect_bit40: bool = False
@@ -1072,6 +1076,11 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Note end................: gate off and envelope zeroed "
             "(release nibble never sounds)")
 
+    det.gate_hold = find_gate_hold(sid)
+    if det.gate_hold:
+        log("Zero-wait event.........: skips the note-end gate-off "
+            "(ties into the next note)")
+
     det.status_bit6 = _find_status_bit6(data)
     if det.status_bit6:
         det.rest_silence_kind = _rest_silence_kind(data)
@@ -1988,6 +1997,111 @@ ENVELOPE_CUT_SHAPES = (
 def find_envelope_cut(sid: SidFile) -> bool:
     """Whether this player zeroes AD and SR when a note ends (33 files)."""
     return any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES)
+
+
+# `LDA status,X / AND #$20 / BNE skip / LDA counter,X / BNE skip` -- the two
+# guards in front of the note-end gate-off. The first is status bit 5, the tie
+# `_build_raw_pattern` has read for as long as `tie` has existed; the second is
+# the one this shape exists for.
+GATE_HOLD_SHAPE = "BD ?? ?? 29 20 D0 ?? BD ?? ?? D0 ??"
+GATE_HOLD_COUNTER = 8       # offset of the second LDA's operand low byte
+# `DEC counter,X / BMI fetch-next` -- the sequencer whose underflow is what
+# makes a zero-`wait` event skip the guard above. Anchored on the *same* cell.
+GATE_HOLD_DEC = "DE {lo} {hi} 30"
+# How far back from that DEC to look for the row clock's own bypass branch.
+# Saboteur_II's two are 20 and 12 bytes before it; Human_Race's is 12.
+GATE_HOLD_CLOCK_WINDOW = 40
+GATE_HOLD_BRANCHES = (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)
+
+
+def _rel_target(data: bytes, at: int) -> int:
+    """File offset a two-byte relative branch at `at` jumps to."""
+    op = data[at + 1]
+    return at + 2 + (op - 256 if op > 127 else op)
+
+
+def find_gate_hold(sid: SidFile) -> bool:
+    """Whether a zero-`wait` event in this player ties into the next note.
+
+    The players end a note like this (Human_Race; Saboteur_II is the same
+    routine at $F08F and $F1BF):
+
+        09E4  DE AD 0D  DEC $0DAD,X    ; counter = the event's status & $1F
+        09E7  30 09     BMI $09F2      ; underflowed -> fetch the next event
+        09E9  4C D3 0A  JMP $0AD3      ; else -> the hold path
+
+        0AD6  BD B0 0D  LDA $0DB0,X    ; the event's status byte
+        0AD9  29 20     AND #$20
+        0ADB  D0 15     BNE $0AF2      ; bit 5 set    -> no gate-off
+        0ADD  BD AD 0D  LDA $0DAD,X    ; the counter, after the DEC
+        0AE0  D0 10     BNE $0AF2      ; not zero yet -> no gate-off
+        0AE2  BD B3 0D  LDA $0DB3,X / AND #$FE / STA $D404,Y
+
+    The gate-off is on the hold path *only*. A `wait` of 0 loads the counter
+    with 0, the first DEC underflows, BMI is taken, and the hold path is never
+    executed -- so the note ends with the gate still open and the next note
+    sounds no attack, exactly as bit 5 makes it do on purpose.
+
+    **That is not the whole routine, and the half that was missing is what
+    tells these two players apart.** Both are called every frame and advance a
+    row only when a clock cell reaches its reload value; on the calls in
+    between, neither reaches the `DEC`. What they do instead is the
+    discriminator, and it is one branch target:
+
+        Human_Race   09D5  CMP $0DCF / D0 15  BNE $09EF -> JMP $0AF2
+        Saboteur_II  F080  CMP $F576 / D0 0F  BNE $F094 -> JMP $F1BC
+
+    $0AF2 is the address *both* of Human_Race's guards skip to -- the row
+    clock's bypass lands past the gate-off, so a zero-`wait` note really does
+    keep its gate. $F1BC is three bytes *before* Saboteur_II's `LDA status,X`:
+    its bypass lands inside the test, with the counter still sitting at 0, so
+    the gate shuts on the very next call the clock does not tick. The player
+    memory confirms it frame by frame (`siddump -wf566,f557,f55a`, subtune 0):
+    voice 0's mask cell $F566 reads `FF FE / FF FE / FF FE` across the
+    zero-`wait` arpeggio of pattern entry 20, one gate-off per note.
+
+    So the criterion is: the bypass branch must NOT reach the hold path. Where
+    it does, this returns False and the zero-`wait` rule stays off -- forcing
+    it on takes Saboteur_II's melody 98% -> 69% and its `retrig` 1.00 -> 0.72.
+
+    Guards against matching the shapes by accident. The counter the second
+    `LDA` reads must be the cell some `DEC abs,X / BMI` decrements -- `AND
+    #$20 / BNE` on its own is in 78 of the 83 convertible corpus files and
+    identifies nothing on its own, which is the "identify the cell before
+    trusting a hit" rule. The two `BNE`s must skip to the same place, since
+    the shape only means what it says when both guards bypass the same code.
+    And the bypass scan is anchored on the located `DEC` and bounded to the
+    40 bytes in front of it rather than run over the file.
+    """
+    data = sid.data
+    at = 0
+    while True:
+        i = search_file(data[at:], GATE_HOLD_SHAPE)
+        if i <= -1:
+            return False
+        i += at
+        at = i + 1
+        # Both guards must skip to the same place.
+        if _rel_target(data, i + 5) != _rel_target(data, i + 10):
+            continue
+        lo, hi = data[i + GATE_HOLD_COUNTER], data[i + GATE_HOLD_COUNTER + 1]
+        dec = GATE_HOLD_DEC.format(lo=f"{lo:02X}", hi=f"{hi:02X}")
+        d = search_file(data, dec)
+        if d <= -1:
+            continue
+        # `DEC counter,X / BMI fetch` -- the hold path is the instruction
+        # after the BMI, and it is a JMP in every player carrying the shape.
+        jmp = d + 5
+        if jmp + 2 >= len(data) or data[jmp] != 0x4C:
+            continue
+        hold = sid.to_offset(_addr16(data, jmp + 1, jmp + 2))
+        # Does the row clock's bypass reach the gate-off test? If it does, a
+        # zero-`wait` event is gated off on the next call and does not tie.
+        lo_w = max(0, d - GATE_HOLD_CLOCK_WINDOW)
+        bypass = any(data[p] in GATE_HOLD_BRANCHES
+                     and _rel_target(data, p) in (jmp, hold)
+                     for p in range(lo_w, d))
+        return not bypass
 
 
 # `LDA duration,X / AND #$1F / CMP #imm / BCC out` -- the per-note length gate
