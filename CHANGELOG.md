@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.335 — 2026-08-20
+
+- the four owed merges land -- subtune bounds, fidelity harness, SongSpeeds, and the zero-wait tie
+
 ## 0.5.334 — 2026-08-20
 
 - the two subtune bounds compose, and the six-task batch is recorded
