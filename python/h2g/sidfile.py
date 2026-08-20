@@ -265,12 +265,17 @@ class FreqTable:
     Goattracker (-1 for a table whose entry 0 is an unused $0000), and
     `detune` is what is left over: the semitones the table sits below
     Goattracker's tuning, which no note number can express.
+
+    `ambiguous` says the file offered more than one validated table and they
+    do **not** agree about the tuning, with nothing given to choose between
+    them -- so `detune` here is one of two answers rather than the file's.
     """
     addr: int          # C64 address of entry 0
     start: int         # first entry with a frequency in it
     length: int        # entries in the validated run
     shift: int
     detune: float
+    ambiguous: bool = False
 
 
 def _semitones(freq: float) -> float:
@@ -310,20 +315,37 @@ def _freq_table_sites(data: bytes):
             yield data[i + 2] | (data[i + 3] << 8)
 
 
-def find_freq_table(sid: "SidFile") -> Optional[FreqTable]:
+def find_freq_table(sid: "SidFile", near: Optional[int] = None) -> Optional[FreqTable]:
     """The player's note frequency table, or None if no candidate validates.
 
     Six corpus files hide their lookup behind an idiom this does not know; a
     file with no table found keeps the default mapping, which is what it had
-    before this existed. The longest validated run wins, so a file carrying
-    two players (Powerplay Hockey has both a classic and a digi one) is read
-    from the table with the most entries -- and where the two disagree about
-    the *shift*, neither is applied, because a wrong shift transposes a whole
-    tune and no shift merely leaves it as it was.
+    before this existed.
+
+    **A file can carry two players, and then "the file's table" is not a
+    thing.** Powerplay Hockey has one at `$3A36` driving its nine game cues
+    and one at `$4895` driving the tune, and they are tuned 0.63 semitones
+    apart -- the tune's is NTSC, the cues' is not. The rule used to be "the
+    longest validated run wins", which separates those two by **one entry**
+    (96 against 95): a coin flip standing in for a choice. `near` is a byte
+    offset into `data` -- the caller's own player, its pattern pointers for
+    preference, the rule `_nearest_table` already uses -- and the table
+    nearest it wins. Without `near` the longest run still wins, so a caller
+    that has no engine to point at behaves exactly as before.
+
+    Two guards on top, for what is left when the candidates disagree:
+
+    * on the **shift**, neither is applied, because a wrong shift transposes a
+      whole tune and no shift merely leaves it as it was;
+    * on the **detune** there is no such null action -- naming a tune on the
+      wrong tuning and naming it on none are both wrong, and by the same 0.65
+      semitones -- so the answer is reported rather than suppressed. An
+      `ambiguous` table is one whose `detune` was picked by a rule that had
+      nothing to go on, and a caller applying it (siddump's `-c`, say) is
+      entitled to know that. Passing `near` resolves the choice and clears it.
     """
     data = sid.data
-    best: Optional[FreqTable] = None
-    shifts = set()
+    cands: list[FreqTable] = []
     seen = set()
     for addr in _freq_table_sites(data):
         if addr in seen:
@@ -342,13 +364,32 @@ def find_freq_table(sid: "SidFile") -> Optional[FreqTable]:
         shift = round(offset)
         if abs(offset - shift) > _GRID_TOLERANCE:
             shift = 0
-        shifts.add(shift)
-        cand = FreqTable(addr, start, run, shift, offset - shift)
-        if best is None or run > best.length:
-            best = cand
-    if best is not None and len(shifts) > 1:
+        cands.append(FreqTable(addr, start, run, shift, offset - shift))
+    if not cands:
+        return None
+    if near is None:
+        # `max` keeps the first of equal keys, which is the file order the
+        # old `run > best.length` walk kept.
+        best = max(cands, key=lambda c: c.length)
+    else:
+        best = min(cands, key=lambda c: (abs(sid.to_offset(c.addr) - near),
+                                         -c.length))
+    if len({c.shift for c in cands}) > 1:
         best = replace(best, shift=0, detune=best.detune + best.shift)
+    if near is None and _detunes_disagree(cands):
+        best = replace(best, ambiguous=True)
     return best
+
+
+def _detunes_disagree(cands: "list[FreqTable]") -> bool:
+    """True if these tables are not all tuned alike.
+
+    The threshold is the one that separates an index shift from a tuning:
+    below it the tables name the same pitches and which one is read cannot
+    change a note name, above it they do not.
+    """
+    detunes = [c.detune + c.shift for c in cands]
+    return bool(detunes) and max(detunes) - min(detunes) > _GRID_TOLERANCE
 
 
 @dataclass

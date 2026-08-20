@@ -22,6 +22,7 @@ import fidelity as F  # noqa: E402
 from h2g.convert import _detect_tables  # noqa: E402
 from h2g.goatwriter import find_song_speeds  # noqa: E402
 from h2g.sidfile import load_sid  # noqa: E402
+from test_fidelity import _Args, _row  # noqa: E402
 
 
 def _voice(frames, names=None):
@@ -188,3 +189,83 @@ def test_a_real_drift_survives_the_gate():
     got = F.drift(o, u)
     assert got["per_1000"] is not None
     assert abs(got["per_1000"] + 290) < 10
+
+
+# --- the "On N files this is exactly -1/(skip+1)" sentence -----------------
+#
+# v0.5.288 shipped that count as a literal 17, measured once by hand and
+# never revisited. v0.5.330's tempo fix took Human_Race's drift to 0.00 --
+# one file fewer in `moving` -- and nothing recomputed the sentence next to
+# it. `_drift_gate_skip_declined` and the summary in `report()` replace the
+# literal with a count taken from the rows themselves.
+
+
+@needs_corpus
+def test_gate_skip_declined_matches_the_pinned_relation():
+    """`_drift_gate_skip_declined` reproduces the relation
+    `test_the_drift_is_the_outer_gates_skipped_call` pins directly: it must
+    read False for the three corrected files and True for the three whose
+    correction `effective_frames` declines (skip > 100 in each case)."""
+    corrected = ("Delta.sid", "Tarzan.sid", "Thrust.sid")
+    declined = ("IK_plus.sid", "Ricochet.sid", "Sanxion.sid")
+    for name in corrected:
+        assert F._drift_gate_skip_declined(CORPUS / name, 0) is False, name
+    for name in declined:
+        assert F._drift_gate_skip_declined(CORPUS / name, 0) is True, name
+
+
+def test_gate_skip_declined_is_false_with_no_gate_or_bad_file():
+    # Commando has no outer-gate skip counter at all.
+    assert F._drift_gate_skip_declined(
+        pathlib.Path(__file__).resolve().parents[2] / "Commando.sid", 0
+    ) is False
+    assert F._drift_gate_skip_declined(pathlib.Path("no-such-file.sid"), 0) is False
+
+
+def _moving_row(name, drift_per_1000, gate_skip):
+    r = _row(name, "measured", melody=1.0, orig=10, ours=10)
+    r["drift_per_1000"] = drift_per_1000
+    r["drift_total"] = drift_per_1000 * 3
+    r["drift_gate_skip"] = gate_skip
+    return r
+
+
+def test_the_report_counts_gate_skip_declines_from_the_rows():
+    """The count in the sentence must track how many rows carry
+    `drift_gate_skip = True`, not a number written into the format string.
+
+    Three declining and two moving-for-another-reason: a reversion to the
+    old literal `17` would fail this (and every other count chosen here that
+    is not coincidentally 17)."""
+    rows = [
+        _moving_row("Sanxion.sid", -9.2, True),
+        _moving_row("IK_plus.sid", -8.8, True),
+        _moving_row("Ricochet.sid", -7.8, True),
+        _moving_row("Knucklebusters.sid", 285.7, False),
+        _moving_row("Rasputin.sid", -4.3, False),
+        _row("Exact.sid", "measured", melody=1.0, orig=10, ours=10),  # 0.0
+    ]
+    text = F.report(rows, _Args())
+    assert "On **3** file(s) this is exactly `-1/(skip+1)`" in text
+    assert "On 17 files" not in text
+    assert "On **17**" not in text
+
+
+def test_the_report_omits_the_sentence_when_no_row_declines():
+    rows = [_moving_row("Rasputin.sid", -4.3, False),
+            _row("Exact.sid", "measured", melody=1.0, orig=10, ours=10)]
+    text = F.report(rows, _Args())
+    assert "part company" in text
+    assert "-1/(skip+1)" not in text
+
+
+def test_the_report_count_changes_when_the_rows_do():
+    """A second, differently-sized population must print a different count
+    -- pinning that the sentence is derived, not memoised or hardcoded."""
+    few = [_moving_row("Sanxion.sid", -9.2, True),
+           _row("Exact.sid", "measured", melody=1.0, orig=10, ours=10)]
+    many = few + [_moving_row(f"Extra{i}.sid", -9.2, True) for i in range(5)]
+    text_few = F.report(few, _Args())
+    text_many = F.report(many, _Args())
+    assert "On **1** file(s) this is exactly `-1/(skip+1)`" in text_few
+    assert "On **6** file(s) this is exactly `-1/(skip+1)`" in text_many

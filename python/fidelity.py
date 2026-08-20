@@ -84,7 +84,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from h2g import __version__
-from h2g.convert import convert
+from h2g.convert import _detect_tables, convert
+from h2g.detect import detect
 from h2g.goatwriter import (FORMAT_GTS5, effective_frames,
                             find_song_speeds)
 from h2g.sidfile import find_freq_table, load_sid
@@ -388,6 +389,49 @@ def calibration(detune: float) -> int:
     tuning, so what is left in the comparison is the conversion.
     """
     return round(SIDDUMP_MIDDLE_C * 2 ** (detune / 12))
+
+
+def engine_freq_table(sid_path, opts: dict | None = None):
+    """The frequency table of the player *this conversion* reads, or None.
+
+    A file carrying two players carries two tables, and they need not be
+    tuned alike: Powerplay Hockey's cue engine sits on the semitone grid and
+    its tune engine 0.63 semitones below it, so which one names the original's
+    notes decides whether a row reads 99% or 12%. `find_freq_table`'s own
+    tie-break -- the longest validated run -- separates those two by one entry
+    out of 96, which is not a choice. Pointing it at the player `opts` selects
+    is (`--engine`; see sidfile.find_freq_table).
+
+    The detection is re-run rather than threaded through from the conversion:
+    it costs ~45 ms against a trace's seconds, and re-deriving the anchor by
+    hand is the shape that has published three wrong readings here.
+    """
+    sid = load_sid(str(sid_path))
+    near = None
+    try:
+        det = detect(sid, log=lambda m: None,
+                     engine=int((opts or {}).get("engine") or 0))
+    except Exception:                                          # noqa: BLE001
+        det = None
+    if det is not None:
+        # The pattern pointers for preference -- the anchor `_nearest_table`
+        # already uses -- with the instrument table as the fallback for a
+        # detection that found one and not the other.
+        for anchor in (det.pattern_lo, det.instr_start):
+            if anchor and anchor > 0:
+                near = anchor
+                break
+    return find_freq_table(sid, near=near)
+
+
+def table_calibration(sid_path, opts: dict | None = None) -> tuple[int, object]:
+    """(siddump -c value, the table it came from) for tracing the original.
+
+    Only a table off the semitone grid needs this -- a shifted one is a
+    converter defect and gets no allowance (see sidfile.find_freq_table).
+    """
+    ft = engine_freq_table(sid_path, opts)
+    return (calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0), ft
 
 
 @functools.lru_cache(maxsize=None)
@@ -3146,6 +3190,35 @@ def resolve_subtune(sid: Path, requested) -> int:
         return 0
 
 
+def _drift_gate_skip_declined(sid: Path, subtune: int) -> bool:
+    """Whether this file/subtune carries the outer gate's skip counter *and*
+    `effective_frames` declines to correct for it -- the exact condition
+    `drift`'s docstring names as producing `-1/(skip+1)` per frame. Re-detects
+    the player rather than threading `Detection`/`SongSpeeds` through
+    `_measure`, the same way
+    `test_drift.test_the_drift_is_the_outer_gates_skipped_call` establishes
+    the relation: `Delta.sid`/`Tarzan.sid`/`Thrust.sid` correct (skip < 100)
+    and `IK_plus.sid`/`Ricochet.sid`/`Sanxion.sid` decline (skip > 100).
+
+    Returns False both where the file has no such gate at all (most of the
+    corpus) and where detection fails -- a row that does not carry this
+    mechanism is not evidence either way, and the caller only wants a count
+    of the ones that do.
+    """
+    try:
+        det_sid, det = _detect_tables(load_sid(str(sid)), lambda *a, **k: None)
+        sp = find_song_speeds(det_sid, det if det.can_convert else None)
+    except Exception:  # noqa: BLE001 -- a file this fails on is not the mechanism
+        return False
+    skip = sp.skip_for(subtune) if sp else None
+    if not skip:
+        return False
+    raw = sp.frames_for(subtune)
+    if raw is None:
+        return False
+    return effective_frames(sp, subtune, skip_gate=True) == raw
+
+
 def measure(sid: Path, workdir: Path, opts: dict, args,
             multiplier: int = 1) -> dict:
     """One file, end to end, plus the record of which dimensions it compared.
@@ -3215,10 +3288,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     local_orig = workdir / "o.sid"
     shutil.copyfile(sid, local_orig)
     # The original is traced on its own tuning; ours is always Goattracker's.
-    # Only a table that is off the semitone grid needs this -- a shifted one is
-    # a converter defect and gets no allowance (see sidfile.find_freq_table).
-    ft = find_freq_table(load_sid(str(sid)))
-    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    # Read from the player `opts` selects, not from the file: a file with two
+    # engines has two tables and they need not be tuned alike (Powerplay
+    # Hockey). See engine_freq_table.
+    cal, ft = table_calibration(sid, opts)
     if cal:
         row["calibration"] = {"detune": round(ft.detune, 3), "c": cal}
     seconds = args.seconds
@@ -3364,6 +3437,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             elif dr.get("per_1000") is not None:
                 row["drift_per_1000"] = dr["per_1000"]
                 row["drift_total"] = dr["total"]
+                # Whether *this* file's drift is the outer gate's declined
+                # skip correction -- see _drift_gate_skip_declined. Computed
+                # only where a drift figure was actually reported, since it
+                # is only meaningful next to one.
+                row["drift_gate_skip"] = _drift_gate_skip_declined(sid, sub)
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a
@@ -3781,6 +3859,14 @@ def report(rows: list[dict], args) -> str:
             mags = sorted(abs(r["drift_per_1000"]) for r in moving)
             worst = max(drifted, key=lambda r: abs(r["drift_per_1000"]))
             med = mags[len(mags) // 2] if mags else 0.0
+            # Counted, not asserted: `drift_gate_skip` is set per row by
+            # `_drift_gate_skip_declined`, which re-detects the player and
+            # asks `effective_frames` itself whether it corrected for the
+            # outer gate's skip counter. A stale literal here (v0.5.288's
+            # "17") is exactly what went wrong -- Human_Race's tempo fix at
+            # v0.5.330 took its drift to 0.00 and moved it out of `moving`
+            # without anyone re-counting the sentence that names the cause.
+            skip_declined = sum(1 for r in moving if r.get("drift_gate_skip"))
             out.append(
                 f"- drift: **{len(drifted) - len(moving)}** of {len(drifted)} "
                 f"file(s) hold the original's timing exactly; the other "
@@ -3788,10 +3874,11 @@ def report(rows: list[dict], args) -> str:
                 f"**{med:.1f}** frame(s) per 1000, worst "
                 f"**{worst['drift_per_1000']:+.1f}** "
                 f"({worst['file']}, {abs(worst.get('drift_total', 0)):.0f} "
-                f"frame(s) across the window). Negative is early. On 17 files "
-                f"this is exactly `-1/(skip+1)`, the outer gate's skipped "
-                f"call, which `effective_frames` declines to correct when the "
-                f"corrected row cannot be packed")
+                f"frame(s) across the window). Negative is early."
+                + (f" On **{skip_declined}** file(s) this is exactly "
+                   "`-1/(skip+1)`, the outer gate's skipped call, which "
+                   "`effective_frames` declines to correct when the "
+                   "corrected row cannot be packed" if skip_declined else ""))
         adsred = [r for r in measured if r.get("adsr") is not None]
         if adsred:
             out.append(
@@ -4900,8 +4987,7 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
         return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
     local = workdir / "o.sid"
     shutil.copyfile(sid, local)
-    ft = find_freq_table(load_sid(str(sid)))
-    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    cal, _ft = table_calibration(sid, opts)
     a = run_siddump(local, args.seconds, traced, args.siddump, cal)
 
     speeds = find_song_speeds(load_sid(str(sid)))
@@ -5129,8 +5215,7 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
         return f"{sid.name}: converted, but gt2reloc wrote no .sid\n"
     local = workdir / "o.sid"
     shutil.copyfile(sid, local)
-    ft = find_freq_table(hdr)
-    cal = calibration(ft.detune) if ft and abs(ft.detune) > 0.2 else 0
+    cal, _ft = table_calibration(sid, opts)
 
     on = " ".join(k for k, v in sorted(opts.items()) if v is True)
     out.append(f"{sid.name}: header claims {hdr.subtunes} subtune(s), "
