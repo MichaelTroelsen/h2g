@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.336 — 2026-08-20
+
+- the six batch branches land, and the wavetable right byte is the packer's inverse
+
 ## 0.5.335 — 2026-08-20
 
 - the four owed merges land -- subtune bounds, fidelity harness, SongSpeeds, and the zero-wait tie
