@@ -20,8 +20,9 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from h2g.detect import Detection
 from h2g.goatwriter import (CMD_SETTEMPO, TEMPO_FASTEST_STEADY, SongSpeeds,
-                            derived_group_tempos, find_song_speeds,
-                            recommended_multiplier, tempo_command_value)
+                            _find_outer_gate, derived_group_tempos,
+                            find_song_speeds, recommended_multiplier,
+                            tempo_command_value)
 from h2g.sidfile import HLEN, SidFile, load_sid
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -53,6 +54,106 @@ def _synthetic(reload_value: int, subtunes: int = 2,
     data = bytes(HLEN - 1) + bytes(image)
     return SidFile(path="synthetic", data=data, name="", author="",
                    released="", load_addr=0x1000, subtunes=subtunes)
+
+
+def _synthetic_outer_gate(subtunes: int, with_neighbor: bool = True,
+                          table_values=(10, 200, 30, 40, 50, 60, 70, 80)
+                          ) -> SidFile:
+    """An outer-gate counter whose reload comes from an 8-byte table.
+
+    Layout at load address $1000: `DEC $1090 / BPL +8 / LDA #$05 / STA
+    $1090 / JMP $1000` at image offset $00 (the outer-gate shape
+    `_find_outer_gate` matches; the immediate operand's own address is
+    $1006). At $20, `with_neighbor` controls whether the table read
+    (`LDA $1050,X / STA $1006`) is preceded by a second `LDA $1058,X` for a
+    *different* table 8 bytes further on -- mirroring Knucklebusters' and
+    W_A_R's init, which reads several such per-subtune tables back to back.
+    `table_values` (8 bytes) sit at $1050; a second table's bytes (all $09,
+    to be visibly distinct) sit right after it at $1058.
+    """
+    image = bytearray(0x100)
+    gate = bytes([0xCE, 0x90, 0x10, 0x10, 0x08, 0xA9, 0x05, 0x8D, 0x90, 0x10,
+                  0x4C, 0x00, 0x10])
+    image[0x00:0x0D] = gate
+    table_b, table_a = 0x1050, 0x1058
+    if with_neighbor:
+        block = bytes([0xBD, table_a & 0xFF, table_a >> 8,
+                       0xBD, table_b & 0xFF, table_b >> 8,
+                       0x8D, 0x06, 0x10])
+    else:
+        block = bytes([0xBD, table_b & 0xFF, table_b >> 8, 0x8D, 0x06, 0x10])
+    image[0x20:0x20 + len(block)] = block
+    image[0x50:0x58] = bytes(table_values)
+    image[0x58:0x60] = bytes([9] * 8)
+    data = bytes(HLEN - 1) + bytes(image)
+    return SidFile(path="synthetic", data=data, name="", author="",
+                   released="", load_addr=0x1000, subtunes=subtunes)
+
+
+# --- the outer gate's table has no sanity guard, and reads a neighbour ------
+
+def test_outer_gate_table_stops_at_the_next_tables_start():
+    """Knucklebusters' own shape: an 8-byte table, a header claiming more.
+
+    $0970 is 8 bytes before $0978, where a second per-subtune table (also
+    read via `LDA table,X` in the same init loop) begins. A header claiming
+    11 subtunes must not walk 3 bytes into it.
+    """
+    sid = _synthetic_outer_gate(subtunes=11, with_neighbor=True)
+    vals, table = _find_outer_gate(sid, 11)
+    assert table == 0x1050
+    assert vals == (10, 200, 30, 40, 50, 60, 70, 80)
+    assert len(vals) == 8
+
+
+def test_outer_gate_table_bound_leaves_no_guard_value_on_a_magnitude():
+    """The bound is positional, not a value cap.
+
+    Ricochet's outer-gate reload is 127 with no table at all -- "almost no
+    skip, and correct for a reason" (`test_outer_gate.py`). A magnitude
+    guard mirroring `MAX_SANE_SPEED_RELOAD` (15) would null that, and would
+    also null 16 corpus files' genuine table entries above it. 200 here
+    (index 1, well inside the real 8-byte table) must survive untouched.
+    """
+    sid = _synthetic_outer_gate(subtunes=11, with_neighbor=True)
+    vals, _ = _find_outer_gate(sid, 11)
+    assert vals[1] == 200
+
+
+def test_outer_gate_table_without_a_neighbor_is_unbounded():
+    """The control: no second table nearby, so nothing truncates the read.
+
+    Without this, the test above could pass on a bound that always fires
+    rather than one that actually found $1058's table.
+    """
+    sid = _synthetic_outer_gate(subtunes=11, with_neighbor=False)
+    vals, _ = _find_outer_gate(sid, 11)
+    assert len(vals) == 11
+    assert vals[8:] == (9, 9, 9)          # the "next" table's own bytes
+
+
+def test_outer_gate_table_bound_never_widens_the_read():
+    """A subtune count already inside the real table is left alone."""
+    sid = _synthetic_outer_gate(subtunes=5, with_neighbor=True)
+    vals, _ = _find_outer_gate(sid, 5)
+    assert vals == (10, 200, 30, 40, 50)
+
+
+def test_songspeeds_skip_for_stops_where_the_table_did():
+    """`skip_for` on the subtunes past the real table returns None.
+
+    This is the observable half of the fix: `SongSpeeds.skip` is 8 entries
+    long once the table read is bounded, and `skip_for`'s own existing
+    range check (not a new one) is what turns subtunes 8-10 into None.
+    """
+    sid = _synthetic_outer_gate(subtunes=11, with_neighbor=True)
+    vals, table = _find_outer_gate(sid, 11)
+    sp = SongSpeeds(frames=(2,) * 11, reload_addr=0x1006, table_addr=None,
+                    skip=vals, skip_table_addr=table)
+    for i in range(8):
+        assert sp.skip_for(i) == vals[i]
+    for i in (8, 9, 10):
+        assert sp.skip_for(i) is None
 
 
 # --- reading the gate out of real players -----------------------------------
