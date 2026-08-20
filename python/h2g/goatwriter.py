@@ -399,7 +399,7 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
 
 
 def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
-                       wave: int) -> Optional[tuple]:
+                       wave: int, multiplier: int = 1) -> Optional[tuple]:
     """Wavetable entries for effect bit $10's arpeggio, or None.
 
     `detect.PitchSeq` reads the mechanism: `note = played note + seq[phase]` on a
@@ -407,6 +407,16 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     directly -- one entry per step, the waveform held and the right side naming a
     relative note -- and loops for as long as the note is held, as the player's
     counter does.
+
+    **The step is a rate, so it is divided by `multiplier` at the point it is
+    encoded** -- which here means multiplied, because the quantity emitted is a
+    number of table entries rather than a period: the player's phase counter
+    advances once per *frame* of a 50 Hz original, a Goattracker wavetable steps
+    once per *play call*, and one frame is `multiplier` calls, so each step holds
+    `multiplier` entries. Without it a `-S3` file arpeggiates three times too
+    fast. `_two_stage_pitch_seq_entries` has scaled its own copy of this cycle
+    since it was written and flagged this path as not doing so ("consistent with
+    this function only at multiplier 1"); the two now agree at every `-S`.
 
     Two honest limits. The player's phase is **global**, so it does not restart
     with the note; a wavetable always does, and the emitted arpeggio can sit up
@@ -426,7 +436,34 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     notes = _pitch_seq_notes(sid, det, i)
     if notes is None:
         return None
-    return [wave] * len(notes), list(notes)
+    # Spelled out rather than delayed: a delay entry's right side is applied
+    # only on its last call (gplay.c:697-723), and the note this step names has
+    # to be current from the first call of the frame it covers. The same reason
+    # `_two_stage_pitch_seq_entries` spells every frame of its cycle out.
+    hold = max(1, multiplier)
+    if hold > 1:
+        # **The attack frame's last write is entry 0 once a step is a frame
+        # long, so the step that leaves the note alone has to move there.**
+        # The packed player runs the wavetable from the note's *second* call
+        # (player.s:908-911), so entry k covers calls `k*hold+1 .. (k+1)*hold`.
+        # At `hold == 1` entry 0 lands on frame 1 and frame 0 is the firstwave,
+        # which writes no note -- so the attack keeps the pattern's own pitch
+        # whatever entry 0 says, and `_pitch_seq_notes` puts the modal (almost
+        # always zero) step at index 1. At `hold >= 2` entry 0 covers frame 0
+        # instead, and a transposing step there renames every note siddump
+        # reads: Shockway_Rider's melody 98.6% -> 83.6%, its voice 2 dropping
+        # from an exact 4-pitch match to five wrong pitches. Rotating one
+        # further -- the modal step to index 0 -- is the *same* rule applied at
+        # the multiplier, not a second one, and restores Shockway_Rider to
+        # 98.6% and Star_Paws to 96.6% while keeping the scaled rate. It also
+        # makes the option free where it was not: Chain_Reaction (-S3) forced
+        # to `--pitch-seq` reads melody 77.6% unscaled, 78.6% scaled and
+        # **99.8%** scaled-and-rotated, which is its score with the option off,
+        # at 1039 reversals against 772. See H2G-CONVERSION-METHOD.md 7.ttt.
+        notes = notes[1:] + notes[:1]
+    left = [wave] * (len(notes) * hold)
+    right = [n for n in notes for _ in range(hold)]
+    return left, right
 
 
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
@@ -898,14 +935,22 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     The rate is scaled the way `_two_stage_entries` scales `frames`: the
     player's phase counter advances once per frame of a single-speed original,
     and the wavetable steps once per *play call*, so each step holds
-    `multiplier` entries. `_pitch_seq_entries` does **not** do this and is
-    consistent with this function only at multiplier 1 -- which is where it is
-    verified, Trans-Atlantic being a multiplier-1 file. Flagged rather than
-    changed here: correcting the standalone path would move three shipped
-    multispeed files this change has no measurement of. And no trace in the
-    repo can adjudicate the scaling: siddump samples once per frame whatever
-    the call rate, so on Thundercats at -S3 the scaled and unscaled blocks emit
-    different bytes and score the identical 1308 reversals.
+    `multiplier` entries. `_pitch_seq_entries` **now does the same** -- it did
+    not for as long as this function has existed, and this docstring flagged the
+    divergence rather than fixing it ("consistent with this function only at
+    multiplier 1"). It also over-counted the reach: the flag said correcting the
+    standalone path "would move three shipped multispeed files", and it moves
+    **two** (Shockway_Rider and Star_Paws). Flash_Gordon, Mr_Meaner and
+    Thundercats are multispeed with `--pitch-seq` on and emit nothing from that
+    path at all: every record that reaches it has bit $10 *clear* (28 of them
+    across the three), so their bit-$10 records were taken by an earlier branch
+    -- this block among them. Count what an option reaches before sizing a
+    change to it. Note what the scaling costs to check: no trace in the repo can
+    adjudicate it, because
+    siddump samples once per frame whatever the call rate, so on Thundercats at
+    -S3 the scaled and unscaled blocks emit different bytes and score the
+    identical 1308 reversals. The scaling is shipped because it is what the
+    player says, not because a column moved.
 
     Returns None where the block will not fit the record's budget, so the
     caller falls back to the plain two-stage shape rather than emitting a
@@ -2975,7 +3020,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # by routing the held byte through `_wave_byte`, and the same encoding is
     # available here.
     if pitch_seq and fmt == FORMAT_GTS5:
-        arpseq = _pitch_seq_entries(sid, det, i, wave)
+        arpseq = _pitch_seq_entries(sid, det, i, wave, multiplier)
         if arpseq is not None:
             left, right = arpseq
             if start is not None and len(left) + 1 <= budget:
