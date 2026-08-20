@@ -1556,6 +1556,29 @@ VIBRATO_BOUND_SHIFT = 3         # ...>> 3, so 0..15
 VIBRATO_SHIFT_MASK = 0x07       # AND #$07 -- the depth's right-shift
 
 
+def _shape_matches(data: bytes, pattern: str) -> List[int]:
+    """Every offset `pattern` matches at, ascending -- `search_file`'s plural.
+
+    Kept local to detect.py rather than added to search.py, which is a
+    line-for-line port of VB's `SSearchfile` and returns the first match by
+    construction. Offsets start at 1 for the same reason `search_file` does.
+    """
+    values = [None if t == "??" else int(t, 16) for t in pattern.split()]
+    limit = len(data) - len(values)
+    head = values[0]
+    out: List[int] = []
+    i = 1
+    while i <= limit:
+        if head is not None:
+            i = data.find(head, i, limit + 1)
+            if i < 0:
+                break
+        if all(v is None or data[i + j] == v for j, v in enumerate(values)):
+            out.append(i)
+        i += 1
+    return out
+
+
 def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
     """Instrument-record offset of the vibrato byte, or None.
 
@@ -1573,22 +1596,39 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
     resolved through the relocation it is the same +5 as everywhere else. For a
     file with no relocation -- or any address that already resolves -- this is
     algebraically what it always was, so no other file can move.
+
+    **Every match is tried, not just the first.** `search_file` returns the
+    lowest offset the shape occurs at, and a file carrying two copies of the
+    player has the shape twice -- once in each. Powerplay Hockey's copies sit
+    at `$37FE` and `$45E5`; the instrument table the chains settle on is
+    `$4A00` (§ 7.iiiii picked it as the one nearest the pattern pointers), and
+    only the second copy reads it: `$45DD LDA $4A05,Y` is the familiar +5,
+    where `$37F6 LDA $3BA5,Y` belongs to the *other* copy's table and lands
+    3675 bytes below this one. Taking the first match and stopping made that a
+    rejection, so the file got no vibrato at all -- three instruments
+    (`$0AC9`, `$0AA9`, `$0A9B`) with 486 + 393 + 330 = 1209 reversals in the
+    original and 0 in ours, the whole of its VIBRATO.md contribution. The
+    backward-LDA test is already the discriminator; it just had one candidate
+    to apply to. Corpus census, old rule against new: **Powerplay is the only
+    file whose offset moves** (None -> 5), 95 of 95 detected without error.
+    Same rule as everywhere else here -- widening a search can rescue a file
+    that read nothing and cannot disturb one whose first match already
+    resolved.
     """
     data = sid.data
-    at = -1
-    for shape in VIBRATO_SHAPES:
-        at = search_file(data, shape)
-        if at >= 1:
-            break
-    if at < 1:
+    matches = [at for shape in VIBRATO_SHAPES
+               for at in _shape_matches(data, shape)]
+    if not matches:
         return None
     if not any(search_file(data, s) >= 1 for s in VIBRATO_DEPTH_SHAPES):
         return None
-    for k in range(at - 3, max(0, at - 26), -1):
-        if data[k] in (0xB9, 0xBD):     # LDA abs,Y / LDA abs,X
-            off = sid.to_offset(data[k + 1] | data[k + 2] << 8) - det.instr_start
-            if 0 <= off < det.instr_stride:
-                return off
+    for at in matches:
+        for k in range(at - 3, max(0, at - 26), -1):
+            if data[k] in (0xB9, 0xBD):     # LDA abs,Y / LDA abs,X
+                off = sid.to_offset(
+                    data[k + 1] | data[k + 2] << 8) - det.instr_start
+                if 0 <= off < det.instr_stride:
+                    return off
     return None
 
 
