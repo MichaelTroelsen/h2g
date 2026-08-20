@@ -1,15 +1,16 @@
 {
   "generated_from": {
-    "head": "1e534e0",
+    "head": "b670faa",
     "sources": [
-      "whats-next.md (narrative stops at the sixth run, v0.5.319-325)",
+      ".claude/tasks/runs.jsonl (46 lines, 37 ids, read in full)",
+      ".claude/tasks/whattask.json (previous plan, head 1e534e0)",
+      "git log 1e534e0..b670faa",
+      "whats-next.md (narrative still stops at the sixth run, v0.5.319-325)",
       "PER-SONG-PLAN.md",
-      ".claude/tasks/runs.jsonl (38 lines, 29 ids, read in full)",
-      ".claude/tasks/whattask.json (previous plan, head 3b091c0)",
-      "git log 3b091c0..1e534e0",
       "SURVEY.md",
       "FIDELITY.md",
       "VIBRATO.md",
+      "SUBTUNES.md",
       "CLAUDE.md",
       "git branch / git worktree list",
       "working tree"
@@ -25,9 +26,12 @@
     "build/listen",
     "Commando.sng",
     "python/tools/siddump-rt/siddump.exe",
-    "the shared session scratchpad (a sibling agent overwrote a probe there during the last batch)"
+    "the shared session scratchpad (a sibling agent overwrote a probe there during a batch)",
+    "agent worktrees are cut at an OLDER commit than the brief names -- three agents in the last batch reported 3b091c0 against a stated 1e534e0; rebase and re-take before merging"
   ],
-  "external_locks": [],
+  "external_locks": [
+    ".claude/tasks/serial.lock"
+  ],
   "tasks": [
     {
       "id": "merge-gate-hold-zero-wait-branch",
@@ -218,96 +222,9 @@
       "lane": "serial"
     },
     {
-      "id": "hard-restart-floor-swallows-short-notes",
-      "title": "_hard_restart_ticks' floor makes a one-row note zero audible calls -- size it corpus-wide",
-      "source": "runs.jsonl: chimera-voice0-opening-pad (opened)",
-      "model": "opus",
-      "mode": "subtask",
-      "touches": [
-        "r:python/h2g/goatwriter.py",
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "a corpus count of notes satisfying note_calls <= gatetimer + 1 under goatwriter.py:260's `ticks = max(ticks, min(2, row_calls - 1))`, broken down by file and multiplier, with a stated recommendation; nobody has run this census",
-      "why_model": "a bound whose naive relaxation would move every file's note length",
-      "why_mode": "read-only census returning a number",
-      "why_lane": "reads goatwriter.py while several tasks write it",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
-      "id": "chimera-voice0-gate-suppression-unlocated",
-      "title": "Chimera's player sustains voice 0 across 612 pitch changes with one gate edge -- mechanism unlocated",
-      "source": "runs.jsonl: chimera-voice0-opening-pad (opened)",
-      "model": "opus",
-      "mode": "subtask",
-      "touches": [
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "the routine in Hubbard's Chimera player that suppresses the note-end gate-off named with an address and a disassembly, given every status byte in the source entry is literally $00 so bit 5 is genuinely absent; needed before any tie-based fix for this file",
-      "why_model": "a 6502 read where a plausible-but-wrong routine is cheap to produce",
-      "why_mode": "read-only disassembly returning a finding",
-      "why_lane": "reads only the corpus",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "lane": "parallel"
-    },
-    {
-      "id": "converter-emits-sound-effects-as-subtunes",
-      "title": "The PSID header's subtune count includes sound effects, and the player says which",
-      "source": "runs.jsonl: knucklebusters-subtunes-11-to-3 (opened)",
-      "model": "opus",
-      "mode": "subtask",
-      "touches": [
-        "rw:python/h2g/detect.py",
-        "rw:python/h2g/tracks.py",
-        "rw:python/tests/test_subtune_census.py",
-        "rw:python/tests/test_tracks.py",
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "the music/sfx split read from the player's own CMP #imm / BCS / JMP dispatch and used to cap subtunes; Knucklebusters reads 3 not 11; corpus byte-hash names only the intended files; Commando.sng byte-exact",
-      "why_model": "a detection rule with corpus-wide reach and a silent failure mode",
-      "why_mode": "confined to detect.py/tracks.py with a byte-hash verify",
-      "why_lane": "writes detect.py and tracks.py",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
-      "id": "songspeeds-skip-reads-past-its-table",
-      "title": "SongSpeeds.skip has no sanity guard and reads a different table past the music bound",
-      "source": "runs.jsonl: knucklebusters-subtunes-11-to-3 (opened)",
-      "model": "sonnet",
-      "mode": "subtask",
-      "touches": [
-        "rw:python/h2g/goatwriter.py",
-        "rw:python/tests/test_song_speed.py",
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "SongSpeeds.skip gains the guard SongSpeeds.frames already has; on Knucklebusters indices 8,9,10 stop reading $0978 because $0970 is only 8 bytes long; corpus byte-hash names only the intended files; Commando.sng byte-exact",
-      "why_model": "copying a guard that already exists next to it",
-      "why_mode": "one function, byte-hash verified",
-      "why_lane": "writes goatwriter.py",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
       "id": "c64-music-examples-phantom-subtunes-not-trimmed",
-      "title": "reject_phantoms ships 15 subtunes of which 14 are junk",
-      "source": "runs.jsonl: c64-music-examples-missing-s0 (opened)",
+      "title": "reject_phantoms ships 15 subtunes of which 14 are junk -- fixed on f2c86f2, two red tests remain",
+      "source": "runs.jsonl: c64-music-examples-missing-s0 (opened), c64-music-examples-phantom-subtunes-not-trimmed (partial); branch f2c86f2",
       "model": "opus",
       "mode": "subtask",
       "touches": [
@@ -315,15 +232,17 @@
         "rw:python/tests/test_reject_phantoms.py",
         "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
       ],
-      "verify": "Commodore_64_Music_Examples emits 1 subtune rather than 15; o14's voice 0 is verifiably the init dispatch LO table at $08EC+6; corpus byte-hash names only the intended files; Commando.sng byte-exact",
+      "verify": "closes when f2c86f2 is on master with its two owed test edits made: test_empty_voice.py:149 `assert subtunes == 17` -> 2 (Rasputin's track table is trackLO $C72B / patLO $C737, a 12-byte gap = 2 subtunes) and test_subtune_census.py:72 rewritten against a SYNTHETIC file, because after the bound NO corpus file has an interior `placeholder` subtune left. The fix itself is measured: C64ME 15 -> 1, 17 files move all by a reduced count, Commando.sng byte-exact",
       "why_model": "a bound whose over-tightening silently deletes real music",
-      "why_mode": "one function in tracks.py with a byte-hash verify",
+      "why_mode": "the remaining work is two test edits plus the merge, and the merge is not delegable",
       "why_lane": "writes tracks.py",
       "mcp": [],
       "needs_main": false,
       "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
+      "depends_on": [
+        "merge-subtune-branches"
+      ],
+      "blocked_on": "the two owed test edits live outside the branch's writable paths, so the branch as it stands leaves two red tests. DURABLE and not to be redone: the extent rule, the o14 proof ($08F2 = the init dispatch LO table at $08EC+6), the 17-file reach, and the side finding that all 139 SUBTUNES.md placeholder rows were subtunes read past the end of the track table",
       "lane": "serial"
     },
     {
@@ -338,7 +257,7 @@
         "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
       ],
       "depends_on": [
-        "c64-music-examples-phantom-subtunes-not-trimmed"
+        "merge-subtune-branches"
       ],
       "verify": "det.subtunes_available bounds these two files; their second engines are sound-effect drivers (2-3 note events in 10 s against 12 and 104 for subtune 0), so SUPPRESSING the phantom orderlists is the gain, not ripping them; corpus byte-hash names only the intended files",
       "why_model": "the same bound as the C64ME case, on a different idiom",
@@ -347,28 +266,6 @@
       "mcp": [],
       "needs_main": false,
       "needs_main_reason": null,
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
-      "id": "c64me-instrument-table-mismatch",
-      "title": "C64ME takes orderlists from engine $1119 and instruments from engine $1D8B",
-      "source": "runs.jsonl: multi-engine-sid-one-player-assumption (opened)",
-      "model": "opus",
-      "mode": "subtask",
-      "touches": [
-        "rw:python/h2g/detect.py",
-        "rw:python/tests",
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "the instrument table nearest the pattern pointers is taken ($1436/$143C's neighbour, not $1D1D) -- the nearness rule section 7.iiiii already applies for gates; corpus byte-hash names only Commodore_64_Music_Examples; Commando.sng byte-exact",
-      "why_model": "a table-picking rule whose wrong answer produces right notes with wrong instruments, which no column flags",
-      "why_mode": "detect.py with a byte-hash verify",
-      "why_lane": "writes detect.py",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
       "blocked_on": null,
       "lane": "serial"
     },
@@ -784,29 +681,6 @@
       "lane": "serial"
     },
     {
-      "id": "freq-table-per-engine-nearness",
-      "title": "find_freq_table's tie-break is longest run where it should be nearness -- Powerplay reads the wrong table by one entry",
-      "source": "runs.jsonl: powerplay-cue-melody-residual (opened)",
-      "model": "opus",
-      "mode": "subtask",
-      "touches": [
-        "rw:python/h2g/sidfile.py",
-        "rw:python/fidelity.py",
-        "rw:python/tests",
-        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-      ],
-      "verify": "byte-neutral corpus-wide (the shift is 0 either way, only `detune` moves) and Powerplay's tune engine stays at 99.3%; mean cue melody 16.5% -> 71.1%; the `len(shifts) > 1` guard extended to inspect detune, which it never does",
-      "why_model": "a tie-break rule whose wrong side miscalibrates a whole engine's trace by 0.63 semitones",
-      "why_mode": "sidfile.py plus fidelity.py, verified by a corpus byte-hash and one file's score",
-      "why_lane": "writes sidfile.py and fidelity.py",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
       "id": "fidelity-cue-subtune-offbyone",
       "title": "Powerplay's cue subtunes are off by one -- our o_k is the original's k+1",
       "source": "runs.jsonl: powerplay-cue-melody-residual (opened)",
@@ -818,7 +692,7 @@
         "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
       ],
       "depends_on": [
-        "freq-table-per-engine-nearness"
+        "merge-fidelity-branches"
       ],
       "verify": "SUBTUNE_REMAP gains the entry; the matrix reads a clean off-diagonal band s(k+1)->o(k) at 63-83% against identity readings of 0-41%; --diagnose stops seeing only s1->o0 at its 50% threshold",
       "why_model": "a correspondence claim that has already been made wrongly on three files",
@@ -827,7 +701,7 @@
       "mcp": [],
       "needs_main": false,
       "needs_main_reason": null,
-      "blocked_on": null,
+      "blocked_on": "the frequency-table fix it rests on is committed but unmerged (87156c2)",
       "lane": "serial"
     },
     {
@@ -844,7 +718,8 @@
       "needs_main": true,
       "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md), which the repo forbids a branch from regenerating",
       "depends_on": [
-        "fidelity-cue-subtune-offbyone"
+        "fidelity-cue-subtune-offbyone",
+        "merge-fidelity-branches"
       ],
       "verify": "Dragons_Lair_Part_II and Commodore_64_Music_Examples either trace their real counterparts or carry a marked row; note from c64-music-examples-missing-s0 that on that file a correspondence remap and a phantom-subtune trim are the same defect seen twice",
       "why_model": "picking a counterpart by score is how a harness flatters itself",
@@ -879,8 +754,8 @@
     },
     {
       "id": "fidelity-hardcoded-drift-count",
-      "title": "fidelity.py:3791 prints 'On 17 files' whatever the corpus does",
-      "source": "runs.jsonl: human-race-skip-table-undetected (opened)",
+      "title": "fidelity.py:3791 prints 'On 17 files' whatever the corpus does -- fixed on d2bca79, never verified by its agent",
+      "source": "runs.jsonl: human-race-skip-table-undetected (opened), fidelity-hardcoded-drift-count (partial); branch d2bca79",
       "model": "sonnet",
       "mode": "subtask",
       "touches": [
@@ -888,15 +763,17 @@
         "rw:python/tests/test_drift.py",
         "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
       ],
-      "verify": "the f-string computes its count from the rows instead of printing 17, with a test that fails if it reverts to a literal; Human_Race's drift went to 0.00 at v0.5.330 so the previously measured count is already stale",
+      "verify": "run `fidelity.py` over the corpus on the merged tree and record what the derived count actually reads -- the one number the task exists to make true, and the one thing the agent never observed (it returned the literal string 'test' in every field). Do NOT redo the edit: `_drift_gate_skip_declined` at fidelity.py:3149 is in place, the literal is gone and tests/test_drift.py passes 17",
       "why_model": "a literal replaced by the value it should have been computing",
-      "why_mode": "one line plus a test",
+      "why_mode": "the merge is not delegable and the corpus run belongs beside it",
       "why_lane": "writes fidelity.py",
       "mcp": [],
       "needs_main": false,
       "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
+      "depends_on": [
+        "merge-fidelity-branches"
+      ],
+      "blocked_on": "the branch is unmerged and the corpus number was never taken",
       "lane": "serial"
     },
     {
@@ -1034,8 +911,8 @@
     },
     {
       "id": "presets-research-12-moved-files",
-      "title": "Re-search settings for the 12 files whose bytes moved at v0.5.330",
-      "source": "whats-next.md item 15; commit 3b091c0",
+      "title": "Re-search settings for every file whose bytes moved -- 12 at v0.5.330, 17 at the track-table bound, 5 at the sfx dispatch",
+      "source": "whats-next.md item 15; runs.jsonl: c64-music-examples-phantom-subtunes-not-trimmed (opened as refidelity-search-the-17-bounded-files), converter-emits-sound-effects-as-subtunes",
       "model": "sonnet",
       "mode": "main",
       "touches": [
@@ -1046,9 +923,10 @@
       "needs_main": true,
       "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md), which the repo forbids a branch from regenerating",
       "depends_on": [
-        "widened-tempo-ab-rerun"
+        "widened-tempo-ab-rerun",
+        "artefact-stamp-realign"
       ],
-      "verify": "a --fidelity search over the 12 moved files with the result DIFFED against the shipped presets before adoption; stderr read for 'will not convert' and 'search failed'; artefacts regenerated after; a corpus search at -t 60 is about 8 minutes",
+      "verify": "a --fidelity search over the union of the moved sets with the result DIFFED against the shipped presets before adoption; stderr read for 'will not convert' and 'search failed'; a corpus search at -t 60 is about 8 minutes and --shard I/N splits it",
       "why_model": "running an existing search and diffing its output",
       "why_mode": "writes presets.json, which no branch may carry",
       "why_lane": "writes all three generated artefacts",
@@ -1237,8 +1115,8 @@
     },
     {
       "id": "artefact-stamp-realign",
-      "title": "Regenerate the artefacts and re-arm test_preset_passthrough, which is currently NOT RUNNING",
-      "source": "derived: FIDELITY.md line 3, SUBTUNES.md line 3; runs.jsonl: merge-instrmap-songview-branch (notes)",
+      "title": "Regenerate every artefact once after the merges -- and re-arm test_preset_passthrough, still NOT RUNNING",
+      "source": "derived: FIDELITY.md line 3, SUBTUNES.md line 3; runs.jsonl: merge-instrmap-songview-branch, c64-music-examples-phantom-subtunes-not-trimmed (opened as regenerate-subtunes-md-after-the-track-table-bound), converter-emits-sound-effects-as-subtunes (opened as subtune-census-doc-refresh), c64me-instrument-table-mismatch (opened as survey-reports-15-subtunes-where-1-is-real)",
       "model": "sonnet",
       "mode": "main",
       "touches": [
@@ -1251,9 +1129,12 @@
       "needs_main": true,
       "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md), which the repo forbids a branch from regenerating",
       "depends_on": [
-        "merge-gate-hold-zero-wait-branch"
+        "merge-gate-hold-zero-wait-branch",
+        "merge-subtune-branches",
+        "merge-fidelity-branches",
+        "merge-goatwriter-and-test-branches"
       ],
-      "verify": "presets.json's `generator` stamp names the running __version__ so test_preset_passthrough stops skipping (it now reads 'h2g 0.5.330 presets.py' against 0.5.331, so the guard that no convert() option escapes IS OFF); FIDELITY.md line 3 names a clean sha with no '-dirty'; SUBTUNES.md and VIBRATO.md carry the current version; regenerate ONCE, after the merge, from a coherent tree",
+      "verify": "presets.json's `generator` stamp names the running __version__ so test_preset_passthrough stops skipping (it reads 0.5.330 against 0.5.332, so the guard that no convert() option escapes IS OFF); FIDELITY.md line 3 names a clean sha with no '-dirty'; SUBTUNES.md's totals move 312 -> 290 emitted with a new `sfx` fate row of 97 across 8 files becoming the largest entry in its By-cause queue; SURVEY.md stops reporting 15 subtunes for C64ME where 1 is real. Regenerate ONCE, after all four merges, from a coherent tree",
       "why_model": "running the documented regeneration commands in the documented order",
       "why_mode": "writes every generated artefact, which no branch may carry",
       "why_lane": "writes all five generated artefacts",
@@ -1304,7 +1185,7 @@
     {
       "id": "fix-7kkkkk-cue-stall-claim",
       "title": "Method doc 7.kkkkk claims a stall that does not exist, and its melody table has no provenance",
-      "source": "runs.jsonl: powerplay-cue-length (opened), powerplay-cue-melody-residual (opened as fix-7kkkkk-measurement-provenance)",
+      "source": "runs.jsonl: powerplay-cue-length (opened), powerplay-cue-melody-residual (opened as fix-7kkkkk-measurement-provenance), freq-table-per-engine-nearness (opened as powerplay-cue-length-stall)",
       "model": "sonnet",
       "mode": "main",
       "touches": [
@@ -1447,26 +1328,6 @@
       "lane": "serial"
     },
     {
-      "id": "push-master-unpushed-commits",
-      "title": "master is three commits ahead of origin and nothing has been pushed",
-      "source": "working tree: git log origin/master..HEAD",
-      "model": "sonnet",
-      "mode": "requires-user",
-      "touches": [
-        "rw:origin/master history"
-      ],
-      "blocked_on": "the user's authorisation to push. 1fbb1ac, a7ee019 and 1e534e0 are local only; the repo's rule is to push only when asked",
-      "verify": "`git log origin/master..HEAD` is empty, or a note recording that the commits stay local",
-      "why_model": "one command once authorised",
-      "why_mode": "an outward-facing action the repo's own rule reserves for the user",
-      "why_lane": "writes the shared remote history",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "lane": "serial"
-    },
-    {
       "id": "listen-verdicts",
       "title": "Listen, and settle the four waiting decisions",
       "source": "whats-next.md item 1 and Immediate next action; runs.jsonl: restage-listening-set (done)",
@@ -1507,9 +1368,357 @@
       "needs_main_reason": null,
       "depends_on": [],
       "lane": "serial"
+    },
+    {
+      "id": "merge-subtune-branches",
+      "title": "Land f2c86f2 and 0c748bb together -- both bound the subtune count, both write tracks.py",
+      "source": "runs.jsonl: c64-music-examples-phantom-subtunes-not-trimmed, converter-emits-sound-effects-as-subtunes",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/h2g/tracks.py",
+        "rw:python/h2g/detect.py",
+        "rw:python/tests",
+        "rw:CHANGELOG.md",
+        "rw:python/h2g/__init__.py",
+        "rw:.claude/worktrees",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "verify": "both shas ancestors of HEAD, rebased onto master (they were cut at 3b091c0, two commits behind) with the corpus byte-hash RE-TAKEN on the new base rather than trusted from the branch; the two bounds composed rather than double-applied -- the track-table extent and the player's sfx dispatch are different upper limits and the tighter must win; the two owed test edits made; suite green; Commando.sng byte-exact; ONE version bump for the pair",
+      "why_model": "two independently derived bounds on the same quantity, merged into one function",
+      "why_mode": "commits to master and decides how two branches compose",
+      "why_lane": "writes tracks.py and detect.py on master",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "merge-fidelity-branches",
+      "title": "Land 87156c2 and d2bca79 -- both write fidelity.py",
+      "source": "runs.jsonl: freq-table-per-engine-nearness, fidelity-hardcoded-drift-count",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/h2g/sidfile.py",
+        "rw:python/tests",
+        "rw:CHANGELOG.md",
+        "rw:python/h2g/__init__.py",
+        "rw:.claude/worktrees",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "verify": "both shas ancestors of HEAD, rebased off 3b091c0 onto master; 87156c2's `near=` tie-break reproduces the OLD choice on every file where only one table exists (its `max` was written to keep the first of equal keys precisely so it does); Powerplay's tune engine stays 99.3% and mean cue melody reads 71.1%; d2bca79's derived drift count printed from a real corpus run, which nobody has yet seen; suite green; ONE version bump for the pair",
+      "why_model": "two branches editing one 4000-line module, one of which was never verified by its author",
+      "why_mode": "commits to master",
+      "why_lane": "writes fidelity.py and sidfile.py on master",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "merge-goatwriter-and-test-branches",
+      "title": "Land 0493e16 and fc84d67 -- the SongSpeeds bound and the C64ME regression test",
+      "source": "runs.jsonl: songspeeds-skip-reads-past-its-table, c64me-instrument-table-mismatch",
+      "model": "sonnet",
+      "mode": "main",
+      "touches": [
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests",
+        "rw:CHANGELOG.md",
+        "rw:python/h2g/__init__.py",
+        "rw:.claude/worktrees",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "verify": "both shas ancestors of HEAD, rebased off 3b091c0; corpus byte-hash re-taken (0493e16 measured zero byte differences today, so any difference on the new base is a finding); note the branch REVERTED the DoD's literal instruction to copy MAX_SANE_SPEED_RELOAD -- skip's range is legitimately 0-127 against frames' 0-8, and copying it broke test_ricochet_has_no_table_and_takes_the_image_byte; suite green; ONE version bump for the pair",
+      "why_model": "two small, independently verified branches with no interaction",
+      "why_mode": "commits to master",
+      "why_lane": "writes goatwriter.py on master",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "duration-zero-is-a-tie",
+      "title": "A duration nibble of zero ties into the next note -- the one-line patterns.py change the Chimera read produced",
+      "source": "runs.jsonl: chimera-voice0-gate-suppression-unlocated (opened)",
+      "model": "opus",
+      "mode": "subtask",
+      "touches": [
+        "rw:python/h2g/patterns.py",
+        "rw:python/tests",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "depends_on": [
+        "merge-gate-hold-zero-wait-branch"
+      ],
+      "verify": "FIRST establish whether the landed find_gate_hold already covers this -- the gate-hold branch gates the identical wait==0 tie on a row-clock discriminator, and this proposal has none, so the two must be reconciled before either is believed. Then: patterns.py:448 `pending_tie = tie and bool(no_adsr)` becomes `... or (wait == 0 and not no_note)` (no_adsr = b1 & $20, wait = b1 & $1F, no_note = b1 & $40, all parsed at :268-270); the bit-6 exclusion is REQUIRED because a rest reaches $C2FF DEC $C640 and $C318 AND $C640 does clear the gate. Corpus byte-hash names only the intended files; Commando.sng byte-exact",
+      "blocked_on": "the gate-hold-zero-wait branch is unmerged and implements the same rule with a discriminator this one lacks",
+      "why_model": "two independently derived rules for one behaviour, one of which must be wrong or redundant",
+      "why_mode": "one line plus its tests, byte-hash verified",
+      "why_lane": "writes patterns.py, shared with the gate-hold merge",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "lane": "serial"
+    },
+    {
+      "id": "duration-zero-tie-corpus-ab",
+      "title": "Adopt or refuse the duration-zero tie -- 2698 events change on Chimera subtune 0 alone",
+      "source": "runs.jsonl: chimera-voice0-gate-suppression-unlocated (opened)",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/h2g/patterns.py",
+        "rw:FIDELITY.md",
+        "r:presets.json",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "needs_main": true,
+      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md / SUBTUNES.md), which the repo forbids a branch from regenerating",
+      "depends_on": [
+        "duration-zero-is-a-tie"
+      ],
+      "verify": "a --baseline A/B at -t 60 with a stated adopt-or-refuse. The blast radius is measured and large: 288 voice-0, 2342 voice-1 and 68 voice-2 events on Chimera subtune 0 alone, voice 1 being 90% of its entries, and 31 of 95 corpus files carry the dialect -- including Commando, the byte-exact fixture's own player. Read the register agreements next to both sides' note counts: a change that removes attacks flatters every column that scores them",
+      "why_model": "a corpus-wide adopt/refuse where the metric can be improved by deleting the events it scores",
+      "why_mode": "regenerates FIDELITY.md and decides a corpus-wide behaviour change",
+      "why_lane": "writes patterns.py and FIDELITY.md",
+      "mcp": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "subtune-census-test-needs-a-synthetic-placeholder",
+      "title": "test_subtune_census.py:72 guards a real defect against a corpus file that no longer has the shape",
+      "source": "runs.jsonl: c64-music-examples-phantom-subtunes-not-trimmed (opened)",
+      "model": "sonnet",
+      "mode": "subtask",
+      "touches": [
+        "rw:python/tests/test_subtune_census.py"
+      ],
+      "depends_on": [
+        "merge-subtune-branches"
+      ],
+      "verify": "a synthetic SidFile/Detection whose interior subtune resolves three pointers but names no existing pattern, so the test still guards reading `built` after the DEFAULT_TRACK reset; it CANNOT be retargeted at another corpus file -- after the bound no corpus file has an interior `placeholder` subtune at all, verified over all 95",
+      "why_model": "building a fixture to an already-stated shape",
+      "why_mode": "one test file",
+      "why_lane": "writes test_subtune_census.py, shared with the subtune merge",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "empty-voice-test-pins-rasputins-old-subtune-count",
+      "title": "test_empty_voice.py:149 pins Rasputin at 17 subtunes where its track table holds 2",
+      "source": "runs.jsonl: c64-music-examples-phantom-subtunes-not-trimmed (opened)",
+      "model": "sonnet",
+      "mode": "subtask",
+      "touches": [
+        "rw:python/tests/test_empty_voice.py"
+      ],
+      "depends_on": [
+        "merge-subtune-branches"
+      ],
+      "verify": "`assert subtunes == 17` becomes 2 (trackLO $C72B, patLO $C737, a 12-byte gap = 2 x 3 voices x 2); the test's actual guard `assert valid == subtunes` still passes -- only the pinned count is stale",
+      "why_model": "a one-line constant with the replacement already derived",
+      "why_mode": "one line in one test",
+      "why_lane": "writes test_empty_voice.py",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "sfx-dispatch-bcc-spelling",
+      "title": "The sfx dispatch has a second spelling the signature does not match",
+      "source": "runs.jsonl: converter-emits-sound-effects-as-subtunes (opened)",
+      "model": "opus",
+      "mode": "subtask",
+      "touches": [
+        "rw:python/h2g/detect.py",
+        "rw:python/tests",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "depends_on": [
+        "merge-subtune-branches"
+      ],
+      "verify": "the BCC form read alongside the BCS one, anchored the way the landed rule is; the same trap as SPEED_GATE_IMM, where one byte of branch offset made a feature look absent. Corpus byte-hash names only files the current rule misses, and none it already reads",
+      "why_model": "a signature widening, the change class CLAUDE.md warns can silently break another game",
+      "why_mode": "detect.py with a byte-hash verify",
+      "why_lane": "writes detect.py",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "subtune-census-doc-refresh",
+      "title": "CLAUDE.md's subtune bullet is now three-quarters true -- 97 lost subtunes have a player-derived cause",
+      "source": "runs.jsonl: converter-emits-sound-effects-as-subtunes (opened)",
+      "model": "sonnet",
+      "mode": "main",
+      "touches": [
+        "rw:CLAUDE.md",
+        "rw:H2G-CONVERSION-METHOD.md"
+      ],
+      "depends_on": [
+        "merge-subtune-branches"
+      ],
+      "verify": "CLAUDE.md's 'essentially all of the loss is reading past the end' corrected -- 97 of the lost subtunes across 8 files are sound effects the init dispatches away, and the rest are the track-table bound; a method-doc section for the dispatch and for the extent rule; whats-next.md item 13 marked answered (Knucklebusters' 8 missing subtunes are sfx, no hidden music, its remaining gap is per-subtune-multiplier-conflict)",
+      "why_model": "transcribing findings already measured",
+      "why_mode": "edits CLAUDE.md and the method doc, which no branch should carry in parallel",
+      "why_lane": "writes CLAUDE.md and H2G-CONVERSION-METHOD.md",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "songspeeds-frames-table-bleed-into-skip-table-uncaught",
+      "title": "The frames table can bleed into the skip table and nothing catches it",
+      "source": "runs.jsonl: songspeeds-skip-reads-past-its-table (opened)",
+      "model": "opus",
+      "mode": "subtask",
+      "touches": [
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests/test_song_speed.py",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "depends_on": [
+        "merge-goatwriter-and-test-branches"
+      ],
+      "verify": "the symmetric bound applied to the frames table, or a stated reason it cannot be; the skip side is now bounded by the next per-subtune table and the frames side is bounded only by MAX_SANE_SPEED_RELOAD, which is a value guard and not an extent",
+      "why_model": "the sibling of a bound that has just been shown to need an extent rather than a magnitude",
+      "why_mode": "goatwriter.py with a byte-hash verify",
+      "why_lane": "writes goatwriter.py",
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "fidelity-engine-flag",
+      "title": "A per-engine flag for the harness, so a two-engine file is traced on its own tables",
+      "source": "runs.jsonl: freq-table-per-engine-nearness (opened)",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/tests",
+        "rw:FIDELITY.md",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "needs_main": true,
+      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md / SUBTUNES.md), which the repo forbids a branch from regenerating",
+      "depends_on": [
+        "merge-fidelity-branches"
+      ],
+      "verify": "`engine_freq_table` / `table_calibration` (landed on 87156c2) extended so a report ROW carries its engine, not just an ad-hoc `-a` invocation; Powerplay's nine cues appear at their own calibration in a regenerated FIDELITY.md rather than only under a hand-passed flag",
+      "why_model": "changes what every row of the report is measured against",
+      "why_mode": "regenerates FIDELITY.md",
+      "why_lane": "writes fidelity.py and FIDELITY.md",
+      "mcp": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "gate-edge-census-column",
+      "title": "A gate-edge census -- the instrument that would have shown Chimera's pad without a disassembly",
+      "source": "runs.jsonl: chimera-voice0-gate-suppression-unlocated (opened)",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/tests/test_fidelity.py",
+        "rw:FIDELITY.md"
+      ],
+      "needs_main": true,
+      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md / SUBTUNES.md), which the repo forbids a branch from regenerating",
+      "depends_on": [
+        "merge-fidelity-branches"
+      ],
+      "verify": "a census of gate 0->1 edges per voice against the original's, with run lengths, so 'one edge over 879 frames where the original has one too' is readable from the tool; the new instrument must reproduce an existing column under that column's own rule FIRST; a corpus count of how many files show an edge-count disagreement",
+      "why_model": "a new scoring dimension, the class of change this repo has shipped wrong twice",
+      "why_mode": "regenerates FIDELITY.md",
+      "why_lane": "writes fidelity.py and FIDELITY.md",
+      "mcp": [],
+      "blocked_on": null,
+      "lane": "serial"
+    },
+    {
+      "id": "hard-restart-frames-2-vs-players-3.3",
+      "title": "HARD_RESTART_FRAMES is 2 where the players average 3.3",
+      "source": "runs.jsonl: hard-restart-floor-swallows-short-notes (opened)",
+      "model": "opus",
+      "mode": "main",
+      "touches": [
+        "rw:python/h2g/goatwriter.py",
+        "rw:presets.json",
+        "rw:FIDELITY.md",
+        "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+      ],
+      "needs_main": true,
+      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md / SUBTUNES.md), which the repo forbids a branch from regenerating",
+      "verify": "a corpus A/B at -t 60 with a stated adopt-or-refuse. Note what the census already settled: the FLOOR is correct and must stay (0 of 357594 notes get zero audible calls, and ticks 1 costs gate -5.0pp on 34/34 files with Chimera melody 98 -> 70%), so this is about the CONSTANT, not the floor",
+      "why_model": "a per-note release length that moves every file",
+      "why_mode": "regenerates presets.json and FIDELITY.md",
+      "why_lane": "writes goatwriter.py and two generated artefacts",
+      "mcp": [],
+      "depends_on": [],
+      "blocked_on": null,
+      "lane": "serial"
     }
   ],
   "closed": [
+    {
+      "id": "c64me-instrument-table-mismatch",
+      "title": "PREMISE FALSE. $1D1D is loaded by five instructions inside engine $1119's own body; physical adjacency to engine $1D8B is not ownership. A regression test committed (fc84d67), detect.py untouched",
+      "closed_by": "b670faa (runs.jsonl); branch fc84d67"
+    },
+    {
+      "id": "songspeeds-skip-reads-past-its-table",
+      "title": "Bounded by the next per-subtune table rather than a value guard (the DoD's literal phrasing was measured WRONG and reverted); committed 0493e16, awaiting merge",
+      "closed_by": "b670faa (runs.jsonl); branch 0493e16"
+    },
+    {
+      "id": "converter-emits-sound-effects-as-subtunes",
+      "title": "The init's CMP #imm / BCS +3 / JMP music_init dispatch read on 8 files; Knucklebusters 11 -> 3; committed 0c748bb, awaiting merge",
+      "closed_by": "b670faa (runs.jsonl); branch 0c748bb"
+    },
+    {
+      "id": "freq-table-per-engine-nearness",
+      "title": "find_freq_table(near=) picks the table nearest the engine's anchors; committed 87156c2, awaiting merge",
+      "closed_by": "b670faa (runs.jsonl); branch 87156c2"
+    },
+    {
+      "id": "hard-restart-floor-swallows-short-notes",
+      "title": "REFUTED. 357594 corpus notes: 4323 (1.21%) at note_calls <= gatetimer+1, ZERO at note_calls <= gatetimer. Keep goatwriter.py:260 verbatim; ticks 1 costs gate -5.0pp on 34/34 files and Chimera melody 98 -> 70%",
+      "closed_by": "b670faa (runs.jsonl)"
+    },
+    {
+      "id": "chimera-voice0-gate-suppression-unlocated",
+      "title": "The suppressor is a duration nibble of zero -- status & $1F -> $C631,X, the next DEC underflows, BMI $C26A is taken and the note-end block at $C356 is skipped whole. Falsified two ways; 31 of 95 files carry the identical shape",
+      "closed_by": "b670faa (runs.jsonl)"
+    },
+    {
+      "id": "push-master-unpushed-commits",
+      "title": "master pushed: 3b091c0..b670faa, four commits",
+      "closed_by": "b670faa"
+    },
     {
       "id": "merge-instrmap-songview-branch",
       "title": "Land the stranded instrmap/songview de-duplication branch",

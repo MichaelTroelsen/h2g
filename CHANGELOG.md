@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.333 — 2026-08-20
+
+- the plan is regenerated at b670faa, and the ready pool is one complete conflict graph
+
 ## 0.5.332 — 2026-08-20
 
 - the eight-task batch is recorded, and the plan regenerated at 1e534e0
