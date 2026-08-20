@@ -122,69 +122,14 @@ def test_render_produces_self_contained_html(commando):
     assert "Orderlists" in page and "Instruments" in page
 
 
-# --- the comparison overlay (v0.5.242) -------------------------------------
-
-def _delta(number, adsr, orig, ours, kind, paired="adsr", effect=0x01,
-           declares=0x41, orig_notes=10, our_notes=10):
-    return songview.InstrumentDelta(
-        number=number, adsr=adsr, effect=effect, declares=declares,
-        orig_shape=orig, our_shape=ours, orig_notes=orig_notes,
-        our_notes=our_notes, kind=kind, paired=paired)
-
-
-def test_an_exact_adsr_is_paired_with_itself():
-    assert songview.pair_by_adsr({0x064B}, {0x064B}) == [(0x064B, 0x064B, "adsr")]
-
-
-def test_a_release_that_cut_release_zeroed_still_pairs():
-    """The key contains the release nibble and `--cut-release` changes it, so
-    Commando's `$295F` and our `$2950` are one instrument. Keyed exactly it is
-    two rows, one flagged 'ours only' and one 'original only' -- two false
-    flags for an instrument that agrees, which is what this page showed the
-    first time it ran."""
-    assert songview.pair_by_adsr({0x295F}, {0x2950}) == [(0x295F, 0x2950, "ad+s")]
-
-
-def test_an_ambiguous_release_match_is_refused_rather_than_guessed():
-    """Two candidates sharing AD+sustain: which of them the trace heard is a
-    guess, and a wrong pairing is a wrong row. Left unpaired instead."""
-    got = songview.pair_by_adsr({0x295F, 0x2951}, {0x2950})
-    assert all(how == "adsr" for _, _, how in got)
-    assert (0x295F, 0x2950, "ad+s") not in got
-    assert set(got) == {(None, 0x2950, "adsr"), (0x2951, None, "adsr"),
-                        (0x295F, None, "adsr")}
-
-
-def test_an_instrument_only_one_side_sounds_keeps_its_row():
-    assert songview.pair_by_adsr({0x1111}, {0x2222}) == [
-        (0x1111, None, "adsr"), (None, 0x2222, "adsr")]
-
-
-def test_the_overlay_sorts_disagreements_first_and_links_to_the_card():
-    tri, noi = 0x10, 0x80
-    deltas = [
-        _delta(2, 0x064B, (tri,) * 4, (tri,) * 4, "match"),
-        _delta(11, 0x0800, (tri, noi, tri, noi), (tri,) * 4, "flat"),
-        _delta(3, 0x0A00, (tri,) * 4, (tri,) * 4, "match"),
-    ]
-    deltas.sort(key=lambda d: (not d.flagged, d.number))
-    html = songview._comparison_section(deltas)
-    assert html.index("cmp11") < html.index("cmp2"), "flagged rows come first"
-    assert "href='#ins11'" in html, "each row links to its instrument card"
-    assert "1 of 3 disagree" in html
-
-
-def test_a_row_paired_on_the_release_says_so():
-    """A pairing rule is a claim, so the page has to make it."""
-    html = songview._comparison_section(
-        [_delta(1, 0x2950, (0x40,) * 4, (0x40,) * 4, "match", paired="ad+s")])
-    assert "*" in html and "--cut-release" in html
-
-
-def test_the_page_without_a_comparison_is_unchanged(commando):
-    """`--compare` is opt-in: it needs siddump and gt2reloc, and the page's
-    whole point is that reading bytes off disk cannot be wrong."""
+def test_render_has_no_comparison_section(commando):
+    """The original-vs-ours overlay moved to `instrmap.py` (v0.5.331): two
+    tools joined the original's trace against ours on the ADSR pair, and
+    `songview.py`'s own docstring already said it "judges nothing and scores
+    nothing" -- a promise `--compare` broke. `instrmap.py` is now the one
+    place that comparison is made, with `songview.py` back to a pure
+    renderer of bytes already on disk."""
     assert "Original against ours" not in songview.render(commando, "Commando")
-    assert "Original against ours" in songview.render(
-        commando, "Commando", None,
-        [_delta(1, 0x2950, (0x40,) * 4, (0x40,) * 4, "match")])
+    assert not hasattr(songview, "compare_sides")
+    assert not hasattr(songview, "InstrumentDelta")
+    assert not hasattr(songview, "pair_by_adsr")
