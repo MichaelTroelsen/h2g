@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.330**
+- Converter: `h2g` **0.5.336**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -55,8 +55,8 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 - **2 files lose a subtune to Goattracker's 254-byte orderlist limit.** The rest of the tune converts: one over-long subtune used to abort the whole file, discarding every good subtune with it. The subtune is dropped rather than truncated, because cutting one voice short while its neighbours play on makes it loop early and drift — a subtune that sounds wrong is worse than one plainly absent. Affected: `Chicken_Song.sid` (1), `Knucklebusters.sid` (1).
 - **80 of 80 converted files pack back to a `.sid`** with `gt2reloc`, the standalone form of Goattracker's F9 packer. That is what makes a fidelity test possible: the packed `.sid` can be `siddump`ed against the file it was converted from. A failure here is not a conversion failure — the `.sng` is fine in the editor — but it blocks that comparison. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md). These numbers are with `--legal-restart`; without it `greloc.c:244` rejects every tune that ends on Hubbard's `$FE` marker, because the stop it maps to is an out-of-range restart position.
 - **3 failures are capacity, not comprehension.** These files detect cleanly (all four passes green) and fail only because the tune exceeds a Goattracker limit — 208 patterns or a 255-byte orderlist. They are the most recoverable group: splitting the orderlist across subtunes would convert them.
-- **18 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
-  - **18 are phantom subtunes** (subtune 0 clean, later subtunes dangling). The track table has no length field and the PSID header routinely over-claims, so a pointer that happens to land inside the file is read as an orderlist. Only pointers resolving *outside* the file, and subtunes that play no existing pattern at all, are rejected -- a threshold on the rest would also discard real subtunes, which run as low as one bad reference in a hundred good ones.
+- **1 converted files contain orderlist entries that point at patterns the file does not have.** `reindex_tracks` drops those references silently, so the tune plays with material missing rather than failing.
+  - **1 are phantom subtunes** (subtune 0 clean, later subtunes dangling). The track table has no length field and the PSID header routinely over-claims, so a pointer that happens to land inside the file is read as an orderlist. Only pointers resolving *outside* the file, and subtunes that play no existing pattern at all, are rejected -- a threshold on the rest would also discard real subtunes, which run as low as one bad reference in a hundred good ones.
 
 ## Converted (80)
 
@@ -75,20 +75,20 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | Chain Reaction | 9 | 1 | 30 | 37 | - | 10769 | y |  |
 | `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 26 | 120 | - | 34060 | y | 1 subtune(s) too long |
 | `Chimera.sid` | Chimera | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 2 (hdr 4) | 9 | 65 | - | 13878 | y |  |
-| `Commando.sid` | Commando | PSID v2 | Rob_Hubbard | Warhawk | 0 | 18 (hdr 19) | 14 | 65 | 59 | 15781 | y |  |
-| `Commodore_64_Music_Examples.sid` | Commodore 64 Music Examples | PSID v2 | Companion, Rob_Hubbard | Battle of Britain | 5 | 15 | 14 | 145 | 75 | 11149 | y |  |
+| `Commando.sid` | Commando | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 19) | 14 | 65 | - | 15193 | y |  |
+| `Commodore_64_Music_Examples.sid` | Commodore 64 Music Examples | PSID v2 | Companion, Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 15) | 14 | 145 | - | 10134 | y |  |
 | `Confuzion.sid` | Confuzion | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 12 | 56 | - | 15599 | y |  |
-| `Crazy_Comets.sid` | Crazy Comets | PSID v2 | Rob_Hubbard | Last V8 | 1 | 17 | 24 | 80 | 16 | 20315 | y |  |
+| `Crazy_Comets.sid` | Crazy Comets | PSID v2 | Rob_Hubbard | Last V8 | 1 | 2 (hdr 17) | 24 | 80 | - | 19651 | y |  |
 | `Deep_Strike.sid` | Deep Strike | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 13 | 56 | - | 13342 | y |  |
-| `Delta_Mix-E-Load_loader.sid` | Delta Mix-E-Load (loader) | PSID v2 | Rob_Hubbard | Warhawk | 0 | 14 (hdr 16) | 30 | 40 | 66 | 11619 | y |  |
+| `Delta_Mix-E-Load_loader.sid` | Delta Mix-E-Load (loader) | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 16) | 30 | 40 | - | 11220 | y |  |
 | `Devils_Galop.sid` | Devils Galop | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 16 | 83 | - | 24046 | y |  |
 | `Flash_Gordon.sid` | Flash Gordon | PSID v2 | Rob_Hubbard | Warhawk | 0 | 9 | 19 | 147 | - | 46397 | y |  |
 | `Food_Feud.sid` | Food Feud | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 15 | 57 | - | 15453 | y |  |
 | `Formula_1_Simulator.sid` | Formula 1 Simulator | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 2) | 16 | 37 | - | 10750 | y |  |
 | `Game_Killer.sid` | Game Killer | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 12 | 38 | - | 9400 | y |  |
-| `Geoff_Capes_Strongman_Challenge.sid` | Geoff Capes Strongman Challenge | PSID v2 | Rob_Hubbard | Warhawk | 0 | 21 (hdr 24) | 22 | 55 | 110 | 11223 | y |  |
+| `Geoff_Capes_Strongman_Challenge.sid` | Geoff Capes Strongman Challenge | PSID v2 | Rob_Hubbard | Warhawk | 0 | 8 (hdr 24) | 22 | 55 | - | 10760 | y |  |
 | `Gerry_the_Germ.sid` | Gerry the Germ | PSID v2 | Rob_Hubbard | Warhawk | 0 | 7 (hdr 23) | 28 | 171 | - | 42153 | y |  |
-| `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 26 | 33 | 208 | 41 | 55809 | y |  |
+| `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 7 (hdr 26) | 33 | 196 | - | 51685 | y |  |
 | `Hollywood_or_Bust.sid` | Hollywood or Bust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 10) | 21 | 136 | - | 38958 | y |  |
 | `Human_Race.sid` | The Human Race | PSID v2 | Rob_Hubbard | Last V8 | 1 | 5 | 25 | 102 | - | 23230 | y |  |
 | `Hunter_Patrol.sid` | Hunter Patrol | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 33 | 78 | - | 21844 | y |  |
@@ -100,26 +100,26 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 | y | digi channel dropped |
 | `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 186 | - | 54309 | y | 1 subtune(s) too long |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 | y |  |
-| `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 17) | 34 | 66 | 113 | 21248 | y |  |
-| `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 12 (hdr 18) | 34 | 56 | 154 | 17385 | y |  |
+| `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 3 (hdr 17) | 34 | 66 | - | 20877 | y |  |
+| `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 3 (hdr 18) | 34 | 56 | - | 17007 | y |  |
 | `Lightforce.sid` | Lightforce | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 23 | 64 | - | 19805 | y |  |
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 | y |  |
-| `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 11 | 22 | 60 | 85 | 17283 | y |  |
-| `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 19 | 21 | 164 | 14 | 48660 | y |  |
+| `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 1 (hdr 11) | 22 | 60 | - | 16249 | y |  |
+| `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 19) | 21 | 147 | - | 42788 | y |  |
 | `Mozart.sid` | Mozart | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 20 | 118 | - | 36219 | y |  |
 | `Mr_Meaner.sid` | Mr Meaner | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 83 | - | 23901 | y | digi channel dropped |
-| `Nemesis_the_Warlock.sid` | Nemesis the Warlock | PSID v2 | Rob_Hubbard | IK+ | 7 | 15 | 17 | 74 | 23 | 16951 | y |  |
+| `Nemesis_the_Warlock.sid` | Nemesis the Warlock | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 (hdr 15) | 17 | 74 | - | 16211 | y |  |
 | `Nineteen.sid` | Nineteen | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 30 | 46 | - | 11816 | y |  |
 | `Ninja.sid` | Ninja | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 14 | 26 | - | 6076 | y |  |
 | `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 106 | - | 37174 | y | digi channel dropped |
-| `One_Man_and_his_Droid.sid` | One Man and his Droid | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 13 (hdr 14) | 16 | 74 | 33 | 21835 | y |  |
+| `One_Man_and_his_Droid.sid` | One Man and his Droid | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 14) | 16 | 74 | - | 21445 | y |  |
 | `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 21 | 74 | - | 11357 | y | digi channel dropped |
 | `Pandora.sid` | Pandora | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 17 | 67 | - | 18448 | y |  |
 | `Phantoms_of_the_Asteroid.sid` | Phantoms of the Asteroid | PSID v2 | Rob_Hubbard | Last V8 | 1 | 4 | 26 | 96 | - | 27004 | y |  |
 | `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 21 | 67 | - | 16129 | y | digi channel dropped |
 | `Proteus.sid` | Proteus | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 18 | 46 | - | 12143 | y |  |
 | `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 | y | digi channel dropped |
-| `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 17 (hdr 18) | 15 | 65 | 22 | 16221 | y |  |
+| `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 (hdr 18) | 15 | 65 | - | 15752 | y |  |
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 17 | 138 | - | 45642 | y |  |
 | `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 | y | digi channel dropped |
 | `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 | y | digi channel dropped |
@@ -129,16 +129,16 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Shockway_Rider.sid` | Shockway Rider | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 14 | 76 | - | 20425 | y |  |
 | `Sigma_Seven.sid` | Sigma Seven | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 9 | 25 | - | 6486 | y |  |
 | `Skate_or_Die_intro.sid` | Skate or Die (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 9 | 53 | - | 13703 | y |  |
-| `Spellbound.sid` | Spellbound | PSID v2 | Rob_Hubbard | Warhawk | 0 | 13 | 26 | 111 | 25 | 36687 | y |  |
+| `Spellbound.sid` | Spellbound | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 13) | 26 | 111 | - | 36414 | y |  |
 | `Star_Paws.sid` | Star Paws | PSID v2 | Rob_Hubbard | IK+ | 7 | 3 | 21 | 53 | - | 13534 | y |  |
 | `Tarzan.sid` | Tarzan | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Warhawk | 0 | 11 (hdr 12) | 20 | 53 | 1 | 12470 | y |  |
 | `Thanatos.sid` | Thanatos | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 6 | 25 | - | 8198 | y |  |
-| `Thing_on_a_Spring.sid` | Thing on a Spring | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 13 (hdr 17) | 16 | 66 | 30 | 19549 | y |  |
+| `Thing_on_a_Spring.sid` | Thing on a Spring | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 17) | 16 | 66 | - | 17410 | y |  |
 | `Thrust.sid` | Thrust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 29 | 63 | - | 17613 | y |  |
-| `Thundercats.sid` | Thundercats | PSID v2 | Rob_Hubbard | IK+ | 7 | 11 (hdr 16) | 30 | 41 | 48 | 12022 | y |  |
+| `Thundercats.sid` | Thundercats | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 (hdr 16) | 30 | 41 | - | 11289 | y |  |
 | `Trans-Atlantic_Balloon_Challenge.sid` | Trans-Atlantic Balloon Challenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 20 | 56 | - | 13575 | y |  |
 | `W_A_R_Preview.sid` | W.A.R. Preview | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 29 | 68 | - | 19883 | y |  |
-| `Warhawk.sid` | Warhawk | PSID v2 | Rob_Hubbard | Warhawk | 0 | 18 | 29 | 70 | 46 | 17646 | y |  |
+| `Warhawk.sid` | Warhawk | PSID v2 | Rob_Hubbard | Warhawk | 0 | 9 (hdr 18) | 29 | 70 | - | 17328 | y |  |
 | `Wiz.sid` | Wiz | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 3 | 21 | 75 | - | 16356 | y |  |
 | `Zoids.sid` | Zoids | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 16 | 59 | - | 19129 | y |  |
 | `Zoolook.sid` | Zoolook | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 30 | 37 | - | 10769 | y |  |

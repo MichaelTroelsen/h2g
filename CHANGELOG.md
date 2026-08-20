@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.337 — 2026-08-20
+
+- the artefacts regenerated across the twelve merges, and the passthrough guard re-armed
+
 ## 0.5.336 — 2026-08-20
 
 - the six batch branches land, and the wavetable right byte is the packer's inverse
