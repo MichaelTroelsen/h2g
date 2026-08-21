@@ -1096,6 +1096,32 @@ derives its keys from `inspect.signature(convert)` and
 `presets.EXCLUDED_FROM_ALWAYS` naming deliberate omissions. Do not hand-edit
 that list back into existence.
 
+- **A staleness skip keyed on the version fires on every commit, because the
+  version changes on every commit.** That guard skipped unless
+  `presets.json`'s `generator` stamp contained the running `__version__`. The
+  skip is *right* — the artefact is regenerated after a conversion-changing
+  commit, not during one, so between the two it legitimately lacks the option
+  it should carry, and asserting against it would fail for the one reason the
+  test is not about. But `bump_version.py` rewrites `__init__.py` and
+  `CHANGELOG.md` and **never touches `presets.json`**, so the stamp fell
+  behind on the next commit whatever that commit did. The guard was therefore
+  live only in the commit that regenerated the artefact — and not even then,
+  because `bump_version.py` runs *after* `presets.py`, so that commit ships a
+  stamp one version behind. That is the likeliest reading of this file's own
+  note that the guard once stayed off for ten versions, and at v0.5.337 it was
+  watched happening again inside a single commit.
+  The version was only ever a **proxy** for "could the option set have changed
+  since this file was written". Ask that directly: `_always()` now skips only
+  when an option is genuinely unaccounted for in the artefact **and** the
+  stamp predates the running version. Every current option accounted for → the
+  test runs whatever version stamped the file; an option missing while the
+  versions match → it fails, which is the defect it exists to catch. All three
+  branches are exercised in `tests/test_preset_passthrough.py`.
+  The general rule: **a skip condition must be keyed on the thing that would
+  make the assertion lie, never on a proxy that moves more often.** A guard
+  that goes dark on a schedule nobody chose is worse than no guard, because
+  the suite still reports green.
+
 **`presets.py --fidelity` searches at `-t 60` since v0.5.235, and the ten
 seconds before it were choosing settings blind.** v0.5.195 moved the *report*
 to 60 s because a fifth of the corpus contributed nothing to some columns at
