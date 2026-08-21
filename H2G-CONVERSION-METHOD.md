@@ -10130,6 +10130,35 @@ that play nothing are emitted as placeholders and counted:
     emitted                        312
     lost                           227   in 39 files
 
+> **SUPERSEDED at v0.5.337, and the headline reversed with it.** Those figures
+> and the by-cause table below are the census as it stood before the two
+> subtune bounds landed (`eb71f82`). It now reads **553 declared, 237 emitted**,
+> and — the part that matters — *every* `placeholder` row is gone. There were
+> 139 of them; all 139 were subtunes read past the end of a track table, which
+> is what the extent bound claimed and what only a regeneration could confirm.
+> The live table is:
+>
+>     192  20 files  beyond_table  track table cells belong to another table
+>      97   8 files  sfx           the player's init dispatches it to the
+>                                  sound-effect routine
+>      12   2 files  beyond_table  track table is shorter than the header
+>      10  10 files  trimmed       no voice pointer resolves inside the file
+>       2   1 file   trimmed       only 1 of 3 voice pointers resolve
+>       2   2 files  unreadable    ValueError
+>       1   1 file   trimmed       only 2 of 3 voice pointers resolve
+>
+> **The negative result this section is named for is now three quarters of the
+> story rather than all of it.** "Essentially all of the loss is reading past
+> the end of a table with no length field" was true when it was written. It is
+> not true now: 97 subtunes across 8 files have a *positive*, player-derived
+> cause — their init dispatches them to a sound-effect routine via
+> `CMP #imm / BCS / JMP`, so the player itself says they are not music. That is
+> a different kind of answer from "the bytes after the table decode to
+> something", and it is the second largest entry in the table.
+>
+> Read the rest of this section as the reasoning that produced the census,
+> which stands, rather than as its current numbers, which do not.
+
 | subtunes | files | fate | cause |
 |---:|---:|---|---|
 | 97 | 17 | `placeholder` | no voice pointer resolves inside the file |

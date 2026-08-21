@@ -215,6 +215,26 @@ test dependency).
   27 of the 28 corpus files whose run is short against the mode's 24. When a
   reduction over per-subtune data is pinned by a fixture, check the corpus
   copy of the same tune has the same subtunes.
+- **A PSID header's subtune count is not a promise, and there are now THREE
+  bounds on it.** The track table has no length field, so the header routinely
+  over-declares and reading past the end yields whatever bytes follow. Applied
+  in order, tighter wins: the player's own init dispatch
+  (`detect.find_music_subtunes`, a `CMP #imm / BCS / JMP` at the entry — 8
+  files, 97 subtunes), the digi engine's `subtunes_available`, and the layout
+  extent (`tracks.track_table_extent`, where the track table runs into the
+  pattern table — 22 files, 204 subtunes). Each dropped subtune is attributed
+  to the bound that dropped it, which is what makes `SUBTUNES.md`'s by-cause
+  table readable rather than a single bucket.
+  **Two things worth carrying.** The dispatch and the extent were derived
+  independently, by agents that never saw each other's work, and they AGREE on
+  seven of the eight files that carry both; Spellbound is the one disagreement
+  (layout 4, dispatch 3) and the dispatch wins, because it says what the player
+  *does* where the extent says only what the table has *room for*. And the
+  census's old headline — "essentially all of the loss is reading past the
+  end" — is now three quarters true rather than all: 97 subtunes have a
+  positive, player-derived cause. **That sentence is still in
+  `python/survey.py`'s template and therefore in every regenerated
+  `SUBTUNES.md`**; fixing it is a code edit, not a doc edit.
 - **`onset` is the column that sees a mechanism emitted one frame out of
   phase**, and until v0.5.217 nothing could. `wave` averages per-frame
   agreement over the whole window, so a wrong opening frame on a 43-note
