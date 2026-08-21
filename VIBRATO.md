@@ -54,6 +54,7 @@
 | Food_Feud.sid | `$29F9` | 3 | $34 | pitchseq | 137 | 0 |
 | Knucklebusters.sid | `$0AAD` | 25 | $44 | atkpitch | 261 | 125 |
 | Monty_on_the_Run.sid | `$3FFF` | 13 | $02 | plain | 218 | 95 |
+| Flash_Gordon.sid | `$1ABD` | 5 | $14 | pitchseq | 108 | 0 |
 | International_Karate.sid | `$0A08` | 5 | $C5 | arp | 103 | 0 |
 | Samantha_Fox_Strip_Poker.sid | `$0909` | 2 | $C4 | arp | 101 | 0 |
 | Spellbound.sid | `$0F0A` | 13 | $25 | arp | 100 | 0 |
@@ -94,12 +95,12 @@
 | plain | 18 | 11 | 29 | 8382 |
 | arp | 20 | 0 | 20 | 5005 |
 | program | 7 | 2 | 9 | 870 |
-| pitchseq | 7 | 0 | 7 | 4868 |
+| pitchseq | 8 | 0 | 8 | 4976 |
 | atkpitch | 3 | 2 | 5 | 161 |
 | bit80 | 2 | 0 | 2 | 17 |
 | unknown | 2 | 0 | 2 | 626 |
 | drum | 2 | 0 | 2 | 282 |
 
-**61 of these 76 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**62 of these 77 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).
