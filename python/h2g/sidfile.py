@@ -269,13 +269,24 @@ class FreqTable:
     `ambiguous` says the file offered more than one validated table and they
     do **not** agree about the tuning, with nothing given to choose between
     them -- so `detune` here is one of two answers rather than the file's.
+
+    `length` and `run` are **not** the same number, and the difference is
+    the top of the table. `run` is what `_table_run` validated -- entries
+    that really do rise a semitone at a time -- and `length` is how many
+    entries the table has, which is one more wherever the last one is a
+    clamp the 16-bit frequency registers forced (see `_grid_edge_clamp`).
+    Read `length` to bound an index into the table, and `run` to compare
+    two candidate tables with each other: the tie-break is about which
+    reading of the file is better evidenced, and a clamped entry is
+    evidence of nothing.
     """
     addr: int          # C64 address of entry 0
     start: int         # first entry with a frequency in it
-    length: int        # entries in the validated run
+    length: int        # entries in the table
     shift: int
     detune: float
     ambiguous: bool = False
+    run: int = 0       # entries in the validated semitone run
 
 
 def _semitones(freq: float) -> float:
@@ -294,6 +305,44 @@ def _table_run(vals, start: int) -> int:
         n += 1
         i += 1
     return n + 1 if n else 0
+
+
+# One semitone as a frequency ratio. `_grid_edge_clamp` is the only user, and
+# it needs the ratio rather than the logarithm `_table_run` works in.
+_SEMITONE = 2.0 ** (1.0 / 12.0)
+
+
+def _grid_edge_clamp(vals, i: int) -> bool:
+    """Is `vals[i]` a table entry the 16-bit frequency registers cut short?
+
+    The top of a note table is not a semitone above the entry below it,
+    because it cannot be. Entry 94 of the PAL table these players share is
+    `$F820` = 63520; a semitone above that is 67297, which does not fit in
+    `$D400`/`$D401`, so entry 95 is written as far up as the register goes --
+    `$FD2E` in 82 of the 88 candidate tables this corpus offers (35 cents), a
+    flat `$FFFF` in the other six (55 cents). `_table_run` is a *validation*,
+    so it stops at that entry, and the run it returns is one short of the
+    table it validated. `goatwriter._freq_table_note` -- rightly -- refuses
+    an index past the table's end, so five records were declined for naming
+    an entry that is really there: Tarzan's 0 and 16 and
+    Delta_Mix-E-Load_loader's 5 through effect bit `$08`'s alternate note,
+    and Ricochet's 0 and 20 through bit `$40`'s fixed attack. Those are the
+    only three files whose converted bytes move.
+
+    The test is the *cause*, not the symptom: an entry qualifies only where a
+    full semitone above its predecessor would overflow 16 bits, which nothing
+    below the top of a table can do. So this widens the reported length by at
+    most one entry, at one place in one table, and `_table_run` itself is
+    left alone -- deliberately, because the same function serves Skate or Die
+    intro's `$0000` at entry 0, and that is a `shift` rather than a longer
+    run. Relaxing the semitone test would blur the two.
+    """
+    if not 0 < i < len(vals):
+        return False
+    prev = vals[i - 1]
+    if prev <= 0 or prev * _SEMITONE <= 0xFFFF:
+        return False
+    return prev < vals[i] <= 0xFFFF
 
 
 def _freq_table_sites(data: bytes):
@@ -364,16 +413,24 @@ def find_freq_table(sid: "SidFile", near: Optional[int] = None) -> Optional[Freq
         shift = round(offset)
         if abs(offset - shift) > _GRID_TOLERANCE:
             shift = 0
-        cands.append(FreqTable(addr, start, run, shift, offset - shift))
+        length = run + 1 if _grid_edge_clamp(vals, start + run) else run
+        cands.append(FreqTable(addr, start, length, shift, offset - shift,
+                               run=run))
     if not cands:
         return None
+    # Both tie-breaks rank on `run`, not `length` -- the validated run is the
+    # evidence, and a clamped top entry is not. Powerplay Hockey's two players
+    # are separated by exactly that one entry (its tune table is NTSC, so its
+    # own entry 95 still fits the grid and its cue table's does not); ranking
+    # on `length` would tie them and hand the blind path back the coin flip
+    # `near` exists to remove.
     if near is None:
         # `max` keeps the first of equal keys, which is the file order the
         # old `run > best.length` walk kept.
-        best = max(cands, key=lambda c: c.length)
+        best = max(cands, key=lambda c: c.run)
     else:
         best = min(cands, key=lambda c: (abs(sid.to_offset(c.addr) - near),
-                                         -c.length))
+                                         -c.run))
     if len({c.shift for c in cands}) > 1:
         best = replace(best, shift=0, detune=best.detune + best.shift)
     if near is None and _detunes_disagree(cands):

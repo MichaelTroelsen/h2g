@@ -133,6 +133,64 @@ def test_a_file_with_no_recognised_lookup_keeps_the_old_mapping():
         assert detect(sid, log=lambda m: None).note_base == 0, name
 
 
+def test_the_clamped_top_entry_is_in_the_length_and_not_in_the_run():
+    # Entry 95 of the PAL table these players share is $FD2E -- 35 cents above
+    # entry 94, not 100, because a semitone above $F820 is 67297 and $D400/
+    # $D401 cannot hold it. `_table_run` is a validation and so stops there;
+    # the entry is still a table entry, and three records name it.
+    if not CORPUS.is_dir():
+        return
+    for name in ("Tarzan", "Delta_Mix-E-Load_loader", "Ricochet"):
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        ft = find_freq_table(sid)
+        assert ft is not None, name
+        off = sid.to_offset(ft.addr) + 2 * 95
+        assert sid.data[off] | (sid.data[off + 1] << 8) == 0xFD2E, name
+        assert ft.run == 95, name
+        assert ft.length == 96, name
+
+
+def test_the_grid_edge_extension_is_the_overflow_and_nothing_else():
+    from h2g.sidfile import _grid_edge_clamp
+    # The real shape: a semitone above 63520 is 67297, so entry 95 is clamped.
+    assert _grid_edge_clamp([63520, 0xFD2E], 1) is True
+    assert _grid_edge_clamp([63520, 0xFFFF], 1) is True
+    # ...and nothing below the top of a table qualifies, however off-grid the
+    # bytes after it look. This is what keeps the widening to one entry in one
+    # place instead of relaxing the semitone test.
+    assert _grid_edge_clamp([1000, 1010], 1) is False
+    assert _grid_edge_clamp([61000, 61500], 1) is False   # 61000 * 2^(1/12) fits
+    # An entry that does not rise, or that is not there at all, is not a clamp.
+    assert _grid_edge_clamp([63520, 63520], 1) is False
+    assert _grid_edge_clamp([63520, 100], 1) is False
+    assert _grid_edge_clamp([63520], 1) is False
+    assert _grid_edge_clamp([63520, 0xFD2E], 0) is False
+
+
+def test_the_grid_edge_entry_names_a_note_the_bound_used_to_refuse():
+    # The point of the length, in the one place it is read: bit $08's alternate
+    # note (Tarzan, Delta Mix-E-Load) and bit $40's fixed attack (Ricochet)
+    # both index the player's table, and both refuse an index past its end.
+    if not CORPUS.is_dir():
+        return
+    from h2g.goatwriter import (WAVE_NOTE_ABS, _fixed_attack_note,
+                                _note_alternate_note)
+    want = {"Tarzan": (_note_alternate_note, (0, 16)),
+            "Delta_Mix-E-Load_loader": (_note_alternate_note, (5,)),
+            "Ricochet": (_fixed_attack_note, (0, 20))}
+    for name, (fn, records) in want.items():
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        det = detect(sid, log=lambda m: None)
+        for i in records:
+            got = fn(sid, det, i)
+            assert got is not None, (name, i)
+            # $FD2E is 35 cents above Goattracker's note 94 and 65 below its
+            # note 95, so the nearest-note rule names it 94 -- which is the
+            # pitch the player actually sounds, register value for register
+            # value.
+            assert got == (WAVE_NOTE_ABS + 94) & 0xFF, (name, i, hex(got))
+
+
 def test_gt_freq0_matches_goattrackers_table():
     # gplay.c freqtbllo[0] = 0x17, freqtblhi[0] = 0x01. If this ever drifts,
     # every base measurement above silently moves with it.

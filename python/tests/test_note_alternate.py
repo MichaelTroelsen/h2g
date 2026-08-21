@@ -165,11 +165,17 @@ def test_the_corpus_population_is_exactly_these_files():
                 resolved += _note_alternate_note(sid, det, i) is not None
     assert found == NOTE_ALT_FILES
     assert records == 80
-    # 14 records name an index past the frequency table's validated run --
-    # twelve of them the same boilerplate sound-effect record 26, whose index
-    # is 99 against a 95-entry run. An index that is not a note is declined
-    # rather than guessed at, the rule `_fixed_attack_note` already follows.
-    assert resolved == 66
+    # 11 records name an index past the end of the frequency table -- all of
+    # them the same boilerplate sound-effect record, whose index is 99 against
+    # a 96-entry table. An index that is not a note is declined rather than
+    # guessed at, the rule `_fixed_attack_note` already follows.
+    #
+    # It was 14 against a 95-entry *run* until the grid-edge clamp landed: a
+    # table's last entry saturates at $FFFF rather than rising a full semitone
+    # (63520 * 2**(1/12) = 67297, which does not fit), so the validated run
+    # stops one short of the table it validates. `run` is still the semitone
+    # run and is what the tie-breaks rank on; `length` is now the table.
+    assert resolved == 69
     # A reading of a bit is a reading of one player: the accumulate dialect
     # reads the same bit as a pulse-width step and the two never coincide.
     assert pulse_lo_too == set()
@@ -213,4 +219,4 @@ def test_every_emitted_note_is_an_absolute_note_byte():
                 continue
             seen += 1
             assert 0x81 <= note <= 0xDF, (path.stem, i, hex(note))
-    assert seen == 66
+    assert seen == 69

@@ -61,7 +61,7 @@ def test_powerplay_offers_two_tables_a_single_entry_apart():
         if ft is not None:
             found[ft.addr] = ft
     assert set(found) >= {CUE_TABLE, TUNE_TABLE}
-    assert found[TUNE_TABLE].length - found[CUE_TABLE].length == 1
+    assert found[TUNE_TABLE].run - found[CUE_TABLE].run == 1
     # ...and they disagree about the tuning by an NTSC clock ratio, which is
     # the difference that decides how the original's notes are named.
     assert abs(found[TUNE_TABLE].detune - found[CUE_TABLE].detune) > 0.5
@@ -117,7 +117,7 @@ def test_the_default_path_still_takes_the_longest_run():
         if not cands:
             assert got is None, path.name
             continue
-        assert got.addr == max(cands, key=lambda c: c.length).addr, path.name
+        assert got.addr == max(cands, key=lambda c: c.run).addr, path.name
 
 
 @needs_corpus
