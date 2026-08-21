@@ -883,14 +883,31 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     extra = calls - 1             # entry 0 is already one call
     if attack_note is not None:
         # **The remaining calls are spelled out rather than folded into a
-        # delay, and the reason recorded here for 130 versions was wrong.**
-        # It read "the rest of the attack returns to the played note", which
-        # `$00` cannot do: the packed player tests `lda notetbl / bne`
-        # (player.s:976-977), so `$00` is *no frequency write at all* and the
-        # fixed pitch is held either way. What separates the two forms is the
-        # other end -- a delay's right side is read on its final call, so
-        # `_first_frame_lead`'s `$80` would re-assert the base note where
-        # these `$00`s leave the pitch alone.
+        # delay.** The reason recorded here was corrected once and is corrected
+        # again: it read "the rest of the attack returns to the played note",
+        # then was rewritten to "`$00` is no frequency write at all", citing
+        # `player.s:976-977`. That second reading is the PACKED byte's, and
+        # this is a `.sng` byte -- `gt2reloc` inverts bit 7 of every
+        # non-command right byte (`greloc.c:1340-1341`), so a `.sng` `$00`
+        # arrives as packed `$80` and DOES write: `adc mt_chnnote / and #$7f`,
+        # the played note. The original wording was nearer the truth than its
+        # correction.
+        #
+        # What actually separates the two forms is the other end. A delay's
+        # right side is read on its FINAL call, so folding these into one
+        # delay would re-assert the played note once at the end of the attack
+        # instead of on every call of it -- and on a fixed-attack-pitch record
+        # that is the difference between holding the pitch and dropping back.
+        # Spelled out, every call carries the same byte and the shape is
+        # explicit.
+        #
+        # THIS IS THE THIRD COMMENT IN THIS FILE ABOUT THAT ONE BYTE. The
+        # other two (`WAVE_NOTE_BASE`'s definition and
+        # `_wave_alternate_entries.half()`) were each corrected by a separate
+        # change that did not know about this one, which is how a superseded
+        # reading survived beside two correct ones. When this byte's meaning is
+        # restated, grep the file for `greloc.c` and `976-977` and fix every
+        # site, or the next reader will find the wrong one first.
         #
         # Holding is what the player does. One_on_One's GT 2 (`$44`, frames
         # byte 4 -> 2), 372 onsets and no distribution on any offset: the
