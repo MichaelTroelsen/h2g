@@ -81,7 +81,8 @@
       "subtunes": 1,
       "rows": 19816,
       "multiplier": 1,
-      "wave_program": true
+      "wave_program": true,
+      "no_test_restart": true
     },
     "Auf_Wiedersehen_Monty.sid": {
       "max_rows": 94,
