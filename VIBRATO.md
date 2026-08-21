@@ -8,7 +8,6 @@
 
 | file | ADSR | GT | effect | cause | orig | ours |
 |---|---|---:|---|---|---:|---:|
-| W_A_R_Preview.sid | `$4AAD` | 2 | $14 | pitchseq | 1717 | 0 |
 | International_Karate.sid | `$090A` | 2 | $55 | pitchseq | 1625 | 0 |
 | IK_plus.sid | `$0A56` | 5 | $14 | pitchseq | 1600 | 0 |
 | Tarzan.sid | `$7840` | 1 | $2A | plain | 1244 | 0 |
@@ -98,12 +97,12 @@
 | plain | 18 | 12 | 30 | 9120 |
 | arp | 20 | 0 | 20 | 5005 |
 | program | 8 | 1 | 9 | 871 |
-| pitchseq | 8 | 0 | 8 | 6585 |
+| pitchseq | 7 | 0 | 7 | 4868 |
 | atkpitch | 4 | 2 | 6 | 478 |
 | drum | 3 | 0 | 3 | 926 |
 | bit80 | 2 | 0 | 2 | 17 |
 | unknown | 2 | 0 | 2 | 626 |
 
-**65 of these 80 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**64 of these 79 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.344 — 2026-08-21
+
+- the W_A_R_Preview pitch_seq gain adopted, and the handoff rewritten
+
 ## 0.5.343 — 2026-08-21
 
 - the artefacts regenerated across three merges

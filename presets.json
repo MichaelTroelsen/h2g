@@ -916,7 +916,8 @@
       "rows": 12130,
       "multiplier": 4,
       "two_stage": true,
-      "max_hard_restart": true
+      "max_hard_restart": true,
+      "pitch_seq": true
     },
     "Warhawk.sid": {
       "max_rows": 94,
