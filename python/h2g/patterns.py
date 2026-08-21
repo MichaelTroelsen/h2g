@@ -467,6 +467,22 @@ def _build_raw_pattern(data: bytes, addr: int,
             # gplay.c:355 skips the firstwave testbit for the same reason. It
             # also zeroes `vibtime`, so the vibrato restarts on the landing --
             # which is what the original does at the end of a slide.
+            #
+            # **The spelling carries more than "no attack", and one of the
+            # extras can raise a file's attack count.** The packed player
+            # answers `CMD_TONEPORTA` with "no gateoff" (player.s:1298-1301,
+            # `lda mt_chnnewfx,x / cmp #TONEPORTA / beq mt_rest`), so a tied
+            # row skips the hard restart *and* the `firstwave` call after it.
+            # On a **3-call row** those two are the whole row -- 2 calls of
+            # `_hard_restart_ticks` plus 1 of `$09`, the testbit that outputs
+            # nothing -- so an *untied* one-row note there is inaudible, and
+            # tying it is what lets it be heard. Nineteen's voice 0 went 69
+            # attacks -> 74 on that alone when `gate_hold` landed, and reads
+            # as a `melody` regression while being the conversion recovering
+            # notes it had swallowed. 38 of the 83 convertible corpus files
+            # carry such a row, so this is a short-row property and not a
+            # player dialect: see tests/test_row_budget.py, and do not gate
+            # the tie on the files it happens to show up in.
             cmd1, cmd2 = 3, 0x00
         # ...and so does an event whose `wait` field is **zero**, for a
         # different reason in the same routine. The players sequence a note's
