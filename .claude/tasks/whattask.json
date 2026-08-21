@@ -1,13 +1,14 @@
 {
  "generated_from": {
-  "head": "fc691a4",
+  "head": "0e9f254",
   "sources": [
-   "whats-next.md (REWRITTEN WHOLE at 350851e -- current, not spent)",
-   ".claude/tasks/runs.jsonl (71 lines, 63 ids, read in full)",
-   ".claude/tasks/whattask.json (previous plan, head e21995a)",
-   "git log e21995a..fc691a4 (21 commits, v0.5.338-v0.5.344)",
-   "git branch / git worktree list / git merge-base --is-ancestor",
-   "CLAUDE.md, H2G-CONVERSION-METHOD.md, python/survey.py, python/fidelity.py",
+   ".claude/tasks/runs.jsonl (78 lines, 68 ids, read in full)",
+   ".claude/tasks/whattask.json (previous plan, head fc691a4)",
+   "git log fc691a4..0e9f254 (17 commits, v0.5.345-v0.5.349)",
+   "whats-next.md (LARGELY SPENT at 350851e -- see the prose)",
+   "the v0.5.349 --fidelity re-search: 6 shards, 83 songs, 5 candidates measured both ways",
+   "git worktree list / git branch / per-worktree content comparison",
+   "CLAUDE.md, H2G-CONVERSION-METHOD.md, python/survey.py",
    "issues: none (no reachable forge -- `gh issue list` empty)",
    "prs: none (no reachable forge -- `gh pr list` empty)"
   ],
@@ -23,12 +24,13 @@
   "Commando.sng",
   "python/tools/siddump-rt/siddump.exe",
   "the shared session scratchpad -- use a subdirectory named for the task id",
-  "any UNTRACKED file in the tree stamps every generated report `-dirty` (fidelity.py:3165 runs `git status --porcelain -- .`)",
+  "any UNTRACKED file in the tree stamps every generated report `-dirty` (fidelity.py:3165 runs `git status --porcelain -- .`); .claude/tasks/serial.lock and serial.lock.d are gitignored as of 957767b",
   "agent worktrees can be cut at an older commit than the brief names -- always report the worktree's actual HEAD",
-  ".claude/worktrees -- the Workflow runner CREATES agent worktrees here, so prune-merged-worktrees conflicts with the RUNNER rather than with any task, and the touches arithmetic is blind to it",
+  "`git stash` MUST NOT be used in a multi-worktree fan-out: refs/stash is shared, a concurrent pop returns a sibling's diff, and `git fsck` shows 100+ dangling stash commits from past sessions",
+  ".claude/worktrees -- the Workflow runner CREATES agent worktrees here, so prune-merged-worktrees conflicts with the RUNNER rather than with any task",
   ".claude/tasks -- the orchestrator holds serial.lock and runs.jsonl here, and /runqueue requires whattask.json to stay byte-identical while it runs",
-  "a bare `rw:python/tests` in any task's touches is a prefix of every specific test file and collapses the fan-out (cycle 1 ran 3 of 28 eligible tasks)",
-  "worktree-wf_b84ec182-f5f-1 (b7ea0f7) and worktree-wf_b84ec182-f5f-3 (a85b59d) carry commits that are NOT on master -- do not prune them"
+  "a bare `rw:python/tests` in any task's touches is a prefix of every specific test file and collapses the fan-out",
+  "regenerate FIDELITY.md/VIBRATO.md on a COMMITTED tree: commit the other artefacts first, or the stamp reads `-dirty` and needs a second pass"
  ],
  "external_locks": [
   ".claude/tasks/serial.lock"
@@ -60,29 +62,6 @@
    "why_model": "a rendering feature reading data the harness already emits",
    "why_mode": "one module plus its test",
    "why_lane": "writes abpage.py and build/listen"
-  },
-  {
-   "id": "abpage-prune-stale-pages",
-   "title": "abpage never prunes pages for tunes no longer staged",
-   "source": "whats-next.md item 14; runs.jsonl: listen-per-voice-ab (opened)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/abpage.py",
-    "rw:python/tests/test_abpage.py",
-    "rw:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "a build after removing a staged pair leaves no page for it and the index does not link one; three stale .v[123].html had to be deleted by hand",
-   "why_model": "a directory-sync loop with an obvious shape",
-   "why_mode": "one module plus its test",
-   "why_lane": "writes abpage.py and build/listen, which the listening set also uses"
   },
   {
    "id": "abpage-spectrogram",
@@ -181,29 +160,6 @@
    "why_lane": "writes goatwriter.py, the busiest shared file on this list"
   },
   {
-   "id": "boundary-tie-four-files-retrig-below-one",
-   "title": "Four files moved retrig from exactly 1.000 to just under it at v0.5.339",
-   "source": "runs.jsonl: pending-tie-across-pattern-boundaries (opened)",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_wait0_tie.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "a stated cause for Battle_of_Britain 0.988, Devils_Galop 0.995, Crazy_Comets 0.995 and Monty_on_the_Run 0.996 -- a handful of ties applied where the original does attack -- checked by turning the proposed cause off. The leading hypothesis is that the successor's row-0 note is reached through a path the decode does not model (e.g. a rest the orderlist inserts); confirm or refute it. Sub-half-a-point on melody in every case, so a melody-only verdict will not settle it.",
-   "why_model": "a four-file residual where a plausible mechanism is cheap to produce and hard to falsify",
-   "why_mode": "patterns.py, and the answer is a byte-level cause",
-   "why_lane": "writes patterns.py, shared with three tie tasks"
-  },
-  {
    "id": "boundary-tie-loop-around-restart-position",
    "title": "The last orderlist entry's exit state never reaches the restart position's pattern",
    "source": "runs.jsonl: pending-tie-across-pattern-boundaries (opened)",
@@ -282,6 +238,33 @@
    "why_lane": "writes goatwriter.py"
   },
   {
+   "id": "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest",
+   "title": "The tick-0 compensation pushes 15 files further from 1 -- Mozart 1.468 -> 2.031",
+   "source": "runs.jsonl: powerplay-vibrato-rate-still-two-thirds (opened); measured at ebc9d1a",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/classic-vibrato-row-calls",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:VIBRATO.md",
+    "r:presets.json",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "ebc9d1a shortens `cmp` by (row_calls - 1)/row_calls because the packed player skips continuous effects on tick 0 (player.s:982-987, REALTIMEOPTIMIZATION, confirmed by packing the same .sng with -R0: Powerplay 0.658 -> 1.015). The mechanism is right and the aggregate improved -- 27 files toward 1, 15 away, mean |ln(ratio)| 0.2293 -> 0.1893 -- but `row_calls` is taken from the SHORTEST row an instrument reaches where the rate a listener hears is the mean over the rows the orderlist actually PLAYS. Weight by play count, as 7.ccc requires for a distribution rather than a safety bound. Settle it on the same 48-file A/B in log space; the target is fewer than 15 files moving away, with Mozart (1.468 -> 2.031) and One_on_One_Jordan_vs_Bird (0.759 -> 1.562) the two to start from. Do NOT move `rshift` to compensate: v0.5.129 left it alone because its error cancels the period's, and the factor wanted at row_calls == 3 is log2(3/2) = 0.585, which an integer shift cannot express.",
+   "why_model": "a rate constant reaching 48 files where the obvious compensation doubles every file's depth",
+   "why_mode": "corpus-wide and its own metric cannot adjudicate it -- no dimension of FIDELITY.md measures an oscillation rate",
+   "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+  },
+  {
    "id": "cmdtable-chord-arpeggio-emission",
    "title": "Emit the $82 chord arpeggio -- per-note signed offset pairs, not a 0/+3/+7 constant",
    "source": "runs.jsonl: chicken-song-command-arpeggio (opened)",
@@ -300,9 +283,7 @@
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "merge-chicken-song-drum-guard"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "one Goattracker instrument per (record, offset-pair) -- 11 pairs in Chicken_Song, more in Hollywood_or_Bust -- with a 3-entry wavetable loop holding op2/op1/0 IN THAT ORDER (notes open on phase 3; confirmed in the trace at frames 396 and 402), each entry held `multiplier` calls. Chicken_Song packs at -S1. It moves Hollywood_or_Bust too, so the byte-hash clause must name BOTH files -- a one-file hash cannot verify it. Commando.sng byte-exact. Phase-lock is NOT a discriminator: Hollywood or Bust's used durations are all multiples of 3.",
@@ -363,6 +344,32 @@
    "why_model": "a structural change to how a tune is split across subtunes",
    "why_mode": "three converter modules, byte-hash verified in a worktree",
    "why_lane": "writes tracks.py, patterns.py and goatwriter.py"
+  },
+  {
+   "id": "crazy-comets-last-missing-attack",
+   "title": "Crazy Comets is 641 of 642 attacks with the boundary tie on OR fully suppressed",
+   "source": "runs.jsonl: boundary-tie-four-files-retrig-below-one (opened)",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/patterns.py",
+    "rw:python/tests/test_wait0_tie.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/crazy-comets-last-missing-attack",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:presets.json"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "its one missing attack survives with boundary ties applied and with them suppressed entirely, so it is NOT the tie pass and the hypothesis that it is has already been turned off and refuted. Identify the attack by its frame in the original's trace and the row that should produce it, then state the cause. One attack in 642 is worth a cause and not worth a mechanism -- closing this with 'the original plays a note our decode has no row for, here is why' is a complete answer.",
+   "why_model": "a one-event residual where any plausible story fits and only the frames settle it",
+   "why_mode": "patterns.py, and the deliverable is a cause",
+   "why_lane": "writes patterns.py"
   },
   {
    "id": "ctrl-sync-ring-column",
@@ -471,26 +478,28 @@
    "why_lane": "writes fidelity.py and FIDELITY.md"
   },
   {
-   "id": "doc-retract-slide-only-wave-programs-claim",
-   "title": "v0.5.336's commit message claim about slide-only wave programs is wrong in both halves",
-   "source": "runs.jsonl: wave-program-single-speed-absent-pitch (opened)",
+   "id": "docs-boundary-tie-rest-rule-claude-md-and-method",
+   "title": "CLAUDE.md and the method doc state the tie rule with the rest excluded from one half only",
+   "source": "runs.jsonl: boundary-tie-four-files-retrig-below-one (opened)",
    "model": "sonnet",
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:H2G-CONVERSION-METHOD.md",
-    "rw:CLAUDE.md"
+    "rw:CLAUDE.md",
+    "rw:H2G-CONVERSION-METHOD.md"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [],
+   "depends_on": [
+    "method-doc-section-scheme"
+   ],
    "blocked_on": null,
    "decision": null,
-   "verify": "no doc says Saboteur_II $0888 and Shockway_Rider $0889 are 'made entirely of slide opcodes and so carry no absolute pitch to keep'. Each program OPENS with `set` opcodes that do carry absolute pitch, and we DO emit it. The inherited second error goes with it: neither record is single-speed -- Saboteur II packs at -S3 and Shockway Rider at -S2. The three single-speed wave-program records are Pandora $0C99, IK+ $0505 and Nemesis $0CC8.",
-   "why_model": "a retraction whose correct wording is already established",
+   "verify": "both docs must say that a bit-6 rest ends a tie unconditionally, because its branch closes the gate without consulting status bit 5 -- read in two players with different signatures (Battle_of_Britain $8065/$80C0/$80D9, Devils_Galop $1399/$13FA/$1418) and landed at ad8a19c. The rest must CLEAR a pending tie, not merely fail to assert one, because the AND is unconditional. Note the trap worth recording: the converter's own decode block already said 'a bit-6 event is a rest' thirty lines above the assignment that contradicted it, and the exclusion read as settled because the half it HAD been applied to is byte-inert on all 83 files. H2G-CONVERSION-METHOD.md needs a section number and its 5-letter scheme is exhausted at 7.zzzzz, so this depends on that decision.",
+   "why_model": "a doc pass whose content is already derived and measured",
    "why_mode": "edits CLAUDE.md, which no branch may touch",
-   "why_lane": "writes CLAUDE.md and H2G-CONVERSION-METHOD.md, shared with three doc tasks"
+   "why_lane": "writes CLAUDE.md and the method doc"
   },
   {
    "id": "drift-residual-17",
@@ -625,33 +634,6 @@
    "why_lane": "writes fidelity.py and FIDELITY.md"
   },
   {
-   "id": "fidelity-hardcodes-s2-in-multispeed-summary",
-   "title": "The multispeed summary sentence says -S2 and 'every 2 frames' for every multiplier -- 23 of 42 files misdescribed",
-   "source": "runs.jsonl: saboteur-ii-regates-on-wait0-rows (opened)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/fidelity-hardcodes-s2-in-multispeed-summary",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:FIDELITY.md",
-    "r:presets.json"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "fidelity.py:3905-3918 emits 'advances a row every 2 frames / called twice a frame / packed with gt2reloc -S2' for any multiplier > 1 while interpolating -m{traced} correctly a few clauses later, so the Saboteur_II report says -S2 and -m3 in one paragraph. After the fix a multiplier-3 file's summary names -S3 and 'every 3 frames'; a test covers at least two multipliers. presets.json's histogram is {1:41, 2:19, 3:8, 4:4, 5:4, 6:1, 7:2, 9:1, 10:3}. Report TEXT only -- the corpus byte-hash names zero files, and FIDELITY.md wants regenerating at [main] afterwards.",
-   "why_model": "a string interpolation with a stated correct value",
-   "why_mode": "confined to fidelity.py, and the check is mechanical",
-   "why_lane": "writes fidelity.py, shared with four harness tasks"
-  },
-  {
    "id": "fidelity-stamp-is-dirty-by-construction",
    "title": "The provenance stamp counts untracked files, so a stray file dirties every report",
    "source": "runs.jsonl: artefact-stamp-realign (opened)",
@@ -678,30 +660,6 @@
    "why_lane": "writes fidelity.py and CLAUDE.md"
   },
   {
-   "id": "find-gate-hold-docstring-names-wrong-branch-address",
-   "title": "find_gate_hold's docstring names $F080 as the branch and records one bypass where there are two",
-   "source": "runs.jsonl: saboteur-ii-regates-on-wait0-rows (opened)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/detect.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/find-gate-hold-docstring-names-wrong-branch-address",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "the docstring names $F083 as the branch ($F080 is the CMP's own address) and records BOTH bypass branches reaching $F094 -- $F07B (F0 17 BEQ, on `LDA $F577`) as well as $F083. The code already scans for branch opcodes and finds both; only the prose is wrong. Corpus byte-hash names zero files.",
-   "why_model": "a prose correction with the right addresses already established",
-   "why_mode": "one docstring, byte-inert",
-   "why_lane": "writes detect.py, shared with the merge and three detection tasks"
-  },
-  {
    "id": "first-frame-lead-written-multispeed",
    "title": "_first_frame_lead(written=True) returns no entries, so every effect on a --no-test-restart multispeed file starts part of a frame early",
    "source": "runs.jsonl: emit-bit08-note-alternate (opened)",
@@ -725,29 +683,6 @@
    "why_model": "a frame-phase fix in the emitter whose sign is easy to get backwards -- see the packer's XOR",
    "why_mode": "goatwriter.py with a single-file A/B and a byte-hash",
    "why_lane": "writes goatwriter.py, the busiest shared file on this list"
-  },
-  {
-   "id": "freq-table-length-off-by-one-at-the-grid-edge",
-   "title": "find_freq_table reports 95 entries for a 96-entry table, and three records are declined for naming index 95",
-   "source": "runs.jsonl: emit-bit08-note-alternate (opened)",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/sidfile.py",
-    "rw:python/tests/test_freq_table.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`length` is the length of a VALIDATED SEMITONE RUN and these players' entry 95 ($FD2E) sits off the grid, so the run stops one short of the table. Tarzan records 0 and 16 and Delta_Mix-E-Load_loader record 5 stop being declined; `_fixed_attack_note` has the identical exposure and is fixed with it. Byte-hash names only those two files. Do NOT widen the run's validation itself -- Skate or Die intro's $0000 at entry 0 is the shift case this function also serves.",
-   "why_model": "a bound in the one function whose two return values mean opposite things",
-   "why_mode": "sidfile.py with a two-file byte-hash",
-   "why_lane": "writes sidfile.py"
   },
   {
    "id": "gate-axis-next-note-fetch",
@@ -842,9 +777,7 @@
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "merge-nineteen-row-budget-test"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "the candidate is to let the bound fall below 2 where `ticks + 1 >= row_calls`; `_hard_restart_ticks(1, 3) == 2` only because of the `max(ticks, min(2, row_calls - 1))` floor at goatwriter.py:260, which is what keeps every -S1 conversion byte-identical -- so this is a large byte change on every -S1 file and needs its own A/B at -t 60. Judge it on gate/hold/onset BESIDE both sides' attack counts, never on melody alone: on Nineteen the change takes voice 0 from 69 to 90 attacks against the original's 69, which is better on the frames and worse on melody.",
@@ -951,62 +884,6 @@
    "why_lane": "writes fidelity.py, shared with four harness tasks"
   },
   {
-   "id": "merge-chicken-song-drum-guard",
-   "title": "Land a85b59d: Chicken Song's bit $01 is not Warhawk's drum -- the block must carry the noise constant",
-   "source": "runs.jsonl: chicken-song-command-arpeggio (done); `git branch` (worktree-wf_b84ec182-f5f-3, never merged)",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/detect.py",
-    "rw:python/h2g/goatwriter.py",
-    "rw:CHANGELOG.md",
-    "rw:python/h2g/__init__.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/merge-chicken-song-drum-guard",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:Commando.sng"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "a85b59d's content is on master (`grep DRUM_NOISE_IMMEDIATE python/h2g/detect.py` hits); the suite passes; a corpus byte-hash re-taken ON MASTER'S BASE names the files the guard moves and no others -- requiring `LDA #$80` within 55 bytes splits a 45-file family into 44 plus one look-alike with zero false negatives; Commando.sng byte-exact (got == ref); the version is bumped.",
-   "why_model": "a detect.py guard that reclassifies a 45-file family, re-measured on a base it was not measured on",
-   "why_mode": "a merge onto master, and it changes what two generated artefacts say",
-   "why_lane": "writes detect.py and goatwriter.py, both shared with the emitter tasks"
-  },
-  {
-   "id": "merge-nineteen-row-budget-test",
-   "title": "Land b7ea0f7: the 3-call row's budget named in patterns.py and pinned by test_row_budget.py (byte-inert)",
-   "source": "runs.jsonl: nineteen-tie-spelling-melody-loss (partial); `git branch` (worktree-wf_b84ec182-f5f-1, never merged)",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_row_budget.py",
-    "rw:CHANGELOG.md",
-    "rw:python/h2g/__init__.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/merge-nineteen-row-budget-test",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:Commando.sng"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "python/tests/test_row_budget.py exists on master and passes (it hooks gw._hard_restart_ticks during a corpus conversion rather than re-deriving the row length); 149 insertions, 0 deletions, so the corpus byte-hash must name ZERO files and Commando.sng must be byte-exact (got == ref); the version is bumped.",
-   "why_model": "a byte-inert test plus a docstring, with a hash that says so",
-   "why_mode": "a merge onto master",
-   "why_lane": "writes patterns.py, shared with three tie tasks"
-  },
-  {
    "id": "method-doc-owed-sections",
    "title": "Write the owed method-doc sections",
    "source": "whats-next.md item 8",
@@ -1108,20 +985,47 @@
     "rw:python/tests",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/nineteen-tie-spelling-melody-loss",
-    "r:python/tools/siddump-rt/siddump.exe"
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/tests/test_row_budget.py"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "merge-nineteen-row-budget-test"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "the OLD verify's first clause is REFUTED, not unmet -- the cause was turned off two independent ways and the fall SURVIVED at 1.07pp of 2.84pp -- so do not re-run it. What remains: a stated cause for that residual, checked by turning the proposed cause off; the attack rise 69 -> 74 is already explained (CMD_TONEPORTA is answered with 'no gateoff' at player.s:1298-1301) and is not the question. Corpus byte-hash names only the intended files.",
+   "verify": "READY NOW: its dependency landed at a925318, and tests/test_row_budget.py is on master pinning the derivation. The OLD verify's first clause is REFUTED, not unmet -- the cause was turned off two independent ways and the fall SURVIVED at 1.07pp of 2.84pp -- so do not re-run it. What remains is a stated cause for that residual, checked by turning the proposed cause off. The attack rise 69 -> 74 is already explained (CMD_TONEPORTA is answered with 'no gateoff' at player.s:1298-1301). Corpus byte-hash names only the intended files.",
    "why_model": "a root-cause hunt where the obvious gate is already known to be a correlation",
    "why_mode": "confined to patterns.py with a byte-hash verify, but ONLY after the re-scope above -- three /runqueue cycles picked the old wording first and excluded it by hand each time",
    "why_lane": "writes patterns.py, shared with the merge and the pending-tie fix"
+  },
+  {
+   "id": "no-test-restart-three-more-refused-candidates",
+   "title": "The re-search offered no_test_restart on three more files and no column can adjudicate any of them",
+   "source": "derived: the v0.5.349 re-search, measured both ways at -t 60",
+   "model": "sonnet",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:build/listen",
+    "rw:whats-next.md",
+    "r:presets.json",
+    "r:python/abpage.py",
+    "r:python/listen.py",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/no-test-restart-three-more-refused-candidates",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": "a human ear, on the same flag as delta-no-test-restart-verdict and for the same reason. Measured both ways at -t 60: Wiz -no_test_restart is 1 column better / 4 worse (reversal ratio 0.781 -> 0.932 against wave -3.7pp, adsr -0.7pp, gate -1.0pp); Powerplay_Hockey 2 better / 3 worse; Dragons_Lair_Part_II +no_test_restart +two_stage is 2 / 2. All three were REFUSED and the shipped settings kept. Every one has the documented signature -- melody or the ratio up, wave/adsr/gate down -- because the flag deletes the testbit frame, the only frame our conversions spend below $10, and siddump needs a frame below $10 to print an attack. Dragons_Lair has a second problem: its traced pair is the wrong music (diagonal 15%, real counterpart o9 at 60%), so no column on that row measures this change. Stage the three with listen.py.",
+   "decision": null,
+   "verify": "a written verdict per file in whats-next.md or a commit message, and presets.json either left as shipped or changed to match",
+   "why_model": "staging is mechanical; the verdict is not a model's to give",
+   "why_mode": "the report is blind to this flag in both directions by construction",
+   "why_lane": "reads build/listen while the abpage tasks rebuild it"
   },
   {
    "id": "noise-pitch-column",
@@ -1148,6 +1052,31 @@
    "why_model": "a new scoring dimension that two refused features are gated on",
    "why_mode": "regenerates FIDELITY.md",
    "why_lane": "writes fidelity.py and FIDELITY.md"
+  },
+  {
+   "id": "note-freq-extrapolates-past-the-16-bit-ceiling",
+   "title": "A player's note table saturates at the top, and 11 records still name index 99",
+   "source": "runs.jsonl: freq-table-length-off-by-one-at-the-grid-edge (opened)",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/sidfile.py",
+    "rw:python/tests/test_freq_table.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/note-freq-extrapolates-past-the-16-bit-ceiling",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "161de13 widened `length` past ONE clamped trailing entry, which is all that entry 95 needs. 11 records corpus-wide still name index 99 against a 96-entry table and are correctly declined. The open question is whether those indices are meaningful at all -- a boilerplate sound-effect record naming a note three past the end is as likely to be an unused cell as an extrapolation. Answer it from the players' bytes before emitting anything: if the routine reads past the table, name what it reads; if the record is never played, say so and close this. Do NOT widen `_table_run`'s validation -- Skate or Die intro's $0000 at entry 0 is the shift case the same function serves.",
+   "why_model": "the honest answer may be 'these records are dead', which a generator eager to emit will not find",
+   "why_mode": "sidfile.py with a byte-hash verify",
+   "why_lane": "writes sidfile.py"
   },
   {
    "id": "orderlist-silent-park-for-fe",
@@ -1353,29 +1282,6 @@
    "why_lane": "writes H2G-CONVERSION-METHOD.md, shared with the other doc tasks"
   },
   {
-   "id": "powerplay-vibrato-rate-still-two-thirds",
-   "title": "Powerplay's three vibrato instruments are off 0 but sit at 0.65-0.67x",
-   "source": "runs.jsonl: powerplay-vibrato-refusals (opened)",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:VIBRATO.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "the _classic_vibrato_entry rate question of H2G-CONVERSION-METHOD sections 7.kk/7.ll, now measurable on this file for the first time. A rate fix, not a detection one -- and note that v0.5.129 corrected `cmp` but deliberately left `rshift` alone because the two errors cancelled, so moving one without the other doubles the depth",
-   "why_model": "the two halves of this derivation cancel, so changing one is a regression dressed as a fix",
-   "why_mode": "goatwriter.py with a per-file vib A/B",
-   "why_lane": "writes goatwriter.py"
-  },
-  {
    "id": "presets-json-provenance-marker",
    "title": "presets.json is no longer the output of one search run, and its `generator` stamp cannot say so",
    "source": "whats-next.md#Open questions 3; 350851e",
@@ -1395,64 +1301,35 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "the file distinguishes a whole-search regeneration from a hand-picked adoption. As shipped it is the v0.5.343 regeneration plus W_A_R_Preview's `pitch_seq` taken from a later run, and its stamp reads `h2g 0.5.342 presets.py` -- every entry is individually a measurement but the FILE is not one run, so a reader reconciling it against a single search finds it does not match. Whatever is added must survive `--merge` and `--no-carry`.",
+   "verify": "presets.json is AGAIN a whole-search regeneration plus a hand-picked adoption -- the v0.5.348 structural run plus Flash_Gordon's `pitch_seq` removal taken from a later --fidelity search whose other four candidates were refused. Its `generator` stamp cannot convey that, and this is the second time in three sessions the file has ended up in that state, so the field should record per-entry provenance rather than a single run. Whatever is added must survive `--merge` and `--no-carry`.",
    "why_model": "a provenance field with the requirement already written down",
    "why_mode": "writes presets.json, a named hazard no branch may touch",
    "why_lane": "writes presets.json, a named hazard"
   },
   {
    "id": "prune-merged-worktrees",
-   "title": "21 worktrees and 20 branch refs outlive their merges -- and TWO of them carry commits that never landed",
+   "title": "31 worktrees outlive their merges, and a tip-ancestry check is the wrong test",
    "source": "runs.jsonl: merge-instrmap-songview-branch (notes); working tree",
-   "model": "sonnet",
+   "model": "opus",
    "mode": "main",
    "lane": "serial",
    "touches": [
     "rw:.claude/worktrees",
-    "rw:.gitignore"
+    "rw:.gitignore",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/prune-merged-worktrees",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "merge-chicken-song-drum-guard",
-    "merge-nineteen-row-budget-test"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "`git worktree list` shows only the main checkout, and `git branch` only master. DO NOT PRUNE BLIND: worktree-wf_b84ec182-f5f-1 (b7ea0f7) and worktree-wf_b84ec182-f5f-3 (a85b59d) are NOT ancestors of HEAD and their content is absent from master, so both merge tasks must land first. The other 18 branch tips are unmerged only as refs -- their content landed under new shas (6993acc -> fb7f03b, cbf80a7 -> c0ee1a5, 9031203 -> 76b7632, 96df4f0 -> b327970, 1a419fc -> 74f4d3f), which is what makes a tip-ancestry check alone the wrong test.",
-   "why_model": "git housekeeping with a checkable end state",
+   "verify": "`git worktree list` shows only the main checkout and `git branch` only master. EVERY remaining branch's content has landed under a DIFFERENT sha (6993acc -> fb7f03b, cbf80a7 -> c0ee1a5, 96df4f0 -> b327970, 1a419fc -> 74f4d3f, b7ea0f7 -> a925318, a85b59d -> 0883a38), so `git merge-base --is-ancestor` reports all of them unmerged and is the WRONG test. The right one, already run once on the six cycle-1 worktrees and passed by all six: no line in the worktree is absent from master. Note wt1 legitimately holds 2 such lines -- the pre-guard `drum = search_file(...)` that 0883a38 replaced -- so the check must distinguish superseded from unlanded. Also remove the two scratch byte-hash worktrees this session created under the scratchpad (base-fc691a4, base-d13205b).",
+   "why_model": "distinguishing superseded content from unlanded content across 20 branches, where the obvious git test gives the wrong answer on every one",
    "why_mode": "operates on the main checkout's git refs",
    "why_lane": "writes .claude/worktrees, which is also where the Workflow runner CREATES agent worktrees -- the conflict is with the runner rather than with another task, so the overlap arithmetic cannot see it"
-  },
-  {
-   "id": "regenerate-vibrato-and-fidelity-after-chicken-drum-fix",
-   "title": "VIBRATO.md's Chicken_Song `drum` row is wrong at source once the guard lands",
-   "source": "runs.jsonl: chicken-song-command-arpeggio (opened)",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:VIBRATO.md",
-    "rw:FIDELITY.md",
-    "r:presets.json",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:python/fidelity.py",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/regenerate-vibrato-and-fidelity-after-chicken-drum-fix",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "merge-chicken-song-drum-guard"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "the row `Chicken_Song.sid | $0A00 | 6 | $01 | drum | 644 | 0` is relabelled (fidelity.pitch_effect_bits reads det.effect_drum), and the file's `noise`, `gate` and `nrun` move. FIDELITY.md's stamp must read clean, not -dirty -- fidelity.py:3165 runs `git status --porcelain -- .` and COUNTS UNTRACKED FILES, so regenerate on a committed tree or expect the one-line stamp pass afterwards.",
-   "why_model": "running two generators in the documented order",
-   "why_mode": "writes generated artefacts, which no branch may touch",
-   "why_lane": "writes FIDELITY.md and VIBRATO.md, named hazards"
   },
   {
    "id": "resonance-volume-columns",
@@ -1520,9 +1397,7 @@
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "merge-chicken-song-drum-guard"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "the baseline is 0 now, and bit $02 is the only mechanism that would put any noise in Chicken_Song -- the original's 654 noise frames are entirely on its two bit-$02 records (ADSR $0A07, $0900) where ours were on nine bit-$01 records the original never sounds noise on, which is what `nrun` 0% had been reporting. Section 7.iiii states the re-taken numbers or the claim is retracted.",
@@ -1604,6 +1479,28 @@
    "why_lane": "writes detect.py"
   },
   {
+   "id": "shared-refs-stash-races-across-worktrees",
+   "title": "refs/stash is shared by every worktree, so two agents stashing concurrently collide",
+   "source": "runs.jsonl: fidelity-hardcodes-s2-in-multispeed-summary and powerplay-vibrato-rate-still-two-thirds (both opened it)",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:CLAUDE.md",
+    "rw:C:/Users/mit/.claude/plugins/marketplaces/mit-claude-setup/plugins/mit-setup/LOCKING.md"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`git stash` is forbidden in a multi-worktree fan-out, in CLAUDE.md's parallel-work section and in the plugin's agent briefing. What happened: two agents stashed concurrently, one `git stash pop` returned a SIBLING's diff, and `git fsck --unreachable` shows 100+ dangling stash-shaped commits from earlier sessions -- so this has been happening unnoticed for a while. NO CODE WAS LOST this time (verified: the 13 lines that differed were all docstring prose), which is exactly why it needs writing down rather than remembering: the failure is silent and the recovery was luck. The replacements are a scratch branch, a plain file copy, or `git diff > patch`.",
+   "why_model": "a rule to record, with the incident already diagnosed",
+   "why_mode": "edits CLAUDE.md and a file outside the repo",
+   "why_lane": "writes CLAUDE.md"
+  },
+  {
    "id": "songspeeds-frames-table-bleed-into-skip-table-uncaught",
    "title": "The frames table can bleed into the skip table and nothing catches it",
    "source": "runs.jsonl: songspeeds-skip-reads-past-its-table (opened)",
@@ -1677,6 +1574,33 @@
    "why_model": "an estimator whose fitted form can only raise the score, which is the trap the current one was written to avoid",
    "why_mode": "moves every per-frame column on every file, so FIDELITY.md regenerates",
    "why_lane": "writes fidelity.py and FIDELITY.md"
+  },
+  {
+   "id": "status-bit6-shape-misses-devils-galop-volume-block",
+   "title": "STATUS_BIT6_SHAPE requires the BIT immediately after the counter store, and one player has nine bytes in between",
+   "source": "runs.jsonl: boundary-tie-four-files-retrig-below-one (opened)",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/detect.py",
+    "rw:python/tests",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/status-bit6-shape",
+    "r:presets.json",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/status-bit6-shape-misses-devils-galop-volume-block",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Devils_Galop's player DOES test bit 6 first and alone ($13BA `BIT $176E` / $13BD `BVS $13FA`), but STATUS_BIT6_SHAPE wants the BIT immediately after `STA counter,X` and this player has a nine-byte $D418 volume block in between, so the file reads status_bit6=False. Harmless for a `$7F` status byte -- bit 7 clear, so both readings consume one byte -- but a `$C0`-`$FE` byte would make our decode read an operand and a note the player skips, desynchronising the rest of the pattern. FIRST establish whether any Devils_Galop pattern carries such a byte; if none does, this is latent and the fix is a widened walk with the corpus byte-hash naming exactly the files intended. Same shape as find_wave_program's `STX abs` walk (v0.5.235) -- run the old walk beside the new one and require the difference to be exactly the files you meant.",
+   "why_model": "a detection walk whose widening has produced unintended corpus movement twice before",
+   "why_mode": "detect.py with a byte-hash verify",
+   "why_lane": "writes detect.py"
   },
   {
    "id": "subtune-correspondence-rows",
@@ -1779,6 +1703,33 @@
    "why_model": "an audit of a JSON file against a stated rule",
    "why_mode": "edits the task plan this session owns",
    "why_lane": "writes .claude/tasks"
+  },
+  {
+   "id": "test-classic-vibrato-row-calls-compensation",
+   "title": "Nothing pins the tick-0 compensation, so a later edit can silently undo it",
+   "source": "runs.jsonl: powerplay-vibrato-rate-still-two-thirds (opened)",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/tests/test_call_rate.py",
+    "r:python/h2g/goatwriter.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/test-classic-vibrato-row-calls-compensation",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "a test transcribing the compensation the way tests/test_call_rate.py already transcribes gplay.c's delay loop -- against the loop that consumes the value, not the constant that names it. It must fail if the (row_calls - 1)/row_calls factor is removed and if `cmp` stops being multiplied by `multiplier`. Byte-inert: corpus byte-hash names zero files.",
+   "why_model": "a transcription of a rule already derived and measured",
+   "why_mode": "one test file, byte-inert",
+   "why_lane": "writes a test file other tasks also write"
   },
   {
    "id": "trackindex-subclass-replace-with-explicit-convert-parameter",
@@ -1903,6 +1854,33 @@
    "why_model": "the classification is already measured; this transcribes it into the tool",
    "why_mode": "regenerates VIBRATO.md",
    "why_lane": "writes fidelity.py and VIBRATO.md"
+  },
+  {
+   "id": "vibrato-tick0-skip-lfo-and-triangle-engines",
+   "title": "The tick-0 skip applies to every continuous effect, not just classic vibrato",
+   "source": "runs.jsonl: powerplay-vibrato-rate-still-two-thirds (opened)",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/vibrato-tick0-skip-lfo",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:VIBRATO.md",
+    "r:presets.json",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/vibrato-tick0-skip-lfo-and-triangle-engines"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`player.s:982-987` gates the whole continuous-effect block on `mt_chncounter`, so the (row_calls - 1)/row_calls loss applies to every rate this converter encodes into a table Goattracker steps per call -- not only _classic_vibrato_entry. Check the table-driven LFO vibrato (_find_table_vibrato's engine: Hollywood or Bust, Chicken Song), the triangle pulse engine's & $1F frame count, and the drum sweep. Each one that IS affected must be corrected with its own A/B; each one that is NOT must be shown not to be, since 'it looked like the same shape' is how this repo has shipped a constant into the wrong dialect before (TRIANGLE_VIBRATO_GATE).",
+   "why_model": "deciding which of four rate encodings share a mechanism, where assuming they do has misfired before",
+   "why_mode": "goatwriter.py with a per-engine A/B",
+   "why_lane": "writes goatwriter.py"
   },
   {
    "id": "wave-alternate-pitch-half",
@@ -2416,6 +2394,84 @@
    "title": "Re-search presets for the 21 files the wave-program slide moved",
    "closed_by": "350851e",
    "reason": "The second `presets.py --fidelity -t 60` run covered the whole corpus and confirmed 81 of 83 songs unchanged; the one adopted change (W_A_R_Preview gains pitch_seq) is in the shipped file."
+  },
+  {
+   "id": "find-gate-hold-docstring-names-wrong-branch-address",
+   "title": "find_gate_hold's docstring names $F080 as the branch and records one bypass where there are two",
+   "closed_by": "9e52802",
+   "reason": null
+  },
+  {
+   "id": "abpage-prune-stale-pages",
+   "title": "abpage never prunes pages for tunes no longer staged",
+   "closed_by": "f4e8c41",
+   "reason": null
+  },
+  {
+   "id": "fidelity-hardcodes-s2-in-multispeed-summary",
+   "title": "The multispeed summary sentence says -S2 and 'every 2 frames' for every multiplier -- 23 of 42 files misdescribed",
+   "closed_by": "7b1a6f2",
+   "reason": null
+  },
+  {
+   "id": "boundary-tie-four-files-retrig-below-one",
+   "title": "Four files moved retrig from exactly 1.000 to just under it at v0.5.339",
+   "closed_by": "ad8a19c",
+   "reason": null
+  },
+  {
+   "id": "powerplay-vibrato-rate-still-two-thirds",
+   "title": "Powerplay's three vibrato instruments are off 0 but sit at 0.65-0.67x",
+   "closed_by": "ebc9d1a",
+   "reason": null
+  },
+  {
+   "id": "doc-retract-slide-only-wave-programs-claim",
+   "title": "v0.5.336's commit message claim about slide-only wave programs is wrong in both halves",
+   "closed_by": "c566058",
+   "reason": null
+  },
+  {
+   "id": "merge-nineteen-row-budget-test",
+   "title": "Land b7ea0f7: the 3-call row's budget named in patterns.py and pinned by test_row_budget.py (byte-inert)",
+   "closed_by": "a925318",
+   "reason": null
+  },
+  {
+   "id": "merge-chicken-song-drum-guard",
+   "title": "Land a85b59d: Chicken Song's bit $01 is not Warhawk's drum -- the block must carry the noise constant",
+   "closed_by": "0883a38",
+   "reason": null
+  },
+  {
+   "id": "regenerate-vibrato-and-fidelity-after-chicken-drum-fix",
+   "title": "VIBRATO.md's Chicken_Song `drum` row is wrong at source once the guard lands",
+   "closed_by": "ea065a3",
+   "reason": null
+  },
+  {
+   "id": "freq-table-length-off-by-one-at-the-grid-edge",
+   "title": "find_freq_table reports 95 entries for a 96-entry table, and three records are declined for naming index 95",
+   "closed_by": "161de13",
+   "reason": "Recorded `partial` because its DoD's 'byte-hash names only those two files' cannot hold alongside its own '_fixed_attack_note has the identical exposure and is fixed with it' -- Ricochet is the third and is that clause's consequence, not a leak. Refuted with per-record evidence rather than worked around. The four assertions it named but could not reach (outside its writable paths) were retargeted at the merge: two `.length` -> `.run` in test_freq_table_engine.py, and test_note_alternate.py's 66 -> 69 with its '95-entry run' comment corrected to '96-entry table'."
+  },
+  {
+   "id": "freq-table-run-vs-length-test-assertions",
+   "title": "Retarget the four assertions the grid-edge clamp moves, outside its writable paths",
+   "closed_by": "161de13",
+   "reason": "Done as part of landing the clamp: `.length` -> `.run` at test_freq_table_engine.py:64 and :120, and 66 -> 69 at test_note_alternate.py:172 and :216 with the comment corrected. Every replace asserted its match first."
+  },
+  {
+   "id": "recover-worktree-4-fidelity-stash-acbba6ef",
+   "title": "Recover the goatwriter/fidelity work the cross-worktree stash race was thought to have destroyed",
+   "closed_by": "957767b",
+   "reason": "MOOT, verified rather than believed. Two agents each concluded the other's work was destroyed and opened mirror-image recovery tasks. Worktree 3 holds 83 insertions against the recovered 47-line snapshot; 34 of those 47 lines are already present and the 13 that differ are ALL docstring prose. No code was lost on either side, and both changes are now on master (ebc9d1a, 7b1a6f2). The race itself is real and survives as shared-refs-stash-races-across-worktrees."
+  },
+  {
+   "id": "recover-and-reapply-lost-goatwriter-vibrato-realtimeoptimization-patch",
+   "title": "Recover the goatwriter/fidelity work the cross-worktree stash race was thought to have destroyed",
+   "closed_by": "957767b",
+   "reason": "MOOT, verified rather than believed. Two agents each concluded the other's work was destroyed and opened mirror-image recovery tasks. Worktree 3 holds 83 insertions against the recovered 47-line snapshot; 34 of those 47 lines are already present and the 13 that differ are ALL docstring prose. No code was lost on either side, and both changes are now on master (ebc9d1a, 7b1a6f2). The race itself is real and survives as shared-refs-stash-races-across-worktrees."
   }
  ]
 }
