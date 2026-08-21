@@ -466,6 +466,37 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     return left, right
 
 
+def _freq_table_note(sid: SidFile, index: int) -> Optional[int]:
+    """Wavetable right-side byte for note `index` of the player's own table.
+
+    Two mechanisms hand a wavetable an *absolute* pitch out of the player's
+    frequency table -- bit $40's fixed attack (`_fixed_attack_note`) and bit
+    $08's alternate note (`_note_alternate_note`) -- and both do it the same
+    way: `sidfile.find_freq_table` locates the table the player indexes, the
+    16-bit frequency at `2 * index` is read out of it, and the nearest of
+    Goattracker's 96 notes names it. One helper rather than two copies,
+    because it is a rule about the player and not about either caller
+    (CLAUDE.md).
+
+    Returns None where the byte cannot be a note. The player's table has a
+    definite length and an index past it is reading something else; a zero
+    frequency is the same. Neither is guessed at.
+    """
+    table = find_freq_table(sid)
+    if table is None:
+        return None
+    if not 0 <= index < table.length:
+        return None
+    at = sid.to_offset(table.addr) + 2 * index
+    if at + 1 >= len(sid.data):
+        return None
+    freq = sid.data[at] | (sid.data[at + 1] << 8)
+    if not freq:
+        return None
+    note = min(range(96), key=lambda n: abs(_note_freq(n) - freq))
+    return (WAVE_NOTE_ABS + note) & 0xFF
+
+
 def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     """Absolute-note byte for effect bit $40's fixed attack pitch, or None.
 
@@ -510,23 +541,38 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     rec7 = det.instr_start + i * det.instr_stride + 7
     if rec7 >= len(sid.data) or not sid.data[rec7] & EFFECT_BIT40_MASK:
         return None
-    table = find_freq_table(sid)
-    if table is None:
-        return None
     off = det.wave_program + i * det.instr_stride
     if off >= len(sid.data):
         return None
-    index = sid.data[off]
-    if not 0 <= index < table.length:
+    return _freq_table_note(sid, sid.data[off])
+
+
+def _note_alternate_note(sid: SidFile, det: Detection,
+                         i: int) -> Optional[int]:
+    """Absolute-note byte for effect bit $08's alternate note, or None.
+
+    `detect._find_note_alternate` reads the block (Flash Gordon `$139A`, 21
+    corpus files, 80 records): the voice's pitch alternates every frame
+    between the note the pattern played and a fixed note *number* held in a
+    parallel per-instrument array, on the same per-voice counter bit $02's
+    waveform alternation uses. The array is indexed by `i * instr_stride`
+    like every other effect table in this family, and the byte in it is an
+    index into the player's own frequency table -- so what a wavetable can say
+    is the nearest absolute note.
+
+    **Per record, not per file**, the rule bit $40 had to learn the hard way:
+    `det.note_alternate` says the player reads the bit, and only this record's
+    own effect byte says it is set.
+    """
+    if det.note_alternate < 0 or det.instr_start < 0:
         return None
-    at = sid.to_offset(table.addr) + 2 * index
-    if at + 1 >= len(sid.data):
+    rec7 = det.instr_start + i * det.instr_stride + 7
+    if rec7 >= len(sid.data) or not sid.data[rec7] & EFFECT_NOTE_ALT_MASK:
         return None
-    freq = sid.data[at] | (sid.data[at + 1] << 8)
-    if not freq:
+    off = det.note_alternate + i * det.instr_stride
+    if off >= len(sid.data):
         return None
-    note = min(range(96), key=lambda n: abs(_note_freq(n) - freq))
-    return (WAVE_NOTE_ABS + note) & 0xFF
+    return _freq_table_note(sid, sid.data[off])
 
 
 def _first_frame_entry(wave: int, written: bool = False) -> bool:
@@ -676,7 +722,8 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
                             start: Optional[int] = None,
                             budget: int = WAVE_ENTRIES_PER_INSTR,
                             written: bool = False,
-                            alt_first: bool = False) -> Optional[tuple]:
+                            alt_first: bool = False,
+                            alt_note: Optional[int] = None) -> Optional[tuple]:
     """Bit $02's every-other-frame waveform, or None where it says nothing.
 
     `detect._find_wave_alternate` reads the block: the voice's waveform
@@ -698,6 +745,24 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     a delay entry beside it exactly as `_first_frame_lead` does. The loop
     target is the first of the pair, so the lead is passed once per note and
     the alternation is continuous after it.
+
+    **`alt_note` is effect bit $08, which is the same alternation applied to
+    the note** -- a second block on the same counter and the same phase test,
+    24 bytes after this one in Flash Gordon (`detect._find_note_alternate`).
+    All 80 corpus records that set bit $08 also set bit $02, so the two are
+    one shape and not two: the alternate half gets the alternate waveform
+    *and* the alternate pitch, and the record's own half keeps its own of
+    both. Passed as an absolute note byte (`_note_alternate_note`), None where
+    the record does not set the bit or the index is not a note.
+
+    The right side of the record's own half is `$00`, which is what puts the
+    played note *back*: `gt2reloc` inverts bit 7 of every non-command right
+    byte (`greloc.c:1339-1341`), so a `.sng` `$00` reaches the packed player
+    as `$80` and writes `adc mt_chnnote,x / and #$7f` -- the note's own pitch
+    -- on every call it is current for. `$80` would be no write at all, and
+    the alternate pitch would simply stay. See `_hold_wave_program_entry`,
+    where reading those two bytes the other way round made the whole
+    `program` bucket of `VIBRATO.md` read zero.
     """
     if alt <= WAVE_MAX_DELAY or alt == wave or not (wave & 0xF0):
         # An alternate in the delay range is not a waveform; an alternate
@@ -711,34 +776,38 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
         return None
     lead, lead_r = _first_frame_lead(wave, multiplier, written=written)
 
-    def half(w: int) -> tuple:
-        # **`$00` is "no frequency write" here, and `$80` is not.** The two
-        # players disagree about this byte: `gplay.c:202` skips the write on
-        # `$80` and treats `$00` as "the base note, +0 semitones", while the
-        # packed player tests `lda notetbl / bne` (`player.s:976-977`) -- so
-        # `$00` writes nothing at all, and `$80` reaches `adc chnnote / and
-        # #$7f`, which is `(128 + n) & 127 == n`: harmless as a transposition
-        # and still a *write*, re-asserting the base note every frame. Emitted
-        # with `$80`, Hollywood or Bust's melody fell 58% -> 25% against 47%
-        # with `$00`. Every number in this repo comes from the packed player,
-        # so `$00` is the value that leaves a bend alone.
-        left, right = [w], [WAVE_NOTE_BASE]
+    def half(w: int, note: int = WAVE_NOTE_BASE) -> tuple:
+        # **`$00` re-asserts the played note and `$80` writes nothing.** This
+        # comment had those two the wrong way round from v0.5.130 until the
+        # `alt_note` work, on a reading of `player.s:976-977` alone: the
+        # measurement it cited ("Hollywood or Bust's melody 58% -> 25% with
+        # `$80` against 47% with `$00`") is right, and so is the byte, but the
+        # reason is `greloc.c:1339-1341` -- `gt2reloc` packs every non-command
+        # right byte as `b ^ $80`, so a `.sng` `$00` reaches the packed
+        # player's `bne` as `$80`, takes the `bmi` path and writes
+        # `adc mt_chnnote,x / and #$7f`, the note's own pitch. `$80` becomes
+        # packed `$00` and makes no write at all. Same conclusion, and the
+        # difference matters the moment an entry beside this one sets an
+        # absolute pitch, as `alt_note` does: `$00` is what takes it back off.
+        # `_hold_wave_program_entry` is where this was measured.
+        left, right = [w], [note]
         rest = max(1, multiplier) - 1          # ...the entry above is one call
         if rest == 1:
             left.append(w)
-            right.append(WAVE_NOTE_BASE)
+            right.append(note)
         elif rest > 1:
-            # $00 on the delay too, so one block keeps one convention. This
-            # one is a *consistency* change and nothing more: reading
-            # `player.s:955-962` suggested the jump path leaves carry set and
-            # that $80 would therefore reach `adc chnnote,x` as
-            # (128 + n + 1) & 127 == n + 1, a semitone up -- and tracing
-            # W_A_R both ways refutes it, 0 of 1500 frames differing in
-            # frequency on all three voices. $80 and $00 are equivalent on a
-            # delay entry; they are *not* on a waveform entry, where $80 is a
-            # write that re-asserts the base note (see `half`'s first line).
+            # The delay carries this half's own note, so one block keeps one
+            # convention -- and with `alt_note` that is no longer merely
+            # tidiness. A delay entry's right side is read on its *last* call
+            # (gplay.c:697-723), which is the last call of the frame and the
+            # one siddump samples: `$00` there would put the played note back
+            # a call after the alternate was set, and the alternation would
+            # measure as flat. Recorded when it was only tidiness: `$80` and
+            # `$00` are equivalent on a delay entry, traced on W_A_R both ways
+            # with 0 of 1500 frames differing on all three voices; they are
+            # *not* on a waveform entry (see `half`'s first line).
             left.append(min(rest - 1, WAVE_MAX_DELAY))
-            right.append(WAVE_NOTE_BASE)
+            right.append(note)
         return left, right
 
     # **Which of the pair the note's second frame gets is read off the
@@ -748,9 +817,17 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     # (W_A_R measures `tri tri noi tri`) and the derived dialect's is the
     # noise (Hollywood or Bust measures `tri noi tri noi`). Same rule, opposite
     # output, which is why this is a parameter rather than a constant.
+    # The alternate note travels with the alternate *waveform*: one counter,
+    # one branch, one phase -- the player's two blocks read the same cell with
+    # the same `AND #$01 / BEQ`, so the frame that sounds the alternate
+    # waveform is the frame that sounds the alternate pitch.
+    own_note = WAVE_NOTE_BASE
+    alt_r = own_note if alt_note is None else alt_note
     first, second = (alt, wave) if alt_first else (wave, alt)
-    a_l, a_r = half(first)
-    b_l, b_r = half(second)
+    first_r, second_r = ((alt_r, own_note) if alt_first
+                         else (own_note, alt_r))
+    a_l, a_r = half(first, first_r)
+    b_l, b_r = half(second, second_r)
     left = lead + a_l + b_l
     right = lead_r + a_r + b_r
     if len(left) + 1 > budget:
@@ -806,14 +883,31 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
     extra = calls - 1             # entry 0 is already one call
     if attack_note is not None:
         # **The remaining calls are spelled out rather than folded into a
-        # delay, and the reason recorded here for 130 versions was wrong.**
-        # It read "the rest of the attack returns to the played note", which
-        # `$00` cannot do: the packed player tests `lda notetbl / bne`
-        # (player.s:976-977), so `$00` is *no frequency write at all* and the
-        # fixed pitch is held either way. What separates the two forms is the
-        # other end -- a delay's right side is read on its final call, so
-        # `_first_frame_lead`'s `$80` would re-assert the base note where
-        # these `$00`s leave the pitch alone.
+        # delay.** The reason recorded here was corrected once and is corrected
+        # again: it read "the rest of the attack returns to the played note",
+        # then was rewritten to "`$00` is no frequency write at all", citing
+        # `player.s:976-977`. That second reading is the PACKED byte's, and
+        # this is a `.sng` byte -- `gt2reloc` inverts bit 7 of every
+        # non-command right byte (`greloc.c:1340-1341`), so a `.sng` `$00`
+        # arrives as packed `$80` and DOES write: `adc mt_chnnote / and #$7f`,
+        # the played note. The original wording was nearer the truth than its
+        # correction.
+        #
+        # What actually separates the two forms is the other end. A delay's
+        # right side is read on its FINAL call, so folding these into one
+        # delay would re-assert the played note once at the end of the attack
+        # instead of on every call of it -- and on a fixed-attack-pitch record
+        # that is the difference between holding the pitch and dropping back.
+        # Spelled out, every call carries the same byte and the shape is
+        # explicit.
+        #
+        # THIS IS THE THIRD COMMENT IN THIS FILE ABOUT THAT ONE BYTE. The
+        # other two (`WAVE_NOTE_BASE`'s definition and
+        # `_wave_alternate_entries.half()`) were each corrected by a separate
+        # change that did not know about this one, which is how a superseded
+        # reading survived beside two correct ones. When this byte's meaning is
+        # restated, grep the file for `greloc.c` and `976-977` and fix every
+        # site, or the next reader will find the wrong one first.
         #
         # Holding is what the player does. One_on_One's GT 2 (`$44`, frames
         # byte 4 -> 2), 372 onsets and no distribution on any offset: the
@@ -2692,6 +2786,10 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     return out
 
 
+EFFECT_NOTE_ALT_MASK = 0x08     # bit $08's two-note alternation (7.hhhh's
+#                                 other half); the pulse-width accumulator in
+#                                 the disjoint dialect `det.pulse_lo_base`
+#                                 reads the same bit
 EFFECT_PITCH_SEQ_MASK = 0x10    # the effect byte's bit-$10 arpeggio
 # Bit $40: a fixed attack pitch out of the player's own note table. It also
 # halves bit $04's attack -- see `_two_stage_frames`, which is where the
@@ -3165,9 +3263,17 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # already running 31 combinations a song. See
         # H2G-CONVERSION-METHOD.md section 7.iiii.
         if alt_byte is not None:
-            alt = _wave_alternate_entries(wave, alt_byte, multiplier, start,
-                                          budget, written=no_test_restart,
-                                          alt_first=alt_first)
+            # **Effect bit $08 rides the same pair.** It is the same counter
+            # and the same phase test 24 bytes further on, alternating the
+            # *note* where this block alternates the waveform, and all 80
+            # corpus records that set it also set $02 -- so it is one shape
+            # and not a second emitter. `_note_alternate_note` returns None
+            # for a record that does not set the bit, which leaves every other
+            # file's bytes exactly as they were.
+            alt = _wave_alternate_entries(
+                wave, alt_byte, multiplier, start, budget,
+                written=no_test_restart, alt_first=alt_first,
+                alt_note=_note_alternate_note(sid, det, i))
             if alt is not None:
                 return alt
 
