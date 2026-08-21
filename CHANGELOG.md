@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.354 — 2026-08-21
+
+- the subtune census headline is derived, not asserted
+
 ## 0.5.353 — 2026-08-21
 
 - v0.5.352's adoption retracted: the probe compared 6 of 14 columns
