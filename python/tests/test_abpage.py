@@ -146,6 +146,17 @@ def test_listening_notes_reads_the_staged_prose(tmp_path, monkeypatch):
     assert "What to write down" not in notes
 
 
+def test_both_templates_declare_a_charset():
+    """Neither template has a <head>, so the charset meta tag is the only
+    thing standing between the page and the browser guessing the encoding --
+    a guess that would corrupt every &mdash;/&middot; entity already baked
+    into these pages."""
+    page_got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=False)
+    index_got = A.index(["W_A_R"], {"W_A_R": ROW}, "v1")
+    assert '<meta charset="utf-8">' in page_got
+    assert '<meta charset="utf-8">' in index_got
+
+
 def test_the_page_quotes_the_notes_it_was_given():
     """A page states what to listen for; if it invented that, the listener
     would be primed for the wrong defect."""
