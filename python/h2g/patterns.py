@@ -114,6 +114,11 @@ GT_END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
 # directly and never consults the table.
 GT_SPEEDTABLE_COMMANDS = (1, 2, 3)
 
+# gcommon.h's CMD_TONEPORTA. With a parameter of 0 it is Goattracker's only
+# way of saying "this row changes the pitch and does not attack" -- see the
+# tie block in _build_raw_pattern and _apply_boundary_ties.
+CMD_TONEPORTA = 3
+
 # Lowest byte value that is a *command* rather than a pattern number, used to
 # read a track that convert_tracks has produced but reindex_tracks has not yet
 # renumbered. Such a track is still in Hubbard numbering, and which byte values
@@ -207,7 +212,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                        tie: bool = False,
                        gate_hold: bool = False,
                        rest_keyoff: bool = False,
-                       rest_wave: bool = False) -> Optional[List[int]]:
+                       rest_wave: bool = False,
+                       exits_tied: Optional[List[bool]] = None
+                       ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
     slide_operand says the player fetches a *second* byte after a `>= $80`
@@ -240,6 +247,13 @@ def _build_raw_pattern(data: bytes, addr: int,
     reaches it and ties into the next note. See detect.find_gate_hold and the
     `pending_tie` assignment below; it does nothing unless `tie` is also set.
 
+    `exits_tied`, when given a list, receives one bool: whether the decode
+    ended with `pending_tie` set -- that is, whether the player would carry
+    the open gate out of this pattern and into whatever the orderlist plays
+    next. Nothing is appended when the decode fails. It is an out-parameter
+    rather than a second return value so that no caller has to change, and it
+    changes no byte of the event stream. See `boundary_ties`.
+
     `note_base` shifts every note byte before it becomes a Goattracker note,
     for the player whose frequency table does not start where Goattracker's
     does (detect.Detection.note_base). Zero for all but one corpus file.
@@ -269,6 +283,8 @@ def _build_raw_pattern(data: bytes, addr: int,
             events += [0xFF, 0x00, 0x00, 0x00]
             if span is not None:
                 span.append(i2 + 1)
+            if exits_tied is not None:
+                exits_tied.append(pending_tie)
             break
 
         get_next = b1 & 0x80
@@ -852,7 +868,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  rest_instrument: bool = False,
                  instr_base: int = 2, tie: bool = False,
                  rest_keyoff: bool = False,
-                 rest_wave: bool = False) -> Optional[List[int]]:
+                 rest_wave: bool = False,
+                 exits_tied: Optional[List[bool]] = None
+                 ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
     The dialect dispatch convert_patterns and phantom_patterns both perform,
@@ -889,7 +907,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
                               steps=steps, tie=tie,
-                              gate_hold=tie and det.gate_hold)
+                              gate_hold=tie and det.gate_hold,
+                              exits_tied=exits_tied)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -1214,6 +1233,29 @@ def scale_portamento_data(patterns: List[List[int]], multiplier: int) -> int:
     return changed
 
 
+class TrackIndex(list):
+    """The per-entry slice lists, with each entry's exit tie state attached.
+
+    `exits_tied[i]` says whether pattern-table entry `i`'s decode ended with
+    `_build_raw_pattern`'s `pending_tie` set -- i.e. whether the player would
+    carry an open gate out of that pattern and into whatever the orderlist
+    plays next. It has to travel from `convert_patterns`, which is the only
+    place a pattern's *bytes* are read, to `reindex_tracks`, which is the only
+    place the *orderlist* and the sliced patterns are both in hand; a list
+    subclass is what lets it do that without every caller in between having to
+    grow a parameter for it. Same shape, and for the same reason, as
+    fidelity.Trace hanging the global filter state off the three voices.
+
+    A plain list is still a valid `track_index` -- `reindex_tracks` reads the
+    attribute with `getattr`, so a caller that builds one by hand simply gets
+    no boundary ties.
+    """
+
+    def __init__(self, items=(), exits_tied=None):
+        super().__init__(items)
+        self.exits_tied: List[bool] = list(exits_tied or ())
+
+
 def convert_patterns(sid: SidFile, det: Detection, log,
                      max_rows: int = GT_DEFAULT_ROWS,
                      terminate_patterns: bool = False,
@@ -1265,6 +1307,10 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     data = sid.data
 
     raw_patterns: List[Optional[List[int]]] = []
+    # Entry -> "the decode ended with pending_tie set". Default False, which is
+    # what every entry that is not decoded at all (pruned, phantom, out of
+    # range) has to be: an ERROR_PATTERN carries no note and ties into nothing.
+    exits: Dict[int, bool] = {}
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -1288,10 +1334,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             raw_patterns.append(list(ERROR_PATTERN))
             continue
 
+        ex: List[bool] = []
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
-                              rest_wave=rest_wave)
+                              rest_wave=rest_wave, exits_tied=ex)
+        exits[i] = bool(ex and ex[0])
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -1302,8 +1350,14 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     for src, octaves in (variants or ()):
         base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
         if base is None:
+            ex = []
             base = decode_entry(sid, det, src, slides, status_bit6,
-                                steps, tie=tie)
+                                steps, tie=tie, exits_tied=ex)
+            exits[src] = bool(ex and ex[0])
+        # A variant is the source's own event stream with its notes shifted, so
+        # it ends on the source's status byte and leaves the gate exactly as
+        # the source does.
+        exits[len(raw_patterns)] = exits.get(src, False)
         if base is None:
             log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -1357,7 +1411,9 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         log(f"De-duplicated {reused} of {total} patterns "
             f"({100 * reused // total}%), {len(new_patterns)} remain")
 
-    return new_patterns, track_index
+    return new_patterns, TrackIndex(
+        track_index,
+        [exits.get(i, False) for i in range(len(raw_patterns))])
 
 
 def pack_repeats(track: List[int]) -> List[int]:
@@ -2149,6 +2205,73 @@ def _apply_orderlist_tempos(new_track: List[int], moved: dict,
     return written
 
 
+def _apply_boundary_ties(new_track: List[int], moved: dict,
+                         steps: Set[int], patterns: List[List[int]],
+                         copies: dict, log=None) -> int:
+    """Tie the first note of a pattern the player enters with the gate open.
+
+    `_build_raw_pattern`'s `pending_tie` is a local, so it starts False at
+    every pattern -- but the player's state does not. Its note-end gate-off
+    lives on the hold path of the *previous* event, and a `$FF` terminator is
+    an orderlist fetch, not an event: nothing between the two patterns closes
+    the gate. So a pattern whose predecessor's last event carried status bit 5
+    (or, where `gate_hold` reads it, a zero `wait`) is entered exactly as a
+    tied note is entered inside a pattern -- a frequency change and no attack
+    -- and this converter re-struck it.
+
+    The tie lands on **row 0 and nowhere else**, because that is where the
+    decoder would have consumed it: `pending_tie` is recomputed at the end of
+    every event, so an opening event with no note of its own overwrites the
+    carried state with its own, and the intra-pattern rule already handles
+    everything after that. Row 0 must also carry a note and an empty command
+    column, which is the same `cmd1 == 0` condition the intra-pattern tie
+    tests.
+
+    **Always into a copy, never in place**, for the reason apply_tempos
+    documents: Goattracker's patterns are global and its orderlists are per
+    subtune, and whether a pattern is entered tied is a property of the
+    orderlist *position*. 96 of the 180 corpus entries that are ever entered
+    tied are also entered untied somewhere -- more than half -- so patching
+    the shared pattern would silence attacks the player really makes. Copies
+    are shared between every step that asks for the same pattern.
+
+    Returns how many steps were tied.
+    """
+    written = 0
+    for at in sorted(steps):
+        i = moved.get(at)
+        if i is None or i >= len(new_track):
+            continue
+        entry = new_track[i]
+        if entry >= MAX_PATTERNS or entry >= len(patterns):
+            continue                    # a command byte, or a dangling number
+        pattern = patterns[entry]
+        if len(pattern) < 4:
+            continue
+        if not GT_FIRSTNOTE <= pattern[0] <= GT_LASTNOTE:
+            continue                    # nothing on row 0 to tie into
+        if pattern[2] == CMD_TONEPORTA and pattern[3] == 0:
+            written += 1                # already says it
+            continue
+        if pattern[2] != 0:
+            # An orderlist tempo copy, or a slide the decoder emitted: the
+            # decoder does not tie over a taken command column either.
+            continue
+        if entry not in copies:
+            if len(patterns) >= MAX_PATTERNS:
+                if log:
+                    log("*** NO ROOM FOR A BOUNDARY-TIE PATTERN COPY (AT "
+                        f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                break
+            copy = list(pattern)
+            copy[2], copy[3] = CMD_TONEPORTA, 0x00
+            copies[entry] = len(patterns)
+            patterns.append(copy)
+        new_track[i] = copies[entry]
+        written += 1
+    return written
+
+
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                    pack: bool = False,
                    floor: int = GT_COMMAND_FLOOR,
@@ -2188,8 +2311,16 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
     new_tracks: List[List[int]] = []
     merge_cache: dict = {}      # shared, so one merged pattern serves every voice
     tempo_copies: dict = {}     # (pattern, value) -> the copy carrying it
+    tie_copies: dict = {}       # pattern -> the copy whose row 0 is tied
+    # Present only on a TrackIndex, which is what convert_patterns returns; a
+    # hand-built list simply gets no boundary ties.
+    exits_tied = getattr(track_index, "exits_tied", None)
     for ti, track in enumerate(tracks):
         new_track: List[int] = []
+        # Positions of this track whose *predecessor* pattern leaves the gate
+        # open. See _apply_boundary_ties.
+        tied_steps: Set[int] = set()
+        prev_ref: Optional[int] = None
         # Where each of this track's own positions ended up, for the tempo
         # pass below. One old entry can become several (a sliced pattern), and
         # the tempo belongs on the first of them.
@@ -2219,6 +2350,14 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
                 # inventing a repeat or transpose in its place.
                 new_track.append(b)
             else:
+                # A transpose byte between two pattern references is consumed
+                # by the orderlist reader and plays nothing, so `prev_ref`
+                # deliberately survives one: the gate the previous pattern left
+                # open is still open when the next one's first note arrives.
+                if (exits_tied is not None and prev_ref is not None
+                        and prev_ref < len(exits_tied) and exits_tied[prev_ref]):
+                    tied_steps.add(at)
+                prev_ref = b
                 new_track.extend(track_index[b] if b < len(track_index) else [])
         # Before packing, and that is the whole reason it is here rather than
         # in a pass of its own: the tempo rides in a *copy* of the pattern it
@@ -2228,6 +2367,16 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
         if tempos and ti < len(tempos) and tempos[ti] and patterns is not None:
             _apply_orderlist_tempos(new_track, moved, tempos[ti], patterns,
                                     tempo_copies, log)
+        # Same placement, and for the same two reasons: the tie rides in a
+        # *copy*, so it has to be substituted before pack_repeats can fold the
+        # step back into the run around it -- and after the tempo pass, whose
+        # copy owns the same command column (a step that is both is left to
+        # the tempo, which is a whole subtune's clock against one note's
+        # attack). Only one corpus player has orderlist tempos at all and no
+        # entry of it is ever entered tied, so the two never meet today.
+        if tied_steps and patterns is not None:
+            _apply_boundary_ties(new_track, moved, tied_steps, patterns,
+                                 tie_copies, log)
         packed = pack_repeats(new_track) if pack else new_track
         # Merging is attempted only for a track that would otherwise cost its
         # subtune, so no track that already fits is rewritten and the fixture
