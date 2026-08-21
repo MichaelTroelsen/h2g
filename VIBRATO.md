@@ -10,7 +10,6 @@
 |---|---|---:|---|---|---:|---:|
 | International_Karate.sid | `$090A` | 2 | $55 | pitchseq | 1625 | 0 |
 | IK_plus.sid | `$0A56` | 5 | $14 | pitchseq | 1600 | 0 |
-| Tarzan.sid | `$7840` | 1 | $2A | plain | 1244 | 0 |
 | Spellbound.sid | `$180A` | 8 | $25 | arp | 911 | 0 |
 | Dragons_Lair_Part_II.sid | `$8C00` | 19 | $2A | plain | 764 | 0 |
 | Delta_Mix-E-Load_loader.sid | `$3A98` | 4 | $04 | plain | 742 | 0 |
@@ -27,14 +26,13 @@
 | Chimera.sid | `$0F0F` | 4 | $05 | arp | 420 | 0 |
 | Devils_Galop.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
 | Monty_on_the_Run.sid | `$0909` | 4 | $05 | arp | 411 | 0 |
-| Dragons_Lair_Part_II.sid | `$097A` | 2 | $00 | plain | 505 | 111 |
+| Dragons_Lair_Part_II.sid | `$097A` | 2 | $00 | plain | 505 | 127 |
 | One_Man_and_his_Droid.sid | `$077F` | 1 | $0A | plain | 612 | 256 |
 | One_Man_and_his_Droid.sid | `$088F` | 2 | $0A | plain | 612 | 256 |
 | Off_the_Cuff.sid | `$09C7` | 4 | $04 | plain | 433 | 95 |
 | Rock_Tells_the_Tale.sid | `$59C9` | 8 | $04 | plain | 326 | 0 |
 | Bangkok_Knights.sid | `$0A08` | 3 | $30 | pitchseq | 325 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$09F8` | 3 | $01 | program | 295 | 0 |
-| One_on_One_Jordan_vs_Bird.sid | `$06A6` | 2 | $44 | atkpitch | 282 | 0 |
 | International_Karate.sid | `$0BB0` | 3 | $08 | plain | 277 | 0 |
 | Nineteen.sid | `$0797` | 7 | $01 | program | 483 | 208 |
 | Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 114 |
@@ -44,7 +42,6 @@
 | Rasputin.sid | `$0A0A` | 7 | $05 | arp | 204 | 0 |
 | Rock_Tells_the_Tale.sid | `$F96E` | 10 | $04 | plain | 190 | 0 |
 | Game_Killer.sid | `$0A9A` | 2 | $0A | plain | 262 | 78 |
-| Knucklebusters.sid | `$0AAD` | 25 | $44 | atkpitch | 261 | 90 |
 | One_on_One_Jordan_vs_Bird.sid | `$0ACA` | 4 | $00 | plain | 167 | 0 |
 | Last_V8.sid | `$0A09` | 4 | $05 | arp | 163 | 0 |
 | Last_V8_C128_version.sid | `$0A09` | 4 | $05 | arp | 162 | 0 |
@@ -55,8 +52,8 @@
 | Last_V8_C128_version.sid | `$040F` | 1 | $01 | drum | 141 | 0 |
 | Dragons_Lair_Part_II.sid | `$A8C9` | 15 | $04 | plain | 138 | 0 |
 | Food_Feud.sid | `$29F9` | 3 | $34 | pitchseq | 137 | 0 |
-| After_8.sid | `$099A` | 7 | $00 | plain | 264 | 131 |
-| Monty_on_the_Run.sid | `$3FFF` | 13 | $02 | plain | 218 | 106 |
+| Knucklebusters.sid | `$0AAD` | 25 | $44 | atkpitch | 261 | 125 |
+| Monty_on_the_Run.sid | `$3FFF` | 13 | $02 | plain | 218 | 95 |
 | International_Karate.sid | `$0A08` | 5 | $C5 | arp | 103 | 0 |
 | Samantha_Fox_Strip_Poker.sid | `$0909` | 2 | $C4 | arp | 101 | 0 |
 | Spellbound.sid | `$0F0A` | 13 | $25 | arp | 100 | 0 |
@@ -76,7 +73,7 @@
 | IK_plus.sid | `$09C8` | 2 | $A4 | bit80 | 15 | 0 |
 | Master_of_Magic.sid | `$050A` | 17 | $05 | arp | 15 | 0 |
 | Saboteur_II.sid | `$0888` | 5 | $01 | program | 11 | 0 |
-| Shockway_Rider.sid | `$0889` | 3 | $01 | program | 10 | 0 |
+| Shockway_Rider.sid | `$0889` | 3 | $01 | program | 10 | 1 |
 | Deep_Strike.sid | `$0FC9` | 3 | $44 | atkpitch | 8 | 0 |
 | Formula_1_Simulator.sid | `$0F0A` | 4 | $C5 | arp | 8 | 0 |
 | Knucklebusters.sid | `$00F8` | 12 | $44 | atkpitch | 11 | 3 |
@@ -94,15 +91,15 @@
 
 | cause | absent | slow | instruments | reversals missing |
 |---|---:|---:|---:|---:|
-| plain | 18 | 12 | 30 | 9120 |
+| plain | 17 | 11 | 28 | 7738 |
 | arp | 20 | 0 | 20 | 5005 |
-| program | 8 | 1 | 9 | 871 |
+| program | 7 | 2 | 9 | 870 |
 | pitchseq | 7 | 0 | 7 | 4868 |
-| atkpitch | 4 | 2 | 6 | 478 |
+| atkpitch | 3 | 2 | 5 | 161 |
 | drum | 3 | 0 | 3 | 926 |
 | bit80 | 2 | 0 | 2 | 17 |
 | unknown | 2 | 0 | 2 | 626 |
 
-**64 of these 79 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**61 of these 76 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).
