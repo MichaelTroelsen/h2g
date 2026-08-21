@@ -10035,15 +10035,30 @@ subtunes 1-9 over 12 seconds, with the `always` options and `--tempo auto`:
 | 7 | 66 | 128 | 70% |
 | 8 | 43 | 83 | 69% |
 
-Mean 75%. The per-cue tempos come through exactly: `find_song_speeds` reads
+Mean 75%. **Two facts about how that table was taken, without which it reads as
+a contradiction of the harness.** It was measured at `-t 12`, not the `-t 60`
+`FIDELITY.md` uses; and it was taken *without* the frequency-table calibration
+— the § 7.mmmmm trap, which for the cue engine is accidentally the right
+answer, because traces on `$3A36` and traces with no calibration are identical
+on all nine cues. `FIDELITY.md` meanwhile reported cue 1 at 1% and cue 3 at
+18%, which looks like a flat refutation of the 40% and 77% above and is not:
+the harness was naming the original's notes on the *tune* engine's table
+(`$4895`, detune −0.6964) because `find_freq_table`'s tie-break was longest
+run and the tune table wins by one entry out of 96. Corrected — the tie-break
+is nearness to the engine's own anchors since `87156c2` — the nine cues read
+63–96%. Take the numbers above as a `-t 12` reading of the right music, not as
+this file's current measurement of it.
+
+The per-cue tempos come through exactly: `find_song_speeds` reads
 `$3B2E,X` through the gate's reload at `$3B40` and returns 2, 2, 3, 2, 2, 3,
 3, 2, 3 frames a row, which is the table byte-for-byte.
 
-#### The one mechanism still unread
+#### The counter behind the cue lengths — read, after one wrong reading
 
-Every remaining miss is a note *count*, in both directions, and one counter
-explains the shape of it. Each cue has a length byte at `$3B37,X` that the
-init patches into an immediate:
+This subsection was headed *"The one mechanism still unread"* and its closing
+paragraph is retracted below. The counter is read; what was unread was how
+`SongSpeeds` already encodes it. Each cue has a length byte at `$3B37,X` that
+the init patches into an immediate:
 
     418A  8D 5C 36  STA $365C         ; patches the operand of...
     365B  A9 70     LDA #$70          ; ...this
@@ -10058,9 +10073,23 @@ init patches into an immediate:
 
 `find_song_speeds` reads the first half of that correctly and lands the table
 as the outer-gate `skip` -- 112, 8, 8, 126, 3, 2, 126, 126, 126, which is
-`$3B37` exactly. The second half is a further stall of one call per cycle, on
-top of the skip, and no Goattracker tempo expresses it. So cue lengths are
-approximate and a cue that ends in the original loops in the conversion.
+`$3B37` exactly.
+
+> **RETRACTED.** This section used to close by claiming the second half is *"a
+> further stall of one call per cycle, on top of the skip, and no Goattracker
+> tempo expresses it"*, and concluded that cue lengths are therefore
+> approximate. Measured on the real player, **there is no second stall.** The
+> mean row rate of all nine cues equals `SongSpeeds.exact_row` =
+> `(reload + 1) * (N + 1) / N` to within 0.3%, which is exactly what the
+> outer-gate skip already encodes. The `BEQ $3694` at `$3678` does not add a
+> stall on top of the skip; it is the same counter the skip is read from, seen
+> from the other side.
+>
+> The mechanism this section called unread is therefore read, and the cue
+> lengths are not approximate for this reason. A cue that ends in the original
+> still loops in the conversion, but that is Hubbard's `$FE` against a
+> Goattracker orderlist -- the `original_ended` problem of § 7.hhhh -- and not
+> a tempo Goattracker cannot express.
 
 > **The transferable lesson:** before writing a signature for a mechanism you
 > have just disassembled, check whether the chains you already have would find

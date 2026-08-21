@@ -1,12 +1,12 @@
 {
   "generated_from": {
-    "head": "ce00467",
+    "head": "e21995a",
     "sources": [
-      ".claude/tasks/runs.jsonl (57 lines, 48 ids, read in full)",
-      ".claude/tasks/whattask.json (previous plan, head b670faa)",
-      "git log b670faa..ce00467 (twelve branch merges + the artefact regeneration)",
-      "SURVEY.md, FIDELITY.md, VIBRATO.md, SUBTUNES.md, presets.json (all regenerated at 990582a)",
-      "whats-next.md",
+      ".claude/tasks/runs.jsonl (60 lines, 50 ids, read in full)",
+      ".claude/tasks/whattask.json (previous plan, head ce00467)",
+      "git log ce00467..e21995a (the preset re-search and the artefact chain)",
+      "SURVEY.md, FIDELITY.md, VIBRATO.md, SUBTUNES.md, presets.json (regenerated at 5030dc9)",
+      "whats-next.md (SPENT -- see the prose)",
       "PER-SONG-PLAN.md",
       "CLAUDE.md",
       "git branch / git worktree list",
@@ -662,30 +662,6 @@
       "lane": "serial"
     },
     {
-      "id": "presets-research-12-moved-files",
-      "title": "Re-search settings for the ~40 files whose bytes moved across the twelve merges",
-      "source": "whats-next.md item 15; runs.jsonl: c64-music-examples-phantom-subtunes-not-trimmed (opened as refidelity-search-the-17-bounded-files), vibrato-pitchseq (opened as pitchseq-preset-reselect), detect-effect-arp-octave",
-      "model": "sonnet",
-      "mode": "main",
-      "touches": [
-        "rw:presets.json",
-        "rw:FIDELITY.md",
-        "rw:SURVEY.md"
-      ],
-      "needs_main": true,
-      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md), which the repo forbids a branch from regenerating",
-      "depends_on": [
-        "artefact-stamp-realign"
-      ],
-      "verify": "a --fidelity search over the union of the moved sets -- 17 at the subtune bounds, 23 at the zero-wait tie, 23 at the six batch branches -- DIFFED against the shipped presets before adoption; stderr read for 'will not convert' and 'search failed'. Also covers the 4 pitchseq files whose preset does not carry --pitch-seq, which is why the option is offered and never selected",
-      "why_model": "running an existing search and diffing its output",
-      "why_mode": "writes presets.json, which no branch may carry",
-      "why_lane": "writes all three generated artefacts",
-      "mcp": [],
-      "blocked_on": null,
-      "lane": "serial"
-    },
-    {
       "id": "corpus-three-failures",
       "title": "Three corpus files still fail to convert -- capacity, not comprehension",
       "source": "whats-next.md item 9; SURVEY.md (80 of 83 in reach)",
@@ -865,32 +841,6 @@
       "lane": "serial"
     },
     {
-      "id": "artefact-stamp-realign",
-      "title": "FIDELITY.md's stamp cannot go clean while 6581.pdf is untracked",
-      "source": "derived: FIDELITY.md line 3, SUBTUNES.md line 3; runs.jsonl: merge-instrmap-songview-branch, c64-music-examples-phantom-subtunes-not-trimmed (opened as regenerate-subtunes-md-after-the-track-table-bound), converter-emits-sound-effects-as-subtunes (opened as subtune-census-doc-refresh), c64me-instrument-table-mismatch (opened as survey-reports-15-subtunes-where-1-is-real)",
-      "model": "sonnet",
-      "mode": "main",
-      "touches": [
-        "rw:FIDELITY.md",
-        "r:SURVEY.md",
-        "r:presets.json",
-        "r:SUBTUNES.md",
-        "r:VIBRATO.md"
-      ],
-      "needs_main": true,
-      "needs_main_reason": "writes a generated artefact (presets.json / FIDELITY.md / SURVEY.md / VIBRATO.md), which the repo forbids a branch from regenerating",
-      "depends_on": [
-        "untracked-6581-pdf"
-      ],
-      "verify": "FIDELITY.md line 3 names a sha with no `-dirty`. Everything else this task asked for is done at 990582a: all five artefacts regenerated once from a coherent tree, presets.json stamping 0.5.337 so test_preset_passthrough's 24 tests run again, and 52 --fidelity settings carried forward",
-      "why_model": "running the documented regeneration commands in the documented order",
-      "why_mode": "one regeneration run once the stray file is resolved; nothing else remains",
-      "why_lane": "writes all five generated artefacts",
-      "mcp": [],
-      "blocked_on": "6581.pdf being untracked. fidelity.py:3165 runs `git status --porcelain -- .`, which counts UNTRACKED files, so one stray file stamps every generated report `-dirty` however clean the tracked tree is. Two of the three strays are now gitignored; this one is the user's",
-      "lane": "serial"
-    },
-    {
       "id": "method-doc-section-scheme",
       "title": "Choose a naming scheme past section 7.zzzzz",
       "source": "whats-next.md open question 3",
@@ -1009,28 +959,7 @@
       "needs_main": false,
       "needs_main_reason": null,
       "blocked_on": null,
-      "lane": "serial"
-    },
-    {
-      "id": "untracked-6581-pdf",
-      "title": "6581.pdf sits untracked in the repo root",
-      "source": "working tree; whats-next.md open question 6",
-      "model": "sonnet",
-      "mode": "requires-user",
-      "touches": [
-        "rw:6581.pdf",
-        "rw:.gitignore"
-      ],
-      "blocked_on": "the user's intent: commit an 805 KB binary, gitignore it so it stops appearing in every status, or move it out of the tree",
-      "verify": "git status --short is empty apart from .claude/tasks/",
-      "why_model": "whichever way it goes, the action is one command",
-      "why_mode": "the user's file and the user's call",
-      "why_lane": "writes .gitignore",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "lane": "serial"
+      "lane": "parallel"
     },
     {
       "id": "commit-misfiling-force-push",
@@ -1229,7 +1158,7 @@
     },
     {
       "id": "passthrough-guard-disarmed-by-every-bump",
-      "title": "test_preset_passthrough is armed only in the commit that regenerates presets.json",
+      "title": "CONFIRMED FIRING: bump_version.py runs after presets.py, so every bump disarms the guard",
       "source": "derived: this session's artefact regeneration; test_preset_passthrough.py:40-41",
       "model": "opus",
       "mode": "main",
@@ -1238,7 +1167,7 @@
         "rw:CLAUDE.md",
         "r:presets.json"
       ],
-      "verify": "a stated decision, with the mechanism written down: the guard skips unless presets.json's `generator` stamp contains the running __version__, and CLAUDE.md requires a version bump on EVERY commit, so the guard is live in the regenerating commit and dead in the next one. That is the likeliest explanation for CLAUDE.md's note that it once stayed off for ten versions unnoticed. Options are to compare only the minor version, to stamp the artefact with the commit rather than the version, or to accept it and say so",
+      "verify": "a decision recorded with the mechanism, which is now OBSERVED rather than inferred. At 990582a the guard was reported live with 24 tests running; one of the 24 was in fact SKIPPING, because bump_version.py ran after presets.py in that same commit and the artefact stamped 0.5.336 against __version__ 0.5.337. Adopting the re-searched presets at 899480d stamped 0.5.337 against 0.5.337 and `pytest tests/test_preset_passthrough.py` reads 24 passed / 0 skipped. Three commits since have deliberately carried NO version bump to keep it that way, which is a standing exception to CLAUDE.md's bump-every-commit rule and cannot be the permanent answer. Options: compare only major.minor; stamp the artefact with the commit rather than the version; have bump_version.py re-stamp presets.json; or accept it and say so in CLAUDE.md",
       "why_model": "a rule about how two of the repo's own conventions interact, where the wrong fix disables a guard permanently",
       "why_mode": "changes a convention CLAUDE.md states, so it needs the surrounding context",
       "why_lane": "writes CLAUDE.md and a test, and reads presets.json while other tasks write it",
@@ -1562,6 +1491,21 @@
   ],
   "closed": [
     {
+      "id": "untracked-6581-pdf",
+      "title": "gitignored -- it was the last untracked file dirtying every generated report",
+      "closed_by": "bde94cd"
+    },
+    {
+      "id": "artefact-stamp-realign",
+      "title": "all five artefacts regenerated from a coherent tree; FIDELITY.md stamps clean at last",
+      "closed_by": "dd1818d"
+    },
+    {
+      "id": "presets-research-12-moved-files",
+      "title": "48 of 83 files had moved bytes; re-searched in six shards, diffed before adopting -- 4 settings gained against 1 substituted. ACE_II gate 83->88%, Food_Feud gate 44->64%, Chain_Reaction vib 0.40->0.51x, Zoolook vib 0.12->0.21x",
+      "closed_by": "899480d / 5030dc9"
+    },
+    {
       "id": "untracked-monlog",
       "title": "gitignored alongside .claude/worktrees/",
       "closed_by": "ce00467"
@@ -1820,6 +1764,71 @@
       "id": "plays-something-else-diagnose",
       "title": "All four 'plays something else' rows were the harness",
       "closed_by": "a5fd6b7"
+    },
+    {
+      "id": "find-vibrato-nearest-copy",
+      "title": "deduped into powerplay-vibrato-refusals",
+      "closed_by": "db4f5d5"
+    },
+    {
+      "id": "regenerate-subtunes-md-after-the-track-table-bound",
+      "title": "SUBTUNES.md regenerated",
+      "closed_by": "990582a"
+    },
+    {
+      "id": "refidelity-search-the-17-bounded-files",
+      "title": "deduped into presets-research-12-moved-files",
+      "closed_by": "899480d"
+    },
+    {
+      "id": "agent-returned-stub-record-unverified",
+      "title": "the stub agent's clause was run by hand at the fidelity merge",
+      "closed_by": "8994fe9"
+    },
+    {
+      "id": "c64me-phantom-subtunes-are-pattern-pointers",
+      "title": "closed by the track-table extent bound",
+      "closed_by": "5176a07"
+    },
+    {
+      "id": "survey-reports-15-subtunes-where-1-is-real",
+      "title": "SURVEY.md regenerated; C64ME reads 1",
+      "closed_by": "990582a"
+    },
+    {
+      "id": "pitchseq-preset-reselect",
+      "title": "the re-search selected --pitch-seq for Chain_Reaction and Zoolook, which is what this asked for",
+      "closed_by": "899480d"
+    },
+    {
+      "id": "invert-wave-program-hold-test",
+      "title": "the hold assertion inverted and its filter tightened",
+      "closed_by": "62403c9"
+    },
+    {
+      "id": "fix-claudemd-wavetable-right-byte-paragraph",
+      "title": "CLAUDE.md rewritten with the packer's XOR",
+      "closed_by": "62403c9"
+    },
+    {
+      "id": "powerplay-vibrato-md-regen-at-merge",
+      "title": "VIBRATO.md regenerated",
+      "closed_by": "5030dc9"
+    },
+    {
+      "id": "fix-7kkkkk-measurement-provenance",
+      "title": "deduped into fix-7kkkkk-cue-stall-claim, which is OPEN",
+      "closed_by": "deduped"
+    },
+    {
+      "id": "powerplay-cue-length-stall",
+      "title": "deduped into fix-7kkkkk-cue-stall-claim, which is OPEN",
+      "closed_by": "deduped"
+    },
+    {
+      "id": "vib-census-ambiguous-adsr-filter",
+      "title": "deduped into vib-census-flag-ambiguous-adsr, which is OPEN",
+      "closed_by": "deduped"
     }
   ]
 }
