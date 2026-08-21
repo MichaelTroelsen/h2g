@@ -3907,17 +3907,38 @@ def report(rows: list[dict], args) -> str:
             mean_ok = sum(r["melody"] for r in measured if r.get("multiplier", 1) == 1)
             n_ok = n - len(slowed)
             traced = sorted({r.get("traced_calls_per_frame", 1) for r in slowed})
+            # "advances a row every 2 frames" / "-S2" used to be hardcoded
+            # here, so a multiplier-3 file's paragraph named -S2 in one
+            # clause and -m3 (correctly, via `traced`) two clauses later --
+            # e.g. Saboteur_II. Name the actual multiplier(s) `slowed`
+            # carries instead of assuming the commonest one.
+            mults = sorted({r.get("multiplier", 1) for r in slowed})
+            if len(mults) == 1:
+                m = mults[0]
+                mech = (
+                    f"Their player advances a row every {m} frames, which "
+                    f"Goattracker reaches only by being called {m} times a "
+                    f"frame, so they are packed with `gt2reloc -S{m}` -- a "
+                    f"CIA stub at the init address that reprograms timer A "
+                    f"to 50.125x{m} Hz (greloc.c:140, :1616).")
+            else:
+                mech = (
+                    "Each one's player advances a row every `multiplier` "
+                    "frames, which Goattracker reaches only by being called "
+                    "`multiplier` times a frame, so it is packed with "
+                    "`gt2reloc -S<multiplier>` -- a CIA stub at the init "
+                    "address that reprograms timer A to "
+                    "50.125x`multiplier` Hz (greloc.c:140, :1616). This "
+                    "run's multipliers: " + ", ".join(f"-S{m}" for m in mults)
+                    + ".")
             out.append(
                 f"- **{len(slowed)} of these {n} files are played faster than "
-                "50Hz and are traced that way.** Their player advances a row "
-                "every 2 frames, which Goattracker reaches only by being "
-                "called twice a frame, so they are packed with `gt2reloc -S2` "
-                "-- a CIA stub at the init address that reprograms timer A to "
-                "50.125x2 Hz (greloc.c:140, :1616). Stock siddump cannot see "
-                "that: it calls the play routine `seconds x 50` times whatever "
-                "the PSID speed field says (siddump.c:309/325), which traced "
-                "every one of these files at half speed until v0.5.99. The "
-                "`tools/siddump-rt` build takes `-m` and this run passed "
+                "50Hz and are traced that way.** " + mech + " Stock siddump "
+                "cannot see that: it calls the play routine `seconds x 50` "
+                "times whatever the PSID speed field says "
+                "(siddump.c:309/325), which traced every one of these files "
+                "at half speed until v0.5.99. The `tools/siddump-rt` build "
+                "takes `-m` and this run passed "
                 + (f"`-m{traced[0]}`" if len(traced) == 1
                    else "each song its own multiplier")
                 + ", so both sides now sit on one real-time axis."

@@ -783,6 +783,57 @@ def test_a_conversion_that_plays_nothing_is_still_a_defect():
     assert "mean melody similarity: **50%**" in text
 
 
+# --- the multispeed summary names the actual multiplier --------------------
+#
+# The paragraph used to hardcode "every 2 frames" / "-S2" / "50.125x2 Hz" for
+# ANY multiplier > 1, while a few clauses later `-m{traced[0]}` interpolated
+# the real rate correctly -- so a multiplier-3 file's own paragraph named -S2
+# and -m3 in the same breath (Saboteur_II).
+
+
+def test_a_multiplier_3_file_is_named_S3_not_the_old_hardcoded_S2():
+    row = _row("Saboteur_II.sid", "measured", 1.0, 90, 90)
+    row["multiplier"] = 3
+    row["traced_calls_per_frame"] = 3
+    text = fidelity.report([row], _Args())
+    assert "`gt2reloc -S3`" in text
+    assert "advances a row every 3 frames" in text
+    assert "called 3 times a frame" in text
+    assert "50.125x3 Hz" in text
+    assert "`-m3`" in text
+    # ... and none of the old hardcoded multiplier-2 wording survives (a
+    # different section elsewhere in the report uses -S2 as a generic
+    # worked example and is not what this guards).
+    assert "every 2 frames" not in text
+    assert "called twice a frame" not in text
+
+
+def test_a_multiplier_2_file_still_reads_S2():
+    row = _row("Two.sid", "measured", 1.0, 90, 90)
+    row["multiplier"] = 2
+    row["traced_calls_per_frame"] = 2
+    text = fidelity.report([row], _Args())
+    assert "`gt2reloc -S2`" in text
+    assert "advances a row every 2 frames" in text
+    assert "50.125x2 Hz" in text
+    assert "`-m2`" in text
+
+
+def test_a_run_mixing_multipliers_names_each_one_generically():
+    two = _row("Two.sid", "measured", 1.0, 50, 50)
+    two["multiplier"] = 2
+    two["traced_calls_per_frame"] = 2
+    three = _row("Three.sid", "measured", 1.0, 50, 50)
+    three["multiplier"] = 3
+    three["traced_calls_per_frame"] = 3
+    text = fidelity.report([two, three], _Args())
+    # Both real multipliers are named -- neither is asserted as THE rate.
+    assert "-S2" in text and "-S3" in text
+    assert "each song its own multiplier" in text
+    # The per-file mechanism sentence is generic, not pinned to one number.
+    assert "advances a row every `multiplier` frames" in text
+
+
 # --- the scratch directory -------------------------------------------------
 #
 # Every file the harness writes has a fixed name -- a.sng, b.sid, o.sid -- so
