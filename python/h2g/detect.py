@@ -2123,10 +2123,22 @@ def find_gate_hold(sid: SidFile) -> bool:
     tells these two players apart.** Both are called every frame and advance a
     row only when a clock cell reaches its reload value; on the calls in
     between, neither reaches the `DEC`. What they do instead is the
-    discriminator, and it is one branch target:
+    discriminator, and it is one branch target -- reached, in Saboteur_II, by
+    two separate branches:
 
-        Human_Race   09D5  CMP $0DCF / D0 15  BNE $09EF -> JMP $0AF2
-        Saboteur_II  F080  CMP $F576 / D0 0F  BNE $F094 -> JMP $F1BC
+        Human_Race   09D5  CMP $0DCF        09D8  D0 15  BNE $09EF -> JMP $0AF2
+        Saboteur_II  F080  CMP $F576        F083  D0 0F  BNE $F094 -> JMP $F1BC
+                     F078  LDA $F577        F07B  F0 17  BEQ $F094 -> JMP $F1BC
+
+    `CMP abs` is a 3-byte instruction, so $F080 is only the `CMP`'s own
+    address -- the branch opcode that actually does the skipping sits three
+    bytes later, at $F083. And Saboteur_II reaches $F094 twice over: the `BNE`
+    at $F083 tests the `CMP $F576` just above it, and a second guard, a `BEQ`
+    at $F07B, tests an unrelated `LDA $F577` three bytes before that. Both
+    reach the identical target, which is exactly the "both guards must skip to
+    the same place" condition the scan below checks for -- it walks the window
+    in front of the `DEC` for *any* branch opcode landing on the hold path or
+    its bypass, so it finds both without either address being hard-coded.
 
     $0AF2 is the address *both* of Human_Race's guards skip to -- the row
     clock's bypass lands past the gate-off, so a zero-`wait` note really does
