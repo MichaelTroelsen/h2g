@@ -14,6 +14,11 @@ build/
 # dirty tree -- so leaving them untracked stamps every generated report
 # `-dirty` however clean the tracked files are.
 .claude/worktrees/
+# the runqueue's lock REGISTRY and its mutex are runtime state, and an
+# untracked file makes every generated report stamp `-dirty`
+# (fidelity.py:3165 runs `git status --porcelain -- .`)
+.claude/tasks/serial.lock
+.claude/tasks/serial.lock.d/
 
 # VICE monitor output, written beside the repo when a player is traced by hand.
 monlog_out.txt
