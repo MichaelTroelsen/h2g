@@ -495,22 +495,48 @@ def _build_raw_pattern(data: bytes, addr: int,
         # branch target that decides it, and note that `gate_hold` is what
         # keeps Saboteur_II out. This condition is not that test.
         #
-        # A **bit-6 event is excluded**, because a bit-6 event is a rest and
-        # the rest branch closes the gate on its own, off the counter path
-        # entirely -- Human_Race `$0A7C DEC $0DBC` (the mask ANDed into $D404
-        # at $0A95), Saboteur_II `$F13C DEC $F566,X` (ANDed in at $F465). So
-        # a zero-wait *rest* ends with the gate shut and the next note really
-        # does attack. **It is byte-inert on all 83 convertible corpus files**
-        # -- measured, not assumed, by flipping it and hashing every
-        # conversion -- so nothing here rests on it and no report number is
-        # evidence for it; it is kept because the two players say so and
-        # pinned by tests/test_gate_hold.py so a file that does exercise it
-        # cannot quietly get the other reading. It was briefly believed to be
-        # what spared Saboteur_II. It is not: with it in place Saboteur_II
-        # still fell from melody 98% to 69% until `gate_hold` excluded the
-        # file outright.
-        pending_tie = tie and (bool(no_adsr)
-                               or (wait == 0 and not no_note and gate_hold))
+        # A **bit-6 event is excluded, and from BOTH halves** -- a bit-6 event
+        # is a rest, and the rest branch closes the gate on its own, off the
+        # counter path entirely: Human_Race `$0A7C DEC $0DBC` (the mask ANDed
+        # into $D404 at $0A95), Saboteur_II `$F13C DEC $F566,X` (ANDed in at
+        # $F465). The idiom is the same in every player that has it and it is
+        # worth reading once in full, here Battle of Britain:
+        #
+        #     8065  A9 FF     LDA #$FF        ; the gate mask, reloaded on
+        #     8067  8D FF 83  STA $83FF       ;   every fetch frame
+        #     806A  B1 FD     LDA ($FD),Y     ; the status byte
+        #     ...
+        #     8077  2C 00 84  BIT $8400       ; bit 6
+        #     807A  70 44     BVS $80C0       ;   set -> the rest branch
+        #     80C0  CE FF 83  DEC $83FF       ; $FF -> $FE
+        #     80D6  BD 22 84  LDA $8422,X     ; the voice's waveform
+        #     80D9  2D FF 83  AND $83FF       ;   with bit 0 cleared
+        #     80DC  99 04 D4  STA $D404,Y     ; gate OFF
+        #
+        # Devils Galop is the same routine at $1399/$13BA/$13FA/$141B. The
+        # `AND` is unconditional: nothing on that path consults bit 5, so a
+        # rest ends with the gate shut **whatever the status byte's bit 5
+        # says**, and the next note really does attack.
+        #
+        # Excluding it from the zero-`wait` half alone is byte-inert on all 83
+        # convertible corpus files (measured by flipping it and hashing every
+        # conversion), which is why this read as settled. It is not: a rest
+        # carrying bit 5 as well -- `$7F`, the byte four of these players end a
+        # pattern on -- set `pending_tie` through `no_adsr`, and
+        # `_apply_boundary_ties` then tied the next pattern's opening note into
+        # a gate the rest had already closed. Battle of Britain, Devils Galop,
+        # Crazy Comets and Monty on the Run each lost a handful of real attacks
+        # that way at v0.5.339 (`retrig` 0.988/0.995/0.995/0.996 against 1.000
+        # with the carry suppressed). The rest is not a note whose end can be
+        # held open; it is the thing that ends the note before it.
+        #
+        # Kept pinned by tests/test_gate_hold.py and tests/test_wait0_tie.py so
+        # a file that exercises either half cannot quietly get the other
+        # reading. It was briefly believed to be what spared Saboteur_II. It is
+        # not: with it in place Saboteur_II still fell from melody 98% to 69%
+        # until `gate_hold` excluded the file outright.
+        pending_tie = tie and not no_note and (
+            bool(no_adsr) or (wait == 0 and gate_hold))
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0

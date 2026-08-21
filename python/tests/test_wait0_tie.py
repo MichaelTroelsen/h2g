@@ -27,6 +27,13 @@ it -- with `gate_hold` forced off the boundary pass changes not one byte of
 that file. It is not downstream of it corpus-wide: 22 of the 30 files the
 pass moves still move with the wait==0 clause disabled, on status bit 5
 alone.
+
+**A bit-6 rest exits untied whatever its bit 5 says**, which the wait==0 half
+had excluded from the start and the bit-5 half had not. That asymmetry is what
+put Battle of Britain, Devils Galop, Crazy Comets and Monty on the Run at
+`retrig` 0.988/0.995/0.995/0.996 instead of 1.000 -- a handful of real attacks
+tied away at a boundary whose predecessor ends on `$7F`. Warhawk was a fifth,
+0.989 -> 0.996.
 """
 import pathlib
 
@@ -94,6 +101,31 @@ def test_zero_wait_last_event_exits_tied_only_with_gate_hold():
 def test_zero_wait_rest_does_not_exit_tied():
     """The rest branch closes the gate itself -- see test_gate_hold.py."""
     p = _ending_on(_status(0, no_note=True), operand=False)
+    assert _exit_state(p, tie=True, gate_hold=True) is False
+
+
+@pytest.mark.parametrize("wait", [0, 1, 31])
+def test_a_rest_carrying_bit5_does_not_exit_tied(wait):
+    """The rest branch's gate-off does not consult bit 5.
+
+    `$7F` -- rest, bit 5, wait 31 -- is the byte four corpus players end a
+    pattern on, and reading its bit 5 as "the gate stays open" tied the next
+    pattern's opening note into a gate the rest had already shut. The player
+    reloads a mask with `#$FF` on every fetch frame, the rest branch `DEC`s it
+    to `$FE` and ANDs it into $D404 unconditionally (Battle of Britain
+    $8065/$80C0/$80D9, Devils Galop $1399/$13FA/$1418), so the next note
+    really does attack.
+    """
+    p = _ending_on(_status(wait, no_note=True, no_adsr=True), operand=False)
+    assert _exit_state(p, tie=True, gate_hold=True) is False
+    assert _exit_state(p, tie=True, gate_hold=False) is False
+
+
+def test_a_rest_clears_a_tie_the_note_before_it_opened():
+    """Not merely "a rest asserts nothing" -- the `AND` is unconditional, so a
+    rest after a bit-5 note leaves the gate shut too."""
+    p = [_status(1, get_next=True, no_adsr=True), 0x05, 0x20,
+         _status(4, no_note=True, no_adsr=True), END]
     assert _exit_state(p, tie=True, gate_hold=True) is False
 
 
@@ -244,8 +276,14 @@ def test_no_patterns_means_no_pass():
 @pytest.mark.parametrize("name,tied,untied", [
     ("Human_Race.sid", (0x2, 0x3, 0x5, 0x6, 0x8, 0x9, 0xB, 0xC, 0x11),
      (0x0, 0x1, 0x4, 0x7, 0xA, 0xD)),
-    ("Warhawk.sid", (0x23, 0x25, 0x26, 0x27, 0x28, 0x2F, 0x30),
-     (0x0, 0x1, 0x2, 0x22, 0x24)),
+    # Warhawk $23 (`64 FF`), $2F and $30 (`... 7F 7F 7F FF`) end on a **rest**
+    # carrying bit 5, and are untied for that reason -- see
+    # test_a_rest_carrying_bit5_does_not_exit_tied. They were in the tied list
+    # until the rest's own gate-off was read; $25-$28 stay tied through the
+    # zero-`wait` path, which is what keeps this pair of lists a real test of
+    # both causes rather than of one.
+    ("Warhawk.sid", (0x25, 0x26, 0x27, 0x28),
+     (0x0, 0x1, 0x2, 0x22, 0x23, 0x24, 0x2F, 0x30)),
 ])
 def test_corpus_entries_report_the_expected_exit_state(name, tied, untied):
     sid = load_sid(str(CORPUS / name))
