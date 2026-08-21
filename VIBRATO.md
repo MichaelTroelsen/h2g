@@ -15,7 +15,7 @@
 | Delta_Mix-E-Load_loader.sid | `$3A98` | 4 | $04 | plain | 742 | 0 |
 | Last_V8.sid | `$0409` | 2 | $05 | arp | 702 | 0 |
 | Last_V8_C128_version.sid | `$0409` | 2 | $05 | arp | 702 | 0 |
-| Chicken_Song.sid | `$0A00` | 6 | $01 | drum | 644 | 0 |
+| Chicken_Song.sid | `$0A00` | 6 | $01 | plain | 644 | 0 |
 | International_Karate.sid | `$0A0A` | 1 | $55 | pitchseq | 630 | 0 |
 | Commodore_64_Music_Examples.sid | `$5C3A` | - | - | unknown | 623 | 0 |
 | Battle_of_Britain.sid | `$0FFF` | 5 | $02 | plain | 616 | 0 |
@@ -91,14 +91,14 @@
 
 | cause | absent | slow | instruments | reversals missing |
 |---|---:|---:|---:|---:|
-| plain | 17 | 11 | 28 | 7738 |
+| plain | 18 | 11 | 29 | 8382 |
 | arp | 20 | 0 | 20 | 5005 |
 | program | 7 | 2 | 9 | 870 |
 | pitchseq | 7 | 0 | 7 | 4868 |
 | atkpitch | 3 | 2 | 5 | 161 |
-| drum | 3 | 0 | 3 | 926 |
 | bit80 | 2 | 0 | 2 | 17 |
 | unknown | 2 | 0 | 2 | 626 |
+| drum | 2 | 0 | 2 | 282 |
 
 **61 of these 76 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
