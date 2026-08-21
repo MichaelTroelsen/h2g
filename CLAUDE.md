@@ -197,6 +197,36 @@ test dependency).
   settle it on the packed bytes**, because every rule here is a rule about what
   to *emit* and the packer sits in between.
 
+  **RETRACTED, and it is v0.5.336's own commit message that says it.** That
+  message closes "two whose programs are made entirely of `slide` opcodes and
+  so carry no absolute pitch to keep (Saboteur_II `$0888`, Shockway_Rider
+  `$0889`)". Both halves are false, and the sentence never reached a doc --
+  which is why it is written down here rather than corrected in place: it is
+  in the history, greppable, and the next reader of that commit needs the
+  retraction to be findable from the same words. Decoded from the players'
+  own bytes, **every** wave program in the five files opens with a `set`
+  opcode, and a `set` carries the absolute frequency high byte:
+
+      Saboteur_II   rec 4 ($0888)  set $81 $2C / set $81 $20 / slide $11 $0180 ...
+      Shockway      rec 2 ($0889)  set $81 $30 / slide $41 $01C0 / slide $40 $0140 ...
+
+  We emit that pitch, and have since before the sentence was written. The real
+  defect was the *slide's* right byte, fixed at v0.5.341 -- a `< $80` opcode
+  subtracts from a frequency accumulator and exits through a path that writes
+  it, so the slide returns to the note, not to the last `set`.
+
+  **The same message's second error is inherited by anything quoting it**:
+  neither record is single-speed. Saboteur II packs at `-S3` and Shockway
+  Rider at `-S2` (`presets.json`). The three single-speed wave-program records
+  are Pandora `$0C99`, IK+ `$0505` and Nemesis `$0CC8`, and after v0.5.341 all
+  five have the same one remaining cause -- the slide's *travel*, which is a
+  linear frequency subtraction and so wants `WAVECMD_PORTADOWN` rather than a
+  right-side note byte, whose semitone size depends on the note played
+  (Saboteur's first slide is -1.16 st under `$1739` and -0.36 st under
+  `$49B8`). The general rule: **a commit message is not a doc, and it is also
+  not erasable** -- when one turns out to carry a wrong mechanism, retract it
+  somewhere a grep for its own words will land.
+
   The Hollywood or Bust case that produced the old wording is still real and is
   a different one: choosing `$80` there took melody to 25% against 47% by
   re-asserting the base note every frame -- but that was a *waveform* entry
