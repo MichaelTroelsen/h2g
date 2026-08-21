@@ -191,6 +191,136 @@ def test_the_grid_edge_entry_names_a_note_the_bound_used_to_refuse():
             assert got == (WAVE_NOTE_ABS + 94) & 0xFF, (name, i, hex(got))
 
 
+# The 11 files whose record 26 names note index 99 against a 96-entry table,
+# with the two bytes the player's `LDA freqtbl,Y` actually loads for it.
+# Neither the record nor the index differs between them; the *bytes* do, which
+# is the whole finding -- see `sidfile._grid_edge_clamp`'s closing paragraph.
+INDEX_99 = {
+    "Bangkok_Knights": 0x1517,
+    "Chain_Reaction": 0x0000,
+    "Delta_Mix-E-Load_loader": 0x0000,
+    "Dragons_Lair_Part_II": 0x0E12,
+    "Knucklebusters": 0x0002,
+    "Nineteen": 0x0002,
+    "Sanxion": 0x0C08,
+    "Thundercats": 0x1309,
+    "W_A_R": 0x1300,
+    "W_A_R_Preview": 0x1C03,
+    "Zoolook": 0x1302,
+}
+# `80 08 41 7E 08 00 30 0A` -- the same eight bytes in all eleven files.
+BOILERPLATE_26 = bytes.fromhex("8008417e0800300a")
+
+
+@needs_corpus
+def test_index_99_is_the_same_boilerplate_record_in_every_file():
+    # The record that names it is not eleven records, it is one record copied
+    # eleven times. That is the first half of "these cells are dead": a
+    # sound-effect template carried from tune to tune, not a per-tune choice.
+    from h2g.goatwriter import EFFECT_NOTE_ALT_MASK
+    for name in INDEX_99:
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        det = detect(sid, log=lambda m: None)
+        base = det.instr_start + 26 * det.instr_stride
+        assert sid.data[base:base + 8] == BOILERPLATE_26, name
+        assert sid.data[base + 7] & EFFECT_NOTE_ALT_MASK, name
+        assert sid.data[det.note_alternate + 26 * det.instr_stride] == 99, name
+
+
+@needs_corpus
+def test_every_other_bit_08_index_is_inside_the_table():
+    # ...and the second half: 99 is the *only* out-of-range index bit $08
+    # produces anywhere in the corpus. Every other record that sets the bit
+    # names an entry in the validated run, so a widening is not owed to a
+    # population -- it would be owed to one repeated template.
+    from h2g.goatwriter import EFFECT_NOTE_ALT_MASK
+    out_of_range = []
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        det = detect(sid, log=lambda m: None)
+        if det.note_alternate < 0 or det.instr_start < 0:
+            continue
+        ft = find_freq_table(sid)
+        if ft is None:
+            continue
+        for i in range(max(det.instr_used, 0)):
+            r7 = det.instr_start + i * det.instr_stride + 7
+            off = det.note_alternate + i * det.instr_stride
+            if max(r7, off) >= len(sid.data):
+                continue
+            if not sid.data[r7] & EFFECT_NOTE_ALT_MASK:
+                continue
+            if not 0 <= sid.data[off] < ft.length:
+                out_of_range.append((path.stem, i, sid.data[off]))
+    assert out_of_range == [(name, 26, 99) for name in sorted(INDEX_99)], \
+        out_of_range
+
+
+@needs_corpus
+def test_index_99_reads_past_the_table_and_finds_no_note_there():
+    # The routine really does read past the end -- `ASL / TAY / LDA freqtbl,Y`
+    # is 8-bit with no mask, and 2*99 = 198 does not wrap. What it lands on is
+    # whatever follows the table, which is a different value in every file and
+    # a silent $0000 in two of them. Nothing about it is an extrapolation:
+    # entry 95 is already the register ceiling, so there is no semitone above
+    # it to extrapolate to.
+    from h2g.goatwriter import _note_alternate_note
+    for name, want in INDEX_99.items():
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        ft = find_freq_table(sid)
+        assert ft is not None and ft.length == 96, name
+        at = sid.to_offset(ft.addr) + 2 * 99
+        assert sid.data[at] | (sid.data[at + 1] << 8) == want, name
+        # A semitone above entry 95 is unrepresentable, and these bytes are
+        # not even monotonic with it -- all eleven read *below* $FD2E.
+        assert want != 0xFD2E, name
+        # ...so the emitter declines, which is what this test pins.
+        det = detect(sid, log=lambda m: None)
+        assert _note_alternate_note(sid, det, 26) is None, name
+
+
+@needs_corpus
+def test_the_boilerplate_record_is_played_in_at_most_one_place():
+    # The decision half. Even if a note could be named for index 99, it would
+    # reach one pattern row in one subtune of one file: W_A_R's pattern 142
+    # row 0, the entry row of subtune 7 voice 0. Every other file names the
+    # instrument in no emitted pattern at all, and W_A_R's PSID startSong is
+    # 1, so the traced subtune is 0 and no FIDELITY.md dimension could see it.
+    import json
+    import h2g.convert as convert_mod
+    from fidelity import _preset_opts
+    presets = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
+    if not presets.is_file():
+        return
+    doc = json.loads(presets.read_text())
+    captured = {}
+    real = convert_mod.build_sng
+
+    def spy(sid, det, tracks, patterns, *a, **kw):
+        captured["patterns"] = patterns
+        return real(sid, det, tracks, patterns, *a, **kw)
+
+    rows = {}
+    convert_mod.build_sng = spy
+    try:
+        for name in INDEX_99:
+            opts = _preset_opts(doc, f"{name}.sid")
+            captured.clear()
+            convert_mod.convert(str(CORPUS / f"{name}.sid"),
+                                log=lambda m: None, **opts)
+            # Instrument numbers are 1-based and the inherited layout keeps a
+            # placeholder at 1, so record 26 is instrument 28 unless
+            # --compact-instruments dropped it.
+            want = 27 if opts.get("compact_instruments") else 28
+            rows[name] = sum(pat[k] == want
+                             for pat in captured["patterns"]
+                             for k in range(1, len(pat), 4))
+    finally:
+        convert_mod.build_sng = real
+    assert rows == {name: (1 if name == "W_A_R" else 0) for name in INDEX_99}, \
+        rows
+
+
 def test_gt_freq0_matches_goattrackers_table():
     # gplay.c freqtbllo[0] = 0x17, freqtblhi[0] = 0x01. If this ever drifts,
     # every base measurement above silently moves with it.

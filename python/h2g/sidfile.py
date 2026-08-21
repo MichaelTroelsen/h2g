@@ -336,6 +336,49 @@ def _grid_edge_clamp(vals, i: int) -> bool:
     left alone -- deliberately, because the same function serves Skate or Die
     intro's `$0000` at entry 0, and that is a `shift` rather than a longer
     run. Relaxing the semitone test would blur the two.
+
+    **And the widening stops here, because the next index up is not a clamp
+    and cannot be one.** 11 corpus records still name index **99** against a
+    96-entry table and are refused by `goatwriter._freq_table_note`; that
+    refusal is correct, and the reason is in the players' own bytes rather
+    than in any threshold. Three things settle it:
+
+    * **What the routine reads.** Bit `$08`'s block (`NOTE_ALT_SHAPE`) ends
+      `ASL / TAY / LDA freqtbl,Y`, an 8-bit shift with no mask and no bound,
+      so index 99 loads `freqtbl+198/+199` -- six bytes past a 192-byte
+      table. What is there is not a note and is not the same thing twice:
+      `$1517` Bangkok_Knights, `$0000` Chain_Reaction, `$0000`
+      Delta_Mix-E-Load_loader, `$0E12` Dragons_Lair_Part_II, `$0002`
+      Knucklebusters, `$0002` Nineteen, `$0C08` Sanxion, `$1309`
+      Thundercats, `$1300` W_A_R, `$1C03` W_A_R_Preview, `$1302` Zoolook.
+      Two are a silent DC pitch and two are subsonic. In W_A_R the sixteen
+      bytes from `$E81E+192` read `00 07 0e 00 00 00 00 13 13 13 12 12 12
+      1f 1f 1f` -- per-voice triples following the table, and index 99
+      straddles the boundary between the `00` run and the `13` triple. No
+      semitone relation to entry 95 exists or could: `$FD2E` is already the
+      register ceiling, which is the whole point of the clamp above.
+    * **Whose record it is.** All 11 are record **26**, and the record is
+      byte-identical in every one of the 11 files: `80 08 41 7E 08 00 30 0A`.
+      Boilerplate, carried from tune to tune. Every *other* bit-`$08` record
+      in the corpus names an index in 32..95 -- in range, in run.
+    * **Whether it is played.** At each file's shipped presets, 10 of the 11
+      emit **zero** pattern rows naming that instrument. W_A_R emits exactly
+      one: pattern 142 row 0, the entry row of orderlist track 21 = subtune
+      7 voice 0 of its 8 emitted subtunes, followed by 126 rests. Its PSID
+      `startSong` is 1, so the traced subtune is 0 and no `FIDELITY.md`
+      dimension can see that row either.
+
+    So the cells are dead, and nothing is emitted for them. `_table_run`,
+    `_grid_edge_clamp` and `FreqTable.length` all stay as they are.
+
+    The four *other* out-of-range indices are a different question and are
+    **not** answered here: ACE_II record 11 (206), Powerplay Hockey record 3
+    (141) and Trans-Atlantic record 15 (174) / 18 (132) all come through bit
+    `$40`, all are >= 128, and the same 8-bit `ASL` wraps them -- `2*idx &
+    $FF` lands on entries 78, 13, 46 and 4 respectively, every one inside the
+    validated run. Whether those bytes are meant as note indices at all is
+    open (the same cell is a wave-program pointer low byte); the wrap is in
+    `goatwriter._freq_table_note`, not in this module.
     """
     if not 0 < i < len(vals):
         return False
