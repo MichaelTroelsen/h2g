@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.348 — 2026-08-21
+
+- the two cycle-1 remainders merged: the row budget named, Chicken Song's drum refuted
+
 ## 0.5.347 — 2026-08-21
 
 - FIDELITY and VIBRATO regenerated; the summary is flat and the census is not
