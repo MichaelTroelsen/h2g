@@ -225,6 +225,129 @@ def test_prune_stale_pages_on_a_missing_directory_is_a_no_op(tmp_path, monkeypat
     assert A.prune_stale_pages(["Anything"]) == []
 
 
+# ---- notes-per-voice strip -----------------------------------------------
+#
+# build/fidelity.json (a `fidelity.py --json` run) is a LIST of per-file
+# dicts, not a dict keyed by name -- getting that wrong is the exact mistake
+# CLAUDE.md records a sibling probe making. It carries no per-note pitch/time
+# sequence, only each voice's orig_attacks/our_attacks *count* plus the set
+# of distinct pitches either side used, so the strip these tests check is a
+# density strip keyed on counts, not a real piano roll.
+
+FJ_ROW = {
+    "file": "W_A_R.sid",
+    "orig_attacks": 8, "our_attacks": 9,
+    "voices": [
+        {"orig_attacks": 5, "our_attacks": 4,
+         "orig_pitches": ["C-4", "D-4"], "our_pitches": ["C-4"]},
+        {"orig_attacks": 3, "our_attacks": 3,
+         "orig_pitches": [], "our_pitches": []},
+        {"orig_attacks": 0, "our_attacks": 2,
+         "orig_pitches": [], "our_pitches": ["E-5"]},
+    ],
+}
+
+
+def test_fidelity_json_rows_reads_the_list_shape(tmp_path, monkeypatch):
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "fidelity.json").write_text(
+        '[{"file": "W_A_R.sid", "voices": []}, {"file": "Delta.sid", "voices": []}]',
+        encoding="utf-8")
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    rows = A.fidelity_json_rows()
+    assert set(rows) == {"W_A_R", "Delta"}
+
+
+def test_fidelity_json_rows_on_a_dict_shape_is_empty_not_a_crash(tmp_path, monkeypatch):
+    """The documented hazard: a probe that assumes a dict-keyed file and
+    silently iterates zero rows. Guard the wrong top-level shape explicitly
+    rather than let `for row in doc` iterate a dict's keys as strings."""
+    build = tmp_path / "build"
+    build.mkdir()
+    (build / "fidelity.json").write_text('{"W_A_R.sid": {"voices": []}}',
+                                         encoding="utf-8")
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    assert A.fidelity_json_rows() == {}
+
+
+def test_fidelity_json_rows_missing_file_is_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    assert A.fidelity_json_rows() == {}
+
+
+def test_notes_strip_counts_match_the_fidelity_json_per_voice_attacks():
+    """The verify clause, verbatim: the strip's counts must equal the
+    per-voice attack counts fidelity's own --json output reports."""
+    got = A.notes_strip_card("W_A_R", FJ_ROW)
+    assert got.count('class="nt o"') == sum(
+        vv["orig_attacks"] for vv in FJ_ROW["voices"])
+    assert got.count('class="nt u"') == sum(
+        vv["our_attacks"] for vv in FJ_ROW["voices"])
+    # And the printed per-voice number, not just the tick count, matches.
+    assert '<span class="scount">5</span>' in got
+    assert '<span class="scount">4</span>' in got
+    assert '<span class="scount">3</span>' in got
+    assert '<span class="scount">0</span>' in got
+    assert '<span class="scount">2</span>' in got
+
+
+def test_notes_strip_totals_equal_the_row_aggregate():
+    """Summed across voices, the strip's counts equal the same orig/ours
+    total FIDELITY.md's row for this file reports -- fidelity.json's own
+    top-level orig_attacks/our_attacks are that total, verified corpus-wide
+    (95/95 rows) to equal the sum of their own `voices` entries."""
+    got = A.notes_strip_card("W_A_R", FJ_ROW)
+    assert got.count('class="nt o"') == FJ_ROW["orig_attacks"]
+    assert got.count('class="nt u"') == FJ_ROW["our_attacks"]
+
+
+def test_notes_strip_shows_the_pitch_sets_per_voice():
+    got = A.notes_strip_card("W_A_R", FJ_ROW)
+    assert "C-4, D-4" in got
+    assert "E-5" in got
+
+
+def test_notes_strip_is_capped_but_the_printed_count_is_not():
+    """A pathological voice must not blow the page out with thousands of
+    <i> elements, but the number shown beside it stays exact regardless."""
+    fj = {"voices": [{"orig_attacks": A.STRIP_MAX_TICKS + 50,
+                       "our_attacks": 1, "orig_pitches": [], "our_pitches": []}]}
+    got = A.notes_strip_card("Dense", fj)
+    assert got.count('class="nt o"') == A.STRIP_MAX_TICKS
+    assert ('<span class="scount">%d</span>' % (A.STRIP_MAX_TICKS + 50)) in got
+
+
+def test_notes_strip_is_absent_with_no_voices():
+    """No fidelity.json row (or a row with no `voices` key) draws nothing --
+    the same "say so, don't fabricate" rule the rest of the page follows for
+    a tune with no FIDELITY.md row at all."""
+    assert A.notes_strip_card("X", None) == ""
+    assert A.notes_strip_card("X", {}) == ""
+    assert A.notes_strip_card("X", {"voices": []}) == ""
+
+
+def test_notes_strip_card_is_well_formed():
+    got = A.notes_strip_card("W_A_R", FJ_ROW)
+    assert _balanced('<div class="wrap">%s</div>' % got) == []
+
+
+def test_the_page_embeds_the_notes_strip_when_fidjson_is_given():
+    got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=False,
+                 fidjson=FJ_ROW)
+    assert "Notes per voice" in got
+    assert got.count('class="nt o"') == FJ_ROW["orig_attacks"]
+    assert _balanced(got) == []
+
+
+def test_the_page_omits_the_notes_strip_when_no_fidjson_is_given():
+    """Every existing call to page() (this test file's own ROW-based tests
+    included) passes no `fidjson` -- the new card must default to invisible
+    rather than change what those pages say."""
+    got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=False)
+    assert "Notes per voice" not in got
+
+
 def test_main_prunes_a_page_whose_pair_was_removed(tmp_path, monkeypatch):
     """End to end: build once with two tunes staged, remove one pair, build
     again -- the DoD clause verbatim. No page and no index entry should

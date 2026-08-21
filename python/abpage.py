@@ -98,6 +98,42 @@ def preset_rows() -> dict[str, dict]:
     return out
 
 
+def fidelity_json_rows() -> dict[str, dict]:
+    """Per-file rows of `build/fidelity.json` (a `fidelity.py --json` run),
+    keyed by stem the same way `fidelity_rows`/`preset_rows` key FIDELITY.md
+    and presets.json.
+
+    The file is a **list** of per-file dicts, not a dict keyed by name -- a
+    probe elsewhere in this project's history got exactly this wrong and
+    silently iterated zero rows (see CLAUDE.md's note on probes that wrap
+    fidelity.py). Guard both shapes rather than assume.
+
+    This is the only reader in the module that reaches per-*voice* data
+    (`row["voices"]`, each with `orig_attacks`/`our_attacks` and the set of
+    distinct pitches used) -- FIDELITY.md's own table only ever prints the
+    sum across all three voices, so anything wanting a per-voice count has
+    to come here.
+    """
+    path = ROOT / "build" / "fidelity.json"
+    if not path.exists():
+        return {}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(doc, list):
+        return {}
+    out: dict[str, dict] = {}
+    for row in doc:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("file") or ""
+        stem = name[:-4] if name.endswith(".sid") else name
+        if stem:
+            out.setdefault(stem, row)
+    return out
+
+
 # Which survey columns are worth a reader's attention, and what to call them.
 SURVEY_FIELDS = (("Player", "player"), ("Ver", "engine ver"),
                  ("SIDId", "SIDId"), ("Source", "format"),
@@ -269,6 +305,30 @@ td a { color:var(--ink); font-weight:600; }
 .trkrow.cur { background:color-mix(in srgb, var(--live) 22%, transparent); }
 .trkrow .ix { color:var(--muted); opacity:.65; }
 .trknote { margin:12px 0 0; font-size:.86rem; color:var(--muted); }
+.vstrip { display:grid; gap:14px;
+  grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
+.vstripcol { border:1px solid var(--line); border-radius:6px;
+  padding:10px 12px; background:var(--sunk); }
+.vstripcol h3 { margin:0 0 8px; font-size:12px; font-family:var(--mono);
+  letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
+.strow { display:flex; align-items:center; gap:8px; margin:5px 0; }
+.strow .slab { font-family:var(--mono); font-size:11px; width:52px; flex:none;
+  color:var(--muted); }
+.strow .slab.o { color:var(--a); }
+.strow .slab.u { color:var(--b); }
+.strow .scount { font-family:var(--mono); font-size:11.5px; width:2.6em;
+  flex:none; text-align:right; color:var(--ink); font-variant-numeric:tabular-nums; }
+.strip { flex:1; display:flex; align-items:center; gap:1px;
+  overflow-x:auto; white-space:nowrap; padding:3px 0; }
+.nt { display:inline-block; width:3px; height:14px; border-radius:1px;
+  flex:none; }
+.nt.o { background:var(--a); }
+.nt.u { background:var(--b); }
+.stpitch { margin:8px 0 0; font-size:11.5px; color:var(--muted);
+  line-height:1.5; }
+.stpitch .k { display:block; font-family:var(--mono); font-size:10.5px;
+  letter-spacing:.08em; text-transform:uppercase; color:var(--muted);
+  margin-bottom:2px; }
 .panel { display:grid; gap:14px;
   grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); }
 .vcol { border:1px solid var(--line); border-radius:6px; overflow:hidden; }
@@ -1077,9 +1137,71 @@ def tracker_card(name: str) -> str:
            tr.get("sub_ours", 0)))
 
 
+# Cap on how many tick marks one strip draws. build/fidelity.json's densest
+# corpus voice is in the hundreds; this keeps a pathological file from
+# emitting thousands of <i> elements while the printed *count* stays exact
+# regardless -- the cap only ever trims the drawing, never the number.
+STRIP_MAX_TICKS = 400
+
+
+def notes_strip_card(name: str, fj: dict | None) -> str:
+    """A strip of tick marks per voice, original against ours, built only
+    from what `build/fidelity.json` actually carries.
+
+    That file has no per-note pitch/time sequence -- each voice's entry is
+    an `orig_attacks`/`our_attacks` *count* plus the alphabetised *set* of
+    distinct pitch classes either side used (`orig_pitches`/`our_pitches`),
+    never a timeline. So this draws a density strip, not a piano roll: one
+    mark per attack, in no particular order, which is the only per-note
+    quantity the JSON has to offer -- and is exactly what FIDELITY.md's own
+    aggregate `orig`/`ours` column is the three-voice sum of. Drawing it per
+    voice is new; the counts themselves are not.
+    """
+    voices = (fj or {}).get("voices")
+    if not voices:
+        return ""
+    cols = []
+    total_o = total_u = 0
+    for i, v in enumerate(voices):
+        oc = int(v.get("orig_attacks") or 0)
+        uc = int(v.get("our_attacks") or 0)
+        total_o += oc
+        total_u += uc
+        o_ticks = '<i class="nt o"></i>' * min(oc, STRIP_MAX_TICKS)
+        u_ticks = '<i class="nt u"></i>' * min(uc, STRIP_MAX_TICKS)
+        op = ", ".join(v.get("orig_pitches") or []) or "&mdash;"
+        up = ", ".join(v.get("our_pitches") or []) or "&mdash;"
+        cols.append(
+            '<div class="vstripcol"><h3>Voice %d</h3>'
+            '<div class="strow"><span class="slab o">original</span>'
+            '<span class="scount">%d</span>'
+            '<div class="strip">%s</div></div>'
+            '<div class="strow"><span class="slab u">ours</span>'
+            '<span class="scount">%d</span>'
+            '<div class="strip">%s</div></div>'
+            '<p class="stpitch"><span class="k">pitches used</span>'
+            'orig: %s<br>ours: %s</p></div>'
+            % (i + 1, oc, o_ticks, uc, u_ticks, op, up))
+    return (
+        '<div class="card">\n  <h2>Notes per voice</h2>\n'
+        '  <div class="vstrip">%s</div>\n'
+        '  <p class="opts">One mark per note attack (capped at %d a row so a '
+        'dense voice cannot blow out the page &mdash; the printed counts are '
+        'never capped). Not a timeline: <code>build/fidelity.json</code> '
+        'carries each voice’s attack <em>count</em> and the set of '
+        'distinct pitches it used, never a per-note sequence, so this strip '
+        'cannot say <b>which</b> mark is which note or where in time it '
+        'falls. %d original / %d ours summed across all three voices '
+        '&mdash; the same two totals FIDELITY.md’s '
+        '<code>orig</code>/<code>ours</code> columns report for this file, '
+        'from this same measurement run.</p>\n</div>\n'
+        % ("".join(cols), STRIP_MAX_TICKS, total_o, total_u))
+
+
 def page(name: str, row: dict, notes: list[str], version: str,
          embed: bool, index_link: bool,
-         survey: dict | None = None, preset: dict | None = None) -> str:
+         survey: dict | None = None, preset: dict | None = None,
+         fidjson: dict | None = None) -> str:
     pretty = name.replace("_", " ")
     chips = "".join(
         '<div class="chip"><span>%s</span><b>%s</b></div>' % (k, row[k])
@@ -1183,6 +1305,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
 %(facts)s
 %(panel)s
 %(tracker)s
+%(notes_strip)s
 <div class="card wave">
   <h2>Both sides, drawn</h2>
   <div class="msg" id="wavemsg">Reading both renders&hellip;</div>
@@ -1225,6 +1348,7 @@ window.__abTrace = "%(trace_src)s";</script>
            facts=facts_card(name, survey or {}, preset or {}),
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
+           notes_strip=notes_strip_card(name, fidjson),
            trace_src="%s.trace.json" % name,
            script=SCRIPT)
 
@@ -1329,6 +1453,7 @@ def main() -> int:
         return 2
     rows, notes = fidelity_rows(), listening_notes()
     survey, presets = survey_rows(), preset_rows()
+    fidjson = fidelity_json_rows()
 
     if args.embed:
         if args.embed not in names:
@@ -1338,7 +1463,8 @@ def main() -> int:
                     notes.get(args.embed, []), version,
                     embed=True, index_link=False,
                     survey=survey.get(args.embed, {}),
-                    preset=presets.get(args.embed, {}))
+                    preset=presets.get(args.embed, {}),
+                    fidjson=fidjson.get(args.embed, {}))
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -1347,7 +1473,8 @@ def main() -> int:
     for n in names:
         html = page(n, rows.get(n, {}), notes.get(n, []), version,
                     embed=False, index_link=True,
-                    survey=survey.get(n, {}), preset=presets.get(n, {}))
+                    survey=survey.get(n, {}), preset=presets.get(n, {}),
+                    fidjson=fidjson.get(n, {}))
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
     pruned = prune_stale_pages(names)
     (LISTEN / "index.html").write_text(index(names, rows, version), encoding="utf-8")
