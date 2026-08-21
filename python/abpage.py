@@ -1261,6 +1261,37 @@ def index(names: list[str], rows: dict, version: str) -> str:
 """ % dict(css=CSS, version=version, count=len(names), body=body)
 
 
+def prune_stale_pages(names: list[str]) -> list[Path]:
+    """Delete pages this build no longer produces, and return what it deleted.
+
+    A page (`<name>.html` or `<name>.embed.html`) outlives the staged pair it
+    was built from: `listen.py` never deletes its own output, and until this
+    function existed neither did this script -- a WAV pair removed from
+    `LISTEN` left its page behind, still reachable by URL and still, if it
+    predated the current build, potentially linked from a stale copy of
+    `index.html` a reader had open. `LISTEN` holds nothing else with a
+    `.html` suffix (`listen.py` stages `.wav`/`.trace.json`/`.md`, `.sng` and
+    `.sid`; `Listen.ps1` is not html), so pruning "every `.html` here whose
+    name is not `index.html` and whose page-name is not in `names`" removes
+    exactly the pages a rebuild stopped producing -- never a staged pair,
+    which carries no `.html` suffix to match, and never `index.html` itself,
+    which the caller rewrites unconditionally right after this runs.
+    """
+    keep = set(names)
+    removed: list[Path] = []
+    if not LISTEN.exists():
+        return removed
+    for f in sorted(LISTEN.glob("*.html")):
+        if f.name == "index.html":
+            continue
+        stem = f.stem                                  # strips one ".html"
+        base = stem[: -len(".embed")] if stem.endswith(".embed") else stem
+        if base not in keep:
+            f.unlink()
+            removed.append(f)
+    return removed
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="abpage")
     ap.add_argument("--embed", metavar="TUNE",
@@ -1318,9 +1349,13 @@ def main() -> int:
                     embed=False, index_link=True,
                     survey=survey.get(n, {}), preset=presets.get(n, {}))
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
+    pruned = prune_stale_pages(names)
     (LISTEN / "index.html").write_text(index(names, rows, version), encoding="utf-8")
     missing = [n for n in names if n not in rows]
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
+    if pruned:
+        print("pruned %d stale page(s) for tunes no longer staged: %s"
+              % (len(pruned), ", ".join(p.name for p in pruned)))
     if missing:
         print("no FIDELITY.md row for: %s" % ", ".join(missing))
     if args.serve is not None:

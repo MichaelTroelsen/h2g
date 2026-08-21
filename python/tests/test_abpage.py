@@ -163,3 +163,90 @@ def test_the_page_quotes_the_notes_it_was_given():
     got = A.page("W_A_R", ROW, ["**No legato.** 419 note changes"], "v1",
                  embed=False, index_link=False)
     assert "<strong>No legato.</strong> 419 note changes" in got
+
+
+# ---- prune_stale_pages --------------------------------------------------
+#
+# `listen.py` never deletes its own staged output, and until prune_stale_pages
+# existed neither did abpage.py: removing a staged pair (its `.original.wav` /
+# `.h2g.wav`) left that tune's `<name>.html` on disk forever, reachable by URL
+# even though no index.html links it any more. Three `.v[123].html` files from
+# an earlier bug (before the current voice-suffix filter existed) had to be
+# found and deleted by hand -- prune_stale_pages is the fix that makes that a
+# rebuild rather than a manual cleanup.
+
+def test_prune_stale_pages_removes_pages_for_untracked_names(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    for f in ("Kept.html", "Stale.html", "Stale.embed.html",
+              "Stale.v1.html", "index.html"):
+        (tmp_path / f).write_text("x", encoding="utf-8")
+
+    removed = A.prune_stale_pages(["Kept"])
+
+    assert {p.name for p in removed} == {
+        "Stale.html", "Stale.embed.html", "Stale.v1.html"}
+    assert (tmp_path / "Kept.html").exists()
+    assert (tmp_path / "index.html").exists()          # never pruned here
+    assert not (tmp_path / "Stale.html").exists()
+    assert not (tmp_path / "Stale.embed.html").exists()
+    assert not (tmp_path / "Stale.v1.html").exists()
+
+
+def test_prune_stale_pages_never_touches_the_staged_pair(tmp_path, monkeypatch):
+    """The hazard this function must not create: build/listen holds staged
+    A/B pairs a human is actively using, and only the generated `.html` is
+    fair game -- the `.wav`/`.trace.json` a rebuild would need to regenerate
+    the page must survive even when the page itself is pruned."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    for f in ("Removed.html", "Removed.original.wav", "Removed.h2g.wav",
+              "Removed.trace.json", "Removed.h2g.sng"):
+        (tmp_path / f).write_text("x", encoding="utf-8")
+
+    removed = A.prune_stale_pages([])                   # no tune staged now
+
+    assert [p.name for p in removed] == ["Removed.html"]
+    assert (tmp_path / "Removed.original.wav").exists()
+    assert (tmp_path / "Removed.h2g.wav").exists()
+    assert (tmp_path / "Removed.trace.json").exists()
+    assert (tmp_path / "Removed.h2g.sng").exists()
+
+
+def test_prune_stale_pages_keeps_everything_when_nothing_is_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "Kept.html").write_text("x", encoding="utf-8")
+    (tmp_path / "index.html").write_text("x", encoding="utf-8")
+
+    assert A.prune_stale_pages(["Kept"]) == []
+    assert (tmp_path / "Kept.html").exists()
+
+
+def test_prune_stale_pages_on_a_missing_directory_is_a_no_op(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path / "does-not-exist")
+    assert A.prune_stale_pages(["Anything"]) == []
+
+
+def test_main_prunes_a_page_whose_pair_was_removed(tmp_path, monkeypatch):
+    """End to end: build once with two tunes staged, remove one pair, build
+    again -- the DoD clause verbatim. No page and no index entry should
+    survive for the removed tune, and the still-staged tune's page and WAVs
+    must be untouched."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    monkeypatch.setattr(A, "ROOT", tmp_path.parent)
+    for stem in ("Kept", "Gone"):
+        (tmp_path / ("%s.original.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+        (tmp_path / ("%s.h2g.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+    monkeypatch.setattr(sys, "argv", ["abpage.py"])
+    assert A.main() == 0
+    assert (tmp_path / "Gone.html").exists()
+
+    # The pair is removed, as a human deleting a staged tune would do -- the
+    # page is what a rebuild must retire, never the WAVs themselves.
+    (tmp_path / "Gone.original.wav").unlink()
+    (tmp_path / "Gone.h2g.wav").unlink()
+    assert A.main() == 0
+
+    assert not (tmp_path / "Gone.html").exists()
+    assert (tmp_path / "Kept.html").exists()
+    index_html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "Gone" not in index_html
+    assert "Kept" in index_html
