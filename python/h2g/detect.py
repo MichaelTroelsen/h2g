@@ -2556,6 +2556,14 @@ PULSE_SETUP = "0A 0A 0A A8 8C ?? ?? B9 ?? ?? 8D ?? ?? B9 ?? ?? 8D ?? ??"
 # that carries it; the window is generous enough for a reordered variant and
 # short enough not to reach the next routine.
 PULSE_SWEEP_WINDOW = 64
+# `LDA #$80` -- the noise constant every bit-$01 drum block reaches for, and
+# the byte that separates Warhawk's routine from a look-alike that writes a
+# per-voice table byte to $D404 instead. Measured, not assumed: 44 of the 45
+# corpus files the drum shape matches carry it 40-55 bytes past the match.
+DRUM_NOISE_IMMEDIATE = "A9 80"
+# Wide enough for all 44 with margin at both ends, narrow enough not to reach
+# the routine after the block (the next effect bit's test).
+DRUM_NOISE_WINDOW = 64
 
 
 def _find_pulse_sweep(sid: SidFile, det: Detection):
@@ -2681,8 +2689,47 @@ def _find_effect_routines(sid: SidFile, det: Detection):
     # $D404. The two BEQ guards are what make this shape specific: a bare
     # `LDA effect / AND #$01 / BEQ` matches far more players than mean by it
     # what Warhawk means.
-    drum = search_file(
-        sid.data, f"{load} 29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0") >= 1
+    #
+    # **And the two guards are still not specific enough on their own**: the
+    # command-table engine (Chicken Song $133B) wears them exactly -- effect
+    # bit test, `LDA $15B5,X / BEQ` on the voice's frequency high byte, `LDA
+    # $1590,X / BEQ` on the note's remaining duration -- and then decrements
+    # that frequency byte into $D401 and writes $D404 from a *per-voice table*
+    # ($15ED,X, or $1596,X on the other branch) rather than from the noise
+    # constant. A table byte is whatever the tune put there; #$80 is noise by
+    # construction, and it is the noise that makes this routine a drum.
+    # So the block must also contain the immediate. Corpus census over the 45
+    # files this shape matched: 44 carry `LDA #$80` at 40-55 bytes past the
+    # match, and Chicken Song carries none within 256 -- a necessary condition
+    # with no false negatives, which is worth more than its raw accuracy
+    # implies (§ 7 on discriminators). The store spelling is deliberately not
+    # required: 30 of the 44 follow it with `STA $D404,Y` and 14 park it in a
+    # per-voice waveform shadow first (Delta $C13B `STA $C2F8,X`), so pinning
+    # the store would read the dialect as absent in a third of the family.
+    #
+    # **And the movement `VIBRATO.md` filed under `drum` for this file is not
+    # in the instrument record at all.** Chicken Song's ADSR-$0A00 instrument
+    # makes 188 attacks and 1624 ties in 60 s -- a pitch change on *every*
+    # frame it sounds, 644 of them reversals -- and that is `$13D8`, a chord
+    # arpeggio the **pattern** drives: command $82 stores two signed semitone
+    # offsets into `$15DD,X`/`$15E0,X` and sets the per-voice enable `$15E3,X`,
+    # command $84 clears it, and a *global* three-phase counter `$15E6`
+    # (3 -> 2 -> 1) picks base / +op1 / +op2 each frame. So it is neither the
+    # bit-$04 nibble arpeggio ($1392, one alternate note, interval from the
+    # record) nor bit $02's noise alternation ($1374) -- and it is per note
+    # rather than per instrument: 38 pattern events over 6 distinct offset
+    # pairs across records 5, 9 and 10.
+    #
+    # It is decoded here and **not emitted**. A per-note wavetable could hold
+    # it -- unusually for a global counter, every duration this engine uses is
+    # a multiple of 3, so notes stay phase-locked (contrast bit $10, § 7.ttt) --
+    # but the offsets belong to the pattern event, so emitting them means one
+    # Goattracker instrument per chord, which is `patterns.py` work. It would
+    # also reach Hollywood or Bust, whose command $82 is the same handler.
+    at = search_file(
+        sid.data, f"{load} 29 01 F0 ?? BD ?? ?? F0 ?? BD ?? ?? F0")
+    drum = at >= 1 and search_file(
+        sid.data[at:at + DRUM_NOISE_WINDOW], DRUM_NOISE_IMMEDIATE) >= 1
     # Warhawk $12A3, Commando $52AC. The other pulse engine: it adds a rate to
     # a running accumulator and writes that to $D402 (pulse LO) alone, never
     # touching $D403, so the width wraps inside one 256-wide band instead of
