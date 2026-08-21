@@ -1068,6 +1068,22 @@ So, for any work that runs concurrently:
 - **Each concurrent agent gets its own git worktree** (`isolation: "worktree"`
   on the Agent tool). There is then no shared working tree to corrupt, and a
   sibling's half-finished edit cannot silently enter your measurement.
+- **NEVER `git stash` in a fan-out. A worktree is not a whole repo, and
+  `refs/stash` is one of the refs it does not get its own copy of.** Two agents
+  stashed concurrently to snapshot their work before an A/B; one `git stash
+  pop` returned a *sibling's* diff — a 47-line `goatwriter.py` change that
+  belonged to another task entirely — and afterwards `git stash list` was
+  empty while `git fsck --unreachable` showed **100+ dangling stash-shaped
+  commits** in the object store. So this has been happening unnoticed across
+  earlier sessions, not just once. Both agents concluded the other's work had
+  been destroyed and opened recovery tasks; **neither was right** — the
+  surviving worktree held a superset and the only lines that differed were
+  docstring prose. That is the part worth fearing: the failure is silent, the
+  diagnosis from inside one worktree is *wrong in both directions*, and the
+  recovery was luck. Snapshot with `git diff > x.patch` and `git apply -R`, or
+  copy the file, or use a scratch branch. The same caution applies to anything
+  else stored per-repo rather than per-worktree — `refs/stash`, the object
+  store, `.git/config`, and the index of any worktree you did not create.
 - **No PR touches `SURVEY.md`, `presets.json` or `FIDELITY.md`.** They are
   generated; parallel branches conflict on every line of them, and a
   per-branch regeneration records a tree state that never existed.
