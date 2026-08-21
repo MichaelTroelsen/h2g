@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.342 — 2026-08-21
+
+- effect bit $08's two-note alternation is emitted, and the tests land
+
 ## 0.5.341 — 2026-08-21
 
 - a wave program's slide returns to the note, not to the last set opcode
