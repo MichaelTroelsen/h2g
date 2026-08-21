@@ -281,7 +281,6 @@
       "rows": 31074,
       "multiplier": 4,
       "two_stage": true,
-      "pitch_seq": true,
       "max_hard_restart": true
     },
     "Food_Feud.sid": {
