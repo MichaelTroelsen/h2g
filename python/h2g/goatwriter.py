@@ -3339,6 +3339,18 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # short of a sixth `--fidelity` toggle -- which doubles a search
         # already running 31 combinations a song. See
         # H2G-CONVERSION-METHOD.md section 7.iiii.
+        #
+        # **Those figures were taken against a baseline that no longer
+        # exists**, and the "noise 490" half of it was never this dialect's:
+        # the 490 came from bit $01 emitting a drum on Chicken Song, which
+        # `detect._find_effect_routines` stopped doing once the block was
+        # required to contain the noise constant `LDA #$80` -- Chicken Song's
+        # writes a per-voice table byte to $D404 instead. Its baseline is now
+        # **0 noise frames**, and all 654 the original makes are on the two
+        # records that carry bit $02 (ADSR $0A07 and $0900), which is this
+        # dialect and nothing else. So the trade above still has to be
+        # re-measured before it is quoted; what it says today is that the one
+        # mechanism that would put noise in this file is the one held back.
         if alt_byte is not None:
             # **Effect bit $08 rides the same pair.** It is the same counter
             # and the same phase test 24 bytes further on, alternating the
