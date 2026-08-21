@@ -34,7 +34,6 @@
 | Bangkok_Knights.sid | `$0A08` | 3 | $30 | pitchseq | 325 | 0 |
 | One_on_One_Jordan_vs_Bird.sid | `$09F8` | 3 | $01 | program | 295 | 0 |
 | International_Karate.sid | `$0BB0` | 3 | $08 | plain | 277 | 0 |
-| Nineteen.sid | `$0797` | 7 | $01 | program | 483 | 208 |
 | Hunter_Patrol.sid | `$0AA0` | 5 | $02 | plain | 387 | 114 |
 | Dragons_Lair_Part_II.sid | `$1979` | 26 | $04 | plain | 245 | 0 |
 | Spellbound.sid | `$0FFA` | 4 | $C5 | arp | 219 | 0 |
@@ -74,7 +73,7 @@
 | IK_plus.sid | `$09C8` | 2 | $A4 | bit80 | 15 | 0 |
 | Master_of_Magic.sid | `$050A` | 17 | $05 | arp | 15 | 0 |
 | Saboteur_II.sid | `$0888` | 5 | $01 | program | 11 | 0 |
-| Shockway_Rider.sid | `$0889` | 3 | $01 | program | 10 | 1 |
+| Shockway_Rider.sid | `$0889` | 3 | $01 | program | 10 | 0 |
 | Deep_Strike.sid | `$0FC9` | 3 | $44 | atkpitch | 8 | 0 |
 | Formula_1_Simulator.sid | `$0F0A` | 4 | $C5 | arp | 8 | 0 |
 | Knucklebusters.sid | `$00F8` | 12 | $44 | atkpitch | 11 | 3 |
@@ -94,13 +93,13 @@
 |---|---:|---:|---:|---:|
 | plain | 18 | 11 | 29 | 8382 |
 | arp | 20 | 0 | 20 | 5005 |
-| program | 7 | 2 | 9 | 870 |
 | pitchseq | 8 | 0 | 8 | 4976 |
+| program | 8 | 0 | 8 | 596 |
 | atkpitch | 3 | 2 | 5 | 161 |
 | bit80 | 2 | 0 | 2 | 17 |
 | unknown | 2 | 0 | 2 | 626 |
 | drum | 2 | 0 | 2 | 282 |
 
-**62 of these 77 instruments emit no oscillation at all**, against 15 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
+**63 of these 76 instruments emit no oscillation at all**, against 13 that merely run slow. That is the reading to take from this table: the shortfall is overwhelmingly a movement that never reached the file, not a rate to tune.
 
 `plain` is an instrument whose effect byte is known and carries no oscillating bit, so its movement is the record's own vibrato byte. `unknown` is one whose byte could not be recovered -- `instrument_stamps` keys on the ADSR pair and two instruments can share one (section 7.zzzz) -- so no mechanism is claimed for it. `alt` and `arp` are mechanisms; `arp` runs on a global phase counter and a per-note wavetable cannot hold it at all (section 7.ttt).
