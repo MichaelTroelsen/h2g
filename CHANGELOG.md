@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.351 — 2026-08-21
+
+- SURVEY, SUBTUNES and presets regenerated for the accumulator fix
+
 ## 0.5.350 — 2026-08-21
 
 - the wave program's hold returns to the accumulator; index 99 proven dead; the notes-per-voice strip
