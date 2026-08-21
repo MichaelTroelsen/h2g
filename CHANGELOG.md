@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.339 — 2026-08-21
+
+- a tie survives a pattern boundary, because the player's gate does
+
 ## 0.5.338 — 2026-08-21
 
 - the passthrough guard is keyed on the option set, not the version
