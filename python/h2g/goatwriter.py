@@ -1576,8 +1576,32 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # waveform (Skate or Die intro and Arcade Classics both end on `slide
     # $00`) that restore is silence, which is what the original sounds for the
     # rest of the note; `_wave_byte` is what makes it reach the packed player.
+    #
+    # **And the hold writes a pitch too** -- `WAVE_NOTE_KEEP` here was the same
+    # defect v0.5.341 fixed one loop above, left in the one emitter that is not
+    # in the loop. `$85` does not stop the interpreter, it *jumps* to the
+    # per-frame writer ($F45F on Saboteur II / Shockway Rider -- the listing
+    # above), and that path ends `LDA $F57B,X / STA $D401,Y` and
+    # `LDA $F58F,X / STA $D400,Y`: the frequency **accumulator**, which is the
+    # note's own frequency minus the running sum of the `slide` operands. It
+    # is **not** whatever the last `set` opcode put in
+    # `$D401` -- that one writes the register directly and exits by another
+    # path, so its absolute pitch has nothing to do with where the hold sits.
+    # Traced on Nineteen's `$0797` (record 6, program `set $81 $30 / slide $11
+    # $0400 / slide $40 $0E40 / set $80 $30 $15 $20 $10 $20 / hold`): over a
+    # 19-frame note the original reads
+    # `17A1 0961 3061 1561 2061 1061 2061 0961 0961 ...` -- base note `$1BA1`,
+    # then the two slides, then the five absolute pitches, then **back to
+    # `$0961` = `$1BA1 - $0400 - $0E40`** for the whole tail. Ours held `20DC`,
+    # the last `set`'s pitch, an octave and a half above it.
+    # `WAVE_NOTE_BASE` is exact whenever the running sum is zero (a program of
+    # nothing but `set` opcodes, which is most of them) and the right side of
+    # the truth otherwise -- the identical argument the slide entries carry.
+    # The sum itself is still dropped for the same reason it is dropped there:
+    # it is a linear frequency subtraction whose size in semitones depends on
+    # the note played, and a wavetable's right column names notes.
     left.append(_wave_byte(persist & ~WAVE_GATE_BIT & 0xFF))
-    right.append(WAVE_NOTE_KEEP)
+    right.append(WAVE_NOTE_BASE)
     left.append(0xFF)
     right.append(0x00)
     return left, right
