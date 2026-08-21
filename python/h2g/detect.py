@@ -154,6 +154,12 @@ class Detection:
     # instrument. File offset of that table, or -1 -- see
     # _find_voice_wave_alternate().
     voice_wave_alternate: int = -1
+    # Bit $08 on the SAME counter as `wave_alternate`, and the *note* rather
+    # than the waveform: the voice's pitch alternates every frame between the
+    # played note and a fixed note number held in a parallel per-instrument
+    # array (Flash Gordon $139A). File offset of that array's first entry,
+    # indexed by the same i * instr_stride -- see _find_note_alternate().
+    note_alternate: int = -1
     # The per-frame pulse-width sweep -- see _find_pulse_sweep(). Both are set
     # together or neither is. `pulse_bounds` is the file offset of an array
     # indexed by the same i * instr_stride the records are, holding the two
@@ -1183,6 +1189,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                 "per-VOICE parameters -- waveform "
                 + "/".join(f"${b:02X}" for b in alt)
                 + " for " + "/".join(str(b) for b in fr) + " frames")
+
+    # Bit $08's alternation of the NOTE, on the same counter and in the same
+    # block family as bit $02's alternation of the waveform. Outside the
+    # `else` above because it is a different bit, and unconditional on
+    # `wave_alternate` because the two are separate blocks: every corpus file
+    # carrying this one carries that one, but the reading does not depend on
+    # it.
+    det.note_alternate = _find_note_alternate(sid, det)
+    if det.note_alternate >= 0:
+        log("Instrument effect byte..: bit $08 alternates the NOTE every "
+            "frame with a fixed per-instrument one (not the pulse width)")
 
     # Bit $01's per-voice alternation. Outside the `else` above because it is
     # a different bit: a file can carry the bit-$02 reading and this one, and
@@ -3392,6 +3409,86 @@ def _find_voice_wave_alternate(sid: SidFile, det: Detection) -> int:
         return -1                       # nothing increments it: not a counter
     off = sid.to_offset(alt)
     if not (0 <= off and off + VOICES <= len(data)):
+        return -1
+    return off
+
+
+# Effect bit $08, in the same block family and on the same counter as
+# `wave_alternate` -- and the *note* rather than the waveform. Flash Gordon
+# `$139A`, 24 bytes after bit $02's handler:
+#
+#     139A  LDA effect / AND #$08 / BEQ out
+#     13A1  LDA counter,X / AND #$01 / BEQ alt   ; the per-voice frame counter,
+#     13A8  LDA note,X                           ;   zeroed at note start
+#     13AB  JMP fetch                            ; odd  -> the played note
+#     13AE  alt: LDA alttbl,Y                    ; even -> a per-instrument one
+#     13B1  fetch: ASL / TAY
+#     13B3  LDA freqtbl,Y  / STA freqlo,X
+#     13B9  LDA freqtbl+1,Y / STA freqhi,X
+#
+# So the voice's PITCH alternates every frame between the note the pattern
+# played and a fixed note *number* held in a parallel per-instrument array,
+# indexed by the same `i * instr_stride` every other effect table here is.
+# All 80 records that set the bit also set bit $02, so what it sounds is the
+# alternation's noise frame at a fixed pitch -- a click under the note.
+#
+# **Two operands are read and both are checked.** The alternate table's is
+# what this returns; the frequency table's is checked against
+# `sidfile.find_freq_table`, which locates the same table independently, and a
+# disagreement means the index is being read against the wrong table -- which
+# is what says the byte is a *note* rather than an arbitrary number. On the
+# corpus the two agree on 21 of 21 files.
+#
+# **Not computed from a layout offset.** The table sits at
+# `instr_base + instr_used * stride + 4` in 19 of the 22 files whose bytes
+# match the shape, and W_A_R reads +29 and Saboteur II +20; the operand is the
+# only thing right on all of them.
+NOTE_ALT_SHAPE = ("{load} 29 08 F0 ?? BD ?? ?? 29 01 F0 ?? BD ?? ?? 4C ?? ?? "
+                  "B9 ?? ?? 0A A8 B9 ?? ?? 9D ?? ?? B9 ?? ?? 9D ?? ??")
+
+
+def _find_note_alternate(sid: SidFile, det: Detection) -> int:
+    """File offset of bit $08's alternate-note table, or -1.
+
+    Anchored on the player's own `LDA effect_byte` the way every other reader
+    of `+7` is, which is what ties the block to *this* instrument table.
+    Powerplay Hockey is the one corpus file whose bytes match the shape and
+    which this declines: it carries two copies of the player (section 7.iiiii)
+    and the block found is the other copy's, so its alternate table resolves
+    to nonsense against the instrument table detection settled on. 22 files
+    match the bare shape, 21 match it anchored, and the anchored set is the
+    one where the operand means what this returns.
+
+    **Bit $08 is the pulse-width accumulator in another dialect**
+    (`pulse_lo_base`, Master of Magic `$C20F`, `ADC / STA $D402,Y`). The two
+    populations are disjoint -- 21 files against 21, zero overlap -- so this
+    is a second reading of the bit and not a missed case of the first, exactly
+    as bit `$02` is the rise in Warhawk's dialect and the alternation here.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found or det.instr_start < 0:
+        return -1
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    i = search_file(sid.data, NOTE_ALT_SHAPE.format(load=load))
+    if i <= -1:
+        return -1
+    data = sid.data
+    p = i + len(load.split())
+    if p + 33 >= len(data):
+        return -1
+    alt = data[p + 18] | data[p + 19] << 8
+    freq_lo = data[p + 23] | data[p + 24] << 8
+    freq_hi = data[p + 29] | data[p + 30] << 8
+    if freq_hi != freq_lo + 1:          # not the two halves of one entry
+        return -1
+    table = find_freq_table(sid)
+    if table is None or table.addr != freq_lo:
+        return -1                       # the index is not a note in that table
+    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    off = alt - instr_cpu + det.instr_start
+    span = max(det.instr_used, 0) * det.instr_stride
+    if not (0 <= off and off + span <= len(data)):
         return -1
     return off
 

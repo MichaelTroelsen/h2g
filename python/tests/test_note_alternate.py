@@ -1,0 +1,216 @@
+"""Effect bit $08's two-note alternation.
+
+The other half of section 7.hhhh. Bit $02 alternates the *waveform* every
+frame between the record's own `+2` and a per-instrument table; bit $08 is the
+same alternation applied to the **note**, a second block on the same per-voice
+counter 24 bytes further on (Flash Gordon `$139A`):
+
+    139A  LDA effect / AND #$08 / BEQ out
+    13A1  LDA counter,X / AND #$01 / BEQ alt
+    13A8  LDA note,X                          ; odd  -> the played note
+    13AB  JMP fetch
+    13AE  alt: LDA alttbl,Y                   ; even -> a per-instrument one
+    13B1  fetch: ASL / TAY
+    13B3  LDA freqtbl,Y / STA freqlo,X / LDA freqtbl+1,Y / STA freqhi,X
+
+All 80 corpus records that set bit $08 also set bit $02, so the two are one
+shape and not two emitters: the frame that sounds the alternate waveform is
+the frame that sounds the alternate pitch.
+
+**Bit $08 is the pulse-width accumulator in another dialect**
+(`Detection.pulse_lo_base`, Master of Magic `$C20F`). The two populations are
+checked here to be disjoint -- a reading of a bit is only ever a reading of
+one player, the lesson bit $02 taught against Warhawk's rise.
+"""
+import pathlib
+
+import pytest
+
+from corpus import CORPUS, needs_corpus
+from h2g.detect import detect
+from h2g.goatwriter import (_note_alternate_note, _wave_alternate_entries)
+from h2g.sidfile import find_freq_table, load_sid
+
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# Flash Gordon's record 3: `+2` is $10-ish, the bit-$02 alternate $81, and the
+# alternate note index 67. $C7 is an absolute note byte -- `$80 + n` in the
+# `.sng`, which `gt2reloc` packs as `n` (`greloc.c:1339-1341` inverts bit 7)
+# and the packed player reads as an absolute note.
+ALT_NOTE = 0xC7
+
+
+def test_the_alternate_note_rides_the_alternate_waveform():
+    """One counter, one branch, one phase.
+
+    The observed phase from the attack frame is `note note alt note alt ...`:
+    frame 0 is the init path, which skips both effect blocks, so the pair runs
+    from frame 1 with the record's own half first. That is the shape bit $02
+    already emits -- the lead, then the pair, looping to the first of it --
+    and the note byte simply travels with the waveform it belongs to.
+    """
+    left, right = _wave_alternate_entries(0x41, 0x81, 1, start=10,
+                                          alt_note=ALT_NOTE)
+    assert left == [0x41, 0x41, 0x81, 0xFF]
+    assert right == [0x00, 0x00, ALT_NOTE, 11]
+    # The record's own half is `$00`, not `$80`, and that is what takes the
+    # alternate pitch back off: `gt2reloc` packs every non-command right byte
+    # as `b ^ $80`, so a `.sng` `$00` reaches the packed player as `$80` and
+    # writes `adc mt_chnnote,x / and #$7f` -- the note's own pitch. A `$80`
+    # here would be packed `$00`, no write at all, and the alternate would
+    # simply stay for the rest of the note.
+    assert right[1] == 0x00
+
+
+def test_the_branch_swaps_both_halves_together():
+    """`alt_first` is the other dialect's branch, and it moves the note too.
+
+    Ninja's per-voice spelling falls through to the alternate rather than to
+    the record's own. Whichever half is the alternate is the half that carries
+    the alternate pitch; the two cannot come apart, because the player reads
+    one counter bit for both blocks.
+    """
+    left, right = _wave_alternate_entries(0x41, 0x81, 1, start=10,
+                                          alt_first=True, alt_note=ALT_NOTE)
+    assert left == [0x41, 0x81, 0x41, 0xFF]
+    assert right == [0x00, ALT_NOTE, 0x00, 11]
+
+
+@pytest.mark.parametrize("multiplier,expect_left,expect_right", [
+    (1, [0x41, 0x41, 0x81, 0xFF],
+        [0x00, 0x00, ALT_NOTE, 11]),
+    (2, [0x41, 0x41, 0x41, 0x41, 0x81, 0x81, 0xFF],
+        [0x00, 0x00, 0x00, 0x00, ALT_NOTE, ALT_NOTE, 12]),
+    (3, [0x41, 0x01, 0x41, 0x01, 0x81, 0x01, 0xFF],
+        [0x00, 0x80, 0x00, 0x00, ALT_NOTE, ALT_NOTE, 12]),
+    (4, [0x41, 0x02, 0x41, 0x02, 0x81, 0x02, 0xFF],
+        [0x00, 0x80, 0x00, 0x00, ALT_NOTE, ALT_NOTE, 12]),
+])
+def test_the_rate_is_divided_by_the_multiplier(multiplier, expect_left,
+                                               expect_right):
+    """The alternation is one of the *player's* frames, which is `multiplier`
+    play calls.
+
+    So each half holds for `multiplier` calls -- one entry plus a repeat at
+    `-S2` and a delay above it -- and **the delay entry carries this half's
+    own note**. A delay's right side is read on its last call
+    (gplay.c:697-723), which is the last call of the frame and the one siddump
+    samples: `$00` there would put the played note back one call after the
+    alternate was set, and the whole alternation would measure as flat. 18 of
+    the 21 files carrying the block move bytes here and 13 of them pack above
+    `-S1`, so this is the common case rather than the corner.
+    """
+    left, right = _wave_alternate_entries(0x41, 0x81, multiplier, start=10,
+                                          budget=12, alt_note=ALT_NOTE)
+    assert left == expect_left
+    assert right == expect_right
+
+
+@pytest.mark.parametrize("multiplier", [1, 2, 3, 4])
+def test_no_alternate_note_leaves_the_bit_02_shape_untouched(multiplier):
+    """The pin. A record that does not set bit $08 -- which is every record in
+    62 of the 83 convertible files -- must emit exactly what it did before
+    this existed.
+    """
+    plain = _wave_alternate_entries(0x41, 0x81, multiplier, start=10,
+                                    budget=12)
+    explicit = _wave_alternate_entries(0x41, 0x81, multiplier, start=10,
+                                       budget=12, alt_note=None)
+    assert plain == explicit
+    assert plain is not None
+    assert set(plain[1][:-1]) <= {0x00, 0x80}, "no absolute note anywhere"
+
+
+def test_the_fixture_has_no_such_block():
+    """Commando is not in the dialect, so nothing here can reach it -- which
+    is what keeps the byte-exact fixture byte-exact.
+    """
+    sid = load_sid(str(REPO_ROOT / "Commando.sid"))
+    det = detect(sid, lambda _m: None)
+    assert det.note_alternate == -1
+    assert all(_note_alternate_note(sid, det, i) is None
+               for i in range(max(det.instr_used, 0)))
+
+
+# The files whose player carries the block, anchored on the player's own
+# `LDA effect_byte`. 22 files match the bare byte shape; Powerplay Hockey is
+# the one this declines, because it carries two copies of the player
+# (section 7.iiiii) and the copy the block belongs to is not the one detection
+# settled the instrument table on.
+NOTE_ALT_FILES = {
+    "Bangkok_Knights", "Chain_Reaction", "Deep_Strike", "Delta",
+    "Delta_Mix-E-Load_loader", "Dragons_Lair_Part_II", "Flash_Gordon",
+    "Food_Feud", "Knucklebusters", "Lightforce", "Nemesis_the_Warlock",
+    "Nineteen", "Ricochet", "Saboteur_II", "Sanxion", "Tarzan",
+    "Thundercats", "W_A_R", "W_A_R_Preview", "Wiz", "Zoolook",
+}
+
+
+@needs_corpus
+def test_the_corpus_population_is_exactly_these_files():
+    found, records, resolved = set(), 0, 0
+    pulse_lo_too = set()
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        det = detect(sid, lambda _m: None)
+        if det.note_alternate < 0:
+            continue
+        found.add(path.stem)
+        if det.pulse_lo_base >= 0:
+            pulse_lo_too.add(path.stem)
+        for i in range(max(det.instr_used, 0)):
+            rec = det.instr_start + i * det.instr_stride
+            if sid.data[rec + 7] & 0x08:
+                records += 1
+                resolved += _note_alternate_note(sid, det, i) is not None
+    assert found == NOTE_ALT_FILES
+    assert records == 80
+    # 14 records name an index past the frequency table's validated run --
+    # twelve of them the same boilerplate sound-effect record 26, whose index
+    # is 99 against a 95-entry run. An index that is not a note is declined
+    # rather than guessed at, the rule `_fixed_attack_note` already follows.
+    assert resolved == 66
+    # A reading of a bit is a reading of one player: the accumulate dialect
+    # reads the same bit as a pulse-width step and the two never coincide.
+    assert pulse_lo_too == set()
+
+
+@needs_corpus
+def test_the_block_names_the_frequency_table_detection_finds():
+    """The second reading that makes this a reading rather than an inference.
+
+    The block loads its index and then indexes the player's own note table
+    with it; `sidfile.find_freq_table` locates that table independently. If
+    the two disagreed the byte would not be a note, so detection refuses --
+    which is also what excludes Powerplay Hockey's second player.
+    """
+    for path in sorted(CORPUS.glob("*.sid")):
+        if path.stem not in NOTE_ALT_FILES:
+            continue
+        sid = load_sid(str(path))
+        det = detect(sid, lambda _m: None)
+        assert det.note_alternate >= 0
+        assert find_freq_table(sid) is not None, path.stem
+
+
+@needs_corpus
+def test_every_emitted_note_is_an_absolute_note_byte():
+    """`$80 + n` in the `.sng` and never `$80` itself.
+
+    `$80` is "keep the frequency" and would emit an alternation that does not
+    alternate; the range this produces is `$81`-`$DF`, Goattracker's absolute
+    notes C#0-B-7.
+    """
+    seen = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        if path.stem not in NOTE_ALT_FILES:
+            continue
+        sid = load_sid(str(path))
+        det = detect(sid, lambda _m: None)
+        for i in range(max(det.instr_used, 0)):
+            note = _note_alternate_note(sid, det, i)
+            if note is None:
+                continue
+            seen += 1
+            assert 0x81 <= note <= 0xDF, (path.stem, i, hex(note))
+    assert seen == 66
