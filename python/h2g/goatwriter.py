@@ -1027,11 +1027,15 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
 
 
 SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
-WAVE_NOTE_BASE = 0x00        # right side: no frequency write (player.s:976-977 `bne`).
-#                              The editor reads the same byte as "the base note, +0"
-#                              (gplay.c) -- see CLAUDE.md; every number here is the
-#                              packed player's, so the name is the editor's and the
-#                              behaviour is not
+WAVE_NOTE_BASE = 0x00        # right side: **writes the pattern's own note**. This is a
+#                              `.sng` byte and `gt2reloc` inverts bit 7 of every
+#                              non-command right byte on the way in (greloc.c:1340-1341,
+#                              `insertbyte(rtable[c][d] ^ 0x80)`), so $00 reaches the
+#                              packed player as $80 and takes the `bmi` at
+#                              `mt_wavefreq` -- `adc mt_chnnote / and #$7f`. The comment
+#                              here used to read "no frequency write (player.s:976-977
+#                              `bne`)", which is true of the *packed* byte $00 and so of
+#                              the `.sng` byte $80. See v0.5.336 and CLAUDE.md.
 WAVE_NOTE_KEEP = 0x80        # right side: leave the frequency alone
 WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
 
@@ -1418,8 +1422,44 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # frame count is what the ear hears in a percussion transient; two
         # frames of pitch movement under a released waveform is not, so the
         # waveform keeps its frame and the movement is dropped.
+        #
+        # **But the frame it lands on is the note's own pitch, not the last
+        # `set` opcode's.** The two opcode kinds do not write the same cells,
+        # and this one does not go through `$D401` at all. Saboteur II $F36B,
+        # Shockway Rider $F05A -- the same routine byte for byte:
+        #
+        #     F36B  9D 5D F5   STA $F55D,X   ; waveform -> the STORED cell
+        #     F36F  38 BD 8F F5 F1 F8 9D 8F F5    ; freq LO acc -= operand
+        #     F379  BD 7B F5 F1 F8 9D 7B F5       ; freq HI acc -= borrow
+        #     F386  4C 5F F4   JMP $F45F
+        #     ...
+        #     F45F  AC 50 F5   LDY $F550
+        #     F462  BD 5D F5 3D 66 F5 99 04 D4    ; stored waveform & gate
+        #     F46B  BD 7B F5 99 01 D4             ; the ACCUMULATOR -> $D401
+        #     F471  BD 8F F5 99 00 D4             ; ...and $D400
+        #
+        # The accumulator is loaded with the note's frequency at note start and
+        # a `>= $80` opcode never touches it -- that one writes `$D401`
+        # directly and exits by another path ($F477). So the first `< $80`
+        # opcode of a program **abandons the absolute pitch and returns to the
+        # note**, minus the running sum of the operands, and every later one
+        # continues from there. Exact on both files and on four different base
+        # notes: Saboteur's $1739 - $0180 = $15B9 and $49B8 - $0180 = $4838,
+        # Shockway's $1168 - $01C0 = $0FA8 and $14AF - $01C0 = $12EF.
+        #
+        # `WAVE_NOTE_KEEP` here held whatever the last `set` put in `$D401`,
+        # which is an absolute pitch with nothing to do with the note -- on
+        # Saboteur's $0888 it froze the program at $20DC where the original
+        # descends from $15B9, and on a *high* note it was an octave and a half
+        # below where the player goes. `WAVE_NOTE_BASE` says "back to the
+        # note", which is exact whenever the running sum is zero and the right
+        # side of the truth otherwise. The sum itself is still dropped: it is a
+        # linear frequency subtraction and a wavetable's right column names
+        # notes, so its size in semitones depends on the note it is played at
+        # (Saboteur's first slide is -1.16 st under $1739 and -0.36 st under
+        # $49B8) and no single byte can carry both.
         left.append(_wave_byte(wave))
-        right.append(WAVE_NOTE_KEEP)
+        right.append(WAVE_NOTE_BASE)
         _hold_wave_program_entry(left, right, wave, multiplier)
         persist = wave              # a `< $80` opcode owns the stored cell
     # `seed` alone is not a program: a record whose interpreter holds on its
