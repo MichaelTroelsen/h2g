@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.346 — 2026-08-21
+
+- SURVEY, SUBTUNES and presets regenerated after the six merges
+
 ## 0.5.345 — 2026-08-21
 
 - six delegated tasks land: the grid-edge clamp, the rest-ends-a-tie rule and the vibrato tick-0 skip
