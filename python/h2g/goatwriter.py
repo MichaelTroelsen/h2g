@@ -2413,7 +2413,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
 VIBRATO_CMP_BIAS = 2
 
 
-def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
+def _classic_vibrato_entry(byte: int, multiplier: int,
+                           row_calls: int = 0) -> Optional[tuple]:
     """Speed-table entry for one instrument byte in the $78/$07 format.
 
     The mapping is close to literal because both sides express the depth the
@@ -2451,6 +2452,59 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
       call and the player's per frame -- the same per-frame/per-call division
       every other rate in this file takes (see _drum_speed).
 
+    * **The packed player does not run the vibrato on tick 0 of a row.**
+      `player.s:982-987` is `REALTIMEOPTIMIZATION`, default-on in `gt2reloc`
+      (`-R0` turns it off): `lda mt_chncounter,x / beq mt_done`, commented "No
+      continuous effects on tick0", and `mt_chnvibtime` is only touched below
+      that branch. So a row of `row_calls` calls advances the counter on
+      `row_calls - 1` of them and a half-period encoded at face value lasts
+      `row_calls / (row_calls - 1)` calls of real time. This is the *same*
+      dropped call `patterns._scaled_step` already compensates for the
+      portamento, in the other direction -- there the step is scaled **up**,
+      here the comparison threshold is scaled **down**:
+
+          cmp = bound * multiplier * (row_calls - 1) / row_calls - BIAS
+
+      Powerplay Hockey is the file that made this measurable: it is the first
+      corpus file whose classic-vibrato instruments emit *anything* (its
+      instrument table was wrong until § 7.iiiii), and all three read
+      0.648/0.669/0.656 of the original's reversal count against a predicted
+      `(3 - 1) / 3 = 0.667` at its `row_calls` of 3. **Confirmed by turning
+      the proposed cause off rather than by argument**, which is the check
+      § 7.ppppp exists to demand: packing the same `.sng` with `-R0` takes the
+      file's `vib` **0.658 -> 1.015** with `melody` unmoved at 0.993, and over
+      all 55 files carrying this engine it takes mean `|log2(vib)|`
+      **0.476 -> 0.411**. Compensating here instead reaches 0.428 -- the
+      emitter reproduces removing the cause, on the rate axis, to within 0.017.
+
+      `-R0` is not itself the fix, and this run reproduces why: it takes the
+      median slide ratio **0.994 -> 1.118** over the same 55, because
+      `patterns._scaled_step` already compensates the same dropped call for
+      the portamento and disabling the skip double-corrects it (the corpus
+      figure recorded in CLAUDE.md, re-measured on this population).
+
+      **What it costs, measured rather than predicted.** Goattracker
+      *integrates* a step, so the excursion is `(cmp + 2) * speed`:
+      shortening `cmp` shortens the swing by the same
+      `(row_calls - 1) / row_calls`. `bend` sees exactly that and moves the
+      wrong way -- mean `|log2(bend)|` **1.221 -> 1.264** (closer on 11 of 48,
+      further on 25) where `-R0`, which fixes the rate without paying for it,
+      reaches 1.079. **Everything else is flat**: `melody`, `sequence`,
+      `wave`, `adsr`, `onset`, `gate` and the attack counts are identical on
+      all 55 files, so what moves here is pitch oscillation and nothing else.
+
+      The obvious repair is to take the depth back in `rshift`, and it was
+      built and measured before being rejected. `rshift` is an integer shift
+      and the factor wanted at `row_calls == 3` is `log2(3/2) = 0.585`, so the
+      nearest whole shift over-corrects: decrementing it lands `bend` at 1.096
+      -- close to `-R0`'s 1.079, as intended -- and costs **melody on
+      Powerplay 0.993 -> 0.922 and Sigma Seven 0.990 -> 0.972**, the swing
+      being deep enough to rename attacks. `vib` is identical either way
+      (0.4282), which is the signature of a change to depth alone. So `rshift`
+      stays where v0.5.129 left it, for a second reason now: not only did its
+      two old errors cancel, there is no integer that pays this one back
+      without a melody regression on the file the correction was derived from.
+
     Until v0.5.129 `cmp` was `2 * bound * multiplier`, from reading
     Goattracker's half-period as `cmp / 2` calls instead of `cmp + 2`. That
     made the emitted oscillation run at close to **half** the player's rate for
@@ -2473,9 +2527,24 @@ def _classic_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
         # silence reached one step later.
         return None
     shift = byte & VIBRATO_SHIFT_MASK
+    half = bound * multiplier
+    # `row_calls` is what `build_sng` receives, which `convert` passes as
+    # `short_row_calls` -- the file's *shortest* row, not `_scaled_step`'s
+    # longest. Exact on the 44 of these 55 files that write one row length,
+    # and an over-correction on the 11 that vary, worst at Warhawk (8 against
+    # 40) -- which is one of the files whose `vib` moves away from 1 here. The
+    # quantity actually wanted is the mean row over the calls the vibrato
+    # runs for; neither end is that, and reaching it means a new argument
+    # through `convert`.
+    # Zero means "do not compensate", and so does anything under 3 -- the same
+    # convention and the same reason as `patterns._scaled_step`: below that the
+    # value is funktempo rather than a row length, and `row_calls - 1` stops
+    # being a call count worth dividing by.
+    if row_calls >= 3:
+        half = half * (row_calls - 1) / row_calls
     # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
     # shortest is two calls (cmp 0), which is what the clamp gives.
-    cmp_value = min(0x7F, max(0, bound * multiplier - VIBRATO_CMP_BIAS))
+    cmp_value = min(0x7F, max(0, round(half) - VIBRATO_CMP_BIAS))
     rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
@@ -2722,7 +2791,8 @@ def _table_vibrato_entry(byte: int, tv, multiplier: int) -> Optional[tuple]:
 def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
                     speed_table: List[tuple], log=None,
-                    lead: int = 1, vibrato_command: bool = False) -> dict:
+                    lead: int = 1, vibrato_command: bool = False,
+                    row_calls: int = 0) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
 
     Goattracker runs a per-instrument vibrato with no pattern command at all:
@@ -2740,6 +2810,13 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     at the same place -- a note-relative speed-table entry and a vibdelay --
     and the derivation of each is in its own function.
 
+    `row_calls` is passed only to the classic engine. The packed player's
+    tick-0 effect skip (see _classic_vibrato_entry) applies to *every* vibrato
+    it runs, so the LFO-table and global-triangle entries carry the same error
+    -- they are left uncorrected because neither was measured, not because
+    they are exempt, and both are a two-line change once a population to
+    measure them on is chosen.
+
     GTS5 only. A GTS2 file stores no speed table -- its loader packs the
     vibrato into a single instrument byte and calls makespeedtable itself
     (gsong.c:285), and it reads bytes 5 and 6 the other way round
@@ -2751,7 +2828,7 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
     mult = max(1, multiplier)
     if det.vibrato_offset is not None:
         offset = det.vibrato_offset
-        entry_of = lambda b: _classic_vibrato_entry(b, mult)
+        entry_of = lambda b: _classic_vibrato_entry(b, mult, row_calls)
         engine = "bound/shift"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset
@@ -4420,7 +4497,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead,
-                               vibrato_command=vibrato_command)
+                               vibrato_command=vibrato_command,
+                               row_calls=row_calls)
     # After the layout because it needs the speed-table indices it allocated,
     # and before the records because it decides what goes in their byte 5.
     # Triangle-dialect only: it is that player's length gate this expresses,
