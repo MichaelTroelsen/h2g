@@ -1,509 +1,436 @@
 <original_task>
-Drive this repo's task queue with the mit-setup plugin commands, in the order
-the user issued them:
+Drive this repo's task queue with the mit-setup plugin commands, in the order the
+user issued them:
 
-  /whattask            regenerate the open-task list with a model and execution
-                       mode per task, as prose plus .claude/tasks/whattask.json
-  /runbatch  x2        run several eligible `subtask` records as one Workflow
-  /runqueue  x3        run both lanes at once -- delegable tasks fanned out to
-                       agents, one `main` task in this session beside them
-  "merge" / "commit and push"  at the user's direction, repeatedly
+  /whattask         x4   regenerate the open-task list with a model, execution mode
+                         and lane per task, as prose plus .claude/tasks/whattask.json
+  /runqueue         x4   run both lanes at once -- delegable tasks fanned out to
+                         agents in their own worktrees, one `main` task in this
+                         session beside them
+  "merge the worktrees" / "commit and push"   at the user's direction, after each cycle
   "regenerate the artefacts"
-  "run the fidelity search" -> "adopt if it gains" -> "adopt just the
-                       W_A_R_Preview gain, keep Delta as shipped"
+  "run the fidelity preset search" -> "adopt if it gains"   (twice)
 
-No converter feature was requested directly. The scope is the queue machinery
-and whatever the queue surfaced. The session ran from v0.5.331 to v0.5.343.
+No converter feature was requested directly. The scope is the queue machinery and
+whatever the queue surfaced. The session ran from v0.5.344 (fc691a4) to v0.5.356
+(4cebef8), 40 commits, all pushed.
 
-THIS FILE WAS REWRITTEN WHOLE. Its previous 122 KB covered runs one to seven
-and was spent -- every item in its work_remaining was closed or superseded and
-its narrative stopped around v0.5.325. Recover it with
-`git show 5b4581a:whats-next.md` if any of that history is wanted.
+THIS FILE REPLACES the previous handoff, which covered the session ending at
+350851e and was spent -- every item in its work_remaining was closed. Recover it
+with `git show 9ec3133:whats-next.md` if any of that history is wanted.
 </original_task>
 
 <work_completed>
 
 ## Headline
 
-Twelve branches merged, five artefacts regenerated twice, suite 1239 -> 1353,
-and the corpus's vibrato shortfall cut from 102 instruments to 80. Master went
-0725f71 -> 5b4581a and every commit is pushed to
-github.com/MichaelTroelsen/h2g.
+Four /runqueue cycles, 16 tasks, 40 commits, suite 1353 -> 1415. Master went
+fc691a4 -> 4cebef8 and everything is pushed to github.com/MichaelTroelsen/h2g.
 
-## Commits, in order
+The session's most valuable output is NEGATIVE results -- four tasks closed by
+refuting their own premises, and two measurement defects found in the harness
+rather than the converter. One preset adoption was made and then RETRACTED.
 
-    1fbb1ac a7ee019 1e534e0   instrmap/songview de-duplication (pre-existing,
-                              pushed for the first time this session)
-    b670faa  v0.5.332  the eight-task batch recorded, plan regenerated
-    d3c84b6  v0.5.333  plan regenerated; the ready pool is one complete
-                       conflict graph
-    eb71f82 5176a07 c01ca98  v0.5.334  the two subtune bounds compose
-    8994fe9  the two fidelity-harness branches
-    35b87a5  the SongSpeeds bound and the C64ME regression test
-    fd9065c 2cdc3f6 699b745  v0.5.335  the four owed merges land
-    bf03e52 ee2a717 db4f5d5 c6119ab 386e746 d312ff0 62403c9 0ae00a6 a31dc31
-             v0.5.336  the six batch branches land; the wavetable right byte is
-                       the packer's inverse
-    990582a  v0.5.337  the artefacts regenerated; passthrough guard re-armed
-    b1470eb ce00467 bde94cd dd1818d 2c7f317  the FIDELITY.md stamp chased to
-                       clean, and the cause found
-    ab7901f  the plan regenerated at ce00467
-    899480d 5030dc9 e21995a  presets re-searched: 4 gained, 1 substituted
-    9018dcf  runqueue cycle 1
-    5ca37bb  v0.5.338  the passthrough guard keyed on the option set
-    fb7f03b fba0949 d73a33b  v0.5.339  a tie survives a pattern boundary
-    0725f71  v0.5.340  the subtune census's headline is three quarters true
-    2695c43  runqueue cycle 3 recorded
-    74f4d3f 5aec5db 082e962  v0.5.341  a wave program's slide returns to the
-                       note
-    b327970 76b7632 2564a8d  the two test-only branches
-    c0ee1a5 62f40e0 ec00aa8 8d5356a  v0.5.342  bit $08's two-note alternation
-    b481b0a  v0.5.343  the artefacts regenerated across three merges
-    5b4581a  FIDELITY.md's stamp names the commit that carries the other four
+## The four cycles
 
-## The four owed merges (v0.5.334-335)
+**Cycle 1** (fan-out at fc691a4, 6 agents + main `doc-retract-slide-only-wave-programs-claim`)
+- `find-gate-hold-docstring-names-wrong-branch-address` (9e52802): $F080 is the
+  CMP's address, the branch is $F083, and Saboteur_II reaches $F094 by TWO
+  branches ($F083 BNE and $F07B BEQ). Byte-inert.
+- `abpage-prune-stale-pages` (f4e8c41): `prune_stale_pages()` removes pages a
+  rebuild no longer produces; 6 tests, staged WAV pairs untouched.
+- `fidelity-hardcodes-s2-in-multispeed-summary` (7b1a6f2): the summary said
+  "-S2 / every 2 frames" for EVERY multiplier while interpolating -m{traced}
+  correctly a clause later. 23 of 42 multispeed files were misdescribed.
+- `freq-table-length-off-by-one-at-the-grid-edge` (161de13): entry 95
+  SATURATES (63520 * 2**(1/12) = 67297 does not fit 16 bits), so a 96-entry
+  table validated only 95. `FreqTable.length` is now the table and the new
+  `.run` is the semitone run; BOTH tie-breaks rank on `run`, which is
+  load-bearing (Powerplay's two players differ by exactly this entry).
+  Returned `partial` because its DoD's "only two files" cannot hold alongside
+  its own "_fixed_attack_note has the identical exposure" -- Ricochet is the
+  third. I made the four assertion retargets it named but could not reach.
+- `boundary-tie-four-files-retrig-below-one` (ad8a19c): a bit-6 REST closes the
+  gate on its own branch unconditionally, without consulting status bit 5, read
+  in two players (BoB $8065/$80C0/$80D9, Devils_Galop $1399/$13FA/$1418). So
+  `pending_tie` must be False after ANY bit-6 event and must CLEAR a tie.
+  12 files move, no file loses on any dimension.
+- `powerplay-vibrato-rate-still-two-thirds` (ebc9d1a): gt2reloc's packed player
+  skips continuous effects on tick 0 (player.s:982-987, REALTIMEOPTIMIZATION,
+  confirmed by packing the same .sng with -R0: 0.658 -> 1.015). `cmp` shortened
+  by (row_calls-1)/row_calls. **48 files reached, 27 toward 1 and 15 away** --
+  adopted on the aggregate with the regression named. Mozart 1.468 -> 2.031.
+- MAIN `doc-retract-slide-only-wave-programs-claim` (c566058): v0.5.336's commit
+  message claim was false in both halves and had reached NO doc, so the
+  retraction is written where a grep for its own words lands.
 
-**merge-subtune-branches** (f2c86f2 + 0c748bb -> eb71f82/5176a07). Two bounds on
-the PSID header's subtune count, derived INDEPENDENTLY by agents that never saw
-each other's work: the track table's layout extent (where it runs into the
-pattern table) and the player's own init dispatch (`CMP #imm / BCS / JMP`).
-They AGREE on seven of the eight files carrying both -- Crazy Comets 2, Geoff
-Capes 8, Gerry the Germ 7, Hollywood or Bust 3, Knucklebusters 3, Thing on a
-Spring 1, Warhawk 9. Spellbound is the one disagreement: layout 4 against
-dispatch 3, and the dispatch wins because it says what the player DOES where
-the extent says only what the table has ROOM for. Three bounds now apply in
-order (dispatch, digi `subtunes_available`, layout extent), tighter wins, and
-each dropped subtune is attributed to the bound that dropped it. 17 files move.
+**Cycle 2** (fan-out at 0e9f254, 4 agents + main `shared-refs-stash-races-across-worktrees`)
+- `wave-program-all-slide-portamento` (3508ddb): `$85` does not stop the
+  interpreter -- it jumps to the per-frame writer whose tail reads the frequency
+  ACCUMULATOR, so a held note sounds at the pitch the program slid TO. One byte
+  (WAVE_NOTE_KEEP -> WAVE_NOTE_BASE). **21 files move, set-equal to the 21
+  `wave_program` presets.** `program` bucket 870 -> 596 missing reversals.
+- `note-freq-extrapolates-past-the-16-bit-ceiling` (57763ef): answered NO. The
+  11 index-99 records are ONE boilerplate record copied across 11 tunes; the
+  player reads freqtbl+198 and what is there differs per file (two are $0000);
+  none is played. Docstring + 4 tests, 0 files move.
+- `abpage-piano-roll` (a7e3160): notes-per-voice card; per-voice attack sums
+  equal the row aggregate on 95/95 rows.
+- `crazy-comets-last-missing-attack` (2c13d0a, no code): **there is no missing
+  attack.** 642 = 640 paired + 2 cut by the window edge; in the region both
+  traces can express OURS has a surplus at 60 s, 66 s and 80 s alike.
+- MAIN `shared-refs-stash-races-across-worktrees` (48822c0): the rule in
+  CLAUDE.md and in the plugin's LOCKING.md.
 
-Three tests broke when the branches met, all for one reason: each pinned its own
-bound by measuring the EMITTED count, which the other bound also moves. Each now
-isolates its own bound with `dataclasses.replace(det, music_subtunes=None)`, and
-a new assertion pins that the two agree on exactly seven of eight -- if that
-number falls, the bounds have drifted. Also did the two edits the branches owed
-but could not make: `test_empty_voice.py:149` 17 -> 2 (Rasputin, independently
-re-measured from its $C72B/$C737 gap) and a SYNTHETIC fixture for
-`test_subtune_census`, because after the bound no corpus file has an interior
-`placeholder` subtune at all.
+**Cycle 3** (fan-out at c6944d4, 2 agents + main `classic-vibrato-row-calls-...`)
+- `survey-template-carries-the-superseded-census-headline` (627a10b): the
+  headline is now COMPUTED from the same rows the by-cause table uses -- "31% of
+  the 316 lost below; the remaining 69% is still read-past-the-end".
+- `listen-merge-notes-stale-header` (closed by 96298cc): **never open.** Fixed at
+  v0.5.317; carried as open through three plans (see Attempted Approaches).
+- MAIN `classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest`
+  (9ec3133, no code): **premise refuted.** 12 of the 15 regressed files have ONE
+  row length, so every reduction over the tempo values is the same number and
+  the proposed play-weighted rule is provably inert -- including Mozart and
+  One_on_One, the two the task named to start from.
 
-**merge-fidelity-branches** (87156c2 + d2bca79 -> 8994fe9). `find_freq_table`
-gains a `near=` tie-break (Powerplay's two tables differ by one entry in 96) and
-drift's "-1/(skip+1)" count is derived rather than a stale literal. ZERO files
-move -- both measurement-only, which only a hash can confirm. Ran the clause
-d2bca79's agent never ran: its agent returned a stub (every field the literal
-string "test"), so the derived count had never been observed. Verified on four
-subsets: prints 3, prints 2, and correctly omits the sentence at zero, where the
-old code printed the literal 17 in all four cases.
+**Cycle 4** (fan-out at 9ec3133, 3 agents + main `reversal-ratio-may-be-nonlinear...`)
+- `bit08-alternate-with-no-wave-pair` (e4b2f58): needed NO second emitter. Of 12
+  candidates, **11 sit past `det.instr_used` -- dead cells**. The one real record
+  is fixed by relaxing one clause to `(alt == wave and alt_note is None)`.
+  1 file moves (Dragons_Lair_Part_II).
+- `boundary-tie-loop-around-restart-position` (268cae4, `partial`): the wrap tie
+  is blocked by `apply_tempos`, which owns row 0 of voice 0's ENTRY REFERENCE,
+  and every corpus restart position is 0. First build cost Star_Paws 38pp of
+  melody; vetoed there, it ships **correct and inert (0 files move)**.
+- `abpage-spectrogram` (510b098): FFT precomputed in Python (pure stdlib, no
+  numpy), base64 into the page; draw sub-10 ms, build ~3.4 s per tune.
+- MAIN `reversal-ratio-may-be-nonlinear-in-oscillation-rate` (73c7cd1):
+  **hypothesis refuted, conclusion confirmed by a different mechanism.**
 
-**merge-goatwriter-and-test-branches** (0493e16 + fc84d67 -> 35b87a5). Zero
-files move. RE-TAKING THE HASH CHANGED WHAT IT MEANT: 0493e16 measured "zero
-byte differences" on a tree where Knucklebusters emitted eleven subtunes and
-indices 8-10 over-read its eight-byte skip table; the subtune merge had since
-cut that file to three, so those indices are unreachable and the bound is now
-defensive rather than corrective. Same number, different claim.
+## The two preset searches, and the retraction
 
-**merge-gate-hold-zero-wait-branch** (56f3a04 -> fd9065c/2cdc3f6). ADOPTED
-DESPITE ITS DoD FAILING, with the reasoning stated. 23 files move; A/B at -t 60
-over all 23: melody 4 up 1 down, seq 5 up 2 down, pitch 3 up 1 down, gate 5 up
-0 down. Human_Race 492 attacks -> 103 against the original's 48, retrig
-5.59 -> 1.17, melody 56 -> 96%, onset 67 -> 100%. Chimera wave 50 -> 80%, gate
-29 -> 83%, adsr 44 -> 57%. The two falls (Nineteen melody -3pp, Trans-Atlantic
-pitch -2pp) are single-column dips on files gaining elsewhere in the same run.
-IT SUBSUMED TWO PLANNED TASKS: `find_gate_hold` is True for Chimera, so the
-mechanism the Chimera investigation derived independently is covered, WITH the
-row-clock discriminator that proposal lacked and which correctly excludes
-Saboteur_II.
+Both were six-shard `presets.py --fidelity -t 60` runs, merged and DIFFED
+against the shipped file before adoption. Zero failures and zero "will not
+convert" in either -- checked, because a failed search keeps the old entry and a
+missing entry is indistinguishable from a measured "no".
 
-## The six batch branches (v0.5.336)
+Run 1 (v0.5.349, 3c74767): five candidates, ONE adopted -- Flash_Gordon drops
+`pitch_seq`, its only moving column being `vib` 1.039 -> 0.987. Verified: exactly
+1 file moves, and the regenerated report printed 1.04 -> 0.99 as predicted.
 
-Composed and re-measured AS A SET, which none had been. 23 files move; `vib`
-mean |ln(ratio)| 1.04 -> 0.66 over 13 files, `bend` 0.73 -> 0.10 over 7, and
-EVERY other dimension exactly unchanged on all 23.
+Run 2 (v0.5.352, bd12a51): six candidates, ALL SIX turning on `no_test_restart`.
+One adopted (Arcade_Classics) -- **and retracted at v0.5.353 (864d096)**. See
+Attempted Approaches; this is the session's most important process failure.
 
-THE CORRECTION THAT MATTERS: `greloc.c:1340-1341` does
-`insertbyte(rtable[c][d] ^ 0x80)` -- "For normal notes, reverse all right side
-high bits". CLAUDE.md stated the PACKED player's semantics correctly and then
-drew the EMITTER's rule from them without the packer's XOR in between, so "the
-byte that leaves a bend alone is `$00`" is backwards for anything writing a
-`.sng`. Verified in greloc.c directly before believing the branch, because
-CLAUDE.md said the opposite and records that choosing `$80` once cost Hollywood
-or Bust 22 points of melody (that case is real and differently scoped: a
-WAVEFORM entry reasoned from gplay.c, the editor, with no packer transform in
-the argument).
+## The artefacts
 
-## The three runqueue cycles
-
-**Cycle 1** (9018dcf): main `fix-7kkkkk-cue-stall-claim`; delegated
-`saboteur-ii-regates-on-wait0-rows` (done), `chicken-song-command-arpeggio`
-(done), `nineteen-tie-spelling-melody-loss` (partial).
-- 7.kkkkk's "further stall of one call per cycle" RETRACTED, verified against
-  the code: `SongSpeeds.exact_row` is `Fraction(f * (o + 1), o)` -- literally
-  (reload+1)*(O+1)/O with the skip already in it, so the section double-counted
-  one counter seen from two sides.
-- Saboteur_II: all 425 voice-0 attacks are genuine gate rising edges, not an
-  instrument dipping below $10 -- $D404 never goes there on that voice.
-- Chicken_Song: right that bit $01 is not Warhawk's drum (44 of the 45 files the
-  old signature matched carry `LDA #$80` within 55 bytes; Chicken_Song has none
-  within 256), WRONG that the arpeggio is 0/+3/+7 -- 38 events carry 6 distinct
-  signed offset pairs, so it is a per-note chord.
-- nineteen-tie: turned its own proposed cause OFF two independent ways and the
-  fall SURVIVED at 1.07pp of 2.84pp, so it reported partial rather than claiming
-  the win. Established that a 3-call row gives an untied note a budget of
-  2+1 = 3 calls, so the whole row is inaudible and the tie UN-swallows notes --
-  which is why attacks rise 69 -> 74, something a tie cannot otherwise do.
-  38 of 83 corpus files have such a row, Commando included.
-
-**Cycle 2** (5ca37bb): main `passthrough-guard-disarmed-by-every-bump`;
-delegated `pending-tie-across-pattern-boundaries` (done), `emit-bit08` (partial),
-`abpage-charset-regression-test` (done).
-- THE GUARD WAS LIVE IN NO COMMIT AT ALL. `bump_version.py` rewrites
-  `__init__.py` and `CHANGELOG.md` and NEVER touches presets.json, and it runs
-  AFTER presets.py, so even the commit that regenerates the artefact ships a
-  stamp one version behind. `_always()` now skips only when an option is
-  genuinely unaccounted for AND the stamp predates the version. All three
-  branches exercised by mutating scratch copies: versions differ + all accounted
-  -> 24 passed (old code SKIPPED); option missing + versions differ -> skip
-  naming it; option missing + versions MATCH -> FAILS.
-- pending-tie: Human_Race voice 1 63 -> 48 attacks, EXACTLY the original's;
-  melody 95.8 -> 100.0%, retrig 1.170 -> 1.000. 30 files move, a strict subset
-  of the 34 with a tied boundary. Its own 2x2 showed the fix contributes
-  EXACTLY ZERO on Human_Race without the wait==0 tie while 22 of 30 still move
-  corpus-wide -- it reported both halves.
-
-**Cycle 3** (2695c43): main `subtune-census-doc-refresh`; delegated
-`wave-program-single-speed-absent-pitch` (done),
-`phantom-subtunes-nemesis-thundercats` (partial, salvaged).
-- 7.lllll was stale in every figure: 553 declared / 312 emitted where it now
-  reads 237, and a by-cause table whose two largest entries were `placeholder`
-  rows. All 139 placeholder rows are gone. Its headline reversed: three quarters
-  of the loss, not all, because 97 subtunes across 8 files have a POSITIVE
-  player-derived cause.
-- wave-program: REFUTED v0.5.336's own commit message. A `< $80` opcode
-  subtracts from a frequency ACCUMULATOR and exits through a path that writes
-  it; a `>= $80` opcode writes the registers directly and never touches it. So
-  the slide's right byte had to be WAVE_NOTE_BASE, not WAVE_NOTE_KEEP, which
-  had frozen Saboteur_II an octave and a half below. 21 files move, `vib` the
-  only dimension that moves.
-- phantom-subtunes: its agent died on "StructuredOutput retry cap (5) exceeded"
-  AFTER committing 169 lines of tests. Salvaged rather than stranded: read the
-  commit, ran its tests (8 passed), recorded `partial` -- artefact verified,
-  process not.
-
-## Artefact regenerations
-
-Twice. First at 990582a (after the four merges), again at b481b0a (after the
-three later merges). The second is the informative one:
-
-    FIDELITY.md summary   flat except noise 74527 -> 74493 and pulse +11
-    VIBRATO.md  plain     25 absent / 38 instr / 16096 missing -> 18 / 30 / 9120
-                drum      13 / 14 / 6302                       ->  3 /  3 /  926
-                program    7 / 11 / 1449                       ->  8 /  9 /  871
-                bit80      2 /  3 /   94                       ->  2 /  2 /   17
-                headline  "81 of 102 emit nothing" -> "65 of 80"
-
-22 instruments left the shortfall entirely; the drum bucket's missing reversals
-fell 85%. NONE of it appears in FIDELITY.md's averaged block, because `vib` is
-not one of the columns it averages. A reader checking only the summary would
-conclude three merges did nothing.
-
-## The preset searches
-
-Two full `presets.py --fidelity -t 60` runs, six disjoint shards each (~15 min
-against ~80 serial), `--merge`d and DIFFED against the shipped file before
-adoption.
-
-Run 1 (899480d): 4 gained, 1 substituted -> adopted. ACE_II gate 83 -> 88%,
-Food_Feud gate 44 -> 64%, Chain_Reaction vib 0.40 -> 0.51x, Zoolook vib
-0.12 -> 0.21x. Zoolook $0F09 went 674 orig / 0 ours -> 674 / 267 and
-Chain_Reaction $00F8's pitchseq row left the absent list entirely.
-
-Run 2 (in progress at the session's end): only 3 changes across 2 songs --
-81 of 83 songs' settings confirmed unchanged against a tree where 69 files'
-bytes had moved. W_A_R_Preview gains `pitch_seq`; Delta loses
-`no_test_restart` and `max_hard_restart`. The user directed: adopt
-W_A_R_Preview only, keep Delta as shipped. Applied and verified: exactly 1 file
-moves.
+Regenerated four times (0cdf47f/d13205b, aab3799/4cebef8, and twice between),
+always with the same discipline: commit SURVEY/SUBTUNES/presets FIRST, then run
+fidelity.py against the clean tree, so its stamp names a real commit rather than
+`-dirty`. That ordering was learned in an earlier session at the cost of three
+runs and two wrong diagnoses; it worked first time on every attempt here.
 </work_completed>
 
 <work_remaining>
 
-## IMMEDIATE -- an unfinished sequence, in order
+## 1. THE PLAN IS STALE -- run /whattask before any runner
 
-1. **The reports are mid-regeneration.** `fidelity.py <corpus> -t 60 --presets
-   ../presets.json -o ../FIDELITY.md --vib-census ../VIBRATO.md` was launched
-   from `python/` and was at 59 of 95 files. Log:
-   `<scratchpad>/fidgen8.log`. Wait for "wrote" in that log.
-2. **Commit the selective adoption**: presets.json, SURVEY.md, FIDELITY.md,
-   VIBRATO.md. Bump the version first (`python python/bump_version.py "..."`) --
-   the bump is routine again since v0.5.338's guard fix.
-3. **The FIDELITY.md stamp will read `-dirty`**, because the other artefacts
-   were uncommitted while it ran. The fix, done twice already this session: run
-   `fidelity.py ... -o ../FIDELITY.md` ALONE on the clean tree left by that
-   commit, then commit the one-line stamp change. Confirm the diff is exactly
-   one line before committing -- if more moved, something else changed.
-4. **Push.**
+`.claude/tasks/whattask.json` is keyed to `9ec3133`; HEAD is `4cebef8` and four
+tasks have closed since (the whole of cycle 4). `runs.jsonl` has 92 lines.
 
-## THE DELTA DECISION -- requires-user, and it is a real one
+Ids opened by cycle 4 and not yet in the plan:
+`vib-figures-are-step-quantised-reread-past-decisions`, plus the four the
+`bit08` and `boundary-tie` agents opened (a [user] listening check on
+Dragons_Lair_Part_II subtune 7 voice 1; the `--baseline` subtune caveat; the
+"could the opening tempo live on voice 1 or 2" question; and the wrap tie's
+unmeasured first-play-vs-loop trade).
 
-The re-search wants to drop Delta's `no_test_restart` and `max_hard_restart`.
-Measured both ways at -t 60:
+## 2. `--baseline`'s verdict line can state the opposite of the truth  [main]
 
-    column      shipped   re-searched
-    melody          92%          100%
-    seq             92%          100%
-    pitch           94%          100%
-    slides    2513/2766     2632/2766
-    bend          0.35x         0.38x
-    vib           0.86x         0.89x
-    wave           100%           89%
-    hold           100%            0%
-    gate            84%           42%
-    adsr           100%           98%
+`python/fidelity.py`. It printed **"No dimension this report measures can see
+this change"** for a change worth **-38pp of melody** (Star_Paws, cycle 4),
+because the change lived outside the traced subtune. That sentence is trusted
+across this project and has justified shipping decisions. It should name the
+subtunes whose bytes moved, or caveat itself when the differing rows' change is
+not in the traced subtune. This is the highest-value open item.
 
-Six up, four down, and CLAUDE.md documents THIS FLAG as distorting the report in
-BOTH directions: `--no-test-restart` deletes the testbit frame, which is the
-only frame our conversions spend below $10, and that is what siddump requires to
-print an attack at all. So with the flag ON melody/seq/pitch are UNDERSTATED
-(the instrument cannot see our attacks); with it OFF, `hold` and `gate` lose the
-frames that were flattering them. The report cannot settle its own distortion.
+## 3. A shared `instr_used`-bounded census helper  [subagent]
 
-This is a listening question. `build/listen` has A/B pages staged (83 pairs at
-120 s, startup lag corrected, voice selector, register panel, tracker view).
-Delta is one file. Open `build/listen/Listen.ps1` or run `python abpage.py
---serve`.
+TWO tasks in two cycles had their candidate population collapse once bounded by
+`det.instr_used`: 11 of 12 bit-$08 records and 11 index-99 frequency cells were
+all dead table cells. A third will start from the unbounded table unless a
+helper makes the bound the default.
 
-## THE PLAN IS STALE -- run /whattask before any runner
+## 4. The vibrato regression is still live  [main]
 
-`.claude/tasks/whattask.json` is keyed to `e21995a`; HEAD is `5b4581a` and 12
-tasks have completed since. `runs.jsonl` has 71 lines. Specifically:
+`ebc9d1a` is on master and pushes 15 files further from the original's
+oscillation rate (Mozart 2.03x). Two things are now known that were not:
+- the proposed `row_calls` fix is REFUTED (12 of 15 files cannot move);
+- the correction is QUANTISED -- the realised half-period is `cmp + 2` calls, so
+  at cmp 0 none is possible and Mozart's four instruments receive 1.000, 0.750,
+  0.667 and 0.700 for one intended 0.667;
+- and `vib` itself is a STEP function, so any candidate must be judged against
+  that rather than a continuous ratio.
+Open as `vibrato-cmp-quantisation-limits-the-tick0-correction`.
 
-- `nineteen-tie-spelling-melody-loss` NEEDS RE-SCOPING, not re-running. Three
-  cycles picked it first because `partial` keeps it ready, and each time I
-  excluded it: its own agent turned the proposed cause off two independent ways
-  and the fall SURVIVED, so the DoD's first clause is REFUTED rather than unmet.
-  Rewrite the verify before any runner sees it again.
-- `phantom-subtunes-nemesis-thundercats`'s verify names the WRONG BOUND: it says
-  `det.subtunes_available`, which belongs to the digi engine and reads 0 on both
-  files, with `det.music_subtunes` None on both. The operative bound is
-  `tracks.track_table_extent`. Opened as
-  `phantom-subtunes-verify-names-the-wrong-bound`.
-- Ids opened and not yet in the plan: `hard-restart-budget-three-call-row`,
-  `melody-collapsed-ratio-mis-orders-a-shorter-truer-sequence`,
-  `fidelity-hardcodes-s2-in-multispeed-summary`,
-  `find-gate-hold-docstring-names-wrong-branch-address`,
-  `cmdtable-chord-arpeggio-emission`,
-  `regenerate-vibrato-and-fidelity-after-chicken-drum-fix`,
-  `retake-wave-alternate-noise-trade`,
-  `boundary-tie-loop-around-restart-position`,
-  `boundary-tie-four-files-retrig-below-one`,
-  `trackindex-subclass-replace-with-explicit-convert-parameter`,
-  `first-frame-lead-written-multispeed`,
-  `freq-table-length-off-by-one-at-the-grid-edge`,
-  `bit08-alternate-with-no-wave-pair`,
-  `survey-template-carries-the-superseded-census-headline`,
-  `prune-worktrees-conflicts-with-the-runner-itself`.
+## 5. The harness window bias  [main]
 
-## TWO DEFECTS IN THE RUNNER ITSELF
+`fidelity._measure` traces BOTH sides for `nframes = seconds * 50`
+(fidelity.py:3374) and passes `lag` only INTO wave_compare/adsr_compare/
+gate_compare as an alignment offset -- the window is never extended. So the
+original's last `startup_lag` frames (3-8) have no counterpart region in our
+trace, on EVERY file, always scored against us. Confirmed by reading, and
+demonstrated on Crazy_Comets. Two candidate fixes: trace ours for
+`seconds + lag/50`, or truncate the original at `nframes - lag`. Either moves
+every sequence figure in FIDELITY.md, so the report must say numbers either side
+are not comparable.
 
-1. **The serial.lock stamp is wrong and will bite.** Records are stamped with
-   the CLAIMING SCRIPT's pid, which exits in under a second, so the protocol's
-   reap rule ("this host, pid not running -> orphan") sees every live record as
-   reapable. In cycle 3 it would have freed `tracks.py`, `python/tests` and
-   `goatwriter.py` while two agents were writing them -- and those agents ran a
-   further twenty minutes after that pid was already dead. I refused to start
-   cycle 4 on that basis. THE FIX: stamp something that outlives the cycle --
-   the workflow run id is the natural candidate, since a session-based
-   orchestrator has no long-lived pid of its own. Belongs in the plugin's
-   LOCKING.md.
-2. **Two conflicts the `touches` arithmetic cannot see**, both excluded by hand
-   every cycle: `prune-merged-worktrees` writes `.claude/worktrees`, which is
-   where the Workflow runner CREATES agent worktrees (the conflict is with the
-   runner, not a task); and `task-touches-under-declared-for-investigations`
-   writes `.claude/tasks`, where the orchestrator holds serial.lock and
-   runs.jsonl, and its job is to rewrite whattask.json which /runqueue requires
-   to stay byte-identical. Put the first in the plan's `hazards`.
+## 6. `retrig`, `hold` and `tail` are reachable by no probe  [subagent]
 
-## OWED CODE FIXES NAMED THIS SESSION
+They are computed and printed but carried under no key in `fidelity.py --json`.
+`pitch` is `pitch_jaccard` and `seq` is `sequence`. Any A/B tooling is blind to
+three columns by construction -- this is what caused the v0.5.352 retraction.
 
-- `python/survey.py:624` still carries "essentially all of the loss is reading
-  past the end", which the sfx dispatch made three-quarters true. It is a
-  GENERATED template, so it reaches every regenerated SUBTUNES.md and no doc
-  edit can fix it.
-- `task-touches-under-declared-for-investigations` is measurably capping the
-  fan-out: one task declaring the bare directory `rw:python/tests` is a prefix
-  of every specific test file, and it held cycle 1's fan-out to 3 of 28.
+## 7. Worktree hygiene, with a CORRECTED check  [main]
+
+40 worktree entries (33 `wf_*`), 18 unmerged branch refs. A naive "no line in
+the worktree is absent from master" check FLAGS 11 files across 8 worktrees --
+but every one is SUPERSEDED content, not unlanded work: master has moved past
+them. Verified by example: `wf_deb47f97-915-1`'s flagged goatwriter.py line is
+the OLD bit-$08 refusal clause that e4b2f58 replaced, and
+`wf_55f332af-99a-5`'s test_abpage.py flags 252 lines while its prune tests ARE
+on master (11 references). **The check must compare against the commit the
+worktree's work landed in, not current master** -- `prune-merged-worktrees`'s
+verify currently says the latter and will produce false positives.
+Also remove the scratch byte-hash worktrees under the scratchpad
+(base-fc691a4, base-d13205b, base-0e9f254, base-9ec3133).
+
+## 8. Standing [user] items, none of them answerable by any column
+
+- `delta-no-test-restart-verdict` -- refused at the user's direction at v0.5.344
+  and offered again by BOTH searches; still open.
+- `no-test-restart-three-more-refused-candidates` (Wiz, Powerplay, Dragons Lair).
+- A listening check on Dragons_Lair_Part_II subtune 7 voice 1 for the bit-$08
+  change: no column reads a noise frame's pitch, its traced subtune is the
+  known-wrong music, and the record sounds only in an untraced subtune.
+- `method-doc-section-scheme` -- H2G-CONVERSION-METHOD.md's 5-letter section
+  scheme is EXHAUSTED at 7.zzzzz, and four tasks are blocked behind it.
 </work_remaining>
 
 <attempted_approaches>
 
-## Dead ends -- do not repeat
+## THE RETRACTION -- the session's most important failure
 
-**Three regeneration runs chasing a clean FIDELITY.md stamp, two of them on a
-wrong diagnosis.** I blamed my own concurrent `runs.jsonl` append, then proved
-otherwise with a frozen tree. The stamp is `git status --porcelain -- .` being
-non-empty (fidelity.py:3165) and THAT COMMAND COUNTS UNTRACKED FILES.
-`.claude/worktrees/`, `monlog_out.txt` and `6581.pdf` marked every report dirty
-however clean the tracked tree was. All three are now gitignored. The 0.5.330
-report that opened the task could never have had a clean stamp either.
+At v0.5.352 I adopted `no_test_restart` for Arcade_Classics on a comparison
+reporting "5 better, 1 worse". **The comparison covered 6 of the 14 columns it
+claimed to.** It asked `fidelity.py --json` rows for `pitch`, `seq`, `hold`,
+`retrig`, `noise`, `onset`, `tail` and `nrun`; the real keys are
+`pitch_jaccard`, `sequence`, and for the rest ABSENT. `dict.get` returned None
+for all eight and the loop skipped them in silence.
 
-**A `--fidelity` search pointed at a subset directory.** `presets.py` has NO
-per-file flag, so a subset directory writes a presets.json holding ONLY those
-songs and silently drops the rest. Shard the whole corpus instead.
+WHAT CAUGHT IT was not the script -- it was regenerating FIDELITY.md and reading
+the row, which showed `pitch 100% -> 93%` and `seq 100% -> 99%`, columns the
+probe had never looked at. Re-keyed, Arcade_Classics has the same signature as
+the five candidates I had refused. Retracted at v0.5.353; presets.json's songs
+dict is byte-identical to v0.5.351's and FIDELITY.md differs by exactly its
+stamp.
 
-**Copying `MAX_SANE_SPEED_RELOAD` onto the skip table**, which is what
-`songspeeds-skip-reads-past-its-table`'s DoD literally asked for. It broke
-`test_ricochet_has_no_table_and_takes_the_image_byte`: skip's legitimate range
-is 0-127 against frames' 0-8-ish. An extent, not a magnitude.
+THE RULE THIS EARNS is narrower than "assert the calling convention", which that
+probe DID follow: **a probe reading a SUBSET of a report's columns must assert
+every column it names exists.** Silently comparing fewer is indistinguishable
+from comparing them all and finding no movement. And: regenerating the artefact
+is a second, independent reader of the same measurement -- prefer it BEFORE
+adopting, not after.
 
-**Including the instrument table in the not-track-data set** for the track-table
-extent. It over-runs and swallows subtune 0's own cells on Battle_of_Britain and
-Las_Vegas_Video_Poker, driving the bound to 0 on 22 files.
+## Probe failures -- nine of the same class this session
 
-**Delegating `nineteen-tie-spelling-melody-loss` again.** Three cycles picked it
-first; each time its DoD's first clause is already refuted.
+1. `quiet=True` passed to `convert()`, which does not accept it (earlier session).
+2. presets.json keyed by bare stem where its keys carry ".sid".
+3. Ratio columns dropped because they print a trailing "x" and float() threw.
+4. The frequency-table calibration omitted.
+5. `detect()` called without its `log` argument (mine).
+6. `Detection.instr` read where the field is `.instr_start` (mine).
+7. The column-subset failure above (mine).
+8. A spy on `h2g.patterns.apply_tempos` when `convert` binds the name at import
+   (`from .patterns import apply_tempos`) -- it patched nothing and reported
+   "0 of 95 files reach the tempo path". Caught only because 0 of 95 is
+   obviously wrong (mine).
+9. The run-log joiner dropped its raw-record fallback and wrote `inconclusive`
+   for two SUCCESSFUL tasks; corrected by APPENDING the right records, since
+   runs.jsonl is append-only and read last-line-per-id (mine).
 
-## Probe errors -- all four were the harness's calling convention
+## The rot detector that was vacuous
 
-1. `fidelity._measure` called with raw values where it takes an args object.
-   Threw. Used the CLI instead, which is the harness's own path.
-2. A byte-hash keyed presets.json by the bare stem ("Sanxion") where its keys
-   carry ".sid". Every per-song entry silently dropped; the diff read 15 files
-   where the truth was 18. Caught only by the probe's own success assert.
-3. My A/B comparison script dropped EVERY ratio column, because they print with
-   a trailing "x" (`0.17x`) and `float()` threw. It reported "no dimension moved
-   on any file" -- a flat table produced by the probe, not the report. `vib` had
-   moved on 13 files. The script now prints which columns it could not parse.
-4. A byte-hash for the selective adoption compared against the PREVIOUS search's
-   merged file rather than the shipped presets.json, and reported 14 files
-   moving for a one-key edit. Re-run against `HEAD:presets.json` it reads 1.
+Built a check for carry-over tasks whose `verify` quotes code that no longer
+exists. First run: 26 tokens, 0 absent -- a clean bill. Then validated it
+against the ONE string known to have rotted (`head = head or h`) and it reported
+that string as PRESENT. `git grep` searches all tracked files including
+`.claude/tasks/whattask.json` and `runs.jsonl`, **which quote the verify strings
+themselves**. Excluding `.claude/` and `CHANGELOG.md` makes it fire correctly.
+That is exactly how the original rot went unnoticed for three plans.
+Known false-positive kinds: language builtins (`dict.get`), PROPOSED code a
+verify asks someone to write, and abbreviations containing `...`.
 
-## Alternatives considered and not taken
+## A synthetic test that was under-powered
 
-- `--untracked-files=no` for the provenance stamp. Rejected: an untracked file
-  CAN change what the report measures -- `python/tools/siddump-rt/siddump.exe`
-  is gitignored and load-bearing. Left open as
-  `fidelity-stamp-is-dirty-by-construction`.
-- Running `/runbatch` on the strict `--ready 8` set. Refused once with the
-  arithmetic: 28 conflicting pairs out of 28, a complete graph, so 8 stages of
-  1 -- strictly worse than 8 `/runtask` runs. The largest pairwise-disjoint set
-  among all 17 eligible tasks was TWO.
-- Reaping cycle 3's lock records to start cycle 4. Refused: the rule permits it
-  (dead pid) and it would have corrupted a live run.
+The first linearity test for `reversals_by_instrument` used ONE 600-frame note
+and reported counted/true = 1.000 at every rate -- it would have closed the
+question as "linear, no problem". The effect lives at SHORT note lengths, where
+`floor(L/p) - 1` is a step function. Re-run at realistic lengths it is
+unmissable (x1.951 at L=10 for a x1.333 rate change).
+
+## A test that passed in its worktree and failed on master
+
+`test_the_page_embeds_null_spectrogram_when_none_is_staged` called `page()`
+without monkeypatching `LISTEN`, so it read the REAL build/listen -- empty in a
+fresh agent worktree, 83 staged pairs on master, including the tune it names.
+Its own sibling three lines below already used tmp_path. Fixed at merge.
+
+## Dead ends and refuted premises -- do not retry
+
+- **The `{a-1, a, a+1}` attack skip as the cause of `vib` non-linearity.** The
+  counter is exact against a known count at every rate and amplitude-independent
+  down to one frequency unit. The skip is innocent.
+- **`row_calls` as the cause of the 15 vibrato regressions.** 12 of the 15 have
+  one row length; the change is provably inert on them.
+- **Crazy_Comets having a missing attack.** It does not; the deficit is the
+  trace window, and in-region OURS has a surplus.
+- **Both stash "recovery" tasks.** Two agents each concluded the other's work
+  was destroyed. Neither was right -- no code was lost either way, verified by
+  diffing (the 13 differing lines were all docstring prose).
+- **`listen-merge-notes-stale-header`.** Fixed at 96298cc; its verify quoted the
+  BUGGY expression as though present.
+- **The wrap tie's "moves more files" premise.** It reaches 2 candidate files,
+  1 after Chimera declines, and 0 after the tempo veto.
+
+## Considered and not taken
+
+- Running the vibrato regression task in cycles 1-3. Deferred three times: twice
+  by the CPU rule (heavy A/B opposite heavy fan-out) and once because
+  `goatwriter.py` was held by an unmerged worktree. It finally ran in cycle 3
+  and refuted itself.
+- Widening a task's declared `touches` mid-run. The vibrato task needed
+  `convert.py`, which was outside its writable set; I did not widen it. It was
+  moot -- the change is inert on 12 of the 15 target files.
 </attempted_approaches>
 
 <critical_context>
 
 ## Rules this session paid for, beyond what CLAUDE.md already says
 
-**A skip condition must be keyed on the thing that would make the assertion lie,
-never on a proxy that moves more often.** A guard that goes dark on a schedule
-nobody chose is worse than no guard, because the suite still reports green.
-Written into CLAUDE.md beside the option-passthrough paragraph.
+**A probe reading a subset of a report's columns must assert every column it
+names exists.** Written up in the v0.5.353 commit; NOT yet in CLAUDE.md (the
+task `docs-probe-must-assert-every-column-it-names` is open and ready).
 
-**A lesson recorded in one emitter is not a lesson in the file.**
-`goatwriter.py` carried THREE comments about the wavetable's right byte. Two
-were corrected independently -- by v0.5.341's slide fix and by cbf80a7's
-alt_note work -- and neither knew about the other, so a superseded reading
-survived beside two correct ones at a third site. Worse, the ORIGINAL wording
-the first correction replaced was nearer the truth than its correction. When
-that byte's meaning is restated, grep for `greloc.c` and `976-977` and fix every
-site.
+**`vib` is a STEP function of the rate, not proportional to it.** Reversals per
+note are `floor(L / p) - 1`, so a rate change registers only when it carries the
+note across a whole half-cycle boundary. Measured through the real function for
+a x1.333 rate change: 600-frame note x1.336, 64 x1.333, 16 x1.333, 12 x1.500,
+10 x1.951, 6 x40.0. This is in the `vib` Dimension's own comment and reaches the
+published FIDELITY.md legend -- which is the argument for putting a column's
+blindness in the Dimension rather than a doc, demonstrated.
 
-**Re-take a measurement on the base you are merging onto, not the base it was
-measured on.** It changed what a number MEANT once this session (the SongSpeeds
-bound went from corrective to defensive because the subtune merge removed the
-indices it guarded) even though the number itself was identical.
+**A worktree does not isolate `refs/stash`.** It is shared. `git fsck
+--unreachable` shows 100+ dangling stash commits from earlier sessions. In
+CLAUDE.md and the plugin's LOCKING.md as of 48822c0. Every fan-out brief this
+session carried it as hard rule 1 and no agent used stash.
 
-**Two agents deriving one mechanism independently is a signal, not a
-coincidence.** It happened twice: the subtune bounds (agreeing on 7 of 8 files)
-and the zero-wait tie (Human_Race's $09E4 and Chimera's $C267, a week apart, as
-two separate plan tasks). Where the two versions differed, the difference was
-the whole value -- one had a discriminator and the other did not.
+**A commit message is not a doc and is also not erasable.** When one carries a
+wrong mechanism, retract it somewhere a grep for its own words will land --
+correcting the docs is not enough when the docs never carried it.
 
-**A "failed" agent is not necessarily failed work.** The harness reported
-`phantom-subtunes-nemesis-thundercats` as returning nothing usable; it had
-already committed 169 lines of tests. Read the worktree before recording.
-
-**The `partial` outcome is doing real work.** Four of this session's tasks
-returned it, every one because the agent refused a DoD it had not literally met
--- and in two cases the refusal WAS the finding (nineteen-tie turning its own
-cause off; emit-bit08's "only the 22 files" holding on the `only` half and not
-the count).
+**Re-measure on the base you are merging onto.** Cycle 4 re-measured four preset
+candidates that a previous search had refused, because 21 files' bytes had moved
+under them. Their verdicts held, but that had to be established.
 
 ## Environment
 
-- Windows 11, PowerShell primary with a Bash tool alongside. `rtk` proxies bash
-  output. The Bash tool's working directory PERSISTS between calls -- a `cd`
-  into a worktree silently redirected several later `git status` calls, one of
-  which read as master having moved.
-- Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob`, 95 files, 83
-  convertible, 12 permanently `UnsupportedSidError`.
-- Tests: `python -m pytest tests/ -q` from `python/`, ~4.5 minutes, 1353 tests.
-- `gt2reloc`: `C:\Users\mit\Downloads\GoatTracker_2.77\win32\gt2reloc.exe`; its
-  source (including `greloc.c`) is at `...\GoatTracker_2.77\src\`.
-- `python/tools/siddump-rt/siddump.exe` is GITIGNORED and load-bearing. A fresh
-  worktree lacks it, and without it the harness REFUSES multiplier>1 songs.
-  Every agent brief must open with copying it in.
-- Agent worktrees have twice been cut at an OLDER commit than the brief named.
-  Always have agents report `git log --oneline -1`.
+- Windows 11, PowerShell primary with a Bash tool. `rtk` proxies bash output.
+- Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob`, 95 files,
+  83 convertible, 12 permanently `UnsupportedSidError`.
+- Tests: `python -m pytest tests/ -q` from `python/`, ~5.5 min, **1415 passed,
+  2 skipped**.
+- `python/tools/siddump-rt/siddump.exe` is GITIGNORED and load-bearing; every
+  agent brief must open by copying it into the worktree.
+- `build/fidelity.json` is GITIGNORED but feeds a COMMITTED feature (abpage's
+  notes-per-voice card). A fresh clone renders that card empty until
+  `fidelity.py --json` runs. It is currently a 0.5.356 trace.
+- The plugin's `LOCKING.md` lives OUTSIDE this repo
+  (`C:/Users/mit/.claude/plugins/marketplaces/mit-claude-setup/plugins/mit-setup/`)
+  and carries half the refs/stash rule, so it is in no commit here.
 - No reachable forge: `gh issue list` and `gh pr list` returned empty every time.
+
+## Orchestration facts worth carrying
+
+- The workflow JOURNAL carries each agent's RAW record; the
+  `{dispatched, model, record}` wrapper exists only in the workflow's return
+  value. A joiner must handle both.
+- `serial.lock` records are stamped with the CLAIMING SCRIPT's pid, which dies
+  in a second, so the protocol's reap rule would see every live record as an
+  orphan. Only safe because this session was the sole orchestrator. Open as
+  `serial-lock-pid-stamp`.
+- Two tasks conflict with the RUNNER rather than with each other and must never
+  be scheduled inside a cycle: `prune-merged-worktrees` (writes
+  `.claude/worktrees`, where the Workflow runner creates agent worktrees) and
+  anything writing `.claude/tasks` (where serial.lock lives and whattask.json
+  must stay byte-identical).
+- A bare `rw:python/tests` in a task's touches is a prefix of every specific
+  test file and collapses the fan-out.
 
 ## Numbers worth carrying
 
-- suite 1239 -> 1353; corpus melody 93 -> 94%, seq 93 -> 94%, gate 53 -> 54%
-- Human_Race: melody 56 -> 100%, retrig 5.59 -> 1.00, across THREE mechanisms
-  (the subtune tempo fix, the zero-wait tie, the boundary carry)
-- vibrato shortfall: 102 instruments -> 80; drum bucket 6302 -> 926 missing
-  reversals
-- 69 files moved bytes across three merges before the second regeneration
+- suite 1353 -> 1415; corpus melody 94%, seq 94%, pitch 95%, wave 83%, gate 55%,
+  adsr 66% (all flat across the session's merges)
+- VIBRATO.md `program` bucket 870 -> 596 missing reversals; `plain` 8382
+- 63 of 83 files moved bytes at v0.5.345, 21 at v0.5.350, 1 at v0.5.355
+- two full `--fidelity` searches, 11 candidates offered, 1 adopted and kept
 </critical_context>
 
 <current_state>
 
 ## Repository
 
-- HEAD `5b4581a`, pushed. `origin/master` == HEAD.
-- WORKING TREE DIRTY, deliberately, mid-sequence:
-      M presets.json    the selective W_A_R_Preview adoption
-      M SURVEY.md       regenerated against it
-      M whats-next.md   this file
-  FIDELITY.md and VIBRATO.md are being rewritten by a running `fidelity.py`.
-- NO unmerged branches. All twelve merged.
-- `.claude/tasks/serial.lock` does NOT exist -- cycle 3's records were released
-  through the mutex and the registry emptied.
+- HEAD `4cebef8`, **pushed**; `origin/master` == HEAD, 0 ahead / 0 behind.
+- Working tree **CLEAN**.
+- Version **0.5.356**.
+- All five artefacts (SURVEY.md, SUBTUNES.md, presets.json, FIDELITY.md,
+  VIBRATO.md) regenerated against a clean tree; FIDELITY.md's stamp reads
+  `h2g 0.5.356, aab3799` with no `-dirty`.
 
 ## Deliverables
 
 | item | state |
 |---|---|
-| the four owed merges | COMPLETE, pushed |
-| the six batch branches | COMPLETE, pushed |
-| the three runqueue cycles | COMPLETE, recorded, pushed |
-| artefact regeneration | COMPLETE for v0.5.343; a second pass is IN FLIGHT for the selective adoption |
-| preset re-search run 1 | COMPLETE, adopted, pushed |
-| preset re-search run 2 | COMPLETE; selectively adopted, NOT yet committed |
-| whattask.json | STALE at e21995a -- 12 tasks done since |
+| /runqueue cycles 1-4 | COMPLETE, recorded, merged, pushed |
+| the 16 tasks they ran | 14 done, 2 partial (freq-table clause; wrap tie) |
+| artefact regeneration | COMPLETE at 4cebef8 |
+| preset search run 1 | COMPLETE, one of five adopted |
+| preset search run 2 | COMPLETE, one of six adopted then RETRACTED |
+| whattask.json | STALE at 9ec3133 -- four tasks done since |
+| worktree pruning | NOT STARTED (33 wf_ worktrees, 18 unmerged refs) |
 
 ## Open questions
 
-1. **Delta** -- the listening decision above. Nothing else blocks on it.
-2. Whether `fidelity.py`'s stamp should ignore untracked files. The safe-looking
-   fix hides a real hazard (siddump.exe).
-3. Whether `presets.json` should carry a marker that it is no longer the output
-   of a single search run. It is now the v0.5.343 regeneration plus one
-   hand-picked setting, and its `generator` stamp (`h2g 0.5.342 presets.py`)
-   cannot convey that. Every entry is individually a measurement; the FILE is
-   not one run.
+1. **Delta** -- the listening decision, refused at the user's direction at
+   v0.5.344 and offered again by both searches. Nothing else blocks on it.
+2. **The method doc's section scheme** is exhausted at 7.zzzzz and four tasks
+   are blocked behind that decision.
+3. **Whether `presets.json` should record per-entry provenance.** It is again a
+   whole-search regeneration plus a hand-picked adoption, and its `generator`
+   stamp cannot convey that.
+4. **Whether the wrap tie should have been merged at all.** It is correct,
+   tested and inert; I kept it because the constraint it documents (Goattracker
+   cannot express both a subtune's clock and a tie in one command column) is the
+   finding. Reversible with `git revert 268cae4`.
 
 ## Exact next command
 
-    # 1. wait for the running regeneration
-    tail -f <scratchpad>/fidgen8.log      # until "wrote"
-    # 2. from the repo root
-    python python/bump_version.py "the W_A_R_Preview pitch_seq gain adopted"
-    git add presets.json SURVEY.md FIDELITY.md VIBRATO.md CHANGELOG.md \
-            python/h2g/__init__.py whats-next.md
-    git commit && git push
-    # 3. then re-run FIDELITY.md alone on the clean tree for a clean stamp,
-    #    confirm the diff is exactly one line, commit, push
-    # 4. then /whattask -- the plan is 12 tasks stale
+    /whattask            # the plan is four tasks stale at 9ec3133
+
+then, in preference order, and all of them are [main]:
+
+    # 1. the --baseline verdict line that can state the opposite of the truth
+    # 2. the fidelity window bias (every file, always against us)
+    # 3. the vib quantisation ceiling, now that vib is known to be a step function
 </current_state>
