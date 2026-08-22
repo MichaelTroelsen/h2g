@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.355 — 2026-08-22
+
+- vib is a step function; bit $08 needs no second emitter; the wrap tie is clock-blocked
+
 ## 0.5.354 — 2026-08-21
 
 - the subtune census headline is derived, not asserted
