@@ -2282,36 +2282,147 @@ def _apply_boundary_ties(new_track: List[int], moved: dict,
     written = 0
     for at in sorted(steps):
         i = moved.get(at)
-        if i is None or i >= len(new_track):
+        if i is None:
             continue
-        entry = new_track[i]
-        if entry >= MAX_PATTERNS or entry >= len(patterns):
-            continue                    # a command byte, or a dangling number
-        pattern = patterns[entry]
-        if len(pattern) < 4:
-            continue
-        if not GT_FIRSTNOTE <= pattern[0] <= GT_LASTNOTE:
-            continue                    # nothing on row 0 to tie into
-        if pattern[2] == CMD_TONEPORTA and pattern[3] == 0:
-            written += 1                # already says it
-            continue
-        if pattern[2] != 0:
-            # An orderlist tempo copy, or a slide the decoder emitted: the
-            # decoder does not tie over a taken command column either.
-            continue
-        if entry not in copies:
-            if len(patterns) >= MAX_PATTERNS:
-                if log:
-                    log("*** NO ROOM FOR A BOUNDARY-TIE PATTERN COPY (AT "
-                        f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
-                break
-            copy = list(pattern)
-            copy[2], copy[3] = CMD_TONEPORTA, 0x00
-            copies[entry] = len(patterns)
-            patterns.append(copy)
-        new_track[i] = copies[entry]
-        written += 1
+        n = _tie_step(new_track, i, patterns, copies, log)
+        if n < 0:
+            break                       # the pattern table is full
+        written += n
     return written
+
+
+def _tie_step(new_track: List[int], i: int, patterns: List[List[int]],
+              copies: dict, log=None) -> int:
+    """Point orderlist step `i` at a copy of its pattern whose row 0 ties.
+
+    The one place a boundary tie is written, so that both callers -- the
+    pattern-to-pattern boundary and the orderlist's own wrap -- obey the same
+    rule rather than agreeing by inspection. That is the lesson
+    `_first_frame_entry` records: a rule about the player belongs in a helper
+    every emitter has to call, not in prose beside one of them.
+
+    **Always into a copy, never in place**, for the reason apply_tempos
+    documents: Goattracker's patterns are global and its orderlists are per
+    subtune, and whether a pattern is entered tied is a property of the
+    orderlist *position*. 96 of the 180 corpus entries that are ever entered
+    tied are also entered untied somewhere -- more than half -- so patching
+    the shared pattern would silence attacks the player really makes. Copies
+    are shared between every step that asks for the same pattern.
+
+    Returns 1 where the step ends up tied (including one whose pattern
+    already said so and cost no copy), 0 where it cannot carry one, and -1
+    where Goattracker's pattern table is full -- a caller in a loop stops
+    rather than asking again for every remaining step.
+    """
+    if i < 0 or i >= len(new_track):
+        return 0
+    entry = new_track[i]
+    if entry >= MAX_PATTERNS or entry >= len(patterns):
+        return 0                        # a command byte, or a dangling number
+    pattern = patterns[entry]
+    if len(pattern) < 4:
+        return 0
+    if not GT_FIRSTNOTE <= pattern[0] <= GT_LASTNOTE:
+        return 0                        # nothing on row 0 to tie into
+    if pattern[2] == CMD_TONEPORTA and pattern[3] == 0:
+        return 1                        # already says it
+    if pattern[2] != 0:
+        # An orderlist tempo copy, or a slide the decoder emitted: the
+        # decoder does not tie over a taken command column either.
+        return 0
+    if entry not in copies:
+        if len(patterns) >= MAX_PATTERNS:
+            if log:
+                log("*** NO ROOM FOR A BOUNDARY-TIE PATTERN COPY (AT "
+                    f"GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+            return -1
+        copy = list(pattern)
+        copy[2], copy[3] = CMD_TONEPORTA, 0x00
+        copies[entry] = len(patterns)
+        patterns.append(copy)
+    new_track[i] = copies[entry]
+    return 1
+
+
+def _apply_wrap_tie(new_track: List[int], patterns: List[List[int]],
+                    copies: dict, exits_tied: bool, tempo_voice: bool,
+                    log=None) -> int:
+    """Carry the last orderlist entry's exit state around the restart.
+
+    `_apply_boundary_ties` reaches every boundary *inside* a list and none of
+    the one that closes it. The player's `$FF` is an orderlist fetch exactly
+    like a pattern's own terminator -- version 4 is `LDA #$00 / STA` the three
+    indices `/ JMP` the top, version 9 the same shape -- and nothing on that
+    path writes `$D404`. So a list whose last entry exits tied re-enters the
+    pattern at its restart position with the gate still open, and this
+    converter re-struck it there too.
+
+    **Only where the restart position is in range**, which is what tells a
+    real loop from Hubbard's `$FE` stop. `convert_tracks` writes `$FF $FD` for
+    *tune ended* -- an out-of-range position, deliberately, so the editor
+    stops (h2g.frm:1206) -- and `legalise_restarts` only later rewrites it to
+    0 so gt2reloc will pack the file at all. That 0 is a loop this tune never
+    plays, so tying into it would suppress an attack the player does make on
+    every pass but the fabricated one. Corpus: 5 of 711 voice orderlists end
+    on a tied pattern and 2 of those 5 are `$FD`.
+
+    The position is read as an index into `new_track`, which is what
+    Goattracker's player will do with it (gsong.c:1344). The pre- and
+    post-reindex numberings agree only at 0 -- one old entry can become
+    several patterns -- and 0 is the only value `convert_tracks` and
+    `legalise_restarts` ever produce, so nothing here depends on the wider
+    claim. A transpose byte at the restart position is stepped over, for the
+    same reason `reindex_tracks` lets `prev_ref` survive one: the reader
+    consumes it and plays nothing, so the gate is still open when the pattern
+    behind it arrives.
+
+    Returns 1 if the restart position ended up tied, else 0.
+
+    **The subtune's clock outranks it, and that is what makes this pass inert
+    on today's corpus.** `apply_tempo`/`apply_tempos` write `CMD_SETTEMPO`
+    into row 0 of voice 0's *entry reference* -- and they run after
+    `reindex_tracks`, so they cannot see a command column this pass has
+    already taken; `apply_tempos` simply skips such a pattern
+    (`pattern[2] not in (0, CMD_SETWAVE)`). A restart position of 0 makes the
+    step this would tie exactly that entry reference, so on voice 0 the tie
+    and the tempo want one column. Measured on Star_Paws, which is the only
+    corpus file this pass reaches: taking the column dropped its tempo writes
+    from **3 patterns to 1** (the converter's own log line), so subtunes 1 and
+    2 played at the table's other value -- 4 frames a row where they want 11 --
+    and subtune 1 read `melody 75% -> 37%`, `retrig 0.96 -> 0.30`, `drift
+    -111 -> +1667`, with **all three voices** losing three quarters of their
+    attacks though the tie was written on voice 0 alone. A whole subtune's
+    clock against one note's attack is the same trade `reindex_tracks` already
+    makes between the orderlist-tempo pass and `_apply_boundary_ties`, decided
+    the same way. `tempo_voice` is that veto; `_apply_boundary_ties` never
+    needs it because a boundary tie has a predecessor by construction and so
+    can never land on position 0.
+
+    **What this cannot express** even where the column is free: Goattracker
+    starts a subtune at orderlist position 0 and every corpus restart position
+    *is* 0, so the step this ties is also the step the song opens on. The
+    original attacks that note on the first pass and ties it on every later
+    one; one orderlist entry cannot say both. Nothing in the corpus exercises
+    that case -- with the veto above, 0 of 83 conversions change a byte -- so
+    the trade is stated rather than measured, and the day a file does exercise
+    it, it is an A/B and not a reading of this docstring.
+    """
+    if not exits_tied:
+        return 0
+    songlen = next((i for i, b in enumerate(new_track)
+                    if b == GT_ORDER_RESTART), None)
+    if songlen is None or songlen + 1 >= len(new_track):
+        return 0                        # no marker, or no operand to read
+    pos = new_track[songlen + 1]
+    if pos >= songlen:
+        return 0                        # a stop marker, not a loop
+    while pos < songlen and new_track[pos] >= MAX_PATTERNS:
+        pos += 1                        # a transpose the reader consumes
+    if pos >= songlen:
+        return 0
+    if tempo_voice and pos == _entry_reference(new_track):
+        return 0                        # the opening tempo owns that column
+    return max(0, _tie_step(new_track, pos, patterns, copies, log))
 
 
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
@@ -2419,6 +2530,16 @@ def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],
         if tied_steps and patterns is not None:
             _apply_boundary_ties(new_track, moved, tied_steps, patterns,
                                  tie_copies, log)
+        # And the boundary the list closes on, which is the one every step of
+        # the pass above cannot reach: `prev_ref` is this track's last pattern
+        # reference, and the wrap plays the restart position with whatever gate
+        # it left open. See _apply_wrap_tie for why only an in-range restart
+        # position counts, and why voice 0 of a subtune yields to the tempo
+        # `apply_tempos` writes into that same row after this runs.
+        if (patterns is not None and exits_tied is not None
+                and prev_ref is not None and prev_ref < len(exits_tied)):
+            _apply_wrap_tie(new_track, patterns, tie_copies,
+                            bool(exits_tied[prev_ref]), ti % 3 == 0, log)
         packed = pack_repeats(new_track) if pack else new_track
         # Merging is attempted only for a track that would otherwise cost its
         # subtune, so no track that already fits is rewritten and the fixture

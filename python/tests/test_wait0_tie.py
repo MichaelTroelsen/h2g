@@ -40,9 +40,10 @@ import pathlib
 import pytest
 
 from corpus import CORPUS, needs_corpus
-from h2g.convert import _detect_tables
-from h2g.patterns import (CMD_TONEPORTA, GT_NO_NOTE, MAX_PATTERNS, TrackIndex,
-                          _apply_boundary_ties, _build_raw_pattern,
+from h2g.convert import _detect_tables, convert
+from h2g.patterns import (CMD_SETTEMPO, CMD_TONEPORTA, GT_NO_NOTE,
+                          MAX_PATTERNS, TrackIndex, _apply_boundary_ties,
+                          _apply_wrap_tie, _build_raw_pattern, apply_tempos,
                           decode_entry, reindex_tracks)
 from h2g.sidfile import load_sid
 
@@ -268,6 +269,115 @@ def test_no_patterns_means_no_pass():
     tracks.py; the pass must simply not run rather than raise."""
     out = reindex_tracks([[0, 1]], _index([True, False]))
     assert out[0] == [0, 1]
+
+
+# --- the wrap: the boundary the orderlist closes on -----------------------
+#
+# `_apply_boundary_ties` reaches every boundary inside a list and none of the
+# one the `$FF` makes. The player's restart is an orderlist fetch like any
+# other -- version 4 zeroes the three indices and jumps to the top without
+# touching `$D404` -- so a list whose LAST entry exits tied re-enters the
+# pattern at its restart position with the gate open.
+#
+# Two things bound it, and both were measured rather than reasoned:
+#
+#   * a `$FD` restart position is Hubbard's *tune ended*, not a loop, so the
+#     wrap the tie describes never happens (2 of the 5 corpus lists that end
+#     on a tied pattern are that);
+#   * voice 0's entry reference belongs to the tempo. `apply_tempos` runs
+#     AFTER `reindex_tracks` and skips a pattern whose command column is
+#     taken, so taking it dropped Star_Paws' tempo writes from 3 patterns to
+#     1 and its subtune 1 read `melody 75% -> 37%`, `retrig 0.96 -> 0.30`,
+#     with all three voices losing three quarters of their attacks.
+
+def test_the_wrap_ties_the_restart_position():
+    patterns = [_pattern(), _pattern()]
+    track = [1, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, True, False) == 1
+    assert track == [2, 0xFF, 0x00], "the restart step was not repointed"
+    assert patterns[2][:4] == [NOTE, 0x01, CMD_TONEPORTA, 0]
+    assert patterns[1][2:4] == [0, 0], "the shared pattern was patched"
+
+
+def test_an_untied_last_entry_wraps_into_nothing():
+    patterns = [_pattern(), _pattern()]
+    track = [1, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, False, False) == 0
+    assert track == [1, 0xFF, 0x00] and len(patterns) == 2
+
+
+def test_a_stop_marker_is_not_a_loop():
+    """`$FF $FD` is Hubbard's *tune ended*: an out-of-range restart position,
+    written so the editor stops. `legalise_restarts` rewrites it to 0 later so
+    gt2reloc will pack the file, but that loop is one the player never plays --
+    tying into it would suppress an attack the original does make."""
+    patterns = [_pattern(), _pattern()]
+    track = [1, 0xFF, 0xFD]
+    assert _apply_wrap_tie(track, patterns, {}, True, False) == 0
+    assert track == [1, 0xFF, 0xFD] and len(patterns) == 2
+
+
+def test_a_transpose_at_the_restart_position_is_stepped_over():
+    """The reader consumes it and plays nothing, so the gate is still open
+    when the pattern behind it arrives -- the same rule `reindex_tracks` uses
+    to let `prev_ref` survive one."""
+    patterns = [_pattern(), _pattern()]
+    track = [0xD5, 1, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, True, False) == 1
+    assert track == [0xD5, 2, 0xFF, 0x00]
+
+
+def test_voice_zeros_entry_reference_belongs_to_the_tempo():
+    patterns = [_pattern()]
+    track = [0, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, True, True) == 0
+    assert track == [0, 0xFF, 0x00] and len(patterns) == 1
+
+
+def test_the_tempo_veto_only_covers_the_step_the_tempo_takes():
+    """The veto is about one row, not about the voice: a restart position
+    naming some later step leaves the entry reference free."""
+    patterns = [_pattern(), _pattern()]
+    track = [0, 1, 0xFF, 0x01]
+    assert _apply_wrap_tie(track, patterns, {}, True, True) == 1
+    assert track == [0, 2, 0xFF, 0x01]
+
+
+def test_reindex_wraps_the_last_entrys_state_into_the_restart():
+    patterns = [_pattern()]
+    tracks = [[0, 0xFF, 0]] * 3
+    out = reindex_tracks(tracks, _index([True]), patterns=patterns)
+    # Voice 0 yields to the tempo; voices 1 and 2 share one tied copy.
+    assert [t[0] for t in out] == [0, 1, 1]
+    assert patterns[1][2:4] == [CMD_TONEPORTA, 0]
+
+
+def test_the_wrap_leaves_voice_zeros_row_for_apply_tempos():
+    """The regression Star_Paws measured, in one assertion: the tempo pass
+    runs after reindexing and cannot write into a column this took."""
+    patterns = [_pattern()]
+    tracks = [[0, 0xFF, 0] for _ in range(3)]
+    out = reindex_tracks(tracks, _index([True]), patterns=patterns)
+    assert apply_tempos(patterns, out, [6]) == 1
+    assert patterns[out[0][0]][2:4] == [CMD_SETTEMPO, 6]
+
+
+@needs_corpus
+def test_star_paws_keeps_all_three_of_its_opening_tempos():
+    """Star_Paws is the only corpus file the wrap reaches, and both of its
+    tied exits are on voice 0 -- so the whole of what this pass does there is
+    to decline. With the veto missing it wrote a tie into the entry pattern of
+    subtunes 1 and 2, and the log line below read `in 1 pattern(s)`.
+
+    `tie=True` is not decoration: it defaults **off**, and without it this
+    test converts a song with no tie state at all and passes whatever the
+    wrap does -- which is how it was first written."""
+    lines: list = []
+    convert(str(CORPUS / "Star_Paws.sid"), log=lines.append, tempo="auto",
+            tie=True)
+    tempo = [ln for ln in lines if ln.startswith("Tempo")]
+    assert len(tempo) == 1, tempo
+    assert "in 3 pattern(s)" in tempo[0], tempo[0]
 
 
 # --- the corpus files this was found on -----------------------------------
