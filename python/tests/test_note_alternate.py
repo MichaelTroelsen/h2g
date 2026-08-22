@@ -121,6 +121,134 @@ def test_no_alternate_note_leaves_the_bit_02_shape_untouched(multiplier):
     assert set(plain[1][:-1]) <= {0x00, 0x80}, "no absolute note anywhere"
 
 
+@pytest.mark.parametrize("multiplier", [1, 2])
+def test_a_coincident_pair_still_alternates_the_note(multiplier):
+    """`alt == wave` is a statement about the *waveform*, and bit $08 is not.
+
+    Where a record's `+2` and its bit-$02 alternate name the same waveform,
+    the waveform alternation is a no-op and the pitch alternation is the whole
+    of what the player does -- one counter, one `AND #$01 / BEQ`, one half
+    sounding the pattern's note and the other the record's own index into the
+    frequency table. The pair used to be declined outright, so the note was
+    flat where the player sounds two.
+    """
+    pair = _wave_alternate_entries(0x81, 0x81, multiplier, start=10,
+                                   budget=12, alt_note=ALT_NOTE)
+    assert pair is not None
+    left, right = pair
+    # One waveform throughout, and the alternation lives entirely in the right
+    # column: the played note on one half, the absolute note on the other.
+    assert set(left[:-1]) == {0x81}
+    assert left[-1] == 0xFF, "still terminated by a jump"
+    assert ALT_NOTE in right[:-1]
+    assert 0x00 in right[:-1], "the record's own half re-asserts the played note"
+
+
+@pytest.mark.parametrize("multiplier", [1, 2])
+def test_a_coincident_pair_without_bit_08_is_still_declined(multiplier):
+    """The pin on the other side. With no alternate note there is genuinely
+    nothing to alternate -- the entries would be N copies of one waveform
+    playing one note -- so the refusal stands exactly as it did.
+    """
+    assert _wave_alternate_entries(0x81, 0x81, multiplier, start=10,
+                                   budget=12) is None
+    assert _wave_alternate_entries(0x81, 0x81, multiplier, start=10,
+                                   budget=12, alt_note=None) is None
+
+
+@pytest.mark.parametrize("alt,wave", [(0x00, 0x41), (0x0F, 0x41), (0x81, 0x00)])
+def test_the_other_two_refusals_are_untouched_by_bit_08(alt, wave):
+    """Only the `alt == wave` clause learned about `alt_note`.
+
+    An alternate in the delay range is not a waveform at all, and a record
+    with no waveform of its own has nothing to alternate *from* -- neither is
+    made emittable by the presence of a note, and **neither occurs on any
+    in-use corpus record that sets bit $08** (see the census below), so there
+    is no evidence to widen them on.
+    """
+    assert _wave_alternate_entries(wave, alt, 1, start=10, budget=12,
+                                   alt_note=ALT_NOTE) is None
+
+
+@needs_corpus
+def test_the_coincident_pair_is_one_record_in_one_file():
+    """The reach, stated as a census rather than as a byte-hash.
+
+    Of the 69 in-use records that set bit $08 and resolve a note, 68 have a
+    bit-$02 pair that emits on its own terms. The 69th is
+    Dragons_Lair_Part_II's record 24 -- `+2 $81`, alternate `$81`, effect
+    `$0A`, note index `$20` -- and it is the only record corpus-wide where the
+    pair declines. The other eleven bit-$08 records whose pair declines all
+    sit **past** `det.instr_used`: dead table cells, which is why the corpus
+    byte-hash for this change names exactly one file.
+    """
+    emitted, declined = 0, []
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        det = detect(sid, lambda _m: None)
+        if det.note_alternate < 0 or det.wave_alternate < 0:
+            continue
+        for i in range(max(det.instr_used, 0)):
+            rec = det.instr_start + i * det.instr_stride
+            if not sid.data[rec + 7] & 0x08:
+                continue
+            if _note_alternate_note(sid, det, i) is None:
+                continue
+            wave = sid.data[rec + 2]
+            alt = sid.data[det.wave_alternate + i * det.instr_stride]
+            if alt == wave:
+                declined.append((path.stem, i, wave, alt))
+            else:
+                emitted += 1
+    assert emitted == 68
+    assert declined == [("Dragons_Lair_Part_II", 24, 0x81, 0x81)]
+
+
+@needs_corpus
+def test_the_coincident_record_is_played():
+    """It is worth emitting because a pattern reaches it.
+
+    A record past `instr_used` is a dead cell and correcting it would buy
+    nothing. This one is GT instrument 25 (`i + 2` = `$1A` in its provenance
+    stamp) and three pattern rows name it, in a pattern an orderlist reaches.
+
+    **No column of `FIDELITY.md` can adjudicate the change**: it moves a noise
+    instrument's *pitch*, which `nrun` (run lengths) and `melody` (the attack
+    frame) are both blind to by construction, and the record sounds only in
+    subtune 7 while the report traces one subtune -- one this file is already
+    known to trace wrongly (15% on the diagonal, 60% at o9). The reach and
+    this census are the evidence; a listening check is `[user]` work.
+    """
+    import json
+
+    import fidelity
+    import songview
+    from h2g.convert import convert
+
+    doc = json.loads((REPO_ROOT / "presets.json").read_text())
+    name = "Dragons_Lair_Part_II.sid"
+    song = songview.parse_sng(convert(str(CORPUS / name), log=lambda _m: None,
+                                      **fidelity._preset_opts(doc, name)))
+    assert len(song.instruments) >= 25
+    # `i + 2` in hex, the provenance stamp `_write_instruments` writes.
+    assert song.instruments[24].name.startswith("1A:"), song.instruments[24].name
+
+    reached = {int(what[1:], 16)
+               for track in song.tracks
+               for kind, what, _n in songview.decode_orderlist(track)
+               if kind == "pattern"}
+    rows = [(pn, r // 4)
+            for pn, patt in enumerate(song.patterns) if pn in reached
+            for r in range(0, len(patt), 4) if patt[r + 1] == 25]
+    assert rows, "record 24 is a dead cell after all -- re-read the census"
+    assert len(rows) == 3
+
+    left, right = zip(*song.tables["WTBL"][song.instruments[24].wave_ptr - 1:][:8])
+    stop = left.index(0xFF)
+    assert set(left[:stop]) == {0x81}, "one waveform"
+    assert 0xA0 in right[:stop], "and an absolute note on one half of the pair"
+
+
 def test_the_fixture_has_no_such_block():
     """Commando is not in the dialect, so nothing here can reach it -- which
     is what keeps the byte-exact fixture byte-exact.

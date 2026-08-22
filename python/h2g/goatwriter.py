@@ -764,13 +764,47 @@ def _wave_alternate_entries(wave: int, alt: int, multiplier: int = 1,
     where reading those two bytes the other way round made the whole
     `program` bucket of `VIBRATO.md` read zero.
     """
-    if alt <= WAVE_MAX_DELAY or alt == wave or not (wave & 0xF0):
+    if (alt <= WAVE_MAX_DELAY
+            or (alt == wave and alt_note is None)
+            or not (wave & 0xF0)):
         # An alternate in the delay range is not a waveform; an alternate
         # equal to `+2` alternates with itself; and a record with no waveform
         # of its own has nothing to alternate *from*. That last is a real
         # under-read rather than the one `_sfx_drum_entries` used to make: a
         # bit-$80 record with no waveform is the drum *alone* and is now
         # encoded (v0.5.253), where an alternation genuinely needs two.
+        #
+        # **`alt == wave` is a statement about the waveform only, so it stops
+        # being a refusal the moment `alt_note` is present.** Bit $08 rides
+        # this pair (see the docstring), and when the record's `+2` and its
+        # alternate name the same waveform the *pitch* is the whole of what
+        # the player alternates: same counter, same `AND #$01 / BEQ`, one half
+        # sounding the pattern's note and the other the record's own index
+        # into the player's frequency table. Declining there emitted a flat
+        # note where the player sounds two.
+        #
+        # Corpus-wide this reaches **one record**: Dragons_Lair_Part_II's 24
+        # (`+2 $81`, alternate `$81`, effect `$0A`, note index `$20` -> `$A0`),
+        # the only record in any file where `alt == wave`, bit $08 is set, the
+        # index resolves to a note, and the record is inside `det.instr_used`.
+        # The other eleven bit-$08 records that resolve a note and reach no
+        # alternation -- for any of these three reasons, or because the record
+        # does not set bit $02 at all -- sit *past* `instr_used`: dead table
+        # cells, the same shape the note-frequency census found. Neither of
+        # the other two clauses fires on a single in-use record, so there is
+        # no evidence to widen either of them on.
+        # This one is played: 3 rows of GT pattern 39, reached by subtune 7
+        # voice 1.
+        #
+        # **No column of `FIDELITY.md` can adjudicate this**, and that is
+        # structural rather than a gap in the effort. The change moves a noise
+        # instrument's *pitch*, and `nrun` compares run lengths while `melody`
+        # reads the attack frame -- CLAUDE.md's own "no report column sees a
+        # noise frame's pitch". The file is doubly unadjudicable: its traced
+        # subtune is not the music our subtune 0 plays (15% on the diagonal,
+        # 60% at o9), and this record only sounds in subtune 7, which nothing
+        # traces. What is checked is the reach -- a corpus byte-hash names
+        # this one file -- and `tests/test_note_alternate.py`.
         return None
     if start is None:
         return None
