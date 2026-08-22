@@ -1,14 +1,13 @@
 {
  "generated_from": {
-  "head": "c6944d4",
+  "head": "9ec3133",
   "sources": [
-   ".claude/tasks/runs.jsonl (83 lines, 73 ids, read in full)",
-   ".claude/tasks/whattask.json (previous plan, head 0e9f254)",
-   "git log 0e9f254..c6944d4 (12 commits, v0.5.350-v0.5.353)",
+   ".claude/tasks/runs.jsonl (88 lines, 76 ids, read in full)",
+   ".claude/tasks/whattask.json (previous plan, head c6944d4)",
+   "git log c6944d4..9ec3133 (2 commits, v0.5.354 and the cycle record)",
+   "a CARRY-OVER ROT CHECK: every task's verify grepped for quoted code that no longer exists (26 tokens, 5 absent, 1 a true positive)",
    "whats-next.md (SPENT at 350851e -- see the prose)",
-   "the v0.5.352 --fidelity re-search and its v0.5.353 retraction",
-   "git worktree list / per-worktree content comparison",
-   "CLAUDE.md, H2G-CONVERSION-METHOD.md, python/fidelity.py",
+   "CLAUDE.md, python/survey.py, python/listen.py",
    "issues: none (no reachable forge -- `gh issue list` empty)",
    "prs: none (no reachable forge -- `gh pr list` empty)"
   ],
@@ -33,7 +32,8 @@
   "regenerate FIDELITY.md/VIBRATO.md on a COMMITTED tree: commit the other artefacts first, or the stamp reads `-dirty` and needs a second pass",
   "a fidelity.py --json row does NOT carry `retrig`, `hold` or `tail`, and names `pitch` as `pitch_jaccard` and `seq` as `sequence` -- a probe that asks for the printed names gets None and skips them SILENTLY (this cost an adopted-then-retracted preset at v0.5.352/353)",
   "build/fidelity.json is gitignored but feeds a committed feature (abpage's notes-per-voice card); a fresh clone renders it empty until `fidelity.py --json` is run",
-  "the plugin's LOCKING.md carries half the refs/stash rule and lives OUTSIDE this repo, so it is in no commit here"
+  "the plugin's LOCKING.md carries half the refs/stash rule and lives OUTSIDE this repo, so it is in no commit here",
+  "a task INHERITED from an earlier plan is never re-checked against the code, so a verify quoting code can rot indefinitely -- listen-merge-notes-stale-header survived three plans that way. Grep quoted code, EXCLUDING .claude/ and CHANGELOG.md, which quote the verify strings themselves and make the check vacuous"
  ],
  "external_locks": [
   ".claude/tasks/serial.lock"
@@ -212,33 +212,6 @@
    "why_model": "rshift and the delay bias have each been derived wrongly once, and no column measures an oscillation rate",
    "why_mode": "goatwriter.py, verified against songview and the census",
    "why_lane": "writes goatwriter.py"
-  },
-  {
-   "id": "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest",
-   "title": "The tick-0 compensation pushes 15 files further from 1 -- Mozart 1.468 -> 2.031",
-   "source": "runs.jsonl: powerplay-vibrato-rate-still-two-thirds (opened); measured at ebc9d1a",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/classic-vibrato-row-calls",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:VIBRATO.md",
-    "r:presets.json",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "ebc9d1a shortens `cmp` by (row_calls - 1)/row_calls because the packed player skips continuous effects on tick 0 (player.s:982-987, REALTIMEOPTIMIZATION, confirmed by packing the same .sng with -R0: Powerplay 0.658 -> 1.015). The mechanism is right and the aggregate improved -- 27 files toward 1, 15 away, mean |ln(ratio)| 0.2293 -> 0.1893 -- but `row_calls` is taken from the SHORTEST row an instrument reaches where the rate a listener hears is the mean over the rows the orderlist actually PLAYS. Weight by play count, as 7.ccc requires for a distribution rather than a safety bound. Settle it on the same 48-file A/B in log space; the target is fewer than 15 files moving away, with Mozart (1.468 -> 2.031) and One_on_One_Jordan_vs_Bird (0.759 -> 1.562) the two to start from. Do NOT move `rshift` to compensate: v0.5.129 left it alone because its error cancels the period's, and the factor wanted at row_calls == 3 is log2(3/2) = 0.585, which an integer shift cannot express.",
-   "why_model": "a rate constant reaching 48 files where the obvious compensation doubles every file's depth",
-   "why_mode": "corpus-wide and its own metric cannot adjudicate it -- no dimension of FIDELITY.md measures an oscillation rate",
-   "why_lane": "writes goatwriter.py, the busiest shared file on this list"
   },
   {
    "id": "cmdtable-chord-arpeggio-emission",
@@ -889,29 +862,6 @@
    "why_lane": "writes goatwriter.py and two generated artefacts"
   },
   {
-   "id": "listen-merge-notes-stale-header",
-   "title": "merge_notes keeps the stale file's header, not the parts'",
-   "source": "runs.jsonl: restage-listening-set (opened)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/listen.py",
-    "rw:python/tests",
-    "rw:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "merge_notes iterates `[outdir/'LISTENING.md'] + parts` with `head = head or h`, so a PRE-EXISTING LISTENING.md's header wins over the parts' -- its own docstring claims it 'keeps the first part's header', which it does not. A merged document once opened 'h2g 0.5.306, 30 s, SID2WAV' over a 0.5.316 / 120 s / sidplayfp run. Fix and add a test with a pre-existing file present",
-   "why_model": "a one-line reduction bug with the mechanism already diagnosed",
-   "why_mode": "one module plus a test",
-   "why_lane": "writes listen.py and reads build/listen while the abpage tasks rebuild it"
-  },
-  {
    "id": "listen-verdicts",
    "title": "Listen, and settle the four waiting decisions",
    "source": "whats-next.md item 1 and Immediate next action; runs.jsonl: restage-listening-set (done)",
@@ -1482,6 +1432,34 @@
    "why_lane": "writes H2G-CONVERSION-METHOD.md, shared with three doc tasks"
   },
   {
+   "id": "reversal-ratio-may-be-nonlinear-in-oscillation-rate",
+   "title": "One_on_One shortens by exactly 0.750 and its ratio moves x2.06 -- the measure may be non-linear",
+   "source": "runs.jsonl: classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest (opened)",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:VIBRATO.md",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/reversal-ratio-may-be-nonlinear-in-oscillation-rate",
+    "r:FIDELITY.md"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "THE ARITHMETIC DOES NOT CLOSE, which is why this is a task. One_on_One_Jordan_vs_Bird's four classic-vibrato instruments ALL shorten from cmp 2 to cmp 1 at ebc9d1a -- a half-period ratio of exactly 0.750, the intended factor -- and a 0.750 period should raise the reversal count by about 1.33. The file's reversal ratio moved 0.759 -> 1.562, x2.06. Something other than the rate is moving the count. The leading suspect is the measure itself: `reversals_by_instrument` skips {a-1, a, a+1}, so an oscillation whose excursion straddles that dead band produces NO reversals until it is fast enough, and then produces them all at once -- a step, not a slope. Settle it by synthesising a known oscillation at a sweep of rates and plotting the counted reversals against the true count; a linear measure gives a straight line. If it is non-linear, say what that means for every `vib` figure in FIDELITY.md, because they are all read as if proportional.",
+   "why_model": "the measure every vibrato decision has been judged by may not be monotone in what it claims to measure",
+   "why_mode": "it would recolour published figures corpus-wide, so the interpretation matters more than the patch",
+   "why_lane": "writes fidelity.py, shared with five harness tasks"
+  },
+  {
    "id": "robs-life-no-signature",
    "title": "Robs_Life carries three byte-identical copies of one player and converts to nothing",
    "source": "runs.jsonl: multi-engine-sid-one-player-assumption (opened)",
@@ -1685,30 +1663,6 @@
    "why_lane": "writes fidelity.py and FIDELITY.md"
   },
   {
-   "id": "survey-template-carries-the-superseded-census-headline",
-   "title": "survey.py's template still says 'essentially all of the loss is reading past the end' -- it is three quarters",
-   "source": "runs.jsonl: subtune-census-doc-refresh (opened)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/survey.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad",
-    "r:SUBTUNES.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "python/survey.py:624's sentence 'Of the loss below, essentially all is that' no longer stands: 97 subtunes across 8 files have a POSITIVE player-derived cause (the init dispatch), so it is three quarters. It is a GENERATED template, so no doc edit can reach it -- confirm by generating into a SCRATCH path with -o, never over ../SUBTUNES.md. Regenerating the artefact itself is [main] work and is not this task.",
-   "why_model": "a template sentence with the corrected numbers already derived",
-   "why_mode": "one line in survey.py, checked by a scratch generation",
-   "why_lane": "writes survey.py; its verify runs the generator, whose output goes to the shared scratchpad"
-  },
-  {
    "id": "sweep-direction-metric",
    "title": "`pul` and `cut` count movement without judging direction",
    "source": "PER-SONG-PLAN.md section 2; whats-next.md item 12",
@@ -1775,12 +1729,10 @@
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "a test transcribing the compensation the way tests/test_call_rate.py already transcribes gplay.c's delay loop -- against the loop that consumes the value, not the constant that names it. It must fail if the (row_calls - 1)/row_calls factor is removed and if `cmp` stops being multiplied by `multiplier`. Byte-inert: corpus byte-hash names zero files.",
+   "verify": "READY: its dependency closed at 9ec3133, which changed no code -- so the compensation to pin is ebc9d1a's, unchanged. A test transcribing it the way tests/test_call_rate.py transcribes gplay.c's delay loop: against the loop that CONSUMES the value, not the constant that names it. It must fail if the (row_calls - 1)/row_calls factor is removed and if `cmp` stops being multiplied by `multiplier`. Pin the QUANTISATION too, now that it is measured: the realised half-period is `cmp + 2` calls, so at cmp 0 no compensation is possible at all and Mozart's four instruments receive 1.000, 0.750, 0.667 and 0.700 for one intended 0.667. Byte-inert: corpus byte-hash names zero files.",
    "why_model": "a transcription of a rule already derived and measured",
    "why_mode": "one test file, byte-inert",
    "why_lane": "writes a test file other tasks also write"
@@ -1910,6 +1862,32 @@
    "why_lane": "writes fidelity.py and VIBRATO.md"
   },
   {
+   "id": "vibrato-cmp-quantisation-limits-the-tick0-correction",
+   "title": "The tick-0 correction is quantised: at cmp 0 none is possible, and one file's instruments get factors from 1.000 to 0.667",
+   "source": "runs.jsonl: classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest (opened)",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:VIBRATO.md",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/vibrato-cmp-quantisation-limits-the-tick0-correction"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "MEASURED, not hypothesised: `_classic_vibrato_entry` multiplies `half` by (row_calls-1)/row_calls and then quantises to `cmp = round(half) - VIBRATO_CMP_BIAS`, while the realised half-period is `cmp + 2` calls. So the correction a record actually receives is (cmp_after + 2)/(cmp_before + 2), which at small cmp is coarse and at cmp 0 is impossible. Mozart, one file, row_calls 3, intended 0.667: byte $0A gets 1.000 (floored), $12 0.750, $1A 0.667, $2A 0.700. Any fix must either accept that ceiling or move the rate somewhere with finer resolution -- and `rshift` is NOT that place (v0.5.129 left it alone because its error cancels the period's, and the factor wanted at row_calls 3 is log2(3/2) = 0.585, which an integer shift cannot express). Judge any candidate on the 48-file reversal-ratio A/B in log space, and read it beside the note counts.",
+   "why_model": "a rate encoding whose resolution limit has to be understood before any candidate is judged",
+   "why_mode": "corpus-wide, and no dimension of the report measures an oscillation rate directly",
+   "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+  },
+  {
    "id": "vibrato-tick0-skip-lfo-and-triangle-engines",
    "title": "The tick-0 skip applies to every continuous effect, not just classic vibrato",
    "source": "runs.jsonl: powerplay-vibrato-rate-still-two-thirds (opened)",
@@ -2009,6 +1987,29 @@
    "why_model": "an emitter change with three ways to be silently wrong, one of which screeches",
    "why_mode": "goatwriter.py with a five-instrument A/B and a byte-hash",
    "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+  },
+  {
+   "id": "whattask-spot-check-carryover-verify-strings",
+   "title": "Make the carry-over rot check part of the planning pass, not a one-off",
+   "source": "derived: listen-merge-notes-stale-header survived three plans (96298cc)",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks",
+    "r:CHANGELOG.md",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/whattask-spot-check-carryover-verify-strings"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "a task INHERITED from an earlier plan is never re-checked against the code -- only the run log and recent commits are reconciled -- so a verify that quotes code can rot indefinitely. listen-merge-notes-stale-header was fixed at 96298cc and carried as open through three plans because its verify quoted `head = head or h`, which the file no longer contains. The check: extract backtick-quoted code-like tokens from every task's verify and `git grep -F` each one. TWO TRAPS, both hit while building it. (1) The grep MUST exclude `.claude/` and CHANGELOG.md -- they quote the verify strings themselves, so every token is trivially present and the check is vacuous, which is exactly how the original rot went unnoticed. (2) Validate the detector against the known-rotten string before trusting a clean result; a check that has never fired is not evidence. Known false-positive kinds, worth filtering: language builtins (`dict.get`), PROPOSED code a verify asks someone to write (`ticks + 1 >= row_calls`), and abbreviations containing `...`. On the plan at 9ec3133 the check reports 26 tokens, 5 absent, 4 of them these kinds and 1 the true positive already closed.",
+   "why_model": "the detector is built and validated; what remains is wiring it into the pass",
+   "why_mode": "edits the planning machinery this session owns",
+   "why_lane": "writes .claude/tasks, where the orchestrator holds serial.lock"
   },
   {
    "id": "widened-tempo-ab-rerun",
@@ -2563,6 +2564,24 @@
    "title": "Crazy Comets is 641 of 642 attacks with the boundary tie on OR fully suppressed",
    "closed_by": "2c13d0a",
    "reason": "Deliberately produced no diff, and the cause is that there is no missing attack: 642 = 640 paired + 2 cut by the trace window, and in the region both traces can express OURS has a surplus. Recorded in the cycle commit rather than in code. It opened the harness-window finding."
+  },
+  {
+   "id": "survey-template-carries-the-superseded-census-headline",
+   "title": "survey.py's template still says 'essentially all of the loss is reading past the end' -- it is three quarters",
+   "closed_by": "627a10b",
+   "reason": null
+  },
+  {
+   "id": "listen-merge-notes-stale-header",
+   "title": "merge_notes keeps the stale file's header, not the parts'",
+   "closed_by": "96298cc",
+   "reason": "NEVER OPEN. Fixed at 96298cc (v0.5.317) -- the code reads `head = h or head`, the corrected form, and the regression test the DoD asks for already exists. It was carried as open through THREE plans because its verify quoted the BUGGY expression as though present, and reconciliation re-checks the run log and recent commits but never an inherited task against the code. That gap is now closed by whattask-spot-check-carryover-verify-strings."
+  },
+  {
+   "id": "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest",
+   "title": "The tick-0 compensation pushes 15 files further from 1 -- Mozart 1.468 -> 2.031",
+   "closed_by": "9ec3133",
+   "reason": "PREMISE REFUTED, no code changed and none owed. 12 of the 15 files that regressed at ebc9d1a have ONE row length, so every reduction over the tempo values is the same number and the proposed play-weighted rule is provably inert on them -- including Mozart and One_on_One, the two the task named to start from. What the measurement found instead is the quantisation ceiling, now open as vibrato-cmp-quantisation-limits-the-tick0-correction."
   }
  ]
 }
