@@ -2857,8 +2857,46 @@ DIMENSIONS = (
     # vibrato (`--vibrato` off takes the count from 245 to zero). A corpus A/B
     # read off `slides` is therefore ranking vibrato rates while appearing to
     # rank slides, which is how the -R0 question got answered twice, differently.
+    # **`vib` IS NOT PROPORTIONAL TO THE RATE ERROR, and on short notes it is
+    # not even close.** `reversals_by_instrument` counts sign changes per NOTE,
+    # so a note of `L` frames oscillating at half-period `p` yields
+    # `floor(L / p) - 1` reversals -- a STEP function, not `L / p`. The step is
+    # invisible while `L / p` is large and dominates when it is small, because
+    # a rate change only registers when it carries the note across a whole
+    # half-cycle boundary.
+    #
+    # Measured, by feeding a synthetic triangle of known reversal count through
+    # this very function. A rate change of x1.333 (Goattracker `cmp` 2 -> 1,
+    # half-period 4 -> 3 calls) reads as:
+    #
+    #       note length   600 frames  ->  x1.336     (linear, as expected)
+    #                     64          ->  x1.333
+    #                     16          ->  x1.333
+    #                     12          ->  x1.500
+    #                     10          ->  x1.951
+    #                      6          ->  x40.0
+    #
+    # That is what put One_on_One_Jordan_vs_Bird at x2.057 for a x1.333 change
+    # at ebc9d1a: all six of its classic-vibrato entries move by at most
+    # x1.333, and no weighting of factors that size can reach 2.057 -- the
+    # remainder is whole half-cycles newly fitting inside its notes. Verified
+    # in isolation with the compensation toggled on one tree: 574 -> 1181 of
+    # the original's 756.
+    #
+    # THE COUNTER ITSELF IS SOUND: amplitude-independent down to one frequency
+    # unit, and exact against a known count at every rate once the notes are
+    # long. The non-linearity is the note, not the measure -- and NOT the
+    # `{a - 1, a, a + 1}` attack skip, which was the obvious suspect and is
+    # refuted (the sweep above holds with the skip in place).
+    #
+    # So: read `vib` as "does it oscillate at roughly the right rate", never as
+    # "it is 1.56x too fast". Two files with the same true rate error score
+    # differently if their notes differ in length, and a file whose notes are
+    # a few half-periods long can swing wildly on a change that is small in
+    # calls. See `test_reversal_step_function`.
     Dimension("reversal_ratio", "vib", ("$D400/$D401",), "ratio",
-              "how fast the pitch oscillates, over the original's rate"),
+              "how fast the pitch oscillates, over the original's rate -- a "
+              "STEP function of the rate on short notes, not proportional"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of

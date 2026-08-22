@@ -1279,3 +1279,65 @@ def test_an_instrument_only_one_side_plays_is_absent_not_wrong():
         [_tail_voice(0x0, 0x2950)], [_tail_voice(0x0, 0x1230)], 20)
     assert got["release_tail_instruments"] == 0
     assert got["release_tail_agreement"] is None
+
+
+def _oscillating_voice(note_len, half, nnotes=40, adsr=0x0F00,
+                       amp_per_half=0x40, base=0x2000):
+    """`nnotes` notes of `note_len` frames, each a triangle of half-period
+    `half`. The true reversal count per note is `floor(note_len / half) - 1`.
+    """
+    vals, atk = [], []
+    for i in range(nnotes):
+        atk.append(i * note_len)
+        for f in range(note_len):
+            phase, pos = (f // half) % 2, f % half
+            step = amp_per_half / half
+            vals.append(base + round(step * (pos if phase == 0 else half - pos)))
+    v = fidelity.Voice()
+    v.attack_frames = atk
+    v.freq_events = [(f, vals[f]) for f in range(len(vals))]
+    v.adsr_events = [(0, adsr)]
+    return v, len(vals)
+
+
+def _reversals(note_len, half):
+    v, n = _oscillating_voice(note_len, half)
+    return fidelity.reversals_by_instrument([v], n).get(0x0F00, 0)
+
+
+def test_reversal_counting_is_exact_on_long_notes():
+    """The counter itself is sound: against a synthetic triangle whose reversal
+    count is known, one long note reads the true count at every rate."""
+    v, n = _oscillating_voice(600, 4, nnotes=1)
+    got = fidelity.reversals_by_instrument([v], n)[0x0F00]
+    assert got == (600 // 4) - 1
+
+
+def test_reversal_counting_is_amplitude_independent():
+    """Down to a single frequency unit of excursion -- so a `vib` move is never
+    an amplitude artefact."""
+    counts = {amp: fidelity.reversals_by_instrument(
+        [_oscillating_voice(600, 4, nnotes=1, amp_per_half=amp)[0]], 600)[0x0F00]
+        for amp in (1, 2, 4, 0x40, 0x400)}
+    assert len(set(counts.values())) == 1, counts
+
+
+def test_reversal_step_function():
+    """**`vib` is a STEP function of the rate on short notes, not proportional.**
+
+    Reversals per note are `floor(L / p) - 1`, so a rate change registers only
+    where it carries the note across a whole half-cycle boundary. This is why
+    One_on_One_Jordan_vs_Bird read x2.057 at ebc9d1a for entries that each move
+    by at most x1.333 -- see the `vib` Dimension's comment. If this test starts
+    failing, the counter changed and every `vib` figure ever published moved
+    with it.
+    """
+    # a x1.333 rate change (half-period 4 -> 3), at several note lengths
+    assert _reversals(600, 3) / _reversals(600, 4) == pytest.approx(1.336, abs=0.01)
+    assert _reversals(64, 3) / _reversals(64, 4) == pytest.approx(1.333, abs=0.01)
+    # short notes: the same rate change reads far larger
+    assert _reversals(10, 3) / _reversals(10, 4) > 1.9
+    assert _reversals(12, 3) / _reversals(12, 4) > 1.4
+    # and the attack skip is NOT the cause -- the effect survives it, which is
+    # what refutes the {a-1, a, a+1} dead-band hypothesis
+    assert _reversals(600, 4) > 0
