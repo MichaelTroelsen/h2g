@@ -8,8 +8,12 @@ them. A page disagreeing with the report it cites would be the failure mode
 worth catching, since a listener would then be told the wrong thing to listen
 for.
 """
+import base64
 import html.parser
+import math
+import struct
 import sys
+import wave
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -346,6 +350,100 @@ def test_the_page_omits_the_notes_strip_when_no_fidjson_is_given():
     rather than change what those pages say."""
     got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=False)
     assert "Notes per voice" not in got
+
+
+# ---- spectrogram: both sides' FFT, precomputed at build time ------------
+#
+# The verify clause is "readable at 120s, drawing in under a second" -- the
+# under-a-second part cannot be tested here (it is a browser question, same
+# disclaimer as the module docstring), so what these tests pin is that the
+# heavy pass runs in Python at build time and hands the page two fixed-size
+# byte grids, and that it degrades to "no card" rather than crashing on the
+# same malformed/missing input the rest of this file already exercises.
+
+def _write_test_wav(path, seconds=0.3, freq=440.0, framerate=8000):
+    """A short real mono 16-bit WAV -- enough samples for one SPEC_WINDOW
+    frame, at a framerate cheap enough to keep the test fast."""
+    n = int(seconds * framerate)
+    frames = bytearray()
+    for i in range(n):
+        v = int(16000 * math.sin(2 * math.pi * freq * i / framerate))
+        frames += struct.pack("<h", v)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(framerate)
+        w.writeframes(bytes(frames))
+
+
+def test_spectrogram_payload_is_none_when_files_are_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    assert A.spectrogram_payload("Nope") is None
+
+
+def test_spectrogram_payload_is_none_for_unreadable_wav_bytes(tmp_path, monkeypatch):
+    """The documented hazard: a test fixture's placeholder WAV bytes (see
+    test_main_prunes_a_page_whose_pair_was_removed below) must not crash a
+    build."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "X.original.wav").write_bytes(b"RIFF....WAVEfmt ")
+    (tmp_path / "X.h2g.wav").write_bytes(b"RIFF....WAVEfmt ")
+    assert A.spectrogram_payload("X") is None
+
+
+def test_spectrogram_payload_returns_fixed_size_grids_for_a_real_pair(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _write_test_wav(tmp_path / "X.original.wav", freq=440.0)
+    _write_test_wav(tmp_path / "X.h2g.wav", freq=880.0)
+    spec = A.spectrogram_payload("X")
+    assert spec is not None
+    assert spec["cols"] == A.SPEC_COLS
+    assert spec["bins"] == A.SPEC_BINS
+    got_a = base64.b64decode(spec["a"])
+    got_b = base64.b64decode(spec["b"])
+    assert len(got_a) == A.SPEC_COLS * A.SPEC_BINS
+    assert len(got_b) == A.SPEC_COLS * A.SPEC_BINS
+    assert all(0 <= v <= 255 for v in got_a)
+
+
+def test_spectrogram_card_is_empty_with_no_spectrogram():
+    assert A.spectrogram_card(None) == ""
+    assert A.spectrogram_card({}) == ""
+
+
+def test_spectrogram_card_names_the_range_it_drew():
+    spec = {"cols": 480, "bins": 64, "fmin": 40.0, "fmax": 12000.0, "a": "", "b": ""}
+    got = A.spectrogram_card(spec)
+    assert '<canvas id="spectro">' in got
+    assert "480 time slices" in got
+    assert _balanced('<div class="wrap">%s</div>' % got) == []
+
+
+def test_the_page_embeds_null_spectrogram_when_none_is_staged(tmp_path, monkeypatch):
+    """Every existing call to page() in this file stages no WAVs -- the new
+    embed must default to null rather than change what those pages say.
+
+    LISTEN is monkeypatched to an EMPTY directory rather than left alone: the
+    real build/listen is a hazard path that may hold 83 staged pairs, and
+    "W_A_R" is one of them. Without this the test asserts the opposite of the
+    truth on any tree where a human has staged listening material -- it passed
+    in the worktree that wrote it (no build/) and failed on master (83 pairs).
+    A test whose result depends on the developer's staging is not a test.
+    """
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    got = A.page("W_A_R", ROW, [], "v1", embed=False, index_link=False)
+    assert "window.__abSpectrogram = null;" in got
+    assert "<canvas id=\"spectro\">" not in got
+
+
+def test_the_page_embeds_the_spectrogram_when_a_pair_is_staged(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _write_test_wav(tmp_path / "X.original.wav", freq=440.0)
+    _write_test_wav(tmp_path / "X.h2g.wav", freq=880.0)
+    got = A.page("X", ROW, [], "v1", embed=False, index_link=False)
+    assert '<canvas id="spectro">' in got
+    assert "window.__abSpectrogram = {" in got
+    assert _balanced(got) == []
 
 
 def test_main_prunes_a_page_whose_pair_was_removed(tmp_path, monkeypatch):

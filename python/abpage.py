@@ -30,8 +30,12 @@ from __future__ import annotations
 
 import argparse
 import base64
+import cmath
 import json
+import math
 import re
+import struct
+import wave
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -132,6 +136,235 @@ def fidelity_json_rows() -> dict[str, dict]:
         if stem:
             out.setdefault(stem, row)
     return out
+
+
+# ---- spectrogram: both sides' FFT, precomputed at build time -------------
+#
+# A per-sample FFT in the browser over two two-minute WAVs cannot draw in
+# under a second -- so the heavy pass runs exactly once, here, in Python, and
+# the page ships two small fixed-size byte grids (bins x cols) that cost the
+# same to paint regardless of how long the tune runs. Log-spaced frequency
+# bins, because an octave low down and an octave up high are the same size
+# to the ear and should be the same width on screen.
+SPEC_COLS = 480          # ~250ms/column over a 120s tune
+SPEC_BINS = 64
+SPEC_WINDOW = 2048       # power of two; ~46ms per analysis frame at 44.1kHz
+SPEC_FMIN = 40.0
+SPEC_FMAX = 12000.0
+SPEC_FLOOR_DB = -60.0
+
+_TWIDDLE_CACHE: dict[int, list[complex]] = {}
+_HANN_CACHE: dict[int, list[float]] = {}
+
+
+def _twiddles(n: int) -> list[complex]:
+    t = _TWIDDLE_CACHE.get(n)
+    if t is None:
+        t = [cmath.exp(-2j * math.pi * k / n) for k in range(n // 2)]
+        _TWIDDLE_CACHE[n] = t
+    return t
+
+
+def _hann(n: int) -> list[float]:
+    w = _HANN_CACHE.get(n)
+    if w is None:
+        w = [0.5 - 0.5 * math.cos(2 * math.pi * i / (n - 1)) for i in range(n)]
+        _HANN_CACHE[n] = w
+    return w
+
+
+def _fft(a: list[complex]) -> list[complex]:
+    """Iterative radix-2 Cooley-Tukey. `len(a)` must be a power of two.
+
+    Pure stdlib (no numpy is used anywhere else in this project -- see
+    CLAUDE.md's "no third-party runtime dependencies"), and called ~1000
+    times per page build, so twiddle factors are cached across calls rather
+    than recomputed per FFT.
+    """
+    n = len(a)
+    a = a[:]
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j ^= bit
+        if i < j:
+            a[i], a[j] = a[j], a[i]
+    length = 2
+    while length <= n:
+        half = length // 2
+        tw = _twiddles(length)
+        for start in range(0, n, length):
+            for k in range(half):
+                u = a[start + k]
+                v = a[start + k + half] * tw[k]
+                a[start + k] = u + v
+                a[start + k + half] = u - v
+        length <<= 1
+    return a
+
+
+def _read_wav_mono(path: Path) -> tuple[list[float], int] | None:
+    """16-bit PCM samples as floats in [-1, 1], averaged to mono if needed.
+
+    Returns None for anything that is not a readable 16-bit WAV -- including
+    the truncated placeholder bytes a test fixture writes in place of real
+    audio -- so a page build never crashes on bad or missing input.
+    """
+    try:
+        with wave.open(str(path), "rb") as wf:
+            n_channels = wf.getnchannels()
+            sampwidth = wf.getsampwidth()
+            framerate = wf.getframerate()
+            raw = wf.readframes(wf.getnframes())
+    except (wave.Error, EOFError, OSError):
+        return None
+    if sampwidth != 2 or framerate <= 0:
+        return None
+    usable = len(raw) - (len(raw) % 2)
+    if usable <= 0:
+        return None
+    try:
+        ints = struct.unpack("<%dh" % (usable // 2), raw[:usable])
+    except struct.error:
+        return None
+    if n_channels <= 1:
+        samples = [s / 32768.0 for s in ints]
+    else:
+        samples = [
+            sum(ints[i:i + n_channels]) / n_channels / 32768.0
+            for i in range(0, len(ints) - n_channels + 1, n_channels)
+        ]
+    if not samples:
+        return None
+    return samples, framerate
+
+
+def _log_bin_lookup(framerate: int, window: int, fmin: float, fmax: float,
+                    bins: int) -> list[int]:
+    """For each rFFT bin `0..window//2`, the log-spaced bin (`0..bins-1`) its
+    frequency falls in, or -1 outside `[fmin, min(fmax, nyquist))`."""
+    hi = min(fmax, framerate / 2)
+    if hi <= fmin:
+        return [-1] * (window // 2 + 1)
+    ratio = hi / fmin
+    out = []
+    for k in range(window // 2 + 1):
+        f = k * framerate / window
+        if f < fmin or f >= hi:
+            out.append(-1)
+            continue
+        b = int(math.log(f / fmin) / math.log(ratio) * bins)
+        out.append(min(bins - 1, max(0, b)))
+    return out
+
+
+def _spectrogram_grid(samples: list[float], framerate: int, cols: int,
+                      bins: int, window: int = SPEC_WINDOW,
+                      fmin: float = SPEC_FMIN,
+                      fmax: float = SPEC_FMAX) -> list[list[float]] | None:
+    """`bins` x `cols` grid of average power, one column per time slice.
+
+    Each column's analysis frame is Hann-windowed and centred on that
+    column's nominal position (clipped to stay in bounds); the frame is much
+    shorter than a column's time span on a full-length tune, so this is a
+    sampled overview rather than a full overlap-add STFT -- the tradeoff that
+    keeps the whole build a fixed, small cost instead of one that scales with
+    `window`/`hop`.
+    """
+    n = len(samples)
+    if n < window:
+        return None
+    lookup = _log_bin_lookup(framerate, window, fmin, fmax, bins)
+    hann = _hann(window)
+    hop = n / cols
+    grid = [[0.0] * cols for _ in range(bins)]
+    for c in range(cols):
+        centre = int((c + 0.5) * hop)
+        start = max(0, min(n - window, centre - window // 2))
+        frame = samples[start:start + window]
+        windowed = [complex(frame[i] * hann[i], 0.0) for i in range(window)]
+        spec = _fft(windowed)
+        sums = [0.0] * bins
+        counts = [0] * bins
+        for k, b in enumerate(lookup):
+            if b < 0:
+                continue
+            re_, im_ = spec[k].real, spec[k].imag
+            sums[b] += re_ * re_ + im_ * im_
+            counts[b] += 1
+        col = [sums[b] / counts[b] if counts[b] else 0.0 for b in range(bins)]
+        for b in range(bins):
+            grid[b][c] = col[b]
+    return grid
+
+
+def _grids_to_bytes(grid_a: list[list[float]],
+                    grid_b: list[list[float]]) -> tuple[bytes, bytes]:
+    """Both grids to 0-255 dB-scaled bytes against ONE shared peak, so a
+    quieter render draws visibly dimmer rather than being re-normalised up to
+    match -- the loudness difference is part of what this overlay shows."""
+    peak = 1e-12
+    for g in (grid_a, grid_b):
+        for row in g:
+            m = max(row) if row else 0.0
+            if m > peak:
+                peak = m
+
+    def to_bytes(g: list[list[float]]) -> bytes:
+        out = bytearray()
+        for row in g:
+            for v in row:
+                db = SPEC_FLOOR_DB if v <= 0 else max(
+                    SPEC_FLOOR_DB, 10.0 * math.log10(v / peak))
+                level = (db - SPEC_FLOOR_DB) / -SPEC_FLOOR_DB
+                out.append(int(round(level * 255)))
+        return bytes(out)
+
+    return to_bytes(grid_a), to_bytes(grid_b)
+
+
+def spectrogram_payload(name: str) -> dict | None:
+    """Both sides' log-frequency magnitude grid, base64-encoded, or None if
+    either WAV is missing or unreadable."""
+    a = _read_wav_mono(LISTEN / ("%s.original.wav" % name))
+    b = _read_wav_mono(LISTEN / ("%s.h2g.wav" % name))
+    if a is None or b is None:
+        return None
+    grid_a = _spectrogram_grid(a[0], a[1], SPEC_COLS, SPEC_BINS)
+    grid_b = _spectrogram_grid(b[0], b[1], SPEC_COLS, SPEC_BINS)
+    if grid_a is None or grid_b is None:
+        return None
+    bytes_a, bytes_b = _grids_to_bytes(grid_a, grid_b)
+    return {
+        "cols": SPEC_COLS, "bins": SPEC_BINS,
+        "fmin": SPEC_FMIN, "fmax": SPEC_FMAX,
+        "a": base64.b64encode(bytes_a).decode("ascii"),
+        "b": base64.b64encode(bytes_b).decode("ascii"),
+    }
+
+
+def spectrogram_card(spec: dict | None) -> str:
+    """The frequency-overlay card, or "" when no spectrogram was built."""
+    if not spec:
+        return ""
+    return (
+        '<div class="card wave">\n  <h2>Both sides, by frequency</h2>\n'
+        '  <canvas id="spectro"></canvas>\n'
+        '  <div class="legend">\n'
+        '    <span class="swatch orig"><i></i>original</span>\n'
+        '    <span class="swatch ours"><i></i>H2G</span>\n'
+        '    <span>brighter = louder at that frequency &middot; click to seek both</span>\n'
+        '  </div>\n'
+        '  <p class="caveat">Precomputed once at build time (log-spaced '
+        '%d&ndash;%d&nbsp;Hz, %d time slices), so drawing it costs the same '
+        'however long the tune runs. Colour is the two renders overlaid, not '
+        'a difference &mdash; a wrong-pitch note shows as a bar lining up on '
+        'one colour and not the other, and a quieter render draws visibly '
+        'dimmer rather than being normalised up to match.</p>\n</div>\n'
+        % (spec["fmin"], spec["fmax"], spec["cols"]))
 
 
 # Which survey columns are worth a reader's attention, and what to call them.
@@ -436,6 +669,7 @@ SCRIPT = r"""
     if (why) syncwhy.innerHTML = why;
     if (!au.paused || au.currentTime) bu.currentTime = bAt(au.currentTime);
     if (window.__abRedraw) window.__abRedraw();
+    if (window.__abSpectroRedraw) window.__abSpectroRedraw();
   }
   syncr.addEventListener("input", function () {
     setSync(Number(syncr.value), "&mdash; set by hand");
@@ -713,6 +947,92 @@ SCRIPT = r"""
     }
     window.__abReload = loadPair;
     loadPair(false);
+  })();
+
+  // ---- spectrogram overlay ------------------------------------------------
+  // Both sides' log-frequency magnitude, precomputed once at build time (see
+  // abpage.py's spectrogram_payload) -- a per-sample FFT here, over two
+  // two-minute WAVs, could not draw in under a second. What ships is two
+  // small fixed-size byte grids (bins x cols); painting them is a handful of
+  // arithmetic per cell regardless of how long the tune runs, so every call
+  // below -- including the one on every timeupdate during playback -- is
+  // sub-millisecond.
+  var scv = document.getElementById("spectro");
+  if (scv && window.__abSpectrogram) (function () {
+    var spec = window.__abSpectrogram, COLS = spec.cols, BINS = spec.bins;
+    var W = 900, H = 220;
+    scv.width = W; scv.height = H;
+    var ctx = scv.getContext("2d");
+    var off = document.createElement("canvas");
+    off.width = COLS; off.height = BINS;
+    var octx = off.getContext("2d");
+
+    function decode(b64) {
+      var bin = atob(b64), out = new Uint8Array(bin.length);
+      for (var i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+      return out;
+    }
+    var gridA = decode(spec.a), gridB = decode(spec.b);
+
+    function css(n) {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    }
+    function hexToRgb(hex) {
+      hex = hex.trim().replace("#", "");
+      if (hex.length === 3) hex = hex.split("").map(function (c) { return c + c; }).join("");
+      var n = parseInt(hex, 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    }
+    // B is drawn where it is HEARD, same rule as the amplitude overlay above:
+    // shifted by the sync offset so the picture never contradicts the ears.
+    function shiftCols() {
+      var d = au.duration;
+      if (!d || !isFinite(d)) return 0;
+      return Math.round(sync / d * COLS);
+    }
+    function paint() {
+      var rgbA = hexToRgb(css("--a")), rgbB = hexToRgb(css("--b"));
+      var img = octx.createImageData(COLS, BINS);
+      var by = shiftCols();
+      for (var b = 0; b < BINS; b++) {
+        var row = BINS - 1 - b;                 // bin 0 (lowest freq) at the bottom
+        for (var c = 0; c < COLS; c++) {
+          var cc = c - by;
+          var va = gridA[b * COLS + c] / 255;
+          var vb = (cc >= 0 && cc < COLS) ? gridB[b * COLS + cc] / 255 : 0;
+          var idx = (row * COLS + c) * 4;
+          img.data[idx] = Math.min(255, rgbA[0] * va + rgbB[0] * vb);
+          img.data[idx + 1] = Math.min(255, rgbA[1] * va + rgbB[1] * vb);
+          img.data[idx + 2] = Math.min(255, rgbA[2] * va + rgbB[2] * vb);
+          img.data[idx + 3] = 255;
+        }
+      }
+      octx.putImageData(img, 0, 0);
+      ctx.imageSmoothingEnabled = false;
+      ctx.clearRect(0, 0, W, H);
+      ctx.drawImage(off, 0, 0, COLS, BINS, 0, 0, W, H);
+      var d = au.duration;
+      if (d && isFinite(d)) {
+        var x = Math.round(au.currentTime / d * W) + 0.5;
+        ctx.strokeStyle = css("--live"); ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+    }
+    scv.addEventListener("click", function (e) {
+      var d = au.duration;
+      if (!d || !isFinite(d)) return;
+      var r = scv.getBoundingClientRect();
+      var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+      au.currentTime = t; bu.currentTime = bAt(t);
+      now.textContent = fmt(t);
+      seek.value = String(Math.round(t / d * 1000));
+      paint();
+    });
+    au.addEventListener("timeupdate", paint);
+    au.addEventListener("loadedmetadata", paint);
+    seek.addEventListener("input", paint);
+    window.__abSpectroRedraw = paint;
+    paint();
   })();
 
   // ---- voice selector ----------------------------------------------------
@@ -1249,6 +1569,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
                 '<span class="note" id="voicenote">all three voices, as '
                 'staged</span></div>' % buttons)
 
+    spec = spectrogram_payload(name)
+
     back = ('<a href="index.html">&larr; all tunes</a> &middot; ' if index_link else "")
 
     return """<meta charset="utf-8">
@@ -1327,6 +1649,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
   apart these pictures are".</p>
 </div>
 
+%(spectrogram)s
 <div class="card">
   <h2>What to listen for</h2>
   <ul>%(bullets)s</ul>
@@ -1340,7 +1663,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
 <audio id="au" preload="auto" src="%(a_src)s"></audio>
 <audio id="bu" preload="auto" src="%(b_src)s"></audio>
 <script>window.__abVoices = %(voice_map)s;
-window.__abTrace = "%(trace_src)s";</script>
+window.__abTrace = "%(trace_src)s";
+window.__abSpectrogram = %(spectrogram_json)s;</script>
 <script>%(script)s</script>
 """ % dict(pretty=pretty, css=CSS, back=back, version=version, chips=chips,
            bullets=bullets, provenance=provenance, a_src=a_src, b_src=b_src,
@@ -1349,6 +1673,8 @@ window.__abTrace = "%(trace_src)s";</script>
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
            notes_strip=notes_strip_card(name, fidjson),
+           spectrogram=spectrogram_card(spec),
+           spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
            script=SCRIPT)
 
