@@ -3145,6 +3145,21 @@ WAVs cannot follow, at 4/3 the size of the audio: about 14 MB for a minute a
 side at 44.1 kHz mono, which is the practical ceiling. If a browser refuses
 `file://` media, serve `build/listen/` over http.
 
+**Opening the pass: run `build/listen/Listen.cmd`.** The build writes it beside
+`Listen.ps1`, and the `.cmd` is the one to double-click — Windows has no "run"
+default verb for `.ps1` (Explorer opens it in an editor) and even the
+right-click *Run with PowerShell* can be refused by the execution policy, so
+the PowerShell script alone could not be started by the gesture its own header
+recommended. The shim passes `-ExecutionPolicy Bypass` for that one invocation
+and changes no machine setting.
+
+It serves with `--no-build`, which matters: a plain `--serve` rebuilds every
+staged page *before* it binds the port — about 3.4 s a tune, five minutes over
+a full corpus — so the window sat silent and read as hung, and a browser opened
+against it got `ERR_CONNECTION_REFUSED`. `--no-build` serves what is already
+staged and binds at once. Rebuild with a plain `python abpage.py` when the
+pages are actually stale.
+
 ### The instrument map — `instrmap.py`
 
 Every other instrument-level check in this project reads the *player's own

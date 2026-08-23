@@ -1495,12 +1495,19 @@ def wav_uri(path: Path) -> str:
     return "data:audio/wav;base64," + base64.b64encode(path.read_bytes()).decode("ascii")
 
 
-LAUNCHER = r"""# Listen.ps1 -- double-click to open the A/B listening pass.
+LAUNCHER = r"""# Listen.ps1 -- the A/B listening pass. Run Listen.cmd, not this file.
 #
 # Written by python/abpage.py; edits here are overwritten on the next build.
 # It starts the little server abpage.py --serve provides and opens the index,
 # because the envelope drawing and the automatic sync both read the WAVs with
 # fetch(), which no browser allows over file://.
+#
+# DOUBLE-CLICKING A .ps1 DOES NOT RUN IT. Windows has no "run" default verb
+# for the type -- Explorer opens it in an editor -- and even the right-click
+# "Run with PowerShell" can be refused by the execution policy. That is why
+# Listen.cmd sits beside this file: .cmd does run on double-click, and it
+# invokes this script with -ExecutionPolicy Bypass. The instruction to
+# double-click *this* file was wrong for as long as it was written here.
 $ErrorActionPreference = "Stop"
 $repo = "%(repo)s"
 $port = %(port)d
@@ -1510,10 +1517,13 @@ Write-Host "H2G listening pass" -ForegroundColor Cyan
 Write-Host "  serving $repo\build\listen on $url"
 Write-Host "  close this window to stop the server."
 
-# `--serve` rebuilds every staged page (spectrogram included, ~3.4s/tune)
-# BEFORE it binds the port, so a fixed sleep here opens the browser on
-# nothing -- ERR_CONNECTION_REFUSED -- long before a large corpus finishes.
-# Poll the port instead of guessing how long the build takes.
+# `--serve` alone rebuilds every staged page (spectrogram included, ~3.4s a
+# tune -- five minutes over 83) BEFORE it binds the port. A fixed sleep here
+# therefore opened the browser on nothing (ERR_CONNECTION_REFUSED), and even
+# with the poll below the window sat silent for minutes and read as hung.
+# `--no-build` serves what is already staged, so the port binds at once; run
+# `python abpage.py` when the pages actually need rebuilding. The poll stays:
+# it costs nothing and still covers a slow start.
 Start-Job -ArgumentList $port, $url -ScriptBlock {
   param($port, $url)
   $deadline = (Get-Date).AddMinutes(15)
@@ -1535,16 +1545,51 @@ Start-Job -ArgumentList $port, $url -ScriptBlock {
 } | Out-Null
 
 Push-Location "$repo\python"
-try { python abpage.py --serve $port } finally { Pop-Location }
+try { python abpage.py --serve $port --no-build } finally { Pop-Location }
 """
 
 
-def write_launcher(port: int = 8730) -> Path:
-    """Drop Listen.ps1 next to the staged pairs and return its path."""
-    out = LISTEN / "Listen.ps1"
-    out.write_text(LAUNCHER % {"repo": str(ROOT), "port": port},
+# The thing a human can actually double-click. Explorer has no "run" verb for
+# .ps1 (it opens an editor) and "Run with PowerShell" is subject to the
+# execution policy, so the PowerShell script alone was unrunnable by the one
+# gesture its own header told people to use. .cmd runs on double-click on every
+# Windows box, and this one does nothing but call the script the documented way.
+LAUNCHER_CMD = r"""@echo off
+REM Listen.cmd -- double-click this to open the A/B listening pass.
+REM Written by python/abpage.py; edits here are overwritten on the next build.
+REM It only launches Listen.ps1: a .ps1 cannot be started by double-click, a
+REM .cmd can. -ExecutionPolicy Bypass applies to this invocation alone and
+REM changes no machine setting.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Listen.ps1"
+if errorlevel 1 (
+  echo.
+  echo Listen.ps1 exited with an error. The window is kept open so the
+  echo message above stays readable.
+  pause
+)
+"""
+
+
+def write_launcher(port: int = 8730) -> tuple[Path, Path]:
+    """Drop Listen.ps1 and its Listen.cmd shim beside the staged pairs.
+
+    Returns both paths; the .cmd is the one to tell a human about.
+    """
+    ps1 = LISTEN / "Listen.ps1"
+    ps1.write_text(LAUNCHER % {"repo": str(ROOT), "port": port},
                    encoding="utf-8")
-    return out
+    cmd = LISTEN / "Listen.cmd"
+    # ASCII, CRLF: a .cmd is read by the legacy command processor, which does
+    # not want a UTF-8 BOM and is happier with DOS line endings.
+    #
+    # `newline=""` and NOT `write_text(... .replace("\n", "\r\n"))`: text mode
+    # translates on write, so a string that already carries \r\n is written as
+    # \r\r\n. That is a real corruption, not a cosmetic one -- and it is
+    # invisible to `read_text()`, which translates it back on the way in. Only
+    # the raw bytes show it.
+    with open(cmd, "w", encoding="ascii", newline="\r\n") as fh:
+        fh.write(LAUNCHER_CMD)
+    return ps1, cmd
 
 
 def facts_card(name: str, sv: dict, pre: dict) -> str:
@@ -2287,6 +2332,13 @@ def main() -> int:
                          "Without the flag the pages reuse whatever "
                          "build/instrmap.json already holds, and omit the card "
                          "if there is none.")
+    ap.add_argument("--no-build", action="store_true",
+                    help="with --serve, skip rebuilding the pages and serve "
+                         "what is already staged. The build takes ~3.4s a tune "
+                         "and runs BEFORE the port binds, so on a full corpus "
+                         "the server appears dead for five minutes; the "
+                         "launcher uses this. Rebuild with a plain run when "
+                         "the pages are actually stale.")
     ap.add_argument("--serve", nargs="?", type=int, const=8730, default=None,
                     metavar="PORT",
                     help="after building, serve build/listen over http on "
@@ -2305,6 +2357,20 @@ def main() -> int:
     if not LISTEN.exists():
         print("no %s -- run listen.py first" % LISTEN)
         return 2
+
+    # Serve straight away, before any of the build work below. The pages are on
+    # disk already; rebuilding them is what made the launcher look hung, since
+    # the port cannot bind until the build finishes.
+    if args.no_build:
+        if args.serve is None:
+            print("--no-build only means anything with --serve")
+            return 2
+        pages = len(list(LISTEN.glob("*.html")))
+        if not pages:
+            print("no pages in %s -- run `python abpage.py` first" % LISTEN)
+            return 2
+        print("serving %d existing page(s); not rebuilding" % pages)
+        return serve(args.serve)
 
     # `listen.py --voices` stages <name>.v1.original.wav beside the pair, and
     # those are the same tune with two voices muted -- not tunes of their own.
@@ -2369,8 +2435,8 @@ def main() -> int:
         print("no FIDELITY.md row for: %s" % ", ".join(missing))
     if args.serve is not None:
         return serve(args.serve)
-    launcher = write_launcher()
-    print("%s -- double-click to serve and open" % launcher)
+    _ps1, cmd = write_launcher()
+    print("%s -- double-click to serve and open" % cmd)
     print("file:// hides the overlay -- `python abpage.py --serve` to draw it")
     return 0
 
