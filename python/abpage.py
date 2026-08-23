@@ -1132,8 +1132,8 @@ SCRIPT = r"""
         g.closePath(); g.globalAlpha = 0.62; g.fillStyle = colour; g.fill();
         g.globalAlpha = 1;
       }
-      band(s.a, cssv("--a"), false);
-      band(s.b, cssv("--b"), true);
+      if (vshow.a) band(s.a, cssv("--a"), false);
+      if (vshow.b) band(s.b, cssv("--b"), true);
       var d = au.duration;
       if (d && isFinite(d)) {
         var x = Math.round(au.currentTime / d * COLS) + 0.5;
@@ -1143,6 +1143,22 @@ SCRIPT = r"""
     }
     function paintAll() { strips.forEach(paintStrip); }
     window.__abVoiceRedraw = paintAll;
+
+    // Which side is drawn, across ALL THREE strips at once -- the same control
+    // the combined picture has, and one switch rather than three, because the
+    // question it answers ("where does our render put something the original
+    // does not") is asked of the voices together.
+    var vshow = { a: true, b: true };
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".voicewave button.swatch[data-vtrace]"),
+      function (b) {
+        b.addEventListener("click", function () {
+          var k = b.dataset.vtrace;
+          vshow[k] = !vshow[k];
+          b.setAttribute("aria-pressed", String(vshow[k]));
+          paintAll();
+        });
+      });
 
     var jobs = [1, 2, 3].map(function (v) {
       var pair = window.__abVoices["v" + v];
@@ -1940,11 +1956,13 @@ def voicewave_card(voice_map: dict) -> str:
         '  <div class="msg" id="vwmsg">Reading the six solo renders&hellip;</div>\n'
         '  <div class="vwrap" id="vwrap" hidden>%s</div>\n'
         '  <div class="legend">\n'
-        '    <span class="swatch orig"><i></i>original</span>\n'
-        '    <span class="swatch ours"><i></i>H2G</span>\n'
-        '    <span>click a voice name to collapse it &middot; same time axis '
-        'and the same sync offset as the pair above &middot; click a strip to '
-        'seek</span>\n'
+        '    <button type="button" class="swatch orig" data-vtrace="a" '
+        'aria-pressed="true"><i></i>original</button>\n'
+        '    <button type="button" class="swatch ours" data-vtrace="b" '
+        'aria-pressed="true"><i></i>H2G</button>\n'
+        '    <span>click a key to hide it in all three &middot; click a voice '
+        'name to collapse it &middot; same time axis and the same sync offset '
+        'as the pair above &middot; click a strip to seek</span>\n'
         '  </div>\n'
         '  <p class="caveat">The voice whose <code>mean&nbsp;|&Delta;|</code> '
         'is worst is the one to solo with the buttons at the top and listen '

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.362 — 2026-08-23
+
+- per-voice legend keys toggle their traces
+
 ## 0.5.361 — 2026-08-23
 
 - the listening server honours HTTP Range; per-voice strips collapse
