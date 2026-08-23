@@ -1,11 +1,13 @@
 {
- "_comment": "HUMAN listening verdicts. Hand-written, never generated -- no tool may rewrite this file, because the whole value of it is that a person said so. abpage.py reads it and shows the verdict on each tune's page and in the index. Key by the staged tune name (the .sid stem). `version` records what was approved, so a later conversion change makes the approval visibly stale rather than silently carrying over. `note` is the human's own words where they gave any.",
+ "_comment": "HUMAN listening verdicts. Hand-written, never generated -- no tool may rewrite this file, because the whole value of it is that a person said so. abpage.py reads it and shows the verdict on each tune's page and in the index. Key by the staged tune name (the .sid stem).",
+ "_staleness": "`sng_sha256` is the sha256 of the .sng the listener approved, and it is what decides whether the verdict still holds -- NOT `version`. Keying on the version was the first design and it was wrong: v0.5.370 and v0.5.371 changed only abpage.py, which cannot alter one byte of audio, and both invalidated ACE_II's approval. That is this repo's own passthrough-guard lesson wearing different clothes -- a staleness check must key on the thing that would make the verdict lie (the conversion changing), never on a proxy that moves more often (any version bump). `version` is kept as provenance only, so a reader knows when the listening happened.",
  "tunes": {
   "ACE_II": {
    "approved": true,
+   "sng_sha256": "7bc6dfad62f1f73e82ac915e3351506a2143fea8e6c9345a0e4e4414e16ec1d7",
    "version": "0.5.369",
    "at": "2026-08-23",
-   "note": "Approved after the wave-program slide travel, the filter cutoff step, the bit-6 rest envelope silence and the vibrato depth fix. The depth change itself was not audible to the listener -- approval is of the tune as it now stands, not of that last change in isolation."
+   "note": "Approved after the wave-program slide travel, the filter cutoff step, the bit-6 rest envelope silence and the vibrato depth fix. The depth change itself was not audible to the listener -- this signs off the tune as it stands, not that change in isolation."
   }
  }
 }

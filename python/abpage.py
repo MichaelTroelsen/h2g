@@ -183,32 +183,83 @@ def approvals() -> dict[str, dict]:
     return tunes if isinstance(tunes, dict) else {}
 
 
-def approval_badge(name: str, appr: dict, version: str) -> str:
+def conversion_shas() -> dict[str, str]:
+    """sha256 of each staged tune's .sng as it converts RIGHT NOW.
+
+    What a listening verdict is actually about. Computed rather than stored:
+    the approval records the sha it was given for, and this says what the sha
+    is today, so the two can disagree and the page can say so.
+
+    Converting the whole staged set costs a second or two and only happens when
+    approvals exist; a tune with no approval is never converted for this.
+    """
+    import hashlib
+    try:
+        import fidelity as F
+        from h2g.convert import convert
+    except Exception:                                          # noqa: BLE001
+        return {}
+    ppath = ROOT / "presets.json"
+    if not ppath.exists():
+        return {}
+    try:
+        doc = json.loads(ppath.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    out: dict[str, str] = {}
+    for name in (doc.get("songs") or {}):
+        stem = name[:-4] if name.endswith(".sid") else name
+        if not (LISTEN / ("%s.original.wav" % stem)).exists():
+            continue
+        for base in (ROOT / "arkiv" / "Hubbard_Rob", ROOT):
+            sid = base / name
+            if sid.exists():
+                break
+        else:
+            continue
+        try:
+            blob = convert(str(sid), log=lambda m: None,
+                           **F._preset_opts(doc, name))
+            out[stem] = hashlib.sha256(blob).hexdigest()
+        except Exception:                                      # noqa: BLE001
+            continue
+    return out
+
+
+def approval_badge(name: str, appr: dict, version: str,
+                   shas: dict | None = None) -> str:
     """The verdict as it appears at the top of a tune's page.
 
-    Three states, and the third is why `version` is recorded at all: approved
-    AT THE CURRENT VERSION, approved at an OLDER one (so the conversion has
-    changed since a person listened, and the verdict no longer covers what the
-    page now plays), and not approved. A stale approval silently presented as a
-    current one would be the worst of the three, because it is the only one
-    that could stop someone re-listening.
+    Three states, and the third is the whole point: approved and STILL VALID,
+    approved but the CONVERSION HAS CHANGED SINCE, and not approved. A stale
+    approval shown as a current one is the worst of the three, because it is
+    the only one that could stop someone re-listening.
+
+    **Staleness keys on the .sng's sha256, never on the version.** Keying on
+    the version was the first design and it was wrong within one commit:
+    v0.5.370 and v0.5.371 touched only abpage.py, which cannot change a byte of
+    audio, and both invalidated ACE_II's approval. That is the repo's own
+    passthrough-guard lesson again -- key on the thing that would make the
+    verdict lie, not on a proxy that moves more often. An approval with no
+    recorded sha falls back to trusting itself rather than crying stale, the
+    same backward-compatibility shape `output_sha` uses.
     """
     a = (appr or {}).get(name)
     if not a or not a.get("approved"):
         return ('<div class="approval none"><b>Not approved</b>'
                 '<span>No human has signed off on this conversion.</span></div>')
     at, was = a.get("at", ""), str(a.get("version", ""))
-    now = version.lstrip("v")
     note = md(a.get("note", "")) if a.get("note") else ""
-    if was and now and was != now:
-        return ('<div class="approval stale"><b>Approved at %s &mdash; '
-                'the conversion has changed since</b><span>Signed off %s, but '
-                'this page is built at %s. The verdict covers what %s '
-                'produced, not what you are about to hear.%s</span></div>'
-                % (was, at, now, was, (" " + note) if note else ""))
+    want, now = a.get("sng_sha256"), (shas or {}).get(name)
+    if want and now and want != now:
+        return ('<div class="approval stale"><b>Approved &mdash; but the '
+                'conversion has changed since</b><span>Signed off %s at %s, '
+                'and the <code>.sng</code> no longer matches the one that was '
+                'heard. The verdict does not cover what this page plays.%s'
+                '</span></div>' % (at, was, (" " + note) if note else ""))
     return ('<div class="approval yes"><b>Human approved</b>'
             '<span>Signed off %s at %s.%s</span></div>'
-            % (at, was or now, (" " + note) if note else ""))
+            % (at, was or version.lstrip("v"), (" " + note) if note else ""))
 
 
 def instrmap_rows() -> tuple[dict[str, dict], int]:
@@ -946,8 +997,32 @@ SCRIPT = r"""
   document.addEventListener("keydown", function (e) {
     if (e.target.tagName === "INPUT" && e.target.type !== "range") return;
     if (e.code === "Space") { e.preventDefault(); toggle(); }
-    else if (e.key === "1" || e.key === "ArrowLeft") { e.preventDefault(); pick("a"); }
-    else if (e.key === "2" || e.key === "ArrowRight") { e.preventDefault(); pick("b"); }
+    // 1-4 solo a voice, A/B pick the source. The digits USED to pick the
+    // source, which spent the three keys that map onto the three voices the
+    // ear is trying to separate -- and left soloing mouse-only, on the control
+    // a listening pass reaches for most.
+    else if (e.key === "1" || e.key === "2" || e.key === "3") {
+      e.preventDefault(); if (window.__abSetVoice) window.__abSetVoice("v" + e.key);
+    }
+    else if (e.key === "4") {
+      e.preventDefault(); if (window.__abSetVoice) window.__abSetVoice("all");
+    }
+    else if (e.key === "a" || e.key === "A" || e.key === "ArrowLeft") {
+      e.preventDefault(); pick("a");
+    }
+    else if (e.key === "b" || e.key === "B" || e.key === "ArrowRight") {
+      e.preventDefault(); pick("b");
+    }
+    // Restart. Driven through the seek slider rather than by setting
+    // currentTime here: every follower (the tracker scroll, both drawings, the
+    // register panel) already listens for its `input`, so one dispatch keeps
+    // them in step instead of this needing to know all of them.
+    else if (e.key === "r" || e.key === "R") {
+      e.preventDefault();
+      seek.value = "0";
+      seek.dispatchEvent(new Event("input"));
+      if (au.paused) toggle();
+    }
     else if (e.key === "l" || e.key === "L") {
       looping.checked = !looping.checked; au.loop = bu.loop = looping.checked;
     }
@@ -1505,6 +1580,9 @@ SCRIPT = r"""
     vbtns.forEach(function (b) {
       b.addEventListener("click", function () { setVoice(b.dataset.voice); });
     });
+    // The keydown handler is installed ABOVE this block and cannot see into
+    // its closure, so the digits reach the selector through here.
+    window.__abSetVoice = setVoice;
   }
 
   // ---- register panel ----------------------------------------------------
@@ -2240,7 +2318,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
          survey: dict | None = None, preset: dict | None = None,
          fidjson: dict | None = None,
          instrmap: dict | None = None, instrmap_seconds: int = 0,
-         approval: dict | None = None) -> str:
+         approval: dict | None = None,
+         appr_shas: dict | None = None) -> str:
     pretty = name.replace("_", " ")
     chips = "".join(
         '<div class="chip"><span>%s</span><b>%s</b></div>' % (k, row[k])
@@ -2281,10 +2360,12 @@ def page(name: str, row: dict, notes: list[str], version: str,
             for v in (1, 2, 3):
                 voice_map["v%d" % v] = ["%s.v%d.original.wav" % (name, v),
                                         "%s.v%d.h2g.wav" % (name, v)]
-            buttons = '<button data-voice="all" aria-pressed="true">All</button>'
+            buttons = ('<button data-voice="all" aria-pressed="true">'
+                       'All <kbd>4</kbd></button>')
             buttons += "".join(
-                '<button data-voice="v%d" aria-pressed="false">Voice %d</button>'
-                % (v, v) for v in (1, 2, 3))
+                '<button data-voice="v%d" aria-pressed="false">'
+                'Voice %d <kbd>%d</kbd></button>'
+                % (v, v, v) for v in (1, 2, 3))
             voice_row = (
                 '<div class="voices" id="voices">'
                 '<span class="lbl">Solo</span>%s'
@@ -2310,12 +2391,12 @@ def page(name: str, row: dict, notes: list[str], version: str,
 <div class="rig" id="rig">
   <div class="sources">
     <button class="src" data-side="a" aria-pressed="true">
-      <span class="key">Source A &middot; press <kbd>1</kbd></span>
+      <span class="key">Source A &middot; press <kbd>A</kbd></span>
       <span class="name" id="nameA">Original .sid</span>
       <span class="rendered">%(a_rendered)s</span>
     </button>
     <button class="src" data-side="b" aria-pressed="false">
-      <span class="key">Source B &middot; press <kbd>2</kbd></span>
+      <span class="key">Source B &middot; press <kbd>B</kbd></span>
       <span class="name" id="nameB">H2G conversion</span>
       <span class="rendered">%(b_rendered)s</span>
     </button>
@@ -2384,7 +2465,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
 </div>
 %(instrmap)s
 <footer>
-  <div><kbd>Space</kbd> play &middot; <kbd>1</kbd>/<kbd>2</kbd> or <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> switch source &middot; <kbd>L</kbd> loop &middot; both tracks run in sync, so switching never loses your place.</div>
+  <div><kbd>Space</kbd> play &middot; <kbd>R</kbd> restart &middot; <kbd>A</kbd>/<kbd>B</kbd> or <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> switch source &middot; <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> solo a voice, <kbd>4</kbd> all &middot; <kbd>L</kbd> loop &middot; both tracks run in sync, so switching never loses your place.</div>
   <div>%(provenance)s</div>
 </footer>
 </div>
@@ -2404,7 +2485,7 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            notes_strip=notes_strip_card(name, fidjson),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
-           approval=approval_badge(name, approval or {}, version),
+           approval=approval_badge(name, approval or {}, version, appr_shas),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
@@ -2412,20 +2493,26 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
 
 
 def index(names: list[str], rows: dict, version: str,
-          appr: dict | None = None) -> str:
+          appr: dict | None = None, shas: dict | None = None) -> str:
     appr = appr or {}
-    now = version.lstrip("v")
+    shas = shas or {}
 
     def verdict(n):
         """The human column. Three states, and `stale` is the one that matters:
-        an approval given at an older version no longer covers what the page
-        plays, and showing it as a plain yes would stop someone re-listening."""
+        an approval whose conversion has changed since no longer covers what
+        the page plays, and showing it as a plain yes would stop someone
+        re-listening.
+
+        Keyed on the `.sng`'s sha256, never on the version -- v0.5.370 and
+        v0.5.371 touched only this file, which cannot change a byte of audio,
+        and a version-keyed check called ACE_II stale for both.
+        """
         a = appr.get(n)
         if not a or not a.get("approved"):
             return '<span class="n">&mdash;</span>'
-        was = str(a.get("version", ""))
-        if was and was != now:
-            return '<span class="s">stale (%s)</span>' % was
+        want, now_sha = a.get("sng_sha256"), shas.get(n)
+        if want and now_sha and want != now_sha:
+            return '<span class="s">stale</span>'
         return '<span class="y">approved</span>'
 
     body = ""
@@ -2651,6 +2738,7 @@ def main() -> int:
     fidjson = fidelity_json_rows()
     imrows, imseconds = instrmap_rows()
     appr = approvals()
+    appr_shas = conversion_shas() if appr else {}
     if imrows:
         print("instrument map: %d song(s) at %ds" % (len(imrows), imseconds))
         missing = [n for n in names if n not in imrows]
@@ -2671,7 +2759,8 @@ def main() -> int:
                     preset=presets.get(args.embed, {}),
                     fidjson=fidjson.get(args.embed, {}),
                     instrmap=imrows.get(args.embed, {}),
-                    instrmap_seconds=imseconds, approval=appr)
+                    instrmap_seconds=imseconds, approval=appr,
+                    appr_shas=appr_shas)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -2683,10 +2772,10 @@ def main() -> int:
                     survey=survey.get(n, {}), preset=presets.get(n, {}),
                     fidjson=fidjson.get(n, {}),
                     instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
-                    approval=appr)
+                    approval=appr, appr_shas=appr_shas)
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
     pruned = prune_stale_pages(names)
-    (LISTEN / "index.html").write_text(index(names, rows, version, appr), encoding="utf-8")
+    (LISTEN / "index.html").write_text(index(names, rows, version, appr, appr_shas), encoding="utf-8")
     missing = [n for n in names if n not in rows]
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
     if pruned:
