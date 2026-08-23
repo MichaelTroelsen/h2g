@@ -1,0 +1,11 @@
+{
+ "_comment": "HUMAN listening verdicts. Hand-written, never generated -- no tool may rewrite this file, because the whole value of it is that a person said so. abpage.py reads it and shows the verdict on each tune's page and in the index. Key by the staged tune name (the .sid stem). `version` records what was approved, so a later conversion change makes the approval visibly stale rather than silently carrying over. `note` is the human's own words where they gave any.",
+ "tunes": {
+  "ACE_II": {
+   "approved": true,
+   "version": "0.5.369",
+   "at": "2026-08-23",
+   "note": "Approved after the wave-program slide travel, the filter cutoff step, the bit-6 rest envelope silence and the vibrato depth fix. The depth change itself was not audible to the listener -- approval is of the tune as it now stands, not of that last change in isolation."
+  }
+ }
+}

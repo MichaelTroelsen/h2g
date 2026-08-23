@@ -160,6 +160,57 @@ def fidelity_json_rows() -> dict[str, dict]:
     return out
 
 
+def approvals() -> dict[str, dict]:
+    """`approved.json` -- the HUMAN listening verdicts, keyed by tune name.
+
+    The only input to these pages that is not derived from a measurement, and
+    the only one no tool may write. Every other number here compares what is
+    played; this records that a person listened and said yes, which is the one
+    thing none of them can establish.
+
+    Empty when the file is absent or unreadable: an unapproved tune and a
+    missing file must look the same on the page, because they mean the same
+    thing -- nobody has said yes.
+    """
+    path = ROOT / "approved.json"
+    if not path.exists():
+        return {}
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    tunes = doc.get("tunes")
+    return tunes if isinstance(tunes, dict) else {}
+
+
+def approval_badge(name: str, appr: dict, version: str) -> str:
+    """The verdict as it appears at the top of a tune's page.
+
+    Three states, and the third is why `version` is recorded at all: approved
+    AT THE CURRENT VERSION, approved at an OLDER one (so the conversion has
+    changed since a person listened, and the verdict no longer covers what the
+    page now plays), and not approved. A stale approval silently presented as a
+    current one would be the worst of the three, because it is the only one
+    that could stop someone re-listening.
+    """
+    a = (appr or {}).get(name)
+    if not a or not a.get("approved"):
+        return ('<div class="approval none"><b>Not approved</b>'
+                '<span>No human has signed off on this conversion.</span></div>')
+    at, was = a.get("at", ""), str(a.get("version", ""))
+    now = version.lstrip("v")
+    note = md(a.get("note", "")) if a.get("note") else ""
+    if was and now and was != now:
+        return ('<div class="approval stale"><b>Approved at %s &mdash; '
+                'the conversion has changed since</b><span>Signed off %s, but '
+                'this page is built at %s. The verdict covers what %s '
+                'produced, not what you are about to hear.%s</span></div>'
+                % (was, at, now, was, (" " + note) if note else ""))
+    return ('<div class="approval yes"><b>Human approved</b>'
+            '<span>Signed off %s at %s.%s</span></div>'
+            % (at, was or now, (" " + note) if note else ""))
+
+
 def instrmap_rows() -> tuple[dict[str, dict], int]:
     """(`build/instrmap.json` rows keyed by stem, the trace window in seconds).
 
@@ -586,6 +637,25 @@ td a { color:var(--ink); font-weight:600; }
 .sync b { color:var(--ink); font-variant-numeric:tabular-nums; min-width:5.5em;
   display:inline-block; text-align:right; }
 .sync .ghost { font-family:var(--mono); font-size:12px; }
+/* The human verdict. Deliberately quiet rather than a green tick: it says who
+   said yes and at which version, because an approval that outlives the
+   conversion it was given for is worse than none. */
+.approval { display:flex; flex-direction:column; gap:3px; padding:10px 14px;
+  border-radius:6px; border:1px solid var(--line); margin:0 0 14px;
+  font-size:12.5px; }
+.approval b { font-size:13px; letter-spacing:.02em; }
+.approval span { color:var(--muted); }
+.approval.yes { border-color:color-mix(in srgb, var(--b) 55%, var(--line));
+  background:color-mix(in srgb, var(--b) 9%, transparent); }
+.approval.yes b { color:var(--b); }
+.approval.stale { border-color:color-mix(in srgb, var(--a) 55%, var(--line));
+  background:color-mix(in srgb, var(--a) 9%, transparent); }
+.approval.stale b { color:var(--a); }
+.approval.none b { color:var(--muted); font-weight:600; }
+td.appr { white-space:nowrap; }
+td.appr .y { color:var(--b); font-weight:600; }
+td.appr .s { color:var(--a); font-weight:600; }
+td.appr .n { color:var(--muted); }
 .trk { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
 .trkcol { border:1px solid var(--line); border-radius:6px; overflow:hidden;
   background:var(--sunk); }
@@ -2082,7 +2152,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
          embed: bool, index_link: bool,
          survey: dict | None = None, preset: dict | None = None,
          fidjson: dict | None = None,
-         instrmap: dict | None = None, instrmap_seconds: int = 0) -> str:
+         instrmap: dict | None = None, instrmap_seconds: int = 0,
+         approval: dict | None = None) -> str:
     pretty = name.replace("_", " ")
     chips = "".join(
         '<div class="chip"><span>%s</span><b>%s</b></div>' % (k, row[k])
@@ -2146,6 +2217,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
   <h1>%(pretty)s<small>original <code>.sid</code> against the H2G conversion, switched in place</small></h1>
   <div class="rail">%(chips)s</div>
 </header>
+
+%(approval)s
 
 <div class="rig" id="rig">
   <div class="sources">
@@ -2243,19 +2316,37 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            notes_strip=notes_strip_card(name, fidjson),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
+           approval=approval_badge(name, approval or {}, version),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
            script=SCRIPT)
 
 
-def index(names: list[str], rows: dict, version: str) -> str:
+def index(names: list[str], rows: dict, version: str,
+          appr: dict | None = None) -> str:
+    appr = appr or {}
+    now = version.lstrip("v")
+
+    def verdict(n):
+        """The human column. Three states, and `stale` is the one that matters:
+        an approval given at an older version no longer covers what the page
+        plays, and showing it as a plain yes would stop someone re-listening."""
+        a = appr.get(n)
+        if not a or not a.get("approved"):
+            return '<span class="n">&mdash;</span>'
+        was = str(a.get("version", ""))
+        if was and was != now:
+            return '<span class="s">stale (%s)</span>' % was
+        return '<span class="y">approved</span>'
+
     body = ""
     for n in names:
         r = rows.get(n, {})
-        body += ("<tr><td><a href=\"%s.html\">%s</a></td><td>%s</td><td>%s</td>"
-                 "<td>%s</td><td>%s</td></tr>"
-                 % (n, n.replace("_", " "), r.get("melody", "&mdash;"),
+        body += ("<tr><td><a href=\"%s.html\">%s</a></td><td class=\"appr\">%s</td>"
+                 "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
+                 % (n, n.replace("_", " "), verdict(n),
+                    r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
     return """<meta charset="utf-8">
@@ -2269,12 +2360,13 @@ def index(names: list[str], rows: dict, version: str) -> str:
 <div class="card">
   <h2>Staged tunes</h2>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
+    <thead><tr><th>tune</th><th>human</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
 <footer>
   <div>Columns are from <code>FIDELITY.md</code> at %(version)s. They compare what is played, never how it sounds &mdash; which is what these pages are for.</div>
+  <div><b>human</b> is the only column here that is not a measurement: it is read from <code>approved.json</code>, which a person writes by hand and no tool may rewrite. <code>stale</code> means someone approved an earlier version and the conversion has changed since &mdash; the verdict does not cover what the page now plays.</div>
   <div><code>gate</code> is the newest of them and the least validated: it was built at v0.5.270 because no other column could see the register it reads, and no listener has confirmed it corresponds to anything audible.</div>
 </footer>
 </div>
@@ -2470,6 +2562,7 @@ def main() -> int:
     survey, presets = survey_rows(), preset_rows()
     fidjson = fidelity_json_rows()
     imrows, imseconds = instrmap_rows()
+    appr = approvals()
     if imrows:
         print("instrument map: %d song(s) at %ds" % (len(imrows), imseconds))
         missing = [n for n in names if n not in imrows]
@@ -2490,7 +2583,7 @@ def main() -> int:
                     preset=presets.get(args.embed, {}),
                     fidjson=fidjson.get(args.embed, {}),
                     instrmap=imrows.get(args.embed, {}),
-                    instrmap_seconds=imseconds)
+                    instrmap_seconds=imseconds, approval=appr)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -2501,10 +2594,11 @@ def main() -> int:
                     embed=False, index_link=True,
                     survey=survey.get(n, {}), preset=presets.get(n, {}),
                     fidjson=fidjson.get(n, {}),
-                    instrmap=imrows.get(n, {}), instrmap_seconds=imseconds)
+                    instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
+                    approval=appr)
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
     pruned = prune_stale_pages(names)
-    (LISTEN / "index.html").write_text(index(names, rows, version), encoding="utf-8")
+    (LISTEN / "index.html").write_text(index(names, rows, version, appr), encoding="utf-8")
     missing = [n for n in names if n not in rows]
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
     if pruned:
