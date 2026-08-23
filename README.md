@@ -1890,7 +1890,12 @@ The −43 pp had nothing to do with waveforms. **`apply_tempo` writes
 one byte per row** — a rest holding row 0 took the slot, so eight files got no
 tempo at all and ran at Goattracker's default. `drift` (added v0.5.288, after
 the attempt) reads it plainly: 0.00 → 1400.00 on Shockway Rider. The tempo now
-outranks a rest's waveform and nothing else.
+outranks any command a rest puts on row 0 — its waveform, and since v0.5.365
+the `CMD_SETSR` of `--rest-envelope-silence` below, which reproduced the whole
+failure (ACE II `drift` 0.00 → 1250, mean melody **−47 pp** over 12 of 19
+files) the first time it was measured without the entry. The overwritable set
+is one named constant now, `patterns.TEMPO_OVERWRITABLE`, so a new row-0
+command has one place to declare itself.
 
 Measured with the tempo preserved, at `-t 60` against the shipped presets:
 
@@ -1903,6 +1908,75 @@ Measured with the tempo preserved, at `-t 60` against the shipped presets:
 
 So it is safe and it is not an improvement, which is why it ships off. The
 option exists because the measurement had never once been valid before it.
+
+### `--rest-envelope-silence` (the rest that zeroes the envelope)
+
+The *other* thing that bit-6 branch does, and the half the `testbit` /
+`envelope` names above do not describe: **all 21 of those players zero the
+voice's envelope pair there**, not four of them. ACE II `$E157`, the whole
+routine —
+
+```
+E157  DE 53 E9  DEC $E953,X      ; the gate mask, $FF -> $FE
+E15A  AC 4F E5  LDY $E54F        ; the voice's $D400 offset
+E15D  A9 00     LDA #$00
+E15F  99 06 D4  STA $D406,Y      ; SR := 0 -- sustain and RELEASE
+E162  99 05 D4  STA $D405,Y      ; AD := 0
+E165  A9 08     LDA #$08
+E167  4C BD E1  JMP $E1BD        ; -> STA storedwave,X
+```
+
+Ricochet `$914A` is byte-for-byte the same through the second store and jumps
+with the `$00` still in A; IK+ `$E135` is the same again written to its
+*shadow* SID (`$E5E3` is its `$D400`, so the pair is `$E5E9`/`$E5E8`). So the
+signature is the shape — `LDA #$00` and two indexed stores at consecutive
+**descending** addresses, SR before AD — which matches 21 of the 61 bit-6 files
+and exactly the 21 that silence, with no miss and no false positive.
+
+A `KEYOFF` only clears the gate, so without this the record's release nibble
+plays out across a gap the original silences. On ACE II the two lead
+instruments carry release **9** (~750 ms) and ring through **575 of voice 1's
+2996 frames**, where the original's ADSR reads `$0000` — 31 % of the trace, and
+the whole of that voice's shortfall while its notes measure `melody` 99.4 %
+with every attack inside one frame.
+
+**This is not `--cut-release`.** That zeroes the release nibble in the
+*instrument*, which is right only for the 33 players that cut at **every** note
+end (`detect.ENVELOPE_CUT_SHAPES`). These 21 cut at the rest alone — ACE II's
+ordinary note end merely clears the gate (`$E1E6 LDA #$FE` into the mask
+`AND`ed at `$E464`) and its release does sound. The two populations are
+**disjoint**: `envelope_cut` is false on all 21.
+
+The `CMD_SETSR $00` goes on the rest row and the `CMD_SETAD $00` on its first
+hold row, because a row has one command column. The delay is inaudible —
+`$D405` shapes only a rising envelope, the gate is off for the whole rest, and
+the next note reloads both from the instrument (`gplay.c:397`,
+`player.s:882-892`) — but it is what lets a trace see the change at all, since
+`adsr` compares the whole 16-bit pair. A one-frame rest (`wait` 0) has no hold
+row and keeps the audible half only.
+
+**Off by default, because the corpus A/B splits.** Over the 19 files it reaches
+(the other two are `digi`-dialect and have no classic bit-6 branch), at `-t 60`
+against the shipped presets:
+
+* `melody`, `seq`, `retrig`, `wave`, `gate`, `noise`, `hold`, `onset`, `tail`,
+  `nrun`, `drift` move on **no file**
+* `adsr` moves on 16: **9 up, 7 down**, mean **+2.5 pp**
+* counted on the frames rather than the column, **9229 moved to the original's
+  value and 3428 away**
+
+It is unambiguous where our rest rows line up with the original's — ACE II 208
+frames toward and **0** away (`adsr` 93 → 96 %), Thundercats 218/0, Shockway
+Rider 986/15, BMX Kidz 3819/279 (`adsr` 24 → 51 %) — and loses where they do
+not. Arcade Classics and Trans-Atlantic flip sign between the trace's two
+halves, which is drift; Bangkok Knights, Skate or Die, I Ball and Ricochet lose
+in both halves for a reason not yet identified.
+
+**And `presets.py --fidelity` cannot select it.** `fidelity_better` scores
+melody, sequence, attacks, noise, oscillation, noise pitch, onset and hold;
+this change moves none of them, and `adsr` is not a term. So it is a
+command-line option waiting on a criterion that can see it, not a per-song
+search candidate — stated here rather than left as a per-song hope.
 
 ### One subtune's tempo reaching another's clock (fixed v0.5.330)
 

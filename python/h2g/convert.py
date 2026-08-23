@@ -136,6 +136,7 @@ def convert(sid_path: str, log: Logger = print,
             rest_instrument: bool = False,
             rest_keyoff: bool = False,
             rest_wave_silence: bool = False,
+            rest_envelope_silence: bool = False,
             compact_instruments: bool = False,
             engine: int = 0,
             tempo: int | str | None = None,
@@ -225,6 +226,18 @@ def convert(sid_path: str, log: Logger = print,
     retrigger. 1422 rows across 64 corpus files. Off by default because it
     changes the bytes of those files, the byte-exact Commando fixture among
     them; found by ear, and no dimension of FIDELITY.md reports it.
+
+    rest_envelope_silence writes `CMD_SETSR $00` on a bit-6 rest, which is
+    what the player does there: all 21 corpus players that silence on such a
+    rest zero the voice's envelope pair in the branch itself
+    (detect._find_rest_silence_envelope), so the note that was sounding stops
+    dead. A Goattracker KEYOFF clears only the gate, so without this the
+    record's release nibble plays out across a gap the original silences --
+    ACE_II's two lead instruments carry release 9 and ring through 575 of its
+    voice-1 frames where the original's ADSR reads $0000. Not the same lever
+    as cut_release: that zeroes the nibble in the *instrument*, which is right
+    only for the 33 players that cut at every note end. These 21 cut at the
+    rest alone and their ordinary note ends do sound the release.
 
     fold_transpose recovers the orderlist transposes Goattracker's +14
     ceiling used to clamp away, by keeping `T mod 12` in the orderlist and
@@ -328,6 +341,10 @@ def convert(sid_path: str, log: Logger = print,
         # Only the testbit family parks a waveform; the envelope-zeroing
         # four write none, and a KEYOFF already says what they do.
         rest_wave=rest_wave_silence and det.rest_silence_kind == "testbit",
+        # ...but *every* one of the 21 zeroes the envelope pair, which is
+        # the half a KEYOFF cannot say. See
+        # detect._find_rest_silence_envelope.
+        rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
         instr_base=1 if compact_instruments else 2, tie=tie)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.

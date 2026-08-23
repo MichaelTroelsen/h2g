@@ -272,6 +272,17 @@ def main(argv=None) -> int:
              "since. Provided so the measurement can be re-run"
     )
     parser.add_argument(
+        "--rest-envelope-silence", action="store_true",
+        help="on a bit-6 rest, zero the sustain/release register the way "
+             "the player does (CMD_SETSR $00) as well as keying off. All "
+             "21 players that silence on a rest zero the envelope pair "
+             "there -- a KEYOFF only clears the gate, so the record's "
+             "release nibble rings through a gap the original silences. "
+             "Distinct from --cut-release, which zeroes the nibble in the "
+             "instrument and so applies at every note end; these players "
+             "cut only at the rest"
+    )
+    parser.add_argument(
         "--pitch-seq", action="store_true",
         help="emit the effect byte's bit-$10 arpeggio: a three-step semitone "
              "sequence the player steps with a GLOBAL phase counter (34 corpus "
@@ -454,6 +465,7 @@ def main(argv=None) -> int:
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
                           ("--rest-wave-silence", "rest_wave_silence"),
+                          ("--rest-envelope-silence", "rest_envelope_silence"),
                           ("--two-stage", "two_stage"),
                           ("--voice-two-stage", "voice_two_stage"),
                           ("--sfx-drum", "sfx_drum"),
@@ -530,6 +542,7 @@ def main(argv=None) -> int:
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
                       rest_wave_silence=args.rest_wave_silence,
+                      rest_envelope_silence=args.rest_envelope_silence,
                       two_stage=args.two_stage,
                       voice_two_stage=args.voice_two_stage,
                       sfx_drum=args.sfx_drum,

@@ -234,6 +234,11 @@ class Detection:
     # (Ricochet, 4 files) writes no waveform at all and a KEYOFF already says
     # what it does. "" where no rest silences.
     rest_silence_kind: str = ""
+    # Whether that same branch zeroes the voice's **envelope pair**, which is
+    # the half of the routine both families share -- see
+    # _find_rest_silence_envelope. True on all 21 files `rest_silences` is
+    # true of, and on no other.
+    rest_silence_envelope: bool = False
     # "cmdtable" dialect only (see _detect_cmdtable): file offset of the
     # note-duration lookup table, how many operand bytes each $8x command
     # takes, and which command index sets the instrument.
@@ -1099,8 +1104,10 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.status_bit6:
         det.rest_silence_kind = _rest_silence_kind(data)
         det.rest_silences = bool(det.rest_silence_kind)
+        det.rest_silence_envelope = _find_rest_silence_envelope(data)
         log("Pattern status bit 6....: skips operand and note (BIT/BVS)"
-            + (" and silences the voice" if det.rest_silences else ""))
+            + (" and silences the voice" if det.rest_silences else "")
+            + (" (envelope pair zeroed)" if det.rest_silence_envelope else ""))
 
     (det.effect_rise, det.effect_arp, det.effect_drum,
      det.effect_pulse_lo, det.arp_fixed_up) = _find_effect_routines(sid, det)
@@ -2459,26 +2466,43 @@ def _find_rest_silences(data: bytes) -> bool:
     return bool(_rest_silence_kind(data))
 
 
-def _rest_silence_kind(data: bytes) -> str:
-    """Which of the two silencing families this player belongs to, or "".
+def _rest_silence_window(data: bytes) -> bytes:
+    """The first REST_SILENCE_WINDOW bytes of the bit-6 branch target, or b"".
 
-    `"testbit"` writes `#$08` into the voice's stored waveform (IK+, 17
-    files); `"envelope"` zeroes the envelope pair (Ricochet, 4 files). Both
-    stop the sound and both are a Goattracker KEYOFF, which is why
-    `_find_rest_silences` collapses them -- but only the first parks a
-    *waveform*, so only it is reproducible by writing one.
+    Both probes below read the same window, and reading it in one place is
+    what keeps them describing the same routine rather than two.
     """
     i = search_file(data, STATUS_BIT6_SHAPE)
     if i <= -1:
-        return ""
+        return b""
     at = i + len(STATUS_BIT6_SHAPE.split())     # the BVS's own operand
     if at >= len(data):
-        return ""
+        return b""
     rel = data[at] - 256 if data[at] > 127 else data[at]
     target = at + 1 + rel
     if not 0 <= target < len(data):
+        return b""
+    return data[target:target + REST_SILENCE_WINDOW]
+
+
+def _rest_silence_kind(data: bytes) -> str:
+    """Which *waveform* the silencing branch parks, or "" where none does.
+
+    `"testbit"` writes `#$08` into the voice's stored waveform (IK+, 17
+    files); `"envelope"` reaches the same store with the `#$00` still in the
+    accumulator and parks that instead (Ricochet, 4 files). Both stop the
+    sound and both are a Goattracker KEYOFF, which is why
+    `_find_rest_silences` collapses them -- but only the first parks a
+    waveform `--rest-wave-silence` can write.
+
+    **The names are older than the reading and they are misleading.** The
+    envelope zero is not what separates the two families: it is the half they
+    *share*, and all 21 files do it -- see `_find_rest_silence_envelope`. The
+    split here is only over the byte left in A at the store.
+    """
+    window = _rest_silence_window(data)
+    if not window:
         return ""
-    window = data[target:target + REST_SILENCE_WINDOW]
     if b"\xa9\x08" in window:                   # LDA #$08, the testbit
         return "testbit"
     # LDA #$00 into the envelope pair: `STA $D405,Y` / `STA $D406,Y`.
@@ -2486,6 +2510,56 @@ def _rest_silence_kind(data: bytes) -> str:
             and (b"\x99\x05\xd4" in window or b"\x99\x06\xd4" in window)):
         return "envelope"
     return ""
+
+
+def _find_rest_silence_envelope(data: bytes) -> bool:
+    """Whether the bit-6 rest branch zeroes the voice's envelope pair.
+
+    One routine, in 21 corpus files, and the two `_rest_silence_kind`
+    families are the same code with a different byte left in A at the end.
+    ACE_II `$E157`, whose subsequent `LDA #$08 / JMP` is the only part the
+    `"testbit"` name describes:
+
+        E157  DE 53 E9  DEC $E953,X      ; the gate mask, $FF -> $FE
+        E15A  AC 4F E5  LDY $E54F        ; the voice's $D400 offset
+        E15D  A9 00     LDA #$00
+        E15F  99 06 D4  STA $D406,Y      ; SR := 0 -- sustain and RELEASE
+        E162  99 05 D4  STA $D405,Y      ; AD := 0
+        E165  A9 08     LDA #$08
+        E167  4C BD E1  JMP $E1BD        ; -> STA storedwave,X
+
+    Ricochet `$914A` is byte-for-byte the same through the second store and
+    then jumps with the `$00` still in A; IK+ `$E135` is the same again with
+    the pair written to its *shadow* SID rather than the chip -- `$E5E3` is
+    its `$D400` (the per-frame flush at `$E455`/`$E45B`/`$E461` writes
+    `$E5E7,Y`/`$E5E4,Y`/`$E5E3,Y` where ACE_II's writes `$D404,Y`/`$D401,Y`/
+    `$D400,Y`, and `$EF73 LDA $E5E3,X` reads it back), so its pair is
+    `$E5E9`/`$E5E8`. Hence the shape rather than the two literal addresses:
+    `LDA #$00` and two indexed stores at consecutive **descending** addresses,
+    SR before AD, which is the order all 21 write them in.
+
+    Over the 61 corpus files carrying STATUS_BIT6_SHAPE this matches 21 and
+    exactly the 21 `rest_silences` is true of -- no miss and no false
+    positive. Pinned by tests/test_rest_envelope.py.
+
+    Why it matters, and why it is not `find_envelope_cut`: that probe finds a
+    player which zeroes the pair at **every** note end, so the record's
+    release nibble is never heard and `--cut-release` can zero it in the
+    instrument. This one zeroes it **only at a rest**. On ACE_II a plain note
+    end merely clears the gate ($E1E6 `LDA #$FE / STA $E953,X`, ANDed into
+    $D404 at $E464) and the record's release does sound -- so zeroing the
+    nibble would be wrong there. The faithful spelling is a `CMD_SETSR $00`
+    on the rest row itself, which the next note's instrument load restores
+    (gplay.c:398, player.s:882-884). See patterns.decode_entry.
+    """
+    win = _rest_silence_window(data)
+    for k in range(len(win) - 7):
+        if (win[k] == 0xA9 and win[k + 1] == 0x00      # LDA #$00
+                and win[k + 2] == 0x99 and win[k + 5] == 0x99   # STA abs,Y x2
+                and win[k + 7] == win[k + 4]           # same page
+                and win[k + 6] == (win[k + 3] - 1) & 0xFF):
+            return True
+    return False
 
 
 # --- The instrument effect byte (+7) ---------------------------------------

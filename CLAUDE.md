@@ -440,6 +440,39 @@ test dependency).
   scrambling — `--diagnose` sweeps a constant transposition through a difflib
   alignment instead and reports the peak, signed as ours against the
   original's.
+- **A register zeroed at a *rest* is not a register zeroed at a *note end*,
+  and the option that fixes one destroys the other.** ACE_II's lead rings a
+  release-9 tail through 575 of voice 1's 2996 frames where the original's
+  ADSR reads `$0000` -- and `--cut-release` is inert on it, because
+  `det.envelope_cut` is false. The reflex is to widen `ENVELOPE_CUT_SHAPES`
+  until it matches. That would be wrong: `cut_release` zeroes the release
+  nibble in the *instrument*, so it applies at **every** note end, and this
+  player cuts only at the bit-6 rest -- its ordinary note end just clears the
+  gate (`$E1E6 LDA #$FE` into the mask `AND`ed at `$E464`) and the release
+  really does sound. Two mechanisms, two populations, and they are
+  **disjoint**: `envelope_cut` 33 files, `rest_silence_envelope` 21, zero
+  overlap, which is the check that says they are different players rather
+  than one probe missing a spelling. The faithful write is a `CMD_SETSR $00`
+  on the rest row, self-restoring exactly as the player's is (the next note
+  reloads it, gplay.c:398 / player.s:882). See README § `--rest-envelope-
+  silence`. **The same reading corrected an old name**: `_rest_silence_kind`'s
+  `"testbit"`/`"envelope"` split is over the *waveform* byte left in A at the
+  store; the envelope zero is the half all 21 share, and reading the two
+  names as two families put 17 files in the wrong bucket for as long as they
+  existed.
+- **Row 0's command column belongs to the subtune's clock, and nothing else
+  may take it.** `apply_tempo`/`apply_tempos` *skip* a pattern whose command
+  column is occupied, so a row-0 command silently costs that subtune its
+  `CMD_SETTEMPO` and it plays at Goattracker's default 6. This has now caught
+  three changes -- v0.5.284's rest waveform (melody -43pp over 8 files),
+  `_apply_boundary_ties` on Star_Paws (`drift` -111 -> +1667), and the rest's
+  `CMD_SETSR` (ACE_II `drift` 0.00 -> **1250**, mean melody **-47pp** over 12
+  of 19 files, on a change whose real reach is one register between notes).
+  It is `patterns.TEMPO_OVERWRITABLE` now, one named set, and **a new row-0
+  command must declare itself there as well as in `ONE_SHOT_COMMANDS`** --
+  the two are different questions (does it repeat down the hold rows / may
+  the tempo take it back) and the second is the one that looks like a
+  catastrophe.
 - **A per-subtune value written into a global structure is read by every
   subtune that reaches it.** Goattracker's patterns are global, its orderlists
   are per subtune, and a `CMD_SETTEMPO` under `$80` sets all three channels

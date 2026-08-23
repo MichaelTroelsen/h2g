@@ -135,6 +135,31 @@ EXCLUDED_FROM_ALWAYS = {
     # clobbering it at v0.5.311. The option exists so the measurement can be
     # re-run against an emitter that does what it says.
     "rest_wave_silence",
+    # The bit-6 rest's zeroed ENVELOPE pair -- a different write in the same
+    # branch, and a mechanism read off the 6502 rather than guessed: all 21
+    # players that silence on a rest do `LDA #$00 / STA SR,Y / STA AD,Y`
+    # there (detect._find_rest_silence_envelope). Ours rings the record's
+    # release nibble through that gap instead. Off by default because the
+    # corpus A/B splits: over the 19 files it reaches, `adsr` is **9 up and 7
+    # down**, mean +2.5pp, with every other column -- melody, seq, retrig,
+    # wave, gate, noise, hold, onset, tail -- flat on every file. Counted on
+    # the frames themselves rather than on the column, 9229 moved TO the
+    # original's value and 3428 away. It is unambiguous where our rest rows
+    # line up with the original's (ACE_II 208 frames toward and 0 away, its
+    # 575-frame voice-1 ring-out gone, `adsr` 93 -> 96%; Thundercats 218/0;
+    # Shockway Rider 986/15) and loses where they do not -- Arcade Classics
+    # and Trans-Atlantic flip sign between the trace's two halves, which is
+    # drift, while Bangkok Knights, Skate or Die, I, Ball and Ricochet lose in
+    # both halves for a reason not yet identified.
+    #
+    # **And the search cannot pick it up**: `fidelity_better` scores melody,
+    # sequence, attacks, noise, oscillation, noise pitch, onset and hold, and
+    # this change moves none of them -- `adsr` is not a term. So this is not
+    # "searched per song" like the entries around it; it is an option waiting
+    # on a criterion that can see it. Written down here rather than left as a
+    # per-song hope, because an option offered and never chosen is the trap
+    # CLAUDE.md names.
+    "rest_envelope_silence",
     "no_test_restart",
     # The hard restart's row bound raised from `row // 2` to `2 * row // 3`.
     # Per song rather than always, because the sweep that measured it

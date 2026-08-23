@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.366 — 2026-08-23
+
+- the bit-6 rest zeroes the envelope, behind --rest-envelope-silence
+
 ## 0.5.365 — 2026-08-23
 
 - each voice carries its own |difference| strip

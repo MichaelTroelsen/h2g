@@ -65,7 +65,29 @@ CMD_SETWAVE = 7                 # gcommon.h:11
 # siddump needs to name the next attack, which is why v0.5.282's `$18`
 # attempt moved no column on any file.
 REST_SILENT_WAVE = 0x08
-ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE})
+# gcommon.h:10. Writes one byte to $D406 on the row it appears and nothing
+# afterwards (gplay.c:428-430, player.s:209-213), and the next note's
+# instrument load overwrites it (gplay.c:398, player.s:882-884) -- so it is
+# self-restoring, exactly like the player's own write. That is what makes it
+# the right spelling for a rest that hard-silences: see
+# detect._find_rest_silence_envelope.
+CMD_SETSR = 6
+# gcommon.h:9, the other half of the pair. Emitted only on a bit-6 rest's
+# first hold row -- see decode_entry for why the delay is inaudible.
+CMD_SETAD = 5
+ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR})
+# Commands a subtune's `CMD_SETTEMPO` may overwrite on row 0 of an entry
+# pattern. **A whole subtune's clock outranks any of them**, and that is not
+# a preference: `apply_tempo`/`apply_tempos` skip a pattern whose command
+# column is taken, so a row-0 command silently costs the subtune its tempo
+# and it plays at Goattracker's default 6. `_apply_boundary_ties` was
+# measured losing Star_Paws two of three tempo writes that way (`drift`
+# -111 -> +1667, all three voices down three quarters of their attacks),
+# and a `CMD_SETSR` rest added here without this entry reproduced it across
+# **12 of 19 files** -- ACE_II `drift` 0.00 -> 1250, Ricochet -7.81 ->
+# 1976.54, mean melody -47pp. Anything new that can land on row 0 belongs
+# in this set, not merely in ONE_SHOT_COMMANDS.
+TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
 GT_FIRSTNOTE = 0x60
@@ -213,6 +235,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                        gate_hold: bool = False,
                        rest_keyoff: bool = False,
                        rest_wave: bool = False,
+                       rest_envelope: bool = False,
                        exits_tied: Optional[List[bool]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
@@ -277,6 +300,9 @@ def _build_raw_pattern(data: bytes, addr: int,
         g_note = GT_NO_NOTE
         cmd1 = 0
         cmd2 = 0
+        # (command, data) for the event's FIRST hold row, where it needs one
+        # of its own rather than the repeat of `cmd1` the loop below writes.
+        hold_cmd: Optional[tuple] = None
         b1 = data[addr + i2]
 
         if b1 == 0xFF:
@@ -342,6 +368,62 @@ def _build_raw_pattern(data: bytes, addr: int,
             # these files and not about the format.
             if rest_wave:
                 cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
+            # ...and the half of that branch **both** families share: the
+            # envelope pair is zeroed, so the note that was sounding stops
+            # dead rather than releasing at the record's own rate. A KEYOFF
+            # cannot say that -- it clears the gate and the release nibble
+            # then plays out. ACE_II's two lead instruments carry release 9
+            # (~750ms) and ring through 575 of its voice-1 frames where the
+            # original's ADSR reads $0000, which is 31% of the trace and the
+            # whole of that voice's shortfall.
+            #
+            # `CMD_SETSR $00` is the write, not `--cut-release`'s zeroed
+            # nibble: this player zeroes the pair **only here**, and a plain
+            # note end merely clears the gate ($E1E6 `LDA #$FE` into the mask
+            # ANDed at $E464), so the release does sound there and destroying
+            # it in the instrument would be wrong. See
+            # detect._find_rest_silence_envelope for the routine and for why
+            # the population is all 21 `rest_silences` files, not the 4 the
+            # `"envelope"` name suggests.
+            #
+            # Only the SR half is emitted. A row has one command column, and
+            # AD governs nothing while the gate is off -- the next note
+            # reloads both from the instrument anyway (gplay.c:397-398,
+            # player.s:882-892), which is also what makes this self-restoring
+            # exactly as the player's own write is.
+            elif rest_envelope and rest_keyoff:
+                # Gated on `rest_keyoff` because the two writes are one
+                # act in the player: it clears the gate on the same
+                # call it zeroes the pair. A sustain of 0 on a voice
+                # whose gate is still OPEN silences a note that should
+                # still be sounding -- the opposite defect, and a worse
+                # one. Nothing in `presets.json` turns `rest_keyoff`
+                # off today, which is exactly why the guard is here
+                # rather than left to the caller.
+                cmd1, cmd2 = CMD_SETSR, 0x00
+                # The AD half goes on the event's first HOLD row, because a
+                # row has one command column and the two writes cannot share
+                # it. That is a one-row delay on a register which, across a
+                # rest, is **inaudible**: $D405 shapes only a rising envelope,
+                # the gate is off for the whole rest, and the next note
+                # reloads it from the instrument before it gates on
+                # (gplay.c:397, player.s:892 `lda mt_insad-1,y`) -- a bit-6
+                # event never carries `pending_tie`, so that next note really
+                # does attack. The SR half keeps row 0 because it is the
+                # audible one: it is the release rate the ring-out plays at.
+                #
+                # It is also what lets a trace *see* the fix. `adsr_compare`
+                # compares the whole 16-bit pair and drops frames both sides
+                # read as $0000, so emitting SR alone leaves ACE_II's 575 rest
+                # frames reading $0800 against $0000 -- still a disagreement,
+                # and the column reported the change as a no-op. With both,
+                # those frames leave the denominator because we now hold what
+                # the original holds.
+                #
+                # A `wait` of 0 has no hold row, so such a rest gets the SR
+                # write only. That is the right half to keep, and the AD is
+                # dropped rather than displacing it.
+                hold_cmd = (CMD_SETAD, 0x00)
 
         if get_next:
             i2 += 1
@@ -556,7 +638,10 @@ def _build_raw_pattern(data: bytes, addr: int,
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
-        for _ in range(wait):
+        for h in range(wait):
+            if h == 0 and hold_cmd is not None:
+                events += [GT_NO_NOTE, 0x00, hold_cmd[0], hold_cmd[1]]
+                continue
             events += [GT_NO_NOTE, 0x00, cmd1, cmd2]
 
         if resc_instr != -1:
@@ -911,6 +996,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  instr_base: int = 2, tie: bool = False,
                  rest_keyoff: bool = False,
                  rest_wave: bool = False,
+                 rest_envelope: bool = False,
                  exits_tied: Optional[List[bool]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
@@ -945,6 +1031,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               rest_instrument=rest_instrument,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
+                              rest_envelope=rest_envelope,
                               instr_base=instr_base,
                               note_base=det.note_base,
                               slide_high_first=det.slide_high_first,
@@ -1311,7 +1398,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      rest_instrument: bool = False,
                      instr_base: int = 2, tie: bool = False,
                      rest_keyoff: bool = False,
-                     rest_wave: bool = False):
+                     rest_wave: bool = False,
+                     rest_envelope: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -1380,7 +1468,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
-                              rest_wave=rest_wave, exits_tied=ex)
+                              rest_wave=rest_wave,
+                              rest_envelope=rest_envelope, exits_tied=ex)
         exits[i] = bool(ex and ex[0])
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -1831,7 +1920,7 @@ def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
         pattern = patterns[target]
         if len(pattern) < 4:
             continue
-        if pattern[2] not in (0, CMD_SETWAVE):
+        if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
         pattern[2], pattern[3] = CMD_SETTEMPO, values[k]
         written += 1
@@ -1916,7 +2005,7 @@ def apply_tempo(patterns: List[List[int]], tracks: List[List[int]],
         # has not been tested. Until it is, the absent write stays absent.
         if len(pattern) < 4:
             continue
-        if pattern[2] not in (0, CMD_SETWAVE):
+        if pattern[2] not in TEMPO_OVERWRITABLE:
             continue
         pattern[2], pattern[3] = CMD_SETTEMPO, value
         written += 1
@@ -2383,7 +2472,7 @@ def _apply_wrap_tie(new_track: List[int], patterns: List[List[int]],
     into row 0 of voice 0's *entry reference* -- and they run after
     `reindex_tracks`, so they cannot see a command column this pass has
     already taken; `apply_tempos` simply skips such a pattern
-    (`pattern[2] not in (0, CMD_SETWAVE)`). A restart position of 0 makes the
+    (`pattern[2] not in TEMPO_OVERWRITABLE`). A restart position of 0 makes the
     step this would tie exactly that entry reference, so on voice 0 the tie
     and the tempo want one column. Measured on Star_Paws, which is the only
     corpus file this pass reaches: taking the column dropped its tempo writes
