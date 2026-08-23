@@ -878,6 +878,31 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             so = 5
             det.track_voices = 2
             log("'Human Race' player (2 voices) detected.")
+    if i <= -1 and not digi:
+        # The same selector with a zero-page scratch byte. The Rasputin
+        # signature above opens on `CLC / ADC $abs / TAX`, which encodes an
+        # *addressing mode* -- `18 6D lo hi AA`. Three files spell the same
+        # arithmetic `ASL / STA $zp / ASL / CLC / ADC $zp / TAX`
+        # (`8A 0A 85 BA 0A 18 65 BA AA`, Samantha Fox $7D2C) and one of those
+        # puts four more instructions between the ADC and the load
+        # (Action Biker $C29F: `LDY #$01 / TAX / BEQ +2 / LDY #$02 /
+        # STY $C3F2 / LDY #$00`). None of them matched, so all three read the
+        # *destination* of the copy -- a six-byte scratch buffer holding
+        # whatever subtune the ripper last inited -- as the table itself, and
+        # every subtune came out shifted by one entry with the ripper's
+        # snapshot standing in for subtune 0.
+        #
+        # What is invariant across all four spellings is the copy loop the
+        # arithmetic feeds: `LDA table,X / STA scratch,Y / INX / INY /
+        # CPY #$06 / BNE -12`. Anchoring there rather than on the arithmetic
+        # is what makes the signature independent of the addressing mode.
+        # Consulted last, so it can only rescue a file the shapes above did
+        # not read: over the corpus it matches 40 files, 37 of which the
+        # Rasputin shape already matched, and it names the identical address
+        # in every one of those 37 (plus Commando's $56FF).
+        i = find("BD ?? ?? 99 ?? ?? E8 C8 C0 06 D0 F4")  # Samantha Fox / Spellbound / Action Biker
+        if i >= 1:
+            so = 1
     if i <= -1:
         pass  # no music selector found, might not be needed
     else:

@@ -446,6 +446,77 @@ det.track_hi = det.track_lo + det.track_voices
 Order matters. This is the kind of "later pass silently invalidates an earlier
 pass's result" coupling that is very easy to break by reordering code.
 
+**Why the overwrite is not optional, and what it is correcting.** In this
+family the player does not index the track table where it plays from. It
+copies the six bytes belonging to the selected subtune — three LO, three HI —
+into a fixed six-byte scratch buffer, and every later read goes to the buffer:
+
+```
+C28E  AD EA C3   LDA $C3EA        ; subtune, biased +$40 by init $CBBB
+C291  29 03      AND #$03         ; the +$40 bias falls out here
+C293  8D EA C3   STA $C3EA
+C296  0A         ASL              ; n*2
+C297  8D D7 C3   STA $C3D7
+C29A  0A         ASL              ; n*4
+C29B  18         CLC
+C29C  6D D7 C3   ADC $C3D7        ; n*6
+C2A1  AA         TAX
+C2AB  BD F9 C3   LDA $C3F9,X      ; <- the TABLE
+C2AE  99 F3 C3   STA $C3F3,Y      ; <- the six-byte SCRATCH BUFFER
+C2B1  E8 C8 C0 06 D0 F4            ; INX / INY / CPY #$06 / BNE
+...
+C048  BD F3 C3   LDA $C3F3,X      ; the reader, and what the subsong chain
+C04B  85 4B      STA $4B          ; fingerprints -- so it names the BUFFER
+C04D  BD F6 C3   LDA $C3F6,X
+C050  85 4C      STA $4C
+```
+
+The scratch buffer holds whatever subtune the *ripper* last inited, which is
+the PSID header's `startSong`. So without the correction a file does not
+merely lose one subtune: our subtune 0 becomes a copy of the original's
+`startSong - 1`, and everything after it is shifted by one entry.
+
+Until v0.5.371 the selector fingerprint was
+`18 6D ?? ?? AA BD ?? ?? 99 ?? ?? E8 C8 C0 06` — `CLC / ADC $abs / TAX` and
+then the copy loop. That encodes an **addressing mode**. Three corpus players
+compute the same `n*6` with a zero-page temp (`8A 0A 85 BA 0A 18 65 BA AA`,
+Samantha Fox `$7D2C`), one of them with four further instructions between the
+`ADC` and the load (Action Biker's `LDY #$01 / TAX / BEQ +2 / LDY #$02 /
+STY $C3F2 / LDY #$00`), so none matched and all three shipped with the buffer
+as their table:
+
+| file | `startSong` | buffer | table | symptom |
+|---|---:|---|---|---|
+| Action_Biker | 2 | `$C3F3` | `$C3F9` | our o0 = original s1, o2 duplicated it, entry 2 never emitted |
+| Samantha_Fox_Strip_Poker | 10 | `$74C7` | `$74CD` | all fourteen shifted by one; our o0 = original s9 |
+| Spellbound | 1 | `$E6B0` | `$E6B6` | buffer equals entry 0, so only s1 upward shifted |
+
+The fallback anchors on the copy loop instead, which every spelling shares:
+
+```
+BD ?? ?? 99 ?? ?? E8 C8 C0 06 D0 F4
+LDA table,X / STA scratch,Y / INX / INY / CPY #$06 / BNE -12
+```
+
+It is consulted only where the two older shapes found nothing. Over the corpus
+it matches 40 files, 37 of which the Rasputin shape already matched, and it
+names the **identical** address in every one of those 37 (and in the Commando
+fixture, `$56FF`) — so the change is exactly three files, confirmed by a
+byte-hash of all 95 conversions at their preset options.
+
+Two things it settled. `Action_Biker` `--diagnose` went from `s0->o1 100%,
+s1->o0 100%` to the identity with `s1->o1 100%`, and Samantha Fox from a
+ten-row off-by-one to `s0->o0 … s7->o7` all at 100%. And Spellbound was the
+one file where `detect.find_music_subtunes` (3) and `tracks.track_table_extent`
+(4) disagreed — reading the table one entry early is what gave the layout the
+extra row. They now agree on all eight files that carry both.
+
+**The report never saw any of it**, because `fidelity.py`'s `--search-subtunes`
+default of 3 searches a window of *our* subtunes either side of the traced one
+and had been quietly finding the counterpart: Action Biker's row was taken at
+`s1` against `o0` and read melody 100% throughout. A shim that hides a defect
+from the score does not hide it from the file.
+
 ### 4.5 Player variant — behavioural, not structural
 
 The fifth pass identifies **which dialect the orderlist bytes are in**, by

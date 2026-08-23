@@ -418,11 +418,23 @@ test dependency).
   matrix first, then a per-voice cause. **All four** of the files the report
   filed under "plays something else" were the harness, and they were three
   different harness defects. Two were the correspondence: Dragons_Lair_Part_II
-  is 15% on the diagonal and 60% at its real counterpart o9 (**not** the
-  94/98/97% this file used to claim — re-measured at v0.5.325, and voice 2
-  still reads "different music" even there, so a defect survives the
-  correction), and Commodore_64_Music_Examples is a clean off-by-one, s1→o0 at
-  93%. Flash_Gordon's traced subtune is its worst of nine. The other two were
+  is 14% on the diagonal and **88%** at its real counterpart o9, all three
+  voices matching (0.89/0.89/0.88, pitches 96/81/95%), and
+  Commodore_64_Music_Examples is a clean off-by-one, s1→o0 at 93%.
+  Flash_Gordon's traced subtune is its worst of nine.
+  **The 60%-and-"voice 2 still reads different music" this paragraph carried
+  from v0.5.325 was a THIRD harness defect, in `--diagnose` itself.**
+  `subtune_matrix` and the per-voice section traced OUR side with siddump's
+  default 1 call a frame while `_measure` traces it at the packed `-S`, so
+  every cell for a multispeed file compared the original at speed against our
+  conversion at 1/multiplier of it. Spellbound's diagonal read 57% where the
+  report's own row for the same pair reads 93%, and its voice 0 was filed as
+  "under-produced: 18 attacks against 93" — half-speed, not under-produced.
+  Fixed by passing `multiplier` through; the original stays at `-m1`, which is
+  the rule of *The multiplier belongs to our side only* two bullets up. The
+  lesson is that one: a diagnostic that re-derives what the harness already
+  resolved will get one of the three inputs wrong, and here the wrong number
+  reached a doc and stood for two sessions as evidence of a converter defect. The other two were
   **the original ending inside the window**: Hubbard's `$FE` means *tune
   ended*, a Goattracker orderlist cannot say that, so our conversion restarts
   and every sequence column was charged for a loop the original never plays.
@@ -1069,6 +1081,39 @@ test dependency).
   where the absolute form found nothing: 35 files carry its shape and 33 of
   them already read a gate, and a wrong tempo is worse than the old constant.
   See § 7.eeeee.
+- **The same lesson, one table over: the "music selector" signature encoded an
+  addressing mode, and what it read was the DESTINATION of a copy.** Three
+  players (Action Biker `$C2AB`, Samantha Fox `$7D35`, Spellbound `$EF9A`)
+  copy the six bytes of the selected subtune's three pointers out of the track
+  table into a fixed six-byte scratch buffer, and the rest of the player reads
+  the buffer. The subsong chain fingerprints that reader (`LDA buf,X / STA $4B
+  / LDA buf+3,X / STA $4C`), so it names the **buffer**; the selector
+  signature exists to correct it to the table. See § 4.4. It opened on `CLC / ADC $abs / TAX` (`18 6D lo hi AA`), which
+  these three spell `ASL / STA $zp / ASL / CLC / ADC $zp / TAX`, one of them
+  with four more instructions before the load -- so all three kept the buffer,
+  which holds whatever subtune the *ripper* last inited. That is the header's
+  `startSong`, and it shows: Action Biker (startSong 2) had our o0 = the
+  original's s1 and its o2 duplicating it, Samantha Fox (startSong 10) was
+  shifted by one across all fourteen with our o0 = the original's s9, and
+  Spellbound (startSong 1) got the harmless case where the buffer happens to
+  equal entry 0 and only its later subtunes shifted. The invariant is the copy
+  loop the arithmetic feeds, not the arithmetic: `BD ?? ?? 99 ?? ?? E8 C8 C0
+  06 D0 F4` names the same address as the old shape in all 38 files that
+  carried both, and rescues exactly these three. **Anchor a signature on the
+  instruction that names the address you want, never on the arithmetic in
+  front of it** -- and when a load and a store in the same idiom both name a
+  table, ask which one the *player* reads.
+  Two things fell out of it. `--diagnose`'s correspondence matrix had been
+  reporting the defect correctly for as long as it existed, while the report's
+  rows were fine, because `--search-subtunes 3` (the default) was silently
+  compensating: **a shim that hides a defect from the score does not hide it
+  from the file**, and the shipped `.sng` played its subtunes in the wrong
+  order the whole time. And Spellbound was the single file where the init
+  dispatch (3) and `track_table_extent` (4) disagreed; reading the table one
+  entry early is what gave the layout one row more of room. **A standing
+  disagreement between two independent readings is a lead, not a tie to be
+  broken by preference** -- they now agree on all eight files that carry both,
+  and `tests/test_tracks.py` pins the count at 8.
 - **To ask whether a constant matters, hash the output -- do not re-derive
   the quantity it is bounded by.** Two scripts asked whether
   `HARD_RESTART_FRAMES` changes anything by reconstructing each song's row:

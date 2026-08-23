@@ -209,7 +209,11 @@ def test_c64_music_examples_emits_one_subtune():
     ("Gremlins", 7), ("Last_V8", 3), ("Last_V8_C128_version", 3),
     ("Mega_Apocalypse", 1), ("Monty_on_the_Run", 3),
     ("Nemesis_the_Warlock", 1), ("One_Man_and_his_Droid", 1),
-    ("Rasputin", 2), ("Spellbound", 4), ("Thing_on_a_Spring", 1),
+    # Spellbound read 4 while the selector signature named the six-byte
+    # scratch buffer at $E6B0 rather than the table it is copied from at
+    # $E6B6: one entry earlier is one row more of room. Correcting the base
+    # is also what made this bound and the player's init dispatch agree.
+    ("Rasputin", 2), ("Spellbound", 3), ("Thing_on_a_Spring", 1),
     ("Thundercats", 1), ("Warhawk", 9),
 ])
 def test_the_bounded_files_end_exactly_where_the_pattern_table_begins(name, extent):
@@ -230,9 +234,10 @@ def test_the_bounded_files_end_exactly_where_the_pattern_table_begins(name, exte
         (det.track_voices - 1) + (extent - 1) * det.track_voices * 2
     assert last_cell + 1 == det.pattern_lo
     # The emitted count is checked with the player's sfx dispatch switched
-    # OFF, because this test is about the layout bound alone. With it on,
-    # Spellbound emits 3 rather than 4 -- the dispatch is tighter there and
-    # wins, which is the composition working, not this bound failing.
+    # OFF, because this test is about the layout bound alone. It used to
+    # differ from the dispatch on Spellbound (4 here, 3 there); once the
+    # selector signature stopped reading that file's scratch buffer as its
+    # table the two agree, on this file and on every other.
     # test_tracks.test_the_dispatch_caps_the_orderlists_a_file_emits pins
     # the other side and their agreement.
     layout_only = dataclasses.replace(det, music_subtunes=None)
@@ -292,7 +297,10 @@ def test_the_bound_reaches_no_other_corpus_file():
         "Nemesis_the_Warlock": (15, 1),
         "One_Man_and_his_Droid": (13, 1),
         "Rasputin": (17, 2),
-        "Spellbound": (13, 4),
+        # 4 until the selector signature stopped assuming the addressing mode
+        # of the arithmetic in front of the copy loop; see the parametrised
+        # test above.
+        "Spellbound": (13, 3),
         "Thing_on_a_Spring": (13, 1),
         "Thundercats": (11, 1),
         "Warhawk": (18, 9),

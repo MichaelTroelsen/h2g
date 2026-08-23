@@ -5695,16 +5695,26 @@ SUBTUNE_REMAP = {
 
 
 def subtune_matrix(orig: Path, packed: Path, args, cal: int,
-                   norig: int, nours: int):
+                   norig: int, nours: int, multiplier: int = 1):
     """melody[i][j] for the original's subtune i against ours j.
 
     The whole point is that the diagonal is not the answer. A file whose best
     match per row sits off the diagonal is a numbering question, and until that
     is settled every other number about the file compares two different pieces
     of music.
+
+    `multiplier` belongs to OUR side only, exactly as in `_measure`: the
+    original is a 50 Hz VBI tune and the -S factor is a property of what
+    gt2reloc packed. Passing it was missed when the matrix was written, so
+    every cell of a multispeed file compared the original at speed against our
+    conversion at 1/multiplier of it -- Spellbound's diagonal read 57% where
+    the report's own row for the same pair reads 93%, and a reader had no way
+    to tell that from a genuine mismatch. Same defect as the probe of
+    § 7.ggggg, in the tool rather than in a scratch script.
     """
     ni, nj = min(norig, MATRIX_CAP), min(nours, MATRIX_CAP)
-    ours = [run_siddump(packed, args.seconds, j, args.siddump) for j in range(nj)]
+    ours = [run_siddump(packed, args.seconds, j, args.siddump,
+                        calls=multiplier) for j in range(nj)]
     grid = []
     for i in range(ni):
         a = run_siddump(orig, args.seconds, i, args.siddump, cal)
@@ -5744,7 +5754,7 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     out.append("")
 
     grid, ni, nj = subtune_matrix(local, packed, args, cal,
-                                  hdr.subtunes, len(lengths))
+                                  hdr.subtunes, len(lengths), multiplier)
     if ni < hdr.subtunes or nj < len(lengths):
         out.append(f"  matrix capped at {MATRIX_CAP} a side: showing {ni} of "
                    f"{hdr.subtunes} original and {nj} of {len(lengths)} ours")
@@ -5769,9 +5779,38 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     if off:
         out.append("  ** the correspondence is not the identity: "
                    + ", ".join(f"s{i} is our o{j}" for i, j in off))
-        out.append(f"     Every other number for this .sid is taken at s{traced}"
-                   f" against o{traced}, so it compares two different pieces of"
-                   " music until this is accounted for.")
+        # Which of ours the REST of this file's numbers were actually taken
+        # against. `_measure` runs a `--search-subtunes` window over our side
+        # (default 3, so one either side of the traced index) and records the
+        # winner as `matched_subtune`; this line asserted the diagonal and so
+        # cried wolf on exactly the files the window already rescues.
+        # Action Biker was one: s0<->o1 and s1<->o0 was a real converter
+        # defect, and the shipped row for it read melody 100% throughout,
+        # because the window had scored s1 against o0. A false alarm about the
+        # report is as damaging as a missed one -- the correspondence claim
+        # above is about the CONVERTER and stands either way; this sentence is
+        # about the MEASUREMENT and has to know what the measurement does.
+        search = int(getattr(args, "search_subtunes", 1) or 1)
+        half = search // 2
+        window = (range(max(0, traced - half), traced + search - half)
+                  if search > 1 else [traced])
+        counterpart = best_j[traced] if traced < len(best_j) else traced
+        if counterpart != traced and counterpart in window:
+            out.append(
+                f"     Every other number for this .sid is taken at s{traced}"
+                f" against o{counterpart}, not o{traced}:"
+                f" --search-subtunes {search} finds the counterpart inside its"
+                " window, so the row is already comparing the right music."
+                " The numbering is still wrong in the .sng.")
+        else:
+            out.append(
+                f"     Every other number for this .sid is taken at s{traced}"
+                f" against o{traced}"
+                + (f" (--search-subtunes {search} searched o{window[0]}.."
+                   f"o{window[-1]} and o{counterpart} is outside it)"
+                   if search > 1 and counterpart != traced else "")
+                + ", so it compares two different pieces of music until this"
+                  " is accounted for.")
     elif strong:
         out.append("  the correspondence is the identity where it is legible")
     out.append("")
@@ -5783,8 +5822,10 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     for label, i, j in pairs:
         if i >= ni or j >= nj:
             continue
+        # Our side at the rate it was packed for; the original at 50 Hz. Same
+        # rule as the matrix above and as `_measure`.
         a = run_siddump(local, args.seconds, i, args.siddump, cal)
-        b = run_siddump(packed, args.seconds, j, args.siddump)
+        b = run_siddump(packed, args.seconds, j, args.siddump, calls=multiplier)
         out.append(f"  s{i} against o{j} ({label}), melody "
                    f"{100 * compare(a, b)['melody']:.0f}%:")
         for v, (ov, nv) in enumerate(zip(a, b)):

@@ -84,7 +84,13 @@ DISPATCH_TRACKS = {
     "Gerry_the_Germ.sid": (23, 7, 7),
     "Hollywood_or_Bust.sid": (10, 3, 3),
     "Knucklebusters.sid": (11, 3, 3),
-    "Spellbound.sid": (13, 3, 4),
+    # Spellbound's layout bound read 4 until the selector signature stopped
+    # encoding an addressing mode: its track table is the six bytes at $E6B6,
+    # and the $E6B0 the chain used to name is the scratch buffer the player
+    # copies each subtune's six pointers INTO. Reading the table one entry
+    # early gave the layout one more row to fit, and disagreed with the
+    # dispatch. Now both say 3.
+    "Spellbound.sid": (13, 3, 3),
     "Thing_on_a_Spring.sid": (17, 1, 1),
     "Warhawk.sid": (18, 9, 9),
 }
@@ -97,19 +103,25 @@ def test_the_dispatch_caps_the_orderlists_a_file_emits():
     Two bounds now cap this count and they were derived independently -- this
     one by reading the player's `CMP #imm / BCS / JMP` init dispatch, the
     other (`tracks.track_table_extent`) by reading where the track table runs
-    into the pattern table. They AGREE on seven of the eight files that have
-    both, which is mutual corroboration rather than redundancy: two different
-    methods, one answer. Spellbound is the single disagreement -- the layout
-    has room for four rows and the player only ever dispatches three as music
-    -- and there the dispatch wins, because it is a statement about what the
-    player does and the extent only about what the table has room for.
+    into the pattern table. They AGREE on all eight files that have both,
+    which is mutual corroboration rather than redundancy: two different
+    methods, one answer.
+
+    Spellbound used to be the one disagreement -- layout 4 against dispatch 3
+    -- and the disagreement turned out to be a third defect rather than a
+    difference of kind: the selector signature read the six-byte scratch
+    buffer at $E6B0 as the table instead of the table at $E6B6, so the layout
+    was measuring a table that started one entry early and had room for one
+    row more. Correcting the base made the two agree without either rule
+    being touched. A standing disagreement between two independent readings
+    is a lead, not a tie to be broken by preference.
 
     So the third column is the LAYOUT bound alone, not the header. Where it
     equals the music count the dispatch changes no bytes and earns its place
     by attribution instead: the census fate is `sfx` rather than
-    `beyond_table`, which is what SUBTUNES.md reports. Where it differs
-    (Spellbound alone today) the dispatch is load-bearing, and this test is
-    what says which of the two moved if either rule changes.
+    `beyond_table`, which is what SUBTUNES.md reports. Nothing is load-bearing
+    on the dispatch alone today, and this test is what says which of the two
+    moved if either rule changes.
     """
     from h2g.convert import _detect_tables
     from h2g.detect import find_music_subtunes
@@ -139,7 +151,7 @@ def test_the_dispatch_caps_the_orderlists_a_file_emits():
         # after it was emitted.
         assert was[:music * 3] == tracks, name
         assert find_music_subtunes(sid) == music, name
-    # Two independent methods, one answer, on seven of the eight. If this
-    # number falls, the two bounds have started disagreeing and one of them
-    # has drifted -- that is the signal, not the individual file counts.
-    assert agreed == 7, agreed
+    # Two independent methods, one answer, on all eight. If this number falls,
+    # the two bounds have started disagreeing and one of them has drifted --
+    # that is the signal, not the individual file counts.
+    assert agreed == 8, agreed

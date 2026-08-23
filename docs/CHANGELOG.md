@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.372 — 2026-08-23
+
+- the subtune table was read six bytes early, at the buffer instead of the table
+
 ## 0.5.371 — 2026-08-23
 
 - scroll-wheel zoom on both amplitude drawings

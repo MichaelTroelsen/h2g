@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.369 presets.py",
+  "generator": "h2g 0.5.372 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -55,9 +55,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16204,
+      "bytes": 18413,
       "subtunes": 3,
-      "rows": 13180,
+      "rows": 10641,
       "multiplier": 1
     },
     "After_8.sid": {
@@ -744,11 +744,11 @@
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
       "pack": false,
-      "prune": true,
+      "prune": false,
       "dedup": true,
-      "bytes": 14650,
+      "bytes": 14832,
       "subtunes": 14,
-      "rows": 11439,
+      "rows": 7894,
       "multiplier": 1
     },
     "Sanxion.sid": {
@@ -805,9 +805,9 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 32611,
+      "bytes": 35213,
       "subtunes": 3,
-      "rows": 51487,
+      "rows": 27188,
       "multiplier": 2
     },
     "Star_Paws.sid": {
