@@ -595,6 +595,39 @@ test dependency).
   `fidelity_better` cannot select it, because it scores a melody *gain*. Two
   mechanisms now wait on a scorer that weighs oscillation and noise pitch. See
   § 7.ttt.
+- **The vibrato DEPTH is about 2.4x too shallow, no column can see it, and the
+  obvious repair is refuted twice over.** A listener reported ACE II's lead as
+  under-vibratoed; measured within notes (segmented on GATE RISING EDGES, not
+  on note names -- siddump prints the *nearest* note, which flickers during
+  vibrato and chops every note into fragments too short to measure), its
+  instruments 9/10 and 6 swing 1.6% of pitch against the original's 5.6%.
+  Restricted to the population that carries a vibrato byte at all --
+  `record + det.vibrato_offset` non-zero, the § "a discriminator is only
+  meaningful on the population the behaviour occurs in" rule -- the corpus
+  median is **2.39x over 33 files, and every multiplier group exceeds 1**,
+  including `-S1` at 1.91x where the multiplier term is zero. **A first pass
+  that did NOT restrict to that population is worthless and was discarded**:
+  it reported "depths" of 273% and 397% of pitch, which are portamento slides
+  and drum sweeps, and its by-multiplier medians all sat at ~1.0.
+  `vib` cannot see any of this -- it counts pitch *reversals*, i.e. the RATE,
+  which we already get right (ACE II reads 1.09x). This is the § "prefer a
+  travel measure to a count whenever the change is to a step size" case, still
+  unbuilt for oscillation depth.
+  **Dropping the `+1` from `rshift = shift + 1 + _rate_shift(multiplier)` is
+  not the fix**, and the second refutation is now on the record with numbers.
+  It moves exactly the 55 files carrying this engine and reproduces v0.5.129's
+  rejection *to three decimals* -- Powerplay 0.993 -> 0.922 and Sigma Seven
+  0.990 -> 0.972, the figures already written down -- while adding two
+  casualties that were not: International Karate 0.980 -> 0.826 and
+  **One_on_One_Jordan_vs_Bird 0.986 -> 0.299**. Zero files improve on melody,
+  sequence or pitch. The cause is that a deeper swing has already moved the
+  pitch by the frame siddump names the attack on, so it renames attacks. The
+  Commando fixture is unaffected either way (`vibrato_offset` is None on both
+  its rips), so the fixture is not what blocks this.
+  The lead worth following, untested: if the swing renames attacks because it
+  is already deep AT the attack, the lever may be `vibdelay` rather than
+  `rshift` -- start the oscillation later and the depth may be payable. Do not
+  touch `rshift` again without a measure of depth in the report.
 - **A column can read 100% because the trace cannot see the defect.** `hold`
   measures a note-length deficit that is a fixed number of play *calls* -- the
   next-note fetch is `gatetimer & $3f` calls early -- so at `-S4` it is a

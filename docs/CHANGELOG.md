@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.367 — 2026-08-23
+
+- rest-envelope silence enabled for five songs; vibrato depth measured and the rshift repair refuted again
+
 ## 0.5.366 — 2026-08-23
 
 - the bit-6 rest zeroes the envelope, behind --rest-envelope-silence
