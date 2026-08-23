@@ -957,11 +957,76 @@ SCRIPT = r"""
   // note lengths and tempo drift (the two traces shear apart); it cannot show
   // pitch, timbre or filter, which is why the caveat is printed beside it
   // rather than left for the reader to infer.
+  // ---- shared zoom -------------------------------------------------------
+  // ONE zoom for both drawings, not one each. The per-voice card's own caption
+  // promises "same time axis and the same sync offset as the pair above", and
+  // two independent zooms would quietly break that -- the whole reason to look
+  // at them together is that a spike in one lines up with a shape in the other.
+  //
+  // `span` is the fraction of the tune on screen and `at` its left edge, both
+  // in tune-fractions rather than seconds, so nothing here needs the duration
+  // until it draws.
+  //
+  // The envelopes are computed at ZMAX times the display width (see
+  // `envelope`), so zooming in reveals detail that was averaged away rather
+  // than stretching the same buckets into blocks. Past ZMAX it would do the
+  // latter, which is why the clamp is there and not higher: a zoom that stops
+  // adding information should stop.
+  var ZMAX = 32;
+  var zoom = { span: 1, at: 0 };
+
+  function zoomClamp() {
+    zoom.span = Math.max(1 / ZMAX, Math.min(1, zoom.span));
+    zoom.at = Math.max(0, Math.min(1 - zoom.span, zoom.at));
+  }
+  function zoomRedraw() {
+    if (window.__abRedraw) window.__abRedraw();
+    if (window.__abVoiceRedraw) window.__abVoiceRedraw();
+    var t = document.getElementById("zoomstat");
+    if (t) {
+      t.textContent = zoom.span >= 1 ? "whole tune"
+        : ("x" + (1 / zoom.span).toFixed(1) + " zoom");
+    }
+  }
+  // Zoom about the cursor, so the thing under the pointer stays under it.
+  function zoomWheel(e, box) {
+    var r = box.getBoundingClientRect();
+    var frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    var anchor = zoom.at + frac * zoom.span;
+    var f = e.deltaY > 0 ? 1.25 : 1 / 1.25;
+    var was = zoom.span;
+    zoom.span *= f;
+    zoomClamp();
+    if (zoom.span === was) return false;   // already at a stop: let the page scroll
+    zoom.at = anchor - frac * zoom.span;
+    zoomClamp();
+    zoomRedraw();
+    return true;
+  }
+  function zoomBind(box) {
+    box.addEventListener("wheel", function (e) {
+      if (zoomWheel(e, box)) e.preventDefault();
+    }, { passive: false });
+    // Double-click restores the whole tune. It also seeks, because the click
+    // handler fires too -- which is the behaviour you want anyway: zoom out
+    // and land where you pointed.
+    box.addEventListener("dblclick", function () {
+      zoom.span = 1; zoom.at = 0; zoomRedraw();
+    });
+  }
+  // Display column -> index into a ZMAX-oversampled envelope.
+  function zsrc(i, cols, fine) {
+    var f = zoom.at + (i / cols) * zoom.span;
+    var k = Math.round(f * fine);
+    return k < 0 ? 0 : (k >= fine ? fine - 1 : k);
+  }
+
   var cv = document.getElementById("wave");
   if (cv) (function () {
     var msg = document.getElementById("wavemsg");
     var stat = document.getElementById("wavestat");
     var COLS = 1400, H = 200, DIFF = 46, PAD = 6;
+    var FINE = COLS * ZMAX;
     var off = document.createElement("canvas");
     off.width = COLS; off.height = H + DIFF;
     cv.width = COLS; cv.height = H + DIFF;
@@ -971,10 +1036,14 @@ SCRIPT = r"""
     function css(n) {
       return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
     }
+    // Sampled at ZMAX times the display width, so a zoom shows detail that was
+    // averaged away rather than the same buckets stretched. It costs one array
+    // of FINE floats a side (~180 KB) and no extra work: the loop is O(samples)
+    // however many buckets it fills.
     function envelope(buf) {
       var ch = buf.getChannelData(0), n = ch.length;
-      var out = new Float32Array(COLS), per = n / COLS;
-      for (var i = 0; i < COLS; i++) {
+      var out = new Float32Array(FINE), per = n / FINE;
+      for (var i = 0; i < FINE; i++) {
         var s = Math.floor(i * per), e = Math.min(n, Math.floor((i + 1) * per));
         var pk = 0;
         for (var j = s; j < e; j++) { var v = ch[j] < 0 ? -ch[j] : ch[j]; if (v > pk) pk = v; }
@@ -982,11 +1051,18 @@ SCRIPT = r"""
       }
       return out;
     }
-    function band(g, env, colour, alpha) {
+    // `by` is the sync offset in FINE units, applied as the envelope is read,
+    // which is what lets the shift stay correct at every zoom -- shifting a
+    // pre-sampled array would quantise the offset to the visible resolution.
+    function at(env, i, by) {
+      var k = zsrc(i, COLS, FINE) + by;
+      return (k >= 0 && k < FINE) ? env[k] : 0;
+    }
+    function band(g, env, colour, alpha, by) {
       var mid = H / 2, half = mid - PAD;
       g.beginPath();
-      for (var i = 0; i < COLS; i++) g.lineTo(i, mid - env[i] * half);
-      for (var k = COLS - 1; k >= 0; k--) g.lineTo(k, mid + env[k] * half);
+      for (var i = 0; i < COLS; i++) g.lineTo(i, mid - at(env, i, by) * half);
+      for (var k = COLS - 1; k >= 0; k--) g.lineTo(k, mid + at(env, k, by) * half);
       g.closePath();
       g.globalAlpha = alpha; g.fillStyle = colour; g.fill(); g.globalAlpha = 1;
     }
@@ -995,39 +1071,35 @@ SCRIPT = r"""
     function shiftCols() {
       var d = au.duration;
       if (!d || !isFinite(d)) return 0;
-      return Math.round(sync / d * COLS);
-    }
-    function shifted(env, by) {
-      if (!by) return env;
-      var out = new Float32Array(COLS);
-      for (var i = 0; i < COLS; i++) {
-        var j = i + by;
-        out[i] = (j >= 0 && j < COLS) ? env[j] : 0;
-      }
-      return out;
+      return Math.round(sync / d * FINE);
     }
     function paint() {
-      var line = css("--line"), ink = css("--ink");
-      var envBs = shifted(envB, shiftCols());
+      var line = css("--line"), ink = css("--ink"), by = shiftCols();
       oc.clearRect(0, 0, COLS, H + DIFF);
       oc.strokeStyle = line; oc.lineWidth = 1;
       oc.beginPath(); oc.moveTo(0, H / 2 + 0.5); oc.lineTo(COLS, H / 2 + 0.5); oc.stroke();
       oc.beginPath(); oc.moveTo(0, H + 0.5); oc.lineTo(COLS, H + 0.5); oc.stroke();
-      if (show.a) band(oc, envA, css("--a"), 0.62);
-      if (show.b) band(oc, envBs, css("--b"), 0.62);
+      if (show.a) band(oc, envA, css("--a"), 0.62, 0);
+      if (show.b) band(oc, envB, css("--b"), 0.62, by);
       // difference strip: |peak difference| per column, same time axis.
-      // The sum accumulates whether or not the strip is drawn -- the mean is a
-      // property of the two renders, not of what is currently on screen, and
-      // recomputing it from the visible traces would make hiding a key look
-      // like it changed the measurement.
-      var sum = 0;
-      oc.globalAlpha = 0.45; oc.fillStyle = ink;
-      for (var i = 0; i < COLS; i++) {
-        var d = Math.abs(envA[i] - envBs[i]); sum += d;
-        if (show.d) oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
+      if (show.d) {
+        oc.globalAlpha = 0.45; oc.fillStyle = ink;
+        for (var i = 0; i < COLS; i++) {
+          var d = Math.abs(at(envA, i, 0) - at(envB, i, by));
+          oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
+        }
+        oc.globalAlpha = 1;
       }
-      oc.globalAlpha = 1;
-      if (stat) stat.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
+      // The mean is over the WHOLE tune at full resolution, never over what is
+      // on screen. It is a property of the two renders, so neither hiding a
+      // trace nor zooming may move it -- a figure that changed when you scrolled
+      // would read as a measurement and be a description of the viewport.
+      var sum = 0;
+      for (var k = 0; k < FINE; k++) {
+        var j = k + by;
+        sum += Math.abs(envA[k] - ((j >= 0 && j < FINE) ? envB[j] : 0));
+      }
+      if (stat) stat.textContent = "mean |Δ| " + (100 * sum / FINE).toFixed(1) + "%";
       frame();
     }
 
@@ -1085,7 +1157,11 @@ SCRIPT = r"""
       ctx.drawImage(off, 0, 0);
       var d = au.duration;
       if (d && isFinite(d)) {
-        var x = Math.round(au.currentTime / d * COLS) + 0.5;
+        // Off-screen while zoomed in elsewhere: drawn anyway and simply clipped,
+        // rather than hidden, so the line's absence always means "not playing"
+        // and never "playing somewhere you cannot see".
+        var f = (au.currentTime / d - zoom.at) / zoom.span;
+        var x = Math.round(f * COLS) + 0.5;
         ctx.strokeStyle = css("--live"); ctx.lineWidth = 2;
         ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H + DIFF); ctx.stroke();
       }
@@ -1097,12 +1173,14 @@ SCRIPT = r"""
       var d = au.duration;
       if (!d || !isFinite(d)) return;
       var r = cv.getBoundingClientRect();
-      var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+      var frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      var t = (zoom.at + frac * zoom.span) * d;
       au.currentTime = t; bu.currentTime = bAt(t);
       now.textContent = fmt(t);
       seek.value = String(Math.round(t / d * 1000));
       frame();
     });
+    zoomBind(cv);
 
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) { if (msg) msg.textContent = "This browser has no Web Audio."; return; }
@@ -1159,19 +1237,27 @@ SCRIPT = r"""
     // because there are three of them stacked and the strip is read for WHERE
     // it spikes, not for how tall the spike is.
     var COLS = 1400, H = 84, DIFF = 22, PAD = 3;
+    var FINE = COLS * ZMAX;
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) { if (vmsg) vmsg.textContent = "This browser has no Web Audio."; return; }
     var ac = new AC(), strips = [];
 
+    // Oversampled like the combined picture, for the same reason and at the
+    // same factor -- six of these is about a megabyte, which is nothing beside
+    // the WAVs they came from.
     function env(buf) {
       var ch = buf.getChannelData(0), n = ch.length;
-      var out = new Float32Array(COLS), per = n / COLS;
-      for (var i = 0; i < COLS; i++) {
+      var out = new Float32Array(FINE), per = n / FINE;
+      for (var i = 0; i < FINE; i++) {
         var s = Math.floor(i * per), e = Math.min(n, Math.floor((i + 1) * per)), pk = 0;
         for (var j = s; j < e; j++) { var v = ch[j] < 0 ? -ch[j] : ch[j]; if (v > pk) pk = v; }
         out[i] = pk;
       }
       return out;
+    }
+    function vat(e, i, by) {
+      var k = zsrc(i, COLS, FINE) + by;
+      return (k >= 0 && k < FINE) ? e[k] : 0;
     }
     function grab(src) {
       return fetch(src).then(function (r) { return r.arrayBuffer(); })
@@ -1187,7 +1273,7 @@ SCRIPT = r"""
     function shiftCols() {
       var d = au.duration;
       if (!d || !isFinite(d)) return 0;
-      return Math.round(sync / d * COLS);
+      return Math.round(sync / d * FINE);
     }
     function paintStrip(s) {
       var g = s.ctx, by = shiftCols(), mid = H / 2, half = mid - PAD;
@@ -1196,15 +1282,10 @@ SCRIPT = r"""
       g.beginPath(); g.moveTo(0, mid + 0.5); g.lineTo(COLS, mid + 0.5); g.stroke();
       g.beginPath(); g.moveTo(0, H + 0.5); g.lineTo(COLS, H + 0.5); g.stroke();
       function band(e, colour, shifted) {
+        var sh = shifted ? by : 0;
         g.beginPath();
-        for (var i = 0; i < COLS; i++) {
-          var j = shifted ? i + by : i, v = (j >= 0 && j < COLS) ? e[j] : 0;
-          g.lineTo(i, mid - v * half);
-        }
-        for (var k = COLS - 1; k >= 0; k--) {
-          var m = shifted ? k + by : k, w = (m >= 0 && m < COLS) ? e[m] : 0;
-          g.lineTo(k, mid + w * half);
-        }
+        for (var i = 0; i < COLS; i++) g.lineTo(i, mid - vat(e, i, sh) * half);
+        for (var k = COLS - 1; k >= 0; k--) g.lineTo(k, mid + vat(e, k, sh) * half);
         g.closePath(); g.globalAlpha = 0.62; g.fillStyle = colour; g.fill();
         g.globalAlpha = 1;
       }
@@ -1218,15 +1299,15 @@ SCRIPT = r"""
       if (vshow.d) {
         g.globalAlpha = 0.45; g.fillStyle = cssv("--ink");
         for (var i = 0; i < COLS; i++) {
-          var j = i + by;
-          var dv = Math.abs(s.a[i] - ((j >= 0 && j < COLS) ? s.b[j] : 0));
+          var dv = Math.abs(vat(s.a, i, 0) - vat(s.b, i, by));
           g.fillRect(i, H + DIFF - dv * (DIFF - 3), 1, dv * (DIFF - 3));
         }
         g.globalAlpha = 1;
       }
       var d = au.duration;
       if (d && isFinite(d)) {
-        var x = Math.round(au.currentTime / d * COLS) + 0.5;
+        var f = (au.currentTime / d - zoom.at) / zoom.span;
+        var x = Math.round(f * COLS) + 0.5;
         g.strokeStyle = cssv("--live"); g.lineWidth = 2;
         g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H + DIFF); g.stroke();
       }
@@ -1256,21 +1337,26 @@ SCRIPT = r"""
         var cv = document.getElementById("vwcv" + v);
         cv.width = COLS; cv.height = H + DIFF;
         var a = env(bufs[0]), b = env(bufs[1]), by = shiftCols(), sum = 0;
-        for (var i = 0; i < COLS; i++) {
+        // Over the whole tune at full resolution, never over the visible
+        // window -- this number ranks the voices against each other and must
+        // not move when one of them is zoomed.
+        for (var i = 0; i < FINE; i++) {
           var j = i + by;
-          sum += Math.abs(a[i] - ((j >= 0 && j < COLS) ? b[j] : 0));
+          sum += Math.abs(a[i] - ((j >= 0 && j < FINE) ? b[j] : 0));
         }
         var st = document.getElementById("vwstat" + v);
-        if (st) st.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
+        if (st) st.textContent = "mean |Δ| " + (100 * sum / FINE).toFixed(1) + "%";
         cv.addEventListener("click", function (e) {
           var d = au.duration;
           if (!d || !isFinite(d)) return;
           var r = cv.getBoundingClientRect();
-          var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+          var frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+          var t = (zoom.at + frac * zoom.span) * d;
           au.currentTime = t; bu.currentTime = bAt(t);
           now.textContent = fmt(t);
           seek.value = String(Math.round(t / d * 1000));
         });
+        zoomBind(cv);
         strips.push({ ctx: cv.getContext("2d"), a: a, b: b });
       });
     });
@@ -2053,8 +2139,9 @@ def voicewave_card(voice_map: dict) -> str:
         '    <button type="button" class="swatch diff" data-vtrace="d" '
         'aria-pressed="true"><i></i>|difference|, lower strip</button>\n'
         '    <span>click a key to hide it in all three &middot; click a voice '
-        'name to collapse it &middot; same time axis and the same sync offset '
-        'as the pair above &middot; click a strip to seek</span>\n'
+        'name to collapse it &middot; <b>scroll to zoom</b>, shared with the '
+        'picture above so the two stay on one time axis &middot; click a '
+        'strip to seek</span>\n'
         '  </div>\n'
         '  <p class="caveat">The voice whose <code>mean&nbsp;|&Delta;|</code> '
         'is worst is the one to solo with the buttons at the top and listen '
@@ -2275,7 +2362,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
     <button type="button" class="swatch orig" data-trace="a" aria-pressed="true"><i></i>original</button>
     <button type="button" class="swatch ours" data-trace="b" aria-pressed="true"><i></i>H2G</button>
     <button type="button" class="swatch diff" data-trace="d" aria-pressed="true"><i></i>|difference|, lower strip</button>
-    <span>click a key to hide it &middot; click the picture to seek both</span>
+    <span>click a key to hide it &middot; click to seek &middot; <b>scroll to zoom</b>, double-click to fit</span>
+    <span class="stat" id="zoomstat">whole tune</span>
     <span class="stat" id="wavestat"></span>
   </div>
   <p class="caveat"><b>This is amplitude, and amplitude is not fidelity.</b>
