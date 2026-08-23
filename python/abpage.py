@@ -33,6 +33,7 @@ import base64
 import cmath
 import json
 import math
+import os
 import re
 import struct
 import sys
@@ -696,6 +697,20 @@ td a { color:var(--ink); font-weight:600; }
   font-size:11.5px; color:var(--muted); border-bottom:1px solid var(--line); }
 .voicewave .vwhead b { color:var(--ink); letter-spacing:.06em; }
 .voicewave canvas { display:block; width:100%; height:84px; cursor:pointer; }
+.voicewave button.vwtoggle { appearance:none; background:none; border:0;
+  padding:0; font:inherit; color:inherit; cursor:pointer; display:inline-flex;
+  align-items:center; gap:7px; }
+.voicewave button.vwtoggle:focus-visible { outline:2px solid var(--ink);
+  outline-offset:3px; border-radius:3px; }
+/* A caret that turns, so the collapsed state reads as collapsed rather than
+   as a voice that failed to render. */
+.voicewave .cx { width:0; height:0; border-left:5px solid currentColor;
+  border-top:4px solid transparent; border-bottom:4px solid transparent;
+  transform:rotate(90deg); transition:transform .12s; opacity:.65; }
+.voicewave button.vwtoggle[aria-pressed="false"] .cx { transform:rotate(0deg); }
+.voicewave button.vwtoggle[aria-pressed="false"] b { color:var(--muted); }
+.voicewave .vw.off canvas { display:none; }
+.voicewave .vw.off { background:transparent; }
 .wave .swatch { display:inline-flex; align-items:center; gap:6px; }
 /* The two bands sit on top of each other at 62% alpha, so where they agree
    they are one colour and neither is readable on its own. Hiding a key is
@@ -1153,6 +1168,20 @@ SCRIPT = r"""
         strips.push({ ctx: cv.getContext("2d"), a: a, b: b });
       });
     });
+    // Collapse a voice. The strip keeps its mean |difference| visible while
+    // collapsed -- that number is what ranks the voices, so hiding it with the
+    // picture would defeat the point of collapsing the other two.
+    Array.prototype.forEach.call(
+      vwrap.querySelectorAll("button.vwtoggle"), function (b) {
+        b.addEventListener("click", function () {
+          var box = b.closest(".vw");
+          var on = b.getAttribute("aria-pressed") !== "false";
+          b.setAttribute("aria-pressed", String(!on));
+          box.classList.toggle("off", on);
+          if (!on) paintAll();      // re-shown: it was not painted while off
+        });
+      });
+
     Promise.all(jobs).then(function () {
       if (vmsg) vmsg.hidden = true;
       vwrap.hidden = false;
@@ -1899,9 +1928,12 @@ def voicewave_card(voice_map: dict) -> str:
         return ""
     strips = "".join(
         '<div class="vw" data-voice="%d">'
-        '<div class="vwhead"><b>Voice %d</b>'
+        '<div class="vwhead">'
+        '<button type="button" class="vwtoggle" data-strip="%d" '
+        'aria-pressed="true" aria-label="Show or hide voice %d">'
+        '<span class="cx"></span><b>Voice %d</b></button>'
         '<span class="stat" id="vwstat%d"></span></div>'
-        '<canvas id="vwcv%d"></canvas></div>' % (v, v, v, v)
+        '<canvas id="vwcv%d"></canvas></div>' % (v, v, v, v, v, v)
         for v in (1, 2, 3))
     return (
         '<div class="card wave voicewave">\n  <h2>Each voice, drawn</h2>\n'
@@ -1910,8 +1942,9 @@ def voicewave_card(voice_map: dict) -> str:
         '  <div class="legend">\n'
         '    <span class="swatch orig"><i></i>original</span>\n'
         '    <span class="swatch ours"><i></i>H2G</span>\n'
-        '    <span>same time axis and the same sync offset as the pair above '
-        '&middot; click any strip to seek</span>\n'
+        '    <span>click a voice name to collapse it &middot; same time axis '
+        'and the same sync offset as the pair above &middot; click a strip to '
+        'seek</span>\n'
         '  </div>\n'
         '  <p class="caveat">The voice whose <code>mean&nbsp;|&Delta;|</code> '
         'is worst is the one to solo with the buttons at the top and listen '
@@ -2441,6 +2474,114 @@ def main() -> int:
     return 0
 
 
+import http.server as _http_server
+
+
+class _RangeHandler(_http_server.SimpleHTTPRequestHandler):
+    """A static handler that honours HTTP Range. The stock one does not.
+
+    `SimpleHTTPRequestHandler` ignores the `Range` header entirely: it answers
+    every request with `200 OK` and the WHOLE file, and advertises no
+    `Accept-Ranges`. For HTML that is merely wasteful. For a 2.6 MB WAV driving
+    an `<audio>` element it is a bug with an audible symptom -- the media
+    pipeline requests a byte range to seek or to refill, is handed the file
+    from byte 0 again, and replays the opening seconds. That is the "it loops
+    every couple of seconds" this project chased twice and misdiagnosed both
+    times as a stale render; the WAV on disk measured clean each time
+    (autocorrelation peaked at 0.59, nowhere near the ~1.0 a real loop gives),
+    because the file was never the problem.
+
+    It is also why an automated browser's `readyState` sat at 0 forever
+    earlier in this project's history, which was written off as an environment
+    limitation. It was this.
+
+    Two changes and no more: advertise and implement single-range requests,
+    and speak HTTP/1.1 so a keep-alive connection is available. Multi-range
+    (`bytes=0-99,200-299`) is not implemented -- no browser uses it for media
+    -- and is answered as a normal 200 rather than wrongly.
+    """
+
+    protocol_version = "HTTP/1.1"
+
+    def send_head(self):
+        rng = self.headers.get("Range")
+        if not rng:
+            return super().send_head()
+        path = self.translate_path(self.path)
+        if os.path.isdir(path):
+            return super().send_head()
+        m = re.fullmatch(r"bytes=(\d*)-(\d*)", rng.strip())
+        if not m or (not m.group(1) and not m.group(2)):
+            return super().send_head()          # unsatisfiable shape: 200
+        try:
+            f = open(path, "rb")
+        except OSError:
+            self.send_error(404, "File not found")
+            return None
+        try:
+            size = os.fstat(f.fileno()).st_size
+            first, last = m.group(1), m.group(2)
+            if first:
+                start = int(first)
+                end = int(last) if last else size - 1
+            else:                                # "bytes=-N": the final N bytes
+                start = max(0, size - int(last))
+                end = size - 1
+            end = min(end, size - 1)
+            if start >= size or start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", "bytes */%d" % size)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                f.close()
+                return None
+            self.send_response(206)
+            self.send_header("Content-type", self.guess_type(path))
+            self.send_header("Accept-Ranges", "bytes")
+            self.send_header("Content-Range",
+                             "bytes %d-%d/%d" % (start, end, size))
+            self.send_header("Content-Length", str(end - start + 1))
+            self.send_header("Last-Modified", self.date_time_string(
+                os.fstat(f.fileno()).st_mtime))
+            self.end_headers()
+            f.seek(start)
+            # copyfile() would send to EOF; hand back only the slice asked for.
+            return _Slice(f, end - start + 1)
+        except Exception:
+            f.close()
+            raise
+
+    def send_response(self, code, message=None):
+        # Advertise range support on every response EXCEPT the 206, which sets
+        # the header itself -- a flag rather than scanning the header buffer,
+        # which is a list of bytes and cannot be searched for a str.
+        super().send_response(code, message)
+        if code != 206:
+            self.send_header("Accept-Ranges", "bytes")
+
+    def log_message(self, fmt, *args):        # keep the console readable
+        pass
+
+
+class _Slice:
+    """A read-only file view of exactly `remaining` bytes, for copyfile()."""
+
+    def __init__(self, fh, remaining):
+        self._fh, self._left = fh, remaining
+
+    def read(self, n=-1):
+        if self._left <= 0:
+            return b""
+        if n is None or n < 0 or n > self._left:
+            n = self._left
+        chunk = self._fh.read(n)
+        self._left -= len(chunk)
+        return chunk
+
+    def close(self):
+        self._fh.close()
+
+
 def serve(port: int) -> int:
     """Serve build/listen on 127.0.0.1 until interrupted.
 
@@ -2454,8 +2595,7 @@ def serve(port: int) -> int:
     import functools
     import http.server
 
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler,
-                                directory=str(LISTEN))
+    handler = functools.partial(_RangeHandler, directory=str(LISTEN))
     try:
         httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     except OSError as exc:
