@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.369 — 2026-08-23
+
+- the vibrato depth doubles, paid for with vibdelay instead of melody
+
 ## 0.5.368 — 2026-08-23
 
 - FIDELITY.md gains a vibrato depth column

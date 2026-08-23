@@ -2755,7 +2755,7 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
     # bound 1 at -S1 asks for a half-period of one frame; Goattracker's
     # shortest is two calls (cmp 0), which is what the clamp gives.
     cmp_value = min(0x7F, max(0, round(half) - VIBRATO_CMP_BIAS))
-    rshift = min(shift + 1 + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
+    rshift = min(shift + _rate_shift(multiplier), GT_MAX_VIB_SHIFT)
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
@@ -2853,6 +2853,22 @@ def _vibrato_delay(det: Detection, multiplier: int,
     below still delayed.
     """
     if det.triangle_vibrato is None:
+        # **The classic engine delays past frame 0; the LFO table does not.**
+        # Halving `rshift` doubles the swing, and on its own that renames the
+        # attack -- siddump names a note from the frequency on the frame the
+        # gate rises, and a swing near a semitone has already moved it by then.
+        # That route was refuted twice (v0.5.129, v0.5.367) at a cost of
+        # melody 0.986 -> 0.299 on One_on_One_Jordan_vs_Bird alone. Delaying
+        # the oscillator until frame 0 is over removes the CAUSE: the attack
+        # keeps the note's own pitch, so the deeper swing is free. `multiplier`
+        # calls are frame 0, so `multiplier + 1` is its first call of frame 1.
+        #
+        # Scoped to the classic engine because that is the population the
+        # depth deficit was measured on, and because the LFO table's entry is
+        # documented as starting ON the note
+        # (tests/test_table_vibrato.py::test_the_entry_is_note_relative_and_starts_on_the_note).
+        if det.vibrato_offset is not None:
+            return max(VIBRATO_DELAY, multiplier + 1)
         return VIBRATO_DELAY
     if commanded:
         # **The commands express the gate; the delay must not express it

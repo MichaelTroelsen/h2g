@@ -624,9 +624,28 @@ test dependency).
   pitch by the frame siddump names the attack on, so it renames attacks. The
   Commando fixture is unaffected either way (`vibrato_offset` is None on both
   its rips), so the fixture is not what blocks this.
-  The lead worth following, untested: if the swing renames attacks because it
-  is already deep AT the attack, the lever may be `vibdelay` rather than
-  `rshift` -- start the oscillation later and the depth may be payable.
+  **The lead was right, and it is now the fix (v0.5.369).** If the swing renames
+  attacks because it is already deep AT the attack, the lever is `vibdelay`, not
+  `rshift`: siddump names a note from the frequency on the frame the gate rises,
+  so delaying the oscillator until frame 0 is over removes the CAUSE rather than
+  paying for it -- the attack keeps the note's own pitch and the deeper swing is
+  then free. `rshift` loses its `+ 1` and the classic engine's `vibdelay` becomes
+  `multiplier + 1` calls. The four files the rshift-only route destroyed are
+  UNMOVED: One_on_One_Jordan_vs_Bird 0.9864, International Karate 0.9800,
+  Powerplay 0.9930, Sigma Seven 0.9903, against 0.299/0.826/0.922/0.972 under
+  rshift alone. Corpus: 55 of 83 files move -- exactly this engine's population --
+  depth median **0.399 -> 0.817**, `vib` |log ratio| median 0.199 -> 0.171, and
+  **zero files worse on any of melody, seq, pitch, wave, onset, hold, gate, adsr,
+  nrun or tail**. **Scope it to the classic engine**: the first cut delayed the
+  LFO table too and broke its documented "starts on the note" property.
+  **AND THE COST IS ONE NO COLUMN CAN SEE.** The oscillator now starts
+  `multiplier` calls later -- 1 frame at `-S1`, 1.33 at `-S3` -- and nothing in
+  FIDELITY.md measures when an oscillation STARTS, so the corpus A/B that
+  justifies this change is structurally blind to its only downside.
+  `_vibrato_delay`'s docstring already records a listener reporting the vibrato
+  starting late. A clean sweep on every column is not evidence here; it is the
+  shape of a measure that cannot look. If a late onset is ever reported, the
+  delay is tunable below `multiplier + 1`, trading depth back for onset.
   **That measure now exists**: `depth` (`depth_ratio`), the column immediately
   right of `vib`, added because this deficit was invisible to every other one.
   It reads $D400/$D401, segments on gate rising edges, and is restricted to the

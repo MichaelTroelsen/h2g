@@ -60,9 +60,11 @@ def test_the_byte_splits_into_a_bound_and_a_shift():
     assert (0x2B & VIBRATO_BOUND_MASK) >> 3 == 5
     assert 0x2B & VIBRATO_SHIFT_MASK == 3
     got, table = _layout(0x2B)
-    # cmp = bound * multiplier - 2; rshift = shift + 1 + log2(multiplier).
-    assert table == [(SPEED_NOTE_RELATIVE | 3, 4)]
-    assert got == {0: (1, VIBRATO_DELAY)}
+    # cmp = bound * multiplier - 2; rshift = shift + log2(multiplier).
+    # The `+ 1` went when `vibdelay` stopped the deeper swing renaming
+    # attacks -- see test_the_classic_vibrato_starts_after_frame_zero.
+    assert table == [(SPEED_NOTE_RELATIVE | 3, 3)]
+    assert got == {0: (1, 2)}
 
 
 def test_the_entry_is_note_relative():
@@ -98,11 +100,11 @@ def test_the_period_and_depth_both_scale_with_the_multiplier():
     # Goattracker's counter advances per play *call*, the player's per frame.
     # At -S2 twice as many calls fit in the player's half-period, and each
     # step must be half the size so the excursion stays where the player
-    # puts it: cmp 5*1-2 = 3 -> 5*2-2 = 8, rshift 4 -> 5.
+    # puts it: cmp 5*1-2 = 3 -> 5*2-2 = 8, rshift 3 -> 4.
     _, at1 = _layout(0x2B, multiplier=1)
     _, at2 = _layout(0x2B, multiplier=2)
-    assert at1 == [(SPEED_NOTE_RELATIVE | 3, 4)]
-    assert at2 == [(SPEED_NOTE_RELATIVE | 8, 5)]
+    assert at1 == [(SPEED_NOTE_RELATIVE | 3, 3)]
+    assert at2 == [(SPEED_NOTE_RELATIVE | 8, 4)]
 
 
 def test_the_half_period_is_the_bound_in_frames_not_twice_it():
@@ -116,7 +118,7 @@ def test_a_bound_shorter_than_goattrackers_shortest_clamps_to_it():
     # bound 1 at -S1 wants a one-frame half-period; cmp 0 is two calls, the
     # fastest Goattracker has, and cmp cannot go negative.
     _, table = _layout(0x08, multiplier=1)      # bound 1, shift 0
-    assert table == [(SPEED_NOTE_RELATIVE | 0, 1)]
+    assert table == [(SPEED_NOTE_RELATIVE | 0, 0)]
 
 
 def test_the_compare_value_cannot_run_into_the_note_relative_bit():
@@ -296,8 +298,12 @@ def test_the_triangle_gate_becomes_a_vibdelay():
     assert _vibrato_delay(tri, 1) == TRIANGLE_VIBRATO_GATE
     assert _vibrato_delay(tri, 2) == TRIANGLE_VIBRATO_GATE * 2
     # the gated players are the only ones that move: nothing else has a gate
-    assert _vibrato_delay(Detection(vibrato_offset=5), 1) == VIBRATO_DELAY
-    assert _vibrato_delay(Detection(vibrato_offset=5), 4) == VIBRATO_DELAY
+    # The ungated players now delay past frame 0, so the deepened swing
+    # cannot rename the attack siddump reads: `multiplier + 1` calls.
+    assert _vibrato_delay(Detection(vibrato_offset=5), 1) == 2
+    assert _vibrato_delay(Detection(vibrato_offset=5), 4) == 5
+    # a player with NO vibrato engine at all keeps the constant -- the delay
+    # is scoped to the classic engine, which is where the depth was measured
     assert _vibrato_delay(Detection(), 1) == VIBRATO_DELAY
 
 
@@ -542,3 +548,28 @@ def test_the_command_pass_reaches_commando_and_leaves_the_fixture_alone():
     # the whole mechanism is unreachable from it -- check the bytes, not len().
     got = convert(str(root / "Commando.sid"), log=lambda m: None)
     assert got == (root / "Commando.sng").read_bytes()
+
+
+def test_the_classic_vibrato_starts_after_frame_zero():
+    """Why the depth could finally be doubled, after two refutations.
+
+    Halving `rshift` doubles the swing, and on its own that RENAMES ATTACKS:
+    siddump names a note from the frequency on the frame the gate rises, and a
+    swing near a semitone has already moved it by then. Measured, that route
+    cost melody on four files -- One_on_One_Jordan_vs_Bird 0.986 -> 0.299,
+    International Karate 0.980 -> 0.826, Powerplay 0.993 -> 0.922, Sigma Seven
+    0.990 -> 0.972 -- and improved nothing anywhere. Refuted at v0.5.129 and
+    again at v0.5.367.
+
+    Delaying the oscillator past frame 0 removes the CAUSE rather than paying
+    for it: the attack frame keeps the note's own pitch, so the name siddump
+    reads is the one the pattern wrote, and the deeper swing is then free.
+    With both changes those four files read 0.9864 / 0.9800 / 0.9930 / 0.9903
+    -- unmoved -- while the corpus depth median goes 0.399 -> 0.817 and no
+    column regresses on any of 83 files.
+    """
+    from h2g.goatwriter import _vibrato_delay
+    from h2g.detect import Detection
+    for m in (1, 2, 3, 4, 10):
+        # frame 0 is `m` calls; the oscillator must not run inside it
+        assert _vibrato_delay(Detection(vibrato_offset=5), m) == m + 1, m
