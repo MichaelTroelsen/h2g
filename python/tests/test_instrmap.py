@@ -60,3 +60,80 @@ def test_ambiguous_adsr_names_every_instrument_sharing_it():
     body, _ = M.annotate_dump(DUMP, F.parse_dump(DUMP),
                               {**INS, 0x0DFB: [3, 8]}, NF)
     assert "*3/8" in _rows(body)[2]
+
+
+# --- the aligned dump ---------------------------------------------------------
+#
+# A literal side-by-side diff of two siddumps is 100% noise: measured on
+# ACE II, 2 of 3001 lines match and difflib scores 0.001, on a conversion whose
+# melody/seq/pitch are all 100%. Three things cause that, and `aligned_dump`
+# corrects each: `....` means "unchanged" so the text is write-events rather
+# than state, the packed player starts a few frames late, and the traces drift.
+
+ALIGN_DUMP = """\
+| Frame | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | FCut RC Typ V |
++-------+---------------------------+---------------------------+---------------------------+---------------+
+|     0 | 0EA3  A-3 AD  11 08F8 800 | 0000  ... ..  00 0000 000 | 0000  ... ..  00 0000 000 | 3000 F4 Low F |
+|     1 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | .... .. ... . |
+|     2 | 0923 (C#3 A5) 40 .... 200 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | 2700 .. ... . |
+"""
+
+
+def test_dots_are_resolved_to_the_value_being_held():
+    """`....` is siddump saying "unchanged", not "nothing".
+
+    Comparing the text as written makes two traces holding identical values
+    look different on nearly every line, which is the whole reason a raw diff
+    of two dumps is useless.
+    """
+    st = M._dump_state(ALIGN_DUMP, 10)
+    assert len(st) == 3
+    v1 = [f[0][0] for f in st]
+    assert v1[0][1] == "A-3" and v1[0][2] == "11"
+    # frame 1 printed dots: every field must still read frame 0's values
+    assert v1[1] == v1[0], "a held value was lost"
+    # frame 2 changes note, waveform and pulse but NOT adsr -- adsr carries
+    assert v1[2][1] == "C#3" and v1[2][2] == "40" and v1[2][4] == "200"
+    assert v1[2][3] == "08F8", "adsr should still be the held value"
+
+
+def test_the_tie_parentheses_are_stripped():
+    """siddump wraps a note it did not re-gate in parens; `(C#3` is a note."""
+    st = M._dump_state(ALIGN_DUMP, 10)
+    assert st[2][0][0][1] == "C#3"
+
+
+def test_the_filter_columns_carry_forward_too():
+    st = M._dump_state(ALIGN_DUMP, 10)
+    assert st[0][1] == ("3000", "F4", "Low")
+    assert st[1][1] == ("3000", "F4", "Low"), "filter state was lost"
+    assert st[2][1][0] == "2700" and st[2][1][1] == "F4"
+
+
+def test_the_aligned_view_shifts_our_side_by_the_lag():
+    """The original's frame f is our frame f+lag, or the comparison is noise."""
+    late = ALIGN_DUMP.replace("|     0 |", "|     9 |")   # shape only; see below
+    # Build a two-frame-late copy by prepending two silent frames.
+    head, rows = ALIGN_DUMP.split("\n", 2)[:2], ALIGN_DUMP.splitlines()[2:]
+    silent = "|     x | 0000  ... ..  00 0000 000 | 0000  ... ..  00 0000 000 | 0000  ... ..  00 0000 000 | 0000 00 Off F |"
+    shifted = "\n".join(head + [silent, silent] + rows)
+    out = M.aligned_dump(ALIGN_DUMP, shifted, 2, 10)
+    assert out, "no aligned output"
+    text = "\n".join(out)
+    assert "startup lag of 2 frame(s)" in text
+    # With the shift applied the two sides agree, so nothing is marked bold.
+    body = text.split("Voice 1")[1] if "Voice 1" in text else text
+    assert "note 100%" in text or "**" not in body.split("Voice 2")[0]
+
+
+def test_the_aligned_view_says_it_capped_rather_than_truncating_silently():
+    out = M.aligned_dump(ALIGN_DUMP, ALIGN_DUMP, 0, 10, cap=2)
+    text = "\n".join(out)
+    assert "Capped at 2 frame(s)" in text
+
+
+def test_the_aligned_percentages_are_flagged_as_not_the_report_columns():
+    """A per-frame agreement is not `melody`, and 56% next to 100% invites
+    exactly that confusion."""
+    text = "\n".join(M.aligned_dump(ALIGN_DUMP, ALIGN_DUMP, 0, 10))
+    assert "not `FIDELITY.md`'s columns" in text

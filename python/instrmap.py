@@ -193,6 +193,18 @@ main { max-width:1180px; margin:0 auto; }
 h1 { font-size:22px; margin:0 0 6px; }
 h2 { font-size:15px; letter-spacing:.06em; text-transform:uppercase;
   color:var(--muted); margin:34px 0 10px; font-weight:600; }
+h3 { font-size:13px; letter-spacing:.05em; margin:22px 0 8px; }
+details { margin:16px 0; border:1px solid var(--line); border-radius:6px;
+  background:var(--panel); padding:0 12px; }
+details[open] { padding-bottom:12px; }
+summary { cursor:pointer; padding:10px 0; font-size:13px; color:var(--b); }
+/* The aligned view: our side is what is being judged, so it carries the
+   marking. `strong` is the only thing highlighted, and it appears only where
+   the two sides genuinely differ -- an agreeing row stays quiet so the eye
+   lands on the disagreements rather than scanning 3000 uniform lines. */
+td strong { color:var(--a); font-weight:600; }
+td strong code { background:color-mix(in srgb, var(--a) 14%, transparent);
+  border-color:color-mix(in srgb, var(--a) 40%, transparent); }
 p { margin:10px 0; max-width:78ch; }
 code { font-family:var(--mono); font-size:.92em; background:var(--panel);
   border:1px solid var(--line); border-radius:3px; padding:0 4px; }
@@ -222,9 +234,24 @@ def _inline(s: str) -> str:
     # bare [..](..) left unconverted renders as literal brackets in a table
     # cell -- visible, but only if someone looks.
     s = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
+    # `**` BEFORE `*`, or the bold markers are eaten as two empty emphases and
+    # the text between them keeps a stray asterisk on each side.
+    s = _re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", s)
     s = _re.sub(r"\*([^*]+)\*", r"<em>\1</em>", s)
     s = _re.sub(r"_\(([^)]+)\)_", r"<em>(\1)</em>", s)
     return s
+
+
+# Block-level HTML this module writes into its own Markdown. `_inline` escapes
+# `<` and `>` -- correctly, for prose -- so these have to be recognised before
+# it runs, or they render as visible `&lt;details&gt;` text and the folding
+# never happens. That is exactly what the first HTML output did: two escaped
+# `<details>` per report and zero real ones, so every page shipped with three
+# thousand rows of siddump permanently expanded.
+def _is_raw_html(line: str) -> bool:
+    t = line.strip()
+    return (t in ("<details>", "</details>", "<p>", "</p>")
+            or (t.startswith("<summary>") and t.endswith("</summary>")))
 
 
 def to_html(lines: list, title: str, back: str | None = None) -> str:
@@ -258,6 +285,12 @@ def to_html(lines: list, title: str, back: str | None = None) -> str:
             esc = "\n".join(block).replace("&", "&amp;") \
                                   .replace("<", "&lt;").replace(">", "&gt;")
             out.append('<div class="tw"><pre>%s</pre></div>' % esc)
+        elif _is_raw_html(line):
+            out.append(line.strip())
+            i += 1
+        elif line.startswith("### "):
+            out.append("<h3>%s</h3>" % _inline(line[4:]))
+            i += 1
         elif line.startswith("## "):
             out.append("<h2>%s</h2>" % _inline(line[3:]))
             i += 1
@@ -287,6 +320,161 @@ def to_html(lines: list, title: str, back: str | None = None) -> str:
             "<title>%s</title><style>%s</style></head><body><main>%s%s"
             "</main></body></html>"
             % (_inline(title), HTML_CSS, nav, "\n".join(out)))
+
+
+def _dump_state(text: str, nframes: int) -> list:
+    """siddump's table as per-frame STATE, one entry per frame.
+
+    siddump prints a register only when it CHANGES -- every other cell is
+    `....`. So the text is a list of write-events, not of states, and two
+    traces holding identical values differ textually on almost every line.
+    That is the single reason a literal `diff` of two dumps is useless here:
+    measured on ACE II, 2 of 3001 lines match and difflib scores 0.001, on a
+    file whose melody, seq and pitch are all 100%.
+
+    Carrying each field forward turns the text back into what it describes.
+
+    Each frame is (voices, filter) where a voice is
+    (freq, note, wf, adsr, pulse) as strings, already stripped of the tie
+    parentheses siddump puts round a note it did not re-gate.
+    """
+    out: list = []
+    v_cur = [["0000", "...", "..", "0000", "000"] for _ in range(3)]
+    f_cur = ["0000", "00", "..."]
+    for line in text.splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = line.split("|")
+        if len(cells) < 6:
+            continue
+        try:
+            int(cells[1].strip())
+        except ValueError:
+            continue
+        for v in range(3):
+            t = cells[2 + v].replace("(", " ").replace(")", " ").split()
+            if len(t) == 6:
+                freq, note, _abs, wf, adsr, pul = t
+                for idx, val in ((0, freq), (1, note), (2, wf),
+                                 (3, adsr), (4, pul)):
+                    if set(val) != {"."}:
+                        v_cur[v][idx] = val
+        ft = cells[5].split()
+        if len(ft) >= 3:
+            for idx, val in enumerate(ft[:3]):
+                if set(val) != {"."}:
+                    f_cur[idx] = val
+        out.append(([tuple(v) for v in v_cur], tuple(f_cur)))
+        if len(out) >= nframes:
+            break
+    return out
+
+
+_ALIGN_FIELDS = (("note", 1), ("wave", 2), ("adsr", 3), ("pulse", 4))
+
+
+def aligned_dump(o_text: str, u_text: str, lag: int, nframes: int,
+                 cap: int = 3000) -> list:
+    """Both traces interleaved frame by frame, as Markdown, per voice.
+
+    The two complete dumps were already published here, but SEQUENTIALLY --
+    in ACE II's report the fences sit at lines 75 and 3093, so comparing frame
+    N meant scrolling three thousand lines between them. This puts the two
+    sides on one row.
+
+    Three corrections, each of which a raw diff lacks and each of which is why
+    the raw diff is noise:
+
+    * **State, not write-events** -- see `_dump_state`.
+    * **The startup lag** -- gt2reloc's player reaches its first note some 3-8
+      frames after the original (corpus median 6), so the original's frame `f`
+      is our frame `f + lag`. Frame-against-frame without this disagrees
+      everywhere by construction.
+    * **Only genuine differences are marked.** A row where the two sides agree
+      on every field is still printed -- context is the point -- but nothing
+      in it is flagged, so the eye lands on the disagreements.
+
+    The multiplier is NOT handled here and does not need to be: both texts are
+    already traced correctly by the caller (the original at `-m1`, ours at
+    `-m{multiplier}`), which is the one thing a hand-rolled probe of this
+    comparison always gets wrong.
+
+    Frames are capped: 3000 rows x 3 voices is already a large page, and the
+    interesting part of a disagreement is essentially always near its start.
+    The cap is stated in the output rather than applied silently.
+    """
+    o = _dump_state(o_text, nframes)
+    u = _dump_state(u_text, nframes)
+    if not o or not u:
+        return []
+
+    lines = ["## Both traces, aligned", ""]
+    lines.append(
+        "The two dumps above, interleaved frame by frame with `....` resolved "
+        "to the value being held and our side shifted by the **startup lag of "
+        "%d frame(s)** so the two first notes coincide. A cell is marked "
+        "**bold** only where the two sides genuinely differ."
+        % lag)
+    lines.append("")
+    lines.append(
+        "*Why this is not a `diff`:* siddump prints a register only when it "
+        "changes, the packed player starts a few frames late, and the two "
+        "traces drift apart by `-1/(skip+1)` a frame. Run side by side as "
+        "text, 2 of ACE II's 3001 dump lines match and difflib scores 0.001 "
+        "&mdash; on a conversion whose melody, seq and pitch are all 100%. "
+        "Alignment is what makes the comparison mean anything.")
+    lines.append("")
+    lines.append(
+        "**These percentages are not `FIDELITY.md`'s columns and must not be "
+        "read as them.** This counts frames on which a register holds the "
+        "same value on both sides; `melody` is a difflib ratio over a note "
+        "*sequence*, which does not care when a note lands, and `wave` "
+        "excludes the gate bit and corrects for the lag before averaging. A "
+        "voice can read 56% here and 100% there without either being wrong "
+        "&mdash; the same notes in the same order, each arriving a frame or "
+        "two out. Read this to find WHERE two traces part company, and the "
+        "report's own columns to judge whether that matters.")
+    lines.append("")
+
+    n = min(len(o), max(0, len(u) - lag), cap)
+    if n <= 0:
+        return []
+
+    for v in range(3):
+        agree = {k: 0 for k, _ in _ALIGN_FIELDS}
+        rows = []
+        for f in range(n):
+            ov = o[f][0][v]
+            uv = u[f + lag][0][v]
+            cells = []
+            for name, idx in _ALIGN_FIELDS:
+                a, b = ov[idx], uv[idx]
+                if a == b:
+                    agree[name] += 1
+                    cells += ["`%s`" % a, "`%s`" % b]
+                else:
+                    cells += ["`%s`" % a, "**`%s`**" % b]
+            rows.append([f] + cells)
+        pct = ", ".join("%s %d%%" % (k, round(100 * agree[k] / n))
+                        for k, _ in _ALIGN_FIELDS)
+        # Each voice folded separately. All three open at once is ~9000 table
+        # rows, which a browser will lay out but slowly, and a reader is
+        # looking at one voice at a time anyway.
+        lines.append("<details>")
+        lines.append("<summary>Voice %d &mdash; agreement over %d aligned "
+                     "frame(s): %s</summary>" % (v + 1, n, pct))
+        lines.append("")
+        lines += _table(rows, ["frame",
+                               "note orig", "note ours",
+                               "wave orig", "wave ours",
+                               "adsr orig", "adsr ours",
+                               "pulse orig", "pulse ours"])
+        lines.append("</details>")
+        lines.append("")
+    if len(o) > n or len(u) - lag > n:
+        lines.append("Capped at %d frame(s) of %d traced." % (n, len(o)))
+        lines.append("")
+    return lines
 
 
 def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
@@ -566,6 +754,24 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         ins = defaultdict(list)
         for i, r in enumerate(recs):
             ins[(r[0] << 8) | r[1]].append(i + 1)
+
+        # The aligned view goes FIRST, before the two raw dumps: it is the one
+        # that answers "where do these differ", and the raw dumps are the
+        # evidence underneath it. The lag comes from the same estimator every
+        # per-frame column in FIDELITY.md uses -- estimated from the two first
+        # attack frames, never fitted to maximise agreement.
+        if o_raw and u_raw and ours is not None:
+            lag, _raw_lag = F.startup_lag(orig, ours)
+            aligned = aligned_dump(o_raw[1].rstrip(), u_raw[1].rstrip(),
+                                   lag, nframes)
+            if aligned:
+                lines += ["<details>",
+                          "<summary>Both traces aligned frame by frame "
+                          "(the comparison a raw diff cannot make)</summary>",
+                          ""]
+                lines += aligned
+                lines += ["</details>", ""]
+
         for label, raw, tr in (("the original", o_raw, orig),
                                ("our conversion", u_raw, ours)):
             if not raw or tr is None:

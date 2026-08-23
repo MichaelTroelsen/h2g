@@ -3190,6 +3190,35 @@ window-dependent: an instrument a tune introduces late is "only original" at
 10 s and matched at 60 s, and a reader who cannot see the window cannot tell
 those two apart.
 
+#### Both traces, aligned — and why it is not a `diff`
+
+Each report opens with the two siddumps **interleaved frame by frame**, one
+voice per fold, with only genuine differences marked. The obvious thing —
+running the two dumps through `diff` side by side — does not work, and not
+marginally: on ACE II, **2 of 3001 lines match and difflib scores 0.001**, on a
+conversion whose `melody`, `seq` and `pitch` are all 100%. Three reasons, all
+of which the aligned view corrects and none of which a text diff can:
+
+* **`....` means *unchanged*.** siddump prints a register only when it changes,
+  so the text is a list of write-events, not of states, and two traces holding
+  identical values differ on nearly every line. Both sides are resolved to
+  per-frame state before anything is compared.
+* **The packed player starts late.** gt2reloc reaches its first note 3–8 frames
+  after the original (corpus median 6). Frame *k* against frame *k* disagrees
+  everywhere by construction, so our side is shifted by `fidelity.startup_lag`
+  — the same estimator every per-frame column in `FIDELITY.md` uses, taken from
+  the two first attack frames and never fitted to maximise agreement.
+* **The traces drift** by `-1/(skip+1)` a frame, and one frame of slip makes
+  every later line differ with nothing for a diff to realign on.
+
+**The per-voice percentages it prints are not `FIDELITY.md`'s columns.** They
+count frames on which a register holds the same value on both sides; `melody`
+is a difflib ratio over a note *sequence* and does not care when a note lands,
+and `wave` excludes the gate bit and corrects the lag before averaging. A voice
+reads 56% here and 100% there without either being wrong — the same notes in
+the same order, each arriving a frame or two out. Use this to find **where** two
+traces part company, and the report's own columns to judge whether it matters.
+
 The join is **ADSR**. It is a verbatim per-instrument copy of the record (0 of
 1635 corpus records differ), so it identifies an instrument where waveform and
 pulse cannot: several instruments share a waveform, and a swept pulse has no
