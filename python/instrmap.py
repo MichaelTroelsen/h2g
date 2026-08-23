@@ -507,6 +507,15 @@ def main(argv=None) -> int:
                          "by default -- the mapping is derived from them, so "
                          "publishing both means a disputed row can be checked "
                          "in place -- but they are ~3000 rows a side per song")
+    ap.add_argument("--json", metavar="PATH",
+                    help="also write the per-song summaries as JSON. The "
+                         "Markdown index carries the same numbers, but a "
+                         "consumer that scrapes a Markdown table breaks the "
+                         "next time a column is added or reordered -- and "
+                         "does so silently, reading None for every column it "
+                         "no longer finds (CLAUDE.md records exactly that "
+                         "failure costing an adoption and a retraction). "
+                         "`abpage.py` reads this file")
     ap.add_argument("--gt2reloc", default=F.GT2RELOC)
     ap.add_argument("--siddump", default=F.SIDDUMP)
     args = ap.parse_args(argv)
@@ -548,6 +557,17 @@ def main(argv=None) -> int:
         ["song", "instruments", "matched", "waveform differs",
          "only original", "only ours", "unused"])
     (out / "index.md").write_text("\n".join(index), encoding="utf-8")
+    if args.json:
+        # A list of per-song dicts, the same shape `fidelity.py --json` uses,
+        # so `abpage.py` reads both with one idiom. `seconds` travels with the
+        # rows because these counts are window-dependent: an instrument a tune
+        # introduces late is "only original" at 10s and matched at 60s, and a
+        # reader that cannot see the window cannot tell those apart.
+        payload = {"seconds": args.seconds, "songs": summaries}
+        jpath = Path(args.json)
+        jpath.parent.mkdir(parents=True, exist_ok=True)
+        jpath.write_text(json.dumps(payload, indent=1), encoding="utf-8")
+        print(f"wrote {jpath}")
     print(f"wrote {len(summaries)} map(s) + index to {out}")
     return 0
 

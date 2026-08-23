@@ -138,7 +138,8 @@ def convert(sid_path: str, log: Logger = print,
             rest_wave_silence: bool = False,
             compact_instruments: bool = False,
             engine: int = 0,
-            tempo: int | str | None = None) -> bytes:
+            tempo: int | str | None = None,
+            real_firstwave_instruments: tuple = ()) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -233,6 +234,19 @@ def convert(sid_path: str, log: Logger = print,
     distinct (pattern, octaves) pair; steps whose notes have no room to rise
     are left clamped. Off by default: it changes the bytes of the files it
     reaches. See tracks.fold_transposes.
+
+    real_firstwave_instruments names the GT instrument numbers (1-based,
+    matching a pattern row's instrument column) whose "first frame" byte is
+    the record's own waveform with the gate forced on, rather than the
+    neutral testbit-only byte every instrument gets by default -- the same
+    byte `no_test_restart` changes, but per instrument instead of for the
+    whole file. `no_test_restart` recovered ACE_II's drum (instrument 1 on
+    voice 2, melody 37% -> 99.6%) but broke voice 1 at the same time (100% ->
+    14%, a different mechanism, in the wavetable-entries code this option
+    does not touch) -- so a file-wide flag cannot ship the fix without the
+    regression. Naming only the instrument that needs it avoids that: empty
+    by default and byte-inert everywhere it names nothing. See
+    goatwriter._write_instruments.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -493,4 +507,5 @@ def convert(sid_path: str, log: Logger = print,
                      min_notes=min_played_notes(tracks, new_patterns),
                      note_rows=median_played_durations(tracks, new_patterns),
                      row_calls=short_row_calls,
-                     compact_instruments=compact_instruments)
+                     compact_instruments=compact_instruments,
+                     real_firstwave_instruments=real_firstwave_instruments)

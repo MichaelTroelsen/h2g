@@ -971,6 +971,61 @@ def test_an_invisible_change_is_printed_as_a_result():
     assert "$D405/$D406" in text and "$D402/$D403" in text
 
 
+def test_subtune_content_shas_matches_songview_reachable_patterns():
+    """The independence property that makes this worth having: derived from
+    the .sng bytes directly, cross-checked against songview's own reader
+    rather than sharing code with it."""
+    import songview
+    from h2g.convert import convert as _convert
+
+    sng = _convert(str(REPO_ROOT / "Commando.sid"), log=lambda m: None)
+    shas = fidelity.subtune_content_shas(sng)
+    song = songview.parse_sng(sng)
+    assert shas is not None
+    assert len(shas) == song.subtunes
+    # Determinism: the same bytes must always hash the same way.
+    assert shas == fidelity.subtune_content_shas(sng)
+
+
+def test_subtune_content_shas_returns_none_on_a_malformed_blob():
+    assert fidelity.subtune_content_shas(b"") is None
+    assert fidelity.subtune_content_shas(b"GTS5" + b"\x00" * 4) is None
+
+
+def test_a_change_outside_the_traced_subtune_is_named_not_hidden():
+    """The Star_Paws regression this exists to catch: bytes moved in a
+    subtune '--baseline' never traced, and the old verdict read as though
+    nothing useful could be said about it."""
+    old = _ab("A.sid", "old", subtune=0,
+              subtune_shas=["aaa", "bbb", "ccc"])
+    new = _ab("A.sid", "new", subtune=0,
+              subtune_shas=["aaa", "bbb", "DIFFERENT"])
+    text, code = fidelity.compare_runs([old], [new])
+    assert code == 0
+    assert "No dimension this report measures can see this change" in text
+    assert "subtune(s) 2 differ" in text
+    assert "**NOT** the traced subtune (0)" in text
+
+
+def test_a_change_inside_the_traced_subtune_says_so_plainly():
+    old = _ab("A.sid", "old", subtune=1,
+              subtune_shas=["aaa", "bbb"])
+    new = _ab("A.sid", "new", subtune=1,
+              subtune_shas=["aaa", "DIFFERENT"])
+    text, _ = fidelity.compare_runs([old], [new])
+    assert "INCLUDING the traced one (1)" in text
+
+
+def test_a_baseline_without_subtune_shas_falls_back_rather_than_guesses():
+    """A row from before this field existed must not be read as 'nothing in
+    any subtune changed' -- that would be worse than the old message."""
+    old = _ab("A.sid", "old", subtune=0)  # _ab does not set subtune_shas
+    assert "subtune_shas" not in old
+    new = _ab("A.sid", "new", subtune=0, subtune_shas=["aaa"])
+    text, _ = fidelity.compare_runs([old], [new])
+    assert "per-subtune diff unavailable" in text
+
+
 def test_an_inert_change_is_told_apart_from_an_invisible_one():
     """Two readings of one flat table, and this repo has shipped the second
     believing the first twice. Identical bytes mean the change reached

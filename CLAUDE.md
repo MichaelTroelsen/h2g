@@ -227,6 +227,35 @@ test dependency).
   not erasable** -- when one turns out to carry a wrong mechanism, retract it
   somewhere a grep for its own words will land.
 
+  **The travel is emitted now, above `-S1`** (`_wave_program_travel_entry`).
+  What made it look impossible was reading the wavetable's right column as the
+  only place a pitch can live: it names notes, so a linear frequency
+  subtraction cannot go there. `WAVECMD_PORTADOWN` can, and a slide opcode is
+  one of the player's *frames* -- `multiplier` play calls -- so at `-S2` and
+  above the waveform entry does not need them all and the spare call carries
+  the portamento inside the same frame. 8 corpus files move, exactly
+  `{wave_program AND multiplier > 1}`; the 13 single-speed ones are
+  byte-identical, because at `-S1` a second entry would halve the program's
+  rate (the trade v0.5.203 measured and refused). ACE II `$EB0A` now
+  reproduces the original frequency for frequency -- `0EA3 40A3 0B23 0923
+  03CE` -- where it held the base note and rang its whole release two octaves
+  high. A/B over the 8: `melody`, `seq`, `pitch`, `retrig`, `wave`, `noise`,
+  `adsr`, `gate`, `nrun`, `hold`, `onset`, `tail`, `pul`, `filt`, `cut` and
+  `drift` all flat on all 8, `vib` moves on 7 (Ricochet 0.78 -> 1.02, Star
+  Paws 0.89 -> 1.04, three others within 0.07 of 1 either way).
+
+  **And the entry that re-anchors is the one to watch, not the portamento.**
+  The first version wrote `WAVE_NOTE_BASE` plus a portamento of the whole
+  running sum on *every* slide -- exact in the player's terms, and it read as
+  a completely flat pitch on the trace, because the note lands on the frame's
+  first call and the correction on its second while siddump samples once a
+  frame. The shipped form anchors only where it must (the first slide, and
+  any slide after a `>= $80` opcode, which leaves an absolute pitch in the
+  register) and otherwise carries that opcode's own operand from where the
+  last one left off, so the frequency only ever moves the way the player
+  moves it. **Two encodings can be equally correct per call and differ
+  entirely in what a per-frame instrument can see.**
+
   The Hollywood or Bust case that produced the old wording is still real and is
   a different one: choosing `$80` there took melody to 25% against 47% by
   re-asserting the base note every frame -- but that was a *waveform* entry
@@ -343,6 +372,27 @@ test dependency).
   the mode's main use. Adding a report column means adding a `Dimension` entry;
   `tests/test_fidelity.py` fails if the registry and the printed header
   disagree. See README.md § *A/B against a previous run*.
+- **"No dimension can see this change" can be true of the report and false of
+  the file, when the bytes that moved are in a subtune `--baseline` never
+  traced.** A row's `output_sha` hashes the *whole* `.sng`, so it correctly
+  says the converter's output changed, but every `Dimension` reads only the
+  one subtune the run traced -- so a change confined to another subtune
+  prints the same "structurally incapable of registering it" verdict as a
+  change genuinely invisible to every register, and a reader has no way to
+  tell the two apart. This is not hypothetical: `boundary-tie-loop-around-
+  restart-position` (cycle 4) cost Star_Paws -38pp of melody in a subtune
+  outside the traced one, and the verdict read as though nothing could be
+  said. Fixed by `subtune_content_shas()` -- one sha1 per subtune, over its
+  own three orderlist tracks plus the raw bytes of every pattern those
+  tracks reach (a pattern several subtunes share folds into all of their
+  hashes, so a shared-pattern change is attributed to every subtune that
+  plays it, not just the first one that names it). `compare_runs()` now
+  prints which subtune(s) actually differ per file, in the "no dimension
+  sees this" branch and in the partial "blind" case alike, and says loudly
+  when the traced subtune is **not** among them. A row from before this
+  field existed (`subtune_shas` absent) falls back to naming the traced
+  subtune rather than asserting silence it has not earned -- the same
+  backward-compatibility shape `output_sha` itself uses.
 - **A low score in `FIDELITY.md` is a claim about the harness until it is a
   claim about the converter.** Six separate defects have now been *in the
   measurement*, the largest being that **every per-frame column was charged
@@ -768,6 +818,27 @@ test dependency).
   write a result where most conversions failed, and prefer a *test* over a
   probe: v0.5.279's identical claim was sound because
   `test_engine_zero_is_byte_identical_across_the_corpus` is a test.
+- **A probe reading a SUBSET of a report's columns must assert every column
+  it names exists.** A narrower failure than the one above, and it shipped
+  and was retracted (v0.5.352/353, 864d096): the probe DID follow the "assert
+  your own success rate" rule -- it went through `fidelity._preset_opts` with
+  the right keys and every conversion succeeded. What it did not do is check
+  that the *columns* it compared exist. It asked each row for `pitch`, `seq`,
+  `hold`, `retrig`, `noise`, `onset`, `tail` and `nrun`; the real keys are
+  `pitch_jaccard` and `sequence`, and the rest are absent from `--json`
+  entirely (see `fidelity-json-omits-retrig-hold-tail`). `dict.get` returned
+  `None` for all eight and the loop skipped them in silence, so a 14-column
+  comparison reported on six and announced "5 better, 1 worse" -- on which an
+  adoption was made and then retracted. Silently comparing fewer columns is
+  indistinguishable from comparing all of them and finding no movement, which
+  is the same shape of lie as the probe above, one level down: that rule
+  guards *whether the conversions ran*, this one guards *whether the report
+  actually read what it claims to have compared*. What caught it was not the
+  probe -- it was regenerating `FIDELITY.md` and reading the row, which
+  showed `pitch 100% -> 93%` and `seq 100% -> 99%`, columns the probe had
+  never looked at. Regenerating the artefact is a second, independent reader
+  of the same measurement; prefer it *before* adopting a candidate, not
+  after.
 - **An explanation that fits the shape of a regression is not thereby its
   cause -- turn the proposed cause off and see if the effect survives.** A
   bit-6 rest parks `$08` in the stored waveform on 17 files and a Goattracker

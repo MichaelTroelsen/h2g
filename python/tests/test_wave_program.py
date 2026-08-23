@@ -334,9 +334,29 @@ def test_a_multispeed_file_holds_each_opcode_for_a_whole_frame():
     two = _wave_program_entries(sid, det, 2, [], "gts5", 2, 60)
     three = _wave_program_entries(sid, det, 2, [], "gts5", 3, 60)
     assert one is not None and two is not None and three is not None
-    # Every entry but the closing stop gains one call's worth of hold, so the
-    # program lasts the same number of *frames* at every -S.
-    assert len(two[0]) == len(three[0]) == 2 * len(one[0]) - 2
+    # **Counted in calls, not in entries.** Entry counts were the assertion
+    # until the slide travel landed (`_wave_program_travel_entry`), which
+    # spends the spare call of a `-S3` frame on a `CMD_PORTADOWN` where a
+    # `-S2` frame has none left over -- so the two lengths legitimately differ
+    # now while the thing the test is about, how long the program lasts, does
+    # not. A delay entry `0 <= v < $10` is current for `v + 1` calls
+    # (gplay.c:697-704); everything else is one.
+    # Over the program's *body*: what follows it is the restore entry, which
+    # is never held for a frame (the stop comes next, so its waveform and
+    # pitch stand for the rest of the note) and at `-S2` and above may be
+    # preceded by the portamento that puts it on the accumulator's pitch.
+    def calls(block):
+        left = list(block[0])
+        assert left and left[-1] == 0xFF                 # the stop
+        left.pop()
+        if left and 0xF0 <= left[-1] < 0xFF:             # the closing travel
+            left.pop()
+        assert left
+        left.pop()                                       # the restore entry
+        return sum(v + 1 if v < 0x10 else 1 for v in left)
+
+    assert calls(two) == 2 * calls(one)
+    assert calls(three) == 3 * calls(one)
     # -S2 has no delay value for a single extra call, so the waveform is
     # written again; -S3 spends a delay of m - 2, current for m - 1 calls.
     assert two[0][2:4] == [one[0][1], one[0][1]]
@@ -377,8 +397,15 @@ def test_a_hold_does_not_rewrite_the_pitch_the_opcode_just_set():
     # a note. The last opcode in this record is followed by the table's own
     # `$FF` terminator, and counting that as a hold is what the first version
     # of this assertion did.
+    #
+    # `r > 0x80`, not `r >= 0x80`: `$80` is exactly the "no frequency write"
+    # byte a hold carries, and since the slide travel landed a slide's own
+    # hold at `-S3` is a *repeat of the waveform* rather than a delay -- which
+    # looks like a waveform entry with `$80` beside it and was picked up here
+    # as an opcode of its own. An absolute pitch is `$80 + note`, always above
+    # `$80` (`_sfx_note_byte`).
     absolute = [k for k, (l, r) in enumerate(zip(left, right))
-                if l >= 0x10 and r >= 0x80 and k + 1 < len(left)
+                if l >= 0x10 and r > 0x80 and k + 1 < len(left)
                 and left[k + 1] < 0xF0]
     assert absolute, "no absolute-pitch opcode in this record"
     assert all(right[k + 1] == 0x80 for k in absolute)

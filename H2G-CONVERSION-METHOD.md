@@ -7322,12 +7322,49 @@ branch, and the two players put different things there.
 
 #### Why it is not emitted
 
-Measured, both files, everything else fixed:
+**RETAKEN, v0.5.357+ (`retake-wave-alternate-noise-trade`).** The numbers
+below were taken at fb787fd (v0.5.232), before a85b59d ("Chicken Song's bit
+$01 is not a drum") fixed a bogus-drum match: the old baseline `noise 490`
+was noise on nine bit-$01 records the original never sounds noise on, not on
+the two bit-$02 records (ADSR $0A07, $0900) that carry all 654 of the
+original's real noise frames. a85b59d's own commit message said this line
+was "corrected in place" -- `git blame` shows it was not; the text stayed at
+fb787fd's stale 490 until now.
+
+Re-measured on the current tree (`fidelity.py Chicken_Song.sid -t 60
+--presets ../presets.json --json`, no code changed): `our_noise_frames = 0`
+(confirms the fix), `onset_agreement = 57.1%` (unchanged from the row's
+baseline), but `wave = 84.1%` -- **not** the row's baseline 77%, and instead
+almost exactly its old *post-emission* figure of 84%. Something unrelated to
+this section's dialect moved Chicken_Song's baseline wave score up 7 points
+between v0.5.232 and now; it was not chased down here, and it means the old
+84%/86% *post* figures cannot be trusted either -- they were measured against
+a wave baseline that has since moved on its own. Hollywood_or_Bust's row was
+independently re-measured the same way and is genuinely UNCHANGED end to end
+(`our_noise_frames = 0`, `melody = 57.6%`, `wave = 83.3%`,
+`onset_agreement = 71.4%`, all matching the figures below already, baseline
+noise already 0 before this fix since HoB never had the bit-$01 bug).
+
+The **post-emission** side of both rows (Chicken_Song's 84%/919/100%/86%,
+Hollywood_or_Bust's 1496/100%) has NOT been re-taken: reproducing it needs
+the derived dialect actually emitted, and `det.wave_alternate_noise` is still
+"detected and logged and not written" (no emitter reads it anywhere in
+`goatwriter.py` -- confirmed by grep). Re-measuring it needs write access to
+`goatwriter.py` for a temporary emitter or monkeypatch probe, outside what
+produced this correction; opened as a follow-up, which should also chase what
+moved Chicken_Song's baseline wave.
+
+Baselines as re-taken, current tree, no dialect emitted:
 
 ```
-Chicken_Song       wave 77 -> 84%   noise 490 -> 919   nrun 0 -> 100%   onset 57 -> 86%   melody unmoved
-Hollywood_or_Bust  wave 83 -> 100%  noise   0 -> 1496  nrun - -> 100%   onset 71 -> 100%  melody 58 -> 47%
+Chicken_Song       wave 84.1%   noise 0   nrun -- (no shared instrument key)   onset 57.1%   melody 61.9%
+Hollywood_or_Bust  wave 83.3%   noise 0   nrun -- (no shared instrument key)   onset 71.4%   melody 57.6%
 ```
+
+The post-emission columns from the original table (Chicken_Song's 84%/919
+noise/100% nrun/86% onset/melody unmoved; Hollywood_or_Bust's
+100%/1496/100%/100%/47%) are UNVERIFIED against the current tree and must not
+be read as still current -- see the follow-up.
 
 One file each way. Eleven points of melody is not a price this repo pays for
 register agreement -- it is exactly what `fidelity_better`'s `keeps_notes`

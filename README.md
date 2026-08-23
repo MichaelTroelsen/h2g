@@ -1339,9 +1339,25 @@ Trans-Atlantic's snare — `81 30`, noise at `$30xx`, 43 notes.
 Each opcode becomes wavetable entries: one for the absolute form (the pitch
 quantised to the nearest semitone, since a wavetable names notes where the
 player writes `$D401` directly), one for a `< $80` opcode with a zero operand,
-and two where its operand is nonzero — the waveform, then a portamento whose
-speed-table entry is the operand itself, taken as `CMD_PORTAUP` with the two's
-complement where the player's subtraction is a rise. Needs `--format gts5`.
+and — **at `-S2` and above** — two where its operand is nonzero: the waveform,
+then a `CMD_PORTADOWN` carrying the step, taken as `CMD_PORTAUP` with the
+two's complement where the player's subtraction is a rise. The pair still
+costs one frame, because a frame is `multiplier` play calls and the waveform
+entry does not need them all; at `-S1` there is no spare call, a second entry
+would halve the program's rate, and the travel is dropped instead. The
+waveform entry writes the pattern's own note only where it has to — the first
+slide of a program, and any slide after a `>= $80` opcode, since that one
+leaves an absolute pitch in the register — and otherwise leaves the frequency
+alone so the portamento steps on from where the last one left it. Writing the
+note on *every* slide and correcting it with a portamento of the running sum
+is equally right per call and reads as a completely flat pitch on a trace that
+samples once a frame. Needs `--format gts5`.
+
+`$85` **holds and does not loop**: the interpreter jumps straight to its
+per-frame register writer without advancing the program index, and the index
+is zeroed only by the note-fetch path (ACE II `$E36C`–`$E370` against `$E0F7
+STA $EBC7,X`). A repeating figure under one of these instruments is the
+pattern re-striking the note, not the program running twice.
 
 **One opcode is one frame, and one frame is `multiplier` play calls**, so every
 opcode takes a hold entry after it and the program runs at the player's rate at
@@ -3071,7 +3087,30 @@ python listen.py --merge-notes
 
 python abpage.py                    # one page per tune + build/listen/index.html
 python abpage.py --embed W_A_R      # one self-contained page, WAVs inlined
+python abpage.py --instrmap <sid_dir>   # ...and refresh the instrument map first
 ```
+
+`--instrmap` regenerates `build/instrmap.json` for the **staged** tunes before
+building, and each page then carries an *Instrument map* card at the bottom
+(see [`instrmap.py`](#the-instrument-map--instrmappy)). Scoped to what is
+staged rather than to the corpus, because the tool traces two emulations a
+song — that is what makes it affordable inside a listening build at all.
+Without the flag the pages reuse whatever `build/instrmap.json` already holds,
+and omit the card entirely if there is none; the build prints which staged
+tunes had no map rather than leaving a silently absent card, since "nothing to
+report" and "never measured" look identical on the page.
+
+Each source button also carries the **render time** of the WAV behind it. A
+stale pair plays perfectly and sounds subtly wrong, and the first suspicion
+falls on the converter rather than on the file's age — which has already cost
+this project one wrong diagnosis. It is hidden under blind mode, where two
+differing timestamps would otherwise say which side is which.
+
+In the *Both sides, drawn* card, the legend keys (`original`, `H2G`,
+`|difference|`) are **buttons**: click one to hide that trace. The two bands
+are drawn over each other at 62% alpha, so where they agree neither is legible
+on its own. The `mean |Δ|` figure keeps counting hidden traces — it is a
+property of the two renders, not of what is currently on screen.
 
 **A sharded pass writes `LISTENING.part<I>.md`, not `LISTENING.md`.** Every run
 writes the whole notes document, so shards sharing an output directory would
@@ -3113,10 +3152,22 @@ comparison** — `songview.py` (below) used to carry a second, overlapping
 ```sh
 cd python
 python instrmap.py <sid-or-dir> -o ../build/instrmap -t 60 --presets ../presets.json
+python instrmap.py <sid> -o ../build/instrmap --json ../build/instrmap.json
 ```
 
 One Markdown file per song plus an index. On demand, not a build artefact — it
-traces two emulations per song.
+traces two emulations per song. `abpage.py --instrmap` runs it over the staged
+tunes and surfaces the per-song summary on each listening page.
+
+`--json` writes the same per-song counts as a machine-readable list, which is
+what `abpage.py` reads. Deliberately not scraped from the Markdown index: a
+table-scraper breaks the next time a column is added or reordered, and it does
+so **silently**, reading nothing for every column it no longer finds — the
+exact failure that cost this project an adoption and a retraction at v0.5.352.
+The window travels in the file beside the rows, because these counts are
+window-dependent: an instrument a tune introduces late is "only original" at
+10 s and matched at 60 s, and a reader who cannot see the window cannot tell
+those two apart.
 
 The join is **ADSR**. It is a verbatim per-instrument copy of the record (0 of
 1635 corpus records differ), so it identifies an instrument where waveform and

@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.355 presets.py",
+  "generator": "h2g 0.5.358 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -81,6 +81,7 @@
       "subtunes": 1,
       "rows": 19816,
       "multiplier": 1,
+      "no_test_restart": true,
       "wave_program": true
     },
     "Auf_Wiedersehen_Monty.sid": {
@@ -235,9 +236,7 @@
       "subtunes": 13,
       "rows": 36076,
       "multiplier": 2,
-      "no_test_restart": true,
-      "two_stage": true,
-      "max_hard_restart": true
+      "two_stage": true
     },
     "Delta_Mix-E-Load_loader.sid": {
       "max_rows": 94,
@@ -269,7 +268,9 @@
       "bytes": 23129,
       "subtunes": 10,
       "rows": 28723,
-      "multiplier": 2
+      "multiplier": 2,
+      "no_test_restart": true,
+      "two_stage": true
     },
     "Flash_Gordon.sid": {
       "max_rows": 94,
@@ -679,6 +680,7 @@
       "subtunes": 1,
       "rows": 11189,
       "multiplier": 1,
+      "no_test_restart": true,
       "two_stage": true,
       "wave_program": true
     },

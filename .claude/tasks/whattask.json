@@ -1,15 +1,19 @@
 {
  "generated_from": {
-  "head": "9ec3133",
+  "head": "73354bd",
   "sources": [
-   ".claude/tasks/runs.jsonl (88 lines, 76 ids, read in full)",
-   ".claude/tasks/whattask.json (previous plan, head c6944d4)",
-   "git log c6944d4..9ec3133 (2 commits, v0.5.354 and the cycle record)",
-   "a CARRY-OVER ROT CHECK: every task's verify grepped for quoted code that no longer exists (26 tokens, 5 absent, 1 a true positive)",
-   "whats-next.md (SPENT at 350851e -- see the prose)",
+   ".claude/tasks/runs.jsonl (92 lines, 80 ids, read via script -- last line per id, whole file)",
+   ".claude/tasks/whattask.json (previous plan, head 9ec3133)",
+   "whats-next.md (v0.5.357, c787ac9 -- work_remaining items 1-8 read in full)",
+   "git log 9ec3133..73354bd (10 commits: cycle 4's four task commits, cycle-4 record, three merges, artefact regen x2, whats-next.md rewrite, graphify install)",
+   "graphify update (run before the cross-check below; 'No code-graph topology changes detected' -- graph already reflected current HEAD)",
+   "graphify explain: compare_runs(), apply_tempos() -- cross-checked for the two most novel new tasks below",
+   "a rot check on carried-over tasks' backtick-quoted code identifiers (8 checked: _classic_vibrato_entry, _fixed_attack_note, _freq_table_note, _measure, engine_freq_table, mt_chncounter, reversals_by_instrument, table_calibration -- all still present in non-test source, 0 rotted)",
    "CLAUDE.md, python/survey.py, python/listen.py",
-   "issues: none (no reachable forge -- `gh issue list` empty)",
-   "prs: none (no reachable forge -- `gh pr list` empty)"
+   "issues: none (no reachable forge -- gh issue list empty)",
+   "prs: none (no reachable forge -- gh pr list empty)",
+   "reconciliation pass at unchanged HEAD 73354bd: cross-checked all 13 runs.jsonl ids with a non-done last outcome and all 80 opened-but-never-run ids against this file; 3 of 4 apparent gaps were already correctly deduped into existing records (phantom-subtunes-verify-names-the-wrong-bound -> phantom-subtunes-nemesis-thundercats, prune-worktrees-conflicts-with-the-runner-itself -> the .claude/worktrees hazard entry, wave-program-nemesis-bend-regression -> nemesis-warlock-wave-program-bend-regression); one genuine gap found and added (vibrato-plain-no-instrument-at-adsr)",
+   "task-touches-under-declared-for-investigations (main, this cycle): replaced the bare `rw:python/tests` directory declaration on 19 tasks with the specific test file each targets (existing file where one matches the mechanism, a plausible new name otherwise) -- the bare directory is a prefix of every specific test file and held /runqueue cycle 1's conflict-free fan-out to 3 of 28 eligible delegable tasks. Under-declared-write half of the same audit: swept every ready, non-requires-user task's verify text for byte-hash/fixture/emit language against its declared rw: paths -- 3 hits, all false positives on closer reading (prune-merged-worktrees and this task itself write non-.py/.md paths correctly; vibrato-plain-no-instrument-at-adsr is deliberately scoped read-only-first, same shape as pygmies-revenge-gate-falls-against-the-flags-own-direction) -- no genuine under-declaration found among currently open tasks."
   ],
   "focus": null
  },
@@ -33,38 +37,13 @@
   "a fidelity.py --json row does NOT carry `retrig`, `hold` or `tail`, and names `pitch` as `pitch_jaccard` and `seq` as `sequence` -- a probe that asks for the printed names gets None and skips them SILENTLY (this cost an adopted-then-retracted preset at v0.5.352/353)",
   "build/fidelity.json is gitignored but feeds a committed feature (abpage's notes-per-voice card); a fresh clone renders it empty until `fidelity.py --json` is run",
   "the plugin's LOCKING.md carries half the refs/stash rule and lives OUTSIDE this repo, so it is in no commit here",
-  "a task INHERITED from an earlier plan is never re-checked against the code, so a verify quoting code can rot indefinitely -- listen-merge-notes-stale-header survived three plans that way. Grep quoted code, EXCLUDING .claude/ and CHANGELOG.md, which quote the verify strings themselves and make the check vacuous"
+  "a task INHERITED from an earlier plan is never re-checked against the code, so a verify quoting code can rot indefinitely -- listen-merge-notes-stale-header survived three plans that way. Grep quoted code, EXCLUDING .claude/ and CHANGELOG.md, which quote the verify strings themselves and make the check vacuous",
+  "graphify-out/ and .claude/settings.json.graphify-bak are untracked as of 73354bd and neither is gitignored -- per the existing untracked-file hazard above, the next FIDELITY.md/SURVEY.md regeneration stamps -dirty until one is resolved (see fidelity-stamp-is-dirty-by-construction)"
  ],
  "external_locks": [
   ".claude/tasks/serial.lock"
  ],
  "tasks": [
-  {
-   "id": "abpage-spectrogram",
-   "title": "Spectrogram overlay -- the half amplitude cannot show",
-   "source": "whats-next.md item 14; PER-SONG-PLAN.md section 3",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/abpage.py",
-    "rw:python/tests/test_abpage.py",
-    "rw:build/listen",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/abpage-spectrogram",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "a regenerated page showing both sides' FFT over the same axes, readable at 120 s, drawing in under a second, with the envelope canvas / sync slider / voice selector still working",
-   "why_model": "a rendering feature against an existing page builder",
-   "why_mode": "one module plus its test",
-   "why_lane": "writes abpage.py and build/listen"
-  },
   {
    "id": "arp-mask-period",
    "title": "Bit $04's arpeggio swings at one call, not the player's period and duty",
@@ -74,7 +53,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_arp_octave.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
    ],
    "mcp": [],
@@ -111,29 +90,29 @@
    "why_lane": "writes CLAUDE.md and H2G-CONVERSION-METHOD.md"
   },
   {
-   "id": "bit08-alternate-with-no-wave-pair",
-   "title": "One record resolves a bit-$08 alternate note with no bit-$02 waveform pair to ride on",
-   "source": "runs.jsonl: emit-bit08-note-alternate (opened)",
+   "id": "baseline-verdict-silent-when-change-outside-traced-subtune",
+   "title": "--baseline's verdict line can state the opposite of the truth",
+   "source": "whats-next.md#2 (highest-value open item); runs.jsonl: boundary-tie-loop-around-restart-position (opened)",
    "model": "opus",
-   "mode": "subtask",
+   "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_note_alternate.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/bit08-alternate-with-no-wave-pair",
-    "r:python/tools/siddump-rt/siddump.exe"
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/405bca33-a6e6-4067-93e8-a032a7489adb/scratchpad/baseline-verdict-silent-when-change-outside-traced-subtune",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob"
    ],
    "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
+   "needs_main": true,
+   "needs_main_reason": "the fix changes compare_runs()'s printed verdict, which every future --baseline A/B call trusts -- a wrong turn here is exactly the class this repo has shipped before (v0.5.352/353)",
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "Dragons_Lair_Part_II record 24 resolves to a note but its pair declines (`alt <= $0F` / `alt == wave` / no waveform of its own). ONE record corpus-wide, so the honest outcomes are equally good: either a standalone emitter whose byte-hash names that one file, or the shape documented as declined WITH the reason. Do not build a second emitter without saying what it buys.",
-   "why_model": "the decision is whether the shape earns an emitter at all, which a count alone does not answer",
-   "why_mode": "goatwriter.py with a one-file byte-hash",
-   "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+   "verify": "compare_runs() (fidelity.py:4276, called only from _run() at L5641) prints \"No dimension this report measures can see this change\" via registers_unread() (L4369) when no Dimension's declared registers moved -- but on cycle 4's Star_Paws case (boundary-tie-loop-around-restart-position, 268cae4) that sentence fired for a change worth -38pp of melody, because the differing bytes lived in a subtune outside the one --baseline traced. The registers_unread() check answers 'can any column SEE this class of register write' -- it cannot and was never meant to answer 'did this run trace the part of the file that changed'. Fix: compare_runs() should name the subtunes whose bytes actually moved (via a byte diff against the two .sng buffers, not just the traced subtune's report row) and caveat the verdict when the differing rows are not the one --baseline traced. Graphify cross-check: compare_runs() calls dimensions_present(), registers_unread(), option_drift(), _dim(), settings_mismatch() and _run_label(), all local to fidelity.py -- no external caller besides _run(), so this is safely scoped to fidelity.py plus its test file.",
+   "why_model": "a harness trust defect with a real, costly precedent (the v0.5.352/353 retraction) if judged wrong",
+   "why_mode": "changes the tool every future adoption decision is verified against; the decision matters more than the patch",
+   "why_lane": "writes fidelity.py, shared with every other harness task"
   },
   {
    "id": "boundary-tie-loop-around-restart-position",
@@ -156,9 +135,9 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "deliberately excluded from v0.5.339 because it needs the restart index and moves more files -- a real but smaller instance of the same defect. The copy-per-position rule is not optional: 96 of the 180 corpus entries ever entered tied are ALSO entered untied somewhere (53%), so patching a shared pattern silences real attacks on more than half. Corpus byte-hash names only files whose last entry exits tied; Commando.sng byte-exact or the fixture updated deliberately.",
+   "verify": "deliberately excluded from v0.5.339 because it needs the restart index and moves more files -- a real but smaller instance of the same defect. The copy-per-position rule is not optional: 96 of the 180 corpus entries ever entered tied are ALSO entered untied somewhere (53%), so patching a shared pattern silences real attacks on more than half. Corpus byte-hash names only files whose last entry exits tied; Commando.sng byte-exact or the fixture updated deliberately. STATUS as of 268cae4 (partial, landed on master): ships correct and INERT -- 0 files move, because every corpus restart position is 0 and apply_tempos owns row 0 of voice 0's entry reference. The wrap tie's first-play-vs-loop trade (Goattracker starts a subtune at position 0, which is also the step the tied loop re-enters) is stated in the docstring and UNMEASURED -- no corpus file exercises it, so there is nothing to A/B yet. If opening-tempo-relocate-off-voice0-row0 frees voice 0's row 0, re-open this task's A/B against Star_Paws.",
    "why_model": "an orderlist pass whose obvious local form is already refuted",
-   "why_mode": "patterns.py with a byte-hash verify",
+   "why_mode": "patterns.py with a byte-hash verify; landed already -- remaining work is contingent on opening-tempo-relocate-off-voice0-row0",
    "why_lane": "writes patterns.py, shared with three tie tasks"
   },
   {
@@ -197,7 +176,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_vibrato.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:VIBRATO.md",
     "r:python/songview.py"
@@ -383,7 +362,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/detect.py",
-    "rw:python/tests",
+    "rw:python/tests/test_bit40_note_index.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/presets.py",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/detect-note-index-array-for-bit40",
@@ -475,6 +454,30 @@
    "why_lane": "writes CLAUDE.md, shared with three doc tasks"
   },
   {
+   "id": "dragons-lair-part-ii-subtune7-voice1-bit08-listening-check",
+   "title": "Listen: Dragons_Lair_Part_II subtune 7 voice 1, GT pattern 39 instrument 25 -- the bit-$08 change's only adjudicator",
+   "source": "runs.jsonl: bit08-alternate-with-no-wave-pair (opened, [user])",
+   "model": "sonnet",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:build/listen",
+    "rw:whats-next.md",
+    "r:python/abpage.py",
+    "r:python/songview.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": "a human ear on Dragons_Lair_Part_II subtune 7, voice 1 (GT pattern 39, instrument 25 / stamp 1A:00-00-0A). Nothing in FIDELITY.md can substitute: no column reads a noise frame's pitch, the file's TRACED subtune is known-wrong music (see fidelity-cue-subtune-offbyone), and this record sounds only in the untraced subtune 7. Stage with listen.py or songview.py against the shipped .sng.",
+   "decision": null,
+   "verify": "a written verdict in whats-next.md or a commit message on whether e4b2f58's bit-$08 emission sounds right on this one instrument",
+   "why_model": "staging and transcription only; the decision is the user's",
+   "why_mode": "no report column can adjudicate a noise frame's pitch in an untraced subtune",
+   "why_lane": "reads build/listen while abpage tasks may rebuild it"
+  },
+  {
    "id": "drift-residual-17",
    "title": "The files whose drift is exactly -1/(skip+1) -- and the count is not 17",
    "source": "whats-next.md item 4 residual",
@@ -505,7 +508,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_drum_return.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/drum-return-to-base-emission",
     "r:python/tools/siddump-rt/siddump.exe",
@@ -564,7 +567,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/fidelity.py",
-    "rw:python/tests",
+    "rw:python/tests/test_cue_subtune_offset.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/fidelity-cue-subtune-offbyone",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -589,7 +592,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/fidelity.py",
-    "rw:python/tests",
+    "rw:python/tests/test_two_engines.py",
     "rw:FIDELITY.md",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/fidelity-engine-flag",
@@ -652,8 +655,8 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "a decision recorded with the trade named. `git status --porcelain -- .` at fidelity.py:3165 counts untracked files, and `--untracked-files=no` would ignore them -- but an untracked file CAN change what the report measures: python/tools/siddump-rt/siddump.exe is gitignored and load-bearing. So the conservative reading is that the current behaviour is right and the fix is to keep the tree free of strays. Settle it either way rather than leaving two regeneration runs' worth of confusion in place",
-   "why_model": "a provenance rule where the obvious fix hides a real hazard",
+   "verify": "a decision recorded with the trade named. `git status --porcelain -- .` at fidelity.py:3165 counts untracked files, and `--untracked-files=no` would ignore them -- but an untracked file CAN change what the report measures: python/tools/siddump-rt/siddump.exe is gitignored and load-bearing. So the conservative reading is that the current behaviour is right and the fix is to keep the tree free of strays. Settle it either way rather than leaving two regeneration runs' worth of confusion in place A FRESH CONCRETE INSTANCE as of 73354bd: graphify-out/ and .claude/settings.json.graphify-bak are untracked in the working tree (added installing the graphify skill/hooks) and neither is gitignored. Per the existing rule, the next FIDELITY.md/ SURVEY.md regeneration will stamp -dirty unless one of the two is chosen and applied before then: gitignore graphify-out/ and the .bak file, or commit them. This sharpens the urgency of the open decision -- it is no longer hypothetical.",
+   "why_model": "a provenance rule where the obvious fix hides a real hazard; now has a live untracked instance blocking the next regen",
    "why_mode": "edits CLAUDE.md and a harness rule",
    "why_lane": "writes fidelity.py and CLAUDE.md"
   },
@@ -717,7 +720,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_freq_table.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/freq-table-index-wraps-at-8-bit-asl-for-the-four-bit-40-records",
     "r:python/tools/siddump-rt/siddump.exe",
@@ -732,6 +735,31 @@
    "verify": "`_freq_table_note` models no wrap, but the player's `ASL` is 8-bit. The four remaining out-of-range indices all come through effect bit $40 and all are >= 128, and `2*idx & $FF` lands each on a valid in-run entry: ACE_II rec 11 (206 -> entry 78, $6270), Powerplay_Hockey rec 3 (141 -> 13, $0238), Trans-Atlantic rec 15 (174 -> 46, $0F82) and rec 18 (132 -> 4, $015F). BEFORE emitting anything, settle whether the byte is meant as a note index at all: the same cell is `det.wave_program`'s pointer low byte and `_fixed_attack_note`'s docstring already warns that read as a pointer it is not a note. Two cautions: the per-record bit-$40 check is required as well as the file-level flag (the Thundercats rule), and Trans-Atlantic ships with --sfx-drum on while NO report column sees a noise frame's pitch, so a wrong pitch here is invisible to FIDELITY.md (7.rrr). Byte-hash names only the intended files.",
    "why_model": "a wrap that is arithmetically clean and semantically doubtful, in the family where a wrong pitch is invisible to every column",
    "why_mode": "goatwriter.py with a byte-hash verify",
+   "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+  },
+  {
+   "id": "freq-table-note-index-63-record26-boilerplate-check",
+   "title": "Dragons_Lair_Part_II record 26 (bits $02|$08, note index $63) is past the freq table -- same boilerplate as the other 11, or a second cause?",
+   "source": "runs.jsonl: bit08-alternate-with-no-wave-pair (opened)",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_freq_table.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/405bca33-a6e6-4067-93e8-a032a7489adb/scratchpad/freq-table-note-index-63-record26-boilerplate-check",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "note-freq-extrapolates-past-the-16-bit-ceiling (closed, 57763ef) found the 11 index-99 frequency cells were ONE boilerplate record copied across 11 tunes, unplayed, and closed with 0 files moving. Dragons_Lair_Part_II record 26 sets bits $02|$08 with note index $63 (past the table) and _freq_table_note returns None for it -- check whether this is the SAME boilerplate shape (unplayed, 0 files move) or a genuinely distinct second cause. This is a read-before-write task: the answer may be 'no code change, documented as the same boilerplate', matching bit08-alternate-with-no-wave-pair's own precedent of a one-record finding that needed no second emitter.",
+   "why_model": "a bounded, mechanical read-then-classify check against an already-established pattern",
+   "why_mode": "goatwriter.py, with the answer possibly being 'no change, documented'",
    "why_lane": "writes goatwriter.py, the busiest shared file on this list"
   },
   {
@@ -1009,7 +1037,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/patterns.py",
-    "rw:python/tests",
+    "rw:python/tests/test_wait0_tie.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/nineteen-tie-spelling-melody-loss",
     "r:python/tools/siddump-rt/siddump.exe",
@@ -1081,6 +1109,33 @@
    "why_lane": "writes fidelity.py and FIDELITY.md"
   },
   {
+   "id": "opening-tempo-relocate-off-voice0-row0",
+   "title": "Could the opening tempo live on voice 1 or 2's entry row instead of voice 0's, to free the wrap tie?",
+   "source": "runs.jsonl: boundary-tie-loop-around-restart-position (opened)",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/patterns.py",
+    "rw:python/tests/test_tempo_conflict.py",
+    "rw:python/tests/test_wait0_tie.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/405bca33-a6e6-4067-93e8-a032a7489adb/scratchpad/opening-tempo-relocate-off-voice0-row0",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:Commando.sng"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "CMD_SETTEMPO under $80 sets all three channels at once (gplay.c:494), so the opening tempo command does not have to be written on voice 0's entry pattern row 0 -- voice 1's or voice 2's entry row would do just as well, and moving it is what would free row 0 for the boundary-tie-loop-around-restart-position wrap tie on Star_Paws. Graphify cross-check: apply_tempos() (patterns.py:1775) is called only from convert() (convert.py:419) and is exercised directly by test_tempo_conflict.py (6 tests: test_the_same_tempo_on_both_sides_is_left_alone, test_two_subtunes_sharing_a_pattern_with_different_tempos_clone_it, test_a_pattern_another_subtune_plays_mid_song_counts_too, test_an_occupied_command_column_still_declines, test_the_write_is_dropped_rather_than_made_wrong_at_the_ceiling, test_it_refuses_a_value_list_that_does_not_match_the_tracks) plus test_the_wrap_leaves_voice_zeros_row_for_apply_tempos in test_wait0_tie.py -- both test files are in scope for any change here, not just patterns.py itself. Verify: apply_tempos' cloning rules still hold (a pattern shared across subtunes with conflicting tempos still clones), a corpus byte-hash naming every file whose bytes move (whats-next.md predicts this moves far more files than the wrap tie itself did), and Commando.sng byte-exact if it is among them or unchanged if not.",
+   "why_model": "a design question about where a global effect's command can legally be moved, with a corpus-wide byte-hash consequence",
+   "why_mode": "bounded to patterns.py plus its two exercising test files, with a clear byte-hash verify",
+   "why_lane": "writes patterns.py, shared with three other tie/tempo tasks"
+  },
+  {
    "id": "orderlist-silent-park-for-fe",
    "title": "A tune ending on $FE stops in the editor and loops in the packed .sid",
    "source": "runs.jsonl: powerplay-cue-length (opened)",
@@ -1116,7 +1171,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/fidelity.py",
-    "rw:python/tests",
+    "rw:python/tests/test_original_ended.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/original-ended-five-second-floor",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -1193,7 +1248,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/tracks.py",
-    "rw:python/tests",
+    "rw:python/tests/test_phantom_subtunes_sfx.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/phantom-subtunes-nemesis-thundercats",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -1218,7 +1273,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/detect.py",
-    "rw:python/tests",
+    "rw:python/tests/test_two_stage_pitch_seq.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:VIBRATO.md",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/pitchseq-detect-shape-gap",
@@ -1244,7 +1299,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_two_stage_pitch_seq.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/pitchseq-zero-step-encoding",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -1328,7 +1383,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "`git worktree list` shows only the main checkout and `git branch` only master. THE OBVIOUS TEST IS WRONG HERE: every remaining branch's content landed under a DIFFERENT sha, so `git merge-base --is-ancestor` reports all of them unmerged. The right check, already run and passed on both cycles' worktrees: no line in the worktree is absent from master. wt1 of cycle 1 legitimately holds 2 such lines -- the pre-guard `drum = search_file(...)` that 0883a38 replaced -- so the check must distinguish superseded from unlanded. Also remove the scratch byte-hash worktrees this session created under the scratchpad (base-fc691a4, base-d13205b, base-0e9f254), which are detached-HEAD checkouts and not on any branch.",
+   "verify": "The check must compare a worktree's flagged lines against the COMMIT THE WORKTREE'S WORK ACTUALLY LANDED IN, not current master -- comparing against master produces false positives on SUPERSEDED content. Verified examples from whats-next.md: wf_deb47f97-915-1's flagged goatwriter.py line is the OLD bit-$08 refusal clause e4b2f58 replaced; wf_55f332af-99a-5's test_abpage.py flags 252 lines that ARE on master (11 references) once compared correctly. A naive 'no line in the worktree is on master' check flags 11 files across 8 worktrees, all false positives. 40 worktree entries (33 wf_*), 18 unmerged branch refs. Also remove the four scratch byte-hash worktrees under the scratchpad (base-fc691a4, base-d13205b, base-0e9f254, base-9ec3133), which are not part of the false-positive count and can be dropped outright.",
    "why_model": "distinguishing superseded content from unlanded content across 20 branches, where the obvious git test gives the wrong answer on every one",
    "why_mode": "operates on the main checkout's git refs",
    "why_lane": "writes .claude/worktrees, which is also where the Workflow runner CREATES agent worktrees -- the conflict is with the runner rather than with another task, so the overlap arithmetic cannot see it"
@@ -1432,34 +1487,6 @@
    "why_lane": "writes H2G-CONVERSION-METHOD.md, shared with three doc tasks"
   },
   {
-   "id": "reversal-ratio-may-be-nonlinear-in-oscillation-rate",
-   "title": "One_on_One shortens by exactly 0.750 and its ratio moves x2.06 -- the measure may be non-linear",
-   "source": "runs.jsonl: classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest (opened)",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:VIBRATO.md",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/reversal-ratio-may-be-nonlinear-in-oscillation-rate",
-    "r:FIDELITY.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "THE ARITHMETIC DOES NOT CLOSE, which is why this is a task. One_on_One_Jordan_vs_Bird's four classic-vibrato instruments ALL shorten from cmp 2 to cmp 1 at ebc9d1a -- a half-period ratio of exactly 0.750, the intended factor -- and a 0.750 period should raise the reversal count by about 1.33. The file's reversal ratio moved 0.759 -> 1.562, x2.06. Something other than the rate is moving the count. The leading suspect is the measure itself: `reversals_by_instrument` skips {a-1, a, a+1}, so an oscillation whose excursion straddles that dead band produces NO reversals until it is fast enough, and then produces them all at once -- a step, not a slope. Settle it by synthesising a known oscillation at a sweep of rates and plotting the counted reversals against the true count; a linear measure gives a straight line. If it is non-linear, say what that means for every `vib` figure in FIDELITY.md, because they are all read as if proportional.",
-   "why_model": "the measure every vibrato decision has been judged by may not be monotone in what it claims to measure",
-   "why_mode": "it would recolour published figures corpus-wide, so the interpretation matters more than the patch",
-   "why_lane": "writes fidelity.py, shared with five harness tasks"
-  },
-  {
    "id": "robs-life-no-signature",
    "title": "Robs_Life carries three byte-identical copies of one player and converts to nothing",
    "source": "runs.jsonl: multi-engine-sid-one-player-assumption (opened)",
@@ -1468,7 +1495,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/detect.py",
-    "rw:python/tests",
+    "rw:python/tests/test_robs_life.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:SURVEY.md",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/robs-life-no-signature",
@@ -1516,7 +1543,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/detect.py",
-    "rw:python/tests",
+    "rw:python/tests/test_phantom_subtunes_sfx.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/sfx-dispatch-bcc-spelling",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -1531,6 +1558,31 @@
    "why_model": "a signature widening, the change class CLAUDE.md warns can silently break another game",
    "why_mode": "detect.py with a byte-hash verify",
    "why_lane": "writes detect.py"
+  },
+  {
+   "id": "shared-instr-used-bounded-census-helper",
+   "title": "A shared instr_used-bounded census helper -- two tasks in two cycles found their candidate population was mostly dead cells",
+   "source": "whats-next.md#3; runs.jsonl: bit08-alternate-with-no-wave-pair (opened, general note)",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/detect.py",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_instr_used_census.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/405bca33-a6e6-4067-93e8-a032a7489adb/scratchpad/shared-instr-used-bounded-census-helper"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "bit08-alternate-with-no-wave-pair (e4b2f58) found 11 of 12 bit-$08 candidate records were dead cells once bounded by det.instr_used; note-freq-extrapolates-past-the-16-bit-ceiling (57763ef) found the same shape for 11 of the index-99 frequency cells. Both tasks built their own ad-hoc instr_used-bounded filter. Build ONE shared helper (Detection or a census module) that any future record-scan task calls by default, so a third investigation starts from the bounded population rather than the raw table. Verify: reproduces both prior findings exactly (11/12 dead for bit-$08, 11/11 boilerplate for freq-table) when the two closed tasks' logic is rerun through the new helper; byte-inert (no .sng bytes move -- this only changes what candidate populations later tasks start from).",
+   "why_model": "a straightforward extraction of a filter two already-closed tasks each wrote independently",
+   "why_mode": "detect.py plus goatwriter.py, verified against two known-good prior results rather than new corpus measurement",
+   "why_lane": "writes goatwriter.py and detect.py, both heavily shared"
   },
   {
    "id": "songspeeds-frames-table-bleed-into-skip-table-uncaught",
@@ -1616,7 +1668,7 @@
    "lane": "serial",
    "touches": [
     "rw:python/h2g/detect.py",
-    "rw:python/tests",
+    "rw:python/tests/test_status_bit6.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/status-bit6-shape",
     "r:presets.json",
@@ -1862,6 +1914,31 @@
    "why_lane": "writes fidelity.py and VIBRATO.md"
   },
   {
+   "id": "vib-figures-are-step-quantised-reread-past-decisions",
+   "title": "Re-read past vib/oscillation accept-or-refuse calls now that vib is known to be a step function",
+   "source": "runs.jsonl: reversal-ratio-may-be-nonlinear-in-oscillation-rate (opened, id given verbatim)",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/presets.py",
+    "r:python/fidelity.py",
+    "r:VIBRATO.md",
+    "r:FIDELITY.md",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/405bca33-a6e6-4067-93e8-a032a7489adb/scratchpad/vib-figures-are-step-quantised-reread-past-decisions"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "reversal-ratio-may-be-nonlinear-in-oscillation-rate (73c7cd1, done, no code) established that reversals per note are floor(L/p) - 1 -- a STEP function of the rate, not proportional to it -- and that this is now in the vib Dimension's own comment. This task is a re-read, not a re-derivation: walk decisions made BEFORE that was known and check whether any used a continuous-ratio assumption where the step function would give a different verdict. Two named candidates: presets.fidelity_better's _oscillation_lost veto (compares a candidate's oscillation ratio to the reference's; if the comparison is against a continuous expectation it may veto or admit wrongly near a step boundary), and the two preset-search runs' refused vib-affecting candidates (Run 1 and Run 2 in whats-next.md). Output is a list of which past verdicts hold and which deserve a re-run, not a code change by itself -- a verdict that changes becomes its own follow-up task.",
+   "why_model": "a re-audit of prior judgement calls under a corrected model -- exactly the shape of task where a plausible-but-wrong re-confirmation is cheap to produce",
+   "why_mode": "reads across presets.py, fidelity.py and two generated reports to build a list; no artefact regeneration by itself",
+   "why_lane": "reads files two other main tasks may be mid-edit on"
+  },
+  {
    "id": "vibrato-cmp-quantisation-limits-the-tick0-correction",
    "title": "The tick-0 correction is quantised: at cmp 0 none is possible, and one file's instruments get factors from 1.000 to 0.667",
    "source": "runs.jsonl: classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest (opened)",
@@ -1882,10 +1959,36 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "MEASURED, not hypothesised: `_classic_vibrato_entry` multiplies `half` by (row_calls-1)/row_calls and then quantises to `cmp = round(half) - VIBRATO_CMP_BIAS`, while the realised half-period is `cmp + 2` calls. So the correction a record actually receives is (cmp_after + 2)/(cmp_before + 2), which at small cmp is coarse and at cmp 0 is impossible. Mozart, one file, row_calls 3, intended 0.667: byte $0A gets 1.000 (floored), $12 0.750, $1A 0.667, $2A 0.700. Any fix must either accept that ceiling or move the rate somewhere with finer resolution -- and `rshift` is NOT that place (v0.5.129 left it alone because its error cancels the period's, and the factor wanted at row_calls 3 is log2(3/2) = 0.585, which an integer shift cannot express). Judge any candidate on the 48-file reversal-ratio A/B in log space, and read it beside the note counts.",
+   "verify": "MEASURED, not hypothesised: `_classic_vibrato_entry` multiplies `half` by (row_calls-1)/row_calls and then quantises to `cmp = round(half) - VIBRATO_CMP_BIAS`, while the realised half-period is `cmp + 2` calls. So the correction a record actually receives is (cmp_after + 2)/(cmp_before + 2), which at small cmp is coarse and at cmp 0 is impossible. Mozart, one file, row_calls 3, intended 0.667: byte $0A gets 1.000 (floored), $12 0.750, $1A 0.667, $2A 0.700. Any fix must either accept that ceiling or move the rate somewhere with finer resolution -- and `rshift` is NOT that place (v0.5.129 left it alone because its error cancels the period's, and the factor wanted at row_calls 3 is log2(3/2) = 0.585, which an integer shift cannot express). Judge any candidate on the 48-file reversal-ratio A/B in log space, and read it beside the note counts. CONFIRMED by reversal-ratio-may-be-nonlinear-in-oscillation-rate (73c7cd1, done): the realised half-period is cmp + 2 calls, so at cmp 0 no correction is possible at all, and Mozart's four instruments receive 1.000, 0.750, 0.667 and 0.700 for one intended 0.667 -- and vib itself is a STEP function of the rate (reversals per note = floor(L/p) - 1), so any candidate must be judged against the real step function, never a continuous ratio. See vib-figures-are-step-quantised-reread-past-decisions for the separate question of whether PAST accept/reject calls used the continuous assumption.",
    "why_model": "a rate encoding whose resolution limit has to be understood before any candidate is judged",
    "why_mode": "corpus-wide, and no dimension of the report measures an oscillation rate directly",
    "why_lane": "writes goatwriter.py, the busiest shared file on this list"
+  },
+  {
+   "id": "vibrato-plain-no-instrument-at-adsr",
+   "title": "Bucket 4 of vibrato-plain: 5 instruments carrying a classic-vibrato ADSR have no counterpart in our output at all",
+   "source": "runs.jsonl: vibrato-plain (partial) -- its evidence four-way-splits the 35 absent plain rows; buckets 1-3 each became a task and are now done (vibrato-plain-zero-byte-decode, vibrato-emitted-but-silent, powerplay-vibrato-refusals), bucket 4 was never opened as a task and vibrato-plain itself is neither in tasks nor closed",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/goatwriter.py",
+    "r:python/h2g/detect.py",
+    "rw:python/tests/test_vib_census.py",
+    "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/vibrato-plain-no-instrument-at-adsr",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Battle_of_Britain, Game_Killer and One_Man_and_his_Droid (x3 instruments) carry a classic-vibrato ADSR pair in the original that has NO matching instrument in our .sng output at all -- read via songview.parse_sng the way vibrato-plain's other three buckets were. First determine whether this is a real conversion gap (an instrument we should be emitting but are not -- e.g. an unindexed or unreferenced record) or a legitimate absence (the ADSR belongs to a mechanism we do not model, e.g. a digi/sfx voice never given a GT instrument). If real, name the missing instrument and the record it should come from; if legitimate, say so and close the bucket in whats-next.md item 3 rather than leaving vibrato-plain permanently unresolved.",
+   "why_model": "a fourth root-cause bucket from the same diagnosis that needed three probe rewrites before it read the record layout correctly",
+   "why_mode": "a scoped read comparing songview output against detect() per file, single-file diagnosis",
+   "why_lane": "reads goatwriter.py/detect.py, which every wave/vibrato task in this plan also touches"
   },
   {
    "id": "vibrato-tick0-skip-lfo-and-triangle-engines",
@@ -1924,7 +2027,7 @@
    "touches": [
     "rw:python/h2g/detect.py",
     "rw:python/h2g/goatwriter.py",
-    "rw:python/tests",
+    "rw:python/tests/test_wave_alternate.py",
     "r:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:C:/Users/mit/AppData/Local/Temp/claude/C--Users-mit-claude-h2g/4ce5e76f-9c7e-4af6-9592-cfc4184abd8b/scratchpad/wave-alternate-pitch-half",
     "r:python/tools/siddump-rt/siddump.exe"
@@ -2582,6 +2685,24 @@
    "title": "The tick-0 compensation pushes 15 files further from 1 -- Mozart 1.468 -> 2.031",
    "closed_by": "9ec3133",
    "reason": "PREMISE REFUTED, no code changed and none owed. 12 of the 15 files that regressed at ebc9d1a have ONE row length, so every reduction over the tempo values is the same number and the proposed play-weighted rule is provably inert on them -- including Mozart and One_on_One, the two the task named to start from. What the measurement found instead is the quantisation ceiling, now open as vibrato-cmp-quantisation-limits-the-tick0-correction."
+  },
+  {
+   "id": "bit08-alternate-with-no-wave-pair",
+   "title": "One record resolves a bit-$08 alternate note with no bit-$02 waveform pair to ride on",
+   "closed_by": "e4b2f58",
+   "reason": null
+  },
+  {
+   "id": "abpage-spectrogram",
+   "title": "Spectrogram overlay -- the half amplitude cannot show",
+   "closed_by": "510b098",
+   "reason": null
+  },
+  {
+   "id": "reversal-ratio-may-be-nonlinear-in-oscillation-rate",
+   "title": "One_on_One shortens by exactly 0.750 and its ratio moves x2.06 -- the measure may be non-linear",
+   "closed_by": "73c7cd1",
+   "reason": null
   }
  ]
 }

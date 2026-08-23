@@ -86,8 +86,9 @@ from pathlib import Path
 from h2g import __version__
 from h2g.convert import _detect_tables, convert
 from h2g.detect import detect
-from h2g.goatwriter import (FORMAT_GTS5, effective_frames,
+from h2g.goatwriter import (FORMAT_GTS5, HEADER_LEN, effective_frames,
                             find_song_speeds)
+from h2g.patterns import GT_ORDER_RESTART, GT_REPEAT
 from h2g.sidfile import find_freq_table, load_sid
 
 import vicetrace
@@ -593,6 +594,82 @@ def song_lengths(blob: bytes) -> list[tuple[int, int, int]]:
             pos += stored + 1
         out.append((voices[0], voices[1], voices[2]))
     return out
+
+
+def subtune_content_shas(blob: bytes) -> list[str] | None:
+    """One sha1 per subtune: its own 3 orderlist tracks, plus the raw bytes of
+    every pattern those tracks reach.
+
+    `output_sha` (below) hashes the whole `.sng` and so cannot tell a change
+    in one subtune's patterns from a change in another's -- exactly the gap
+    that let a -38pp regression print "no dimension can see this change"
+    (Star_Paws, boundary-tie-loop-around-restart-position): the differing
+    bytes were in a subtune `--baseline` never traced. A pattern that
+    several subtunes share is bytes those subtunes all fold into their own
+    hash, so a change to it is correctly attributed to all of them, not just
+    the one whose orderlist happens to name it first.
+
+    Returns None on any malformed `.sng` -- a missing per-subtune diff must
+    fall back to the file-wide reading, never be reported as "no change".
+    """
+    try:
+        pos = HEADER_LEN
+        n_subtunes = blob[pos]
+        pos += 1
+        tracks: list[bytes] = []
+        for _ in range(n_subtunes * 3):
+            n = blob[pos]
+            pos += 1
+            tracks.append(blob[pos:pos + n + 1])
+            pos += n + 1
+
+        n_instr = blob[pos]
+        pos += 1 + n_instr * 25
+
+        n_tables = 4 if blob[0:4] == b"GTS5" else 3
+        for _ in range(n_tables):
+            n = blob[pos]
+            pos += 1 + 2 * n
+
+        n_patt = blob[pos]
+        pos += 1
+        patterns: list[bytes] = []
+        for _ in range(n_patt):
+            rows = blob[pos]
+            pos += 1
+            patterns.append(blob[pos:pos + rows * 4])
+            pos += rows * 4
+    except IndexError:
+        return None
+
+    def referenced_patterns(track: bytes) -> set[int]:
+        out: set[int] = set()
+        operand = False
+        for b in track:
+            if operand:
+                operand = False
+            elif b == GT_ORDER_RESTART:
+                operand = True
+            elif b >= GT_REPEAT:
+                continue  # repeat count (0xD0-0xDF) or transpose (0xE0-0xFE)
+            else:
+                out.add(b)
+        return out
+
+    shas = []
+    for s in range(n_subtunes):
+        voices = tracks[s * 3:s * 3 + 3]
+        h = hashlib.sha1()
+        for t in voices:
+            h.update(t)
+        refs: set[int] = set()
+        for t in voices:
+            refs |= referenced_patterns(t)
+        for p in sorted(refs):
+            if p < len(patterns):
+                h.update(patterns[p])
+        shas.append(h.hexdigest()[:12])
+    return shas
 
 
 def greloc_export(lengths: list[tuple[int, int, int]]) -> dict:
@@ -3074,7 +3151,8 @@ def sidm2_audio(orig: Path, ours: Path, seconds: int,
 # Options convert() takes that are not booleans read from the `always` block:
 # three per-song shaping values, the two named differently in the JSON, and the
 # packing factor, which belongs to gt2reloc rather than to the conversion.
-_PER_SONG_OPTS = ("max_rows", "pack", "prune", "dedup")
+_PER_SONG_OPTS = ("max_rows", "pack", "prune", "dedup",
+                  "real_firstwave_instruments")
 _RENAMED_OPTS = {"fmt": "format"}
 _NOT_CONVERT_OPTS = ("gt2reloc", "multiplier")
 
@@ -3149,6 +3227,12 @@ def _preset_opts(doc: dict, name: str) -> dict:
         "dedup": bool(entry.get("dedup")),
         "fmt": always.get("format", FORMAT_GTS5),
         "tempo": always.get("tempo", "auto"),
+        # Per song, like the four above: which GT instrument numbers get the
+        # real-waveform firstwave byte -- a decision only meaningful for a
+        # specific instrument in a specific file (see convert()'s docstring),
+        # never a bool the generic `always`/per-song loop below could carry.
+        "real_firstwave_instruments": tuple(
+            entry.get("real_firstwave_instruments") or ()),
     }
     for opt in _convert_options():
         if opt in opts or opt in _PER_SONG_OPTS:
@@ -3301,6 +3385,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # table, and the second one has shipped here twice (--slides for four
     # versions, --filter for two). Without it an A/B cannot tell them apart.
     row["output_sha"] = hashlib.sha1(sng).hexdigest()[:12]
+    # Per-subtune, so an A/B can name WHICH subtune's bytes moved rather than
+    # only that the file's did -- see subtune_content_shas.
+    row["subtune_shas"] = subtune_content_shas(sng)
 
     sng, patched = legalise_restarts(sng)
     row["restarts_patched"] = patched
@@ -4265,6 +4352,44 @@ def option_drift(base: dict, new: dict) -> list[str]:
             for (k, a, c), f in sorted(diffs.items())]
 
 
+def _subtune_diff_note(fname: str, base_row: dict, new_row: dict) -> str:
+    """One bullet naming which subtune of `fname` actually differs, if we can
+    tell -- the fix for a verdict that named a register that cannot see the
+    change while staying silent about a change that landed somewhere the
+    report never traced (see subtune_content_shas). Never asserts silence it
+    has not earned: an unparsed or pre-upgrade row falls back to naming the
+    traced subtune rather than the specific one that moved.
+    """
+    traced = new_row.get("subtune")
+    b_shas, n_shas = base_row.get("subtune_shas"), new_row.get("subtune_shas")
+    if b_shas is None or n_shas is None:
+        return (f"- `{fname}`: traced subtune {traced} -- per-subtune diff "
+                "unavailable (one of these two runs predates it)")
+    if len(b_shas) != len(n_shas):
+        return (f"- `{fname}`: traced subtune {traced} -- subtune COUNT "
+                f"differs ({len(b_shas)} -> {len(n_shas)}); a per-subtune "
+                "diff is not meaningful here, treat every subtune as suspect")
+    differing = [i for i, (x, y) in enumerate(zip(b_shas, n_shas)) if x != y]
+    if not differing:
+        return (f"- `{fname}`: traced subtune {traced} -- no subtune's own "
+                "content changed; the differing bytes are in the header, "
+                "instrument or table region every subtune shares")
+    where = ", ".join(str(i) for i in differing)
+    if traced in differing:
+        return (f"- `{fname}`: subtune(s) {where} differ, INCLUDING the "
+                f"traced one ({traced})")
+    return (f"- `{fname}`: subtune(s) {where} differ -- **NOT** the traced "
+            f"subtune ({traced}). This verdict says nothing about those "
+            "subtunes; re-run with `-a <n>` on each to measure them")
+
+
+def _subtune_diff_notes(files: list[str], base: dict, new: dict, cap: int = 20) -> list[str]:
+    lines = [_subtune_diff_note(f, base[f], new[f]) for f in files[:cap]]
+    if len(files) > cap:
+        lines.append(f"- ... and {len(files) - cap} more")
+    return lines
+
+
 def _run_label(rows: list[dict], fallback: str) -> str:
     for r in rows:
         bits = [b for b in (r.get("label"), r.get("version")) if b]
@@ -4382,10 +4507,16 @@ def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]
             ] + [f"- `{reg}` -- {what}" for reg, what in unread] + [
                 "",
                 "or in note length, tempo, or a part of the file outside the "
-                "traced window (see the report's *What this run compared*). "
-                "Judge it by ear or by a dimension this harness does not have "
-                "-- `listen.py` is the only check that spans the rest.",
-            ]
+                "traced window. Judge it by ear or by a dimension this "
+                "harness does not have -- `listen.py` is the only check "
+                "that spans the rest.",
+                "",
+                "**Which subtune actually differs, per file** (a change "
+                "outside the traced subtune is exactly how this verdict has "
+                "stated the opposite of the truth before -- Star_Paws, "
+                "boundary-tie-loop-around-restart-position):",
+                "",
+            ] + _subtune_diff_notes(bytes_changed, base, new)
         elif hashed:
             out += [
                 "**This change reaches nothing.**",
@@ -4440,7 +4571,8 @@ def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]
                 "have landed in "
                 + ", ".join(f"`{reg}`" for reg, _ in unread)
                 + ", in note length, in tempo, or outside the traced window.",
-            ]
+                "",
+            ] + _subtune_diff_notes(blind, base, new)
 
     # The integrity check that falls out of having both halves: identical
     # bytes that measure differently is the harness moving, not the converter.

@@ -35,7 +35,9 @@ import json
 import math
 import re
 import struct
+import sys
 import wave
+from datetime import datetime
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -136,6 +138,39 @@ def fidelity_json_rows() -> dict[str, dict]:
         if stem:
             out.setdefault(stem, row)
     return out
+
+
+def instrmap_rows() -> tuple[dict[str, dict], int]:
+    """(`build/instrmap.json` rows keyed by stem, the trace window in seconds).
+
+    `instrmap.py --json` writes it. Empty and 0 when absent -- the file is
+    expensive to produce (two emulations a song) and is deliberately NOT a
+    per-commit artefact, so a page built without it must render fine rather
+    than fail.
+
+    Read from the JSON rather than from `instrmap`'s Markdown index for the
+    reason the `--json` flag's help gives: a Markdown-table scraper degrades
+    *silently* into reading nothing.
+    """
+    path = ROOT / "build" / "instrmap.json"
+    if not path.exists():
+        return {}, 0
+    try:
+        doc = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}, 0
+    if not isinstance(doc, dict):
+        return {}, 0
+    seconds = doc.get("seconds") or 0
+    out: dict[str, dict] = {}
+    for row in doc.get("songs") or []:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("file") or ""
+        stem = name[:-4] if name.endswith(".sid") else name
+        if stem:
+            out.setdefault(stem, row)
+    return out, (seconds if isinstance(seconds, int) else 0)
 
 
 # ---- spectrogram: both sides' FFT, precomputed at build time -------------
@@ -466,6 +501,14 @@ h1 small { display:block; font-size:15px; font-weight:400; color:var(--muted);
 .src:focus-visible { outline:2px solid var(--ink); outline-offset:2px; }
 .src .key { font-size:11px; letter-spacing:.12em; color:var(--muted); text-transform:uppercase; }
 .src .name { font-size:17px; font-weight:600; }
+/* When this WAV was rendered. A stale pair is indistinguishable from a fresh
+   one by ear until something sounds wrong, and then the first suspicion falls
+   on the converter rather than on the file's age -- which has already cost
+   this project one wrong diagnosis. Kept quiet: it is provenance, not a
+   control. */
+.src .rendered { font-family:var(--mono); font-size:10.5px; color:var(--muted);
+  letter-spacing:.04em; opacity:.8; }
+.blind .src .rendered { visibility:hidden; }
 .src[data-side="a"][aria-pressed="true"] { border-color:var(--a);
   background:color-mix(in srgb, var(--a) 11%, var(--panel)); }
 .src[data-side="b"][aria-pressed="true"] { border-color:var(--b);
@@ -529,14 +572,23 @@ td a { color:var(--ink); font-weight:600; }
 .trkcol h3 { margin:0; padding:6px 10px; font-family:var(--mono); font-size:12px;
   letter-spacing:.06em; background:var(--panel);
   border-bottom:1px solid var(--line); }
-.trkbody { height:340px; overflow:hidden; position:relative;
+.trkbody { height:680px; overflow:hidden; position:relative;
   font-family:var(--mono); font-size:12.5px; line-height:1.45; }
+.trkhead { display:flex; gap:8px; padding:4px 10px; white-space:pre;
+  font-size:11px; letter-spacing:.06em; color:var(--muted); opacity:.75;
+  border-bottom:1px solid var(--line); }
 .trkrow { display:flex; gap:8px; padding:0 10px; white-space:pre;
-  color:var(--muted); }
+  color:var(--muted); cursor:pointer; }
+.trkrow:hover { background:color-mix(in srgb, var(--ink) 6%, transparent); }
+.trkhead .ix, .trkrow .ix { display:inline-block; width:2.6em; }
+.trkhead .n, .trkrow .n { display:inline-block; width:3em; }
+.trkhead .instr, .trkrow .instr { display:inline-block; width:3.2em; }
+.trkhead .cmd, .trkrow .cmd { display:inline-block; width:3.2em; }
 .trkrow .n { color:var(--ink); }
 .trkrow.note { color:var(--ink); }
 .trkrow.cur { background:color-mix(in srgb, var(--live) 22%, transparent); }
 .trkrow .ix { color:var(--muted); opacity:.65; }
+.trkrow .instr { color:var(--b); font-weight:600; }
 .trknote { margin:12px 0 0; font-size:.86rem; color:var(--muted); }
 .vstrip { display:grid; gap:14px;
   grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
@@ -618,6 +670,18 @@ td a { color:var(--ink); font-weight:600; }
   margin:10px 0 0; font-size:.82rem; color:var(--muted);
 }
 .wave .swatch { display:inline-flex; align-items:center; gap:6px; }
+/* The two bands sit on top of each other at 62% alpha, so where they agree
+   they are one colour and neither is readable on its own. Hiding a key is
+   how you read the other -- and hiding BOTH but the difference strip is how
+   you see where they part company with nothing else on the canvas. */
+button.swatch { appearance:none; background:none; border:0; padding:0;
+  font:inherit; color:inherit; cursor:pointer; }
+button.swatch:focus-visible { outline:2px solid var(--ink); outline-offset:3px;
+  border-radius:3px; }
+button.swatch[aria-pressed="false"] { opacity:.42; }
+button.swatch[aria-pressed="false"] i { background:transparent !important;
+  box-shadow:inset 0 0 0 1.5px var(--muted); }
+button.swatch[aria-pressed="false"] { text-decoration:line-through; }
 .wave .swatch i { width:11px; height:11px; border-radius:3px; display:inline-block; }
 .wave .swatch.orig i { background:var(--a); }
 .wave .swatch.ours i { background:var(--b); }
@@ -835,19 +899,38 @@ SCRIPT = r"""
       oc.strokeStyle = line; oc.lineWidth = 1;
       oc.beginPath(); oc.moveTo(0, H / 2 + 0.5); oc.lineTo(COLS, H / 2 + 0.5); oc.stroke();
       oc.beginPath(); oc.moveTo(0, H + 0.5); oc.lineTo(COLS, H + 0.5); oc.stroke();
-      band(oc, envA, css("--a"), 0.62);
-      band(oc, envBs, css("--b"), 0.62);
+      if (show.a) band(oc, envA, css("--a"), 0.62);
+      if (show.b) band(oc, envBs, css("--b"), 0.62);
       // difference strip: |peak difference| per column, same time axis.
+      // The sum accumulates whether or not the strip is drawn -- the mean is a
+      // property of the two renders, not of what is currently on screen, and
+      // recomputing it from the visible traces would make hiding a key look
+      // like it changed the measurement.
       var sum = 0;
       oc.globalAlpha = 0.45; oc.fillStyle = ink;
       for (var i = 0; i < COLS; i++) {
         var d = Math.abs(envA[i] - envBs[i]); sum += d;
-        oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
+        if (show.d) oc.fillRect(i, H + DIFF - d * (DIFF - 4), 1, d * (DIFF - 4));
       }
       oc.globalAlpha = 1;
       if (stat) stat.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
       frame();
     }
+
+    // Which traces are drawn. Hiding one does not recompute anything -- paint()
+    // reads these and the envelopes are untouched, so toggling is free and
+    // reversible.
+    var show = { a: true, b: true, d: true };
+    Array.prototype.forEach.call(
+      cv.parentNode.querySelectorAll("button.swatch[data-trace]"),
+      function (b) {
+        b.addEventListener("click", function () {
+          var k = b.dataset.trace;
+          show[k] = !show[k];
+          b.setAttribute("aria-pressed", String(show[k]));
+          if (envA) paint();
+        });
+      });
     window.__abRedraw = function () { if (envA) paint(); };
 
     // --- automatic sync ---------------------------------------------------
@@ -1171,31 +1254,105 @@ SCRIPT = r"""
       }
       return best;
     }
-    function follow() {
-      var f = Math.floor((bu.currentTime || au.currentTime) * 50);
+    // A single scrollTop assignment per note (driven off "timeupdate", which
+    // Chrome fires ~4x/sec) reads as a series of leaps rather than motion,
+    // and CSS scroll-behavior:smooth made it worse: each leap restarted the
+    // browser's own animation mid-flight, so the visible position overshot
+    // and corrected on every row. Instead: while playing, a rAF loop moves
+    // scrollTop continuously, interpolated between the current row's offset
+    // and the next row's by how far the exact play position is between the
+    // two rows' start frames -- one smooth motion instead of one jump per row.
+    function updateRow(v, i) {
+      if (i === cur[v]) return;
+      cur[v] = i;
+      var box = cols[v];
+      var prev = box.querySelector(".trkrow.cur");
+      if (prev) prev.classList.remove("cur");
+      var el = box.children[i];
+      if (el) el.classList.add("cur");
+    }
+    function scrollTick(instant) {
+      var f = (bu.currentTime || au.currentTime) * 50;
       for (var v = 0; v < 3; v++) {
         var frames = window.__abRows[v];
         if (!frames || !frames.length) continue;
-        var i = rowAt(frames, f);
-        if (i === cur[v]) continue;
-        cur[v] = i;
+        var i = rowAt(frames, Math.floor(f));
+        updateRow(v, i);
         var box = cols[v];
-        var prev = box.querySelector(".trkrow.cur");
-        if (prev) prev.classList.remove("cur");
         var el = box.children[i];
         if (!el) continue;
-        el.classList.add("cur");
-        box.scrollTop = el.offsetTop - box.clientHeight / 2 + el.offsetHeight / 2;
+        var nextEl = box.children[i + 1];
+        var top = el.offsetTop;
+        if (nextEl && i + 1 < frames.length) {
+          var span = frames[i + 1] - frames[i];
+          var frac = span > 0 ? Math.min(1, Math.max(0, (f - frames[i]) / span)) : 0;
+          top += (nextEl.offsetTop - el.offsetTop) * frac;
+        }
+        box.scrollTop = top - box.clientHeight / 2 + el.offsetHeight / 2;
       }
     }
-    au.addEventListener("timeupdate", follow);
+    function follow() { scrollTick(true); }
+
+    var rafId = null;
+    function frameLoop() { scrollTick(false); rafId = requestAnimationFrame(frameLoop); }
+    function startScroll() { if (rafId === null) rafId = requestAnimationFrame(frameLoop); }
+    function stopScroll() { if (rafId !== null) { cancelAnimationFrame(rafId); rafId = null; } follow(); }
+    au.addEventListener("play", startScroll);
+    au.addEventListener("pause", stopScroll);
+    au.addEventListener("ended", stopScroll);
     seek.addEventListener("input", follow);
     follow();
+
+    // Click a row to jump playback there and pause -- so a row that looks
+    // wrong can be heard in isolation instead of waiting for the loop to
+    // scroll back around to it. Guarded on readyState: setting .currentTime
+    // before the browser has metadata (duration unknown) can block on a
+    // 10+ MB WAV while it works out whether the position is even seekable --
+    // silently doing nothing here is better than a hang.
+    cols.forEach(function (box) {
+      box.addEventListener("click", function (e) {
+        var row = e.target.closest(".trkrow");
+        if (!row || !box.contains(row)) return;
+        if (au.readyState < 1 || bu.readyState < 1) return;
+        var i = Number(row.dataset.i);
+        var v = cols.indexOf(box);
+        var frames = window.__abRows[v];
+        if (!frames || !(i in frames)) return;
+        var t = frames[i] / 50;
+        au.pause(); bu.pause();
+        play.innerHTML = "&#9654;"; play.setAttribute("aria-label", "Play");
+        au.currentTime = t; bu.currentTime = bAt(t);
+        now.textContent = fmt(t);
+        if (au.duration) seek.value = String(Math.round(t / au.duration * 1000));
+        follow();
+      });
+    });
   })();
 
   apply(); setNames();
 })();
 """
+
+
+def wav_rendered(path: Path) -> str:
+    """"rendered 2026-08-23 14:07" for a staged WAV, or "" if it is absent.
+
+    Local time, not UTC: the reader comparing this against "did I just re-run
+    listen.py?" is looking at their own clock.
+
+    This exists because a stale render is silent. `listen.py` overwrites its
+    output in place and never announces an age, so a pair left from an earlier
+    converter state plays perfectly and sounds subtly wrong -- and the first
+    suspicion falls on the converter. That has already cost this project one
+    wrong diagnosis, from a pair four days old. A timestamp on the face of the
+    page turns "why does this sound off" into "this was rendered before the
+    fix" without anyone having to think to check.
+    """
+    try:
+        ts = path.stat().st_mtime
+    except OSError:
+        return ""
+    return "rendered " + datetime.fromtimestamp(ts).strftime("%Y-%m-%d %H:%M")
 
 
 def wav_uri(path: Path) -> str:
@@ -1217,9 +1374,28 @@ Write-Host "H2G listening pass" -ForegroundColor Cyan
 Write-Host "  serving $repo\build\listen on $url"
 Write-Host "  close this window to stop the server."
 
-Start-Job -ScriptBlock {
-  Start-Sleep -Seconds 2
-  Start-Process $using:url
+# `--serve` rebuilds every staged page (spectrogram included, ~3.4s/tune)
+# BEFORE it binds the port, so a fixed sleep here opens the browser on
+# nothing -- ERR_CONNECTION_REFUSED -- long before a large corpus finishes.
+# Poll the port instead of guessing how long the build takes.
+Start-Job -ArgumentList $port, $url -ScriptBlock {
+  param($port, $url)
+  $deadline = (Get-Date).AddMinutes(15)
+  $up = $false
+  while ((Get-Date) -lt $deadline) {
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+      $client.Connect("127.0.0.1", $port)
+      $up = $client.Connected
+    } catch {
+      $up = $false
+    } finally {
+      $client.Close()
+    }
+    if ($up) { break }
+    Start-Sleep -Milliseconds 500
+  }
+  if ($up) { Start-Process $url }
 } | Out-Null
 
 Push-Location "$repo\python"
@@ -1435,11 +1611,15 @@ def tracker_card(name: str) -> str:
         frames_js.append([r[0] for r in rows])
         body = "".join(
             '<div class="trkrow%s" data-i="%d"><span class="ix">%03d</span>'
-            '<span class="n">%s</span><span>%02X</span><span>%X%02X</span></div>'
+            '<span class="n">%s</span><span class="instr">%02X</span>'
+            '<span class="cmd">%X%02X</span></div>'
             % (" note" if r[1] not in ("...", "===") else "", i, i % 1000,
                r[1], r[2], r[3], r[4])
             for i, r in enumerate(rows))
         cols += ('<div class="trkcol"><h3>Channel %d</h3>'
+                 '<div class="trkhead"><span class="ix">row</span>'
+                 '<span class="n">note</span><span class="instr">instr</span>'
+                 '<span class="cmd">cmd</span></div>'
                  '<div class="trkbody" id="trk%d">%s</div></div>'
                  % (v + 1, v, body))
 
@@ -1452,7 +1632,10 @@ def tracker_card(name: str) -> str:
         'render\u2019s clock, and the row timing is <b>derived</b> from the '
         'tempo written into the file \u2014 so if the view drifts against '
         'what you hear, the row rate is wrong, which is a finding rather '
-        'than a display fault.</p>\n</div>\n'
+        'than a display fault. <b>Click a row</b> to jump playback there and '
+        'pause, so a row that looks wrong can be heard on its own instead of '
+        'waiting for the loop to scroll back to it \u2014 or press '
+        '<kbd>Space</kbd> to pause/resume wherever it already is.</p>\n</div>\n'
         % (cols, json.dumps(frames_js, separators=(",", ":")),
            tr.get("sub_ours", 0)))
 
@@ -1518,10 +1701,71 @@ def notes_strip_card(name: str, fj: dict | None) -> str:
         % ("".join(cols), STRIP_MAX_TICKS, total_o, total_u))
 
 
+def instrmap_card(name: str, im: dict | None, seconds: int) -> str:
+    """The instrument map's per-song verdict, keyed to what the ear should check.
+
+    `instrmap.py` asks the question no other check here asks. Everything else
+    reads the player's instrument *table* and reasons about what it means;
+    this reads what the SID registers actually hold on the frame each note
+    begins, both sides, joined on ADSR. So its buckets say where to point the
+    ear:
+
+      only original   an instrument the tune sounds and we never do -- the
+                      loudest kind of miss, and audible as something absent
+      only ours       a signature the original never produces: we invented it
+      waveform differs both sides sound the instrument, with different timbre
+
+    Empty string when no map has been generated: the file costs two emulations
+    a song and is not built per commit, so its absence is normal rather than
+    an error.
+    """
+    if not im:
+        return ""
+    total = im.get("instruments") or 0
+    if not total:
+        return ""
+    matched = im.get("matched") or 0
+    buckets = [
+        ("waveform differs", im.get("waveform_mismatch") or 0,
+         "both sides sound it, with a different waveform class"),
+        ("only original", im.get("only_original") or 0,
+         "the tune sounds it and we never do"),
+        ("only ours", im.get("only_ours") or 0,
+         "we sound something the original never does"),
+        ("unused", im.get("unused") or 0,
+         "in the table, sounded by neither side"),
+    ]
+    cells = ['<div><span class="k">matched</span><span class="v">%d of %d</span></div>'
+             % (matched, total)]
+    cells += ['<div><span class="k">%s</span><span class="v">%d</span></div>'
+              % (label, n) for label, n, _ in buckets if n]
+    legend = "".join("<li><b>%s</b> &mdash; %s</li>" % (label, why)
+                     for label, n, why in buckets if n)
+    window = (" over the first %ds" % seconds) if seconds else ""
+    return (
+        '<div class="card">\n  <h2>Instrument map</h2>\n'
+        '  <div class="facts">%s</div>\n'
+        '  %s\n'
+        '  <p class="caveat"><b>This is the trace\'s view, not the '
+        'converter\'s.</b> Every other instrument check in this project reads '
+        'the player\'s own instrument table and argues about what it means; '
+        'this one reads what the SID registers actually hold on the frame each '
+        'note begins%s, in the original and in the conversion, matched on the '
+        'ADSR pair. Where the two disagree the trace wins &mdash; and where we '
+        'produce a signature the original never produces, we invented it. It '
+        'compares waveform <i>class</i>, bucketed pulse width and the envelope; '
+        'it does not judge pitch, and a count here is not a score. Generated by '
+        '<code>instrmap.py</code>; the per-instrument rows are in '
+        '<code>build/instrmap/%s.md</code>.</p>\n</div>\n'
+        % ("".join(cells), "<ul>%s</ul>" % legend if legend else "",
+           window, name))
+
+
 def page(name: str, row: dict, notes: list[str], version: str,
          embed: bool, index_link: bool,
          survey: dict | None = None, preset: dict | None = None,
-         fidjson: dict | None = None) -> str:
+         fidjson: dict | None = None,
+         instrmap: dict | None = None, instrmap_seconds: int = 0) -> str:
     pretty = name.replace("_", " ")
     chips = "".join(
         '<div class="chip"><span>%s</span><b>%s</b></div>' % (k, row[k])
@@ -1534,6 +1778,9 @@ def page(name: str, row: dict, notes: list[str], version: str,
         "<li>No notes were staged for this tune. Anything heard here is "
         "something no check in the repo can see &mdash; which is the reason "
         "this pass exists.</li>")
+
+    a_rendered = wav_rendered(LISTEN / ("%s.original.wav" % name))
+    b_rendered = wav_rendered(LISTEN / ("%s.h2g.wav" % name))
 
     if embed:
         a_src = wav_uri(LISTEN / ("%s.original.wav" % name))
@@ -1588,10 +1835,12 @@ def page(name: str, row: dict, notes: list[str], version: str,
     <button class="src" data-side="a" aria-pressed="true">
       <span class="key">Source A &middot; press <kbd>1</kbd></span>
       <span class="name" id="nameA">Original .sid</span>
+      <span class="rendered">%(a_rendered)s</span>
     </button>
     <button class="src" data-side="b" aria-pressed="false">
       <span class="key">Source B &middot; press <kbd>2</kbd></span>
       <span class="name" id="nameB">H2G conversion</span>
+      <span class="rendered">%(b_rendered)s</span>
     </button>
   </div>
   <div class="transport">
@@ -1633,10 +1882,10 @@ def page(name: str, row: dict, notes: list[str], version: str,
   <div class="msg" id="wavemsg">Reading both renders&hellip;</div>
   <canvas id="wave" hidden></canvas>
   <div class="legend">
-    <span class="swatch orig"><i></i>original</span>
-    <span class="swatch ours"><i></i>H2G</span>
-    <span class="swatch diff"><i></i>|difference|, lower strip</span>
-    <span>click to seek both</span>
+    <button type="button" class="swatch orig" data-trace="a" aria-pressed="true"><i></i>original</button>
+    <button type="button" class="swatch ours" data-trace="b" aria-pressed="true"><i></i>H2G</button>
+    <button type="button" class="swatch diff" data-trace="d" aria-pressed="true"><i></i>|difference|, lower strip</button>
+    <span>click a key to hide it &middot; click the picture to seek both</span>
     <span class="stat" id="wavestat"></span>
   </div>
   <p class="caveat"><b>This is amplitude, and amplitude is not fidelity.</b>
@@ -1654,7 +1903,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
   <h2>What to listen for</h2>
   <ul>%(bullets)s</ul>
 </div>
-
+%(instrmap)s
 <footer>
   <div><kbd>Space</kbd> play &middot; <kbd>1</kbd>/<kbd>2</kbd> or <kbd>&larr;</kbd>/<kbd>&rarr;</kbd> switch source &middot; <kbd>L</kbd> loop &middot; both tracks run in sync, so switching never loses your place.</div>
   <div>%(provenance)s</div>
@@ -1668,11 +1917,13 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
 <script>%(script)s</script>
 """ % dict(pretty=pretty, css=CSS, back=back, version=version, chips=chips,
            bullets=bullets, provenance=provenance, a_src=a_src, b_src=b_src,
+           a_rendered=a_rendered, b_rendered=b_rendered,
            voice_row=voice_row, voice_map=json.dumps(voice_map),
            facts=facts_card(name, survey or {}, preset or {}),
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
            notes_strip=notes_strip_card(name, fidjson),
+           instrmap=instrmap_card(name, instrmap, instrmap_seconds),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
@@ -1742,12 +1993,84 @@ def prune_stale_pages(names: list[str]) -> list[Path]:
     return removed
 
 
+def run_instrmap(sid_dir: str, names: list[str]) -> int:
+    """Regenerate `build/instrmap.json` for exactly the staged tunes. 0 on success.
+
+    Scoped to `names` rather than to the directory: `instrmap.py` traces two
+    emulations a song, so pointing it at the whole corpus would cost roughly
+    ninety times what a listening build needs. The tunes staged in
+    `build/listen` are the ones whose pages are about to be written, and they
+    are the only ones whose card anyone can read.
+
+    A tune staged from somewhere other than `sid_dir` is reported and skipped
+    rather than silently dropped -- the resulting page would simply lack the
+    card, which is indistinguishable from a tune that had nothing to report.
+    """
+    import subprocess
+
+    src = Path(sid_dir)
+    if not src.is_dir():
+        print("--instrmap: %s is not a directory" % src)
+        return 2
+    targets, missing = [], []
+    for n in names:
+        p = src / ("%s.sid" % n)
+        (targets if p.exists() else missing).append(p if p.exists() else n)
+    if missing:
+        print("--instrmap: no .sid in %s for: %s" % (src, ", ".join(missing)))
+    if not targets:
+        print("--instrmap: nothing to map")
+        return 2
+    out = ROOT / "build" / "instrmap"
+    jpath = ROOT / "build" / "instrmap.json"
+    print("instrument map: tracing %d staged tune(s) -- two emulations each"
+          % len(targets))
+    # One instrmap process per tune, because its `target` is a file or a whole
+    # directory and we want a subset of one. It appends nothing, so the JSON
+    # has to be merged here rather than left to the last run to overwrite.
+    merged: list[dict] = []
+    seconds = 60
+    for p in targets:
+        cmd = [sys.executable, str(HERE / "instrmap.py"), str(p),
+               "-o", str(out), "-t", str(seconds),
+               "--presets", str(ROOT / "presets.json"),
+               "--json", str(jpath)]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode != 0:
+            print("  %s: instrmap failed (%d)" % (p.name, r.returncode))
+            if r.stderr.strip():
+                print("    %s" % r.stderr.strip().splitlines()[-1])
+            continue
+        try:
+            doc = json.loads(jpath.read_text(encoding="utf-8"))
+            merged += [s for s in doc.get("songs") or [] if isinstance(s, dict)]
+        except (OSError, ValueError):
+            print("  %s: instrmap wrote no readable json" % p.name)
+    if not merged:
+        print("--instrmap: every tune failed; leaving the previous map alone")
+        return 2
+    jpath.write_text(json.dumps({"seconds": seconds, "songs": merged}, indent=1),
+                     encoding="utf-8")
+    print("  wrote %s (%d song(s))" % (jpath, len(merged)))
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="abpage")
     ap.add_argument("--embed", metavar="TUNE",
                     help="build one self-contained page with the audio inlined")
     ap.add_argument("-o", "--output", default=None,
                     help="where to write (--embed only; default beside the WAVs)")
+    ap.add_argument("--instrmap", metavar="SID_DIR",
+                    help="regenerate the instrument map for the staged tunes "
+                         "from the originals in SID_DIR, then build the pages "
+                         "with it. Costs two emulations per staged tune, so it "
+                         "is opt-in rather than automatic -- but it is scoped "
+                         "to what is STAGED, not to the corpus, which is what "
+                         "makes it affordable in a listening build at all. "
+                         "Without the flag the pages reuse whatever "
+                         "build/instrmap.json already holds, and omit the card "
+                         "if there is none.")
     ap.add_argument("--serve", nargs="?", type=int, const=8730, default=None,
                     metavar="PORT",
                     help="after building, serve build/listen over http on "
@@ -1777,9 +2100,23 @@ def main() -> int:
     if not names:
         print("no staged pairs in %s -- run listen.py first" % LISTEN)
         return 2
+    if args.instrmap:
+        rc = run_instrmap(args.instrmap, names)
+        if rc:
+            return rc
+
     rows, notes = fidelity_rows(), listening_notes()
     survey, presets = survey_rows(), preset_rows()
     fidjson = fidelity_json_rows()
+    imrows, imseconds = instrmap_rows()
+    if imrows:
+        print("instrument map: %d song(s) at %ds" % (len(imrows), imseconds))
+        missing = [n for n in names if n not in imrows]
+        if missing:
+            # Named rather than silent: a page without the card looks the same
+            # as a page whose tune had nothing to report, and those are very
+            # different things to a reader deciding what to listen for.
+            print("  no map for: %s" % ", ".join(missing))
 
     if args.embed:
         if args.embed not in names:
@@ -1790,7 +2127,9 @@ def main() -> int:
                     embed=True, index_link=False,
                     survey=survey.get(args.embed, {}),
                     preset=presets.get(args.embed, {}),
-                    fidjson=fidjson.get(args.embed, {}))
+                    fidjson=fidjson.get(args.embed, {}),
+                    instrmap=imrows.get(args.embed, {}),
+                    instrmap_seconds=imseconds)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -1800,7 +2139,8 @@ def main() -> int:
         html = page(n, rows.get(n, {}), notes.get(n, []), version,
                     embed=False, index_link=True,
                     survey=survey.get(n, {}), preset=presets.get(n, {}),
-                    fidjson=fidjson.get(n, {}))
+                    fidjson=fidjson.get(n, {}),
+                    instrmap=imrows.get(n, {}), instrmap_seconds=imseconds)
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
     pruned = prune_stale_pages(names)
     (LISTEN / "index.html").write_text(index(names, rows, version), encoding="utf-8")

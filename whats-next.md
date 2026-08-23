@@ -12,8 +12,8 @@ user issued them:
   "run the fidelity preset search" -> "adopt if it gains"   (twice)
 
 No converter feature was requested directly. The scope is the queue machinery and
-whatever the queue surfaced. The session ran from v0.5.344 (fc691a4) to v0.5.356
-(4cebef8), 40 commits, all pushed.
+whatever the queue surfaced. The session ran from v0.5.344 (fc691a4) to v0.5.357
+(c787ac9), 41 commits, all pushed -- the 41st being this document itself.
 
 THIS FILE REPLACES the previous handoff, which covered the session ending at
 350851e and was spent -- every item in its work_remaining was closed. Recover it
@@ -24,8 +24,8 @@ with `git show 9ec3133:whats-next.md` if any of that history is wanted.
 
 ## Headline
 
-Four /runqueue cycles, 16 tasks, 40 commits, suite 1353 -> 1415. Master went
-fc691a4 -> 4cebef8 and everything is pushed to github.com/MichaelTroelsen/h2g.
+Four /runqueue cycles, 16 tasks, 41 commits, suite 1353 -> 1415. Master went
+fc691a4 -> c787ac9 and everything is pushed to github.com/MichaelTroelsen/h2g.
 
 The session's most valuable output is NEGATIVE results -- four tasks closed by
 refuting their own premises, and two measurement defects found in the harness
@@ -136,7 +136,7 @@ runs and two wrong diagnoses; it worked first time on every attempt here.
 
 ## 1. THE PLAN IS STALE -- run /whattask before any runner
 
-`.claude/tasks/whattask.json` is keyed to `9ec3133`; HEAD is `4cebef8` and four
+`.claude/tasks/whattask.json` is keyed to `9ec3133`; HEAD is `c787ac9` and four
 tasks have closed since (the whole of cycle 4). `runs.jsonl` has 92 lines.
 
 Ids opened by cycle 4 and not yet in the plan:
@@ -391,9 +391,13 @@ under them. Their verdicts held, but that had to be established.
 
 ## Repository
 
-- HEAD `4cebef8`, **pushed**; `origin/master` == HEAD, 0 ahead / 0 behind.
+- HEAD `c787ac9`, **pushed**; `origin/master` == HEAD, 0 ahead / 0 behind.
 - Working tree **CLEAN**.
-- Version **0.5.356**.
+- Version **0.5.357**.
+- This document was committed at v0.5.357 (c787ac9) and then corrected in
+  place: as first written it described HEAD `4cebef8` / v0.5.356, because a
+  handoff cannot describe the commit that contains it. If the figures here and
+  `git log` ever disagree again, that is the reason and `git log` wins.
 - All five artefacts (SURVEY.md, SUBTUNES.md, presets.json, FIDELITY.md,
   VIBRATO.md) regenerated against a clean tree; FIDELITY.md's stamp reads
   `h2g 0.5.356, aab3799` with no `-dirty`.

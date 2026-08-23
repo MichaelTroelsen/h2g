@@ -198,8 +198,20 @@ if (-not (Test-Path -LiteralPath $sdl)) {
     Write-Warning "sdl.dll not found next to $exe -- GoatTracker will fail to start."
 }
 
-Write-Host "launching: $exe"
-$proc = Start-Process -FilePath $exe -ArgumentList $songLeaf `
+# The editor takes the multiplier on the command line -- "goattrk2 dojo.sng
+# -s1 -e1" in its own readme, songname first then options, -Sxx documented as
+# "Set speed multiplier (0 for 25Hz, 1 for 1x, 2 for 2x etc.) DEFAULT=1".
+# This used to be left to the human: the script printed how many times to
+# press SHIFT+F6 (which *increases* the multiplier from 1, so N-1 presses for
+# N). The arithmetic was right and the instruction still went wrong in
+# practice -- a miscounted or dropped keypress lands on the wrong multiplier
+# and every listening verdict taken there is about the wrong tempo, silently.
+# Passing -S removes the step rather than documenting it. The message below
+# now states what was applied instead of what to press.
+$gtArgs = @($songLeaf)
+if ($speedMultiplier -gt 1) { $gtArgs += "-S$speedMultiplier" }
+Write-Host "launching: $exe $($gtArgs -join ' ')"
+$proc = Start-Process -FilePath $exe -ArgumentList $gtArgs `
                       -WorkingDirectory $songDir -PassThru
 Start-Sleep -Milliseconds 1500
 
@@ -210,10 +222,9 @@ if ($proc.HasExited) {
 
 Write-Host "running (PID $($proc.Id)) -- F1 plays from the beginning, F2 from current position."
 if ($speedMultiplier -gt 1) {
-    $presses = $speedMultiplier - 1
-    $times = if ($presses -eq 1) { "once" } else { "$presses times" }
-    Write-Host ("this player advances one row every $speedMultiplier frames: press SHIFT+F6 $times " +
-                "to set speed multiplier $speedMultiplier, or it plays $($speedMultiplier)x too slow. " +
+    Write-Host ("this player advances one row every $speedMultiplier frames: launched with " +
+                "-S$speedMultiplier, so the speed multiplier is already set -- no SHIFT+F6 needed. " +
+                "SHIFT+F5/F6 still decrease/increase it if you want to A/B against another rate. " +
                 "convert.ps1 -Sid applies the same value as gt2reloc -S$speedMultiplier.")
 }
 elseif ($Tempo -and $Tempo -ne 'none') {

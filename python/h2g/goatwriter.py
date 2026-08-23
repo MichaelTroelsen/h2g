@@ -1427,6 +1427,69 @@ def _hold_wave_program_entry(left: List[int], right: List[int],
         right.append(WAVE_NOTE_KEEP)
 
 
+def _wave_program_travels(multiplier: int, fmt: str, running: int) -> bool:
+    """Whether a slide's accumulated travel can be carried at this call rate.
+
+    A `< $80` opcode is one of the player's *frames*, and a frame is
+    `multiplier` play calls. Above `-S1` the opcode's waveform entry does not
+    need all of them, so the spare call can hold a `CMD_PORTADOWN` and the
+    travel reaches the chip inside the same frame the player spends on it. At
+    `-S1` there is no spare call and a second entry would make the program run
+    at half the player's rate -- the trade v0.5.203 measured and refused, and
+    the reason this is gated rather than unconditional.
+    """
+    return fmt == FORMAT_GTS5 and multiplier >= 2 and bool(running & 0xFFFF)
+
+
+def _wave_program_travel_entry(left: List[int], right: List[int],
+                               running: int, speed_table: List[tuple],
+                               fmt: str, multiplier: int) -> bool:
+    """Append the portamento carrying `running`, the slides' summed operands.
+
+    The player subtracts each `< $80` opcode's 16-bit operand from a frequency
+    **accumulator** that note-start loaded with the note's own frequency, so
+    after k slides the voice sounds `note - sum(operands)`. The waveform entry
+    beside this one writes the note (`WAVE_NOTE_BASE`); this entry takes it the
+    rest of the way.
+
+    **The sum, not the step.** Written per opcode as the running total rather
+    than as that opcode's own delta so the entry is correct without depending
+    on what the previous entries left in `cptr->freq` -- a `>= $80` opcode
+    between two slides writes `$D401` directly and never touches the
+    accumulator, so a delta chain would drift by exactly that opcode's absolute
+    pitch. Each entry re-derives the whole offset from the note.
+
+    One entry is one subtraction: `gplay.c:557-573` and `player.s:1531-1547`
+    both execute the command, advance the pointer and skip the note write on
+    the same call -- the packed player routes it through `mt_execwavetickn`,
+    which sets `mt_effectjump+1` and falls into `mt_effect_12` *without*
+    writing `mt_chnfx,x`, so it is a one-shot and not a standing effect. Same
+    shape as the drum sweep's `[WAVECMD_PORTADOWN] * steps` chain.
+
+    A sum at or above `$8000` is a net *rise* (the player's subtraction is
+    modular 16-bit) and takes `CMD_PORTAUP` with the two's complement, which
+    also keeps the speed's high byte below `$80` -- at or above it the players
+    read the entry as note-relative and take the low byte as a shift
+    (`gplay.c:548-552`, `player.s:1027`), which is a different quantity
+    entirely.
+    """
+    if not _wave_program_travels(multiplier, fmt, running):
+        return False
+    s = running & 0xFFFF
+    if s < 0x8000:
+        cmd, speed = WAVECMD_PORTADOWN, s
+    else:
+        cmd, speed = WAVECMD_PORTAUP, 0x10000 - s
+    if not 0 < speed < 0x8000:
+        return False
+    index = _speed_index(speed_table, ((speed >> 8) & 0xFF, speed & 0xFF))
+    if not index:
+        return False
+    left.append(cmd)
+    right.append(index)
+    return True
+
+
 def _wave_program_entries(sid: SidFile, det: Detection, i: int,
                           speed_table: List[tuple], fmt: str,
                           multiplier: int, budget: int,
@@ -1447,14 +1510,18 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
       inaudible (see `_sfx_note_byte`).
     * `< $80` with a zero operand is also one entry: a waveform change and no
       pitch movement, which is most of what GT 11-13 do.
-    * `< $80` with a nonzero operand is two: the waveform, then a portamento
-      whose speed-table entry is the operand itself. The player *subtracts* it,
-      so an operand above `$8000` is a rise and takes `CMD_PORTAUP` with the
-      two's complement -- which also keeps the high byte below `$80`, where a
-      speed-table entry would otherwise read as note-relative
-      (`SPEED_NOTE_RELATIVE`).
-    * `$85` holds, which is the program's end; the block stops there and
-      Goattracker keeps the last waveform, as the player does.
+    * `< $80` with a nonzero operand is two **above `-S1`**: the waveform on
+      the note's own pitch, then a portamento carrying the running sum of the
+      operands (`_wave_program_travel_entry`). The pair still costs one frame,
+      because a frame is `multiplier` calls and the waveform entry does not
+      need them all. At `-S1` there is no spare call and the travel is dropped,
+      which is what v0.5.203 measured and chose.
+    * `$85` holds, which is the program's end. The interpreter does **not**
+      loop back: on `$85` it jumps straight to the per-frame writer without
+      advancing the program index, and the index is zeroed only by note start
+      (ACE II `$E36C-$E370` against `$E0F7 STA $EBC7,X` on the note-fetch
+      path). So the block stops there, restoring the stored waveform on the
+      accumulator's pitch, as the player does.
 
     **One opcode is one frame, and one frame is `multiplier` play calls.** The
     player advances one opcode per frame; a wavetable advances one entry per
@@ -1531,15 +1598,34 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # the five every later record is reserved -- the one property that makes
     # the variable-length layout safe (`_wavetable_layout`).
     per_opcode = 1 + (_wave_hold_byte(multiplier) is not None)
+    # The slides' running total, in the units the player's accumulator counts
+    # in. Zero for a program of nothing but `>= $80` opcodes, which is what
+    # makes those records byte-identical to before the travel was emitted.
+    running = 0
+    # Whether the frequency Goattracker is holding right now IS that
+    # accumulator. False after a `>= $80` opcode, which writes an absolute
+    # pitch over it, and false at `-S1`, where no portamento is emitted at all
+    # and the entries stay exactly the bytes they were before the travel
+    # existed. See the slide branch: it decides between re-anchoring on the
+    # note and stepping on from where the last one left off.
+    carried = False
+    # What the block after the loop needs: the restore entry, the stop, and --
+    # wherever the call rate lets a slide's travel be emitted at all -- the
+    # portamento that puts the restore on the accumulator's pitch. Reserved
+    # whatever this opcode does, because the closing travel is decided by the
+    # sum of *every* slide and a `set` can be the last opcode a full budget
+    # admits.
+    tail = 2 + (1 if _wave_program_travels(multiplier, fmt, 1) else 0)
     for kind, wave, arg in decode_wave_program(data, at):
         if kind == "hold":
             break
-        if len(left) + per_opcode + 2 > budget:     # ...the restore and the stop
-            break
         if kind == "set":
+            if len(left) + per_opcode + tail > budget:
+                break
             left.append(_wave_byte(wave))
             right.append(_sfx_note_byte(arg))
             _hold_wave_program_entry(left, right, wave, multiplier)
+            carried = False     # an absolute pitch, not the accumulator
             continue
         # **One entry, even when the operand is non-zero** (v0.5.203). A
         # portamento needs a command entry of its own, and a wavetable spends a
@@ -1586,9 +1672,47 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
         # notes, so its size in semitones depends on the note it is played at
         # (Saboteur's first slide is -1.16 st under $1739 and -0.36 st under
         # $49B8) and no single byte can carry both.
+        #
+        # **The travel itself is carried where there is a call to carry it in**
+        # -- `_wave_program_travel_entry`, a `CMD_PORTADOWN` on the spare call
+        # of the frame at `-S2` and above. The paragraph above is what remains
+        # true at `-S1`, where the opcode's one call is already spent on its
+        # waveform. So `WAVE_NOTE_BASE` is no longer the whole answer, it is
+        # the entry the portamento starts from, and the sum is dropped only
+        # where the call rate leaves nowhere to put it.
+        #
+        # **The step, not the sum, wherever the last entry left the frequency
+        # on the accumulator.** Both are exact in the player's terms and they
+        # differ in *when inside the frame* the pitch is right. Re-anchoring
+        # (`WAVE_NOTE_BASE` + a portamento of the whole running sum) writes the
+        # bare note on the frame's first call and corrects it on the second, so
+        # a trace sampling once a frame can read the note -- ACE II's `$EB0A`
+        # sat at `0EA3` for the whole slide that way while the calls underneath
+        # it stepped correctly. `WAVE_NOTE_KEEP` plus this opcode's own operand
+        # never writes the note at all, so the frequency only ever moves the
+        # way the player moves it. The anchor is still needed for the first
+        # slide of a program and for the one after any `>= $80` opcode, because
+        # those leave an absolute pitch in the register that has nothing to do
+        # with the accumulator.
+        delta = arg & 0xFFFF if carried else (running + arg) & 0xFFFF
+        travel = int(_wave_program_travels(multiplier, fmt, delta))
+        cost = 1 + travel + (_wave_hold_byte(multiplier - travel) is not None)
+        if len(left) + cost + tail > budget:
+            break
         left.append(_wave_byte(wave))
-        right.append(WAVE_NOTE_BASE)
-        _hold_wave_program_entry(left, right, wave, multiplier)
+        right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
+        # `moved` rather than `travel`: a full speed table refuses the index,
+        # and the hold has to cover the call the portamento did not take.
+        moved = int(_wave_program_travel_entry(left, right, delta, speed_table,
+                                               fmt, multiplier))
+        _hold_wave_program_entry(left, right, wave, multiplier - moved)
+        running = (running + arg) & 0xFFFF
+        # The frequency now matches the accumulator only if this entry actually
+        # said so: a step it could not encode (a full speed table) leaves it a
+        # step behind, and the next slide re-anchors instead of compounding the
+        # error. `delta == 0` needs no portamento to be right either way.
+        carried = bool(travel and moved) or (not delta and bool(
+            _wave_program_travels(multiplier, fmt, 1)))
         persist = wave              # a `< $80` opcode owns the stored cell
     # `seed` alone is not a program: a record whose interpreter holds on its
     # first opcode has nothing to say here and falls through to the shapes
@@ -1631,11 +1755,19 @@ def _wave_program_entries(sid: SidFile, det: Detection, i: int,
     # `WAVE_NOTE_BASE` is exact whenever the running sum is zero (a program of
     # nothing but `set` opcodes, which is most of them) and the right side of
     # the truth otherwise -- the identical argument the slide entries carry.
-    # The sum itself is still dropped for the same reason it is dropped there:
-    # it is a linear frequency subtraction whose size in semitones depends on
-    # the note played, and a wavetable's right column names notes.
+    # The sum is carried here by the same portamento the slide entries take
+    # (`_wave_program_travel_entry`), and dropped at `-S1` for the same reason
+    # it is dropped there. It is the *whole* running sum, because the hold
+    # writes where the accumulator ended up and not where the last slide moved
+    # it -- the entry re-derives the offset from the note, so a `>= $80` opcode
+    # after the last slide changes nothing about it. Nothing follows the stop,
+    # so the pitch this leaves stands for the rest of the note, which is what
+    # the interpreter's `$85` does.
     left.append(_wave_byte(persist & ~WAVE_GATE_BIT & 0xFF))
-    right.append(WAVE_NOTE_BASE)
+    right.append(WAVE_NOTE_KEEP if carried else WAVE_NOTE_BASE)
+    if not carried:
+        _wave_program_travel_entry(left, right, running, speed_table,
+                                   fmt, multiplier)
     left.append(0xFF)
     right.append(0x00)
     return left, right
@@ -2352,7 +2484,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        multiplier: int = 1,
                        row_calls: int = 0,
                        wide_hard_restart: bool = False,
-                       max_hard_restart: bool = False) -> int:
+                       max_hard_restart: bool = False,
+                       real_firstwave_instruments: tuple = ()) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -2438,9 +2571,28 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # what `--no-test-restart` writes here. Anything below $FE is assigned
         # to the waveform and forces the gate on (gplay.c:355-363), which is
         # both halves of what a note needs: a real attack and no silent frame.
+        #
+        # `--no-test-restart` makes this decision for every instrument in the
+        # file at once, and that is too blunt: on ACE_II it recovers the drum
+        # (voice 2, instrument 1 alone) from melody 100% -> 37% back to 99.6%,
+        # but the SAME flag also breaks voice 1 (100% -> 14%, a different
+        # mechanism entirely -- see the wavetable-entries `written=` plumbing,
+        # not this byte). `real_firstwave_instruments` isolates just the
+        # firstwave half of the trade, by GT instrument NUMBER (1-based,
+        # matching what a pattern row's instrument column and songview.py
+        # both show -- `gt_number = i + lead + 1`), so a per-song preset entry
+        # can name the one instrument that needs it without forcing every
+        # other instrument in the file through the same byte. Isolated and
+        # measured on ACE_II (v0.5.357+): reverting only this byte for the
+        # rest of the file, while instrument 1 keeps the real-waveform byte,
+        # holds voice 0 and voice 2 at their un-flagged fidelity while voice 2
+        # gains the fix -- confirming the corruption lives in this byte alone
+        # for that instrument, not in `no_test_restart`'s other effects.
+        gt_number = i + lead + 1
+        use_real_firstwave = no_test_restart or gt_number in real_firstwave_instruments
         out += bytes([ad, sr, wave_ptr, pulse_ptr, filt_ptr, stbl_ptr,
                       vib_delay, gatetimer,
-                      ((data[base + 2] | 0x01) & 0xFF) if no_test_restart
+                      ((data[base + 2] | 0x01) & 0xFF) if use_real_firstwave
                       else FIRSTWAVE_TESTBIT])
 
         b5, b6, b7 = data[base + 5], data[base + 6], data[base + 7]
@@ -4092,7 +4244,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       no_test_restart: bool = False,
                       voice_two_stage: bool = False,
                       instr_voices: Optional[dict] = None,
-                      gate_skip: Optional[int] = None) -> tuple:
+                      gate_skip: Optional[int] = None,
+                      real_firstwave_instruments: tuple = ()) -> tuple:
     """(entries, starts) for the whole wavetable, laid out sequentially.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -4124,6 +4277,15 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
         budget = max(WAVE_ENTRIES_PER_INSTR,
                      GT_MAX_TABLELEN - len(entries) - reserved)
+        # Must agree with _write_instruments' own per-instrument decision, or
+        # the wavetable's own first entry and the instrument record's
+        # firstwave byte disagree about who writes frame 0 -- exactly the
+        # mismatch that made real_firstwave_instruments alone (without this)
+        # cost ACE_II melody 100% -> 88% instead of fixing it: the record's
+        # byte writes the real waveform on frame 0 AND the wavetable's entry 0
+        # still assumed a testbit lead-in and wrote its own, one frame later.
+        gt_number = i + lead + 1
+        instrument_written = no_test_restart or gt_number in real_firstwave_instruments
         left, right = _wavetable_entries(sid, det, i, effects, fmt, speed_table,
                                          multiplier, min_notes, lead,
                                          start=start, budget=budget,
@@ -4133,10 +4295,10 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          pitch_seq=pitch_seq,
                                          note_rows=note_rows,
                                          row_calls=row_calls,
-                                         no_test_restart=no_test_restart,
+                                         no_test_restart=instrument_written,
                                          voice_two_stage=voice_two_stage,
                                          voice=_record_voice(instr_voices,
-                                                             i + lead + 1),
+                                                             gt_number),
                                          gate_skip=gate_skip)
         starts.append(start)
         entries += list(zip(left, right))
@@ -4531,7 +4693,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               instr_voices: Optional[dict] = None,
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
-              max_hard_restart: bool = False) -> bytes:
+              max_hard_restart: bool = False,
+              real_firstwave_instruments: tuple = ()) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -4585,7 +4748,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                   note_rows, row_calls,
                                                   no_test_restart,
                                                   voice_two_stage,
-                                                  instr_voices, gate_skip)
+                                                  instr_voices, gate_skip,
+                                                  real_firstwave_instruments)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,
@@ -4593,7 +4757,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        no_test_restart=no_test_restart,
                        multiplier=multiplier, row_calls=row_calls,
                        wide_hard_restart=wide_hard_restart,
-                       max_hard_restart=max_hard_restart)
+                       max_hard_restart=max_hard_restart,
+                       real_firstwave_instruments=real_firstwave_instruments)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)
