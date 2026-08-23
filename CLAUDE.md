@@ -626,8 +626,19 @@ test dependency).
   its rips), so the fixture is not what blocks this.
   The lead worth following, untested: if the swing renames attacks because it
   is already deep AT the attack, the lever may be `vibdelay` rather than
-  `rshift` -- start the oscillation later and the depth may be payable. Do not
-  touch `rshift` again without a measure of depth in the report.
+  `rshift` -- start the oscillation later and the depth may be payable.
+  **That measure now exists**: `depth` (`depth_ratio`), the column immediately
+  right of `vib`, added because this deficit was invisible to every other one.
+  It reads $D400/$D401, segments on gate rising edges, and is restricted to the
+  records that carry the mechanism -- which turned out to need MORE than the
+  vibrato byte being non-zero: a record also setting a bit the player reads as
+  a pitch mover reported Commando at 59% of pitch and Zoids at 67%, eight
+  semitones and an octave, which no vibrato is. Excluding those takes them to
+  2.19% and 2.18% and leaves ACE_II untouched. ACE_II reads **0.27x** where
+  `vib` reads a flat 1.09x, and the 15-file subset median is 0.399 = 2.51x,
+  against the 2.39x this paragraph recorded from a scratch probe. Two rows are
+  unexplained and were not chased: Thrust reads an original depth of 22.44% and
+  Warhawk 11.24% on clean populations.
 - **A column can read 100% because the trace cannot see the defect.** `hold`
   measures a note-length deficit that is a fixed number of play *calls* -- the
   next-note fetch is `gatetimer & $3f` calls early -- so at `-S4` it is a

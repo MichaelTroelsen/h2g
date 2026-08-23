@@ -1374,6 +1374,250 @@ def pitch_motion_compare(orig: list[Voice], ours: list[Voice],
     }
 
 
+def _median(values: list[float]) -> float | None:
+    """Plain median, or None for an empty list.
+
+    A median rather than a mean everywhere below, for `_drum_max_steps`'
+    reason: one instrument's notes are a distribution, and a single note whose
+    "oscillation" is really a portamento would drag a mean without bound.
+    """
+    if not values:
+        return None
+    s = sorted(values)
+    n = len(s)
+    return s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+
+
+def vibrato_records(sid_path) -> set[int] | None:
+    """ADSR pairs of the records that carry a **non-zero vibrato byte**.
+
+    The population `depth` is measured on, and the reason it is a separate
+    function rather than an inline filter: a depth measured over *every*
+    oscillating note is worthless, and that is not a hypothetical. A first
+    pass without this restriction reported per-note "depths" of 273% and 397%
+    of pitch -- those are portamento slides and drum sweeps, not vibrato --
+    and its by-multiplier medians all sat at about 1.0, i.e. it announced that
+    there is no problem. This is § "a discriminator is only meaningful on the
+    population the behaviour occurs in", applied before the measurement rather
+    than after it.
+
+    The byte is read from the SID through `Detection`, not from our own
+    output, so it is a fact about the *original* -- and one that survives our
+    emitter declining a record. All three vibrato engines are covered, since
+    they are mutually exclusive and each names one record offset:
+    `vibrato_offset` ($78/$07 pair), `table_vibrato.offset` (LFO table) and
+    `triangle_vibrato` (bare right-shift count).
+
+    The key is `(record+3 << 8) | record+4`, the ADSR pair the player stores
+    verbatim into $D405/$D406 -- the same join key every other census here
+    uses, and the one the trace can be read back on. Two records sharing a
+    pair are a known ambiguity (§ 7.zzzz); they widen the population by one
+    instrument rather than mis-attributing a number, which is the safe
+    direction for a filter.
+
+    **A vibrato byte is necessary and not sufficient**, which is the second
+    thing measurement said rather than argument. Restricting on the byte alone
+    put Commando at an "orig depth" of 59% of pitch and Zoids at 67% -- eight
+    semitones and an octave, which no vibrato is -- because a record may carry
+    a vibrato byte *and* a drum or an arpeggio, and then the half-cycles
+    measured are the other mechanism's. So a record whose `+7` sets any bit
+    **this player** reads as a pitch mover (`pitch_effect_bits`, which is the
+    same per-player table `vib_census` attributes with) is excluded too: on
+    Commando that is 4 records of 7, and its depth falls to a figure a vibrato
+    can actually be.
+
+    Returns **None**, not an empty set, where the population cannot be
+    established -- detection failed, or the player has no vibrato routine at
+    all. `depth_compare` then declines rather than falling back to the
+    unrestricted reading the first pass proved worthless.
+    """
+    try:
+        sid, det = _detect_tables(load_sid(str(sid_path)), lambda *a, **k: None)
+    except Exception:                                          # noqa: BLE001
+        return None
+    if det.vibrato_offset is not None:
+        offset = det.vibrato_offset
+    elif det.table_vibrato is not None:
+        offset = det.table_vibrato.offset
+    elif det.triangle_vibrato is not None:
+        offset = det.triangle_vibrato
+    else:
+        return None
+    if det.instr_start < 0 or det.instr_used <= 0:
+        return None
+    # The player's own reading of its effect byte, not a fixed table: `$01` is
+    # a drum in one dialect and a wave-program selector in another, and `$04`
+    # is an arpeggio in some players and a two-stage *waveform* in others --
+    # ACE_II's three vibrato records all carry `$04` and none of them moves a
+    # pitch with it.
+    competing = 0
+    for bit in pitch_effect_bits(sid_path, det):
+        competing |= bit
+    data = sid.data
+    keys: set[int] = set()
+    for i in range(det.instr_used):
+        base = det.instr_start + i * det.instr_stride
+        if base + max(offset, 7) >= len(data):
+            continue
+        if data[base + offset] and not data[base + 7] & competing:
+            keys.add((data[base + 3] << 8) | data[base + 4])
+    return keys or None
+
+
+def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
+    """`(peak-to-peak swing, centre frequency)` for each full cycle in `seg`.
+
+    The excursion an oscillator reaches -- the quantity `vib` cannot see,
+    because `vib` counts the turning points and says nothing about how far
+    apart they are.
+
+    **Taken over three consecutive turning points, not two, so a slide under
+    the vibrato cancels exactly.** For extremes `p`, `q`, `r` the reading is
+    `|2q - p - r| / 2`. On a pure oscillation of peak-to-peak `A` that is `A`;
+    add any *linear* drift `d` per half-cycle -- a portamento, a wave
+    program's slide, a drum's sweep -- and `p, q, r` become `0, A + d, 2d`,
+    where the same expression still gives `A`. The obvious two-point reading
+    `|q - p|` gives `A + d` instead, and this project has already learnt once
+    that a measure which cannot separate a vibrato from a portamento ends up
+    ranking the wrong one (`slides`, section 7.hhh).
+
+    **Only interior cycles count.** The stretch from the segment's start to
+    its first turning point, and from its last to the end, are cut by the note
+    boundary and understate the swing -- the same rule, for the same reason,
+    as `noise_runs` dropping a run that touches the window edge. Requiring
+    three extremes rather than two is the same rule applied once more.
+
+    Zero deltas do not end a half-cycle: a frequency held for a frame is the
+    same direction of travel resumed, and treating a flat frame as a reversal
+    would halve every swing on a slow oscillator.
+    """
+    turns: list[int] = []
+    last = 0
+    for k in range(len(seg) - 1):
+        d = seg[k + 1] - seg[k]
+        if not d:
+            continue
+        s = 1 if d > 0 else -1
+        if last and s != last:
+            turns.append(k)          # seg[k] is the extreme itself
+        last = s
+    out = []
+    for i in range(len(turns) - 2):
+        p, q, r = (seg[turns[i]], seg[turns[i + 1]], seg[turns[i + 2]])
+        out.append((abs(2 * q - p - r) / 2, (p + 2 * q + r) / 4))
+    return out
+
+
+def oscillation_depths(voices: list[Voice], nframes: int,
+                       keys: set[int] | None = None) -> dict:
+    """`{ADSR: median cycle swing, as a fraction of the pitch}`.
+
+    **Segmented on gate rising edges** -- `Voice.attack_frames`, the frames
+    siddump prints a bare note on (siddump.c:376-380) -- and never on note
+    *names*. siddump names the frequency's nearest note, which flickers up and
+    down while a vibrato runs, so segmenting on the printed name chops one
+    note into fragments shorter than a half-cycle: the first attempt at this
+    measurement found **one** measurable note in 3000 frames that way.
+
+    Expressed as a fraction of the frequency the swing happens around, so an
+    instrument's depth is comparable across the pitches it plays and across
+    two tunings -- a raw unit count is a semitone at one octave and two at the
+    next.
+
+    The same attack-adjacent frame skip as `pitch_motion` and
+    `reversals_by_instrument`: a note onset is a large jump and would read as
+    a turning point. Sharing the skip is deliberate -- this reads the same
+    segments the rate columns read, so a disagreement between `depth` and
+    `vib` is about the two statistics and not about two different populations.
+
+    `keys` restricts to the instruments that carry the mechanism (see
+    `vibrato_records`); the mask is applied through `instrument_key` as well
+    as exactly, because `--cut-release` rewrites the release nibble on our
+    side and an exact-only filter would drop every instrument whose release
+    the conversion changed.
+    """
+    masked = {instrument_key(k) for k in keys} if keys is not None else None
+    pooled: dict = {}
+    for v in voices:
+        fq = register_timeline(v.freq_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        skip = set()
+        for a in v.attack_frames:
+            skip |= {a - 1, a, a + 1}
+        atk = sorted(v.attack_frames)
+        for j, a in enumerate(atk):
+            key = adsr[a] if a < nframes else 0
+            if keys is not None and key not in keys \
+                    and instrument_key(key) not in masked:
+                continue
+            nxt = atk[j + 1] if j + 1 < len(atk) else nframes
+            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
+            for swing, centre in vibrato_swings(seg):
+                if centre > 0:
+                    pooled.setdefault(key, []).append(swing / centre)
+    return {k: m for k, vals in pooled.items()
+            if (m := _median(vals)) is not None}
+
+
+def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
+                  keys: set[int] | None = None) -> dict:
+    """How deep our vibrato swings, over the original's.
+
+    `vib` is a *count* of pitch reversals -- the rate -- and this project has
+    a standing rule that a count cannot answer a question about a step
+    **size** (`cut` exists beside `filt`, and `bend` beside `slides`, for
+    exactly this). The vibrato was the last mechanism with no travel measure
+    next to its count, and the gap was not academic: a listener reported ACE
+    II's lead as under-vibratoed, `vib` read 1.09x for that file, and the
+    swing measured 1.6% of pitch against the original's 5.6%.
+
+    Per instrument first, then the median of the per-instrument ratios --
+    **not** a ratio of pooled swings. Depth is a property of an instrument, so
+    pooling would let whichever instrument plays the most notes speak for the
+    file, and the corpus's vibrato instruments differ in depth by an order of
+    magnitude within one tune.
+
+    Read it in log space, as every `x`-suffixed column here is read: 0.42 and
+    2.4 are the same size of wrong.
+    """
+    if not keys:
+        # No population, no measurement. See vibrato_records.
+        return {}
+    a = oscillation_depths(orig, nframes, keys)
+    b = oscillation_depths(ours, nframes, keys)
+    pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
+    if not pairs:
+        return {}
+    return {
+        "depth_ratio": _median([b[u] / a[o] for o, u in pairs]),
+        "orig_depth": _median([a[o] for o, _ in pairs]),
+        "our_depth": _median([b[u] for _, u in pairs]),
+        "depth_instruments": len(pairs),
+    }
+
+
+def depth_census(orig: list[Voice], ours: list[Voice], nframes: int,
+                 keys: set[int] | None = None,
+                 stamps: dict | None = None) -> list[dict]:
+    """Per-instrument rows behind `depth`, on the same population and pairing.
+
+    Same reduction the column scored, for `onset_census`' reason: a second
+    pipeline could resolve a different subtune and then disagree with the
+    report for a reason that has nothing to do with the conversion.
+    """
+    if not keys:
+        return []
+    a = oscillation_depths(orig, nframes, keys)
+    b = oscillation_depths(ours, nframes, keys)
+    out = []
+    for o, u in paired_keys(a, b):
+        rec = {"adsr": o, "orig_depth": a[o], "our_depth": b[u],
+               "ratio": (b[u] / a[o]) if a[o] else None}
+        rec.update(stamp_for(stamps, o))
+        out.append(rec)
+    return sorted(out, key=lambda r: r["adsr"])
+
+
 def noise_runs(voices: list[Voice], nframes: int) -> dict:
     """Maximal runs of noise, keyed by the ADSR latched while each one played.
 
@@ -1807,7 +2051,7 @@ def reversals_by_instrument(voices: list[Voice], nframes: int) -> dict:
     return out
 
 
-def pitch_effect_bits(sid_path) -> dict:
+def pitch_effect_bits(sid_path, det=None) -> dict:
     """`{bit: name}` for the pitch-moving effect bits *this player reads*.
 
     **A bit's meaning is a fact about a player, not about the format.** This
@@ -1823,13 +2067,19 @@ def pitch_effect_bits(sid_path) -> dict:
     a bit is named only where the player is known to act on it. Bits `$04`
     (two-stage waveform) and `$08` (pulse width) are deliberately absent: they
     move a waveform and a duty cycle, not a pitch.
+
+    `det` may be passed by a caller that has already detected the file --
+    `vibrato_records` has -- so the two do not disagree about the player and
+    the file is not read twice.
     """
     from h2g.convert import _detect_tables
     from h2g.sidfile import load_sid
-    try:
-        _, det = _detect_tables(load_sid(str(sid_path)), lambda *a, **k: None)
-    except Exception:                                          # noqa: BLE001
-        return {}
+    if det is None:
+        try:
+            _, det = _detect_tables(load_sid(str(sid_path)),
+                                    lambda *a, **k: None)
+        except Exception:                                      # noqa: BLE001
+            return {}
     out = {}
     # **Every bit below is read from `Detection`'s own field comment**, not
     # from memory. Getting this table from anywhere else has now been wrong
@@ -2974,6 +3224,44 @@ DIMENSIONS = (
     Dimension("reversal_ratio", "vib", ("$D400/$D401",), "ratio",
               "how fast the pitch oscillates, over the original's rate -- a "
               "STEP function of the rate on short notes, not proportional"),
+    # The other half of `vib`, and the half a count is structurally incapable
+    # of answering -- the same pairing as `cut` beside `filt` and `bend`
+    # beside `slides`, and the last mechanism here that had only a count.
+    #
+    # WHAT IT READS. The frequency register between gate rising edges, reduced
+    # to the median peak-to-peak swing over three consecutive turning points
+    # (so a slide underneath cancels), as a fraction of the pitch it swings
+    # around; then per instrument, then the median of the per-instrument
+    # ratios. Restricted to the records carrying a non-zero vibrato byte and
+    # no competing pitch bit (`vibrato_records`) -- unrestricted, the same
+    # statistic reports 273% and 397% "depths" that are portamentos and drum
+    # sweeps, and a corpus median of about 1.0.
+    #
+    # WHAT IT IS BLIND TO.
+    # * **Whether an oscillation exists at all.** A half-cycle needs two
+    #   turning points, so a side that emits no vibrato contributes no
+    #   samples and the instrument simply leaves the pairing -- the column
+    #   prints `-` where `vib` prints 0.00x. Read the two together.
+    # * **Where the swing sits.** It is a peak-to-peak magnitude, so a
+    #   vibrato centred a semitone off the note reads exactly the same as one
+    #   centred on it. `melody` is what sees that.
+    # * **The waveform of the oscillator.** A triangle and a square of equal
+    #   excursion are one number here; the players' and Goattracker's LFOs are
+    #   both triangles reached differently (_classic_vibrato_entry), and no
+    #   column distinguishes them.
+    # * **A slide under the vibrato.** A half-cycle carries whatever
+    #   portamento runs beneath it. The median over half-cycles damps that
+    #   rather than removing it, and a *pure* slide contributes nothing at all
+    #   (no turning points).
+    # * **Rate.** Deliberately: `vib` is the rate, and conflating them is what
+    #   made this unmeasurable. Note that Goattracker *integrates* its speed,
+    #   so an emitter that shortens `cmp` shortens the swing with it -- a
+    #   change to the rate moves this column too, and the two must be read
+    #   side by side before either is called a fix.
+    Dimension("depth_ratio", "depth", ("$D400/$D401",), "ratio",
+              "how far our vibrato swings, over the original's -- median over "
+              "the instruments that carry a vibrato byte, **blind to whether "
+              "an oscillation exists at all**, which is `vib`'s question"),
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
@@ -3567,6 +3855,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # only where a drift figure was actually reported, since it
                 # is only meaningful next to one.
                 row["drift_gate_skip"] = _drift_gate_skip_declined(sid, sub)
+            # Read once and shared by the column and its census, so the two
+            # cannot restrict to different populations.
+            vib_keys = vibrato_records(sid)
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a
@@ -3579,6 +3870,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row["vib_census"] = vib_census(a, best_dump, nframes,
                                                instrument_stamps(sng),
                                                pitch_effect_bits(sid))
+                row["depth_census"] = depth_census(a, best_dump, nframes,
+                                                   vib_keys,
+                                                   instrument_stamps(sng))
             if getattr(args, "gate_census", None):
                 # Same two traces and the same alignment the column used.
                 row["gate_census"] = gate_census(a, best_dump, nframes,
@@ -3588,6 +3882,12 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 row["hold_census"] = hold_census(
                     a, best_dump, nframes, instrument_stamps(sng))
             row.update(pitch_motion_compare(a, best_dump, nframes))
+            # `depth` is `vib`'s other half and reads the same register, but
+            # only on the records that carry a vibrato byte -- the population
+            # restriction is the measurement, not a refinement of it (see
+            # vibrato_records). A file whose player has no vibrato routine
+            # contributes no row rather than a reading over its portamentos.
+            row.update(depth_compare(a, best_dump, nframes, vib_keys))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
@@ -3903,13 +4203,35 @@ def report(rows: list[dict], args) -> str:
         "count. `-` is an original that never moves it. Both sides' raw "
         "numbers are under *Filter*, below.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "* **depth** -- how far our vibrato *swings*, over the original's: "
+        "the median peak-to-peak excursion of the frequency within a note, as "
+        "a fraction of the pitch it swings around, taken per instrument and "
+        "then across instruments. **vib** is the rate and this is the size of "
+        "the step, the same pairing as **slides**/**bend** and "
+        "**filt**/**cut** -- a count of reversals reads identically whether "
+        "the oscillator moves a comma or a whole tone. Notes are cut at gate "
+        "rising edges, never at siddump's printed note *name*, which flickers "
+        "while a vibrato runs; each reading spans three consecutive turning "
+        "points rather than two, so any slide underneath the oscillation "
+        "cancels instead of being counted as depth. Measured **only on the "
+        "records that carry a non-zero vibrato byte and no competing "
+        "pitch-moving effect bit** in the player's own instrument table: over "
+        "every oscillating note instead, the statistic picks up portamento "
+        "slides and drum sweeps and reports 273% and 397% \"depths\", and "
+        "over the vibrato byte alone it reads Commando at 59% of pitch (eight "
+        "semitones) from records that also carry a drum. `-` is a file whose "
+        "player has no vibrato routine, or one where no such instrument "
+        "oscillates on both sides -- a side emitting *no* oscillation drops "
+        "out of this column entirely, so read it beside **vib**, which is "
+        "where a missing oscillation shows up.",
+        "",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 20 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * 21 + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -3923,6 +4245,7 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
+            f"{'-' if r.get('depth_ratio') is None else f'{r["depth_ratio"]:.2f}x'} | "
             f"{_fmt_drift(r)} | "
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "

@@ -585,7 +585,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
             in text)
     assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
@@ -732,6 +732,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  adsr=melody, adsr_frames=100,
                  reversal_ratio=1.0, orig_reversals=10, our_reversals=10,
                  orig_oscillation=0.9, our_oscillation=0.9,
+                 depth_ratio=1.0, orig_depth=0.05, our_depth=0.05,
+                 depth_instruments=2,
                  noise_run_agreement=melody, noise_run_matched=1,
                  noise_run_instruments=1, noise_run_orig_only=0,
                  noise_run_ours_only=0,
@@ -1396,3 +1398,127 @@ def test_reversal_step_function():
     # and the attack skip is NOT the cause -- the effect survives it, which is
     # what refutes the {a-1, a, a+1} dead-band hypothesis
     assert _reversals(600, 4) > 0
+
+
+# --- depth: the OTHER half of the vibrato question --------------------------
+#
+# `vib` counts pitch reversals, i.e. the rate. The corpus defect it cannot see
+# is a swing that reverses at the right moments and travels a third of the
+# distance -- ACE_II reads `vib` 1.09x with its lead swinging 1.5% of pitch
+# against the original's 5.6%. Same shape as `slides`/`bend` and `filt`/`cut`:
+# prefer a travel measure whenever the change is to a step *size*.
+
+
+def _osc(n_cycles, amp, half=4, base=0x1000, drift=0):
+    """A triangle of known peak-to-peak `amp`, optionally sliding under it."""
+    out, up, cur = [], True, float(base)
+    step = amp / half
+    for _ in range(2 * n_cycles + 2):
+        for _ in range(half):
+            cur += (step if up else -step) + drift / (2 * half)
+            out.append(int(round(cur)))
+        up = not up
+    return out
+
+
+def test_a_swing_is_measured_at_its_real_peak_to_peak():
+    swings = fidelity.vibrato_swings(_osc(4, 400))
+    assert swings, "a four-cycle triangle must yield readings"
+    for swing, centre in swings:
+        assert abs(swing - 400) <= 2, swing
+        assert 0x0E00 < centre < 0x1200
+
+
+def test_a_slide_under_the_vibrato_cancels_out():
+    """Three turning points rather than two, so a linear drift subtracts
+    exactly. The two-point reading would report `amp + drift`, which is how a
+    portamento gets counted as vibrato depth."""
+    flat = fidelity.vibrato_swings(_osc(6, 400))
+    sliding = fidelity.vibrato_swings(_osc(6, 400, drift=600))
+    assert flat and sliding
+    assert abs(fidelity._median([s for s, _ in flat])
+               - fidelity._median([s for s, _ in sliding])) <= 4
+
+
+def test_only_interior_cycles_are_measured():
+    """A cycle cut by the note boundary understates its own swing, so it is
+    dropped -- the rule `noise_runs` applies to the window edge."""
+    # Two turning points is one half-cycle and not enough: nothing is emitted.
+    assert fidelity.vibrato_swings([0, 10, 20, 10, 0, 10, 20]) == []
+    assert len(fidelity.vibrato_swings(_osc(2, 400))) < 4
+
+
+def test_a_pure_slide_has_no_swing_at_all():
+    assert fidelity.vibrato_swings(list(range(0x1000, 0x1100, 4))) == []
+
+
+def _fq_voice(attacks, freqs, adsr):
+    """One voice: gate-edge attacks at `attacks`, a frequency per frame."""
+    return fidelity.Voice(
+        attacks=["C-4"] * len(attacks), attack_frames=list(attacks),
+        freq_events=[(f, v) for f, v in enumerate(freqs)],
+        adsr_events=[(0, adsr)])
+
+
+def test_depth_is_segmented_on_gate_edges_and_not_on_note_names():
+    """siddump prints the *nearest* note, which flickers while a vibrato runs.
+    Segmenting on the printed name chops one note into fragments shorter than
+    a cycle -- the first attempt at this measurement found one measurable note
+    in 3000 frames that way. Here a single 80-frame note carries ten cycles
+    and must be read as one segment."""
+    seg = _osc(10, 400)
+    v = _fq_voice([0], seg, 0x0A0A)
+    got = fidelity.oscillation_depths([v, fidelity.Voice(), fidelity.Voice()],
+                                      len(seg), {0x0A0A})
+    assert 0x0A0A in got
+    assert 0.08 < got[0x0A0A] < 0.11        # 400 / ~0x1000
+
+
+def test_depth_reports_a_shallow_swing_as_shallow():
+    """The defect the column exists for: the same rate, a third of the
+    distance. `pitch_motion_compare` reads 1.00x on this pair."""
+    deep, shallow = _osc(10, 900), _osc(10, 300)
+    orig = [_fq_voice([0], deep, 0x0A0A), fidelity.Voice(), fidelity.Voice()]
+    ours = [_fq_voice([0], shallow, 0x0A0A), fidelity.Voice(), fidelity.Voice()]
+    n = min(len(deep), len(shallow))
+    assert fidelity.pitch_motion_compare(orig, ours, n)["reversal_ratio"] == 1.0
+    got = fidelity.depth_compare(orig, ours, n, {0x0A0A})
+    assert 0.30 < got["depth_ratio"] < 0.37
+    assert got["depth_instruments"] == 1
+
+
+def test_depth_declines_rather_than_measuring_the_wrong_population():
+    """A depth over every oscillating note is worthless -- it picks up
+    portamento slides and drum sweeps and reports 273% and 397% depths, with
+    by-multiplier medians all at about 1.0. So no population means no
+    measurement, not a fallback to the unrestricted reading."""
+    seg = _osc(10, 400)
+    v = [_fq_voice([0], seg, 0x0A0A), fidelity.Voice(), fidelity.Voice()]
+    assert fidelity.depth_compare(v, v, len(seg), None) == {}
+    assert fidelity.depth_compare(v, v, len(seg), set()) == {}
+    # ...and an instrument outside the population is not measured either.
+    assert fidelity.depth_compare(v, v, len(seg), {0x0B0B}) == {}
+
+
+def test_a_release_rewritten_by_cut_release_still_joins():
+    """`--cut-release` zeroes the release nibble on our side only, so an
+    exact-only population filter would drop every instrument it touched --
+    the trap `paired_keys` and `stamp_for` already exist for."""
+    seg = _osc(10, 400)
+    orig = [_fq_voice([0], seg, 0x0A0C), fidelity.Voice(), fidelity.Voice()]
+    ours = [_fq_voice([0], seg, 0x0A00), fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.depth_compare(orig, ours, len(seg), {0x0A0C})
+    assert got.get("depth_instruments") == 1
+    assert abs(got["depth_ratio"] - 1.0) < 0.01
+
+
+def test_depth_is_a_declared_dimension_reading_the_frequency_registers():
+    d = next(d for d in fidelity.DIMENSIONS if d.key == "depth_ratio")
+    assert d.column == "depth" and d.kind == "ratio"
+    assert d.reads == ("$D400/$D401",)
+    # Present in a row only when it was actually computed -- a file whose
+    # player has no vibrato routine must not claim the column.
+    row = _row("A.sid", "measured", 1.0)
+    assert "depth_ratio" in fidelity.dimensions_present(row)
+    assert "depth_ratio" not in fidelity.dimensions_present(
+        dict(row, depth_ratio=None))

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.368 — 2026-08-23
+
+- FIDELITY.md gains a vibrato depth column
+
 ## 0.5.367 — 2026-08-23
 
 - rest-envelope silence enabled for five songs; vibrato depth measured and the rshift repair refuted again
