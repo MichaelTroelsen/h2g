@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.365 — 2026-08-23
+
+- each voice carries its own |difference| strip
+
 ## 0.5.364 — 2026-08-23
 
 - both siddumps aligned frame by frame in the instrument map

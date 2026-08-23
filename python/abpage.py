@@ -696,7 +696,8 @@ td a { color:var(--ink); font-weight:600; }
   align-items:baseline; padding:5px 10px; font-family:var(--mono);
   font-size:11.5px; color:var(--muted); border-bottom:1px solid var(--line); }
 .voicewave .vwhead b { color:var(--ink); letter-spacing:.06em; }
-.voicewave canvas { display:block; width:100%; height:84px; cursor:pointer; }
+/* 84 of bands + 22 of |difference| strip, matching the canvas set in JS. */
+.voicewave canvas { display:block; width:100%; height:106px; cursor:pointer; }
 .voicewave button.vwtoggle { appearance:none; background:none; border:0;
   padding:0; font:inherit; color:inherit; cursor:pointer; display:inline-flex;
   align-items:center; gap:7px; }
@@ -1083,7 +1084,11 @@ SCRIPT = r"""
   var vwrap = document.getElementById("vwrap");
   if (vwrap && window.__abVoices) (function () {
     var vmsg = document.getElementById("vwmsg");
-    var COLS = 1400, H = 84, PAD = 3;
+    // DIFF is the |difference| strip under each voice's bands, the same third
+    // trace the combined picture carries. Shallower here (22px against 46)
+    // because there are three of them stacked and the strip is read for WHERE
+    // it spikes, not for how tall the spike is.
+    var COLS = 1400, H = 84, DIFF = 22, PAD = 3;
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) { if (vmsg) vmsg.textContent = "This browser has no Web Audio."; return; }
     var ac = new AC(), strips = [];
@@ -1116,9 +1121,10 @@ SCRIPT = r"""
     }
     function paintStrip(s) {
       var g = s.ctx, by = shiftCols(), mid = H / 2, half = mid - PAD;
-      g.clearRect(0, 0, COLS, H);
+      g.clearRect(0, 0, COLS, H + DIFF);
       g.strokeStyle = cssv("--line"); g.lineWidth = 1;
       g.beginPath(); g.moveTo(0, mid + 0.5); g.lineTo(COLS, mid + 0.5); g.stroke();
+      g.beginPath(); g.moveTo(0, H + 0.5); g.lineTo(COLS, H + 0.5); g.stroke();
       function band(e, colour, shifted) {
         g.beginPath();
         for (var i = 0; i < COLS; i++) {
@@ -1134,11 +1140,25 @@ SCRIPT = r"""
       }
       if (vshow.a) band(s.a, cssv("--a"), false);
       if (vshow.b) band(s.b, cssv("--b"), true);
+      // |difference| per column, on the same time axis and the same shift as
+      // the bands above it. This is the trace that answers "where do these two
+      // part company" without the eye having to separate two overlapping
+      // shapes -- on a voice where the renders agree it is a flat line, so a
+      // spike is the thing to go and listen to.
+      if (vshow.d) {
+        g.globalAlpha = 0.45; g.fillStyle = cssv("--ink");
+        for (var i = 0; i < COLS; i++) {
+          var j = i + by;
+          var dv = Math.abs(s.a[i] - ((j >= 0 && j < COLS) ? s.b[j] : 0));
+          g.fillRect(i, H + DIFF - dv * (DIFF - 3), 1, dv * (DIFF - 3));
+        }
+        g.globalAlpha = 1;
+      }
       var d = au.duration;
       if (d && isFinite(d)) {
         var x = Math.round(au.currentTime / d * COLS) + 0.5;
         g.strokeStyle = cssv("--live"); g.lineWidth = 2;
-        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H + DIFF); g.stroke();
       }
     }
     function paintAll() { strips.forEach(paintStrip); }
@@ -1148,7 +1168,7 @@ SCRIPT = r"""
     // the combined picture has, and one switch rather than three, because the
     // question it answers ("where does our render put something the original
     // does not") is asked of the voices together.
-    var vshow = { a: true, b: true };
+    var vshow = { a: true, b: true, d: true };
     Array.prototype.forEach.call(
       document.querySelectorAll(".voicewave button.swatch[data-vtrace]"),
       function (b) {
@@ -1164,7 +1184,7 @@ SCRIPT = r"""
       var pair = window.__abVoices["v" + v];
       return Promise.all([grab(pair[0]), grab(pair[1])]).then(function (bufs) {
         var cv = document.getElementById("vwcv" + v);
-        cv.width = COLS; cv.height = H;
+        cv.width = COLS; cv.height = H + DIFF;
         var a = env(bufs[0]), b = env(bufs[1]), by = shiftCols(), sum = 0;
         for (var i = 0; i < COLS; i++) {
           var j = i + by;
@@ -1960,13 +1980,21 @@ def voicewave_card(voice_map: dict) -> str:
         'aria-pressed="true"><i></i>original</button>\n'
         '    <button type="button" class="swatch ours" data-vtrace="b" '
         'aria-pressed="true"><i></i>H2G</button>\n'
+        '    <button type="button" class="swatch diff" data-vtrace="d" '
+        'aria-pressed="true"><i></i>|difference|, lower strip</button>\n'
         '    <span>click a key to hide it in all three &middot; click a voice '
         'name to collapse it &middot; same time axis and the same sync offset '
         'as the pair above &middot; click a strip to seek</span>\n'
         '  </div>\n'
         '  <p class="caveat">The voice whose <code>mean&nbsp;|&Delta;|</code> '
         'is worst is the one to solo with the buttons at the top and listen '
-        'to. Same caveat as the combined picture: this is amplitude, so it '
+        'to, and the <b>lower strip under each voice</b> says <i>where</i> in '
+        'the tune to listen: it is the same <code>|difference|</code> the '
+        'combined picture carries, per voice, so a spike is a moment to click '
+        'rather than a whole tune to sit through. Its height is the gap '
+        'between the two envelopes at that instant, not a score, and it keeps '
+        'counting toward <code>mean&nbsp;|&Delta;|</code> even when hidden. '
+        'Same caveat as the combined picture: this is amplitude, so it '
         'shows dropped notes, note lengths and silence, and says nothing about '
         'pitch or timbre &mdash; two different notes of the same loudness draw '
         'the same shape. A voice the original never plays draws a flat line on '
