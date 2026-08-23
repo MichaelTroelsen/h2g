@@ -445,3 +445,63 @@ def test_each_opcode_holds_for_one_frame_at_every_multiplier():
     for m, runs in got.items():
         base = [n for _, n in got[1]]
         assert [n for _, n in runs] == [n * m for n in base], m
+
+
+# --- the filter's cutoff step ------------------------------------------------
+#
+# The filter table's right side is a speed applied once per play CALL
+# (GoatTracker readme 3.4.3); the player adds its record byte once per FRAME.
+# They agree only at -S1. ACE II's original steps the cutoff 768 a frame and
+# ours stepped 2304 -- 768x3 at its -S3 -- which FIDELITY.md scored as `cut`
+# 2.39x. `_filter_entries` was simply never given the multiplier.
+
+def test_the_filter_step_is_per_call_not_per_frame():
+    from h2g.goatwriter import _filter_step_per_call as f
+    # -S1: the two rates coincide and the byte passes through untouched.
+    for step in (1, 3, 9, 0x7F):
+        assert f(step, 1) == step, step
+    # Above it, the per-frame rate is divided. ACE II's own numbers: a record
+    # byte of 3 at -S3 must reach the table as 1, not 3.
+    assert f(3, 3) == 1
+    assert f(9, 3) == 3
+    assert f(8, 2) == 4
+
+
+def test_a_negative_filter_step_stays_negative():
+    """The speed is a SIGNED 8-bit value; $F8 is -8, not 248.
+
+    Dividing it as unsigned would turn a downward sweep of 8 a frame into an
+    upward one of 124 a call -- the wrong direction and seventy times the
+    distance.
+    """
+    from h2g.goatwriter import _filter_step_per_call as f
+    assert f(0xF8, 1) == 0xF8                      # -8 unchanged at -S1
+    assert f(0xF8, 2) == (-4 & 0xFF)               # -8 / 2 = -4
+    assert f(0xFF, 1) == 0xFF                      # -1
+    # ...and a small negative never rounds THROUGH zero into a positive.
+    for m in (2, 3, 4, 5, 7, 10):
+        got = f(0xFF, m)
+        assert got >= 0x80, (m, got)
+
+
+def test_a_live_filter_sweep_never_rounds_to_static():
+    """A step of 1 at -S10 is 0.1 a call, which the byte cannot express.
+
+    Truncating gives 0 -- no modulate entry at all, so the sweep vanishes and
+    the cutoff sits where the table set it. A sweep slightly too fast is
+    mistimed; a sweep that does not happen is a different instrument.
+    """
+    from h2g.goatwriter import _filter_step_per_call as f
+    for m in (2, 3, 4, 5, 6, 7, 9, 10):
+        assert f(1, m) == 1, m
+        assert f(0xFF, m) == 0xFF, m
+    # A zero step is genuinely static and must stay that way.
+    for m in (1, 2, 10):
+        assert f(0, m) == 0
+
+
+def test_the_filter_step_stays_in_one_signed_byte():
+    from h2g.goatwriter import _filter_step_per_call as f
+    for step in range(256):
+        for m in (1, 2, 3, 5, 10):
+            assert 0 <= f(step, m) <= 255, (step, m)

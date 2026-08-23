@@ -1003,7 +1003,21 @@ test dependency).
   `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_hold_byte`
   and the pulse programs now are -- and `_wave_program_entries` since
   v0.5.235, which until then simply *refused* every multispeed file rather
-  than dividing. **A restriction is not a neutral default.** That one was
+  than dividing, and **`_filter_entries` only since v0.5.363**. That one is
+  the cautionary case for this whole bullet: the list above was *written down*
+  and the filter emitter was simply never added to it, so the rule sat two
+  paragraphs from an emitter that broke it for the life of the project. It was
+  not even given a `multiplier` parameter to ignore -- the call site passed
+  four arguments and the fifth did not exist. A listener reported ACE II's
+  filter as "missing"; it was routed correctly (`filt` 2994/2997) and sweeping
+  **three times too far**, 2304 a frame against the player's 768, which is
+  exactly its `-S3`. `cut` had been reporting it all along, at 2.39x. **When a
+  rule names the functions that obey it, that list is a checklist to re-run
+  against the tree, not a record to append to** -- grep for what writes a rate
+  byte, not for what already calls `multiplier`. Fixing it moved 9 files, zero
+  of them `-S1`, and `cut` was the ONLY column that moved on any of them:
+  Saboteur II 3.99x -> 1.48x, Thundercats 3.13x -> 1.13x, Food Feud
+  2.96x -> 1.13x, ACE II 2.39x -> 0.79x. **A restriction is not a neutral default.** That one was
   written down honestly in its own docstring, stood for 32 versions, and was
   holding back the largest group of the onset census: seven files whose
   `--wave-program` the preset search had measured twice and could never

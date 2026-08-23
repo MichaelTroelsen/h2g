@@ -4602,8 +4602,39 @@ FILT_STOP = 0xFF
 FILT_MODULATE = 0x7F
 
 
+def _filter_step_per_call(step: int, multiplier: int) -> int:
+    """The player's per-FRAME cutoff step as a per-CALL one, signed.
+
+    The filter table's right side is "speed, signed 8-bit" and Goattracker
+    applies it once per play CALL (readme 3.4.3); the player adds its record
+    byte once per FRAME. They coincide only at `-S1`, and above it the sweep
+    runs `multiplier` times too far -- ACE II's original steps the cutoff by
+    768 a frame and ours stepped 2304, which is 768x3 at its `-S3`, measured
+    as `cut` 2.39x over 30 s.
+
+    This is the rule CLAUDE.md already states -- a rate read out of the player
+    is per frame and every table applies it per call -- and the list of
+    emitters that obey it (`build_speed_table`, `_drum_speed`,
+    `_rise_speed_index`, `_wave_hold_byte`, the pulse programs,
+    `_wave_program_entries`) did not include this one.
+
+    Rounded to NEAREST rather than truncated, and floored at a magnitude of 1
+    so a sweep never becomes static: `3 // 4` is 0, and a filter that stops
+    moving is a worse error than one moving slightly too fast, because it is
+    inaudible as a sweep at all rather than merely mistimed.
+    """
+    if not step:
+        return 0
+    signed = step - 256 if step >= 0x80 else step
+    scaled = round(signed / multiplier)
+    if scaled == 0:                       # never round a live sweep to nothing
+        scaled = 1 if signed > 0 else -1
+    scaled = max(-128, min(127, scaled))
+    return scaled & 0xFF
+
+
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
-                    lead: int = 1):
+                    lead: int = 1, multiplier: int = 1):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
 
     The player adds a per-instrument step to a per-voice cutoff accumulator
@@ -4639,8 +4670,9 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
             continue  # routes no voice through the filter: nothing to hear
         block = [(FILT_SET_PARAMS | filt.passband, resctl),
                  (FILT_SET_CUTOFF, filt.cutoff)]
-        if step:
-            block.append((FILT_MODULATE, step))
+        per_call = _filter_step_per_call(step, multiplier)
+        if per_call:
+            block.append((FILT_MODULATE, per_call))
         block.append((FILT_STOP, 0x00))
         if len(entries) + len(block) > GT_MAX_FILT:
             break
@@ -4721,7 +4753,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # position is not a stride either.
     if filters:
         filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used,
-                                                      lead)
+                                                      lead, multiplier)
     else:
         filter_entries, filter_ptrs = [], {}
     pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
