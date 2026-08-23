@@ -69,7 +69,7 @@ test dependency).
   `python/`:
 
   ```sh
-  python survey.py <sid_dir> -o ../SURVEY.md --legal-restart --gt2reloc   # corpus report
+  python survey.py <sid_dir> -o ../docs/SURVEY.md --legal-restart --gt2reloc   # corpus report
   python presets.py <sid_dir> -o ../presets.json                          # per-song best options
   ```
 
@@ -95,7 +95,7 @@ test dependency).
   coherent and the tests pass, never while another change is half-applied: a
   run taken mid-edit records a state that never existed.
 - **`FIDELITY.md` is generated too, but on demand rather than every commit.**
-  `python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md`
+  `python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md`
   packs each conversion back to a `.sid` with gt2reloc and compares SID register
   traces against the original. It is the closest thing in the repo to a measure
   of whether a conversion *sounds* right, so regenerate it after a commit that

@@ -19,7 +19,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 INIT_PY = REPO_ROOT / "python" / "h2g" / "__init__.py"
-CHANGELOG = REPO_ROOT / "CHANGELOG.md"
+CHANGELOG = REPO_ROOT / "docs" / "CHANGELOG.md"
 
 VERSION_RE = re.compile(r'^__version__ = "(\d+)\.(\d+)\.(\d+)"$', re.MULTILINE)
 

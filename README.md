@@ -22,8 +22,14 @@ SID bytes for known player-engine opcode fingerprints, reads the data-table
 addresses straight out of the matched instructions' operands, and re-encodes the
 instrument/pattern/orderlist data into Goattracker's binary song format. That
 means it only works on tunes whose player matches one of 17 hard-coded game
-fingerprints — see [`H2G-CONVERSION-METHOD.md`](H2G-CONVERSION-METHOD.md) for the
+fingerprints — see [`H2G-CONVERSION-METHOD.md`](docs/H2G-CONVERSION-METHOD.md) for the
 full method write-up.
+
+Everything except this file, `CLAUDE.md` and `whats-next.md` lives in
+[`docs/`](docs/inventory.md) — the inventory there says what each document is,
+which ones are **generated** (and by which command, so a hand edit is not lost
+to the next run), and which are plans or audits dated to a version and to be
+checked before they are believed.
 
 ## Usage
 
@@ -90,7 +96,7 @@ headline counts (see [Corpus survey](#corpus-survey) below):
 
 ```sh
 cd python
-python survey.py <sid_dir> -o ../SURVEY.md                       # default, 94 rows
+python survey.py <sid_dir> -o ../docs/SURVEY.md                       # default, 94 rows
 python survey.py <sid_dir> -o survey-128.md --max-rows 128       # scratch, not committed
 ```
 
@@ -2291,7 +2297,7 @@ python python/bump_version.py "short description"     # bumps the patch
 python python/bump_version.py --minor "description"   # feature release
 ```
 
-That rewrites `__version__` and prepends a [`CHANGELOG.md`](CHANGELOG.md) entry.
+That rewrites `__version__` and prepends a [`CHANGELOG.md`](docs/CHANGELOG.md) entry.
 Never hand-edit the version in more than one place. If a document embeds the
 version string (`SURVEY.md` records the converter version in its header),
 regenerate it after bumping so the committed docs match the committed version.
@@ -2345,14 +2351,14 @@ a Markdown report recording *why* each file fails, not just that it did:
 
 ```sh
 cd python
-python survey.py <sid_dir> -o ../SURVEY.md      # see --help for all options
+python survey.py <sid_dir> -o ../docs/SURVEY.md      # see --help for all options
 ```
 
 It accepts the same output-shaping flags as the converter, so a report can be
 generated for any combination of settings; the report header records which ones
 were used and echoes the exact command that reproduces it.
 
-[`SURVEY.md`](SURVEY.md) is the committed report for the Rob Hubbard corpus and
+[`SURVEY.md`](docs/SURVEY.md) is the committed report for the Rob Hubbard corpus and
 the single place conversion rates are quoted — it carries the pass/fail count,
 the failure breakdown by stage, the detected player-variant spread and per-file
 detail, all regenerated from the code. Deliberately **do not** restate those
@@ -2361,7 +2367,7 @@ changes, and a second copy goes stale silently.
 
 "Converted" there means the converter produced a `.sng` without erroring — it
 does **not** mean the output is musically correct. That question is
-[`FIDELITY.md`](FIDELITY.md)'s, below.
+[`FIDELITY.md`](docs/FIDELITY.md)'s, below.
 
 ### The subtune census
 
@@ -2374,7 +2380,7 @@ cd python
 python survey.py <sid_dir> --subtune-census ../SUBTUNES.md
 ```
 
-[`SUBTUNES.md`](SUBTUNES.md) is the committed census. It is generated on demand
+[`SUBTUNES.md`](docs/SUBTUNES.md) is the committed census. It is generated on demand
 rather than every commit, like `FIDELITY.md`, and it reads the record
 `convert_tracks` fills in as it decides each subtune's fate — not a second pass
 re-deriving the same decision from a `Detection`.
@@ -2407,7 +2413,7 @@ compares what the two players tell the SID chip to do:
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md
 python fidelity.py --pair original.sid ours.sid        # two files you already have
 ```
 
@@ -2554,7 +2560,7 @@ before the alignment.
 sides' raw figures, and *What this run compared* names the registers no column
 reads.
 
-[`FIDELITY.md`](FIDELITY.md) is the committed report, and the single place
+[`FIDELITY.md`](docs/FIDELITY.md) is the committed report, and the single place
 fidelity figures are quoted — as with `SURVEY.md`, do not restate its numbers
 elsewhere. Regenerate it after any commit that changes conversion.
 
@@ -2986,7 +2992,7 @@ from a half-applied tree has cost this repo two re-runs and the report had no
 way to say it happened.
 
 Two further comparisons are wired up behind flags, both shelling out to
-[SIDM2](SIDM2-FIDELITY-TESTER.md)'s tools and inheriting their dependencies:
+[SIDM2](docs/SIDM2-FIDELITY-TESTER.md)'s tools and inheriting their dependencies:
 `--audio` (onset-aligned audio, tolerates our tempo offset) and `--register`
 (frame-exact register comparison, only meaningful once tempo is reconciled).
 
@@ -2996,7 +3002,7 @@ keeps its index and comes back as an entry that plays nothing — so comparing
 against it measures our converter against silence. Those rows are marked and
 left out of the averages rather than scored as bad conversions; the report
 lists every affected file, including the subtunes that are silently dropped off
-the end of the list. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md) §7.
+the end of the list. See [`SNG2SID-FIDELITY.md`](docs/SNG2SID-FIDELITY.md) §7.
 
 ### Listening
 
@@ -3004,7 +3010,7 @@ the end of the list. See [`SNG2SID-FIDELITY.md`](SNG2SID-FIDELITY.md) §7.
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../FIDELITY.md \
+python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md \
     --json ../build/fidelity.json
 python listen.py <sid_dir> --from-json ../build/fidelity.json -t 30
 ```
@@ -3281,7 +3287,7 @@ shared code could not disagree with the writer, and disagreeing is the value.
   fingerprints *player engines*, not composers, so any tune built on a
   recognised engine converts regardless of who wrote the music. The corpus here
   is Hubbard-only, so that reach is untested — see
-  [`SURVEY.md`](SURVEY.md) § Out of scope for the inverse case, Hubbard tunes
+  [`SURVEY.md`](docs/SURVEY.md) § Out of scope for the inverse case, Hubbard tunes
   whose player is somebody else's.
 
 ## Licence

@@ -178,6 +178,117 @@ def _table(rows: list, head: list) -> list:
     return out
 
 
+HTML_CSS = """
+:root { --ink:#14181d; --muted:#5d6b7a; --line:#d6dde5; --panel:#fff;
+  --sunk:#f4f7fa; --a:#c1573a; --b:#2b6f83;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,monospace; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --ink:#e8edf2; --muted:#9aa8b6; --line:#2b333c; --panel:#161b21;
+  --sunk:#11151a; --a:#e0805f; --b:#5fb0c8; } }
+:root[data-theme="dark"] { --ink:#e8edf2; --muted:#9aa8b6; --line:#2b333c;
+  --panel:#161b21; --sunk:#11151a; --a:#e0805f; --b:#5fb0c8; }
+body { margin:0; padding:32px 20px 80px; background:var(--sunk); color:var(--ink);
+  font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; }
+main { max-width:1180px; margin:0 auto; }
+h1 { font-size:22px; margin:0 0 6px; }
+h2 { font-size:15px; letter-spacing:.06em; text-transform:uppercase;
+  color:var(--muted); margin:34px 0 10px; font-weight:600; }
+p { margin:10px 0; max-width:78ch; }
+code { font-family:var(--mono); font-size:.92em; background:var(--panel);
+  border:1px solid var(--line); border-radius:3px; padding:0 4px; }
+.tw { overflow-x:auto; border:1px solid var(--line); border-radius:6px;
+  background:var(--panel); margin:12px 0; }
+.tw pre { margin:0; padding:10px 12px; font-family:var(--mono);
+  font-size:12px; line-height:1.35; }
+table { border-collapse:collapse; width:100%; font-family:var(--mono);
+  font-size:12.5px; }
+th, td { text-align:left; padding:5px 10px; white-space:nowrap;
+  border-bottom:1px solid var(--line); }
+th { background:var(--sunk); position:sticky; top:0; color:var(--muted);
+  font-weight:600; letter-spacing:.04em; }
+tr:last-child td { border-bottom:0; }
+td:first-child, th:first-child { color:var(--muted); }
+a { color:var(--b); }
+.back { display:inline-block; margin-bottom:18px; font-size:13px; }
+"""
+
+
+def _inline(s: str) -> str:
+    """Escape, then the only two inline forms this module emits."""
+    import re as _re
+    s = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    s = _re.sub(r"`([^`]+)`", r"<code>\1</code>", s)
+    # Links before emphasis: the index's rows are [name.sid](name.html), and a
+    # bare [..](..) left unconverted renders as literal brackets in a table
+    # cell -- visible, but only if someone looks.
+    s = _re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r'<a href="\2">\1</a>', s)
+    s = _re.sub(r"\*([^*]+)\*", r"<em>\1</em>", s)
+    s = _re.sub(r"_\(([^)]+)\)_", r"<em>(\1)</em>", s)
+    return s
+
+
+def to_html(lines: list, title: str, back: str | None = None) -> str:
+    """The Markdown this module writes, as one self-contained page.
+
+    Deliberately NOT a general Markdown converter: it handles exactly the
+    forms `report()` and `main()` emit -- ATX headings, paragraphs, pipe
+    tables, code spans, emphasis -- and passes anything else through as a
+    paragraph. A general renderer would be a dependency and a much larger
+    surface for silently wrong output; this one's whole input is written
+    fifty lines away.
+    """
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        line = lines[i]
+        if not line.strip():
+            i += 1
+            continue
+        if line.startswith("```"):
+            # The siddump listings. They MUST stay preformatted: every column
+            # is fixed-width and the whole point of publishing them beside the
+            # mapping is that a disputed row can be checked in place. Flattened
+            # into paragraphs (or, worse, parsed as pipe tables -- they do
+            # begin with "|") the alignment is gone and they are unreadable.
+            i += 1
+            block = []
+            while i < n and not lines[i].startswith("```"):
+                block.append(lines[i])
+                i += 1
+            i += 1                                     # the closing fence
+            esc = "\n".join(block).replace("&", "&amp;") \
+                                  .replace("<", "&lt;").replace(">", "&gt;")
+            out.append('<div class="tw"><pre>%s</pre></div>' % esc)
+        elif line.startswith("## "):
+            out.append("<h2>%s</h2>" % _inline(line[3:]))
+            i += 1
+        elif line.startswith("# "):
+            out.append("<h1>%s</h1>" % _inline(line[2:]))
+            i += 1
+        elif line.startswith("|"):
+            # A pipe table: header, a --- rule, then rows until the block ends.
+            head = [c.strip() for c in line.strip().strip("|").split("|")]
+            body, i = [], i + 2                    # skip the |---|---| rule
+            while i < n and lines[i].startswith("|"):
+                body.append([c.strip() for c in
+                             lines[i].strip().strip("|").split("|")])
+                i += 1
+            out.append('<div class="tw"><table><thead><tr>%s</tr></thead><tbody>%s'
+                       "</tbody></table></div>"
+                       % ("".join("<th>%s</th>" % _inline(c) for c in head),
+                          "".join("<tr>%s</tr>"
+                                  % "".join("<td>%s</td>" % _inline(c) for c in r)
+                                  for r in body)))
+        else:
+            out.append("<p>%s</p>" % _inline(line))
+            i += 1
+    nav = ('<a class="back" href="%s">&larr; %s</a>' % back if back else "")
+    return ("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+            "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+            "<title>%s</title><style>%s</style></head><body><main>%s%s"
+            "</main></body></html>"
+            % (_inline(title), HTML_CSS, nav, "\n".join(out)))
+
+
 def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
            gt2reloc: str, siddump: str, dump: bool = True) -> tuple:
     """(markdown lines, summary dict) for one song."""
@@ -540,6 +651,9 @@ def main(argv=None) -> int:
             print(f"  {path.name}: {type(exc).__name__}: {exc}")
             continue
         (out / f"{path.stem}.md").write_text("\n".join(lines), encoding="utf-8")
+        (out / f"{path.stem}.html").write_text(
+            to_html(lines, f"{path.stem} — instrument map",
+                    ("index.html", "all instrument maps")), encoding="utf-8")
         summaries.append(s)
         print(f"  {path.name:<40} {s['matched']:>3}/{s['instruments']:<3} matched, "
               f"{s['waveform_mismatch']} waveform, "
@@ -557,6 +671,11 @@ def main(argv=None) -> int:
         ["song", "instruments", "matched", "waveform differs",
          "only original", "only ours", "unused"])
     (out / "index.md").write_text("\n".join(index), encoding="utf-8")
+    # The index links `<stem>.md`; the HTML twin must link `<stem>.html` or
+    # every row would bounce the reader out of the HTML view into raw Markdown.
+    (out / "index.html").write_text(
+        to_html([ln.replace(".md)", ".html)") for ln in index],
+                "Instrument maps"), encoding="utf-8")
     if args.json:
         # A list of per-song dicts, the same shape `fidelity.py --json` uses,
         # so `abpage.py` reads both with one idiom. `seconds` travels with the

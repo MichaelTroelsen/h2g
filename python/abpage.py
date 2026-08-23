@@ -44,6 +44,25 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 LISTEN = ROOT / "build" / "listen"
 
+
+def _doc(name: str) -> Path:
+    """A generated report, wherever it currently lives.
+
+    The reports moved from the repo root into `docs/`. Both are checked, docs/
+    first, so a stale checkout still reads rather than silently returning no
+    rows. Falling back is safe: nothing writes both.
+
+    Resolved against the CURRENT value of `ROOT` on every call, never against
+    a module-level `DOCS` constant -- the tests redirect this module at a
+    temporary directory with `monkeypatch.setattr(A, "ROOT", tmp_path)`, and a
+    constant computed at import time ignores that and reads the real report.
+    Which is exactly what happened: two tests began asserting against the live
+    corpus instead of their own four-line fixture, and passed or failed on
+    whatever the last regeneration produced.
+    """
+    a = ROOT / "docs" / name
+    return a if a.exists() else ROOT / name
+
 # The columns worth putting on a listening page, in reading order. `slides`,
 # `pul` and the raw attack counts are left out: they are pair-of-counts cells
 # that need their own explanation to mean anything.
@@ -52,7 +71,7 @@ CHIPS = ("melody", "seq", "retrig", "wave", "gate", "hold", "onset",
 
 
 def fidelity_rows() -> dict[str, dict[str, str]]:
-    path = ROOT / "FIDELITY.md"
+    path = _doc("FIDELITY.md")
     if not path.exists():
         return {}
     rows, header = {}, None
@@ -75,7 +94,7 @@ def survey_rows() -> dict[str, dict[str, str]]:
     generated report rather than re-running detection, so it cannot claim a
     player the survey does not.
     """
-    path = ROOT / "SURVEY.md"
+    path = _doc("SURVEY.md")
     if not path.exists():
         return {}
     rows, header = {}, None
@@ -669,6 +688,14 @@ td a { color:var(--ink); font-weight:600; }
   display:flex; flex-wrap:wrap; gap:14px; align-items:center;
   margin:10px 0 0; font-size:.82rem; color:var(--muted);
 }
+.voicewave .vwrap { display:flex; flex-direction:column; gap:10px; }
+.voicewave .vw { border:1px solid var(--line); border-radius:6px;
+  background:var(--sunk); overflow:hidden; }
+.voicewave .vwhead { display:flex; justify-content:space-between;
+  align-items:baseline; padding:5px 10px; font-family:var(--mono);
+  font-size:11.5px; color:var(--muted); border-bottom:1px solid var(--line); }
+.voicewave .vwhead b { color:var(--ink); letter-spacing:.06em; }
+.voicewave canvas { display:block; width:100%; height:84px; cursor:pointer; }
 .wave .swatch { display:inline-flex; align-items:center; gap:6px; }
 /* The two bands sit on top of each other at 62% alpha, so where they agree
    they are one colour and neither is readable on its own. Hiding a key is
@@ -734,6 +761,7 @@ SCRIPT = r"""
     if (!au.paused || au.currentTime) bu.currentTime = bAt(au.currentTime);
     if (window.__abRedraw) window.__abRedraw();
     if (window.__abSpectroRedraw) window.__abSpectroRedraw();
+    if (window.__abVoiceRedraw) window.__abVoiceRedraw();
   }
   syncr.addEventListener("input", function () {
     setSync(Number(syncr.value), "&mdash; set by hand");
@@ -1030,6 +1058,114 @@ SCRIPT = r"""
     }
     window.__abReload = loadPair;
     loadPair(false);
+  })();
+
+  // ---- per-voice amplitude -------------------------------------------------
+  // Three overlays on one time axis, so "which voice is wrong" is a glance
+  // rather than three rounds of soloing. Decoded once and kept as envelopes:
+  // the six solo WAVs are the same bytes the voice buttons already swap in,
+  // so this costs one extra decode pass and no extra staging.
+  var vwrap = document.getElementById("vwrap");
+  if (vwrap && window.__abVoices) (function () {
+    var vmsg = document.getElementById("vwmsg");
+    var COLS = 1400, H = 84, PAD = 3;
+    var AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { if (vmsg) vmsg.textContent = "This browser has no Web Audio."; return; }
+    var ac = new AC(), strips = [];
+
+    function env(buf) {
+      var ch = buf.getChannelData(0), n = ch.length;
+      var out = new Float32Array(COLS), per = n / COLS;
+      for (var i = 0; i < COLS; i++) {
+        var s = Math.floor(i * per), e = Math.min(n, Math.floor((i + 1) * per)), pk = 0;
+        for (var j = s; j < e; j++) { var v = ch[j] < 0 ? -ch[j] : ch[j]; if (v > pk) pk = v; }
+        out[i] = pk;
+      }
+      return out;
+    }
+    function grab(src) {
+      return fetch(src).then(function (r) { return r.arrayBuffer(); })
+        .then(function (ab) { return ac.decodeAudioData(ab); });
+    }
+    function cssv(n) {
+      return getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+    }
+    // The SAME shift the combined picture uses. Derived from the full pair, not
+    // from a solo voice -- a voice that is silent at the start has no first
+    // onset of its own, and measuring one per strip would slide the quiet
+    // voices against the loud ones for no musical reason.
+    function shiftCols() {
+      var d = au.duration;
+      if (!d || !isFinite(d)) return 0;
+      return Math.round(sync / d * COLS);
+    }
+    function paintStrip(s) {
+      var g = s.ctx, by = shiftCols(), mid = H / 2, half = mid - PAD;
+      g.clearRect(0, 0, COLS, H);
+      g.strokeStyle = cssv("--line"); g.lineWidth = 1;
+      g.beginPath(); g.moveTo(0, mid + 0.5); g.lineTo(COLS, mid + 0.5); g.stroke();
+      function band(e, colour, shifted) {
+        g.beginPath();
+        for (var i = 0; i < COLS; i++) {
+          var j = shifted ? i + by : i, v = (j >= 0 && j < COLS) ? e[j] : 0;
+          g.lineTo(i, mid - v * half);
+        }
+        for (var k = COLS - 1; k >= 0; k--) {
+          var m = shifted ? k + by : k, w = (m >= 0 && m < COLS) ? e[m] : 0;
+          g.lineTo(k, mid + w * half);
+        }
+        g.closePath(); g.globalAlpha = 0.62; g.fillStyle = colour; g.fill();
+        g.globalAlpha = 1;
+      }
+      band(s.a, cssv("--a"), false);
+      band(s.b, cssv("--b"), true);
+      var d = au.duration;
+      if (d && isFinite(d)) {
+        var x = Math.round(au.currentTime / d * COLS) + 0.5;
+        g.strokeStyle = cssv("--live"); g.lineWidth = 2;
+        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, H); g.stroke();
+      }
+    }
+    function paintAll() { strips.forEach(paintStrip); }
+    window.__abVoiceRedraw = paintAll;
+
+    var jobs = [1, 2, 3].map(function (v) {
+      var pair = window.__abVoices["v" + v];
+      return Promise.all([grab(pair[0]), grab(pair[1])]).then(function (bufs) {
+        var cv = document.getElementById("vwcv" + v);
+        cv.width = COLS; cv.height = H;
+        var a = env(bufs[0]), b = env(bufs[1]), by = shiftCols(), sum = 0;
+        for (var i = 0; i < COLS; i++) {
+          var j = i + by;
+          sum += Math.abs(a[i] - ((j >= 0 && j < COLS) ? b[j] : 0));
+        }
+        var st = document.getElementById("vwstat" + v);
+        if (st) st.textContent = "mean |Δ| " + (100 * sum / COLS).toFixed(1) + "%";
+        cv.addEventListener("click", function (e) {
+          var d = au.duration;
+          if (!d || !isFinite(d)) return;
+          var r = cv.getBoundingClientRect();
+          var t = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)) * d;
+          au.currentTime = t; bu.currentTime = bAt(t);
+          now.textContent = fmt(t);
+          seek.value = String(Math.round(t / d * 1000));
+        });
+        strips.push({ ctx: cv.getContext("2d"), a: a, b: b });
+      });
+    });
+    Promise.all(jobs).then(function () {
+      if (vmsg) vmsg.hidden = true;
+      vwrap.hidden = false;
+      paintAll();
+    }).catch(function () {
+      // Same file:// limitation as the combined picture, same wording.
+      vwrap.hidden = true;
+      if (vmsg) vmsg.innerHTML =
+        "The per-voice drawing reads the six solo WAVs, which a browser "
+        + "refuses over file://. Run <code>python abpage.py --serve</code>.";
+    });
+    au.addEventListener("timeupdate", paintAll);
+    seek.addEventListener("input", paintAll);
   })();
 
   // ---- spectrogram overlay ------------------------------------------------
@@ -1701,6 +1837,47 @@ def notes_strip_card(name: str, fj: dict | None) -> str:
         % ("".join(cols), STRIP_MAX_TICKS, total_o, total_u))
 
 
+def voicewave_card(voice_map: dict) -> str:
+    """Three stacked amplitude overlays, one per voice, drawn at once.
+
+    The main *Both sides, drawn* canvas already follows the voice selector, so
+    a single voice could always be seen -- one at a time, by switching, and
+    with nothing to compare it against but memory. The question that actually
+    gets asked of these pages is "WHICH voice is wrong", and that is a
+    comparison across voices, not within one. Three strips on one time axis
+    answer it by looking; switching back and forth does not.
+
+    Each strip carries its own mean |difference|, which is the number that
+    ranks them. Empty unless `listen.py --voices` staged the six solo renders.
+    """
+    if not voice_map or not all("v%d" % v in voice_map for v in (1, 2, 3)):
+        return ""
+    strips = "".join(
+        '<div class="vw" data-voice="%d">'
+        '<div class="vwhead"><b>Voice %d</b>'
+        '<span class="stat" id="vwstat%d"></span></div>'
+        '<canvas id="vwcv%d"></canvas></div>' % (v, v, v, v)
+        for v in (1, 2, 3))
+    return (
+        '<div class="card wave voicewave">\n  <h2>Each voice, drawn</h2>\n'
+        '  <div class="msg" id="vwmsg">Reading the six solo renders&hellip;</div>\n'
+        '  <div class="vwrap" id="vwrap" hidden>%s</div>\n'
+        '  <div class="legend">\n'
+        '    <span class="swatch orig"><i></i>original</span>\n'
+        '    <span class="swatch ours"><i></i>H2G</span>\n'
+        '    <span>same time axis and the same sync offset as the pair above '
+        '&middot; click any strip to seek</span>\n'
+        '  </div>\n'
+        '  <p class="caveat">The voice whose <code>mean&nbsp;|&Delta;|</code> '
+        'is worst is the one to solo with the buttons at the top and listen '
+        'to. Same caveat as the combined picture: this is amplitude, so it '
+        'shows dropped notes, note lengths and silence, and says nothing about '
+        'pitch or timbre &mdash; two different notes of the same loudness draw '
+        'the same shape. A voice the original never plays draws a flat line on '
+        'both sides and scores 0%%, which is agreement, not absence of '
+        'evidence.</p>\n</div>\n' % strips)
+
+
 def instrmap_card(name: str, im: dict | None, seconds: int) -> str:
     """The instrument map's per-song verdict, keyed to what the ear should check.
 
@@ -1754,11 +1931,27 @@ def instrmap_card(name: str, im: dict | None, seconds: int) -> str:
         'ADSR pair. Where the two disagree the trace wins &mdash; and where we '
         'produce a signature the original never produces, we invented it. It '
         'compares waveform <i>class</i>, bucketed pulse width and the envelope; '
-        'it does not judge pitch, and a count here is not a score. Generated by '
-        '<code>instrmap.py</code>; the per-instrument rows are in '
-        '<code>build/instrmap/%s.md</code>.</p>\n</div>\n'
+        'it does not judge pitch, and a count here is not a score. %s</p>\n</div>\n'
         % ("".join(cells), "<ul>%s</ul>" % legend if legend else "",
-           window, name))
+           window, _instrmap_link(name)))
+
+
+def _instrmap_link(name: str) -> str:
+    """The sentence pointing at the full per-instrument report.
+
+    Links the copy inside `build/listen` rather than `../instrmap/<name>.html`:
+    `abpage.py --serve` serves `build/listen` AS THE ROOT, so a parent-relative
+    href escapes the served tree and 404s. Falls back to naming the Markdown
+    path when no HTML twin was staged, which is what happens on a build that
+    reused an older `instrmap.json` without re-running the tool.
+    """
+    if (LISTEN / ("%s.instrmap.html" % name)).exists():
+        return ('Generated by <code>instrmap.py</code> &mdash; '
+                '<a href="%s.instrmap.html">read the full per-instrument '
+                'report</a>, one row per instrument with the original\'s '
+                'per-frame behaviour beside ours.' % name)
+    return ('Generated by <code>instrmap.py</code>; the per-instrument rows '
+            'are in <code>build/instrmap/%s.md</code>.' % name)
 
 
 def page(name: str, row: dict, notes: list[str], version: str,
@@ -1898,6 +2091,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
   apart these pictures are".</p>
 </div>
 
+%(voicewave)s
 %(spectrogram)s
 <div class="card">
   <h2>What to listen for</h2>
@@ -1923,6 +2117,7 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            panel=panel_card(name, embed),
            tracker=tracker_card(name),
            notes_strip=notes_strip_card(name, fidjson),
+           voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
@@ -1986,7 +2181,15 @@ def prune_stale_pages(names: list[str]) -> list[Path]:
         if f.name == "index.html":
             continue
         stem = f.stem                                  # strips one ".html"
-        base = stem[: -len(".embed")] if stem.endswith(".embed") else stem
+        # `<name>.embed.html` and `<name>.instrmap.html` both belong to
+        # `<name>`; strip either suffix before deciding, or a staged tune's
+        # instrument report is deleted on the very next build that does not
+        # pass --instrmap, and the card silently falls back to naming a path.
+        for suffix in (".embed", ".instrmap"):
+            if stem.endswith(suffix):
+                stem = stem[: -len(suffix)]
+                break
+        base = stem
         if base not in keep:
             f.unlink()
             removed.append(f)
@@ -2051,7 +2254,20 @@ def run_instrmap(sid_dir: str, names: list[str]) -> int:
         return 2
     jpath.write_text(json.dumps({"seconds": seconds, "songs": merged}, indent=1),
                      encoding="utf-8")
-    print("  wrote %s (%d song(s))" % (jpath, len(merged)))
+    # Copy each HTML report INTO the served tree. `--serve` roots at
+    # build/listen, so a link to ../instrmap/ leaves the served directory and
+    # 404s -- and it would work when opened as a file:// path, which is the
+    # worst kind of difference: right on the developer's machine, broken for
+    # anyone handed the URL.
+    import shutil
+    staged = 0
+    for p in targets:
+        src = out / ("%s.html" % p.stem)
+        if src.exists():
+            shutil.copyfile(src, LISTEN / ("%s.instrmap.html" % p.stem))
+            staged += 1
+    print("  wrote %s (%d song(s)), %d report(s) copied beside the pages"
+          % (jpath, len(merged), staged))
     return 0
 
 

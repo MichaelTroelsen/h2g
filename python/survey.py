@@ -311,7 +311,7 @@ def build_report(results: list[Result], sid_dir: Path,
     fmt_arg = "" if fmt == DEFAULT_FORMAT else f" --format {fmt}"
     restart_arg = " --legal-restart" if legal_restart else ""
     lines.append(f"Regenerate with: `python survey.py \"{sid_dir}\" "
-                 f"-o SURVEY.md{rows_arg}{fmt_arg}{restart_arg}`")
+                 f"-o ../docs/SURVEY.md{rows_arg}{fmt_arg}{restart_arg}`")
     lines.append("")
 
     # --- failure breakdown -------------------------------------------------
