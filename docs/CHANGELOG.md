@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.377 — 2026-08-24
+
+- the 5 Title Tunes pulse census: pul is an artefact, pspan is the defect
+
 ## 0.5.376 — 2026-08-24
 
 - the listener's length rule, and Action Biker approved

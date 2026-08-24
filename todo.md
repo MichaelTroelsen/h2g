@@ -149,12 +149,34 @@ Keep items actionable: what to run, and what makes it done.
   | `wave` | 90% | |
   | `hold` | 0% | check against `--hold-census` FIRST, per the Action Biker precedent |
 
-  START WITH THE PULSE, because those two numbers are one finding: 1.99 x 0.47
-  = 0.94, i.e. **the total travel is about right and the sweep is subdivided
-  twice as finely**. That is the signature of a step size halved and a step
-  rate doubled, not of a wrong target width — which is also why `pul` alone
-  cannot say it (it is a count, and its own docstring says the defect it
-  watches is a *frozen* width, not a wrong one).
+  **CENSUSED at v0.5.376 — `pul` is NOT a defect and the claim once written
+  here that "1.99 x 0.47 = 0.94, so the total travel is about right" was wrong:
+  `pspan` is the max-min BAND, not a per-step size, so multiplying the two
+  decomposes nothing.** Measured, our travel is 1.64-1.85x the original's.
+
+  `pul` 1.99x is the documented half-step substitution and is correct. The
+  records confirm it exactly: `rec+6` `$41` -> step 64 / delay 2 -> speed 32,
+  and `$81` -> step 128 / delay 2 -> speed 64, which are precisely the step
+  sizes observed on the trace (32, and 64/65). Same average sweep rate, taken
+  in half-size steps twice as often. `fidelity._span`'s own docstring already
+  says so: "the count doubles while the sound is the same".
+
+  THE REAL DEFECT IS `pspan` 0.47x — our band is 449/771/899 against the
+  original's 1536/1536/1408, and the band the engine is told to sweep is
+  `$800..$E00` = 1536. CAUSE: Goattracker reloads the pulse pointer at every
+  note (`gplay.c:375-379`) while the player's 12-bit accumulator FREE-RUNS
+  across notes. Voice 2 proves it exactly — 186 notes, 186 reset jumps of 899,
+  and a band of 899, all three the same number. Our sweep gets a fraction of
+  the way up and is snapped back at the next note; the player keeps climbing.
+  Note gaps here are rigidly uniform (8, 8 and 16 frames), where crossing the
+  band at speed 32 needs 48.
+
+  `_pulse_triangle`'s docstring claims "The band and the rate carry over; the
+  phase cannot." THE RATE CARRIES OVER; THE BAND DOES NOT, whenever notes are
+  short against the sweep period. That sentence should be corrected with the
+  fix. Residual not closed: per-note excursion is not exactly gap x speed
+  (predicted 256/512/1024 against 449/771/899), so the arithmetic of the
+  turn-around is not fully accounted for.
 
   RULED OUT ALREADY, so do not spend the session on it: this is NOT the
   "a rate read out of the player is per frame, every table applies it per play

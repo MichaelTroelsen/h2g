@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "f1dab41",
+  "head": "c038484",
   "sources": [
    "todo.md",
    "whats-next.md",
@@ -8,10 +8,10 @@
    "commits",
    "graphify-out/graph.json",
    "docs/FIDELITY.md",
-   "build/fidelity.json",
-   "user message (2026-08-24)"
+   "presets.json",
+   "measured this pass (detect + siddump on 5_Title_Tunes)"
   ],
-  "focus": "Action Biker"
+  "focus": "5 Title Tunes"
  },
  "hazards": [
   "docs/FIDELITY.md",
@@ -30,9 +30,9 @@
  ],
  "tasks": [
   {
-   "id": "action-biker-nrun-zero-run-lengths",
-   "title": "Action Biker's nrun is 0% while 92% of the original's noise frames are present",
-   "source": "todo.md#Open, docs/FIDELITY.md#Action_Biker, user message",
+   "id": "five-title-tunes-pulse-census",
+   "title": "Attribute 5 Title Tunes' pul 1.99x / pspan 0.47x to a mechanism before touching an emitter",
+   "source": "todo.md#Open, docs/FIDELITY.md:25, measured this pass",
    "model": "opus",
    "mode": "subtask",
    "lane": "serial",
@@ -42,7 +42,9 @@
     "r:python/fidelity.py",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:build/fidelity.json",
-    "r:build/instrmap"
+    "r:build/listen",
+    "r:build/instrmap",
+    "r:python/songview.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -50,15 +52,46 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "cd python && python fidelity.py <sid_dir>/Action_Biker.sid -t 60 --presets ../presets.json --census <scratch>.json  runs to completion, and every disagreeing noise run is attributed to a NAMED cause rather than left as a total. Done when nrun is either materially above 0% or refuted in writing with the mechanism named. Write census JSON to a scratch path, NOT to build/fidelity.json. Note the shape: 682/744 noise frames present (92% of the original's) with ZERO agreement on run lengths is a mechanical signature, not noise.",
-   "why_model": "a root-cause hunt where a plausible-but-wrong story is cheap to produce -- the count being right while every length is wrong has several candidate mechanisms",
-   "why_mode": "read-only census against an existing harness, and the conclusion is a classification rather than a judgement call",
-   "why_lane": "reads build/fidelity.json and build/instrmap, which other tasks here rebuild"
+   "verify": "The row reads pul 4459/2240 = 1.99x with pspan 0.47x, and 1.99 x 0.47 = 0.94 -- total duty-cycle travel about RIGHT, sweep subdivided twice as finely. Done when that is attributed to a named mechanism with numbers, or refuted. MEASURED THIS PASS and to be taken as given rather than re-derived: detect() reports pulse_tri_gated=True, pulse_tri_hi=14, pulse_tri_lo=8, pulse_rate_field=-1, instr_stride=8 -- so this is the TRIANGLE pulse engine, and CLAUDE.md records that it packs the step in `& $E0` and the frames-between-steps in `& $1F` at the same record +6 the other two engines read as a plain per-frame rate. Reading one field as the other is exactly a half-step/double-rate error, so rule that in or out FIRST. RULED OUT ALREADY, do not spend the session on it: this is NOT the per-frame-vs-per-call family behind v0.5.363's _filter_entries bug -- presets.json records multiplier 1, where that correction is the identity. The column is fidelity.pulse_compare (fidelity.py:2725, confirmed via graphify with a matching source_file). There is NO --pulse-census flag (only --gate/--hold/--vib), so the grouping needs a probe: it MUST go through fidelity's own resolution of subtune / multiplier / calibration / startup lag rather than re-deriving them, MUST assert its own success rate, and MUST assert every column key it names exists. Write output to scratch, never build/fidelity.json.",
+   "why_model": "a root-cause hunt on a sweep encoding where a plausible-but-wrong story is cheap -- two fields at one record offset that are easy to swap in either direction",
+   "why_mode": "read-only measurement against an existing harness; the conclusion is an attribution, not a design call",
+   "why_lane": "reads python/h2g and build/fidelity.json, which the emitter fix writes"
   },
   {
-   "id": "action-biker-hold-zero-is-fetch-not-length",
-   "title": "Refute (or confirm) Action Biker's hold 0% as the known fetch deficit, not a note-length defect",
-   "source": "todo.md#Open, docs/FIDELITY.md#Action_Biker",
+   "id": "five-title-tunes-pulse-emitter-fix",
+   "title": "Emit the triangle pulse engine's step and frames-between-steps correctly",
+   "source": "todo.md#Open; follows five-title-tunes-pulse-census",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/h2g/detect.py",
+    "rw:python/tests/test_pulse.py",
+    "rw:python/tests/test_detection_soundness.py",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "the verify SWEEPS the corpus (a byte-hash over all 83 convertible files) and REGENERATES docs/FIDELITY.md and build/fidelity.json, both hazard artefacts -- a multi-minute rebuild no delegated agent should own",
+   "depends_on": [
+    "five-title-tunes-pulse-census"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Corpus byte-hash before and after must move EXACTLY the files carrying pulse_tri_gated and no others -- run the old rule beside the new one and require the difference to be the population you meant, per CLAUDE.md. Then 5_Title_Tunes' pul ratio moves toward 1.00 and pspan toward 1.00 TOGETHER (they are one finding: 1.99 x 0.47 = 0.94, so a fix that moves only one has changed the total travel and is wrong). melody/seq/pitch must not fall on any moved file -- 5_Title_Tunes is at 100/100/100 with retrig 1.00, drift +0.0 and onset 100%, so there is nothing to gain there and everything to lose. Full suite (was 1482 passed / 2 skipped) and Commando.sng byte-exact. Regenerate docs/FIDELITY.md ONLY after the tree is coherent and the tests pass.",
+   "why_model": "changes a shared emitter across the 24-file triangle-pulse population, and the failure mode is a confident wrong field split",
+   "why_mode": "sweeps the corpus and regenerates a hazard artefact; the diagnosis matters more than the measurement",
+   "why_lane": "writes python/h2g, docs/FIDELITY.md and build/fidelity.json, which every other task here reads"
+  },
+  {
+   "id": "five-title-tunes-hold-zero-refute",
+   "title": "Refute (or confirm) 5 Title Tunes' hold 0% as a measurement artefact",
+   "source": "todo.md#Open, docs/FIDELITY.md:25",
    "model": "sonnet",
    "mode": "subtask",
    "lane": "serial",
@@ -75,24 +108,23 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "cd python && python fidelity.py <sid_dir>/Action_Biker.sid -t 60 --presets ../presets.json --hold-census  classifies all scored instruments. Done when each is named match/slot/fetch/short/long. Expect fetch+slot and ZERO short/long (Action Biker is -S1, where CLAUDE.md records 106 of 121 instruments reading -1); if so, state that no wavetable edit can move it and close by refutation, exactly as ACE_II's hold was closed.",
-   "why_model": "running a documented census flag and reading its classification -- the judgement was spent writing classify_hold",
-   "why_mode": "one command against an existing harness with a documented precedent for the expected answer",
-   "why_lane": "reads build/fidelity.json, which the search-subtunes task rewrites"
+   "verify": "cd python && python fidelity.py <sid_dir>/5_Title_Tunes.sid -t 60 --presets ../presets.json --hold-census  classifies every scored instrument as match/slot/fetch/short/long. Done when each is named. EXPECT AN ARTEFACT: this has been the answer four times running (ACE_II slides / bend / hold, Action Biker hold and nrun), and the file is multiplier 1, where CLAUDE.md records the `gatetimer & $3f` fetch deficit as a whole frame and therefore visible. If short+long is zero, close by refutation and state that no wavetable edit can move it -- do NOT manufacture a fix.",
+   "why_model": "running a documented census flag and reading its classification against a documented precedent",
+   "why_mode": "one command, read-only, with the expected answer already characterised",
+   "why_lane": "reads build/fidelity.json and python/h2g, which the emitter fix writes"
   },
   {
-   "id": "listen-pairs-by-identity-by-coincidence",
-   "title": "listen.py --all pairs both sides by the same index because no fidelity row is loaded",
-   "source": "discovered this pass reading python/listen.py:439 pair_subtunes",
+   "id": "five-title-tunes-gate-50-adsr-58-census",
+   "title": "Attribute 5 Title Tunes' gate 50% and adsr 58% by cause",
+   "source": "docs/FIDELITY.md:25",
    "model": "sonnet",
    "mode": "subtask",
    "lane": "serial",
    "touches": [
-    "rw:python/listen.py",
-    "rw:python/tests/test_listen_all.py",
-    "rw:python/tests/test_listen_shard.py",
-    "r:python/fidelity.py",
     "r:presets.json",
+    "r:python/h2g",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe",
     "r:build/fidelity.json"
    ],
    "mcp": [],
@@ -101,141 +133,65 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "With --all and no --from-json every row is {'file': f}, so pair_subtunes falls through to row.get('matched_subtune', sub_orig) == sub_orig and stages BOTH sides at the same index. That is correct TODAY only because 0 of 95 rows carry a differing matched_subtune -- correct by coincidence, not by construction. Done when a --all run either loads build/fidelity.json for matched_subtune when it exists, or SAYS in LISTENING.md that it paired by identity and that no row needed otherwise, so a future correspondence defect cannot silently return to staging mismatched music. A test in test_listen_all.py pins the fallback.",
-   "why_model": "a bounded single-file change against an existing fallback, with the correct behaviour already decided",
-   "why_mode": "one module plus its two existing tests; nothing shared has to be rebuilt",
-   "why_lane": "writes python/listen.py and reads python/fidelity.py, which the search-subtunes task writes"
-  },
-  {
-   "id": "search-subtunes-default-now-the-shim-is-empty",
-   "title": "Decide whether --search-subtunes should still default to 3 now that it compensates for nothing",
-   "source": "f63caa1 commit message; CLAUDE.md 'a shim that hides a defect from the score does not hide it from the file'",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:presets.json",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "the verify REGENERATES docs/FIDELITY.md and build/fidelity.json over the whole corpus -- a multi-minute hazard rebuild no delegated agent should own",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "f63caa1 took the report's 'scored against a subtune of ours other than the one traced' note to ZERO, and this pass confirms 0 of 95 rows have matched_subtune != subtune. So the shim now hides nothing -- and it hid a real defect for the life of the converter. Done when either the default is lowered and a full  fidelity.py <sid_dir> -t 60 --presets ../presets.json  regeneration shows no row's melody falling, or the default is kept with the reason written down. Either way the report must FAIL LOUDLY rather than silently compensate when a correspondence defect reappears.",
-   "why_model": "a design decision about what the harness is allowed to hide -- the failure mode is a shim that quietly masks the next defect the way it masked this one",
-   "why_mode": "regenerates a hazard artefact and the diagnosis matters more than the measurement",
-   "why_lane": "writes docs/FIDELITY.md and build/fidelity.json, which every diagnosis task here reads"
-  },
-  {
-   "id": "restage-build-listen-audio",
-   "title": "Re-render the staged WAVs -- all 83 predate the subtune-order and vibdelay fixes",
-   "source": "carried from the previous plan; IN FLIGHT this session",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:build/listen",
-    "r:presets.json",
-    "r:python/h2g",
-    "r:python/listen.py",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "renders 83 tunes x 8 WAVs at 120 s through sidplayfp; measured 1m22s per tune, ~113 min serial, and it REBUILDS build/listen, a hazard directory",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "cd python && python listen.py <sid_dir> --all --voices -t 120 --presets ../presets.json  completes (6 shards plus --merge-notes is equivalent and about 6x faster), and no build/listen/*.h2g.wav has an mtime older than f63caa1. Then abpage.audio_provenance(name, conversion_shas()) reads 'current' for all 83 -- the v0.5.374 guard is the mechanical check for exactly this.",
-   "why_model": "a documented staging command plus an mtime and provenance check",
-   "why_mode": "rebuilds build/listen, a hazard directory, and outlives any subagent",
-   "why_lane": "writes build/listen, which the listening verdict and the instrmap rebuild both touch"
-  },
-  {
-   "id": "rebuild-build-instrmap",
-   "title": "Rebuild build/instrmap -- every dump predates four converter changes",
-   "source": "todo.md#Open",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:build/instrmap",
-    "rw:build/instrmap.json",
-    "rw:build/listen",
-    "r:presets.json",
-    "r:python/h2g",
-    "r:python/instrmap.py",
-    "r:python/abpage.py",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "REBUILDS build/instrmap and build/listen, two hazard directories, tracing two emulations for each of 83 tunes",
-   "depends_on": [
-    "restage-build-listen-audio"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "cd python && python abpage.py --instrmap <sid_dir>  completes, and every build/instrmap/*.md has an mtime NEWER than f63caa1 (2026-08-23 21:01) -- checked mechanically, not by eye. MUST run AFTER the restage: --instrmap rebuilds the build/listen pages, and the v0.5.374 staleness banner is baked in at page-build time, so pages built before the restage would falsely read 'behind'.",
-   "why_model": "running a documented command and checking mtimes",
-   "why_mode": "rebuilds two hazard directories and outlives any subagent",
-   "why_lane": "writes build/instrmap and build/listen, which every other task here reads"
-  },
-  {
-   "id": "action-biker-listening-verdict",
-   "title": "Confirm by ear that Action Biker's channel complaint is gone on freshly staged audio",
-   "source": "todo.md#Open, user report relayed in f63caa1",
-   "model": "sonnet",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:build/listen",
-    "r:presets.json"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "restage-build-listen-audio"
-   ],
-   "blocked_on": "Needs a human ear. The listener reported 'the original's channel 3 is channel 2 in H2G'; f63caa1 showed the channels were never wrong -- our .sng played its SUBTUNES in the wrong order. Measurement now agrees (subtune 1 both sides, matched_subtune 1, 0 of 95 rows mismatched, all three voices ratio 1.00 / pitches 100%), but the staged audio still predates the fix, so the complaint cannot be retested until the restage lands. No amount of further measurement settles this one.",
-   "decision": null,
-   "verify": "On audio staged after f63caa1, the listener confirms the parts sit on the channels they expect. Record the verdict in approved.json against the .sng's sha256, the way ACE_II's is -- never against a version.",
-   "why_model": "not a model question; staging and verdict recording are mechanical, the ear is the instrument",
-   "why_mode": "a listening verdict is the one thing no measurement here can substitute for",
-   "why_lane": "reads build/listen while the restage rebuilds it"
+   "verify": "cd python && python fidelity.py <sid_dir>/5_Title_Tunes.sid -t 60 --presets ../presets.json --gate-census <scratch>  runs, and the gate disagreement is grouped by cause rather than reported as a total (CLAUDE.md: a census of what a column misses is a queue, not a report). `adsr` has no census flag, so report its disagreement per instrument keyed by ADSR pair, and CHECK FIRST whether our keys and the original's line up at all -- an unshared key means the column is comparing unrelated populations and reads low for a reason no emitter change can fix. Also read `wave` 90% beside them: all three read $D404/$D405-6 and a single wrong waveform or envelope write can move more than one. Done when each is attributed or declared unexplained with a count.",
+   "why_model": "two existing census paths plus a keyed grouping; mechanical against the harness",
+   "why_mode": "read-only, and the deliverable is a classification",
+   "why_lane": "reads build/fidelity.json and python/h2g, which the emitter fix writes"
   }
  ],
  "closed": [
   {
-   "id": "action-biker-subtune-enumeration",
-   "title": "Action_Biker's subtunes were read six bytes early, at the scratch buffer",
-   "closed_by": "f63caa1",
+   "id": "action-biker-listening-verdict",
+   "title": "Listen to Action Biker and say what still sounds wrong",
+   "closed_by": "c038484",
+   "reason": "Approved by the listener on audio re-staged after f63caa1: same subtune both sides, sounding very close, which closes the original 'channel 3 is channel 2' complaint. Recorded in approved.json against sng_sha256 1bc6f4fa..., which equals today's conversion. The listener also found the length defect, now a rule in CLAUDE.md."
+  },
+  {
+   "id": "five-title-tunes-length-rule",
+   "title": "Does 5 Title Tunes obey the +-5 second length rule?",
+   "closed_by": "c038484",
+   "reason": "PASSES, measured this pass: traced 180 s both sides at subtune 0 the original makes 2813 attacks with its last at 179.90 s and ours 2810 at 179.84 s, and fidelity.original_ended(orig, 180) returns None. It is a looping tune with no $FE ending inside the window, so the rule that caught Action Biker does not bite here. Recorded so it is not chased."
+  },
+  {
+   "id": "search-subtunes-default-now-the-shim-is-empty",
+   "title": "Decide whether --search-subtunes should still default to 3",
+   "closed_by": "80baad8",
    "reason": null
+  },
+  {
+   "id": "listen-pairs-by-identity-by-coincidence",
+   "title": "listen.py --all pairs both sides by the same index",
+   "closed_by": "80baad8",
+   "reason": null
+  },
+  {
+   "id": "action-biker-nrun-zero-run-lengths",
+   "title": "Action Biker's nrun is 0% while 92% of the noise frames are present",
+   "closed_by": "runs.jsonl",
+   "reason": "Closed by refutation: one instrument, 62 runs each side, lengths 12 vs 11 -- off by exactly the $09 FIRSTWAVE_TESTBIT lead on each note's frame 0. noise 682/744 IS 11/12, so noise and nrun are the same fact twice. No converter change warranted."
+  },
+  {
+   "id": "action-biker-hold-zero-is-fetch-not-length",
+   "title": "Action Biker's hold is 0%",
+   "closed_by": "runs.jsonl",
+   "reason": "Closed by refutation: 4 of 4 instruments classify as `fetch`, zero short/long, at -S1 where the gatetimer deficit is a whole frame."
+  },
+  {
+   "id": "rebuild-build-instrmap",
+   "title": "Rebuild build/instrmap",
+   "closed_by": "runs.jsonl",
+   "reason": "84/84 .md newer than f63caa1; pages finished after an interrupted run."
+  },
+  {
+   "id": "restage-build-listen-audio",
+   "title": "Re-render the staged WAVs",
+   "closed_by": "runs.jsonl",
+   "reason": "83 of 83 staged tunes read 'current', from 77 behind."
   },
   {
    "id": "staleness-guard-on-staged-output",
-   "title": "Make the pages SAY when their audio predates the converter that is shipping",
+   "title": "Make the pages SAY when their audio predates the converter",
    "closed_by": "f1dab41",
-   "reason": null
-  },
-  {
-   "id": "regenerate-fidelity-and-presets-after-the-vibdelay-change",
-   "title": "Regenerate the artefacts after the vibdelay change",
-   "closed_by": "f63caa1",
-   "reason": "Already satisfied: f63caa1 landed AFTER the vibdelay commit 3ec87b1 and regenerated presets.json, docs/SURVEY.md, docs/SUBTUNES.md and docs/FIDELITY.md. presets.json stamps 'h2g 0.5.372 presets.py' and the two commits since (791c3ff, f1dab41) change no converter behaviour."
-  },
-  {
-   "id": "vibrato-depth-via-vibdelay",
-   "title": "Double the vibrato depth by delaying the oscillator past frame 0",
-   "closed_by": "3ec87b1",
    "reason": null
   }
  ]
