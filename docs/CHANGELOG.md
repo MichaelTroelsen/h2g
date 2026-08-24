@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.380 — 2026-08-24
+
+- the wave 90 frame is named: the trigger tick's firstwave byte
+
 ## 0.5.379 — 2026-08-24
 
 - the pulse free-run fix is declined, and the docstring that hid it is corrected
