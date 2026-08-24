@@ -4428,12 +4428,23 @@ def report(rows: list[dict], args) -> str:
             and r["matched_subtune"] != r.get("subtune"))
         if shifted:
             out.append(
-                f"- {len(shifted)} file(s) are scored against a subtune of "
-                "*ours* other than the one traced in the original, because our "
-                "numbering shifts when a subtune is dropped. The window is one "
-                "either side; widening it moves no other file, so this is "
-                "identifying the counterpart rather than picking the "
-                f"flattering one. ({', '.join(shifted)})")
+                f"- **{len(shifted)} file(s) are scored against a subtune of "
+                "*ours* other than the one traced in the original.** There are "
+                "TWO causes and this line cannot tell them apart. The benign "
+                "one is that our numbering shifts when `gt2reloc` drops a "
+                "subtune whose orderlist exceeds Goattracker's limit. The "
+                "other is a CONVERTER DEFECT: our `.sng` emitting its subtunes "
+                "in the wrong order, which looks identical here because the "
+                "search simply keeps whichever of ours matches best. That is "
+                "not hypothetical -- until `f63caa1` Action Biker, Samantha Fox "
+                "Strip Poker and Spellbound all read their track table six "
+                "bytes early, at a scratch buffer, and shipped `.sng`s whose "
+                "subtunes played in the wrong order for the life of the "
+                "converter. Every column read fine throughout, because this "
+                "search was finding the right counterpart and scoring it. **A "
+                "non-empty list here is a lead to run `--diagnose` on, not a "
+                "footnote.** "
+                f"({', '.join(shifted)})")
         patched = sum(1 for r in rows if r.get("restarts_patched"))
         if patched:
             out.append(
@@ -5921,8 +5932,17 @@ def main(argv=None) -> int:
                         "traced one and keep the best match; our numbering "
                         "shifts when a subtune is dropped. Default 3, i.e. one "
                         "either side -- enough to find a counterpart displaced "
-                        "by a dropped subtune, and measured to move exactly "
-                        "the two corpus files that are displaced. 1 disables it")
+                        "by a dropped subtune. 1 disables it. KEPT at 3 "
+                        "deliberately after f63caa1: a dropped subtune is a "
+                        "real, non-defect reason our numbering differs, so "
+                        "disabling this would charge those files for a "
+                        "displacement they cannot avoid. But note what it "
+                        "cannot do -- it finds the best counterpart without "
+                        "asking WHY ours moved, so it scores a wrong-order "
+                        "conversion exactly as well as a displaced one. The "
+                        "guard against that is the report's `scored against a "
+                        "subtune of ours` line, which names the files; read it "
+                        "as a lead, and see that line's own text")
     p.add_argument("--workdir", default=WORKDIR,
                    help="scratch path, kept short because gt2reloc's filename "
                         "buffer is 60 bytes. Default is a private directory "

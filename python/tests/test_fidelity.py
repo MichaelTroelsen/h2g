@@ -1522,3 +1522,84 @@ def test_depth_is_a_declared_dimension_reading_the_frequency_registers():
     assert "depth_ratio" in fidelity.dimensions_present(row)
     assert "depth_ratio" not in fidelity.dimensions_present(
         dict(row, depth_ratio=None))
+
+
+# --- the `scored against a subtune of ours` line ------------------------------
+#
+# This line asserted the BENIGN cause outright -- "because our numbering shifts
+# when a subtune is dropped" -- and that sentence is why Action Biker, Samantha
+# Fox Strip Poker and Spellbound shipped `.sng`s whose subtunes played in the
+# wrong ORDER for the life of the converter (fixed in f63caa1). The report was
+# not silent about them; it named them and then told the reader they were fine.
+# `--search-subtunes` cannot distinguish the two causes, because it keeps
+# whichever of ours matches best either way, so the line must not pretend it
+# can. These pin the wording rather than the mechanism, deliberately: the
+# mechanism is a search that is working as designed.
+
+def _report_args():
+    """The fields `report()` actually reads, derived from its source rather than
+    guessed -- `args.label`, `args.seconds`, `args.subtune` and a `pair` it takes
+    through `getattr`. Kept as a helper so a new read shows up as one failure here
+    instead of four."""
+    import argparse
+    return argparse.Namespace(label=None, seconds=60, subtune="auto", pair=None)
+
+
+def _real_row():
+    """One REAL measured row, not a fabricated one.
+
+    `report()` walks every column, so a hand-built dict fails on whichever key
+    was added last (it failed here first on `retrigger_ratio`) and would go on
+    failing for every column added after. Taking a row the harness actually
+    emitted keeps these tests about the WORDING they pin. `build/fidelity.json`
+    is gitignored, so a fresh checkout skips rather than fails.
+    """
+    import json
+    p = pathlib.Path(fidelity.__file__).resolve().parent.parent / "build" / "fidelity.json"
+    if not p.exists():
+        pytest.skip("build/fidelity.json absent; run fidelity.py to generate it")
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    rows = doc if isinstance(doc, list) else (doc.get("rows") or doc.get("songs") or [])
+    real = next((r for r in rows if r.get("status") == "measured"), None)
+    if real is None:
+        pytest.skip("no measured row in build/fidelity.json")
+    return dict(real)
+
+
+def _note_for(matched_delta):
+    row = _real_row()
+    row["matched_subtune"] = row.get("subtune", 0) + matched_delta
+    text = fidelity.report([row], _report_args())
+    return next((ln for ln in text.splitlines()
+                 if "subtune of" in ln and "ours" in ln), "")
+
+
+def _shifted_note(monkeypatch):
+    return _note_for(1)
+
+
+def test_the_shifted_subtune_line_does_not_assert_the_benign_cause(monkeypatch):
+    line = _shifted_note(monkeypatch)
+    assert line, "the shifted-subtune line did not render for a shifted row"
+    # The exact clause that made the defect read as normal.
+    assert "because our numbering shifts when a subtune is dropped" not in line
+
+
+def test_the_shifted_subtune_line_names_the_defect_cause(monkeypatch):
+    line = _shifted_note(monkeypatch)
+    low = line.lower()
+    assert "wrong order" in low, "the line must name the wrong-order defect"
+    assert "defect" in low
+    assert "diagnose" in low, "the line must point at the tool that separates the two"
+
+
+def test_the_shifted_subtune_line_still_names_the_files(monkeypatch):
+    # Whatever else it says, it has to stay actionable.
+    row = _real_row()
+    assert row["file"] in _shifted_note(monkeypatch)
+
+
+def test_no_shifted_line_when_every_correspondence_is_the_identity():
+    # The state the corpus is in today: f63caa1 took this to zero files, and a
+    # zero must render nothing at all rather than an empty warning.
+    assert _note_for(0) == ""

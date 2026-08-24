@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.375 — 2026-08-24
+
+- the shifted-subtune line stops explaining the defect away, and listen.py recovers matched_subtune
+
 ## 0.5.374 — 2026-08-24
 
 - a page says when its audio predates the converter, keyed on the .sng hash

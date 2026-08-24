@@ -93,6 +93,13 @@ BANDS = [
 # fallback rather than the default.
 VSID = r"C:\Users\mit\Downloads\GTK3VICE-3.9-win64\GTK3VICE-3.9-win64\bin\vsid.exe"
 PAL_CYCLES_PER_SECOND = 985248
+# Where fidelity.py --json writes by convention (see CLAUDE.md's regeneration
+# order). Consulted automatically by `--all`/`--files` when `--from-json` was
+# not given, so that `pair_subtunes` can recover `matched_subtune` instead of
+# guessing -- see the docstring there. A hazard artefact: read-only, and a
+# fresh checkout has none, which is why every use of this path is guarded by
+# `.exists()` rather than assumed.
+DEFAULT_FIDELITY_JSON = Path(__file__).resolve().parent.parent / "build" / "fidelity.json"
 # A WAV header with no samples. The failure this fallback exists to avoid, and
 # the shape a silent success takes here.
 EMPTY_WAV = 64
@@ -436,7 +443,38 @@ def select_names(files, stage_all: bool, presets: str) -> list[str]:
     return sorted(set(names) | set(songs), key=str.lower)
 
 
-def pair_subtunes(src: Path, row: dict, requested) -> tuple[int, int]:
+def _load_fidelity_rows(path: Path) -> list[dict]:
+    """Rows from a fidelity.py --json run, or [] if there is nothing to read.
+
+    `path` is a hazard artefact this script only ever reads -- another lane
+    regenerates it, and a fresh checkout has none at all -- so both "the file
+    is missing" and "the file is not valid JSON" are the ordinary case, not
+    an error worth stopping the run for.
+    """
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
+def resolve_matched_subtunes(rows: list[dict], from_json_given: bool,
+                             default_path: Path = DEFAULT_FIDELITY_JSON) -> dict[str, int]:
+    """The `{file: matched_subtune}` map `pair_subtunes` falls back to.
+
+    An explicit `--from-json` run already is the source of truth: `rows` is
+    read as given and `default_path` is never even opened, so a stale or
+    absent `build/fidelity.json` cannot second-guess a run that named its own
+    data. Only when no `--from-json` was given -- the `--all`/`--files`-alone
+    case this function exists for -- does it fall back to whatever already
+    sits at `default_path`, via `_load_fidelity_rows`, which turns "missing"
+    and "unreadable" both into "nothing recovered" rather than an error.
+    """
+    sub_rows = rows if from_json_given else _load_fidelity_rows(default_path)
+    return {r["file"]: r["matched_subtune"] for r in sub_rows
+            if "matched_subtune" in r}
+
+
+def pair_subtunes(src: Path, row: dict, requested, matched=None) -> tuple[int, int]:
     """Which subtune to render, per side of the pair.
 
     The original's is its own `startSong`, the same rule `fidelity.py` traces
@@ -447,13 +485,30 @@ def pair_subtunes(src: Path, row: dict, requested) -> tuple[int, int]:
 
     Ours can be a *different index for the same tune*, because a subtune whose
     orderlist gt2reloc drops shifts every later one down. A `fidelity.py` row
-    that searched for the counterpart records it as `matched_subtune`; without
-    one the two indices are the same, which is right for all but three corpus
-    files and is at least a pair of the same index rather than a silent
-    mismatch.
+    that searched for the counterpart records it as `matched_subtune`, and
+    `row` carries it whenever `--from-json` named a row for this file.
+
+    `matched` is the fallback for when it did not: `--all`/`--files` without
+    `--from-json` stage a bare `{"file": f}`, so `row` alone has nothing to
+    give. `main` passes the same field recovered from `build/fidelity.json`
+    when that file exists, and `row`'s own value wins if both are present --
+    an explicit `--from-json` row is a claim about *this* run, a leftover
+    fidelity.json is a claim about some previous one.
+
+    Absent BOTH, this returns `sub_orig` for both sides -- correct for all
+    but three corpus files today, and wrong by coincidence rather than by
+    rule: before f63caa1 the same fallback silently staged different music for
+    Action Biker, Samantha Fox and Spellbound, and nothing here can tell that
+    case apart from a genuine identity pairing. `main` counts how often this
+    branch is taken and says so, because a listener who hears a mismatch
+    should not have to re-derive that this is where it would come from.
     """
     sub_orig = resolve_subtune(src, requested)
-    return sub_orig, int(row.get("matched_subtune", sub_orig))
+    if "matched_subtune" in row:
+        return sub_orig, int(row["matched_subtune"])
+    if matched is not None:
+        return sub_orig, int(matched)
+    return sub_orig, sub_orig
 
 
 def document_header(args, engines, rendered_subtunes, shard=None) -> list[str]:
@@ -629,6 +684,15 @@ def main(argv=None) -> int:
     rows: list[dict] = []
     if args.from_json:
         rows = json.loads(Path(args.from_json).read_text(encoding="utf-8"))
+
+    # `matched_subtune` recovers the subtune correspondence `pair_subtunes`
+    # otherwise has to guess at (see its docstring and `resolve_matched_subtunes`).
+    matched_subtunes = resolve_matched_subtunes(rows, bool(args.from_json))
+    if not args.from_json and matched_subtunes:
+        print(f"note: recovered matched_subtune for {len(matched_subtunes)} "
+              f"file(s) from {DEFAULT_FIDELITY_JSON} (no --from-json given)",
+              file=sys.stderr)
+
     chosen: list[tuple[str, dict]] = []
     try:
         names = select_names(args.files, args.all, args.presets)
@@ -671,6 +735,11 @@ def main(argv=None) -> int:
     lines: list[str] = []
 
     staged = 0
+    # Tunes paired by the sub_orig == sub_ours coincidence rather than a
+    # measured correspondence -- see pair_subtunes. Reported once at the end
+    # rather than per file, so the assumption is visible without repeating
+    # the same line 80 times.
+    paired_by_identity: list[str] = []
     for label, r in chosen:
         name = r["file"]
         src = (sid_dir / name) if sid_dir else Path(name)
@@ -679,7 +748,10 @@ def main(argv=None) -> int:
             continue
         stem = name[:-4] if name.lower().endswith(".sid") else name
 
-        sub_orig, sub_ours = pair_subtunes(src, r, args.subtune)
+        sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
+                                          matched_subtunes.get(name))
+        if "matched_subtune" not in r and name not in matched_subtunes:
+            paired_by_identity.append(name)
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 
         try:
@@ -777,6 +849,15 @@ def main(argv=None) -> int:
                          f"shifted when a subtune was dropped)"
                          if sub_ours != sub_orig else "")
                       + ", the PSID header's own `startSong`.", ""]
+        if name in paired_by_identity:
+            lines += ["*No measured subtune correspondence was available "
+                      "for this pairing (no `--from-json` row, and no "
+                      f"`{DEFAULT_FIDELITY_JSON.name}` at the default "
+                      "location); both sides were staged at the same index "
+                      "on the assumption that gt2reloc dropped nothing "
+                      "ahead of it. If this sounds like two different "
+                      "pieces of music, that assumption is the first thing "
+                      "to check.*", ""]
         if multiplier > 1:
             lines += [f"Packed at `-S{multiplier}`: this player wants "
                       f"{multiplier} calls per frame, so the CIA stub runs the "
@@ -806,6 +887,10 @@ def main(argv=None) -> int:
     notes = (outdir / f"LISTENING.part{shard[0]}.md") if shard else (outdir / "LISTENING.md")
     notes.write_text("\n".join(lines), encoding="utf-8")
     print(f"staged {staged} tune(s) -> {outdir}", file=sys.stderr)
+    if paired_by_identity:
+        print(f"note: {len(paired_by_identity)} tune(s) paired by identity "
+              "(sub_orig == sub_ours assumed, no measured correspondence "
+              "found) -- see LISTENING.md for which", file=sys.stderr)
     if shard:
         print(f"notes -> {notes.name}; run --merge-notes when every shard is "
               f"done", file=sys.stderr)
