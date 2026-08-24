@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.374 — 2026-08-24
+
+- a page says when its audio predates the converter, keyed on the .sng hash
+
 ## 0.5.373 — 2026-08-23
 
 - 1-4 solo voices, A/B pick source, R restarts; approval keys on the .sng hash

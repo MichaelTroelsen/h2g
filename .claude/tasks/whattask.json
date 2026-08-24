@@ -1,15 +1,8 @@
 {
  "generated_from": {
-  "head": "428ca07",
-  "sources": [
-   "whats-next.md",
-   ".claude/tasks/runs.jsonl",
-   "docs/FIDELITY.md",
-   "CLAUDE.md",
-   "commits",
-   "graphify-out/graph.json"
-  ],
-  "focus": "ACE II fidelity"
+  "head": "791c3ff",
+  "sources": ["todo.md", "whats-next.md", ".claude/tasks/runs.jsonl", "commits", "graphify-out/graph.json"],
+  "focus": "rebuild build/instrmap"
  },
  "hazards": [
   "docs/FIDELITY.md",
@@ -17,305 +10,82 @@
   "docs/SUBTUNES.md",
   "presets.json",
   "build/fidelity.json",
-  "build/listen",
   "build/instrmap",
+  "build/instrmap.json",
+  "build/listen",
   "python/tools/siddump-rt/siddump.exe"
  ],
- "external_locks": [
-  ".claude/tasks/serial.lock",
-  ".claude/tasks/serial.lock.d"
- ],
+ "external_locks": [".claude/tasks/serial.lock", ".claude/tasks/serial.lock.d"],
  "tasks": [
   {
-   "id": "redispatch-three-read-only-with-ids-stated",
-   "title": "Re-dispatch the three read-only ACE_II diagnoses with the task id stated in the prompt",
-   "source": "runs.jsonl#cycle1 id-mismatch rejections",
-   "model": "opus",
+   "id": "rebuild-build-instrmap",
+   "title": "Rebuild build/instrmap -- every dump predates three converter changes",
+   "source": "todo.md#Open",
+   "model": "sonnet",
    "mode": "main",
    "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/runs.jsonl",
-    "r:build/instrmap",
-    "r:python/h2g/patterns.py",
-    "r:python/h2g/detect.py",
-    "r:presets.json"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "ace2-bend-half-attribution, ace2-wave-gate-residual-census and rest-envelope-four-both-half-losers each return a record whose `id` EQUALS the id it was dispatched for, and each is appended to runs.jsonl by the orchestrator with outcome done/partial rather than inconclusive",
-   "why_model": "the three underlying diagnoses are opus/opus/sonnet work; the dispatch itself is trivial, so the model is that of the heaviest task it carries",
-   "why_mode": "only the orchestrator dispatches and only the orchestrator writes runs.jsonl; this is a runner action, not delegable work",
-   "why_lane": "writes runs.jsonl, which every cycle appends to"
-  },
-  {
-   "id": "ace2-hold-43-percent",
-   "title": "ACE_II's hold is 43% -- its worst column, and note length is audible",
-   "source": "docs/FIDELITY.md#ACE_II, runs.jsonl#hold-zero-note-length-loss",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_call_rate.py",
-    "rw:python/tests/test_row_budget.py",
-    "r:presets.json",
-    "rw:build/fidelity.json",
-    "rw:docs/FIDELITY.md"
-   ],
+   "touches": ["rw:build/instrmap", "rw:build/instrmap.json", "rw:build/listen", "r:presets.json", "r:python/h2g", "r:python/instrmap.py", "r:python/abpage.py", "r:python/tools/siddump-rt/siddump.exe"],
    "mcp": [],
    "needs_main": true,
-   "needs_main_reason": "a corpus fidelity A/B plus FIDELITY.md regeneration; multi-minute and artefact-writing",
+   "needs_main_reason": "REBUILDS build/instrmap and build/listen, two of the plan's hazard directories, and traces two emulations for each of 83 tunes -- multi-minute and far past a delegated agent's useful life",
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "python -m pytest tests/ -q stays green and Commando.sng byte-exact; corpus byte-hash names only the files predicted; ACE_II's hold rises from 43% with melody/seq/pitch staying 100% and no other row falling",
-   "why_model": "root-cause on note length where the predecessor attempt already regressed two files' melody",
-   "why_mode": "changes converter output and needs a corpus-wide re-measurement",
-   "why_lane": "writes goatwriter.py and regenerates FIDELITY.md, both shared"
+   "verify": "`cd python && python abpage.py --instrmap \"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob\"` completes, and every build/instrmap/*.md has an mtime NEWER than f63caa1's commit time (2026-08-23 21:01) -- checked mechanically, not by eye",
+   "why_model": "running a documented command and checking mtimes; the judgement was spent deciding it was needed",
+   "why_mode": "rebuilds two hazard directories and outlives any subagent",
+   "why_lane": "writes build/instrmap and build/listen, which both other tasks here touch"
   },
   {
-   "id": "vibrato-depth-dimension",
-   "title": "Give FIDELITY.md a vibrato DEPTH column -- nothing measures it today",
-   "source": "CLAUDE.md#vibrato-depth, session measurement at 428ca07",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "r:build/instrmap",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "a new Dimension appears in the printed header and in --json, tests/test_fidelity.py fails if registry and header disagree, and the column reports ACE_II's instruments 9/10 and 6 as ~2-3x shallow rather than flat",
-   "why_model": "choosing the statistic is the judgement -- a count reads flat where a travel measure reads the defect, the trap CLAUDE.md names",
-   "why_mode": "bounded to one module against an existing Dimension registry",
-   "why_lane": "regenerates FIDELITY.md, which other tasks here also write"
-  },
-  {
-   "id": "vibrato-depth-via-vibdelay",
-   "title": "Test vibdelay, not rshift, as the lever for the 2.39x depth deficit",
-   "source": "CLAUDE.md#vibrato-depth (untested lead recorded at 428ca07)",
-   "model": "opus",
+   "id": "restage-build-listen-audio",
+   "title": "Re-render the staged WAVs -- all 83 predate the vibdelay change, which moved 55 files",
+   "source": "measured at 791c3ff during this pass",
+   "model": "sonnet",
    "mode": "main",
    "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_vibrato.py",
-    "r:presets.json",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json"
-   ],
+   "touches": ["rw:build/listen", "r:presets.json", "r:python/h2g", "r:python/listen.py", "r:python/tools/siddump-rt/siddump.exe"],
    "mcp": [],
    "needs_main": true,
-   "needs_main_reason": "moves the 55 files carrying this engine and needs a corpus-wide fidelity re-measurement",
-   "depends_on": [
-    "vibrato-depth-dimension"
-   ],
+   "needs_main_reason": "renders 83 tunes x 8 WAVs at 120 s through sidplayfp; hours of wall clock and ~28 GB, which no delegated agent can outlive",
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "corpus byte-hash names only classic-vibrato files; the new depth column moves toward 1.0; and melody does NOT fall on One_on_One_Jordan_vs_Bird, International_Karate, Powerplay_Hockey or Sigma_Seven -- the four the rshift route broke",
-   "why_model": "the obvious repair is already refuted twice; a plausible-but-wrong second attempt is cheap here",
-   "why_mode": "converter change plus corpus re-measurement",
-   "why_lane": "writes goatwriter.py and FIDELITY.md"
+   "verify": "`cd python && python listen.py <sid_dir> --all --voices -t 120 --presets ../presets.json` completes, and no build/listen/*.h2g.wav has an mtime older than 3ec87b1 (the vibdelay commit). Spot-check that a file the vibdelay change moved -- e.g. Delta or Ricochet -- has a different md5 from its pre-change render",
+   "why_model": "a documented staging command plus an mtime and md5 check",
+   "why_mode": "rebuilds build/listen, a hazard directory, and runs for hours",
+   "why_lane": "writes build/listen, which rebuild-build-instrmap also writes"
   },
   {
-   "id": "ace2-bend-half-attribution",
-   "title": "Is ACE_II's bend 0.48x the shallow vibrato, or a separate slide defect?",
-   "source": "docs/FIDELITY.md#ACE_II",
+   "id": "staleness-guard-on-staged-output",
+   "title": "Make the pages SAY when their audio predates the converter that is shipping",
+   "source": "opened by this pass; the same shape as the approval sha added at 791c3ff",
    "model": "opus",
    "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:build/instrmap"
-   ],
+   "lane": "serial",
+   "touches": ["rw:python/abpage.py", "rw:python/tests/test_abpage.py", "r:build/listen", "r:build/instrmap", "r:presets.json", "r:python/h2g"],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "the report attributes ACE_II's missing pitch travel per instrument, and states what share is vibrato depth versus slide travel -- no code change, no artefact write",
-   "why_model": "an attribution whose wrong answer would send the next fix at the wrong mechanism, the balloon-song trap",
-   "why_mode": "read-only analysis of dumps already on disk; the conclusion is a number",
-   "why_lane": "reads build/instrmap only, which no task in this plan writes"
-  },
-  {
-   "id": "ace2-wave-gate-residual-census",
-   "title": "Census what remains of ACE_II's wave 87% and gate 88% by cause",
-   "source": "docs/FIDELITY.md#ACE_II",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "r:build/instrmap"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "every disagreeing frame is grouped by (original waveform -> ours) with counts, and each group is named as a known mechanism or explicitly as unexplained; no code change",
-   "why_model": "mechanical grouping against traces that already exist, with an existing --census precedent",
-   "why_mode": "self-contained and the conclusion is a table",
-   "why_lane": "reads build/instrmap only, disjoint from every writer here"
-  },
-  {
-   "id": "ace2-slides-emitted-1.6x-too-many",
-   "title": "ACE_II emits 1870 slide frames against the original's 1158",
-   "source": "docs/FIDELITY.md#ACE_II",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/h2g/goatwriter.py",
-    "r:python/h2g/patterns.py",
-    "r:build/instrmap",
-    "r:presets.json"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "ace2-bend-half-attribution"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "names which emitter produces the surplus frames and whether they are audible; recommends a change or states why the surplus is correct. Read-only -- no converter edit in this task",
-   "why_model": "several emitters can produce slide frames; picking the wrong one is the cheap failure",
-   "why_mode": "diagnosis only, deliberately split from any fix",
-   "why_lane": "reads goatwriter.py and patterns.py, which other tasks here write"
-  },
-  {
-   "id": "rest-envelope-four-both-half-losers",
-   "title": "Explain the four files --rest-envelope-silence loses on, so it can go wider",
-   "source": "d8a5f10, 428ca07",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/h2g/patterns.py",
-    "r:python/h2g/detect.py",
-    "r:presets.json",
-    "r:build/instrmap"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "states why Bangkok_Knights, Skate_or_Die_intro, I_Ball and Ricochet move AWAY from the original in both trace halves -- the loss is not drift, and their rest rows are displaced relative to the original's. Read-only",
-   "why_model": "the honest gap the implementing agent left; a plausible wrong cause would license enabling the option corpus-wide",
-   "why_mode": "bounded to four named files, conclusion is a mechanism",
-   "why_lane": "reads patterns.py and detect.py, which other tasks may write"
-  },
-  {
-   "id": "unmerged-vibrato-worktree-commits",
-   "title": "Decide the fate of 4663ffa and 55f5f12, unmerged on worktree branches",
-   "source": "runs.jsonl#vibrato-program, runs.jsonl#vibrato-pitchseq",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:python/h2g/goatwriter.py",
-    "rw:.claude/tasks/runs.jsonl"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "each commit is either merged with a corpus byte-hash and A/B, or recorded as superseded naming the commit that superseded it -- 4663ffa's subject overlaps v0.5.336's wave-program hold fix and may already be in master by another route",
-   "why_model": "a judgement about history where 'looks superseded' and 'is superseded' differ",
-   "why_mode": "touches the run log and needs the session's context on what landed since",
-   "why_lane": "reads goatwriter.py, which other tasks write"
-  },
-  {
-   "id": "ace2-listening-verdict",
-   "title": "Listen to ACE_II after the depth and hold work and say what still sounds wrong",
-   "source": "user report at 428ca07",
-   "model": "sonnet",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "rw:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "ace2-hold-43-percent",
-    "vibrato-depth-via-vibdelay"
-   ],
-   "blocked_on": "Only a human ear can say whether the lead is right; melody, seq, pitch, onset, nrun and tail are already 100% for this file, so no column can adjudicate what remains.",
-   "decision": null,
-   "verify": "a human verdict on the lead, recorded in LISTENING.md or as a task note",
-   "why_model": "staging only; the judgement is the user's",
-   "why_mode": "blocked on a listening verdict no measurement substitutes for",
-   "why_lane": "restages build/listen, which is a shared directory"
+   "verify": "a page whose staged .h2g.wav was rendered from a .sng whose sha no longer matches today's conversion says so on its face; tests/test_abpage.py covers both the matching and mismatching case; and with the corpus as it stands right now the banner appears on the files the vibdelay change moved and NOT on ACE_II, whose sha is unchanged",
+   "why_model": "choosing what the guard keys on is the judgement -- keying it on the version rather than the conversion is the mistake this session already made once and had to undo",
+   "why_mode": "one module against an existing reader, and `conversion_shas()` already computes the input",
+   "why_lane": "reads build/listen and build/instrmap, which both other tasks rebuild"
   }
  ],
  "closed": [
-  {
-   "id": "ace2-wave-program-slide-travel",
-   "title": "ACE_II's wave-program slides dropped their pitch travel",
-   "closed_by": "f77f2b0",
-   "reason": null
-  },
-  {
-   "id": "ace2-filter-cutoff-step-per-frame",
-   "title": "The filter cutoff stepped 3x too far at -S3",
-   "closed_by": "352821c",
-   "reason": null
-  },
-  {
-   "id": "ace2-lead-rings-through-rests",
-   "title": "The lead rang through rests the original silences",
-   "closed_by": "d8a5f10",
-   "reason": null
-  },
-  {
-   "id": "ace2-rest-envelope-enabled",
-   "title": "Enable --rest-envelope-silence for the five clear wins",
-   "closed_by": "428ca07",
-   "reason": null
-  },
-  {
-   "id": "vibrato-depth-drop-the-plus-one",
-   "title": "Double the vibrato depth by dropping the +1 from rshift",
-   "closed_by": "428ca07",
-   "reason": "Refuted by measurement, not merely unachieved: reproduces v0.5.129's rejection to three decimals and adds One_on_One_Jordan_vs_Bird 0.986 -> 0.299. Zero files improve. Do not retry this lever."
-  },
-  {
-   "id": "fidelity-json-omits-retrig-hold-tail",
-   "title": "retrig, hold and tail carried no --json key",
-   "closed_by": "runs.jsonl",
-   "reason": null
-  },
-  {
-   "id": "listen-server-ignores-http-range",
-   "title": "The listening server replayed the opening seconds on seek",
-   "closed_by": "22ea911",
-   "reason": null
-  },
-  {
-   "id": "listen-launcher-cannot-be-launched",
-   "title": "Listen.ps1 could not be started by double-click",
-   "closed_by": "1877cfe",
-   "reason": null
-  }
+  { "id": "action-biker-subtune-enumeration", "title": "Action_Biker's subtunes were read six bytes early, at the scratch buffer", "closed_by": "f63caa1", "reason": null },
+  { "id": "vibrato-depth-via-vibdelay", "title": "Double the vibrato depth by delaying the oscillator past frame 0", "closed_by": "3ec87b1", "reason": null },
+  { "id": "vibrato-depth-dimension", "title": "Give FIDELITY.md a vibrato depth column", "closed_by": "42718c1", "reason": null },
+  { "id": "ace2-hold-43-percent", "title": "ACE_II's hold is 43%", "closed_by": "runs.jsonl", "reason": "Closed by refutation rather than by a fix: --hold-census classifies all 7 instruments as 3 match / 3 slot / 1 fetch with short=0 and long=0, so no note-length defect exists. The only lever that raises hold (--no-test-restart) takes it to 100% while collapsing melody 0.9973 -> 0.2796." },
+  { "id": "ace2-slides-emitted-1.6x-too-many", "title": "ACE_II emits 1870 slide frames against 1158", "closed_by": "runs.jsonl", "reason": "Closed by refutation: all 1870 are the classic vibrato (--vibrato off gives 3), and the surplus is siddump's slide/tie classifier re-expressing the DEPTH DEFICIT -- the opposite sign to what the column reads. No converter change." },
+  { "id": "ace2-bend-half-attribution", "title": "Is ACE_II's bend 0.48x the shallow vibrato or a slide defect?", "closed_by": "runs.jsonl", "reason": null },
+  { "id": "ace2-wave-gate-residual-census", "title": "Census ACE_II's wave and gate residual by cause", "closed_by": "runs.jsonl", "reason": null },
+  { "id": "rest-envelope-four-both-half-losers", "title": "Explain the four files --rest-envelope-silence loses on", "closed_by": "runs.jsonl", "reason": null },
+  { "id": "unmerged-vibrato-worktree-commits", "title": "Decide the fate of 4663ffa and 55f5f12", "closed_by": "runs.jsonl", "reason": "Both fully superseded -- every added line is already in master via 386e746 and c6119ab, confirmed by identical md5 over their added lines. Nothing to merge." },
+  { "id": "redispatch-three-read-only-with-ids-stated", "title": "Re-dispatch the three read-only diagnoses with ids stated", "closed_by": "runs.jsonl", "reason": null },
+  { "id": "ace2-listening-verdict", "title": "Listen to ACE_II and say what still sounds wrong", "closed_by": "791c3ff", "reason": "Approved. Recorded in approved.json against the .sng's sha256 rather than a version, so the verdict survives commits that cannot change the audio and lapses when the conversion really moves." }
  ]
 }

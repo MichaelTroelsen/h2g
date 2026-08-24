@@ -471,3 +471,149 @@ def test_main_prunes_a_page_whose_pair_was_removed(tmp_path, monkeypatch):
     index_html = (tmp_path / "index.html").read_text(encoding="utf-8")
     assert "Gone" not in index_html
     assert "Kept" in index_html
+
+
+# --- the staged audio's provenance -------------------------------------------
+#
+# A page shows numbers, envelopes, a spectrogram and a human verdict about the
+# conversion -- and plays a WAV that was rendered at some earlier moment. When
+# the converter has moved since that render, every one of those describes
+# something the tool no longer emits, and nothing on the page used to say so.
+#
+# The guard keys on the sha256 of the `.sng` `listen.py` staged beside the WAV,
+# because that file IS what the audio was made from. It must never key on
+# `__version__` or a commit id: the version moves on every commit, including
+# the ones that touch only abpage.py and cannot alter a byte of audio, so a
+# version-keyed guard would mark every page behind on a schedule nobody chose.
+# That mistake was made once on the approval badge in this repo and undone.
+
+BANNER = '<div class="staleaudio">'   # the CSS names the class too; match the element
+
+SNG_OLD = b"GTS5" + b"\x01" * 200
+SNG_NEW = b"GTS5" + b"\x02" * 200
+
+
+def _sha(b):
+    import hashlib
+    return hashlib.sha256(b).hexdigest()
+
+
+def _stage(dirpath, stem, sng=SNG_OLD):
+    (dirpath / ("%s.original.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+    (dirpath / ("%s.h2g.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+    if sng is not None:
+        (dirpath / ("%s.h2g.sng" % stem)).write_bytes(sng)
+
+
+def test_audio_provenance_is_current_when_the_staged_sng_is_todays(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    assert A.audio_provenance("Tune", {"Tune": _sha(SNG_OLD)})[0] == "current"
+
+
+def test_audio_provenance_is_behind_when_the_converter_has_moved(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    state, was, now = A.audio_provenance("Tune", {"Tune": _sha(SNG_NEW)})
+    assert state == "behind"
+    assert (was, now) == (_sha(SNG_OLD), _sha(SNG_NEW))
+
+
+def test_audio_provenance_with_no_staged_sng_is_unknown_not_behind(tmp_path, monkeypatch):
+    """Absence of evidence, printed as silence. A pair staged by a tool that
+    kept no `.sng` cannot be judged, and guessing `behind` would put a warning
+    on a page nobody can act on."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", sng=None)
+    assert A.audio_provenance("Tune", {"Tune": _sha(SNG_NEW)})[0] == "unknown"
+
+
+def test_audio_provenance_with_no_conversion_sha_is_unknown(tmp_path, monkeypatch):
+    """`conversion_shas()` skips a tune that is not in presets.json, whose
+    `.sid` is not on disk, or that raises. None of those is staleness."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    assert A.audio_provenance("Tune", {})[0] == "unknown"
+    assert A.audio_provenance("Tune", None)[0] == "unknown"
+
+
+def test_the_banner_appears_only_when_the_audio_is_behind(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    assert A.audio_banner("Tune", {"Tune": _sha(SNG_OLD)}) == ""
+    assert A.audio_banner("Tune", {}) == ""
+    stale = A.audio_banner("Tune", {"Tune": _sha(SNG_NEW)})
+    assert "older conversion" in stale
+    assert _sha(SNG_OLD)[:12] in stale and _sha(SNG_NEW)[:12] in stale
+    assert _balanced(stale) == []
+
+
+def test_the_page_carries_the_banner_when_its_audio_is_behind(tmp_path, monkeypatch):
+    """The DoD clause: a page whose staged `.h2g.wav` came from a `.sng` that
+    no longer matches today's conversion says so on its face."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    got = A.page("Tune", ROW, [], "v0.5.373", embed=False, index_link=True,
+                 now_shas={"Tune": _sha(SNG_NEW)})
+    assert BANNER in got
+    assert "older conversion" in got
+    assert _balanced(got) == []
+
+
+def test_the_page_is_silent_when_its_audio_is_the_current_conversion(tmp_path, monkeypatch):
+    """The matching case. A page that is up to date carries no badge saying so
+    -- a banner on every page is a banner nobody reads."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    got = A.page("Tune", ROW, [], "v0.5.373", embed=False, index_link=True,
+                 now_shas={"Tune": _sha(SNG_OLD)})
+    assert BANNER not in got
+    assert _balanced(got) == []
+
+
+def test_the_banner_does_not_key_on_the_version(tmp_path, monkeypatch):
+    """The judgement this guard exists to get right. Same staged `.sng`, same
+    conversion, four different version strings -- and no page may claim its
+    audio is behind, because the version moving is not the thing that would
+    make the claim true. v0.5.370, v0.5.371 and v0.5.373 each touched only
+    abpage.py, which cannot alter a byte of audio."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    shas = {"Tune": _sha(SNG_OLD)}
+    for version in ("v0.5.369", "v0.5.370", "v0.5.371", "v0.9.999"):
+        got = A.page("Tune", ROW, [], version, embed=False, index_link=True,
+                     now_shas=shas)
+        assert BANNER not in got, version
+
+
+def test_a_valid_approval_does_not_silence_the_banner(tmp_path, monkeypatch):
+    """The live ACE_II case, reduced. The approval records the sha
+    `conversion_shas()` gave when the verdict was written, so it can match
+    today's conversion exactly while the WAV on the page came from a `.sng`
+    staged earlier. Both statements belong on the page: the verdict still
+    holds, and it is not what you are hearing."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Tune", SNG_OLD)
+    appr = {"Tune": {"approved": True, "sng_sha256": _sha(SNG_NEW),
+                     "version": "0.5.369", "at": "2026-08-23"}}
+    got = A.page("Tune", ROW, [], "v0.5.373", embed=False, index_link=True,
+                 approval=appr, now_shas={"Tune": _sha(SNG_NEW)})
+    assert "Human approved" in got
+    assert BANNER in got
+    assert _balanced(got) == []
+
+
+def test_the_index_names_which_tunes_play_an_older_conversion(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    _stage(tmp_path, "Old", SNG_OLD)
+    _stage(tmp_path, "New", SNG_NEW)
+    _stage(tmp_path, "Unknown", sng=None)
+    got = A.index(["Old", "New", "Unknown"], {}, "v0.5.373", {},
+                  {"Old": _sha(SNG_NEW), "New": _sha(SNG_NEW),
+                   "Unknown": _sha(SNG_NEW)})
+    rows = {n: got.split('%s.html">' % n)[1].split("</tr>")[0]
+            for n in ("Old", "New", "Unknown")}
+    assert "behind" in rows["Old"]
+    assert "current" in rows["New"] and "behind" not in rows["New"]
+    assert "behind" not in rows["Unknown"]
+    assert _balanced(got) == []

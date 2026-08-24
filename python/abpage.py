@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import base64
 import cmath
+import hashlib
 import json
 import math
 import os
@@ -190,10 +191,17 @@ def conversion_shas() -> dict[str, str]:
     the approval records the sha it was given for, and this says what the sha
     is today, so the two can disagree and the page can say so.
 
-    Converting the whole staged set costs a second or two and only happens when
-    approvals exist; a tune with no approval is never converted for this.
+    It answers a **second** question too, and that one is asked of every page
+    rather than only the approved ones: `audio_provenance` compares this
+    against the sha of the `.sng` sitting in `LISTEN` -- the one `listen.py`
+    rendered the staged `.h2g.wav` from -- so a page can say that the audio it
+    plays predates the converter that is shipping. It is therefore computed
+    unconditionally now; it used to be skipped when `approved.json` was empty,
+    which would have left every page silent about its own audio.
+
+    Converting the whole staged set costs a few seconds (4.4 s over the 83
+    staged tunes, measured at v0.5.373).
     """
-    import hashlib
     try:
         import fidelity as F
         from h2g.convert import convert
@@ -260,6 +268,85 @@ def approval_badge(name: str, appr: dict, version: str,
     return ('<div class="approval yes"><b>Human approved</b>'
             '<span>Signed off %s at %s.%s</span></div>'
             % (at, was or version.lstrip("v"), (" " + note) if note else ""))
+
+
+def staged_sng_sha(name: str) -> str | None:
+    """sha256 of the `.sng` the staged `.h2g.wav` was rendered FROM.
+
+    `listen.py` writes `<stem>.h2g.sng` with the very bytes it then packs and
+    renders (`listen.py:686-703`: one `convert(...)` call, `write_bytes`, then
+    `pack_sid` on the same object), so this file IS the provenance of the
+    audio. Nothing has to be recorded anywhere for that to hold, which is why
+    the guard keys on it: a manifest can be written by one tool and believed by
+    another after the fact, and this cannot.
+
+    None when there is no staged `.sng` -- which is silence, not staleness.
+    """
+    try:
+        return hashlib.sha256((LISTEN / ("%s.h2g.sng" % name)).read_bytes()).hexdigest()
+    except OSError:
+        return None
+
+
+def audio_provenance(name: str, shas: dict | None = None) -> tuple[str, str, str]:
+    """(state, sha the audio came from, sha the converter gives today).
+
+    `state` is `"current"`, `"behind"` or `"unknown"`.
+
+    **This keys on the conversion, never on `__version__` or a commit id.**
+    That is not a stylistic preference: a version-keyed audio guard would cry
+    stale on every commit -- the version moves on all of them, and v0.5.370,
+    v0.5.371 and v0.5.373 touched only this file, which cannot alter one byte
+    of audio. It is the repo's own passthrough-guard lesson (CLAUDE.md: *a skip
+    condition must be keyed on the thing that would make the assertion lie,
+    never on a proxy that moves more often*), and this session had already made
+    that mistake once on the approval badge and undone it.
+
+    `"unknown"` when either side is missing: no staged `.sng` (nothing to
+    compare against), or no entry in `shas` (the tune is not in `presets.json`,
+    its `.sid` was not found, or converting it raised). Absence of evidence
+    prints nothing rather than an accusation -- the same fallback shape
+    `approval_badge` and `output_sha` use.
+
+    Note the two questions this and the approval badge ask are **different**,
+    and ACE_II is the live case where they part company. The approval records
+    the sha `conversion_shas()` gave when the verdict was written, so it can
+    match today's conversion exactly -- while the `.h2g.wav` on the page came
+    from a `.sng` staged hours earlier, before the change the note says it was
+    approved after. "The verdict still holds" and "you are hearing what was
+    approved" are not the same claim, and only this one is about the audio.
+    """
+    was = staged_sng_sha(name)
+    now = (shas or {}).get(name)
+    if not was or not now:
+        return ("unknown", was or "", now or "")
+    return ("current" if was == now else "behind", was, now)
+
+
+def audio_banner(name: str, shas: dict | None = None) -> str:
+    """The warning a page carries when its own audio is behind the converter.
+
+    Rendered above the human verdict, because it outranks it: an approval that
+    is still valid says nothing about a render made from a different `.sng`.
+
+    Empty for `"current"` and for `"unknown"` alike -- a page that is up to
+    date should not carry a badge saying so, and a page that cannot tell must
+    not imply it can.
+    """
+    state, was, now = audio_provenance(name, shas)
+    if state != "behind":
+        return ""
+    return ('<div class="staleaudio"><b>The audio on this page is an older '
+            'conversion</b><span>The <code>%s.h2g.wav</code> played here was '
+            'rendered from a <code>.sng</code> whose sha256 begins '
+            '<code>%s</code>; converting this tune with today\'s code and '
+            'presets gives <code>%s</code>. So the H2G side is not what the '
+            'converter now produces, and nothing said on this page &mdash; a '
+            'listening note, a human approval, an envelope, a spectrogram '
+            '&mdash; describes the current conversion. The original '
+            '<code>.sid</code> side is unaffected. Re-run <code>listen.py</code> '
+            'for this tune before trusting the comparison.</span></div>'
+            % (name, was[:12], now[:12]))
 
 
 def instrmap_rows() -> tuple[dict[str, dict], int]:
@@ -703,6 +790,19 @@ td a { color:var(--ink); font-weight:600; }
   background:color-mix(in srgb, var(--a) 9%, transparent); }
 .approval.stale b { color:var(--a); }
 .approval.none b { color:var(--muted); font-weight:600; }
+/* The audio's own provenance. Louder than the approval above it on purpose:
+   an approval that no longer holds still describes this tune, where audio
+   rendered from a different .sng means every picture and every number on the
+   page is about something the converter no longer emits. */
+.staleaudio { display:flex; flex-direction:column; gap:3px; padding:10px 14px;
+  border-radius:6px; margin:0 0 14px; font-size:12.5px;
+  border:1px solid var(--a);
+  background:color-mix(in srgb, var(--a) 14%, transparent); }
+.staleaudio b { font-size:13px; letter-spacing:.02em; color:var(--a); }
+.staleaudio span { color:var(--muted); }
+.staleaudio code { font-family:var(--mono); font-size:11.5px; }
+td.aud .old { color:var(--a); font-weight:600; }
+td.aud .cur { color:var(--muted); }
 td.appr { white-space:nowrap; }
 td.appr .y { color:var(--b); font-weight:600; }
 td.appr .s { color:var(--a); font-weight:600; }
@@ -2319,7 +2419,16 @@ def page(name: str, row: dict, notes: list[str], version: str,
          fidjson: dict | None = None,
          instrmap: dict | None = None, instrmap_seconds: int = 0,
          approval: dict | None = None,
-         appr_shas: dict | None = None) -> str:
+         now_shas: dict | None = None) -> str:
+    """One tune's page.
+
+    `now_shas` is `conversion_shas()` -- the sha256 each staged tune converts
+    to RIGHT NOW. Two independent things read it: the human verdict (does the
+    approval still cover this conversion) and the audio banner (was the `.wav`
+    on this page rendered from this conversion). It used to be named
+    `appr_shas` for the first of those; the rename is because the second reader
+    is asked on every page, approved or not.
+    """
     pretty = name.replace("_", " ")
     chips = "".join(
         '<div class="chip"><span>%s</span><b>%s</b></div>' % (k, row[k])
@@ -2386,6 +2495,7 @@ def page(name: str, row: dict, notes: list[str], version: str,
   <div class="rail">%(chips)s</div>
 </header>
 
+%(staleaudio)s
 %(approval)s
 
 <div class="rig" id="rig">
@@ -2485,7 +2595,8 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            notes_strip=notes_strip_card(name, fidjson),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
-           approval=approval_badge(name, approval or {}, version, appr_shas),
+           approval=approval_badge(name, approval or {}, version, now_shas),
+           staleaudio=audio_banner(name, now_shas),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
@@ -2515,12 +2626,29 @@ def index(names: list[str], rows: dict, version: str,
             return '<span class="s">stale</span>'
         return '<span class="y">approved</span>'
 
+    def audio(n):
+        """Whether the staged `.wav` came from the conversion shipping now.
+
+        A separate column from the human verdict rather than folded into it,
+        because they can disagree: an approval keyed on the conversion stays
+        valid while the audio beside it was rendered from an older `.sng`.
+        Reading one as the other is how a reader concludes that a page they
+        have not re-staged is signed off.
+        """
+        state, _was, _now = audio_provenance(n, shas)
+        if state == "behind":
+            return '<span class="old">behind</span>'
+        if state == "current":
+            return '<span class="cur">current</span>'
+        return '<span class="cur">&mdash;</span>'
+
     body = ""
     for n in names:
         r = rows.get(n, {})
         body += ("<tr><td><a href=\"%s.html\">%s</a></td><td class=\"appr\">%s</td>"
+                 "<td class=\"aud\">%s</td>"
                  "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-                 % (n, n.replace("_", " "), verdict(n),
+                 % (n, n.replace("_", " "), verdict(n), audio(n),
                     r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
@@ -2535,13 +2663,14 @@ def index(names: list[str], rows: dict, version: str,
 <div class="card">
   <h2>Staged tunes</h2>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>human</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
+    <thead><tr><th>tune</th><th>human</th><th>audio</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
 <footer>
   <div>Columns are from <code>FIDELITY.md</code> at %(version)s. They compare what is played, never how it sounds &mdash; which is what these pages are for.</div>
   <div><b>human</b> is the only column here that is not a measurement: it is read from <code>approved.json</code>, which a person writes by hand and no tool may rewrite. <code>stale</code> means someone approved an earlier version and the conversion has changed since &mdash; the verdict does not cover what the page now plays.</div>
+  <div><b>audio</b> compares the sha256 of the <code>.sng</code> each staged <code>.h2g.wav</code> was rendered from against what the tune converts to now. <code>behind</code> means the page plays an older conversion, whatever its other columns say &mdash; re-run <code>listen.py</code> for it. It is keyed on the conversion, never on the version: a version-keyed check would report every tune behind after any commit, including the ones that only touch this file.</div>
   <div><code>gate</code> is the newest of them and the least validated: it was built at v0.5.270 because no other column could see the register it reads, and no listener has confirmed it corresponds to anything audible.</div>
 </footer>
 </div>
@@ -2738,7 +2867,15 @@ def main() -> int:
     fidjson = fidelity_json_rows()
     imrows, imseconds = instrmap_rows()
     appr = approvals()
-    appr_shas = conversion_shas() if appr else {}
+    # Unconditional now. It was `if appr else {}` while the only reader was the
+    # approval badge; the audio banner asks it of every page, so gating it on
+    # approvals existing would have left an unapproved tune silent about its
+    # own audio -- which is the majority of them.
+    now_shas = conversion_shas()
+    behind = [n for n in names if audio_provenance(n, now_shas)[0] == "behind"]
+    if behind:
+        print("audio predates the current converter for %d of %d tune(s): %s"
+              % (len(behind), len(names), ", ".join(behind)))
     if imrows:
         print("instrument map: %d song(s) at %ds" % (len(imrows), imseconds))
         missing = [n for n in names if n not in imrows]
@@ -2760,7 +2897,7 @@ def main() -> int:
                     fidjson=fidjson.get(args.embed, {}),
                     instrmap=imrows.get(args.embed, {}),
                     instrmap_seconds=imseconds, approval=appr,
-                    appr_shas=appr_shas)
+                    now_shas=now_shas)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -2772,10 +2909,10 @@ def main() -> int:
                     survey=survey.get(n, {}), preset=presets.get(n, {}),
                     fidjson=fidjson.get(n, {}),
                     instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
-                    approval=appr, appr_shas=appr_shas)
+                    approval=appr, now_shas=now_shas)
         (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
     pruned = prune_stale_pages(names)
-    (LISTEN / "index.html").write_text(index(names, rows, version, appr, appr_shas), encoding="utf-8")
+    (LISTEN / "index.html").write_text(index(names, rows, version, appr, now_shas), encoding="utf-8")
     missing = [n for n in names if n not in rows]
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
     if pruned:
