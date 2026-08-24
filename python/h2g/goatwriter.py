@@ -4527,9 +4527,41 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     * **The player's sweep free-runs and this one cannot.** The width lives in
       the instrument record, shared by every voice sounding it, and nothing
       reseeds it at note start; Goattracker reloads the pulse pointer whenever
-      an instrument is triggered (gplay.c:375-379). So the original's phase at
-      any given note is arbitrary and ours is always the record's own width.
-      The band and the rate carry over; the phase cannot.
+      an instrument is triggered (gplay.c:375-379, player.s:859-866). So the
+      original's phase at any given note is arbitrary and ours is always the
+      record's own width. The RATE carries over. **THE BAND DOES NOT** --
+      this line said it did until v0.5.379, and it is the sentence that would
+      stop the next reader looking. Measured on 5_Title_Tunes at `-t 60`: our
+      per-voice band is 449 / 771 / 899 against the original's 1536 / 1536 /
+      1408, where the bounds here describe 1536. Voice 2 proves the mechanism
+      with three identical numbers -- 186 notes, 186 reset jumps of 899, and a
+      band of 899. Our sweep climbs part of the way up and is snapped back to
+      the record's width at the next note; the player keeps climbing. Crossing
+      the band at speed 32 needs 48 frames and this file's notes are 8 and 16
+      frames long, so we can only ever cover a fraction of it.
+
+      **It is fixable in principle and not worth fixing, which is why this
+      stays an approximation.** An instrument whose pulse pointer is 0 leaves
+      the channel pointer AND the step timer untouched, so a program started
+      once free-runs exactly as the player's accumulator does (player.s:859-866
+      `lda mt_inspulseptr-1,y / beq mt_skippulse`, its own comment "if
+      nonzero"; gplay.c:375-379 guards the same block with `if
+      (iptr->ptr[PTBL])`). `_pulse_layout` already uses pointer 0 as its
+      table-overflow fallback. Two things stop it being a general repair.
+      Goattracker's pulse state is per CHANNEL where the player's accumulator
+      is per RECORD and shared across voices, so the two are equivalent only
+      where ONE sweeping instrument owns a voice; and one instrument per record
+      means pointer 0 alone never STARTS the program, so it needs a
+      starter/continuer pair costing two slots against a ceiling this writer
+      already drops instruments past. Censused over the whole corpus at
+      v0.5.378: **2 of 72 voices** across the 24 files carrying this engine
+      qualify -- 5_Title_Tunes voice 2 and Human_Race voice 0 -- holding 2881
+      of the engine population's 67619 original pulse-width changes, 4.26% of
+      it and 0.76% of the corpus. Every other voice either plays two or more
+      instruments (each owning its own table, so the pointer resets regardless)
+      or is dominated by an instrument that does not sweep. Same family as the
+      effect-bit-`$10` case in CLAUDE.md, where a globally-counted mechanism
+      could not go in a per-note table and the honest answer was to say so.
     * **A step above 127 cannot be expressed at all.** A Goattracker pulse
       speed is a signed byte (readme.txt:887-889, gplay.c:889-899), so the most
       the width can move is 127 per *call*. `rate & $E0` reaches 224, and at
