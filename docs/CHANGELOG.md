@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.376 — 2026-08-24
+
+- the listener's length rule, and Action Biker approved
+
 ## 0.5.375 — 2026-08-24
 
 - the shifted-subtune line stops explaining the defect away, and listen.py recovers matched_subtune

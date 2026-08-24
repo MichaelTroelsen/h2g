@@ -8,6 +8,13 @@
    "version": "0.5.369",
    "at": "2026-08-23",
    "note": "Approved after the wave-program slide travel, the filter cutoff step, the bit-6 rest envelope silence and the vibrato depth fix. The depth change itself was not audible to the listener -- this signs off the tune as it stands, not that change in isolation."
+  },
+  "Action_Biker": {
+   "approved": true,
+   "sng_sha256": "1bc6f4fa4f5e9c422d63eaa867fda3193966ba3c00e9817d8528ac69ce5cc2a0",
+   "version": "0.5.375",
+   "at": "2026-08-24",
+   "note": "Approved on audio re-staged after f63caa1. The listener confirms it is the same subtune on both sides and that they sound very close -- which closes the original complaint, 'the original's channel 3 is channel 2 in H2G'. The channels were never wrong; our .sng had played its SUBTUNES in the wrong order, because the selector named a six-byte scratch buffer ($C3F3) where the track table is ($C3F9). APPROVED WITH ONE KNOWN, UNFIXED DEFECT, recorded here so this sign-off is not read as covering it: our conversion is LONGER than the original. Traced 180 s both sides, the original makes 291 attacks and stops at 59.54 s; ours makes 856 and loops every 61.44 s forever. Per loop ours carries 52/52/187 attacks per voice against the original's 52/52/187 in total, so the music is right and only the ending is wrong -- Hubbard's $FE means 'tune ended' and a Goattracker orderlist cannot say it. This is the +-5 second length rule in CLAUDE.md and todo.md; the verdict signs off how the tune SOUNDS, not how long it runs."
   }
  }
 }

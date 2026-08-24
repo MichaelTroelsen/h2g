@@ -985,6 +985,35 @@ test dependency).
   affected file's derived value happened to equal the constant it replaced.
   `assert old in s` before every replace, and check the change is in
   `git diff`, not merely that the tests still pass.
+- **THE CONVERSION MUST BE THE SAME LENGTH AS THE ORIGINAL, WITHIN ±5 SECONDS.**
+  A listener's rule, and it is an invariant no column enforces. Where the
+  original *ends*, ours must end too. This is not about tempo — `drift`,
+  `retrig` and `--pace` all measure the rate of a row and are all satisfied by
+  a conversion that plays the right music at the right speed **forever**.
+  Measured on Action_Biker at v0.5.375, traced 180 s both sides: the original
+  makes 291 attacks, its last at frame 2977 = **59.54 s**, and then 120 s of
+  silence — it STOPS. Ours makes 856 and never stops, looping with period
+  **61.44 s**. Per loop it carries exactly 52/52/187 attacks per voice against
+  the original's 52/52/187 *in total*, so the music is right and only the
+  ending is wrong. A listener hears this as "the H2G song is longer", which is
+  the only instrument that reports it.
+  The cause is documented and is a property of the target format: Hubbard's
+  `$FE` track byte means *tune ended*, a Goattracker orderlist cannot say that,
+  and `--legal-restart` turns it into a restart at position 0 — which is what
+  makes the file packable at all. The repair is not a new mechanism but a
+  choice of restart target: an orderlist can loop a SILENT pattern instead of
+  position 0, which ends the tune in every way a listener can hear.
+  **And note where this rule bites the harness, because it is the same failure
+  this project has now hit twice.** `fidelity.original_ended` already detects
+  the condition and uses it to SHORTEN the comparison window so our surplus is
+  not charged — the score is protected and the shipped `.sng` still plays
+  forever. That is exactly the `--search-subtunes` shape corrected in v0.5.375
+  (*a shim that hides a defect from the score does not hide it from the file*),
+  one level over. Any tune whose window `original_ended` shortens is a tune
+  that FAILS this rule; the report names them, and that list should be read as
+  a defect queue rather than as a methodology note. Action Biker is not among
+  them only because its 60 s window happens to end where the tune does, so its
+  `melody` 100% is honest — the surplus is entirely outside the window.
 - **A score is not a clock.** Every column of `FIDELITY.md` compares
   *what* is played, never *when*: `melody` is a difflib ratio over a note
   sequence in a fixed window, and a conversion playing too fast overruns that

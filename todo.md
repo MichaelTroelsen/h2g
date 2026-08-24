@@ -90,3 +90,84 @@ Keep items actionable: what to run, and what makes it done.
 
   Done when `nrun` is either materially above 0% or refuted with a named cause.
   `[subagent]` for the census, `[main]` for any emitter change.
+
+- **The conversion must be the same length as the original, ±5 seconds.**
+  A listening rule (recorded in CLAUDE.md as an invariant). Where the original
+  ENDS, ours must end too. No column enforces it: `drift`, `retrig` and
+  `--pace` all measure the rate of a row, and every one of them is satisfied by
+  a conversion that plays the right music at the right speed *forever*.
+
+  Measured on Action_Biker at v0.5.375, both sides traced 180 s:
+
+  | | attacks | last attack | after that |
+  |---|---:|---|---|
+  | original | 291 | 59.54 s | 120 s of silence — it stops |
+  | ours | 856 | 179.68 s | never stops, loops every 61.44 s |
+
+  Per loop ours carries 52/52/187 attacks per voice against the original's
+  52/52/187 in total, so the music is right and only the ending is wrong.
+
+  CAUSE, already documented: Hubbard's `$FE` track byte means *tune ended*; a
+  Goattracker orderlist cannot say that, and `--legal-restart` rewrites it as a
+  restart at position 0, which is what makes the file packable at all.
+
+  TWO PIECES OF WORK, and they are separable:
+
+  1. **A `len` dimension** in `FIDELITY.md`: seconds of music ours plays
+     against the original's, flagged when the ratio leaves ±5 s. The detector
+     already exists — `fidelity.original_ended` returns the second the original
+     stops — so this is reporting a number the harness already computes rather
+     than deriving a new one. `[subagent]`, touches `python/fidelity.py` and
+     `python/tests/test_fidelity.py`.
+  2. **An option to end rather than loop**: restart into a SILENT pattern
+     instead of position 0, so the tune stops in every way a listener can hear.
+     Must be opt-in — a looping tracker song is often what is wanted, and this
+     changes the bytes of every file whose original ends. `[main]`, touches
+     `python/h2g/tracks.py` / `goatwriter.py` and the presets search.
+
+  READ `original_ended`'s USE AS A DEFECT QUEUE. It currently shortens the
+  comparison window so our surplus is not charged, which protects the score
+  while the shipped `.sng` still plays forever — the same shape as the
+  `--search-subtunes` line corrected in v0.5.375. Every file whose window it
+  shortens fails this rule. Action Biker is not one of them only because its
+  60 s window happens to end where the tune does.
+
+  Done when the report names every file failing the ±5 s rule, and a listener
+  confirms one of them ends.
+
+- **5 Title Tunes fidelity.** Like Action Biker, the sequence is already exact —
+  `melody`, `seq`, `pitch` all 100%, `retrig` 1.00, `drift` +0.0, `onset` 100%,
+  938 original notes against 935. So nothing here is about the notes. The row
+  (`docs/FIDELITY.md:25`):
+
+  | column | 5_Title_Tunes | reading |
+  |---|---|---|
+  | `pul` | **4459/2240 = 1.99x** | we move the duty cycle almost exactly TWICE as often as the original |
+  | `pspan` | **0.47x** | and each move is about HALF as wide |
+  | `gate` | 50% | |
+  | `adsr` | 58% | |
+  | `wave` | 90% | |
+  | `hold` | 0% | check against `--hold-census` FIRST, per the Action Biker precedent |
+
+  START WITH THE PULSE, because those two numbers are one finding: 1.99 x 0.47
+  = 0.94, i.e. **the total travel is about right and the sweep is subdivided
+  twice as finely**. That is the signature of a step size halved and a step
+  rate doubled, not of a wrong target width — which is also why `pul` alone
+  cannot say it (it is a count, and its own docstring says the defect it
+  watches is a *frozen* width, not a wrong one).
+
+  RULED OUT ALREADY, so do not spend the session on it: this is NOT the
+  "a rate read out of the player is per frame, every table applies it per play
+  call" family that produced the v0.5.363 `_filter_entries` bug. That one moves
+  only multispeed files, and `presets.json` records 5_Title_Tunes at
+  **multiplier 1**, where the correction is the identity. Look at the pulse
+  program's own step encoding instead — and check `--pulse` / the triangle
+  pulse engine's `& $E0` step vs `& $1F` frames-between-steps packing, since
+  reading one field as the other is exactly a double-rate/half-step error.
+
+  Expect `hold` and possibly `gate` to be measurement artefacts rather than
+  defects — that has now been the answer four times running (ACE_II `slides`,
+  `bend`, `hold`; Action Biker `hold`, `nrun`). Census before emitting.
+
+  `[subagent]` for the pulse census and the hold refutation; `[main]` for any
+  emitter change.
