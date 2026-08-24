@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.378 — 2026-08-24
+
+- the page build is atomic, and the pulse free-run census says two voices
+
 ## 0.5.377 — 2026-08-24
 
 - the 5 Title Tunes pulse census: pul is an artefact, pspan is the defect

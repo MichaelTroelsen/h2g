@@ -38,6 +38,7 @@ import os
 import re
 import struct
 import sys
+import uuid
 import wave
 from datetime import datetime
 from pathlib import Path
@@ -2716,7 +2717,146 @@ def prune_stale_pages(names: list[str]) -> list[Path]:
     return removed
 
 
-def run_instrmap(sid_dir: str, names: list[str]) -> int:
+def _atomic_write(path: Path, text: str) -> None:
+    """Write `text` to `path` so a reader never observes a partial file.
+
+    A plain `write_text` can be killed mid-write, leaving a truncated file in
+    place of whatever used to be there. Writing to a sibling temp file first
+    and swapping it in with `os.replace` cannot do that: the old (or absent)
+    target and the fully-written temp file are the only two states the swap
+    can ever produce, on both POSIX (`rename(2)`) and Windows
+    (`os.replace` -> `MoveFileExW` with `MOVEFILE_REPLACE_EXISTING`), because
+    a temp file written beside its target is always on the same volume.
+
+    This does not by itself make a multi-file BUILD atomic -- a kill between
+    two calls still leaves some files updated and others not. It only rules
+    out the file being torn. `check_build_consistency` below is what a reader
+    uses to tell "some pages are from an older build" apart from "some page
+    is half-written".
+    """
+    tmp = path.with_name(path.name + (".tmp-%d" % os.getpid()))
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
+_BUILD_TAG = re.compile(r"<!--\s*abpage-build:([0-9a-f]+)\s*-->")
+
+
+def _new_build_id() -> str:
+    """A fresh id for one call to the page+index build loop in `main()`."""
+    return uuid.uuid4().hex[:12]
+
+
+def _stamp(build_id: str, html: str) -> str:
+    """Prepend `html` with the id of the build that produced it.
+
+    Every page and `index.html` written in the same pass of `main()` carry
+    the same id, as their first line. Nothing else on disk records which run
+    a page belongs to, so two files carrying different ids is the only
+    after-the-fact signal that a build was interrupted between them -- see
+    `check_build_consistency`.
+    """
+    return "<!-- abpage-build:%s -->\n%s" % (build_id, html)
+
+
+def _build_id_of(path: Path) -> str | None:
+    """The build id stamped on `path`, or None if it has none (or is absent).
+
+    A page written before this stamp existed, or by something other than
+    `main()`'s build loop (an `--embed` page, say), has no tag at all --
+    that is "unknown", not "mismatched", the same distinction every other
+    provenance check in this file makes.
+    """
+    try:
+        head = path.read_text(encoding="utf-8", errors="replace")[:200]
+    except OSError:
+        return None
+    m = _BUILD_TAG.match(head)
+    return m.group(1) if m else None
+
+
+def check_build_consistency(names: list[str]) -> list[str]:
+    """Staged tunes whose page disagrees with `index.html` about which build
+    produced it -- the observable symptom of an interrupted build.
+
+    `main()`'s build loop writes every `<name>.html` and then, last,
+    `index.html`, all stamped with one id shared by the whole pass. A build
+    killed partway through leaves some pages carrying the new id and the rest
+    (and, if it did not reach the very end, `index.html` itself) carrying an
+    older one -- which is exactly the bug this guards: pages whose staleness
+    banner was computed in one build sitting next to an index that was
+    written by a different one, each describing a reality the other
+    disagrees with. Nothing else on disk distinguishes "written together"
+    from "written near each other", so this is the only check that can catch
+    it after the fact rather than only at the moment of the kill.
+
+    Returns the names, in `names`' order, whose page exists and carries a
+    build id different from `index.html`'s. Empty when `index.html` is
+    missing or untagged (nothing to compare against -- a build that has never
+    completed under this scheme is not "inconsistent", it is "not yet
+    measured") or when every page agrees.
+    """
+    want = _build_id_of(LISTEN / "index.html")
+    if not want:
+        return []
+    stale = []
+    for n in names:
+        p = LISTEN / ("%s.html" % n)
+        got = _build_id_of(p)
+        if got is not None and got != want:
+            stale.append(n)
+    return stale
+
+
+def _instrmap_is_fresh(jpath: Path, targets: list[Path], ppath: Path) -> bool:
+    """True when `jpath` already covers every one of `targets` and predates
+    none of the things that could have changed it -- so re-tracing would
+    reproduce the same numbers at the cost of two emulations a song.
+
+    This is deliberately narrow: it is the fix for the specific harm named in
+    `instrmap-rebuild-should-say-what-it-cached` -- the SAME `--instrmap`
+    invocation, killed after the trace finished writing `jpath` but before
+    the page loop that follows it, then simply re-run. Nothing about the
+    inputs changed between the kill and the retry in that case. If a `.sid`
+    or `presets.json` WAS touched since -- a real input change -- `jpath` is
+    now older than something it should reflect and this returns False, which
+    is the safe direction to be wrong in: a missed skip costs the ninety
+    seconds it always cost, a wrongly-taken one would ship stale numbers.
+    """
+    try:
+        doc = json.loads(jpath.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    if not isinstance(doc, dict):
+        return False
+    have = set()
+    for row in doc.get("songs") or []:
+        if not isinstance(row, dict):
+            continue
+        f = row.get("file") or ""
+        have.add(f[:-4] if f.endswith(".sid") else f)
+    if not all(p.stem in have for p in targets):
+        return False
+    try:
+        jmtime = jpath.stat().st_mtime
+    except OSError:
+        return False
+    for p in targets:
+        try:
+            if p.stat().st_mtime > jmtime:
+                return False
+        except OSError:
+            return False
+    if ppath.exists():
+        try:
+            if ppath.stat().st_mtime > jmtime:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def run_instrmap(sid_dir: str, names: list[str], force: bool = False) -> int:
     """Regenerate `build/instrmap.json` for exactly the staged tunes. 0 on success.
 
     Scoped to `names` rather than to the directory: `instrmap.py` traces two
@@ -2728,6 +2868,14 @@ def run_instrmap(sid_dir: str, names: list[str]) -> int:
     A tune staged from somewhere other than `sid_dir` is reported and skipped
     rather than silently dropped -- the resulting page would simply lack the
     card, which is indistinguishable from a tune that had nothing to report.
+
+    Skips the trace entirely, unless `force`, when `build/instrmap.json`
+    already covers every one of `names` and predates none of their `.sid`s
+    or `presets.json` (`_instrmap_is_fresh`) -- the case a killed
+    `--instrmap` retried verbatim lands in, where the expensive half already
+    ran and only the page build after it did not. Without this, retrying
+    paid for the 166 emulations a second time and said nothing about why
+    that was unnecessary; see `instrmap-rebuild-should-say-what-it-cached`.
     """
     import subprocess
 
@@ -2746,8 +2894,26 @@ def run_instrmap(sid_dir: str, names: list[str]) -> int:
         return 2
     out = ROOT / "build" / "instrmap"
     jpath = ROOT / "build" / "instrmap.json"
+    if not force and jpath.exists() and _instrmap_is_fresh(
+            jpath, targets, ROOT / "presets.json"):
+        print("instrument map already covers all %d staged tune(s) and "
+              "predates none of them -- skipping the trace (%d emulations "
+              "avoided). Pass --instrmap-force to retrace anyway."
+              % (len(targets), 2 * len(targets)))
+        sys.stdout.flush()
+        import shutil
+        staged = 0
+        for p in targets:
+            s = out / ("%s.html" % p.stem)
+            if s.exists():
+                shutil.copyfile(s, LISTEN / ("%s.instrmap.html" % p.stem))
+                staged += 1
+        print("  %d report(s) copied beside the pages" % staged)
+        sys.stdout.flush()
+        return 0
     print("instrument map: tracing %d staged tune(s) -- two emulations each"
           % len(targets))
+    sys.stdout.flush()
     # One instrmap process per tune, because its `target` is a file or a whole
     # directory and we want a subset of one. It appends nothing, so the JSON
     # has to be merged here rather than left to the last run to overwrite.
@@ -2786,8 +2952,11 @@ def run_instrmap(sid_dir: str, names: list[str]) -> int:
         if src.exists():
             shutil.copyfile(src, LISTEN / ("%s.instrmap.html" % p.stem))
             staged += 1
-    print("  wrote %s (%d song(s)), %d report(s) copied beside the pages"
+    print("  wrote %s (%d song(s), now cached -- rerunning --instrmap "
+          "before touching a .sid or presets.json will reuse it rather "
+          "than re-tracing), %d report(s) copied beside the pages"
           % (jpath, len(merged), staged))
+    sys.stdout.flush()
     return 0
 
 
@@ -2807,6 +2976,10 @@ def main() -> int:
                          "Without the flag the pages reuse whatever "
                          "build/instrmap.json already holds, and omit the card "
                          "if there is none.")
+    ap.add_argument("--instrmap-force", action="store_true",
+                    help="with --instrmap, retrace every staged tune even if "
+                         "build/instrmap.json already covers all of them and "
+                         "predates none of their .sids or presets.json.")
     ap.add_argument("--no-build", action="store_true",
                     help="with --serve, skip rebuilding the pages and serve "
                          "what is already staged. The build takes ~3.4s a tune "
@@ -2844,6 +3017,16 @@ def main() -> int:
         if not pages:
             print("no pages in %s -- run `python abpage.py` first" % LISTEN)
             return 2
+        staged_names = sorted(
+            p.name[: -len(".original.wav")]
+            for p in LISTEN.glob("*.original.wav")
+            if not re.search(r"\.v[123]$", p.name[: -len(".original.wav")]))
+        stale_build = check_build_consistency(staged_names)
+        if stale_build:
+            print("WARNING: %d of %d served page(s) are left over from a "
+                  "build that did not finish and disagree with index.html: "
+                  "%s -- a plain `python abpage.py` will fix this"
+                  % (len(stale_build), len(staged_names), ", ".join(stale_build)))
         print("serving %d existing page(s); not rebuilding" % pages)
         return serve(args.serve)
 
@@ -2857,8 +3040,19 @@ def main() -> int:
     if not names:
         print("no staged pairs in %s -- run listen.py first" % LISTEN)
         return 2
+
+    # Report an interrupted PREVIOUS build before starting a new one -- this
+    # is the check that used to not exist at all: a build killed mid-write
+    # left pages and index.html disagreeing about which was current, and
+    # nothing said so until someone happened to compare them by hand.
+    stale_build = check_build_consistency(names)
+    if stale_build:
+        print("%d of %d page(s) are left over from a build that did not "
+              "finish (killed mid-write, most likely) and disagree with "
+              "index.html: %s" % (len(stale_build), len(names), ", ".join(stale_build)))
+
     if args.instrmap:
-        rc = run_instrmap(args.instrmap, names)
+        rc = run_instrmap(args.instrmap, names, force=args.instrmap_force)
         if rc:
             return rc
 
@@ -2903,6 +3097,18 @@ def main() -> int:
         print("%s  %.2f MB" % (out, len(html) / 1e6))
         return 0
 
+    # Render every page AND the index fully in memory before writing any of
+    # them. The slow part of a build -- FFTs for the spectrogram, reading and
+    # re-converting for the audio banner, one `page()` call per tune -- runs
+    # entirely here, so a kill during it leaves the PREVIOUS build's files on
+    # disk completely untouched: still self-consistent, if old. Only the
+    # write loop below, which does nothing but stamp and swap already-
+    # computed strings, can be interrupted mid-build -- and that is exactly
+    # what `check_build_consistency` (run at the top of the next invocation,
+    # above) exists to catch, because a `.tmp` swap makes each FILE atomic
+    # but cannot make the whole set of them land together.
+    build_id = _new_build_id()
+    rendered: dict[str, str] = {}
     for n in names:
         html = page(n, rows.get(n, {}), notes.get(n, []), version,
                     embed=False, index_link=True,
@@ -2910,9 +3116,13 @@ def main() -> int:
                     fidjson=fidjson.get(n, {}),
                     instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
                     approval=appr, now_shas=now_shas)
-        (LISTEN / ("%s.html" % n)).write_text(html, encoding="utf-8")
+        rendered[n] = _stamp(build_id, html)
+    index_html = _stamp(build_id, index(names, rows, version, appr, now_shas))
+
+    for n in names:
+        _atomic_write(LISTEN / ("%s.html" % n), rendered[n])
     pruned = prune_stale_pages(names)
-    (LISTEN / "index.html").write_text(index(names, rows, version, appr, now_shas), encoding="utf-8")
+    _atomic_write(LISTEN / "index.html", index_html)
     missing = [n for n in names if n not in rows]
     print("%d page(s) + index -> %s" % (len(names), LISTEN))
     if pruned:

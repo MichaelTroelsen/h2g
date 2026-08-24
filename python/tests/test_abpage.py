@@ -11,10 +11,14 @@ for.
 import base64
 import html.parser
 import math
+import os
 import struct
 import sys
+import time
 import wave
 from pathlib import Path
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -617,3 +621,262 @@ def test_the_index_names_which_tunes_play_an_older_conversion(tmp_path, monkeypa
     assert "current" in rows["New"] and "behind" not in rows["New"]
     assert "behind" not in rows["Unknown"]
     assert _balanced(got) == []
+
+
+# --- build atomicity: an interrupted build must not go undetected ----------
+#
+# abpage-page-build-is-not-atomic. A killed build used to leave some pages
+# rewritten by the new run and some (and index.html, written last) still
+# from the old one -- a page could say "current" while index.html, reading
+# from a different build entirely, still called it "behind". Nothing on disk
+# recorded which run a page belonged to, so nothing could tell the two apart
+# after the fact; it was found once, by hand.
+#
+# The fix stamps every page and index.html with one id per call to the build
+# loop in `main()` (`_new_build_id`/`_stamp`), so `check_build_consistency`
+# can say, after the fact, which on-disk pages were not part of the same
+# build as the index that links them.
+
+def test_atomic_write_replaces_the_file_and_leaves_no_temp_behind(tmp_path):
+    target = tmp_path / "page.html"
+    target.write_text("old", encoding="utf-8")
+    A._atomic_write(target, "new content")
+    assert target.read_text(encoding="utf-8") == "new content"
+    assert list(tmp_path.glob("*.tmp-*")) == []
+
+
+def test_stamp_and_build_id_of_round_trip(tmp_path):
+    p = tmp_path / "x.html"
+    p.write_text(A._stamp("deadbeef1234", "<html><body>hi</body></html>"),
+                 encoding="utf-8")
+    assert A._build_id_of(p) == "deadbeef1234"
+
+
+def test_build_id_of_a_file_with_no_stamp_is_unknown(tmp_path):
+    p = tmp_path / "x.html"
+    p.write_text("<html><body>no stamp here</body></html>", encoding="utf-8")
+    assert A._build_id_of(p) is None
+
+
+def test_build_id_of_a_missing_file_is_unknown(tmp_path):
+    assert A._build_id_of(tmp_path / "nope.html") is None
+
+
+def test_check_build_consistency_is_empty_with_no_index(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    assert A.check_build_consistency(["Tune"]) == []
+
+
+def test_check_build_consistency_is_empty_when_every_page_agrees(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "index.html").write_text(A._stamp("abc123", "<html></html>"),
+                                          encoding="utf-8")
+    (tmp_path / "Tune.html").write_text(A._stamp("abc123", "<html></html>"),
+                                        encoding="utf-8")
+    assert A.check_build_consistency(["Tune"]) == []
+
+
+def test_check_build_consistency_names_the_page_that_disagrees(tmp_path, monkeypatch):
+    """The exact reported shape: index.html from one build, a page left over
+    from an earlier one."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "index.html").write_text(A._stamp("aaa111", "<html></html>"),
+                                          encoding="utf-8")
+    (tmp_path / "Fresh.html").write_text(A._stamp("aaa111", "<html></html>"),
+                                         encoding="utf-8")
+    (tmp_path / "Stale.html").write_text(A._stamp("aaa000", "<html></html>"),
+                                         encoding="utf-8")
+    assert A.check_build_consistency(["Fresh", "Stale"]) == ["Stale"]
+
+
+def test_check_build_consistency_treats_an_untagged_page_as_unknown_not_stale(
+        tmp_path, monkeypatch):
+    """A page from before this stamp existed must not be flagged -- absence
+    of evidence is not evidence of disagreement, the same fallback shape
+    `audio_provenance`'s "unknown" state uses."""
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    (tmp_path / "index.html").write_text(A._stamp("aaa111", "<html></html>"),
+                                          encoding="utf-8")
+    (tmp_path / "Legacy.html").write_text("<html>no stamp</html>",
+                                          encoding="utf-8")
+    assert A.check_build_consistency(["Legacy"]) == []
+
+
+def _stage_pair(dirpath, stem):
+    (dirpath / ("%s.original.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+    (dirpath / ("%s.h2g.wav" % stem)).write_bytes(b"RIFF....WAVEfmt ")
+
+
+def test_an_interrupted_build_is_caught_and_reported_on_the_next_run(
+        tmp_path, monkeypatch, capsys):
+    """OBSERVED shape, reproduced: kill `main()` after it has rewritten one
+    page but before it reaches the rest (and index.html, written last).
+    `check_build_consistency` must name exactly the page that changed, and
+    the NEXT `main()` invocation must print that finding rather than stay
+    silent about it -- the two halves of `abpage-page-build-is-not-atomic`.
+    """
+    monkeypatch.setattr(A, "LISTEN", tmp_path)
+    monkeypatch.setattr(A, "ROOT", tmp_path.parent)
+    for stem in ("Alpha", "Beta"):
+        _stage_pair(tmp_path, stem)
+    monkeypatch.setattr(sys, "argv", ["abpage.py"])
+
+    assert A.main() == 0
+    capsys.readouterr()
+
+    good_id = A._build_id_of(tmp_path / "index.html")
+    assert good_id
+    assert A._build_id_of(tmp_path / "Alpha.html") == good_id
+    assert A._build_id_of(tmp_path / "Beta.html") == good_id
+
+    # Simulate the kill: let exactly one page's write through, then blow up
+    # before the next one -- the write loop is the only place a kill CAN
+    # land mid-build now, since every page is fully rendered in memory
+    # first.
+    real_write = A._atomic_write
+    written = []
+
+    def _flaky(path, text):
+        if written:
+            raise KeyboardInterrupt("simulated kill")
+        written.append(path)
+        real_write(path, text)
+
+    monkeypatch.setattr(A, "_atomic_write", _flaky)
+    with pytest.raises(KeyboardInterrupt):
+        A.main()
+    capsys.readouterr()
+
+    assert len(written) == 1
+    updated = written[0].stem
+    stale = "Beta" if updated == "Alpha" else "Alpha"
+
+    # The page that got through carries a NEW id; the other one, and
+    # index.html (never reached), still carry the old one.
+    assert A._build_id_of(tmp_path / ("%s.html" % updated)) != good_id
+    assert A._build_id_of(tmp_path / ("%s.html" % stale)) == good_id
+    assert A._build_id_of(tmp_path / "index.html") == good_id
+
+    # This is the exact bug: the tool reported nothing on its own.
+    assert A.check_build_consistency(["Alpha", "Beta"]) == [updated]
+
+    # A plain rerun must SAY so, not silently paper over it.
+    monkeypatch.setattr(A, "_atomic_write", real_write)
+    assert A.main() == 0
+    out, _ = capsys.readouterr()
+    assert "left over from a build that did not finish" in out
+    assert updated in out
+
+    # ...and, having rebuilt, the inconsistency is gone.
+    assert A.check_build_consistency(["Alpha", "Beta"]) == []
+
+
+# --- run_instrmap: say what got cached, and reuse it -----------------------
+#
+# instrmap-rebuild-should-say-what-it-cached, folded in here. The expensive
+# half of `--instrmap` (two emulations a song) had already written
+# build/instrmap.json by the time a kill hit the observed run; retrying the
+# same command blindly re-traced everything, paying for it again. A retry
+# with nothing else changed must reuse what is already on disk instead.
+
+class _FakeResult:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def _touch(path, when):
+    path.write_bytes(path.read_bytes() if path.exists() else b"")
+    os.utime(path, (when, when))
+
+
+def test_run_instrmap_skips_the_trace_when_the_cache_already_covers_everything(
+        tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    monkeypatch.setattr(A, "LISTEN", tmp_path / "build" / "listen")
+    A.LISTEN.mkdir(parents=True)
+    sid_dir = tmp_path / "sids"
+    sid_dir.mkdir()
+    for stem in ("Alpha", "Beta"):
+        (sid_dir / ("%s.sid" % stem)).write_bytes(b"PSID")
+    build = tmp_path / "build"
+    jpath = build / "instrmap.json"
+    jpath.write_text('{"seconds": 60, "songs": [{"file": "Alpha.sid"}, '
+                     '{"file": "Beta.sid"}]}', encoding="utf-8")
+    (build / "instrmap").mkdir(parents=True, exist_ok=True)
+    (build / "instrmap" / "Alpha.html").write_text("<html>report</html>",
+                                                     encoding="utf-8")
+
+    now = time.time()
+    _touch(sid_dir / "Alpha.sid", now - 100)
+    _touch(sid_dir / "Beta.sid", now - 100)
+    os.utime(jpath, (now, now))          # the cache is NEWER than every .sid
+
+    def _boom(*a, **k):
+        raise AssertionError("subprocess.run must not be called on a fresh cache")
+    monkeypatch.setattr("subprocess.run", _boom)
+
+    rc = A.run_instrmap(str(sid_dir), ["Alpha", "Beta"])
+    assert rc == 0
+    # The HTML report copy still runs on the skip path -- a page must not
+    # lose its instrument-map card just because the trace was skipped.
+    assert (A.LISTEN / "Alpha.instrmap.html").exists()
+
+
+def test_run_instrmap_retraces_when_a_sid_postdates_the_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    monkeypatch.setattr(A, "LISTEN", tmp_path / "build" / "listen")
+    A.LISTEN.mkdir(parents=True)
+    sid_dir = tmp_path / "sids"
+    sid_dir.mkdir()
+    (sid_dir / "Alpha.sid").write_bytes(b"PSID")
+    build = tmp_path / "build"
+    jpath = build / "instrmap.json"
+    jpath.write_text('{"seconds": 60, "songs": [{"file": "Alpha.sid"}]}',
+                     encoding="utf-8")
+    now = time.time()
+    os.utime(jpath, (now - 100, now - 100))   # the cache is OLDER than the .sid
+    _touch(sid_dir / "Alpha.sid", now)
+
+    calls = []
+
+    def _fake_run(cmd, capture_output, text):
+        calls.append(cmd)
+        jpath.write_text('{"seconds": 60, "songs": [{"file": "Alpha.sid"}]}',
+                         encoding="utf-8")
+        return _FakeResult(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    rc = A.run_instrmap(str(sid_dir), ["Alpha"])
+    assert rc == 0
+    assert len(calls) == 1
+
+
+def test_run_instrmap_force_bypasses_a_fresh_cache(tmp_path, monkeypatch):
+    monkeypatch.setattr(A, "ROOT", tmp_path)
+    monkeypatch.setattr(A, "LISTEN", tmp_path / "build" / "listen")
+    A.LISTEN.mkdir(parents=True)
+    sid_dir = tmp_path / "sids"
+    sid_dir.mkdir()
+    (sid_dir / "Alpha.sid").write_bytes(b"PSID")
+    build = tmp_path / "build"
+    jpath = build / "instrmap.json"
+    jpath.write_text('{"seconds": 60, "songs": [{"file": "Alpha.sid"}]}',
+                     encoding="utf-8")
+    now = time.time()
+    _touch(sid_dir / "Alpha.sid", now - 100)
+    os.utime(jpath, (now, now))          # fresh by mtime alone
+
+    calls = []
+
+    def _fake_run(cmd, capture_output, text):
+        calls.append(cmd)
+        jpath.write_text('{"seconds": 60, "songs": [{"file": "Alpha.sid"}]}',
+                         encoding="utf-8")
+        return _FakeResult(returncode=0)
+
+    monkeypatch.setattr("subprocess.run", _fake_run)
+    rc = A.run_instrmap(str(sid_dir), ["Alpha"], force=True)
+    assert rc == 0
+    assert len(calls) == 1
