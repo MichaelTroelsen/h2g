@@ -79,6 +79,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import typing
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -3445,6 +3446,22 @@ _RENAMED_OPTS = {"fmt": "format"}
 _NOT_CONVERT_OPTS = ("gt2reloc", "multiplier")
 
 
+def _wants_int(annotation) -> bool:
+    """True if a convert() parameter's own annotation names int, not bool.
+
+    bool is a subclass of int, so an isinstance check on a *value* cannot
+    separate `hard_restart_frames: int | None` from `slides: bool` -- both
+    would accept an int. The signature's annotation can: every bool option
+    convert() takes is spelled exactly `bool`, never a union that also
+    contains it, so "int appears, bool does not" reads the same distinction
+    the signature already draws, for both a bare `int` and a `int | None`.
+    """
+    if annotation is int:
+        return True
+    args = typing.get_args(annotation)
+    return int in args and bool not in args
+
+
 def _convert_options() -> tuple:
     """Every keyword convert() accepts, minus the inputs that are not options.
 
@@ -3521,13 +3538,20 @@ def _preset_opts(doc: dict, name: str) -> dict:
         # never a bool the generic `always`/per-song loop below could carry.
         "real_firstwave_instruments": tuple(
             entry.get("real_firstwave_instruments") or ()),
-        # Per song and an INT, so it cannot go through the generic loop
-        # below: that loop coerces with `bool()`, which turns a frame count
-        # of 4 into True and then into 1, landing back on the default and
-        # changing no byte. The option looked inert for exactly that reason
-        # before it was moved here.
+        # Per song, and read with `entry.get(...) or None` rather than the
+        # generic loop below: an explicit 0 here means "no override", the
+        # same as unset, which is a per-option idiom the generic loop does
+        # not know and should not guess at for every int option. It used to
+        # also be the ONLY way to keep an int option out of the generic
+        # loop's `bool()` coercion (a frame count of 4 arrived as True, then
+        # 1) -- that reason is gone now that the loop below reads the
+        # annotation, so a *future* int option does not need to be added
+        # here just to survive it. Kept hand-listed anyway for the 0-vs-None
+        # idiom above, which is genuinely per-option.
         "hard_restart_frames": entry.get("hard_restart_frames") or None,
     }
+    hints = typing.get_type_hints(convert)
+    params = inspect.signature(convert).parameters
     for opt in _convert_options():
         if opt in opts or opt in _PER_SONG_OPTS:
             continue
@@ -3538,7 +3562,23 @@ def _preset_opts(doc: dict, name: str) -> dict:
         # and `--filter` each shipped dead (see _convert_options), and which
         # `presets.py --fidelity` would otherwise reproduce for
         # `no_test_restart`.
-        opts[opt] = bool(entry[key] if key in entry else always.get(key))
+        raw = entry[key] if key in entry else always.get(key)
+        if _wants_int(hints.get(opt)):
+            # bool(4) is True, and convert() would then read the option as
+            # 1 -- an int option must never go through bool(). An absent
+            # value takes convert()'s own default rather than False, and a
+            # bare True/False (bool is a subclass of int, so JSON `true`
+            # would decode as one -- and this is also the shape a test
+            # handing `_preset_opts` a stand-in value uses) passes through
+            # unchanged rather than being renumbered by int().
+            if raw is None:
+                opts[opt] = params[opt].default
+            elif isinstance(raw, bool):
+                opts[opt] = raw
+            else:
+                opts[opt] = int(raw)
+        else:
+            opts[opt] = bool(raw)
     return opts
 
 

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.385 — 2026-08-25
+
+- the preset loader reads an option's annotation instead of coercing everything to bool, and the grid-edge clamp has two spellings
+
 ## 0.5.384 — 2026-08-25
 
 - a note row shows the instrument that sounds, not the literal 00

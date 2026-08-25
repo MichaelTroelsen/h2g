@@ -316,18 +316,40 @@ def _grid_edge_clamp(vals, i: int) -> bool:
     """Is `vals[i]` a table entry the 16-bit frequency registers cut short?
 
     The top of a note table is not a semitone above the entry below it,
-    because it cannot be. Entry 94 of the PAL table these players share is
-    `$F820` = 63520; a semitone above that is 67297, which does not fit in
-    `$D400`/`$D401`, so entry 95 is written as far up as the register goes --
-    `$FD2E` in 82 of the 88 candidate tables this corpus offers (35 cents), a
-    flat `$FFFF` in the other six (55 cents). `_table_run` is a *validation*,
-    so it stops at that entry, and the run it returns is one short of the
-    table it validated. `goatwriter._freq_table_note` -- rightly -- refuses
-    an index past the table's end, so five records were declined for naming
-    an entry that is really there: Tarzan's 0 and 16 and
-    Delta_Mix-E-Load_loader's 5 through effect bit `$08`'s alternate note,
-    and Ricochet's 0 and 20 through bit `$40`'s fixed attack. Those are the
-    only three files whose converted bytes move.
+    because it cannot be. Entry 94 of the commoner PAL table is `$F820` =
+    63520; a semitone above that is 67297, which does not fit in
+    `$D400`/`$D401`, so entry 95 is written as far up as the register goes.
+
+    **It has two spellings, and a rule about the top of a note table must
+    expect both.** Of the 97 candidate tables this corpus offers, 88 carry a
+    clamped entry 95: `$FD2E` in 82 of them and a flat `$FFFF` in the other
+    six -- Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast,
+    Radio_ACE and Sun_Never_Shines. The six are not the same table with a
+    different top: they are a second, independently rounded PAL table that
+    differs from the first at **64 of its 96 entries** by one LSB, and their
+    entry 94 is `$F80F` = 63503, not `$F820`. So the clamp is 34.91 cents in
+    one family and 54.53 in the other, and any rule keyed on either of those
+    numbers -- the value `$FD2E`, the value `$F820`, a cents threshold --
+    reads one family and silently misses the other. The test below is keyed
+    on none of them: it asks whether a full semitone above the *predecessor*
+    would overflow 16 bits, which is true at 67297 and at 67279 alike and
+    false everywhere below the top of a table.
+
+    `_table_run` is a *validation*, so it stops at that entry, and the run it
+    returns is one short of the table it validated.
+    `goatwriter._freq_table_note` -- rightly -- refuses an index past the
+    table's end, so five records were declined for naming an entry that is
+    really there: Tarzan's 0 and 16 and Delta_Mix-E-Load_loader's 5 through
+    effect bit `$08`'s alternate note, and Ricochet's 0 and 20 through bit
+    `$40`'s fixed attack.
+
+    **Three files' converted bytes move, not two.** The plan this came from
+    said the byte-hash would name Tarzan and Delta_Mix-E-Load_loader only,
+    and that cannot hold beside its own next sentence: both mechanisms pass
+    through the one `index < table.length` gate in
+    `goatwriter._freq_table_note`, so fixing bit `$08` fixes bit `$40` with
+    it, and Ricochet is the necessary consequence rather than a leak. The
+    clause is restated here rather than met.
 
     The test is the *cause*, not the symptom: an entry qualifies only where a
     full semitone above its predecessor would overflow 16 bits, which nothing

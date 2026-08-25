@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "a10419f",
+  "head": "5b2f3f3",
   "sources": [
    "todo.md",
    "whats-next.md",
@@ -54,31 +54,6 @@
    "verify": "`rest_envelope_silence` is a real convert() parameter, sits in presets.EXCLUDED_FROM_ALWAYS so it is never in the `always` block, and is ABSENT from FIDELITY_TOGGLES -- the seven the search varies. Neither route can reach it, so presets.json carries it for 0 of 83 songs while v0.5.367 is titled 'five songs take the rest-envelope silence'. PROVEN a selection gap and not an inert option: forcing it into a song entry moved that song's output_sha 7cb02371e295 -> bd0e00843b07. `rest_wave_silence` sits in exactly the same position -- check it in the same pass. Done when both are reachable by some route (searched, or recorded per song from a measurement) and the five songs v0.5.367 names either carry it or are shown by an A/B not to want it. Corpus byte-hash must move only songs that take it.",
    "why_model": "a question about what the search can express, where the wrong answer ships a feature nobody can select",
    "why_mode": "writes presets.json and needs a corpus A/B to decide the five songs",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "preset-opts-coerces-every-option-to-bool",
-   "title": "Any non-boolean convert() option silently arrives as True/False unless hand-listed",
-   "source": "runs.jsonl (opened by hard-restart-frames-per-song-option)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "r:python/h2g/convert.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`_preset_opts`'s generic loop does `bool(entry[key] ...)`, so an int option reads as True and then as 1. That is not hypothetical: `hard_restart_frames: 4` reached the conversion as 1 and produced a byte-identical .sng until it was added to _PER_SONG_OPTS. Three ints are now remembered by hand there (max_rows, real_firstwave_instruments, hard_restart_frames). Done when the loop reads the ANNOTATION off inspect.signature(convert) and passes ints as ints, with a test that a new int option works WITHOUT being added to _PER_SONG_OPTS. Corpus byte-hash must be identical -- this is a plumbing fix, not a behaviour change.",
-   "why_model": "a bounded change against an existing signature-derived mechanism, with the failure already reproduced",
-   "why_mode": "one module plus its test file; no artefact is rebuilt",
    "why_lane": "shares a path with another task where one side writes"
   },
   {
@@ -330,34 +305,6 @@
    "why_lane": "shares a path with another task where one side writes"
   },
   {
-   "id": "c64-music-examples-phantom-subtunes-not-trimmed",
-   "title": "Land the track-table-extent bound: the fix is complete, two tests pin the old counts",
-   "source": "runs.jsonl (partial, head 1e534e0)",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/tracks.py",
-    "rw:python/tests/test_tracks.py",
-    "rw:python/tests/test_reject_phantoms.py",
-    "rw:python/tests/test_empty_voice.py",
-    "rw:docs/SUBTUNES.md",
-    "r:python/h2g/detect.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DURABLE: commit f2c86f2 on branch worktree-wf_beea4e15-8ff-1, 2 files +245/-1, all four original verify clauses met. PARTIAL for ONE reason: two existing tests pin the superseded subtune counts and lay outside that task's writable paths, so the tree has 2 red tests. Done when the branch is rebased onto current master, those tests updated, the full suite green and docs/SUBTUNES.md regenerated. Sibling: empty-voice-test-pins-rasputins-old-subtune-count is the same shape. A version bump is owed at merge.",
-   "why_model": "a subtune-bound change already measured once and mis-scoped once",
-   "why_mode": "merges a branch and regenerates a hazard artefact",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
    "id": "vibrato-plain",
    "title": "The four-way split of the plain-vibrato deficit is recorded; act on it",
    "source": "runs.jsonl (partial, head c6eb8b5)",
@@ -466,30 +413,6 @@
    "why_lane": "shares a path with another task where one side writes"
   },
   {
-   "id": "freq-table-length-off-by-one-at-the-grid-edge",
-   "title": "Entry 95 is a clamp with two corpus spellings -- finish the length/run split",
-   "source": "runs.jsonl (partial, head fc691a4)",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/sidfile.py",
-    "rw:python/tests/test_freq_table.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DURABLE: entry 95 is a CLAMP, not corruption (63520 * 2^(1/12) = 67297 exceeds 16 bits), with two spellings -- $FD2E in 82 tables and $FFFF in 6 -- so any future rule about the top of a note table must expect both. `length` != `run` and the split is load-bearing. Done when the remaining clause is met or restated and freq-table-run-vs-length-test-assertions is folded in. Suite green and Commando.sng byte-exact.",
-   "why_model": "a table-boundary rule where an off-by-one silently changes note pitches",
-   "why_mode": "one module plus its existing test file",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
    "id": "skate-or-die-intro-drift-plus-200-is-not-the-gate-skip",
    "title": "A drift outlier the report's own prose attributes to a cause that does not fit it",
    "source": "runs.jsonl (opened by audit-other-report-lines-that-assert-a-benign-cause)",
@@ -558,6 +481,24 @@
    "title": "Narrow the r:python/h2g directory declarations",
    "closed_by": "a10419f",
    "reason": "Fixed in this plan and the one before it: every task now declares the files it actually reads, so a task writing goatwriter.py no longer blocks one reading sidfile.py."
+  },
+  {
+   "id": "preset-opts-coerces-every-option-to-bool",
+   "title": "Any non-boolean convert() option silently arrives as True/False unless hand-listed",
+   "closed_by": "5b2f3f3",
+   "reason": "_preset_opts now reads the annotation off convert()'s signature: a brand-new int option is forwarded as an int WITHOUT being added to _PER_SONG_OPTS, pinned by 6 tests. Corpus byte-identical, 83/83, verified against a clean HEAD export."
+  },
+  {
+   "id": "c64-music-examples-phantom-subtunes-not-trimmed",
+   "title": "Land the track-table-extent bound: the fix is complete, two tests pin the old counts",
+   "closed_by": "5b2f3f3",
+   "reason": "SUPERSEDED, not merged. 98% of the branch's added lines are already in master, and its only unique content is Spellbound = 4 -- which f63caa1 settled at 3 (the init dispatch beats the layout extent). presets.json and track_table_extent both say 3 at this HEAD. The 'two red tests' are 42 passed on master."
+  },
+  {
+   "id": "freq-table-length-off-by-one-at-the-grid-edge",
+   "title": "Entry 95 is a clamp with two corpus spellings -- finish the length/run split",
+   "closed_by": "5b2f3f3",
+   "reason": "Census confirms 82 x $FD2E + 6 x $FFFF = 88 clamped of 97 candidates. NEW: the six are a DIFFERENT table, not the same table with a different top -- 64 of 96 entries differ by one LSB, so the clamp is 34.91 cents in one family and 54.53 in the other, and a rule keyed on the literal byte or a cents threshold would read one and miss the other. Clause (a) restated: three files move, not two -- Ricochet is a necessary consequence of the shared `index < table.length` gate, not a leak."
   }
  ]
 }

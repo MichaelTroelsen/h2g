@@ -150,11 +150,85 @@ def test_the_clamped_top_entry_is_in_the_length_and_not_in_the_run():
         assert ft.length == 96, name
 
 
+# The six corpus files whose clamp is spelled `$FFFF` rather than `$FD2E`.
+# They carry a second, independently rounded PAL table: 64 of its 96 entries
+# differ from the commoner one by a single LSB, and its entry 94 is $F80F
+# rather than $F820. That is why a rule keyed on either literal reads one
+# family and misses the other -- see `sidfile._grid_edge_clamp`.
+FFFF_TABLES = ("Go_Go_Dash", "Lakers_vs_Celtics", "Lion_Heart",
+               "Pacific_Coast", "Radio_ACE", "Sun_Never_Shines")
+
+
+@needs_corpus
+def test_the_clamp_is_spelled_two_ways_and_the_census_says_which():
+    # The durable fact, pinned so it decays loudly. Counted over *candidate*
+    # tables (a file can offer more than one -- Powerplay Hockey offers two),
+    # which is the population the docstring's numbers are about.
+    from h2g.sidfile import _freq_table_sites, _grid_edge_clamp, _table_run
+    spellings = {}
+    candidates = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        seen = set()
+        for addr in _freq_table_sites(sid.data):
+            if addr in seen:
+                continue
+            seen.add(addr)
+            off = sid.to_offset(addr)
+            if not 0 <= off < len(sid.data) - 8:
+                continue
+            n = min(100, (len(sid.data) - off) // 2)
+            vals = [sid.data[off + 2 * i] | (sid.data[off + 2 * i + 1] << 8)
+                    for i in range(n)]
+            start, run = max(((s, _table_run(vals, s)) for s in range(3)),
+                             key=lambda t: t[1])
+            if run < 36:
+                continue
+            candidates += 1
+            if _grid_edge_clamp(vals, start + run):
+                spellings.setdefault(vals[start + run], []).append(path.stem)
+    assert candidates == 97, candidates
+    counts = {hex(v): len(names) for v, names in sorted(spellings.items())}
+    assert counts == {"0xfd2e": 82, "0xffff": 6}, counts
+    assert sorted(spellings[0xFFFF]) == sorted(FFFF_TABLES), spellings[0xFFFF]
+    assert sum(counts.values()) == 88
+
+
+@needs_corpus
+def test_the_ffff_spelling_reaches_length_the_same_way_fd2e_does():
+    # The second spelling end to end, not merely as a `_grid_edge_clamp` unit
+    # case: these six must come out of `find_freq_table` with the same
+    # run/length split as Tarzan's, off a table whose entry 94 is $F80F.
+    for name in FFFF_TABLES:
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        ft = find_freq_table(sid)
+        assert ft is not None, name
+        off = sid.to_offset(ft.addr)
+        assert sid.data[off + 2 * 94] | (sid.data[off + 2 * 94 + 1] << 8) \
+            == 0xF80F, name
+        assert sid.data[off + 2 * 95] | (sid.data[off + 2 * 95 + 1] << 8) \
+            == 0xFFFF, name
+        assert (ft.start, ft.run, ft.length) == (0, 95, 96), name
+
+
+def test_the_clamp_is_arithmetic_rather_than_corruption():
+    # Both families overflow, by 1762 and 1744 units respectively -- which is
+    # what makes entry 95 a clamp and not a bad byte. Neither number is in the
+    # test; the overflow is.
+    assert 63520 * 2 ** (1 / 12) > 0xFFFF
+    assert round(63520 * 2 ** (1 / 12)) == 67297
+    assert round(63503 * 2 ** (1 / 12)) == 67279
+
+
 def test_the_grid_edge_extension_is_the_overflow_and_nothing_else():
     from h2g.sidfile import _grid_edge_clamp
     # The real shape: a semitone above 63520 is 67297, so entry 95 is clamped.
     assert _grid_edge_clamp([63520, 0xFD2E], 1) is True
     assert _grid_edge_clamp([63520, 0xFFFF], 1) is True
+    # ...and the $FFFF family's own predecessor, which is $F80F and not
+    # $F820. The two families are both caught because the test is on the
+    # overflow, not on either literal.
+    assert _grid_edge_clamp([63503, 0xFFFF], 1) is True
     # ...and nothing below the top of a table qualifies, however off-grid the
     # bytes after it look. This is what keeps the widening to one entry in one
     # place instead of relaxing the semitone test.

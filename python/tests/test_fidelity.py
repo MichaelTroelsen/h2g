@@ -1603,3 +1603,71 @@ def test_no_shifted_line_when_every_correspondence_is_the_identity():
     # The state the corpus is in today: f63caa1 took this to zero files, and a
     # zero must render nothing at all rather than an empty warning.
     assert _note_for(0) == ""
+
+
+# --- _preset_opts: an int option must survive the generic loop -------------
+#
+# `_preset_opts`'s generic loop used to coerce every option it did not
+# recognise with `bool()`. That is silently wrong for an int option: bool(4)
+# is True, and convert() then reads it as 1. `hard_restart_frames: 4` reached
+# a conversion that way and produced a byte-identical .sng until it was
+# hand-added to `_PER_SONG_OPTS` to dodge the loop entirely -- which meant the
+# *next* int option would need the same manual rescue. The fix reads the
+# option's own annotation off inspect.signature(convert) instead of guessing,
+# so a brand-new int option works the first time, with nothing added to
+# `_PER_SONG_OPTS`.
+
+
+def _convert_with_new_int_option(new_int_default=0):
+    """A stand-in for h2g.convert.convert carrying one extra int option that
+    _preset_opts has never heard of and _PER_SONG_OPTS does not name."""
+    def fake_convert(sid_path, log=print,
+                      brand_new_int_option: int | None = new_int_default):
+        return b""
+    return fake_convert
+
+
+def test_a_new_int_option_is_forwarded_as_an_int_not_a_bool(monkeypatch):
+    monkeypatch.setattr(fidelity, "convert", _convert_with_new_int_option())
+    assert "brand_new_int_option" not in fidelity._PER_SONG_OPTS
+    doc = {"always": {}, "songs": {"a.sid": {"brand_new_int_option": 4}}}
+    opts = fidelity._preset_opts(doc, "a.sid")
+    assert opts["brand_new_int_option"] == 4, (
+        "an int option must arrive as the int itself, not bool(4) == True "
+        f"(== 1) -- got {opts['brand_new_int_option']!r}")
+    assert opts["brand_new_int_option"] is not True
+    assert type(opts["brand_new_int_option"]) is int
+
+
+def test_a_new_int_option_absent_from_both_blocks_keeps_its_own_default(
+        monkeypatch):
+    monkeypatch.setattr(fidelity, "convert",
+                        _convert_with_new_int_option(new_int_default=7))
+    doc = {"always": {}, "songs": {}}
+    opts = fidelity._preset_opts(doc, "a.sid")
+    # Not False (bool(None)), and not silently missing: convert()'s own
+    # default for the parameter, read off its signature.
+    assert opts["brand_new_int_option"] == 7
+    assert opts["brand_new_int_option"] is not False
+
+
+def test_a_new_int_option_can_also_be_set_from_the_always_block(monkeypatch):
+    monkeypatch.setattr(fidelity, "convert", _convert_with_new_int_option())
+    doc = {"always": {"brand_new_int_option": 12}, "songs": {}}
+    opts = fidelity._preset_opts(doc, "a.sid")
+    assert opts["brand_new_int_option"] == 12
+
+
+def test_wants_int_distinguishes_int_from_bool():
+    assert fidelity._wants_int(int)
+    assert fidelity._wants_int(int | None)
+    assert not fidelity._wants_int(bool)
+    assert not fidelity._wants_int(str)
+
+
+def test_hard_restart_frames_still_arrives_as_a_real_int():
+    """The regression this whole fix is about, against the real convert()."""
+    doc = {"always": {}, "songs": {"a.sid": {"hard_restart_frames": 4}}}
+    opts = fidelity._preset_opts(doc, "a.sid")
+    assert opts["hard_restart_frames"] == 4
+    assert opts["hard_restart_frames"] is not True
