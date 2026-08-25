@@ -831,6 +831,15 @@ td.appr .n { color:var(--muted); }
 .trkrow.cur { background:color-mix(in srgb, var(--live) 22%, transparent); }
 .trkrow .ix { color:var(--muted); opacity:.65; }
 .trkrow .instr { color:var(--b); font-weight:600; }
+/* An instrument the row INHERITS rather than sets. Goattracker reads a 00
+   in the instrument column as "keep the current one", so the literal byte
+   is 00 while the instrument actually sounding is whatever was last set on
+   that channel. Showing the literal byte made a reader conclude the
+   instruments were missing; showing the effective one without marking it
+   would claim the row sets something it does not. Dimmed and italic says
+   both: this is what you hear, and this row is not where it came from. */
+.trkrow .instr.inherited { color:var(--muted); font-weight:400;
+  font-style:italic; opacity:.75; }
 .trknote { margin:12px 0 0; font-size:.86rem; color:var(--muted); }
 .vstrip { display:grid; gap:14px;
   grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); }
@@ -2118,7 +2127,7 @@ def row_schedule(sng_path: Path, subtune: int, multiplier: int,
     out = []
     for v in range(3):
         order = song.tracks[subtune * 3 + v]
-        rows, frame, tempo, transpose = [], 0.0, song_tempo, 0
+        rows, frame, tempo, transpose, live_instr = [], 0.0, song_tempo, 0, 0
         for entry in order:
             if entry >= npat:                    # transpose / repeat / restart
                 continue
@@ -2129,8 +2138,20 @@ def row_schedule(sng_path: Path, subtune: int, multiplier: int,
                     break
                 if cmd == CMD_SETTEMPO_ and 3 <= data <= 0x7F:
                     tempo = data
+                # Instrument 0 in a Goattracker pattern means KEEP THE
+                # CURRENT ONE, not "no instrument" -- so a note row
+                # showing 00 is inheriting, and the literal byte alone
+                # reads as though the note has no instrument at all. A
+                # listener reported exactly that on 5 Title Tunes, whose
+                # channels 1 and 2 inherit on 43% of their note rows. Carry
+                # the last non-zero forward and mark it, so the display can
+                # show WHICH instrument sounds while still saying that this
+                # row did not set it.
+                if instr:
+                    live_instr = instr
+                eff = instr or live_instr
                 rows.append([round(frame), _note_name(note), instr, cmd, data,
-                             entry, i // 4])
+                             entry, i // 4, eff, 1 if (eff and not instr) else 0])
                 frame += (tempo or 6) / max(1, multiplier)
                 if frame > frames:
                     break
@@ -2192,10 +2213,10 @@ def tracker_card(name: str) -> str:
         frames_js.append([r[0] for r in rows])
         body = "".join(
             '<div class="trkrow%s" data-i="%d"><span class="ix">%03d</span>'
-            '<span class="n">%s</span><span class="instr">%02X</span>'
+            '<span class="n">%s</span><span class="instr%s">%02X</span>'
             '<span class="cmd">%X%02X</span></div>'
             % (" note" if r[1] not in ("...", "===") else "", i, i % 1000,
-               r[1], r[2], r[3], r[4])
+               r[1], " inherited" if r[8] else "", r[7], r[3], r[4])
             for i, r in enumerate(rows))
         cols += ('<div class="trkcol"><h3>Channel %d</h3>'
                  '<div class="trkhead"><span class="ix">row</span>'
@@ -2209,7 +2230,10 @@ def tracker_card(name: str) -> str:
         '  <div class="trk">%s</div>\n'
         '  <script>window.__abRows = %s;</script>\n'
         '  <p class="trknote">Our conversion\u2019s subtune %d, the one both '
-        'renders are of: note, instrument, command. It follows <b>our</b> '
+        'renders are of: note, instrument, command. An instrument shown '
+        '<i>dimmed and italic</i> is one the row <b>inherits</b> — Goattracker '
+        'reads 00 in that column as “keep the current instrument”, so the '
+        'number shown is what sounds and the row is not where it was set. It follows <b>our</b> '
         'render\u2019s clock, and the row timing is <b>derived</b> from the '
         'tempo written into the file \u2014 so if the view drifts against '
         'what you hear, the row rate is wrong, which is a finding rather '

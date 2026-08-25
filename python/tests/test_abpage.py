@@ -880,3 +880,50 @@ def test_run_instrmap_force_bypasses_a_fresh_cache(tmp_path, monkeypatch):
     rc = A.run_instrmap(str(sid_dir), ["Alpha"], force=True)
     assert rc == 0
     assert len(calls) == 1
+
+
+# --- the pattern view shows the instrument that SOUNDS -----------------------
+#
+# Goattracker reads 00 in a pattern's instrument column as "keep the current
+# instrument", not "no instrument". Showing the literal byte made a reader of
+# 5 Title Tunes conclude the instruments were missing -- 43% of that file's
+# note rows on channels 1 and 2 inherit rather than set. `row_schedule` now
+# carries the last non-zero forward as `eff` (index 7) and flags the row as
+# inherited (index 8), so the view can show what sounds while still saying the
+# row is not where it was set.
+
+def _sched_rows(tmp_path, monkeypatch):
+    import pathlib as _pl
+    sng = _pl.Path(A.__file__).resolve().parent.parent / "build" / "listen" / "5_Title_Tunes.h2g.sng"
+    if not sng.exists():
+        pytest.skip("build/listen/5_Title_Tunes.h2g.sng not staged")
+    return A.row_schedule(sng, 0, 1, 3000)
+
+
+def test_a_note_row_never_reports_instrument_zero(tmp_path, monkeypatch):
+    sched = _sched_rows(tmp_path, monkeypatch)
+    for v, rows in enumerate(sched["voices"]):
+        notes = [r for r in rows if r[1] not in ("...", "===")]
+        assert notes, v
+        assert all(r[7] for r in notes), (
+            "voice %d has a note row whose effective instrument is 0" % v)
+
+
+def test_an_inherited_row_is_flagged_and_keeps_its_literal_byte(tmp_path, monkeypatch):
+    sched = _sched_rows(tmp_path, monkeypatch)
+    inherited = [r for rows in sched["voices"] for r in rows
+                 if r[1] not in ("...", "===") and r[8]]
+    assert inherited, "expected some inherited note rows on this file"
+    for r in inherited:
+        assert r[2] == 0          # the literal pattern byte is still 00
+        assert r[7] != 0          # and the effective instrument is real
+
+
+def test_a_row_that_sets_an_instrument_is_not_flagged(tmp_path, monkeypatch):
+    sched = _sched_rows(tmp_path, monkeypatch)
+    setters = [r for rows in sched["voices"] for r in rows
+               if r[1] not in ("...", "===") and r[2]]
+    assert setters
+    for r in setters:
+        assert r[8] == 0
+        assert r[7] == r[2]
