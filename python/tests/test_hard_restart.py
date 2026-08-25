@@ -191,3 +191,49 @@ def test_it_fits_the_six_bits_it_is_written_into():
     for row in (2, 3, 8, 40, 127):
         for mult in (1, 3, 8):
             assert _hard_restart_ticks(mult, row) <= 0x3F
+
+
+# --- wide/full are inert at multiplier 1 -------------------------------------
+#
+# `_hard_restart_ticks` computes `ticks = min(want, bound)`, and `want` is
+# `HARD_RESTART_FRAMES * multiplier`. `wide` and `full` raise the BOUND only, so
+# at multiplier 1 (want = 2) neither can lift the result above 2 however long the
+# row is. The docstring used to say `full` "goes to row_calls - 1", which is true
+# only once the multiplier has already pushed `want` past the bound.
+#
+# This is not a defect to fix here -- raising `want` needs a convert() option --
+# but it is why 17 corpus songs carry `max_hard_restart` and none of them is
+# multiplier 1: on a single-speed file the toggle changes no byte, so the preset
+# search can never select it. Pinned so the inertness is a stated property rather
+# than a surprise the next reader re-derives.
+
+def test_full_and_wide_are_inert_at_multiplier_one():
+    from h2g import goatwriter as G
+    for row_calls in (4, 6, 8, 12, 16):
+        plain = G._hard_restart_ticks(1, row_calls)
+        assert G._hard_restart_ticks(1, row_calls, wide=True) == plain
+        assert G._hard_restart_ticks(1, row_calls, full=True) == plain
+        assert plain == 2, (row_calls, plain)
+
+
+def test_full_does_reach_its_bound_once_want_exceeds_it():
+    # The other half of the same statement: the bound is real, it just needs a
+    # `want` big enough to reach it, which only a multiplier supplies today.
+    from h2g import goatwriter as G
+    assert G._hard_restart_ticks(4, 8, full=True) == 7      # row_calls - 1
+    assert G._hard_restart_ticks(4, 8) == 4                 # row_calls // 2
+    assert G._hard_restart_ticks(2, 4, full=True) == 3      # row_calls - 1
+
+
+def test_the_constant_cannot_move_a_four_call_row():
+    # 5_Title_Tunes' shape: multiplier 1, row_calls 4. `bound = 4 // 2` = 2 caps
+    # the result before `want` is consulted, which is why converting that file at
+    # HARD_RESTART_FRAMES 2, 3, 4 and 5 produces a byte-identical .sng.
+    from h2g import goatwriter as G
+    old = G.HARD_RESTART_FRAMES
+    try:
+        for n in (2, 3, 4, 5, 8):
+            G.HARD_RESTART_FRAMES = n
+            assert G._hard_restart_ticks(1, 4) == 2, n
+    finally:
+        G.HARD_RESTART_FRAMES = old

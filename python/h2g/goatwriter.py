@@ -199,7 +199,8 @@ HARD_RESTART_FRAMES = 2
 
 
 def _hard_restart_ticks(multiplier: int, row_calls: int,
-                        wide: bool = False, full: bool = False) -> int:
+                        wide: bool = False, full: bool = False,
+                        frames: int | None = None) -> int:
     """Calls to hold the gate off before a note, bounded by the row.
 
     **gplay.c:334 stops the song outright** when the gatetimer exceeds the
@@ -227,12 +228,43 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     exactly that: 9 of the 19 files it reaches took it and Saboteur II did
     not.
 
-    **`full` goes to `row_calls - 1`, the player's own limit**, 3.3pp of mean
-    gate in the same sweep and 98% -> 62% on the same file. It is offered on
-    the strength of `keeps_notes` having demonstrably refused the gentler
-    value where it hurts -- a guard that has caught the case once is evidence,
-    where at v0.5.276 it was a hope. `full` outranks `wide`; see the comment
-    at the branch.
+    **`full` raises that bound to `row_calls - 1`, the player's own limit**,
+    3.3pp of mean gate in the same sweep and 98% -> 62% on the same file. It is
+    offered on the strength of `keeps_notes` having demonstrably refused the
+    gentler value where it hurts -- a guard that has caught the case once is
+    evidence, where at v0.5.276 it was a hope. `full` outranks `wide`; see the
+    comment at the branch.
+
+    **BOTH RAISE THE BOUND AND NEITHER RAISES `want`, so both are INERT AT
+    MULTIPLIER 1** -- and that sentence used to read "`full` *goes to*
+    `row_calls - 1`", which is true only where `want` already exceeds the
+    bound. `ticks = min(want, bound)` and `want` is `HARD_RESTART_FRAMES *
+    multiplier` = 2 at single speed, so at multiplier 1 `full` returns 2 for a
+    row of 4, of 8 and of 12 alike, where its own bound would allow 3, 7 and
+    11. The corpus shows the consequence rather than merely admitting it: 17
+    songs carry `max_hard_restart` and **not one of them is multiplier 1**,
+    because on a single-speed file the toggle changes no byte and the preset
+    search cannot select what does nothing.
+
+    **What that costs, measured on 5_Title_Tunes (multiplier 1, row 4 calls).**
+    Its original gates off for a uniform 4 frames per note against our 2, and
+    the gate column reads 0.4996 with `gate_ours_ringing` 1873. The constant is
+    NOT the lever -- converting at `HARD_RESTART_FRAMES` 2, 3, 4 and 5 gives a
+    byte-identical `.sng` every time (sha b49462e6553e), because `bound =
+    row_calls // 2` = 2 caps it before `want` is ever consulted. Raising `want`
+    to 4 *and* setting `full` reaches ticks 3, the row's ceiling, and that
+    measures gate **0.4996 -> 0.7494** with `gate_ours_ringing` 1873 -> 938 and
+    melody, seq, pitch and wave every one unchanged to four decimals. Ticks 4
+    would match the original exactly and is unreachable: `gplay.c:334` stops the
+    song when the gatetimer exceeds the channel's tick, so a 4-call row can
+    never gate off for 4.
+
+    **And `adsr` does NOT follow the gate, which was predicted and is wrong.**
+    At ticks 3 it stays 0.5831 to four decimals. The frame merely moves from
+    "we are gated on while the original is off" to "both gated off"; the AD
+    byte we hold there is the instrument's and the original's is $0000, so it
+    disagrees in either state. The two columns share a population and not a
+    fix.
 
     **Floored at 2**, the value this writer wrote for its whole life, so no
     single-speed file moves: Commando's row is 3 calls, half of which is 1,
@@ -242,7 +274,17 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     Falls back to that constant where the row is unknown, which is what a
     caller building instruments without a tempo pass has.
     """
-    want = max(1, HARD_RESTART_FRAMES * max(1, multiplier))
+    # `frames` is the per-song override (`--hard-restart-frames`). It replaces
+    # the constant in `want` and nothing else, so the row bound still applies
+    # and gplay.c:334's limit is still respected -- a song cannot ask its way
+    # past the tick that stops the player.
+    # `not frames` rather than `frames is None`: `_preset_opts` passes False
+    # for every option a song's entry does not carry, so an `is None` test
+    # reads absent-as-zero and silently drops `want` from 2 to 1. That moved
+    # 24 corpus files on a change advertised as inert, and the byte-hash is
+    # what caught it.
+    base = max(1, int(frames)) if frames else HARD_RESTART_FRAMES
+    want = max(1, base * max(1, multiplier))
     if not row_calls or row_calls <= 1:
         return min(want, 2)
     # Ordered, not exclusive: the search tries every combination of its
@@ -2485,6 +2527,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        row_calls: int = 0,
                        wide_hard_restart: bool = False,
                        max_hard_restart: bool = False,
+                       hard_restart_frames: int | None = None,
                        real_firstwave_instruments: tuple = ()) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
@@ -2559,7 +2602,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         gatetimer = ((0x80 if no_hard_restart else 0)
                      | (_hard_restart_ticks(multiplier, row_calls,
                                             wide_hard_restart,
-                                            max_hard_restart) & 0x3F))
+                                            max_hard_restart,
+                                            hard_restart_frames) & 0x3F))
         filt_ptr = (filter_ptrs or {}).get(i, 0x00)
         # Bytes 5 and 6 are ptr[STBL] and vibdelay in a GTS5 file
         # (gsong.c:224-225) and the same pair the other way round, packed, in a
@@ -4759,6 +4803,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               filters: bool = False,
               vibrato: bool = False,
               min_notes: Optional[dict] = None,
+              hard_restart_frames: int | None = None,
               compact_instruments: bool = False,
               no_test_restart: bool = False,
               two_stage: bool = False,
@@ -4838,6 +4883,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        multiplier=multiplier, row_calls=row_calls,
                        wide_hard_restart=wide_hard_restart,
                        max_hard_restart=max_hard_restart,
+                       hard_restart_frames=hard_restart_frames,
                        real_firstwave_instruments=real_firstwave_instruments)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)

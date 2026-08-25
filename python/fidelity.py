@@ -3440,7 +3440,7 @@ def sidm2_audio(orig: Path, ours: Path, seconds: int,
 # three per-song shaping values, the two named differently in the JSON, and the
 # packing factor, which belongs to gt2reloc rather than to the conversion.
 _PER_SONG_OPTS = ("max_rows", "pack", "prune", "dedup",
-                  "real_firstwave_instruments")
+                  "real_firstwave_instruments", "hard_restart_frames")
 _RENAMED_OPTS = {"fmt": "format"}
 _NOT_CONVERT_OPTS = ("gt2reloc", "multiplier")
 
@@ -3521,6 +3521,12 @@ def _preset_opts(doc: dict, name: str) -> dict:
         # never a bool the generic `always`/per-song loop below could carry.
         "real_firstwave_instruments": tuple(
             entry.get("real_firstwave_instruments") or ()),
+        # Per song and an INT, so it cannot go through the generic loop
+        # below: that loop coerces with `bool()`, which turns a frame count
+        # of 4 into True and then into 1, landing back on the default and
+        # changing no byte. The option looked inert for exactly that reason
+        # before it was moved here.
+        "hard_restart_frames": entry.get("hard_restart_frames") or None,
     }
     for opt in _convert_options():
         if opt in opts or opt in _PER_SONG_OPTS:

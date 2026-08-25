@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.382 — 2026-08-25
+
+- a per-song hard-restart frame count, and 5 Title Tunes' gate goes 50 to 75
+
 ## 0.5.381 — 2026-08-24
 
 - the adsr deficit is half the gate task and half inaudible

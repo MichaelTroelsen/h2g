@@ -105,6 +105,17 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
 # nothing, which is how --slides and --filter each shipped dead.
 # test_preset_passthrough.py checks this set covers the difference.
 EXCLUDED_FROM_ALWAYS = {
+    # An integer, not a toggle, and a property of the PLAYER being ripped
+    # rather than a setting that could be right for everyone: how many frames
+    # that player holds the gate off before a note. There is no value that
+    # suits the corpus, so there is nothing to put in `always`. It is also not
+    # searchable by `--fidelity`, whose walk is over booleans -- a song gets it
+    # from a measurement written into its own entry. 5_Title_Tunes is the first:
+    # its player releases for a uniform 4 frames where the built-in constant
+    # asks for 2, and at 4 (with --max-hard-restart to lift the row bound off
+    # half the row) its gate goes 0.4996 -> 0.7494 with melody, seq, pitch and
+    # wave every one unchanged. Unset it changes no byte anywhere.
+    "hard_restart_frames",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
     # carries one -- Powerplay Hockey's nine game cues against the tune its

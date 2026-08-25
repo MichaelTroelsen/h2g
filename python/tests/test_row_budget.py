@@ -101,8 +101,11 @@ def test_the_swallowed_row_is_not_one_file():
     seen: dict[str, set] = {}
     current = [""]
 
-    def spy(multiplier, row_calls, wide=False, full=False):
-        ticks = real(multiplier, row_calls, wide, full)
+    def spy(multiplier, row_calls, wide=False, full=False, frames=None):
+        # `frames` is the per-song --hard-restart-frames override; the spy has
+        # to accept it or every conversion here raises TypeError and the
+        # `converted >= 80` guard below correctly refuses to conclude anything.
+        ticks = real(multiplier, row_calls, wide, full, frames)
         if row_calls:
             seen.setdefault(current[0], set()).add((row_calls, ticks))
         return ticks

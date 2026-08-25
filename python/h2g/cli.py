@@ -132,6 +132,19 @@ def main(argv=None) -> int:
              "downward frequency sweep, then noise. Off by default: it "
              "changes the output bytes")
     parser.add_argument(
+        "--hard-restart-frames", type=int, default=None, metavar="N",
+        help="how many FRAMES to hold the gate off before a note, replacing "
+             "the built-in 2. Per song, because it is a property of the "
+             "player being ripped: 5 Title Tunes' releases for a uniform 4 "
+             "frames where the default asks for 2, and its gate reads 50%%. "
+             "It sets the WANT only -- the row bound still applies, so a "
+             "value larger than the row buys nothing and gplay.c:334's limit "
+             "(the gatetimer may not exceed the channel tick, or the player "
+             "stops) is still respected. On a row of 4 calls the ceiling is "
+             "3, which needs --max-hard-restart as well because the default "
+             "bound is half the row. Unset leaves every conversion "
+             "byte-identical.")
+    parser.add_argument(
         "--engine", type=int, default=0, metavar="N",
         help="rip player N, for a .sid that carries more than one. 0 (the "
              "default) is the player the PSID header's startSong selects, "
@@ -491,6 +504,11 @@ def main(argv=None) -> int:
             # always beats the stored preset.
             if not _given("--max-rows"):
                 args.max_rows = entry.get("max_rows", args.max_rows)
+            # Same shape as --max-rows: an int a song carries, where an
+            # explicit flag still beats the stored value.
+            if not _given("--hard-restart-frames"):
+                args.hard_restart_frames = entry.get(
+                    "hard_restart_frames", args.hard_restart_frames)
             for flag, key in (("--pack-repeats", "pack"),
                               ("--prune-patterns", "prune"),
                               ("--dedup-patterns", "dedup")):
@@ -539,6 +557,7 @@ def main(argv=None) -> int:
                       no_hard_restart=args.no_hard_restart,
                       wide_hard_restart=args.wide_hard_restart,
                       max_hard_restart=args.max_hard_restart,
+                      hard_restart_frames=args.hard_restart_frames,
                       no_test_restart=args.no_test_restart,
                       rest_keyoff=args.rest_keyoff,
                       rest_wave_silence=args.rest_wave_silence,
