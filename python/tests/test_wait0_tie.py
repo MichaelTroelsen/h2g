@@ -41,7 +41,7 @@ import pytest
 
 from corpus import CORPUS, needs_corpus
 from h2g.convert import _detect_tables, convert
-from h2g.patterns import (CMD_SETTEMPO, CMD_TONEPORTA, GT_NO_NOTE,
+from h2g.patterns import (CMD_SETTEMPO, CMD_TONEPORTA, GT_KEYOFF, GT_NO_NOTE,
                           MAX_PATTERNS, TrackIndex, _apply_boundary_ties,
                           _apply_wrap_tie, _build_raw_pattern, apply_tempos,
                           decode_entry, reindex_tracks)
@@ -410,3 +410,93 @@ def test_corpus_entries_report_the_expected_exit_state(name, tied, untied):
 
     assert [i for i in tied if not state(i)] == []
     assert [i for i in untied if state(i)] == []
+
+
+# --- the three declines, and the one that is not on voice 0 ---------------
+#
+# The pass had been recorded as reaching nothing because "every corpus
+# instance is on voice 0", and that is not why. Censused by wrapping
+# `_apply_wrap_tie` at its own call site over the whole corpus, five voice
+# orderlists exit tied and three have an in-range restart, and they decline
+# for THREE unrelated reasons -- one of them on voice 1, where the veto never
+# runs at all. See the function's docstring for the table and the numbers.
+
+def test_a_keyoff_at_the_restart_position_is_not_a_note_to_tie_into():
+    """Chimera's decline, as a unit.
+
+    `GT_KEYOFF` is $BE and `GT_LASTNOTE` is $BC, so a KEYOFF row 0 fails
+    `_tie_step`'s note-range test. That is the right answer rather than an
+    off-by-two: a KEYOFF is the player's own data saying *release here*, so
+    there is no attack being suppressed and nothing to tie into. Tying it
+    would write a portamento into a row that closes the gate.
+    """
+    patterns = [_pattern(), _pattern(note=GT_KEYOFF)]
+    track = [1, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, True, False) == 0
+    assert track == [1, 0xFF, 0x00], "the step was repointed anyway"
+    assert len(patterns) == 2, "a copy was made for a row that cannot tie"
+
+
+def test_the_same_step_with_a_real_note_does_tie():
+    """The pair for the test above: it is the KEYOFF that declines, not the
+    fixture. Same track, same call, one byte different on row 0."""
+    patterns = [_pattern(), _pattern()]
+    track = [1, 0xFF, 0x00]
+    assert _apply_wrap_tie(track, patterns, {}, True, False) == 1
+    assert track[0] == 2
+
+
+@needs_corpus
+def test_the_corpus_wrap_census_has_not_moved():
+    """Every exit-tied orderlist in the corpus, and why each one declines.
+
+    Four files carry all five, so this pins the census without converting the
+    whole corpus. It asserts the DECLINE KIND per file, not just a total: a
+    change that turned the KEYOFF decline into a tie, or that lifted the
+    tempo veto, would leave the total at zero ties on some other route and
+    pass a bare count.
+    """
+    import h2g.patterns as P
+
+    real = P._apply_wrap_tie
+    seen: list = []
+    state = {"file": None, "ti": -1}
+
+    def spy(new_track, patterns, copies, exits_tied, tempo_voice, log=None):
+        state["ti"] += 1
+        ti = state["ti"]
+        songlen = next((i for i, b in enumerate(new_track)
+                        if b == P.GT_ORDER_RESTART), None)
+        pos = (new_track[songlen + 1]
+               if songlen is not None and songlen + 1 < len(new_track) else None)
+        n = real(new_track, patterns, copies, exits_tied, tempo_voice, log)
+        if exits_tied:
+            in_range = (pos is not None and songlen is not None
+                        and pos < songlen)
+            seen.append((state["file"], ti // 3, ti % 3, in_range, n))
+        return n
+
+    expect = {
+        # file,               subtune, voice, restart in range, ties written
+        "Chimera.sid":        [(0, 1, True, 0)],    # row 0 is a KEYOFF
+        "Flash_Gordon.sid":   [(6, 0, False, 0)],   # $FD: a stop, not a loop
+        "Star_Paws.sid":      [(1, 0, True, 0),     # the tempo owns the column
+                               (2, 0, True, 0)],
+        "Warhawk.sid":        [(4, 2, False, 0)],   # $FD: a stop, not a loop
+    }
+    P._apply_wrap_tie = spy
+    try:
+        for name in sorted(expect):
+            state["file"], state["ti"] = name, -1
+            convert(str(CORPUS / name), log=lambda m: None, tempo="auto",
+                    tie=True)
+    finally:
+        P._apply_wrap_tie = real
+
+    got: dict = {}
+    for name, sub, voice, in_range, n in seen:
+        got.setdefault(name, []).append((sub, voice, in_range, n))
+    assert got == expect, f"the wrap census moved:\n got {got}\n want {expect}"
+    assert sum(n for *_, n in seen) == 0, "a wrap tie was written"
+    # The finding this test exists for: the one instance NOT on voice 0.
+    assert got["Chimera.sid"][0][1] == 1, "Chimera's tied exit left voice 1"

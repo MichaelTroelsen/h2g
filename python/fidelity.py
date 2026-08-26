@@ -1155,6 +1155,43 @@ def gate_census(orig: list[Voice], ours: list[Voice], nframes: int,
     return recs
 
 
+def gate_census_by_voice(recs: list[dict]) -> dict[int, dict[str, dict[str, int]]]:
+    """Split census records the file-level table collapses -- by voice.
+
+    Returns `{voice: {kind: {"runs": n, "frames": frames_we_ring}}}`, `voice`
+    being the record's own 1-indexed field (already carried by every record
+    since the census was written, and never read until now). Summing every
+    voice's `frames` for a kind reproduces that kind's "frames we ring" total
+    from the file-level table, because this is the same quantity
+    (`frames - ours_off`) grouped one level finer rather than a different
+    measurement.
+
+    This is the fix for "a per-voice question can't be answered from the
+    census": Auf Wiedersehen Monty's gate row reads voice 0 (`gate_voices`
+    index) at 48.06%, voice 1 at 56.90%, voice 2 at only 15.08% -- and before
+    this function existed, nothing could say *which* voice the file's 219
+    `held` runs belonged to. Split, they are 67 / 46 / 106 (`voice` 1/2/3
+    here, i.e. `gate_voices` index 0/1/2) -- voice 2 alone carries very nearly
+    half of them, which is consistent with it being the one the gate column
+    reads worst. Summed across all four kinds the three voices give
+    336 + 473 + 455 = 1264 frames we ring, against that row's own
+    `gate_ours_ringing` of 1266: the 2-frame gap is `gate_runs` dropping a
+    release that starts inside the aligned window but extends past it
+    (`# runs past the aligned window`, in `gate_census`) where `gate_compare`
+    instead just stops at the shorter of the two zipped traces -- a boundary
+    difference between the two reductions of the same signal, not a defect in
+    the split.
+    """
+    out: dict[int, dict[str, dict[str, int]]] = {}
+    for r in recs:
+        by_kind = out.setdefault(r["voice"],
+                                  {k: {"runs": 0, "frames": 0} for k in GATE_KINDS})
+        cell = by_kind[r["kind"]]
+        cell["runs"] += 1
+        cell["frames"] += r["frames"] - r["ours_off"]
+    return out
+
+
 def gate_census_report(rows: list[dict]) -> str:
     """The gate census over a whole run -- a queue, not a measurement."""
     recs = [dict(r, file=row["file"]) for row in rows
@@ -1178,18 +1215,35 @@ def gate_census_report(rows: list[dict]) -> str:
     for k in GATE_KINDS:
         n = counts.get(k, 0)
         out.append(f"| {k} | {n} | {100 * n / len(recs):.1f}% | {frames[k]} |")
+    out += ["", "## By voice", "",
+            "A gate deficit is a per-voice question -- the table above sums "
+            "over the whole file, and `gate`'s own per-voice split can read "
+            "wildly different voices as one number (Auf Wiedersehen Monty: "
+            "48.06% / 56.90% / 15.08%). Same reduction as the table above, "
+            "one level finer; `voice` is 1-indexed (`gate_voices` index + 1).",
+            "", "| voice | kind | runs | share | frames we ring |",
+            "|---:|---|---:|---:|---:|"]
+    by_voice = gate_census_by_voice(recs)
+    for v in sorted(by_voice):
+        v_total = sum(c["runs"] for c in by_voice[v].values())
+        for k in GATE_KINDS:
+            n = by_voice[v][k]["runs"]
+            share = f"{100 * n / v_total:.1f}%" if v_total else "-"
+            out.append(f"| {v} | {k} | {n} | {share} | "
+                       f"{by_voice[v][k]['frames']} |")
     out += ["", "## Where the held ones are", "",
-            "| file | runs | frames | longest |", "|---|---:|---:|---:|"]
+            "| file | voice | runs | frames | longest |",
+            "|---|---:|---:|---:|---:|"]
     per = {}
     for r in recs:
         if r["kind"] != "held":
             continue
-        e = per.setdefault(r["file"], [0, 0, 0])
+        e = per.setdefault((r["file"], r["voice"]), [0, 0, 0])
         e[0] += 1
         e[1] += r["frames"]
         e[2] = max(e[2], r["frames"])
-    for name, (n, f, longest) in sorted(per.items(), key=lambda kv: -kv[1][1]):
-        out.append(f"| {name} | {n} | {f} | {longest} |")
+    for (name, v), (n, f, longest) in sorted(per.items(), key=lambda kv: -kv[1][1]):
+        out.append(f"| {name} | {v} | {n} | {f} | {longest} |")
     return "\n".join(out) + "\n"
 
 
@@ -2723,6 +2777,44 @@ def _span(timeline: list[int]) -> int:
     return (max(live) - min(live)) if live else 0
 
 
+# A duty cycle quantised for the phase count below. `instrmap.PULSE_BUCKET`
+# is the same 0x100 and for the same reason: the register is 12 bits and the
+# ear does not hear the bottom eight of them as a separate timbre, so counting
+# raw values would report two notes a handful of units apart as two phases.
+PULSE_PHASE_BUCKET = 0x100
+
+
+def _onset_phases(v: Voice, timeline: list, nframes: int) -> set:
+    """The distinct duty cycles this voice's notes START on.
+
+    `pspan` says how WIDE a band the sweep covers and cannot say WHERE in it a
+    note opens, so two sweeps of identical width entered from different points
+    score the same. That is exactly the deficit `_pulse_tri_program` documents:
+    the player's accumulator free-runs and is never reseeded, so its notes open
+    all over the band, while a Goattracker pulse program reloads with the
+    instrument and opens every note on the record's own width. On
+    5_Title_Tunes' instrument 5 the original opens on five buckets and ours on
+    one, with the per-note TRAVEL already correct (0.83x, from instrmap's own
+    table) -- a phase error rather than a rate or depth error, and no column
+    could see it.
+
+    Read one frame AFTER the attack, matching `instrmap`'s "at onset", because
+    the note's own instrument load writes the width on the attack frame itself
+    and the frame after it is the first the program actually governs.
+
+    **No startup-lag correction, for `onset`'s reason**: each side is read at
+    its OWN attack frames, so the packed player's 3-8 frame latency cancels
+    rather than needing to be subtracted. Passing a lag in here would
+    manufacture the error this is built to detect.
+    """
+    out = set()
+    for f in v.attack_frames:
+        g = f + 1
+        if 0 <= g < nframes and timeline[g]:
+            out.add(timeline[g] // PULSE_PHASE_BUCKET)
+    return out
+
+
 def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
     """How often each side moves the duty cycle, and how far it travels.
 
@@ -2744,22 +2836,46 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
     """
     o_ch = u_ch = 0
     o_sp = u_sp = 0
+    o_phases = u_phases = 0
     per_voice = []
     for a, b in zip(orig, ours):
         ta = register_timeline(a.pulse_events, nframes)
         tb = register_timeline(b.pulse_events, nframes)
         vo, vu = _changes(ta), _changes(tb)
-        per_voice.append({"orig_pulse_changes": vo, "our_pulse_changes": vu})
+        vo_sp, vu_sp = _span(ta), _span(tb)
+        # Per voice as well as summed, so a row can name WHICH voice's sweep
+        # is narrow. The file-level ratio alone said 0.47x on 5_Title_Tunes
+        # and could not say that instrument 5 is the one at fault -- the same
+        # gap `gate_census_by_voice` closed for the gate.
+        o_ph, u_ph = (_onset_phases(a, ta, nframes),
+                      _onset_phases(b, tb, nframes))
+        per_voice.append({"orig_pulse_changes": vo, "our_pulse_changes": vu,
+                          "orig_pulse_span": vo_sp, "our_pulse_span": vu_sp,
+                          "pulse_span": (vu_sp / vo_sp) if vo_sp else None,
+                          "orig_pulse_phases": len(o_ph),
+                          "our_pulse_phases": len(u_ph)})
         o_ch += vo
         u_ch += vu
-        o_sp += _span(ta)
-        u_sp += _span(tb)
+        o_sp += vo_sp
+        u_sp += vu_sp
+        # THE POPULATION IS THE VOICES WHOSE ORIGINAL ACTUALLY VARIES, which
+        # is the rule "a discriminator is only meaningful on the population
+        # the behaviour occurs in". A voice whose original opens every note on
+        # one width has no phase to reproduce and ours reproduces it exactly,
+        # so counting it would score a perfect 1/1 and dilute the files that
+        # do sweep -- 4 of 5_Title_Tunes' 7 instruments are that case.
+        if len(o_ph) > 1:
+            o_phases += len(o_ph)
+            u_phases += len(u_ph)
     return {
         "orig_pulse_changes": o_ch,
         "our_pulse_changes": u_ch,
         "orig_pulse_span": o_sp,
         "our_pulse_span": u_sp,
         "pulse_span": (u_sp / o_sp) if o_sp else None,
+        "orig_pulse_phases": o_phases,
+        "our_pulse_phases": u_phases,
+        "pulse_phase": (u_phases / o_phases) if o_phases else None,
         "pulse_voices": per_voice,
     }
 
@@ -3306,6 +3422,20 @@ DIMENSIONS = (
     # covers slightly *less* of the band than the original's.
     Dimension("pulse_span", "pspan", ("$D402/$D403",), "ratio",
               "how wide a band the duty cycle covers, over the original's"),
+    # `pphase` is to `pspan` what `pspan` is to `pul`, one question further
+    # out: a count says whether the duty cycle moves, a span says how far it
+    # gets, and NEITHER says where in the band a note opens. The player's
+    # accumulator free-runs and is never reseeded at a note, so its notes open
+    # all over the sweep; Goattracker reloads the pulse pointer from the
+    # instrument, so every one of ours opens on the record's own width. Both
+    # sweeps can be the right SIZE and still sound unlike each other, and on
+    # 5_Title_Tunes they are: instrument 5's per-note travel is 0.83x of the
+    # original's (instrmap's own table) while it opens on 1 bucket against 5.
+    # Restricted to the voices whose original opens on more than one bucket --
+    # see pulse_compare -- because a voice with a fixed width has no phase to
+    # reproduce and would score a free 1.00.
+    Dimension("pulse_phase", "pphase", ("$D402/$D403",), "ratio",
+              "distinct duty cycles a note opens on, over the original's"),
     # The filter is two dimensions because it is two questions, and one of
     # them is not a count: `filt` is whether we filter at all, `cut` is
     # whether the cutoff then moves as far as the original's. A count reads
@@ -4271,13 +4401,20 @@ def report(rows: list[dict], args) -> str:
         "out of this column entirely, so read it beside **vib**, which is "
         "where a missing oscillation shows up.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
+    # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
+    # against a header that wanted 23, so every `not converted` row had been
+    # two cells short for as long as the count had drifted -- and adding
+    # `pphase` widened the gap rather than causing it. A number that has to be
+    # kept in step with a string is a number that will not be.
+    _header = next(l for l in reversed(out) if l.startswith("| File |"))
+    _dashes = len(_header.strip().strip("|").split("|")) - 2
     for r in sorted(rows, key=lambda r: r["file"].lower()):
         if r["status"] not in ("measured", "silent", "window empty"):
             out.append(
-                f"| {r['file']} |" + " - |" * 21 + f" {r['status']} |")
+                f"| {r['file']} |" + " - |" * _dashes + f" {r['status']} |")
             continue
         rr = r["retrigger_ratio"]
         status = r["status"]
@@ -4301,6 +4438,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "
             f"{_fmt_pct(r.get('adsr'))} | {_one_sided(r, 'pulse_changes')} | "
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
+            f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
             f"{status} |")
 
@@ -4730,6 +4868,77 @@ def option_drift(base: dict, new: dict) -> list[str]:
                               repr(n.get("multiplier"))), set()).add(name)
     return [f"`{k}` {a} -> {c} on {len(f)} file(s)"
             for (k, a, c), f in sorted(diffs.items())]
+
+
+# --------------------------------------------------------------------------
+# Sweeping one option (or comparing any set of arms) without a hand-picked
+# column list
+# --------------------------------------------------------------------------
+# Twice now a per-song or per-instrument comparison has reported a SUBSET of
+# the scored columns and had its conclusion corrected by re-running it:
+# v0.5.352/353 shipped and retracted an adoption after reading six of
+# fourteen columns (`fidelity-json-omits-retrig-hold-tail`), and a firstwave
+# sweep on 5_Title_Tunes recommended a combination while never printing
+# `pitch`, which falls 1.0000 -> 0.9836 on the exact combination it
+# recommended. Both were scratch probes that named their own column list by
+# hand, which is the same shape of mistake as `report()`'s hand-typed header
+# (line ~4328) -- except `report()`'s hardcoded header is caught by
+# test_every_printed_column_has_a_dimension_declaring_its_registers, and a
+# throwaway probe has no such test watching it.
+#
+# `sweep_report` cannot make that mistake: its header and every cell are
+# built by iterating `DIMENSIONS`, the same registry `compare_runs`' "What
+# moved" table already trusts (see its `"| File | bytes | " + " | ".join(d
+# .column for d in DIMENSIONS)`). Add a Dimension there and it appears in the
+# next sweep with no edit to this function -- see
+# test_sweep_report_prints_a_dimension_added_after_this_function_was_written.
+
+
+def sweep_report(rows: list[dict]) -> str:
+    """Every scored dimension, for a set of rows representing the arms of one
+    comparison -- values of a single `convert()` option swept against one
+    file, a set of instruments, or whatever the caller grouped by
+    `row["file"]`. Prints ALL of `DIMENSIONS`, not the subset a reader
+    happens to think is relevant to the change under test: that selection is
+    exactly what has misled twice (see the module note above this function).
+
+    Each row is expected to be the output of `measure()` (or the `_row()`
+    test fixture shape) -- a dict keyed by the `Dimension.key`/`.source`
+    names, plus `file` and `status`. A row missing a key prints `-` for it,
+    the same convention `Dimension.fmt` uses everywhere else.
+    """
+    out = [
+        "| arm | " + " | ".join(d.column for d in DIMENSIONS) + " | status |",
+        "|---|" + "---|" * len(DIMENSIONS) + "---|",
+    ]
+    for r in rows:
+        cells = [d.fmt(d.value(r)) for d in DIMENSIONS]
+        out.append(f"| {r.get('file', '?')} | " + " | ".join(cells)
+                   + f" | {r.get('status', '?')} |")
+    return "\n".join(out) + "\n"
+
+
+def sweep_option(sid: Path, workdir: Path, args, option: str, values,
+                  base_opts: dict | None = None, multiplier: int = 1) -> str:
+    """Convert and measure one file once per value of a single `convert()`
+    option, and report every dimension `DIMENSIONS` scores for each arm via
+    `sweep_report` -- so a change recommended from this can never again be
+    missing the one column that would have overturned it.
+
+    `values` is any iterable of option values (bools, ints, strings...);
+    `base_opts` holds the rest of the options held fixed across every arm
+    (e.g. the file's preset). `multiplier` is the song's gt2reloc `-S` value,
+    passed through to `measure` exactly as `_run` passes it.
+    """
+    base = dict(base_opts or {})
+    rows = []
+    for v in values:
+        opts = dict(base)
+        opts[option] = v
+        row = measure(sid, workdir, opts, args, multiplier)
+        row["file"] = f"{option}={v!r}"
+        rows.append(row)
+    return sweep_report(rows)
 
 
 def _subtune_diff_note(fname: str, base_row: dict, new_row: dict) -> str:

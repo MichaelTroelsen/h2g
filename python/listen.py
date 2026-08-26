@@ -417,6 +417,42 @@ def merge_notes(outdir: Path) -> int:
     return len(merged)
 
 
+def _basename_of(name: str) -> str:
+    """The bare filename every `--files` entry is keyed and staged by.
+
+    `--files` used to take a name *verbatim*: as the `presets.json` lookup
+    key, and (via `stem = name[:-4]`) as the on-disk filename joined to
+    `outdir`. pathlib's `/` returns the right operand unchanged when it is
+    absolute, so `outdir / stem` silently discarded `outdir` entirely for a
+    path argument -- one real run wrote 85 MB of `.sng`/`.sid`/`.wav`/
+    `.trace.json` next to the originals in the SID corpus directory, while
+    reporting success. `presets.json` lookup missed for the same reason
+    (it is keyed on the bare name), so the conversion used default options
+    too. Routing every name through this one function is what makes a path
+    argument behave like the bare name it should have been.
+    """
+    return Path(name).name
+
+
+def _outdir_path(outdir: Path, filename: str) -> Path:
+    """Resolve `filename` under `outdir`, refusing anything that would not
+    stay inside it.
+
+    Belt-and-braces for the same bug `_basename_of` fixes at the source: by
+    the time a caller gets here `filename` should already be a bare name, but
+    this is the check that makes an escape *impossible* regardless of how it
+    was built -- the actual damage was files landing next to the original
+    `.sid`s rather than in `build/listen`, and a silent `outdir`-relative join
+    is exactly how that happened the first time.
+    """
+    base = outdir.resolve()
+    target = (base / filename).resolve()
+    if target != base and base not in target.parents:
+        raise ValueError(
+            f"refusing to write outside outdir {base}: {target}")
+    return target
+
+
 def select_names(files, stage_all: bool, presets: str) -> list[str]:
     """Which tunes to stage, from `--files` and `--all`.
 
@@ -429,8 +465,13 @@ def select_names(files, stage_all: bool, presets: str) -> list[str]:
     The two combine rather than compete -- `--files X --all` is every song
     plus X, which is how a tune outside the presets (a second rip, a file
     under test) joins a full pass.
+
+    Every `--files` entry is normalised to its bare filename first (see
+    `_basename_of`) and then resolved against `sid_dir` in `main` like every
+    other name -- a path argument used to be kept whole and silently escape
+    `outdir` on write.
     """
-    names = list(files)
+    names = [_basename_of(f) for f in files]
     if not stage_all:
         return names
     try:
@@ -698,6 +739,12 @@ def main(argv=None) -> int:
         names = select_names(args.files, args.all, args.presets)
     except ValueError as exc:
         p.error(str(exc))
+    for f in args.files:
+        base = _basename_of(f)
+        if base != f:
+            print(f"note: --files entry '{f}' is a path; using basename "
+                  f"'{base}', resolved against sid_dir like every other name",
+                  file=sys.stderr)
     if names:
         by_name = {r["file"]: r for r in rows}
         chosen = [("named", by_name.get(f, {"file": f})) for f in names]
@@ -747,6 +794,15 @@ def main(argv=None) -> int:
             print(f"  {name:44} missing", file=sys.stderr)
             continue
         stem = name[:-4] if name.lower().endswith(".sid") else name
+        try:
+            sng_out = _outdir_path(outdir, f"{stem}.h2g.sng")
+        except ValueError as exc:
+            # Belt-and-braces: `stem` should already be a bare basename by
+            # construction (select_names / _basename_of), but this is the
+            # check that refuses to write outside `outdir` regardless of how
+            # `stem` was built -- see `_outdir_path`.
+            print(f"  {name:44} refused: {exc}", file=sys.stderr)
+            continue
 
         sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
                                           matched_subtunes.get(name))
@@ -754,6 +810,9 @@ def main(argv=None) -> int:
             paired_by_identity.append(name)
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 
+        if name not in (doc.get("songs") or {}):
+            print(f"  {name:44} not in {Path(args.presets).name}; "
+                  "converting with default options", file=sys.stderr)
         try:
             sng = convert(str(src), log=lambda m: None, **_preset_opts(doc, name))
         except Exception as exc:  # noqa: BLE001
@@ -761,7 +820,6 @@ def main(argv=None) -> int:
             lines += [f"## {stem} — *{label}*", "",
                       f"Does not convert: `{type(exc).__name__}: {exc}`", ""]
             continue
-        sng_out = outdir / f"{stem}.h2g.sng"
         sng_out.write_bytes(sng)
 
         # The multiplier is not optional here, as it is in fidelity.py. siddump
@@ -780,7 +838,7 @@ def main(argv=None) -> int:
                       "to render. The `.sng` is staged; open it in GoatTracker.",
                       ""]
             continue
-        ours_sid = outdir / f"{stem}.h2g.sid"
+        ours_sid = _outdir_path(outdir, f"{stem}.h2g.sid")
         shutil.copyfile(packed, ours_sid)
 
         # Both sides through one renderer, which is the one thing this staging
@@ -799,9 +857,11 @@ def main(argv=None) -> int:
                 print(f"  {name:44} {why}", file=sys.stderr)
         skip_renders = getattr(args, "traces_only", False)
         ok_a = skip_renders or render_pair(
-            src, outdir / f"{stem}.original.wav", args.seconds, sub_orig)
+            src, _outdir_path(outdir, f"{stem}.original.wav"),
+            args.seconds, sub_orig)
         ok_b = skip_renders or render_pair(
-            ours_sid, outdir / f"{stem}.h2g.wav", args.seconds, sub_ours)
+            ours_sid, _outdir_path(outdir, f"{stem}.h2g.wav"),
+            args.seconds, sub_ours)
 
         # Each voice alone, both sides. `-u` is 1-based, so soloing voice v
         # mutes the other two. The A/B page reads these when its voice
@@ -812,10 +872,10 @@ def main(argv=None) -> int:
             for v in (1, 2, 3):
                 others = tuple(x for x in (1, 2, 3) if x != v)
                 solo_ok += bool(render_pair(
-                    src, outdir / f"{stem}.v{v}.original.wav",
+                    src, _outdir_path(outdir, f"{stem}.v{v}.original.wav"),
                     args.seconds, sub_orig, others))
                 solo_ok += bool(render_pair(
-                    ours_sid, outdir / f"{stem}.v{v}.h2g.wav",
+                    ours_sid, _outdir_path(outdir, f"{stem}.v{v}.h2g.wav"),
                     args.seconds, sub_ours, others))
             if solo_ok < 6:
                 print(f"  {name:44} per-voice: {solo_ok}/6 rendered "
@@ -826,7 +886,7 @@ def main(argv=None) -> int:
 
         # The register panel's data. Written beside the pair so `abpage.py`
         # can build the panel without re-tracing anything.
-        (outdir / f"{stem}.trace.json").write_text(
+        _outdir_path(outdir, f"{stem}.trace.json").write_text(
             json.dumps(trace_json(orig, ours, args.seconds, 1, multiplier,
                                   sub_orig, sub_ours),
                        separators=(",", ":")), encoding="utf-8")

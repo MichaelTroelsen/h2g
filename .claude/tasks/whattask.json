@@ -437,6 +437,59 @@
    "why_model": "a falsification pass on prose that already explained one real defect away",
    "why_mode": "read-only diagnosis whose deliverable is an attribution",
    "why_lane": "shares a path with another task where one side writes"
+  },
+  {
+   "id": "pulse-phase-via-setpulseptr-per-note",
+   "title": "the sweeping instrument's pulse band is 3-7x too narrow, because Goattracker reseeds the pulse pointer at every note",
+   "source": "listener report (5 Title Tunes, voice 1, from 43s)",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/h2g/patterns.py",
+    "rw:python/tests/test_pulse.py",
+    "rw:python/tests/test_table_validation.py",
+    "rw:python/tests/test_patterns.py",
+    "r:python/h2g/convert.py",
+    "r:python/h2g/detect.py",
+    "r:python/fidelity.py",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "needs a corpus A/B and a listening re-check; the emitter change reaches 24 files' worth of the triangle pulse engine",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "MEASURED, NOT ASSUMED. 5_Title_Tunes at f5306abedbfa, traced 120s both sides at lag 5, attributing each note's frames to the ADSR at its attack: voice 1 instrument $5700 (GT instrument 5) sweeps a pulse band of 1344 ($8C0-$E00) in the original and 192 ($909-$9C9) in ours; voice 2 $4700 1408 against 386; voice 3 $5830 1408 against 899. The two flat instruments on voice 1 ($2400, $0400) sit at $800 against our $808 and are inaudible, WHICH IS WHY THE LISTENER REPORTED 43s RATHER THAN 0s -- voice 1 alternates by section and the sweeping record only enters around 40s. Median |orig-ours| pulse per 10s on voice 1 is 8 8 8 8 439 471 8 8 8 8 247 471. `pspan` 0.47x has been reporting this correctly all along; `pul` counts moved frames and structurally cannot see a band.\n\nCAUSE: the player's 12-bit accumulator free-runs and is never reseeded at a note, so it crosses its band over several notes; Goattracker reloads the pulse pointer from the instrument at every note (player.s:859-861), and crossing the band at speed 32 needs 48 frames while this file's notes are 8 and 16. Confirmed at frame level: the original ramps 900 940 980 9C0 A00 A40 A80 AC0 B00 straight through note boundaries where ours resets to 909 each note and crawls to 9C9.\n\nTHE REPAIR IS CMD_SETPULSEPTR ($9) ON THE NOTE ROW, and the three facts it rests on were read before this task was written. player.s:244-250 stores mt_chnpulseptr,x and zeroes mt_chnpulsetime,x. player.s:903-906 comments 'Execute tick 0 FX AFTER newnote init', so the command BEATS the instrument's own pointer load at player.s:859-861 -- this is the load-bearing fact and without it the whole approach is inert. gplay.c:447-455 is the same store in the editor. greloc.c:1783-1787 sets nosetpulseptr = 0 on use and remaps the operand through tablemap[PTBL], so the emitter writes the PRE-relocation index exactly as the wavetable pointer path already does. Emit the sweep once as a table spanning the band and set the pointer per note to the entry matching the accumulator's phase, which is computable at emit time from a known free-running speed and known note lengths -- no new player state.\n\nFOUR THINGS THAT WILL BREAK IT, each already a documented trap here. (1) Never point at a jump entry: both players call stopsong() if ltable[PTBL][ptr-1] == 0xff (gplay.c:453), so a phase index landing on the terminator kills the song SILENTLY. (2) Declare the command in patterns.TEMPO_OVERWRITABLE AND in ONE_SHOT_COMMANDS -- they are different questions, and taking row 0's column costs that subtune its CMD_SETTEMPO and drops it to Goattracker's default 6. This has caught three changes. (3) Divide the rate by `multiplier`: a rate read out of the player is per frame and every table Goattracker applies steps per play call. 5_Title_Tunes is -S1 so this will NOT show up on it -- check a -S2+ file carrying the engine, which is how _filter_entries hid the same defect for the life of the project. (4) Table budget: ~48 entries per sweeping record against the pulse table's 255 rows, three sweeping records in this file alone; tests/test_table_validation.py replicates exectable and is the guard.\n\nDONE WHEN: behind an opt-in option (signature, presets.FIXED or FIDELITY_TOGGLES, _preset_opts -- all three, or it is inert); the corpus byte-hash moves only files carrying a sweeping record of this engine; `pspan` rises on 5_Title_Tunes with melody, seq, pitch, onset and gate unmoved; and a -S2+ file with the engine is checked explicitly. NOT done on a flat report: run fidelity.py --baseline so the run can distinguish 'no dimension sees this' from 'this reached nothing'.\n\nTHE ALTERNATIVE IS ALREADY DECLINED AND DOES NOT COVER THIS. The free-run repair via a zero pulse pointer (v0.5.379) reproduces the player only where ONE sweeping instrument owns the voice, which here is voice 3 alone -- the LEAST wrong of the three at 899 against 1408 -- and it cannot reach instrument 5 at all. That census's '5_Title_Tunes voice 2' is 0-BASED and means channel 3; its quoted band of 899 is this run's channel 3 exactly, which is what confirms the numbering.",
+   "why_model": "an emitter change against two players plus a packer, where the obvious repair was already declined once on population grounds and a plausible-but-wrong phase is silent rather than loud",
+   "why_mode": "needs a corpus A/B over the 24 files of the triangle pulse engine and a listening re-check, and it competes for the pattern command column that row 0's tempo owns",
+   "why_lane": "writes goatwriter.py and patterns.py, which nearly every other task reads"
+  },
+  {
+   "id": "listen-files-takes-a-path-and-writes-outside-outdir",
+   "title": "listen.py --files with a path stages nothing, reports success, and writes 11 files into the SID corpus",
+   "source": "hit while re-staging 5_Title_Tunes",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/listen.py",
+    "rw:python/tests/test_listen.py",
+    "r:presets.json"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "REPRODUCED, WITH THE DAMAGE. `python listen.py <sid_dir> --files C:/full/path/to/5_Title_Tunes.sid --voices -t 120 --presets ../presets.json` printed '5_Title_Tunes.sid staged (named)', 'staged 1 tune(s) -> build\\listen' and exited 0, while writing NOTHING to build/listen and 11 files totalling ~85 MB into the SID CORPUS DIRECTORY next to the originals: .h2g.sng, .h2g.sid, .h2g.wav, .original.wav, .trace.json and six per-voice WAVs. They were removed by hand; the corpus is clean and 5_Title_Tunes.sid itself was untouched.\n\nTHE MECHANISM IS TWO LINES. `select_names` returns `--files` verbatim, so `r['file']` is the whole path; `stem = name[:-4]` is then an ABSOLUTE path, and `outdir / f'{stem}.h2g.sng'` discards `outdir` entirely -- pathlib's `/` returns the right operand when it is absolute. `src = (sid_dir / name)` survives the same way, which is why the existence check passes and the run looks healthy. `_preset_opts(doc, name)` ALSO misses, because presets.json is keyed on the bare filename, so the tune is converted with defaults rather than its measured options -- the conversion is wrong as well as misplaced (sha 6adcc4cfd3e4 against the correct f5306abedbfa).\n\nA bare `--files 5_Title_Tunes.sid` is correct and was verified in the same session: staged sha f5306abedbfa, written to build/listen, zero stray files in the corpus.\n\nDONE WHEN: a `--files` entry that is a path is either normalised to its basename (and then resolved against sid_dir like every other name) or rejected with a message naming the bare form; a name that matches no presets.json entry is REPORTED rather than silently converted with defaults; and no output path can escape `outdir` -- assert the resolved target is inside it before writing. Tests: a path argument, a bare name, and a name absent from presets.json. THIS CANNOT BE A DOC FIX. The failure is silent and it writes outside the tree it was given, which is the property that made it worth a task rather than a note.\n\nSECOND, SMALLER DEFECT SEEN IN THE SAME SESSION and worth fixing in the same pass: a re-stage of an already-staged tune reuses the existing WAVs (the `out.exists() and size > EMPTY_WAV` guard around listen.py:246), which is deliberate and right for rendering -- but the run then reports 'staged' for a tune whose .sng was never rewritten either, so a stale conversion survives a re-stage that claims to have refreshed it. The .sng write itself is unconditional, so this only bites via the path bug above; check whether it can happen on its own before deciding it is one defect or two.",
+   "why_model": "a bounded path-handling fix in one file with a clear reproduction and an obvious correct behaviour",
+   "why_mode": "confined to listen.py and its tests, verified by running the two invocations and checking where the bytes land",
+   "why_lane": "listen.py is read by the staging lane other tasks depend on"
   }
  ],
  "closed": [

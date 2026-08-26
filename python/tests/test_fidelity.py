@@ -502,6 +502,132 @@ def test_pulse_span_is_none_when_the_original_never_moves_the_width():
     assert got["pulse_span"] is None
 
 
+# --- `pphase`: where in the band a note OPENS -----------------------------
+#
+# `pul` says whether the duty cycle moves and `pspan` says how far it gets;
+# neither says where a note starts. The player's accumulator free-runs and is
+# never reseeded, so its notes open all over the sweep, while Goattracker
+# reloads the pulse pointer from the instrument and opens every note on the
+# record's own width. On 5_Title_Tunes instrument 5 the per-note TRAVEL is
+# already 0.83x of the original's -- the right size -- while the original
+# opens on 5 buckets and we open on 1. That is a phase error, and until this
+# column no dimension could see it.
+
+def _phase_voice(pulse_events, attacks):
+    return fidelity.Voice(pulse_events=list(pulse_events),
+                          attack_frames=list(attacks),
+                          attacks=["C-4"] * len(attacks))
+
+
+def _phase_voices(*pairs):
+    vs = [_phase_voice(p, a) for p, a in pairs]
+    return vs + [fidelity.Voice()] * (3 - len(vs))
+
+
+# A free-running sweep: the width climbs steadily and notes fall all over it.
+_FREE = [(f, 0x800 + f * 0x100) for f in range(8)]
+# The same band, restarted at every note: each note opens on $800.
+_RESET = [(0, 0x800), (1, 0x900), (2, 0x800), (3, 0x900),
+          (4, 0x800), (5, 0x900), (6, 0x800), (7, 0x900)]
+_ATTACKS = [0, 2, 4, 6]
+
+
+def test_pphase_sees_a_sweep_that_opens_every_note_on_the_same_width():
+    """The defining case, and the one no other pulse column can register."""
+    got = fidelity.pulse_compare(_phase_voices((_FREE, _ATTACKS)),
+                                 _phase_voices((_RESET, _ATTACKS)), 8)
+    assert got["orig_pulse_phases"] == 4, "the original opens on four buckets"
+    assert got["our_pulse_phases"] == 1, "we open on one"
+    assert got["pulse_phase"] == 0.25
+
+
+def test_pphase_is_read_one_frame_after_the_attack():
+    """Matching instrmap's `at onset`: the note's own instrument load writes
+    the width on the attack frame itself, so the frame AFTER it is the first
+    the pulse program actually governs. Reading the attack frame would report
+    the width the note was triggered with, not the one it plays."""
+    pulse = [(0, 0x800), (1, 0xB00)]
+    # $B00 // $100 == 11, the frame-after value; the attack frame holds $800,
+    # which would bucket to 8.
+    assert fidelity._onset_phases(_phase_voice(pulse, [0]),
+                                  fidelity.register_timeline(pulse, 4), 4) == {0xB}
+    # It reaches the row through pulse_compare's per-voice record. The summed
+    # `orig_pulse_phases` is 0 here rather than 1, because one bucket is not a
+    # phase to reproduce and the population rule drops the voice -- which is
+    # the behaviour the test below pins.
+    got = fidelity.pulse_compare(_phase_voices((pulse, [0])),
+                                 _phase_voices((pulse, [0])), 4)
+    assert got["pulse_voices"][0]["orig_pulse_phases"] == 1
+    assert got["orig_pulse_phases"] == 0
+
+
+def test_pphase_ignores_the_voices_whose_original_never_varies():
+    """The population rule. A voice opening every note on one width has no
+    phase to reproduce and ours reproduces it exactly, so counting it would
+    add a free 1/1 and dilute the voices that sweep -- four of
+    5_Title_Tunes' seven instruments are that case."""
+    flat = ([(0, 0x800)], _ATTACKS)
+    without = fidelity.pulse_compare(_phase_voices((_FREE, _ATTACKS)),
+                                     _phase_voices((_RESET, _ATTACKS)), 8)
+    with_flat = fidelity.pulse_compare(
+        _phase_voices((_FREE, _ATTACKS), flat),
+        _phase_voices((_RESET, _ATTACKS), flat), 8)
+    assert with_flat["pulse_phase"] == without["pulse_phase"] == 0.25
+    # ... and the flat voice is still reported per voice, just not scored.
+    assert with_flat["pulse_voices"][1]["orig_pulse_phases"] == 1
+
+
+def test_pphase_takes_no_startup_lag_correction():
+    """`onset`'s rule: each side is read at its OWN attack frames, so the
+    packed player's 3-8 frame latency cancels. Shifting our whole side --
+    pulse writes and attacks together -- must not move the score, and a
+    version that subtracted a lag here would manufacture the very error the
+    column exists to detect."""
+    base = fidelity.pulse_compare(_phase_voices((_FREE, _ATTACKS)),
+                                  _phase_voices((_FREE, _ATTACKS)), 20)
+    k = 5
+    shifted = _phase_voices(([(f + k, v) for f, v in _FREE],
+                             [a + k for a in _ATTACKS]))
+    lagged = fidelity.pulse_compare(_phase_voices((_FREE, _ATTACKS)),
+                                    shifted, 20)
+    assert base["pulse_phase"] == lagged["pulse_phase"] == 1.0
+
+
+def test_pphase_is_none_when_no_voice_varies_its_onset():
+    """A ratio needs a denominator, the same rule `pspan` follows."""
+    flat = ([(0, 0x800)], _ATTACKS)
+    got = fidelity.pulse_compare(_phase_voices(flat), _phase_voices(flat), 8)
+    assert got["pulse_phase"] is None
+
+
+def test_the_travel_can_be_right_while_the_phase_is_wrong():
+    """Why this is a column and not a note on `pspan`. Both sides move the
+    width by exactly $100 between the frames each note covers -- identical
+    travel, identical span -- and only the opening point differs."""
+    got = fidelity.pulse_compare(_phase_voices((_FREE, _ATTACKS)),
+                                 _phase_voices((_RESET, _ATTACKS)), 8)
+    assert got["pulse_phase"] == 0.25, "the phase collapses"
+    assert got["our_pulse_changes"] == got["orig_pulse_changes"] == 7
+
+
+def test_pspan_is_reported_per_voice_as_well_as_for_the_file():
+    """The file-level ratio said 0.47x on 5_Title_Tunes and could not say
+    which instrument was at fault -- the gap `gate_census_by_voice` closed
+    for the gate, closed here for the pulse."""
+    wide = [(f, 0x800 + f * 0x100) for f in range(5)]     # span $400
+    narrow = [(f, 0x800 + f * 0x40) for f in range(5)]    # span $100
+    got = fidelity.pulse_compare(_pulse_voices(wide, wide),
+                                 _pulse_voices(wide, narrow), 5)
+    per = got["pulse_voices"]
+    assert per[0]["pulse_span"] == 1.0, "voice 1 matches"
+    assert per[1]["pulse_span"] == 0.25, "voice 2 is the narrow one"
+    assert per[0]["orig_pulse_span"] == 0x400
+    assert per[1]["our_pulse_span"] == 0x100
+    # and the per-voice spans still sum to the file-level pair
+    assert sum(v["our_pulse_span"] for v in per) == got["our_pulse_span"]
+    assert sum(v["orig_pulse_span"] for v in per) == got["orig_pulse_span"]
+
+
 def _filt(cutoff=(), ctrl=(), passband=(), volume=()):
     return fidelity.FilterState(cutoff_events=list(cutoff),
                                 ctrl_events=list(ctrl),
@@ -587,7 +713,10 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
     text = fidelity.report(rows, _Args())
     assert ("| vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
             in text)
-    assert "| 50% | 60/100 | 0.75x | 40/0 ! | 2.00x |" in text
+    # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
+    # span and the filter, so this fragment moves when it is added and the
+    # test is the record that it did.
+    assert "| 50% | 60/100 | 0.75x | 1.00x | 40/0 ! | 2.00x |" in text
     assert "mean ADSR agreement: **50%**" in text
     assert "pulse-width changes, ours/original: **60/100**" in text
     assert "filtered frames, ours/original: **40/0**" in text
@@ -749,6 +878,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_pulse_changes=0, our_pulse_changes=0,
                  orig_pulse_span=0, our_pulse_span=0,
                  pulse_span=1.0,
+                 orig_pulse_phases=0, our_pulse_phases=0,
+                 pulse_phase=1.0,
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
@@ -903,6 +1034,54 @@ def test_every_printed_column_has_a_dimension_declaring_its_registers():
         "", "File", "orig", "ours", "status"}
 
 
+def test_every_row_has_exactly_as_many_cells_as_the_header():
+    """The header is generated and the ROW is hand-built, so the two can
+    disagree -- and did. `pphase` was added to DIMENSIONS and to the header,
+    the registry test above passed, and every row went out one cell short, so
+    the whole table was silently misaligned from `pul` rightwards.
+
+    That is the same shape as the defects CLAUDE.md collects: a guard keyed on
+    one half of a pair, green while the other half is wrong. Counting cells
+    costs nothing and covers every future column.
+    """
+    text = fidelity.report([_row("A.sid", "measured", 1.0),
+                            _row("B.sid", "measured", 0.5)], _Args())
+    lines = text.splitlines()
+    i = next(i for i, l in enumerate(lines) if l.startswith("| File |"))
+
+    def cells(line):
+        return len(line.strip().strip("|").split("|"))
+
+    want = cells(lines[i])
+    assert cells(lines[i + 1]) == want, "the separator row is a different width"
+    rows = [l for l in lines[i + 2:] if l.startswith("| A.sid") or l.startswith("| B.sid")]
+    assert rows, "no data rows were rendered"
+    for r in rows:
+        assert cells(r) == want, f"{cells(r)} cells against {want}: {r}"
+
+
+def test_an_unmeasured_row_is_as_wide_as_a_measured_one():
+    """The `not converted` rows go through a different branch that fills the
+    table with dashes, and its count was HARDCODED at 21 against a header
+    wanting 23 -- so all twelve of them had been two cells short in every
+    generated report, and adding a column widened the gap rather than causing
+    it. Deriving the count from the header is the fix; this is the test that
+    keeps it derived."""
+    text = fidelity.report([_row("Fine.sid", "measured", 1.0),
+                            {"file": "Broken.sid", "status": "not converted"}],
+                           _Args())
+    lines = text.splitlines()
+    i = next(i for i, l in enumerate(lines) if l.startswith("| File |"))
+
+    def cells(line):
+        return len(line.strip().strip("|").split("|"))
+
+    want = cells(lines[i])
+    broken = next(l for l in lines if l.startswith("| Broken.sid"))
+    assert cells(broken) == want, f"{cells(broken)} against {want}: {broken}"
+    assert broken.rstrip().endswith("not converted |")
+
+
 def test_a_row_records_only_the_dimensions_it_actually_compared():
     full = _row("A.sid", "measured", 0.5)
     assert fidelity.dimensions_present(full) == [d.key for d in fidelity.DIMENSIONS]
@@ -946,6 +1125,74 @@ def test_the_report_states_its_own_reach():
     assert "## What this run compared" in text
     assert "$D405/$D406" in text and "$D415/$D416" in text
     assert "note length" in text
+
+
+# --- sweeping an option without a hand-picked column list -------------------
+#
+# Twice a per-song/per-instrument comparison shipped a conclusion read from a
+# SUBSET of the scored columns and had to be retracted: v0.5.352/353 read six
+# of fourteen keys via `dict.get` and silently skipped the rest, and a
+# firstwave sweep on 5_Title_Tunes recommended a combination while never
+# printing `pitch`, which fell 1.0000 -> 0.9836 on exactly that combination.
+# `sweep_report` cannot repeat that mistake because it does not know the
+# column list -- it reads `DIMENSIONS` at call time.
+
+
+def test_sweep_report_prints_every_declared_dimension():
+    text = fidelity.sweep_report([_row("firstwave=0x09", "measured", 1.0),
+                                   _row("firstwave=0x00", "measured", 0.5)])
+    header = text.splitlines()[0]
+    cells = {c.strip() for c in header.split("|")}
+    for d in fidelity.DIMENSIONS:
+        assert d.column in cells, f"{d.column} is scored but not printed"
+    # And every arm actually appears as its own row, not folded away.
+    assert "firstwave=0x09" in text and "firstwave=0x00" in text
+
+
+def test_sweep_report_prints_a_dimension_added_after_this_function_was_written(
+        monkeypatch):
+    """The regression this whole task is about: a helper that names its own
+    columns can go stale the moment a new Dimension is added elsewhere and
+    nobody remembers to update the printer. Prove `sweep_report` cannot go
+    stale that way -- add a brand-new Dimension the function has never heard
+    of, feed it a row carrying that key, and confirm it shows up unasked."""
+    fake = fidelity.Dimension("_test_only_marker", "zzmarker",
+                               ("$D400/$D401",), "fraction", "test fixture only")
+    monkeypatch.setattr(fidelity, "DIMENSIONS", fidelity.DIMENSIONS + (fake,))
+    row = _row("arm-A", "measured", 1.0)
+    row["_test_only_marker"] = 0.75
+    text = fidelity.sweep_report([row])
+    header = text.splitlines()[0]
+    assert "zzmarker" in {c.strip() for c in header.split("|")}
+    assert fidelity._fmt_pct(0.75) in text
+
+
+def test_sweep_option_calls_measure_once_per_value_and_reports_them_all(
+        monkeypatch):
+    seen_opts = []
+
+    def fake_measure(sid, workdir, opts, args, multiplier=1):
+        seen_opts.append(dict(opts))
+        # firstwave 0x00 is the arm the retracted probe would have shipped;
+        # its pitch is the column that would have caught it.
+        pitch = 0.9836 if opts["firstwave"] == 0x00 else 1.0
+        row = _row(f"firstwave={opts['firstwave']:#x}", "measured", 1.0)
+        row["pitch_jaccard"] = pitch
+        return row
+
+    monkeypatch.setattr(fidelity, "measure", fake_measure)
+    text = fidelity.sweep_option(pathlib.Path("Fake.sid"), pathlib.Path("."),
+                                 _Args(), "firstwave", [0x09, 0x00],
+                                 base_opts={"filters": True})
+
+    # measure() saw both arms, with the fixed option carried through.
+    assert [o["firstwave"] for o in seen_opts] == [0x09, 0x00]
+    assert all(o["filters"] is True for o in seen_opts)
+    # And the report is not a hand-picked subset: `pitch` -- the very column
+    # the real firstwave sweep omitted -- is visible and shows the drop.
+    header = text.splitlines()[0]
+    assert "pitch" in {c.strip() for c in header.split("|")}
+    assert "98%" in text and "100%" in text
 
 
 # --- A/B against a previous run --------------------------------------------
@@ -1671,3 +1918,101 @@ def test_hard_restart_frames_still_arrives_as_a_real_int():
     opts = fidelity._preset_opts(doc, "a.sid")
     assert opts["hard_restart_frames"] == 4
     assert opts["hard_restart_frames"] is not True
+
+
+# --- gate census, split by voice --------------------------------------------
+
+def test_gate_census_tags_each_record_with_its_voice():
+    """`gate_runs`/`gate_census` operate per voice; the record must say which
+    one, or a per-voice question (which this task exists because of --
+    Auf Wiedersehen Monty's gate reads 48.06% / 56.90% / 15.08% across its
+    three voices) cannot be asked of the census at all."""
+    # Voice 0: one long original release (frames 2-5) we never release in --
+    # `held`. Voice 1: untouched (no release either side).
+    orig = _wf_voices([(0, 0x41), (2, 0x40), (6, 0x41)])
+    ours = _wf_voices([(0, 0x41)])
+    recs = fidelity.gate_census(orig, ours, nframes=8)
+    assert [r["kind"] for r in recs] == ["held"]
+    assert recs[0]["voice"] == 1
+    assert recs[0]["frames"] == 4
+
+
+def test_gate_census_by_voice_reproduces_the_file_level_totals():
+    """Summing the per-voice split back up must reproduce the un-split
+    table's numbers -- it is the same reduction one level finer, not a
+    second measurement. Three voices, three different kinds, by construction:
+    voice 0 gets a `held` run, voice 1 a `matched` release, voice 2 a `short`
+    one, and a fourth run gives voice 0 a second `held` run so a kind can
+    have more than one voice contributing to it."""
+    orig = [
+        # v0: two rests (frames 2-3, 5-6)
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (4, 0x41),
+                                   (5, 0x40), (7, 0x41)]),
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (6, 0x41)]),  # v1: one rest
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (6, 0x41)]),  # v2: one rest
+    ]
+    ours = [
+        fidelity.Voice(wf_events=[(0, 0x41)]),                          # never lets go: both held
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (5, 0x41)]),    # releases most of it: matched
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (3, 0x41)]),    # releases briefly: short
+    ]
+    recs = fidelity.gate_census(orig, ours, nframes=8)
+    kinds = sorted((r["voice"], r["kind"]) for r in recs)
+    assert kinds == [(1, "held"), (1, "held"), (2, "matched"), (3, "short")]
+
+    by_voice = fidelity.gate_census_by_voice(recs)
+    # Reproduction check: summed back across voices, per kind, matches a
+    # plain (non-split) reduction over the same records.
+    from collections import Counter
+    plain_frames = Counter()
+    for r in recs:
+        plain_frames[r["kind"]] += r["frames"] - r["ours_off"]
+    split_frames = Counter()
+    for v in by_voice:
+        for k, cell in by_voice[v].items():
+            split_frames[k] += cell["frames"]
+    assert split_frames == plain_frames
+    # And voice 0's two `held` runs stay attributed to voice 0, not folded
+    # into a file-wide bucket -- the actual per-voice question this task is
+    # about.
+    assert by_voice[1]["held"]["runs"] == 2
+    assert by_voice[2]["matched"]["runs"] == 1
+    assert by_voice[3]["short"]["runs"] == 1
+
+
+def test_gate_census_report_by_voice_section_sums_to_the_top_table():
+    """The report's own tables must agree with each other: the "By voice"
+    section's runs, summed over voices for a given kind, equal the runs the
+    top (file-level) table prints for that same kind -- the exact property
+    the task asks for ("reproduces the file-level totals when summed")."""
+    orig = [
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (4, 0x41),
+                                   (5, 0x40), (7, 0x41)]),
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (6, 0x41)]),
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (6, 0x41)]),
+    ]
+    ours = [
+        fidelity.Voice(wf_events=[(0, 0x41)]),
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (5, 0x41)]),
+        fidelity.Voice(wf_events=[(0, 0x41), (2, 0x40), (3, 0x41)]),
+    ]
+    rows = [{"file": "synthetic.sid",
+            "gate_census": fidelity.gate_census(orig, ours, nframes=8)}]
+    report = fidelity.gate_census_report(rows)
+
+    import re
+    # crude but exact: parse "| held | N | ... |" out of the top table --
+    # anchored to line start so it cannot match a "By voice" row instead
+    # (those start with "| <voice> | held | ...").
+    top_held = int(re.search(r"^\| held \| (\d+) \|", report, re.M).group(1))
+    assert top_held == 2
+    # Sum the by-voice section's `held` rows.
+    by_voice_held = sum(int(n) for n in
+                        re.findall(r"^\| \d+ \| held \| (\d+) \|", report,
+                                   re.M))
+    assert by_voice_held == top_held
+    assert "## By voice" in report
+    assert "## Where the held ones are" in report
+    # The held-runs table must now say *which voice*, not just which file.
+    held_section = report.split("## Where the held ones are", 1)[1]
+    assert "voice" in held_section.splitlines()[2]  # header row names it

@@ -2491,10 +2491,59 @@ def _apply_wrap_tie(new_track: List[int], patterns: List[List[int]],
     starts a subtune at orderlist position 0 and every corpus restart position
     *is* 0, so the step this ties is also the step the song opens on. The
     original attacks that note on the first pass and ties it on every later
-    one; one orderlist entry cannot say both. Nothing in the corpus exercises
-    that case -- with the veto above, 0 of 83 conversions change a byte -- so
-    the trade is stated rather than measured, and the day a file does exercise
-    it, it is an A/B and not a reading of this docstring.
+    one; one orderlist entry cannot say both.
+
+    **THERE ARE THREE DECLINES HERE, NOT ONE, AND ONLY ONE OF THEM IS ON
+    VOICE 0.** Censused by wrapping this function at its own call site and
+    converting the corpus with its own presets -- 83 converted, 12 refused for
+    having no Hubbard player -- 5 voice orderlists exit tied and 3 of those
+    have an in-range restart:
+
+        Flash_Gordon  s6 v0   restart 253 >= songlen 11   -- $FD, a stop
+        Warhawk       s4 v2   restart 253 >= songlen  1   -- $FD, a stop
+        Chimera       s0 v1   restart 0 -> pos 0          -- row 0 is $BE
+        Star_Paws     s1 v0   restart 0 -> pos 1 == ref   -- the tempo veto
+        Star_Paws     s2 v0   restart 0 -> pos 1 == ref   -- the tempo veto
+
+    Chimera is the one this pass had been described as unable to reach and can
+    reach perfectly well: it is on **voice 1**, so `tempo_voice` is False and
+    the veto never runs. It declines in `_tie_step` because its restart
+    pattern's row 0 is `GT_KEYOFF` ($BE), which sits just above `GT_LASTNOTE`
+    ($BC) and so fails the note-range test. That is the RIGHT answer and not a
+    limitation: a KEYOFF row is the player's own data saying *release here*,
+    so there is no attack to suppress and nothing to tie into. So "every
+    corpus instance is on voice 0" is false, and "this pass reaches nothing"
+    is true for two unrelated reasons rather than one.
+
+    **The veto lift is refuted again, at this head, on the subtunes that carry
+    the ties.** The numbers above were taken before v0.5.330's `apply_tempos`,
+    which clones a contested entry pattern instead of skipping blindly, so the
+    trade could have changed; it has not. Forcing `tempo_voice=False` moves
+    Star_Paws' bytes (c6b37cdc6cc8 -> fcc868e88ab5) and takes the converter's
+    own tempo line from `in 3 pattern(s)` to `in 1`:
+
+        subtune 1   melody .7481 -> .3663   seq .8636 -> .4571   pitch .9643 -> .3929
+        subtune 2   melody .9869 -> .9647   seq .9854 -> .9649   pitch 1.0000 -> .9667
+        subtune 0   unchanged on all three
+
+    Subtune 0 being flat is the whole reason the original A/B read as harmless:
+    it is the only subtune with no tie at the wrap, and it is the one a default
+    trace looks at.
+
+    **It IS expressible, and the price is the reason it is not taken.** To say
+    both halves -- attacked on the first pass, tied on every later one -- the
+    loop body has to appear twice, `[T P1..Pn T P1_tied..Pn $FF restart=n+2]`,
+    so that the opening entry stays untied and keeps its `CMD_SETTEMPO` while
+    the restart lands on a tied second copy; the veto then dissolves on its
+    own. Star_Paws' two lists are 29 and 48 entries and would go to about 58
+    and 96 against `MAX_TRACK_LEN` 255, plus a pattern copy each. The prize is
+    one spurious attack per wrap on one file's two subtunes -- voice 0 of
+    subtune 2 over-attacks by 3 in 60 s, and subtune 1 by 12 beside a voice-1
+    deficit of -58 that this cannot touch. Near-doubling two orderlists inside
+    the function whose last regression cost three quarters of a subtune's
+    attacks is not worth that, so the pass declines on voice 0 by design. The
+    day a file exercises it with more than one note at stake, the route is
+    written down here and the decision is an A/B rather than a re-derivation.
     """
     if not exits_tied:
         return 0
