@@ -91,6 +91,14 @@ TOGGLES = ("pack", "prune", "dedup")
 
 # Not searched; see the module docstring.
 FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
+         # Rides with legal_restart because it decides the same byte.
+         # In FIXED rather than FIDELITY_TOGGLES because the search
+         # CANNOT select it: measured over all 29 files it moves,
+         # 28 are flat on melody, sequence and pitch and one improves,
+         # so `fidelity_better` sees nothing to prefer. What it fixes
+         # is the length rule, which only `len` measures -- Action
+         # Biker goes from 856 attacks in 180s to the original's 291.
+         "silent_park": True,
          "skip_gate": True,
          "slides": True, "effects": True, "status_bit6": True,
          "reject_phantoms": True, "fold_transpose": True,

@@ -110,6 +110,7 @@ def convert(sid_path: str, log: Logger = print,
             prune: bool = False,
             pack: bool = False,
             legal_restart: bool = False,
+            silent_park: bool = False,
             slides: bool = False,
             effects: bool = False,
             status_bit6: bool = False,
@@ -377,7 +378,15 @@ def convert(sid_path: str, log: Logger = print,
         # After reindexing, packing, merging and splitting: those all change an
         # orderlist's length, and whether a restart position is in range is a
         # question about the finished list.
-        legalise_restarts(tracks, log)
+        #
+        # `silent_park` hands the pattern table over so a tune that ENDED can
+        # be parked on silence rather than looped from the top -- the repair
+        # for the length rule, where restart-0 is only the workaround that
+        # makes the file packable. It rides on `legal_restart` because it is
+        # the same decision about the same byte: without that flag there is no
+        # restart position to choose.
+        legalise_restarts(tracks, log,
+                          new_patterns if silent_park else None)
     # Every subtune dropped means the file carries no orderlist at all -- the
     # same refusal the empty-tracks case gets, for the same reason.
     if all(t == DEFAULT_TRACK for t in tracks):

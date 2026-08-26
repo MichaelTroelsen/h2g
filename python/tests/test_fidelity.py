@@ -880,6 +880,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  pulse_span=1.0,
                  orig_pulse_phases=0, our_pulse_phases=0,
                  pulse_phase=1.0,
+                 orig_ends_at=10.0, ours_ends_at=10.0,
+                 length_delta=0.0, length_bounded=False,
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
@@ -1058,6 +1060,93 @@ def test_every_row_has_exactly_as_many_cells_as_the_header():
     assert rows, "no data rows were rendered"
     for r in rows:
         assert cells(r) == want, f"{cells(r)} cells against {want}: {r}"
+
+
+# --- `len`: the listener's rule, and the only column about LENGTH ---------
+#
+# "The original and the H2G should have the same length +- 5 seconds."  No
+# other dimension enforces it: `drift`, `retrig` and `--pace` all measure the
+# rate of a ROW and are satisfied by a conversion that plays the right music
+# at the right speed FOREVER. Action Biker reads drift +0.0 and retrig 1.00
+# while running three times too long.
+
+def _len_voice(attacks):
+    return fidelity.Voice(attack_frames=list(attacks),
+                          attacks=["C-4"] * len(attacks))
+
+
+def _len_side(attacks):
+    return [_len_voice(attacks), fidelity.Voice(), fidelity.Voice()]
+
+
+def test_a_side_still_playing_at_the_window_edge_has_not_stopped():
+    # attacks every 50 frames right up to the end: no trailing silence at all
+    assert fidelity.stopped_at(_len_side(range(0, 3000, 50)), 60) is None
+
+
+def test_a_side_that_stops_reports_the_second_it_stopped():
+    # last attack at frame 500 = 10 s, then 50 s of silence
+    assert fidelity.stopped_at(_len_side(range(0, 501, 50)), 60) == 10.0
+
+
+def test_a_long_rest_is_not_an_ending_for_either_side():
+    """The same rule `original_ended` uses, and for the same reason: a tune
+    that pauses mid-way must not be read as over. The trailing silence has to
+    beat twice the tune's own largest gap."""
+    # a 20 s gap mid-tune, then it resumes and runs to the edge
+    attacks = list(range(0, 501, 50)) + list(range(1500, 3000, 50))
+    assert fidelity.stopped_at(_len_side(attacks), 60) is None
+
+
+def test_len_is_the_seconds_ours_runs_past_the_originals_ending():
+    orig = _len_side(range(0, 501, 50))            # stops at 10 s
+    ours = _len_side(range(0, 1501, 50))           # stops at 30 s
+    got = fidelity.length_compare(orig, ours, 60)
+    assert got["orig_ends_at"] == 10.0
+    assert got["ours_ends_at"] == 30.0
+    assert got["length_delta"] == 20.0
+    assert got["length_bounded"] is False
+
+
+def test_len_says_nothing_when_the_original_never_ends():
+    """No ending to match means the rule does not apply -- not that it passed."""
+    orig = _len_side(range(0, 3000, 50))
+    ours = _len_side(range(0, 501, 50))
+    assert fidelity.length_compare(orig, ours, 60) == {}
+
+
+def test_a_conversion_that_never_stops_reports_a_floor_not_a_pass():
+    """Ours loops, so where it has not stopped by the window edge all we know
+    is a lower bound. It must be reported as a bound and not as a figure."""
+    orig = _len_side(range(0, 501, 50))            # stops at 10 s
+    ours = _len_side(range(0, 3000, 50))           # never stops
+    got = fidelity.length_compare(orig, ours, 60)
+    assert got["ours_ends_at"] is None
+    assert got["length_bounded"] is True
+    assert got["length_delta"] == 50.0             # 60 - 10, a floor
+    assert fidelity._fmt_length(got).startswith(">"), "the floor is not marked"
+    assert fidelity._fmt_length(got).endswith("!"), "a 50 s surplus is a breach"
+
+
+def test_action_bikers_case_reports_nothing_rather_than_a_pass():
+    """THE case that forces the design. Its original's last attack is at
+    59.54 s and the report's window is 60 s, so the surplus is entirely
+    OUTSIDE the window and cannot be seen. Scoring that as a pass would be
+    exactly the shim this column exists to expose."""
+    orig = _len_side([int(59.54 * 50)])
+    ours = _len_side(range(0, 3000, 50))
+    got = fidelity.length_compare(orig, ours, 60)
+    # the original does not even count as stopped -- its tail is under 5 s
+    assert got == {} or got["length_delta"] is None
+    assert fidelity._fmt_length(got) == "-"
+
+
+def test_a_conversion_inside_the_tolerance_is_not_flagged():
+    orig = _len_side(range(0, 501, 50))            # 10 s
+    ours = _len_side(range(0, 651, 50))            # 13 s, +3
+    got = fidelity.length_compare(orig, ours, 60)
+    assert got["length_delta"] == 3.0
+    assert "!" not in fidelity._fmt_length(got)
 
 
 def test_an_unmeasured_row_is_as_wide_as_a_measured_one():

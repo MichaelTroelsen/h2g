@@ -155,3 +155,79 @@ def test_the_dispatch_caps_the_orderlists_a_file_emits():
     # the two bounds have started disagreeing and one of them has drifted --
     # that is the signal, not the individual file counts.
     assert agreed == 8, agreed
+
+
+# --- parking a finished tune on silence -----------------------------------
+#
+# Hubbard's `$FE` means TUNE ENDED. A Goattracker orderlist has no "stop", so
+# `legalise_restarts` rewrites the out-of-range restart position to 0 and the
+# tune loops from the top instead of ending -- which is what makes the file
+# packable and also why every such tune plays forever. `len` reads Action
+# Biker at >+120.5s past its original's ending over a 180s trace, with 856
+# attacks against the original's 291.
+#
+# Given the pattern table, the same pass parks the track on a SILENT pattern
+# appended to its own orderlist. An orderlist still cannot say "stop", but it
+# can loop something that makes no sound.
+
+def _ended_track(entries):
+    """An orderlist ending the way convert_tracks writes a `$FE`."""
+    return list(entries) + [0xFF, 0xFD]
+
+
+def test_without_the_pattern_table_the_restart_is_still_zeroed():
+    """The behaviour every caller had before, unchanged when `patterns` is
+    not passed -- this is what keeps the option opt-in."""
+    from h2g.tracks import legalise_restarts
+    track = _ended_track([0, 1, 2])
+    assert legalise_restarts([track]) == 1
+    assert track == [0, 1, 2, 0xFF, 0x00]
+
+
+def test_given_the_pattern_table_the_track_parks_on_silence():
+    from h2g.tracks import SILENT_PATTERN, legalise_restarts
+    patterns = [[0] * 8, [0] * 8]
+    track = _ended_track([0, 1, 0])
+    assert legalise_restarts([track], None, patterns) == 1
+    # the silent pattern was appended to the table ...
+    assert patterns[-1] == SILENT_PATTERN
+    silent = len(patterns) - 1
+    # ... its number sits at the end of the orderlist, and the restart names it
+    assert track == [0, 1, 0, silent, 0xFF, 3]
+    assert track[track.index(0xFF) + 1] == 3, "restart does not name the park"
+
+
+def test_one_silent_pattern_serves_every_parked_track():
+    """It carries no per-track state, so a copy each would spend pattern slots
+    for nothing. Auf Wiedersehen Monty parks 36 tracks."""
+    from h2g.tracks import legalise_restarts
+    patterns = [[0] * 8]
+    tracks = [_ended_track([0]), _ended_track([0, 0]), _ended_track([0, 0, 0])]
+    assert legalise_restarts(tracks, None, patterns) == 3
+    assert len(patterns) == 2, "more than one silent pattern was created"
+    for t in tracks:
+        assert t[t.index(0xFF) + 1] == t.index(0xFF) - 1
+
+
+def test_a_track_at_the_length_limit_falls_back_to_restart_zero():
+    """Parking costs one orderlist position. A track with no room for it must
+    still be legalised -- an unpackable file is worse than a looping one."""
+    from h2g.patterns import MAX_TRACK_LEN
+    from h2g.tracks import legalise_restarts
+    patterns = [[0] * 8]
+    track = [0] * (MAX_TRACK_LEN - 2) + [0xFF, 0xFD]
+    assert len(track) >= MAX_TRACK_LEN
+    assert legalise_restarts([track], None, patterns) == 1
+    assert track[-1] == 0, "it should have fallen back to restart 0"
+    assert len(patterns) == 1, "a silent pattern was spent on a track with no room"
+
+
+def test_a_track_that_already_loops_is_left_alone_either_way():
+    """Parking is for tracks that ENDED. A legal restart is a real loop the
+    composer wrote, and touching it would silence music the player plays."""
+    from h2g.tracks import legalise_restarts
+    patterns = [[0] * 8]
+    track = [0, 1, 2, 0xFF, 0x01]
+    assert legalise_restarts([track], None, patterns) == 0
+    assert track == [0, 1, 2, 0xFF, 0x01]
+    assert len(patterns) == 1

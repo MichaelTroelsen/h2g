@@ -84,6 +84,17 @@ def main(argv=None) -> int:
              "which loses the composer's intent but is what makes a packed "
              ".sid possible at all. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--silent-park", action="store_true",
+        help="with --legal-restart, park a tune that ENDED on a silent pattern "
+             "instead of looping it from the top. Hubbard's $FE means 'tune "
+             "ended' and a Goattracker orderlist cannot say that, so the "
+             "restart-at-0 above makes every such tune play forever -- "
+             "FIDELITY.md's `len` column reads Kings of the Beach 53s and "
+             "Geoff Capes 44s past their originals' endings. An orderlist "
+             "still cannot stop, but it can loop a pattern that makes no "
+             "sound. Costs one pattern slot and one orderlist position per "
+             "ended track. Off by default: it changes the output bytes")
+    parser.add_argument(
         "--vibrato", action="store_true",
         help="give each instrument the vibrato its player runs. 56 of 95 "
              "corpus players carry it in one record byte (bits 3-6 an "
@@ -461,6 +472,8 @@ def main(argv=None) -> int:
             args.tempo = always["tempo"]
         if not _given("--legal-restart") and always.get("legal_restart"):
             args.legal_restart = True
+        if not _given("--silent-park") and always.get("silent_park"):
+            args.silent_park = True
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file)) or {}
         for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
                           ("--effects", "effects"),
@@ -544,6 +557,7 @@ def main(argv=None) -> int:
                       prune=args.prune_patterns,
                       pack=args.pack_repeats,
                       legal_restart=args.legal_restart,
+                      silent_park=args.silent_park,
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
                       status_bit6=args.status_bit6,

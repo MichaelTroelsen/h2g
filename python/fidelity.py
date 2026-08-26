@@ -2384,7 +2384,7 @@ def census_report(rows: list[dict]) -> str:
                 "the source record's `+7`. This is the work list: a group "
                 "whose bit is already implemented points at option selection, "
                 "one whose bit is not points at the player.", "",
-                "| effect | n | files |", "|---|---:|---|"]
+                "| effect | n | files |", "|---|---:|---:|---:|---|"]
         for eff, n in by_eff.most_common():
             files = sorted({r["file"] for r in flat if r.get("effect") == eff})
             name = "-" if eff is None else f"`${eff:02X}`"
@@ -3463,6 +3463,16 @@ DIMENSIONS = (
     # *onsets*, which is what `melody` is built from -- but it uses their
     # frame positions, which `melody` discards. A file can therefore score
     # 100% melody and drift badly, and 17 of them do.
+    # The listener's rule, and the only column here that is about the
+    # tune's LENGTH rather than its content. Every other dimension is
+    # satisfied by a conversion that plays the right music at the right
+    # speed forever -- Action Biker reads drift +0.0 and retrig 1.00 at
+    # three times the original's length. `-` means the original does not
+    # stop inside the window, so there is no ending to match, OR ours is
+    # still playing with too little window left to prove a surplus. See
+    # length_compare: not-measured is reported as not-measured.
+    Dimension("length_delta", "len", _PITCH_REGS, "ratio",
+              "seconds ours runs past the original's ending"),
     Dimension("drift_per_1000", "drift", _PITCH_REGS, "ratio",
               "frames of lead (negative) or lag we accumulate per 1000, from "
               "a Theil-Sen fit over matched onsets -- **the startup lag is "
@@ -3604,6 +3614,78 @@ def _convert_options() -> tuple:
     """
     params = inspect.signature(convert).parameters
     return tuple(n for n in params if n not in ("sid_path", "log"))
+
+
+def stopped_at(voices, seconds: int) -> float | None:
+    """The second this side's music STOPS, or None if it is still playing.
+
+    `original_ended` asks the same question of the original and answers with a
+    comparison WINDOW; this answers with the second itself, and asks it of
+    either side, so the two can be compared. The silence test is the same one
+    and deliberately so -- a rest is not an ending, so the trailing quiet has
+    to exceed twice the tune's own largest gap between attacks and five
+    seconds outright before it counts as over.
+    """
+    frames = [f for v in voices for f in v.attack_frames]
+    if not frames:
+        return None
+    window = seconds * 50
+    last = max(frames)
+    ordered = sorted(frames)
+    gaps = [b - a for a, b in zip(ordered, ordered[1:])]
+    biggest = max(gaps) if gaps else 0
+    if window - last <= max(2 * biggest, 5 * 50):
+        return None                 # still playing when the window ran out
+    return last / 50.0
+
+
+def length_compare(orig, ours, seconds: int) -> dict:
+    """Does our conversion END where the original ends, within +-5 seconds?
+
+    A listener's rule and a CLAUDE.md invariant, and until this NO column
+    enforced it. `drift`, `retrig` and `--pace` all measure the rate of a ROW
+    and are every one of them satisfied by a conversion that plays the right
+    music at the right speed **forever**: Action Biker reads `drift +0.0` and
+    `retrig 1.00` while running three times too long. The cause is a property
+    of the target format -- Hubbard's `$FE` means *tune ended*, a Goattracker
+    orderlist cannot say it, and `--legal-restart` turns it into a restart at
+    position 0 -- so the surplus is real music the original never plays.
+
+    **THE COLUMN'S BLINDNESS IS THE POINT OF ITS DESIGN.** Our side loops, so
+    where it does not stop inside the window all we know is a LOWER BOUND on
+    how long it runs: `seconds - orig`. That bound is only worth reporting when
+    it already exceeds the tolerance. Action Biker is the case that forces
+    this -- its original's last attack is at 59.54 s and the report's window is
+    60 s, so the window ends where the tune does and the surplus is entirely
+    outside it. Scoring that as a pass would be a lie of exactly the kind this
+    repo keeps catching, so it reports `-` instead: not measured, rather than
+    measured and fine.
+
+    Returns `length_delta` in seconds, ours minus the original's, positive
+    where we run long; `length_bounded` when our side never stopped, so the
+    delta is a floor and the true figure is worse.
+    """
+    o = stopped_at(orig, seconds)
+    if o is None:
+        # The original does not stop inside the window, so there is no ending
+        # for ours to match and the rule does not apply to this row.
+        return {}
+    u = stopped_at(ours, seconds)
+    if u is not None:
+        return {"orig_ends_at": round(o, 2), "ours_ends_at": round(u, 2),
+                "length_delta": round(u - o, 2), "length_bounded": False}
+    floor = seconds - o
+    if floor <= LENGTH_TOLERANCE:
+        # Still playing, but the window leaves no room to prove a surplus.
+        return {"orig_ends_at": round(o, 2), "ours_ends_at": None,
+                "length_delta": None, "length_bounded": True}
+    return {"orig_ends_at": round(o, 2), "ours_ends_at": None,
+            "length_delta": round(floor, 2), "length_bounded": True}
+
+
+# The listener's rule, in seconds. "The original and the H2G should have the
+# same length +- 5 seconds."
+LENGTH_TOLERANCE = 5.0
 
 
 def original_ended(orig, seconds: int) -> int | None:
@@ -3895,6 +3977,18 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # file, not a setting that differed between two runs, and writing it
         # here would make every `--baseline` across this change refuse with
         # `seconds 60 -> 17`. The shortening is reported as `original_ends`.
+        # THE LENGTH RULE IS MEASURED HERE, BEFORE THE WINDOW SHRINKS, and it
+        # has to be: after the shortening both sides are cut to the same
+        # `seconds` and the delta is 0 by construction, which is the shim this
+        # column exists to expose rather than to join. It costs one extra
+        # trace of OUR side over the full window, and only on the files that
+        # shorten -- which are exactly the files that can fail the rule, so
+        # the cost falls where the finding is.
+        row.update(length_compare(
+            a,
+            run_siddump(packed, seconds, sub, args.siddump,
+                        calls=getattr(args, "calls_per_frame", None) or multiplier),
+            seconds))
         row["original_ends"] = seconds = ended
         a = run_siddump(local_orig, seconds, sub, args.siddump, cal)
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
@@ -4145,6 +4239,24 @@ def blindness_section(rows: list[dict]) -> list[str]:
         out += ["", f"No row in this run computed {missing}, so it is blind "
                 "on that too."]
     return out
+
+
+def _fmt_length(r: dict) -> str:
+    """The `len` cell: how far past the original's ending ours runs.
+
+    `-` where the rule could not be tested at all -- either the original does
+    not stop inside the window, or ours is still going with less than the
+    tolerance left to prove it. A `>` prefix marks a FLOOR: our side had not
+    stopped when the trace ran out, so the true surplus is at least this and
+    probably larger. `!` marks a breach of the +-5 s rule, the same way
+    `_one_sided` marks a filter we invent.
+    """
+    d = r.get("length_delta")
+    if d is None:
+        return "-"
+    lead = ">" if r.get("length_bounded") else ""
+    bad = " !" if abs(d) > LENGTH_TOLERANCE else ""
+    return f"{lead}{d:+.1f}s{bad}"
 
 
 def _fmt_sweep(row: dict) -> str:
@@ -4401,8 +4513,8 @@ def report(rows: list[dict], args) -> str:
         "out of this column entirely, so read it beside **vib**, which is "
         "where a missing oscillation shows up.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -4440,6 +4552,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
+            f"{_fmt_length(r)} | "
             f"{status} |")
 
     if measured:
@@ -4652,18 +4765,39 @@ def report(rows: list[dict], args) -> str:
                 f"{r['file'].replace('.sid', '')} {r['original_ends']}s"
                 for r in sorted(ended, key=lambda r: r["file"].lower()))
             out.append(
-                f"- {len(ended)} file(s) are compared over a **shorter window "
-                "than the rest**, because the original's subtune ends inside "
-                "it. Hubbard's `$FE` track byte means *tune ended* and a "
-                "Goattracker orderlist cannot say that, so our conversion "
-                "restarts and every sequence column would otherwise be charged "
-                "for a loop the original never plays -- Geoff Capes read "
-                "`retrig` 3.21 and `melody` 49% that way, against 1.02 and 100% "
-                "over the music it actually has. The shortening can only remove "
-                "our surplus, so it flatters those rows by construction: it is "
-                "gated on the original stopping (a trailing silence longer than "
-                "twice its own largest gap between attacks, and 5s outright), "
-                f"never on the two sides disagreeing. ({names})")
+                f"- **{len(ended)} file(s) FAIL the length rule**, and this "
+                "list is a defect queue rather than a note on method. A "
+                "conversion must end within +-5s of the original; these are "
+                "the files whose original STOPS inside the window while ours "
+                "plays on, so the harness shortens their comparison to the "
+                "music the original actually has. Read that shortening for "
+                "what it is: the score is protected and **the shipped `.sng` "
+                "still plays forever**. It is the same shape as the "
+                "`--search-subtunes` compensation corrected in v0.5.375 -- a "
+                "shim that hides a defect from the score does not hide it "
+                "from the file. Hubbard's `$FE` means *tune ended*, a "
+                "Goattracker orderlist cannot say it, and `--legal-restart` "
+                "turns it into a restart at position 0; the repair is a "
+                "choice of restart TARGET, looping a silent pattern instead. "
+                "The `len` column carries the surplus per file where the "
+                "window is long enough to measure one. Without the "
+                "shortening Geoff Capes reads `retrig` 3.21 and `melody` 49% "
+                "against 1.02 and 100% over its real length, so the "
+                "truncation is right for the SCORE and says nothing good "
+                f"about the conversion. ({names})")
+            out.append(
+                "- **The length rule reaches only as far as the window.** "
+                "`len` can see a surplus only where the original stops with "
+                "more than 5s of trace left after it, so at `-t 60` it finds "
+                "the tunes that end EARLY and is blind to the ones that end "
+                "near the edge. Action Biker is the known case it cannot "
+                "reach: its original's last attack is at 59.54s and ours "
+                "loops with a period of 61.44s, so it runs three times too "
+                "long and this column prints `-` for it at this window. That "
+                "is the column declining to score what it cannot see rather "
+                "than passing it; a `-t 180` run is what measures that file. "
+                "The count above is therefore a FLOOR on how many files "
+                "break the rule, not a census of them.")
 
         # The mean hides the shape, and the shape is the finding: this is not
         # a corpus that is uniformly 2/3 right, it is one where most files are

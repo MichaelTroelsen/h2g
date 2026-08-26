@@ -4,6 +4,12 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.387 — 2026-08-26
+
+- a length column, and original_ended becomes a defect queue
+- --silent-park ends a tune instead of looping it, measured but inert
+  until presets.json carries it
+
 ## 0.5.386 — 2026-08-26
 
 - a pulse phase column, and pspan per voice

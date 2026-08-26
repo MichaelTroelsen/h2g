@@ -9,9 +9,17 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
-from .patterns import (DEFAULT_TRACK, GT_LASTNOTE, GT_ORDER_RESTART,
-                       MAX_PATTERNS, command_floor, decode_entry,
-                       pattern_references, pattern_top_note)
+from .patterns import (DEFAULT_TRACK, GT_END_PATTERN, GT_KEYOFF, GT_LASTNOTE,
+                       GT_ORDER_RESTART, MAX_PATTERNS, MAX_TRACK_LEN,
+                       command_floor, decode_entry, pattern_references,
+                       pattern_top_note)
+
+# The pattern a finished tune parks on. One KEYOFF row, then ENDPATT: the
+# gate closes on every voice that reaches it and nothing sounds again however
+# many times the orderlist loops back to it. A Goattracker orderlist has no
+# "stop", so this is the nearest thing to one that the format can express --
+# see legalise_restarts.
+SILENT_PATTERN = [GT_KEYOFF, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
 from .sidfile import SidFile
 
 # Goattracker orderlist transpose, from gcommon.h: TRANSDOWN $E0, TRANSUP $F0,
@@ -946,7 +954,8 @@ def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:
     return revived
 
 
-def legalise_restarts(tracks: List[List[int]], log=None) -> int:
+def legalise_restarts(tracks: List[List[int]], log=None,
+                      patterns: List[List[int]] | None = None) -> int:
     """Replace restart positions Goattracker's exporter refuses, in place.
 
     Hubbard's `$FE` track marker means *this tune has ended*. Every dialect
@@ -979,9 +988,18 @@ def legalise_restarts(tracks: List[List[int]], log=None) -> int:
     loss of the composer's intent, which is why this is opt-in and why it is
     logged; it is also the difference between a packed .sid and no file.
 
+    `patterns` opts into the repair rather than the workaround: given the
+    pattern table, a track that ended is parked on a SILENT pattern appended
+    to its own orderlist instead of being restarted at 0. See the branch
+    below. Without it the behaviour is exactly as before.
+
     Returns the number of tracks changed.
     """
-    fixed = 0
+    fixed = parked = 0
+    # One silent pattern for the whole song, created on first need and shared
+    # by every track that parks -- it carries no per-track state, so a copy
+    # each would spend pattern slots for nothing.
+    silent: list = [None]
     for track in tracks:
         # Walk to the LOOPSONG rather than scanning for the first small byte.
         # In a reindexed orderlist nothing but LOOPSONG can be $FF -- pattern
@@ -1001,9 +1019,31 @@ def legalise_restarts(tracks: List[List[int]], log=None) -> int:
             # its whole subtune whether or not the restart position is legal,
             # so it must not depend on this opt-in flag.
             continue
-        track[songlen + 1] = 0
+        if patterns is not None and len(track) < MAX_TRACK_LEN:
+            # PARK ON SILENCE INSTEAD OF LOOPING FROM THE TOP. Restart 0 is
+            # what makes the file packable, and it is also why every such tune
+            # plays forever -- the `len` column reads Kings of the Beach at
+            # >+53.6s and Geoff Capes at >+44.6s past their originals' endings.
+            # An orderlist still cannot say "stop", but it can loop a pattern
+            # that makes no sound, which ends the tune in every way a listener
+            # can hear. Safe HERE and nowhere earlier: this pass runs after
+            # reindexing, packing, merging and splitting, so the orderlist
+            # length is final and an appended position keeps its number.
+            if silent[0] is None:
+                silent[0] = len(patterns)
+                patterns.append(list(SILENT_PATTERN))
+            track.insert(songlen, silent[0])
+            track[songlen + 2] = songlen     # the parked entry's own index
+            parked += 1
+        else:
+            track[songlen + 1] = 0
         fixed += 1
     if log and fixed:
-        log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's $FE "
-            "stop marker; restarted at 0 so the song can be relocated")
+        if parked:
+            log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's "
+                f"$FE stop marker; {parked} parked on a silent pattern so the "
+                "tune stops, the rest restarted at 0")
+        else:
+            log(f"Restart positions.......: {fixed} track(s) ended on Hubbard's "
+                "$FE stop marker; restarted at 0 so the song can be relocated")
     return fixed
