@@ -4,6 +4,14 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.391 — 2026-08-26
+
+- the note flag has a second spelling, and 155 of Monty's notes stop clamping to G#7
+
+## 0.5.390 — 2026-08-26
+
+- the pulse phase: a note opens on the accumulator's own duty cycle
+
 ## 0.5.389 — 2026-08-26
 
 - 5 Title Tunes takes the firstwave set: wave 90 to 99, hold 0 to 86

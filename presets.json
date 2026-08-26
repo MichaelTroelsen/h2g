@@ -46,7 +46,8 @@
         5,
         6,
         8
-      ]
+      ],
+      "pulse_phase": true
     },
     "ACE_II.sid": {
       "max_rows": 128,

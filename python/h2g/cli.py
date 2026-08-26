@@ -95,6 +95,19 @@ def main(argv=None) -> int:
              "sound. Costs one pattern slot and one orderlist position per "
              "ended track. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--pulse-phase", action="store_true",
+        help="open each note of a free-running pulse sweep on the duty cycle "
+             "the player's accumulator holds at that moment, via a "
+             "CMD_SETPULSEPTR on the note row. The triangle engine's sweep is "
+             "never reseeded at a note, so its notes open all over the band "
+             "while a Goattracker instrument reloads its pointer and opens "
+             "every note on the record's width -- FIDELITY.md's pspan read "
+             "5 Title Tunes at 0.47x and pphase at 0.25x for exactly this; "
+             "with the option both read 1.0x with every other column "
+             "unchanged. Costs pattern copies and pulse-table entries; "
+             "single-speed files only for now. Off by default: it changes "
+             "the output bytes")
+    parser.add_argument(
         "--vibrato", action="store_true",
         help="give each instrument the vibrato its player runs. 56 of 95 "
              "corpus players carry it in one record byte (bits 3-6 an "
@@ -488,6 +501,7 @@ def main(argv=None) -> int:
                           ("--no-hard-restart", "no_hard_restart"),
                           ("--wide-hard-restart", "wide_hard_restart"),
                           ("--max-hard-restart", "max_hard_restart"),
+                          ("--pulse-phase", "pulse_phase"),
                           ("--no-test-restart", "no_test_restart"),
                           ("--rest-keyoff", "rest_keyoff"),
                           ("--rest-wave-silence", "rest_wave_silence"),
@@ -558,6 +572,7 @@ def main(argv=None) -> int:
                       pack=args.pack_repeats,
                       legal_restart=args.legal_restart,
                       silent_park=args.silent_park,
+                      pulse_phase=args.pulse_phase,
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
                       status_bit6=args.status_bit6,

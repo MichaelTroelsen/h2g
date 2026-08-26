@@ -124,6 +124,15 @@ EXCLUDED_FROM_ALWAYS = {
     # half the row) its gate goes 0.4996 -> 0.7494 with melody, seq, pitch and
     # wave every one unchanged. Unset it changes no byte anywhere.
     "hard_restart_frames",
+    # Per song, like hard_restart_frames, and for a structural reason as well
+    # as a search one: the phase plan costs pattern copies and pulse-table
+    # rows, both bounded, and a file where either budget overflows silently
+    # keeps its old sweep -- a per-song entry records a measured adoption
+    # where a blanket default would record an assumption. It is also
+    # invisible to `fidelity_better` for the same reason silent_park is:
+    # melody, onset and noise cannot see a duty cycle's phase; `pspan` and
+    # `pphase` can, and neither is a search criterion.
+    "pulse_phase",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
     # carries one -- Powerplay Hockey's nine game cues against the tune its

@@ -1055,6 +1055,31 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # $AF $AD $AF -- all six were emitted as one repeated $BC.
     if find("C8 B1 ?? 8D ?? ?? 29 7F 9D ?? ?? 0A A8") >= 1:
         det.note_flag = True
+    # THE SAME IDIOM WITH A TRANSPOSE SPLICED IN, and it is a fallback for the
+    # reason `find_relocation` and `INSTRUMENT_INDEX_SHAPE` are: consulted only
+    # where the shape above found nothing, so it can rescue a file that reads
+    # its notes wrongly and can never disturb one that already reads them
+    # right. Auf Wiedersehen Monty ($E5A7) masks the flag and then adds the
+    # voice's own transpose before storing:
+    #
+    #     C8         INY
+    #     B1 04      LDA (patt),Y
+    #     8D 2D EB   STA flag          ; the raw byte, bit 7 included
+    #     29 7F      AND #$7F          ; the note is the low seven bits
+    #     18         CLC               ; <-- four bytes the shape above
+    #     7D 81 EB   ADC transpose,X   ; <-- does not allow for
+    #     9D 27 E9   STA note,X
+    #     0A A8      ASL / TAY         ; index the frequency table
+    #
+    # Without it the whole byte was taken as the note, and every one of the 155
+    # flagged notes in that file -- raw $90-$CD, all with bit 7 set -- clamped
+    # onto $5C and came out as a single repeated G#7, the top of Goattracker's
+    # range. A listener reported it as a high-pitched tone on voice 3. Same
+    # lesson as SPEED_GATE_IMM: two spellings of one idiom differ by an
+    # instruction, and matching neither is indistinguishable from the player
+    # not having the feature.
+    elif find("C8 B1 ?? 8D ?? ?? 29 7F 18 7D ?? ?? 9D ?? ?? 0A A8") >= 1:
+        det.note_flag = True
 
     # Delta's orderlist carries a repeat count between pattern numbers. Its
     # *read* is version 0's shape byte for byte ($BE79: LDY $C2EC,X /

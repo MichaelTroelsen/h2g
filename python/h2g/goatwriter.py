@@ -4672,6 +4672,205 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     return entries, starts
 
 
+# --------------------------------------------------------------------------
+# Pulse PHASE: which duty cycle a note OPENS on.
+#
+# The triangle engine's accumulator free-runs: it lives in the instrument
+# record's own width bytes, is stepped every `delay` play calls while the
+# record sounds, reflects where the high nibble reaches a bound, and is never
+# reseeded at a note -- so the original's notes open all over the sweep, while
+# Goattracker reloads the pulse pointer from the instrument and opens every
+# note on the record's width. `pspan` reads 5_Title_Tunes at 0.47x and
+# `pphase` at 0.25x for exactly this.
+#
+# The model below was validated against the original's own trace before any
+# of this was built: it predicts 848 of 848 note-onset widths on all three of
+# 5_Title_Tunes' sweeping voices exactly, and 96.9% of all 6000 traced frames
+# once the initial state is known. Two details are load-bearing and both were
+# read out of the trace rather than assumed: THE SWEEP DOES NOT RUN ON THE
+# NOTE-FETCH CALL (the width holds three frames around an attack against the
+# delay's two everywhere else), and THE REFLECTION STORES THE AT-BOUND VALUE
+# (the store-at-bound simulation matches 96.9% of frames; the skip-at-bound
+# reading of the 6502 -- whose top-bound exit is a JMP with two bytes left on
+# the stack -- matches 9.5%, so the observable behaviour wins over the
+# disassembly).
+#
+# The repair is CMD_SETPULSEPTR on the note row: the phase is deterministic,
+# so it is computed at emit time by walking the orderlist (patterns.
+# collect/apply, which own the clone discipline), and the pulse table gains
+# one ENTRY POINT per distinct (width, direction) a note opens on -- a set,
+# a ramp to the bound, and a jump into a shared alternating loop. Tick 0
+# commands run AFTER the new-note init (player.s:903-906), so the command
+# beats the instrument's own pointer load.
+# --------------------------------------------------------------------------
+
+class PulsePhaseSim:
+    """The triangle accumulator, exactly as validated against the trace.
+
+    One per sweeping record. `advance(calls, skip_first)` runs the sweep for
+    that many play calls -- `skip_first` on the call that fetches a note,
+    which the player spends in the fetch rather than the sweep. `phase()` is
+    the (width, direction) a note starting NOW opens on.
+
+    Units are PLAYER CALLS throughout, which is what makes the model
+    multiplier-free: the original steps its sweep once per play call whatever
+    the call rate. (The GT-side table speed is a separate question and keeps
+    `_pulse_tri_program`'s formula.)
+    """
+
+    def __init__(self, width: int, step: int, delay: int,
+                 lo: int, hi: int) -> None:
+        self.width, self.step, self.delay = width, step, delay
+        self.lo, self.hi = lo, hi
+        self.direction = +1
+        # The first active call ticks immediately: the player's DEC-then-BPL
+        # counter starts at zero, goes negative on the first decrement, and
+        # fires before its first reload.
+        self._dcnt = 0
+
+    def phase(self) -> tuple:
+        return (self.width, self.direction)
+
+    def advance(self, calls: int, skip_first: bool = False) -> None:
+        for k in range(calls):
+            if skip_first and k == 0:
+                continue
+            self._dcnt -= 1
+            if self._dcnt >= 0:
+                continue
+            self._dcnt = self.delay - 1
+            if self.direction > 0:
+                self.width += self.step
+                if (self.width >> 8) & 0x0F >= self.hi:
+                    self.direction = -1
+            else:
+                self.width -= self.step
+                if (self.width >> 8) & 0x0F <= self.lo:
+                    self.direction = +1
+
+    def clone(self) -> "PulsePhaseSim":
+        c = PulsePhaseSim(self.width, self.step, self.delay, self.lo, self.hi)
+        c.direction, c._dcnt = self.direction, self._dcnt
+        return c
+
+
+def pulse_phase_sims(sid: SidFile, det: Detection,
+                     lead: int = 1) -> dict:
+    """{pattern instrument byte: PulsePhaseSim} for the records that sweep.
+
+    The gates are `_pulse_tri_program`'s own: the engine present, the record's
+    rate byte carrying a step, and the effect-bit-$08 gate honoured only where
+    the player tests it. The instrument byte is the record index plus `lead`,
+    the same 1-based numbering `_pulse_layout` writes.
+    """
+    if det.pulse_tri_hi < 0:
+        return {}
+    d = sid.data
+    out: dict = {}
+    for i in range(det.instr_used):
+        rec = det.instr_start + i * det.instr_stride
+        if rec + 7 >= len(d):
+            break
+        if det.pulse_tri_gated and d[rec + 7] & 0x08:
+            continue
+        step = d[rec + 6] & 0xE0
+        if step == 0:
+            continue
+        delay = (d[rec + 6] & 0x1F) + 1
+        width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
+        # Instrument numbers are 1-based and offset by the layout's lead:
+        # record 0 is instrument 1 under --compact-instruments (lead 0) and
+        # instrument 2 in the inherited layout (lead 1). _instruments_used
+        # documents the convention; getting this wrong points every command
+        # at a neighbouring record's table.
+        out[i + 1 + lead] = PulsePhaseSim(width, step, delay,
+                                          det.pulse_tri_lo, det.pulse_tri_hi)
+    return out
+
+
+def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
+                            pulse: bool, multiplier: int,
+                            phases: dict, log=None,
+                            lead: int = 1) -> tuple | None:
+    """The whole pulse table with phase entry points, or None if it will not fit.
+
+    `phases` is {instrument byte: set of (width, direction)} from the
+    orderlist walk. Returns (entries, starts, index) where `index` maps
+    (instrument byte, width, direction) to the 1-based table entry a
+    CMD_SETPULSEPTR must name. Non-sweeping instruments keep exactly the
+    block `_pulse_layout` gives them; a sweeping record's own start pointer
+    becomes its (record width, up) phase entry, so a note that gets no
+    command -- a yielded row 0, a skipped occupied column -- still lands
+    inside the same machinery rather than on a second copy of the sweep.
+    """
+    entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
+    starts = [1] * lead
+    index: dict = {}
+    d = sid.data
+    for i in range(max(instr_used - lead, 0)):
+        num = i + 1 + lead
+        want = phases.get(num)
+        if not want:
+            program, loop = _pulse_program(sid, det, i, pulse, multiplier)
+            start = len(entries) + 1
+            block = program if loop is None else program + [(0xFF, start + loop)]
+            if len(entries) + len(block) > GT_MAX_TABLELEN:
+                if log:
+                    log("*** PULSE TABLE FULL UNDER --pulse-phase ***")
+                return None
+            starts.append(start)
+            entries += block
+            continue
+
+        rec = det.instr_start + i * det.instr_stride
+        step = d[rec + 6] & 0xE0
+        delay = (d[rec + 6] & 0x1F) + 1
+        width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
+        speed = min(GT_MAX_PULSE_SPEED,
+                    max(1, round(step / (delay * max(1, multiplier)))))
+        lo_v, hi_v = det.pulse_tri_lo << 8, det.pulse_tri_hi << 8
+        span_ticks = max(1, (hi_v - lo_v) // speed)
+
+        # The shared alternating loop: a down leg and an up leg, each jumping
+        # to the other. Every phase entry ramps to its bound and joins here.
+        down_head = len(entries) + 1
+        down = [(t, (0x100 - speed) & 0xFF) for t in _split_ticks(span_ticks)]
+        up_head = down_head + len(down) + 1
+        block = down + [(0xFF, up_head)]
+        block += [(t, speed) for t in _split_ticks(span_ticks)]
+        block += [(0xFF, down_head)]
+
+        # One entry point per distinct phase, the record's own resting width
+        # included so the instrument pointer has somewhere to stand.
+        want = set(want) | {(width, +1)}
+        for (w, direction) in sorted(want):
+            at = len(entries) + len(block) + 1
+            piece = [((0x80 | (w >> 8)) & 0xFF, w & 0xFF)]
+            if direction > 0:
+                ticks = max(0, (hi_v - w)) // speed
+                if ticks:
+                    piece += [(t, speed) for t in _split_ticks(ticks)]
+                piece += [(0xFF, down_head)]
+            else:
+                ticks = max(0, (w - lo_v)) // speed
+                if ticks:
+                    piece += [(t, (0x100 - speed) & 0xFF)
+                              for t in _split_ticks(ticks)]
+                piece += [(0xFF, up_head)]
+            index[(num, w, direction)] = at
+            block += piece
+
+        if len(entries) + len(block) > GT_MAX_TABLELEN:
+            if log:
+                log(f"*** PULSE PHASE NEEDS {len(block)} TABLE ROWS FOR "
+                    f"INSTRUMENT {num} AND THE TABLE IS FULL ***")
+            return None
+        starts.append(index[(num, width, +1)])
+        entries += block
+
+    return entries, starts, index
+
+
 def _write_pulsetable(out: bytearray, entries: List[tuple]) -> None:
     out.append(_table_length_byte(len(entries), "pulse"))
     out += bytes(left for left, _ in entries)
@@ -4805,6 +5004,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               min_notes: Optional[dict] = None,
               hard_restart_frames: int | None = None,
               compact_instruments: bool = False,
+              pulse_plan: tuple | None = None,
               no_test_restart: bool = False,
               two_stage: bool = False,
               sfx_drum: bool = False,
@@ -4849,8 +5049,15 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                                       lead, multiplier)
     else:
         filter_entries, filter_ptrs = [], {}
-    pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
-                                                multiplier, log, lead=lead)
+    if pulse_plan is not None:
+        # Precomputed by convert() under --pulse-phase: the phase entries had
+        # to exist BEFORE the patterns were patched, because CMD_SETPULSEPTR
+        # names table indices. Built by build_pulse_phase_table with this same
+        # lead, so the starts line up with the records exactly as below.
+        pulse_entries, pulse_starts = pulse_plan
+    else:
+        pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
+                                                    multiplier, log, lead=lead)
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,

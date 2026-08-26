@@ -140,6 +140,10 @@ GT_SPEEDTABLE_COMMANDS = (1, 2, 3)
 # way of saying "this row changes the pitch and does not attack" -- see the
 # tie block in _build_raw_pattern and _apply_boundary_ties.
 CMD_TONEPORTA = 3
+CMD_SETPULSEPTR = 9
+# Startup calls the classic engine's sweep has already run by the first
+# fetch -- see collect_pulse_phases. Measured, not derived.
+PULSE_PHASE_PREROLL = 7
 
 # Lowest byte value that is a *command* rather than a pattern number, used to
 # read a track that convert_tracks has produced but reindex_tracks has not yet
@@ -2561,6 +2565,275 @@ def _apply_wrap_tie(new_track: List[int], patterns: List[List[int]],
     if tempo_voice and pos == _entry_reference(new_track):
         return 0                        # the opening tempo owns that column
     return max(0, _tie_step(new_track, pos, patterns, copies, log))
+
+
+# --------------------------------------------------------------------------
+# Pulse phase: CMD_SETPULSEPTR on the note rows of a free-running sweep.
+#
+# The mechanics of the sweep live in goatwriter (PulsePhaseSim, the table
+# builder); what lives HERE is everything that touches orderlists and
+# patterns -- the play-order walk, the repeat-fold expansion, and the
+# clone-per-vector discipline apply_tempos established: patterns are global
+# and a phase belongs to an orderlist POSITION, so a pattern entered at two
+# phases needs two copies, never an in-place edit.
+# --------------------------------------------------------------------------
+
+def _expand_repeats(track: List[int]) -> tuple:
+    """The track with every $D0-$DF fold written out, plus the index map.
+
+    Playback-neutral by construction -- a fold IS its expansion -- but the
+    restart operand indexes into the track, so it is remapped through the
+    same table every other index goes through. Returns (new_track, old->new
+    index map) or (None, None) where the expansion would not fit.
+    """
+    out: List[int] = []
+    remap: dict = {}
+    i, n = 0, len(track)
+    while i < n:
+        b = track[i]
+        remap[i] = len(out)
+        if b == GT_ORDER_RESTART:
+            out.append(b)
+            if i + 1 < n:
+                remap[i + 1] = len(out)
+                out.append(track[i + 1])
+            i += 2
+            continue
+        if GT_REPEAT <= b < GT_REPEAT + 16 and i + 1 < n \
+                and track[i + 1] < MAX_PATTERNS:
+            plays = b - GT_REPEAT + 1
+            remap[i + 1] = len(out)
+            out += [track[i + 1]] * plays
+            i += 2
+            continue
+        out.append(b)
+        i += 1
+    if len(out) >= MAX_TRACK_LEN:
+        return None, None
+    # the restart operand is an index and must survive the shift
+    songlen = next((k for k, v in enumerate(out) if v == GT_ORDER_RESTART), None)
+    if songlen is not None and songlen + 1 < len(out):
+        old_songlen = next(k for k, v in enumerate(track)
+                           if v == GT_ORDER_RESTART)
+        pos = track[old_songlen + 1]
+        if pos < len(track):
+            out[songlen + 1] = remap.get(pos, pos)
+    return out, remap
+
+
+def _phase_note_rows(pattern: List[int], live_instr: int, sims: dict):
+    """Yield (row_index, kind, instr) walking one pattern's rows.
+
+    kind: "note" for a played note, "row" for anything else. `live_instr`
+    carries the last non-zero instrument byte in, exactly as the player
+    does -- instrument 00 means KEEP.
+    """
+    rows = len(pattern) // 4
+    for r in range(rows):
+        note = pattern[4 * r]
+        if note == GT_END_PATTERN:
+            return
+        instr = pattern[4 * r + 1] or live_instr
+        if pattern[4 * r + 1]:
+            live_instr = pattern[4 * r + 1]
+        kind = "note" if GT_FIRSTNOTE <= note <= GT_LASTNOTE else "row"
+        yield r, kind, instr
+
+
+def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
+                         tempos: List[int], sims: dict, log=None):
+    """Walk every subtune in play order and plan the phase of every note.
+
+    Returns (phases, writes) or None where the plan cannot be trusted:
+      phases -- {instrument byte: set of (width, direction)}
+      writes -- [(track index, slot index, {row: (instr, (width, dir))})]
+
+    Declines -- whole voices or whole groups, logged -- rather than guessing:
+    a record sounded by two voices of one group shares one accumulator and
+    the walk simulates voices independently; a loop whose second pass opens
+    its notes on different phases than its first cannot be expressed by a
+    per-position command at all. Tracks are MUTATED only by `_expand_repeats`
+    (playback-neutral); the caller holds a snapshot to restore on decline.
+    """
+    groups = len(tracks) // 3
+    if len(tempos) != groups:
+        raise ValueError(f"{groups} group(s), {len(tempos)} tempo(s)")
+    phases: dict = {}
+    writes: list = []
+    for g in range(groups):
+        # a record on two voices shares one accumulator: decline the group
+        owner: dict = {}
+        clash = False
+        for v in range(3):
+            live = 0
+            for b in tracks[3 * g + v]:
+                if b >= MAX_PATTERNS:
+                    continue
+                if b >= len(patterns):
+                    continue
+                for _, kind, instr in _phase_note_rows(patterns[b], live, sims):
+                    if kind == "note" and instr in sims:
+                        if owner.setdefault(instr, v) != v:
+                            clash = True
+                    if instr:
+                        live = instr
+        if clash:
+            if log:
+                log("Pulse phase.............: a record sounds on two voices "
+                    f"of subtune {g}; the accumulator is shared and the plan "
+                    "declines the subtune")
+            continue
+
+        tempo = max(1, tempos[g])
+        for v in range(3):
+            ti = 3 * g + v
+            expanded, _ = _expand_repeats(tracks[ti])
+            if expanded is None:
+                if log:
+                    log(f"Pulse phase.............: subtune {g} voice {v} "
+                        "cannot expand its repeats inside the orderlist "
+                        "limit; declined")
+                continue
+            tracks[ti] = expanded
+            track = expanded
+            songlen = next((k for k, b in enumerate(track)
+                            if b == GT_ORDER_RESTART), len(track))
+            restart = track[songlen + 1] if songlen + 1 < len(track) else 0
+            voice_sims = {num: sim.clone() for num, sim in sims.items()
+                          if owner.get(num) == v}
+            if not voice_sims:
+                continue
+            # THE STARTUP PREROLL, measured rather than derived: the record
+            # that is current when the tune starts has already swept for a
+            # few calls by the time its first note fetches -- init plus the
+            # player's warm-up. Seven calls reproduces every one of
+            # 5_Title_Tunes voice 3's 188 measured onsets exactly (0..8 were
+            # swept; 7 alone scores 188/188, its neighbours 94). A record
+            # that is NOT the voice's opening instrument is frozen until its
+            # first note and needs none -- voices 1 and 2's first onsets
+            # measure exactly the record width, which is the zero-preroll
+            # prediction. A wrong value here costs a fixed orbit offset,
+            # never the band or the travel.
+            first_instr = 0
+            live_scan = 0
+            for b in track:
+                if b == GT_ORDER_RESTART:
+                    break
+                if b >= MAX_PATTERNS or b >= len(patterns):
+                    continue
+                for _, kind, instr in _phase_note_rows(
+                        patterns[b], live_scan, voice_sims):
+                    if instr:
+                        live_scan = instr
+                    if kind == "note":
+                        first_instr = instr
+                        break
+                if first_instr:
+                    break
+            if first_instr in voice_sims:
+                voice_sims[first_instr].advance(PULSE_PHASE_PREROLL)
+
+            def one_pass(start: int, live: int):
+                out: dict = {}
+                pos = start
+                while pos < songlen:
+                    b = track[pos]
+                    if b >= MAX_PATTERNS or b >= len(patterns):
+                        pos += 1
+                        continue
+                    for r, kind, instr in _phase_note_rows(
+                            patterns[b], live, voice_sims):
+                        if instr:
+                            live = instr
+                        sim = voice_sims.get(instr)
+                        if sim is None:
+                            continue
+                        if kind == "note":
+                            out.setdefault(pos, {})[r] = (instr, sim.phase())
+                            sim.advance(tempo, skip_first=True)
+                        else:
+                            sim.advance(tempo)
+                    pos += 1
+                return out, live
+
+            first, live = one_pass(0, 0)
+            second, _ = one_pass(restart, live)
+            # The loop's second pass re-enters wherever the free-running
+            # accumulator happens to be, and a per-position command cannot
+            # follow that -- so the FIRST pass's phases are anchored and
+            # every later loop repeats them. That is not a shim: the
+            # original's own re-entry phase is an accident of arithmetic,
+            # not a composed value (5_Title_Tunes' whole 120s trace is a
+            # single pass, so no re-entry was ever even observed), and the
+            # cost is one width jump at the loop seam against a whole pass
+            # of restored phasing. Logged so a reader knows which kind of
+            # file this is.
+            stable = all(second.get(pos, first[pos]) == first[pos]
+                         for pos in first if pos >= restart)
+            if not stable and log:
+                log(f"Pulse phase.............: subtune {g} voice {v} "
+                    "re-enters its loop mid-sweep; the first pass's phases "
+                    "are anchored and every repeat plays them")
+            for pos, rows in first.items():
+                writes.append((ti, pos, rows))
+                for (num, ph) in rows.values():
+                    phases.setdefault(num, set()).add(ph)
+    if not writes:
+        return None
+    return phases, writes
+
+
+def apply_pulse_phase(patterns: List[List[int]], tracks: List[List[int]],
+                      writes: list, index: dict, log=None) -> int:
+    """Write the planned CMD_SETPULSEPTR commands, always into copies.
+
+    One clone per distinct (pattern, command vector), shared across every
+    slot that wants the same vector -- `_tie_step`'s rule. A row whose
+    command column is already taken keeps its command (the tempo pass ran
+    first and a subtune's clock outranks one note's phase); the skip is
+    counted and logged rather than silent.
+    """
+    clones: dict = {}
+    written = skipped = 0
+    for (ti, pos, rows) in writes:
+        track = tracks[ti]
+        target = track[pos]
+        if target >= len(patterns):
+            continue
+        vector = tuple(sorted(
+            (r, index[(num, ph[0], ph[1])])
+            for r, (num, ph) in rows.items()
+            if (num, ph[0], ph[1]) in index))
+        if not vector:
+            continue
+        src = patterns[target]
+        # already carrying exactly this vector (a shared clone reused)
+        if all(src[4 * r + 2] == CMD_SETPULSEPTR and src[4 * r + 3] == e
+               for r, e in vector):
+            continue
+        key = (target, vector)
+        if key not in clones:
+            if len(patterns) >= MAX_PATTERNS:
+                if log:
+                    log("Pulse phase.............: pattern table full, a "
+                        "phase clone was dropped")
+                skipped += len(vector)
+                continue
+            copy = list(src)
+            for r, e in vector:
+                if copy[4 * r + 2] == 0:
+                    copy[4 * r + 2], copy[4 * r + 3] = CMD_SETPULSEPTR, e
+                    written += 1
+                else:
+                    skipped += 1
+            clones[key] = len(patterns)
+            patterns.append(copy)
+        track[pos] = clones[key]
+    if log and (written or skipped):
+        log(f"Pulse phase.............: CMD_SETPULSEPTR on {written} note "
+            f"row(s) in {len(clones)} pattern copy(ies)"
+            + (f", {skipped} skipped over occupied columns" if skipped else ""))
+    return written
 
 
 def reindex_tracks(tracks: List[List[int]], track_index: List[List[int]],

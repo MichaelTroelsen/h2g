@@ -348,3 +348,53 @@ def test_every_emitted_note_is_an_absolute_note_byte():
             seen += 1
             assert 0x81 <= note <= 0xDF, (path.stem, i, hex(note))
     assert seen == 69
+
+
+# --- bit 7 of a note byte is a flag, in TWO spellings ----------------------
+#
+# The classic dialect masks bit 7 off before the frequency lookup and tests
+# the saved bit a few instructions later; it is a legato marker and the low
+# seven bits are the note. Taking the whole byte clamps every flagged note
+# onto $5C -> G#7, the top of Goattracker's range. Auf Wiedersehen Monty
+# spells the read with a transpose add spliced between the mask and the
+# store, so the original shape missed it and 155 of its notes came out as one
+# repeated G#7 -- reported by a listener as a high-pitched tone on voice 3.
+
+@needs_corpus
+def test_the_transposing_spelling_of_the_note_flag_is_read():
+    from h2g.convert import _detect_tables
+    from h2g.sidfile import load_sid
+    sid = load_sid(str(CORPUS / "Auf_Wiedersehen_Monty.sid"))
+    sid, det = _detect_tables(sid, lambda m: None, 0)
+    assert det.note_flag, (
+        "the AND #$7F / CLC / ADC transpose,X / STA note,X spelling was missed")
+
+
+@needs_corpus
+def test_no_note_is_clamped_onto_the_top_of_the_range():
+    """The symptom, in the file that showed it. $BC is GT_LASTNOTE: a handful
+    of legitimate top notes is music, 151 of them is a clamp. The next
+    highest note this file uses appears at most ten times."""
+    import json
+    from collections import Counter
+    import fidelity as F
+    import songview
+    from h2g.convert import convert
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    name = "Auf_Wiedersehen_Monty.sid"
+    sng = convert(str(CORPUS / name), log=lambda m: None,
+                  **F._preset_opts(doc, name))
+    song = songview.parse_sng(sng)
+    used = Counter()
+    for pat in song.patterns:
+        for r in range(len(pat) // 4):
+            n = pat[4 * r]
+            if n == 0xFF:
+                break
+            if 0x60 <= n <= 0xBC:
+                used[n] += 1
+    top = used.get(0xBC, 0)
+    runner_up = max((v for k, v in used.items() if k != 0xBC), default=0)
+    assert top <= runner_up, (
+        f"G#7 used {top} times against a next-highest of {runner_up} -- "
+        "that is a clamp, not a melody")

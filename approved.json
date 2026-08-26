@@ -11,10 +11,17 @@
   },
   "Action_Biker": {
    "approved": true,
-   "sng_sha256": "1bc6f4fa4f5e9c422d63eaa867fda3193966ba3c00e9817d8528ac69ce5cc2a0",
-   "version": "0.5.375",
-   "at": "2026-08-24",
-   "note": "Approved on audio re-staged after f63caa1. The listener confirms it is the same subtune on both sides and that they sound very close -- which closes the original complaint, 'the original's channel 3 is channel 2 in H2G'. The channels were never wrong; our .sng had played its SUBTUNES in the wrong order, because the selector named a six-byte scratch buffer ($C3F3) where the track table is ($C3F9). APPROVED WITH ONE KNOWN, UNFIXED DEFECT, recorded here so this sign-off is not read as covering it: our conversion is LONGER than the original. Traced 180 s both sides, the original makes 291 attacks and stops at 59.54 s; ours makes 856 and loops every 61.44 s forever. Per loop ours carries 52/52/187 attacks per voice against the original's 52/52/187 in total, so the music is right and only the ending is wrong -- Hubbard's $FE means 'tune ended' and a Goattracker orderlist cannot say it. This is the +-5 second length rule in CLAUDE.md and todo.md; the verdict signs off how the tune SOUNDS, not how long it runs."
+   "sng_sha256": "3554a89bc1c024d95bde7bb08e1a10e2914eaf64a4b6f533c129de819601997a",
+   "version": "0.5.389",
+   "at": "2026-08-26",
+   "note": "RE-APPROVED after --silent-park, on audio re-staged at this sha. THE KNOWN DEFECT THE PREVIOUS VERDICT CARRIED IS NOW CLOSED, which is the reason this entry was rewritten rather than left standing: that sign-off (0.5.375, sha 1bc6f4fa) said explicitly that it covered how the tune SOUNDS and not how long it runs, because our conversion looped forever where the original stops. Measured 180 s both sides: the original's last attack is at 59.54 s and ours now ends at 59.68 s, with 291 attacks against the original's 291 -- identical, where before the park ours made 856 and looped every 61.44 s. Hubbard's $FE means 'tune ended' and a Goattracker orderlist still cannot say it; the tune is parked on a silent pattern instead, which ends it in every way a listener can hear. The +-5 second rule in CLAUDE.md is satisfied for this file at +0.14 s. Nothing else about the tune changed -- the orderlist gained one position and the pattern table one silent pattern, and the per-loop note counts were already right."
+  },
+  "5_Title_Tunes": {
+   "approved": true,
+   "sng_sha256": "762b0457ae84883b30b0e4c87c160cfa7af32dca3a5c9e8fdea21b983a09ce4a",
+   "version": "0.5.390",
+   "at": "2026-08-26",
+   "note": "Approved after the pulse phase. The listener's report was that voice 1 sounded wrong from about 43 s and that the instruments did not sound like the original -- the notes were already exact there (melody/seq/pitch/onset 100%), so it was never the music. Three things were fixed between the complaint and this sign-off, in the order they were found. The GATE was 50%: HARD_RESTART_FRAMES=2 against a player that releases for 4, now hard_restart_frames 4 with max_hard_restart, 75%. NOTE LENGTHS were wrong on every note: `hold` read 0.0000 because our $09 testbit frame splits each note's waveform run, now real_firstwave_instruments [1,2,3,5,6,8] for wave 90->99% and hold 0->86% (instrument 7 excluded -- with it, melody collapses to 0.9475). And the DUTY CYCLE, which is what the 43 s complaint actually was: the player's pulse accumulator free-runs and is never reseeded, so its notes open all over the band while ours opened every note on the record's width -- pspan 0.47x, pphase 0.25x. --pulse-phase gives each note a CMD_SETPULSEPTR naming the accumulator's own phase; pspan 1.05x, pphase 1.00x, and instrument 5's onset list now matches the original's exactly.\n\nAPPROVED WITH THREE KNOWN, MEASURED LIMITS, recorded so this sign-off is not read as covering them. `gate` cannot exceed 75% on this file: the original gates off 4 calls before the next note and the row is 4 calls, and gplay.c:334's counter==gatetimer IS the note-fetch trigger -- forcing 4 was tested and gives 3 attacks out of 938. `adsr` 58% is half that same gate deficit restated and half AD on frames where both sides are gated off, which is inaudible and self-restoring. `pitch` 98% (from 100%) is the price of the firstwave set, bought for 9 points of wave and 86 of hold with melody and sequence unmoved."
   }
  }
 }

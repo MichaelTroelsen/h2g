@@ -459,3 +459,142 @@ def test_pulse_skipping_can_be_restored_for_an_ab():
     import fidelity
     p = inspect.signature(fidelity.pack_sid).parameters["pulse_skip"]
     assert p.default is False, "the faithful setting is the default"
+
+
+# --- pulse PHASE: which duty cycle a note OPENS on -------------------------
+#
+# The triangle engine's accumulator free-runs and is never reseeded at a
+# note; Goattracker reloads the pulse pointer per note. --pulse-phase opens
+# each note on the accumulator's own value via CMD_SETPULSEPTR. The model
+# below was validated against 5_Title_Tunes' trace BEFORE the emitter was
+# built: 848/848 onsets exact on all three sweeping voices, 96.9% of all
+# 6000 frames. Two facts are load-bearing and both were measured rather than
+# read off the 6502: the sweep does NOT run on the note-fetch call, and the
+# reflection STORES the at-bound value (store-at-bound matches 96.9% of
+# frames; the skip-at-bound reading matches 9.5%).
+
+from h2g.goatwriter import (PulsePhaseSim, build_pulse_phase_table,
+                            pulse_phase_sims)
+from h2g.convert import _detect_tables
+from h2g.patterns import (CMD_SETPULSEPTR, _expand_repeats,
+                          apply_pulse_phase)
+
+
+def _sim(width=0x900, step=0x40, delay=2, lo=8, hi=0xE):
+    return PulsePhaseSim(width, step, delay, lo, hi)
+
+
+def test_the_first_active_call_ticks_immediately():
+    """DEC-then-BPL from zero goes negative at once: the first active call
+    fires a step before the counter's first reload."""
+    s = _sim()
+    s.advance(1)
+    assert s.width == 0x940
+
+
+def test_the_cadence_is_one_step_per_delay_calls():
+    s = _sim()
+    s.advance(1 + 2 * 3)          # the immediate tick, then three periods
+    assert s.width == 0x900 + 4 * 0x40
+
+
+def test_the_reflection_stores_the_at_bound_value():
+    """The empirical winner: the trace holds $E60 for a full period at the
+    top, so the at-bound value is stored and THEN the direction flips."""
+    s = _sim(width=0xDE0, step=0x80)
+    s.advance(1)
+    assert (s.width, s.direction) == (0xE60, -1), "the bound value was lost"
+    s.advance(2)
+    assert s.width == 0xDE0, "the descent did not resume from the bound"
+
+
+def test_the_attack_call_does_not_sweep():
+    """The note-fetch call is spent in the fetch, not the sweep. Over ONE
+    8-call note the delay's parity hides it (4 ticks either way); over two
+    notes the counter's carry shows the true cost -- 7 ticks against 8,
+    which is exactly the measured cycle's alternating +$100/+$C0 stride."""
+    plain, skipped = _sim(), _sim()
+    plain.advance(8)
+    plain.advance(8)
+    skipped.advance(8, skip_first=True)
+    skipped.advance(8, skip_first=True)
+    assert plain.width - 0x900 == 0x40 * 8
+    assert skipped.width - 0x900 == 0x40 * 7
+
+
+def test_the_measured_onset_cycle_is_reproduced():
+    """5_Title_Tunes voice 1's instrument 5, as the trace measures it: 238
+    onsets repeating with period 12. Notes are 8 calls, back to back."""
+    want = [0x900, 0xA00, 0xAC0, 0xBC0, 0xC80, 0xD80,
+            0xDC0, 0xCC0, 0xC00, 0xB00, 0xA40, 0x940]
+    s = _sim(width=0x900, step=0x40, delay=2)
+    got = []
+    for _ in range(24):
+        got.append(s.phase()[0])
+        s.advance(8, skip_first=True)
+    assert got[:12] == want, [hex(x) for x in got[:12]]
+    assert got[12:24] == want, "the cycle does not repeat with period 12"
+
+
+def test_expand_repeats_writes_the_fold_out_and_remaps_the_restart():
+    track = [0x01, 0xD2, 0x02, 0x03, 0xFF, 0x03]     # restart names index 3
+    out, remap = _expand_repeats(track)
+    assert out[:6] == [0x01, 0x02, 0x02, 0x02, 0x03, 0xFF]
+    # index 3 (the pattern after the fold) is index 4 expanded, and the
+    # restart operand follows it there
+    assert out[6] == 4
+    assert remap[3] == 4
+
+
+def test_expand_repeats_declines_at_the_orderlist_limit():
+    from h2g.patterns import MAX_TRACK_LEN
+    track = [0xDF, 0x01] * (MAX_TRACK_LEN // 2) + [0xFF, 0x00]
+    out, remap = _expand_repeats(track)
+    assert out is None and remap is None
+
+
+def test_the_phase_table_carries_set_ramp_and_join_per_phase():
+    """Every planned (width, direction) gets an entry point: a set to that
+    width, a ramp toward its bound, and a jump into the shared loop."""
+    sid = load_sid(str(CORPUS / "5_Title_Tunes.sid"))
+    sid2, det = _detect_tables(sid, lambda m: None, 0)
+    phases = {5: {(0x900, +1), (0xC00, -1)}}
+    got = build_pulse_phase_table(sid2, det, 17, True, 1, phases, lead=0)
+    assert got is not None
+    entries, starts, index = got
+    assert (5, 0x900, +1) in index
+    at = index[(5, 0xC00, -1)]
+    left, right = entries[at - 1]
+    assert (left, right) == (0x8C, 0x00), "the set does not name the width"
+    # the piece ends by joining the shared loop
+    tail = entries[at - 1:at + 3]
+    assert any(l == 0xFF for l, _ in tail), "no join back into the loop"
+
+
+def test_apply_writes_into_clones_and_yields_occupied_columns():
+    patterns = [[0x80, 5, 0, 0, 0x84, 0, 7, 1, 0xFF, 0, 0, 0]]
+    tracks = [[0, 0xFF, 0x00]]
+    writes = [(0, 0, {0: (5, (0x900, 1)), 1: (5, (0xA00, 1))})]
+    index = {(5, 0x900, 1): 40, (5, 0xA00, 1): 43}
+    n = apply_pulse_phase(patterns, tracks, writes, index)
+    assert n == 1, "the free column alone takes the command"
+    assert len(patterns) == 2, "the write went into the shared pattern"
+    clone = patterns[tracks[0][0]]
+    assert (clone[2], clone[3]) == (CMD_SETPULSEPTR, 40)
+    assert (clone[6], clone[7]) == (7, 1), "the occupied command was overwritten"
+    assert patterns[0][2] == 0, "the original pattern was patched in place"
+
+
+@needs_corpus
+def test_five_title_tunes_takes_the_phase_plan_end_to_end():
+    """The option changes the bytes, the plan reaches all three sweeping
+    voices, and the default stays byte-identical."""
+    from h2g.convert import convert
+    lines: list = []
+    base = dict(tempo="auto", pulse=True, compact_instruments=True,
+                dedup=True, prune=True, pack=True)
+    off = convert(str(CORPUS / "5_Title_Tunes.sid"), log=lambda m: None, **base)
+    on = convert(str(CORPUS / "5_Title_Tunes.sid"), log=lines.append,
+                 pulse_phase=True, **base)
+    assert off != on, "the option reached nothing"
+    assert any("CMD_SETPULSEPTR on" in ln for ln in lines), lines

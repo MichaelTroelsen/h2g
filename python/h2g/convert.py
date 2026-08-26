@@ -6,7 +6,8 @@ from typing import Callable, List
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
-                         outer_gate_skip)
+                         outer_gate_skip, pulse_phase_sims,
+                         build_pulse_phase_table, _instruments_used)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -14,7 +15,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations,
                        pattern_references, phantom_patterns,
-                       referenced_patterns, reindex_tracks)
+                       referenced_patterns, reindex_tracks,
+                       collect_pulse_phases, apply_pulse_phase)
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
@@ -142,7 +144,8 @@ def convert(sid_path: str, log: Logger = print,
             compact_instruments: bool = False,
             engine: int = 0,
             tempo: int | str | None = None,
-            real_firstwave_instruments: tuple = ()) -> bytes:
+            real_firstwave_instruments: tuple = (),
+            pulse_phase: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -397,6 +400,7 @@ def convert(sid_path: str, log: Logger = print,
     # table is stepped per play call, so a sweep written for one call a frame
     # runs at twice its rate under -S2; only the auto path knows the factor.
     multiplier = 1
+    group_tempos = None
     # The row length in play calls, for build_speed_table's lost-call
     # compensation. The largest one the file writes, because a pattern shared
     # between two subtunes at different tempos has no single right answer and
@@ -458,6 +462,7 @@ def convert(sid_path: str, log: Logger = print,
         # writing them one at a time made the later subtune's value the earlier
         # one's clock. See patterns.apply_tempos.
         written = apply_tempos(new_patterns, tracks, values, log)
+        group_tempos = list(values)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "
@@ -473,6 +478,7 @@ def convert(sid_path: str, log: Logger = print,
         row_calls = resolved_tempo
         short_row_calls = resolved_tempo
         apply_tempo(new_patterns, tracks, resolved_tempo, log)
+        group_tempos = [resolved_tempo] * (len(tracks) // 3)
 
     # The outer counter's reload, where the player has one. A call it skips is
     # a call our wavetable steps anyway, so a duration read out of that player
@@ -513,6 +519,43 @@ def convert(sid_path: str, log: Logger = print,
     # a bound taken before splitting/packing/transpose-folding would describe
     # patterns that are no longer the ones being written. See
     # goatwriter._drum_steps_safe.
+    # ------------------------------------------------------------------
+    # Pulse phase: open each note of a free-running sweep on the duty cycle
+    # the player's accumulator holds at that moment, via CMD_SETPULSEPTR.
+    # The walk and the clone discipline live in patterns.py, the simulator
+    # and the table in goatwriter.py; the table is built HERE, before the
+    # patterns are patched, because the commands name its entry indices.
+    # Multispeed files are declined for now: the within-note table speed
+    # divides by the multiplier (as `_pulse_tri_program` does) but whether
+    # this engine's own sweep steps per call or per frame on a multispeed
+    # player has not been measured, and a wrong reading there would be
+    # silent. 5_Title_Tunes, the measured case, is -S1.
+    # ------------------------------------------------------------------
+    pulse_plan = None
+    if (pulse_phase and pulse and det.pulse_tri_hi >= 0
+            and multiplier == 1 and group_tempos):
+        lead = 0 if compact_instruments else 1
+        sims = pulse_phase_sims(sid, det, lead)
+        if sims:
+            snapshot = [list(t) for t in tracks]
+            plan = collect_pulse_phases(new_patterns, tracks, group_tempos,
+                                        sims, log)
+            table = None
+            if plan:
+                phases, writes = plan
+                table = build_pulse_phase_table(
+                    sid, det, _instruments_used(det, None, lead), pulse,
+                    multiplier, phases, log, lead)
+            if plan and table:
+                entries, starts, index = table
+                apply_pulse_phase(new_patterns, tracks, writes, index, log)
+                pulse_plan = (entries, starts)
+            else:
+                # Nothing shipped: the expansion collect may have made is
+                # playback-neutral but not byte-neutral, and a declined plan
+                # must leave the output exactly as it was.
+                tracks[:] = snapshot
+
     return build_sng(sid, det, tracks, new_patterns, log=log, fmt=fmt,
                      speed_table=speed_table, effects=effects,
                      pulse=pulse, multiplier=multiplier,
@@ -536,4 +579,5 @@ def convert(sid_path: str, log: Logger = print,
                      note_rows=median_played_durations(tracks, new_patterns),
                      row_calls=short_row_calls,
                      compact_instruments=compact_instruments,
-                     real_firstwave_instruments=real_firstwave_instruments)
+                     real_firstwave_instruments=real_firstwave_instruments,
+                     pulse_plan=pulse_plan)
