@@ -4,6 +4,14 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.389 — 2026-08-26
+
+- 5 Title Tunes takes the firstwave set: wave 90 to 99, hold 0 to 86
+
+## 0.5.388 — 2026-08-26
+
+- silent_park reaches the artefact, and two presets bugs that hid it
+
 ## 0.5.387 — 2026-08-26
 
 - a length column, and original_ended becomes a defect queue

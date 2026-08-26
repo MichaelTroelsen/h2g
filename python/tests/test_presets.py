@@ -101,3 +101,44 @@ def test_malformed_json_is_a_clean_error(tmp_path):
     r, _ = _run(tmp_path, "--presets", str(path))
     assert r.returncode != 0
     assert "json" in r.stderr.lower()
+
+
+# --- the artefact must describe the conversion it recorded -----------------
+
+def test_every_fixed_option_reaches_the_always_block(tmp_path):
+    """`presets.py` CONVERTS with FIXED and used to write the `always` block
+    key by key, so an option added to FIXED moved every recorded `bytes` and
+    `rows` while never reaching the block `fidelity._preset_opts` reads --
+    an artefact describing a conversion its own options cannot reproduce.
+    `silent_park` did exactly that.
+
+    Third instance of one shape this session: a generated half and a
+    hand-written half that can disagree (the report's header vs its rows, the
+    not-converted dash count, and this).
+    """
+    import presets
+    want = {presets._ALWAYS_NAME.get(k, k) for k in presets.FIXED
+            if k not in presets.EXCLUDED_FROM_ALWAYS}
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    missing = want - set(doc.get("always") or {})
+    assert not missing, (
+        f"in FIXED but not in presets.json's always block: {sorted(missing)} "
+        "-- regenerate presets.json")
+
+
+def test_the_carry_forward_keeps_options_no_search_can_re_derive():
+    """A regeneration without --fidelity cannot re-derive a per-song setting,
+    so it carries what the artefact already records. It used to carry only
+    FIDELITY_TOGGLES -- a BOOLEAN walk -- which silently dropped
+    5_Title_Tunes' hand-measured `hard_restart_frames: 4` on every
+    regeneration, returning its gate to 50%. Observed, not hypothesised.
+    """
+    import presets
+    for key in presets.FIDELITY_TOGGLES:
+        assert key in presets.CARRIED_PER_SONG, key
+    # the int the boolean search cannot express
+    assert "hard_restart_frames" in presets.CARRIED_PER_SONG
+    # and it is keyed on EXCLUDED_FROM_ALWAYS, so a future per-song option
+    # joins by being declared rather than by being remembered here
+    for key in presets.EXCLUDED_FROM_ALWAYS:
+        assert key in presets.CARRIED_PER_SONG, key

@@ -411,9 +411,21 @@ def best_options(sid_path: Path) -> dict | None:
 # would tie every time and silently pick the default. They can only be chosen by
 # playing both settings, which needs siddump and gt2reloc, so they live behind
 # `--fidelity` rather than in the search every commit re-runs.
+# Everything a regeneration must carry rather than re-derive. The toggles
+# are one half; the other is the options a search CANNOT express -- ints,
+# and anything measured by hand into a song's own entry. Keyed on
+# EXCLUDED_FROM_ALWAYS so a future per-song option joins by being
+# declared there, rather than by being remembered here.
+# `fmt` is spelled `format` in the artefact and nowhere else; every other
+# FIXED key keeps its name. One entry rather than a rule, because one
+# rename is a fact and not a convention.
+_ALWAYS_NAME = {"fmt": "format"}
+
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
                     "wave_program", "pitch_seq", "wide_hard_restart",
                     "max_hard_restart")
+CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
+    k for k in sorted(EXCLUDED_FROM_ALWAYS) if k not in FIDELITY_TOGGLES)
 # Seven toggles is 127 combinations a song, each a convert, a pack and two
 # traces -- about 30 minutes over the corpus, measured.
 # `wide_hard_restart` was refused at v0.5.276 as a sixth toggle that "would
@@ -1004,7 +1016,15 @@ def main(argv=None) -> int:
         try:
             prev = json.loads(Path(args.output).read_text(encoding="utf-8"))
             for name, e in (prev.get("songs") or {}).items():
-                keep = {k: e[k] for k in FIDELITY_TOGGLES if e.get(k)}
+                # FIDELITY_TOGGLES is not the whole set of per-song
+                # decisions. `hard_restart_frames` is an INT measured by
+                # hand -- the search walks booleans and cannot express
+                # it -- so carrying only the toggles dropped
+                # 5_Title_Tunes' measured 4 on every regeneration,
+                # silently returning it to the built-in 2 and its gate
+                # to 50%. Anything the artefact already records that
+                # this run cannot re-derive is carried.
+                keep = {k: e[k] for k in CARRIED_PER_SONG if e.get(k)}
                 if keep:
                     carried[name] = keep
         except (OSError, ValueError):
@@ -1220,6 +1240,18 @@ def main(argv=None) -> int:
         "criteria": "most playable subtunes, then most rows, then smallest file",
         "songs": songs,
     }
+    # THE BLOCK ABOVE IS HAND-LISTED AND THIS IS WHY IT CANNOT STAY THAT WAY.
+    # `presets.py` CONVERTS with FIXED but writes the `always` block key by
+    # key, so an option added to FIXED changed every recorded `bytes` and
+    # `rows` while never reaching the block `fidelity._preset_opts` reads.
+    # `silent_park` did exactly that: the artefact described a conversion its
+    # own options could not reproduce. Anything in FIXED and not deliberately
+    # excluded is added here, so the two cannot drift again. The hand-written
+    # entries keep their comments, which are the reasoning for each.
+    for _key, _value in FIXED.items():
+        if _key in EXCLUDED_FROM_ALWAYS:
+            continue
+        doc["always"].setdefault(_ALWAYS_NAME.get(_key, _key), _value)
     Path(args.output).write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     print(f"{len(songs)}/{len(paths)} convertible -> {args.output}", file=sys.stderr)
     # Only a run that did *not* search carries wholesale; a --fidelity run
