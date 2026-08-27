@@ -106,7 +106,26 @@
       "rows": 24223,
       "multiplier": 1,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "real_firstwave_instruments": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16
+      ],
+      "rest_envelope_silence": true
     },
     "Bangkok_Knights.sid": {
       "max_rows": 94,
@@ -140,7 +159,8 @@
       "rows": 9176,
       "multiplier": 1,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "rest_envelope_silence": true
     },
     "Bump_Set_Spike.sid": {
       "max_rows": 94,
@@ -786,7 +806,8 @@
       "multiplier": 2,
       "two_stage": true,
       "wave_program": true,
-      "pitch_seq": true
+      "pitch_seq": true,
+      "rest_envelope_silence": true
     },
     "Sigma_Seven.sid": {
       "max_rows": 128,
@@ -891,7 +912,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "max_hard_restart": true
+      "max_hard_restart": true,
+      "rest_envelope_silence": true
     },
     "Trans-Atlantic_Balloon_Challenge.sid": {
       "max_rows": 94,

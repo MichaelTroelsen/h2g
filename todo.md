@@ -193,3 +193,42 @@ Keep items actionable: what to run, and what makes it done.
 
   `[subagent]` for the pulse census and the hold refutation; `[main]` for any
   emitter change.
+
+## Auf Wiedersehen Monty to 99%
+
+Requested by the listener after the note-flag fix landed. Where it stands at
+v0.5.393 (`docs/FIDELITY.md`, `-t 60`, subtune traced as the PSID `startSong`):
+
+    melody 98%   seq 97%   pitch 95%   onset 100%   retrig 1.00
+    wave   75%   hold 75%  gate  48%   adsr  75%    pspan 0.98x  pphase 0.75x
+
+Two fixes already landed on this file and both are in `presets.json`:
+`note_flag`'s transposing spelling (v0.5.391 — 155 notes had been clamping to
+G#7, melody 90 -> 98%) and `real_firstwave_instruments` 1..16 (v0.5.392 —
+hold 0 -> 75%). THE SECOND ONE IS NOT YET SIGNED OFF: it costs seq 99 -> 97%
+and pitch 97 -> 95%, and the open task
+`monty-firstwave-trade-needs-a-listen` is waiting on an ear. Settle that
+before chasing the remainder, because dropping it moves three of the six
+numbers above.
+
+WHERE THE REMAINING GAP IS, largest first, and none of it is melody:
+
+* `gate 48%` is the biggest and is NOT a known format limit here. 5 Title
+  Tunes' 75% ceiling came from `gplay.c:334` on a 4-call row; Monty's rows are
+  not 4 calls, so the same arithmetic does not apply and the ceiling has not
+  been derived. Start with `fidelity.py <file> --gate-census`, which splits by
+  voice since v0.5.386 — this file was the case that motivated the split
+  (voice gates read 48.06% / 56.90% / 15.08%, and voice 3 at 15% is the one to
+  explain).
+* `wave 75%` and `adsr 75%` are the same population seen twice, on the
+  evidence of every other file this session. Census before emitting.
+* `pphase 0.75x` — the pulse phase is emitted for this file only where
+  `multiplier == 1`; check whether Monty is single-speed and if so why three
+  of its sweeping records still open on the wrong duty cycle.
+
+DO NOT chase `melody 98%` or `seq 97%` directly: 36 files score better and the
+two points here are downstream of the firstwave trade above, so they move when
+that verdict does.
+
+`[main]` — every item writes `presets.json` or an emitter and needs a corpus
+A/B; the gate census itself is `[subagent]`, read-only.

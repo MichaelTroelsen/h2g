@@ -4,6 +4,18 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.394 — 2026-08-27
+
+- Monty takes the rest-envelope silence back: adsr 75 to 83
+
+## 0.5.393 — 2026-08-27
+
+- the adsr gated-off drop is refuted, and the split is reported instead
+
+## 0.5.392 — 2026-08-26
+
+- Monty takes the firstwave set: hold 0 to 75
+
 ## 0.5.391 — 2026-08-26
 
 - the note flag has a second spelling, and 155 of Monty's notes stop clamping to G#7

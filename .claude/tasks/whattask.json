@@ -1,14 +1,14 @@
 {
  "generated_from": {
-  "head": "5b2f3f3",
+  "head": "576391e",
   "sources": [
-   "todo.md",
    "whats-next.md",
+   "todo.md",
    ".claude/tasks/runs.jsonl",
    "commits",
-   "graphify-out/graph.json",
    "docs/FIDELITY.md",
-   "presets.json"
+   "presets.json",
+   "graphify-out/graph.json"
   ],
   "focus": null
  },
@@ -17,10 +17,12 @@
   "docs/SURVEY.md",
   "docs/SUBTUNES.md",
   "presets.json",
+  "approved.json",
   "build/fidelity.json",
   "build/instrmap",
   "build/instrmap.json",
   "build/listen",
+  "graphify-out",
   "python/tools/siddump-rt/siddump.exe"
  ],
  "external_locks": [
@@ -86,67 +88,6 @@
    "why_lane": "shares a path with another task where one side writes"
   },
   {
-   "id": "len-dimension-original-vs-ours",
-   "title": "Give FIDELITY.md a length column, and read original_ended as a defect queue",
-   "source": "todo.md#length-rule, CLAUDE.md invariant",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:python/h2g/convert.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "regenerates docs/FIDELITY.md and build/fidelity.json",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "CLAUDE.md carries the rule: a conversion must be the same length as the original within +-5 s. No column enforces it -- drift, retrig and --pace all measure the rate of a ROW and are satisfied by a conversion that plays the right music at the right speed FOREVER (Action Biker: drift +0.0, retrig 1.00, three times too long). The detector exists: fidelity.original_ended returns the second the original stops. Done when the report carries seconds of music ours plays against the original's, flagged outside +-5 s, as a `Dimension` entry so tests/test_fidelity.py fails if registry and header disagree -- AND the report stops presenting original_ended as a methodology note: every file whose window it SHORTENS fails this rule. Name them.",
-   "why_model": "reporting a number the harness already computes, against an existing Dimension registry",
-   "why_mode": "regenerates a hazard artefact over the corpus",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "orderlist-silent-park-for-fe",
-   "title": "End the tune instead of looping, where Hubbard's $FE says the tune ended",
-   "source": "todo.md#length-rule",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/tracks.py",
-    "rw:python/h2g/cli.py",
-    "rw:python/h2g/convert.py",
-    "rw:python/presets.py",
-    "rw:python/tests/test_tracks.py",
-    "rw:python/tests/test_presets.py",
-    "rw:python/tests/test_preset_passthrough.py",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:python/fidelity.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "corpus byte-hash plus FIDELITY.md and build/fidelity.json",
-   "depends_on": [
-    "len-dimension-original-vs-ours"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Hubbard's $FE means TUNE ENDED; a Goattracker orderlist cannot say it and --legal-restart rewrites it as a restart at position 0, which is what makes the file packable. The repair is a choice of restart TARGET: loop a SILENT pattern instead. MUST be opt-in -- a looping tracker song is often wanted -- and in all three places (signature, presets.FIXED or FIDELITY_TOGGLES, _preset_opts). Done when Action Biker stops within +-5 s of the original's 59.54 s instead of looping every 61.44 s, the byte-hash moves only files whose track data carries $FE, melody/seq/pitch fall nowhere, and Commando.sng stays byte-exact -- it carries three such tracks, so check its BYTES, not its length.",
-   "why_model": "changes what an orderlist means at its end across every file whose tune stops",
-   "why_mode": "sweeps the corpus and regenerates a hazard artefact",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
    "id": "adsr-counts-inaudible-gate-off-attack-decay",
    "title": "adsr counts AD on frames where both sides are gated off, which is structurally unhearable",
    "source": "runs.jsonl (opened by note-end-envelope-zero-for-adsr)",
@@ -171,83 +112,6 @@
    "verify": "`adsr` compares the whole 16-bit pair on every frame, including frames where BOTH sides are gated off -- where AD governs nothing and both players reload it from the instrument before the next gate-on (patterns.py:389-393 states this, citing gplay.c:397-398 and player.s:882-892). On 5_Title_Tunes that is 1870 of 3743 disagreeing frames: half the column's deficit cannot be heard. Either drop both-gated-off frames from the denominator the way `_span` drops zero and `wave_compare` drops both-silent, or say so in the Dimension docstring. NOT a shim: the difference is provably inaudible, which is the opposite of the --search-subtunes case. Regenerate FIDELITY.md after.",
    "why_model": "a reporting change whose evidence is already measured; the judgement is drop-or-document",
    "why_mode": "regenerates a hazard artefact over the corpus",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "gate-census-is-file-level-not-per-voice",
-   "title": "The gate census cannot answer a per-voice question, which is what gate deficits are",
-   "source": "runs.jsonl (opened by awm-voice2-gate-bit)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`--gate-census` classifies releases by kind for the WHOLE file, so a per-voice question cannot be answered from it. Auf Wiedersehen Monty is the case: voice 2's gate is 15.08% against voice 0's 48.06% and voice 1's 56.90%, and the census's 219 `held` runs could not be attributed to a voice. Done when the census splits by voice and reproduces the file-level totals when summed (397 + 205 + 662 = 1264 against that row's gate_ours_ringing 1266). Do NOT regenerate docs/FIDELITY.md here.",
-   "why_model": "adding a split to an existing census with the totals already known as a check",
-   "why_mode": "one module plus its test file; no artefact rebuilt",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "per-instrument-sweeps-should-print-every-scored-column",
-   "title": "A sweep helper that prints the full row, so a subset comparison cannot mislead again",
-   "source": "runs.jsonl (opened by five-title-tunes-wave-90-note-end-frame)",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "TWICE now a per-song or per-instrument comparison has reported a SUBSET of columns and had its conclusion corrected by re-running it: v0.5.352/353 shipped and retracted an adoption after reading six of fourteen columns, and the 5_Title_Tunes firstwave sweep omitted `pitch`, which falls 1.0000 -> 0.9836 on the combination it recommended. Done when a helper exists that sweeps an option and prints EVERY scored column for each arm, with a test that a new Dimension appears in its output without being added by hand.",
-   "why_model": "a bounded helper against the existing Dimension registry",
-   "why_mode": "one module plus its test file; read-only against the corpus",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "five-title-tunes-real-firstwave-preset",
-   "title": "The wave 90% is reachable via real_firstwave_instruments, but the obvious set costs pitch",
-   "source": "runs.jsonl (opened by five-title-tunes-wave-90-note-end-frame)",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:presets.json",
-    "rw:python/presets.py",
-    "rw:python/tests/test_presets.py",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:python/h2g/goatwriter.py",
-    "r:python/fidelity.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "writes presets.json and regenerates FIDELITY.md/build/fidelity.json",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The 935 wave mismatches are the trigger tick's $09 firstwave byte, and `real_firstwave_instruments` removes them. MEASURED: instrument 7 alone costs voice 0's melody 0.9982 -> 0.8757; the set {1,2,3,5,6,8} gives wave 0.8958 -> 0.9857 for melody 0.9982 -> 0.9950 -- BUT ALSO pitch 1.0000 -> 0.9836 and sequence 0.9984 -> 0.9957, which the sweep that recommended it did not measure. Done when a set is chosen with EVERY column measured for each arm, or the trade is declined with the numbers recorded. Note real_firstwave_instruments is not in FIDELITY_TOGGLES, so the search cannot find this.",
-   "why_model": "a per-instrument trade where the first recommendation was already wrong for not measuring pitch",
-   "why_mode": "writes presets.json and regenerates a hazard artefact",
    "why_lane": "shares a path with another task where one side writes"
   },
   {
@@ -276,32 +140,6 @@
    "verify": "Channels 1 and 3 of International_Karate set NO instrument on any pattern row, so they play with whatever instrument 0 is -- 91 rows each with an effective instrument of 0. This is distinct from Pygmies Revenge, where the zero rows all fall BEFORE that channel's first setter and are therefore correct. `--initial-instrument` exists for exactly this (CLAUDE.md: 'gives a voice the instrument the player starts it on where no pattern names one') and is off by default and deliberately not in the always block, because the index array is mutable player state and a multi-subtune snapshot catches it mid-tune. Done when the option is measured on this file and either recorded per song or declined with the reason.",
    "why_model": "a per-song judgement about mutable player state where a wrong default corrupted a file before",
    "why_mode": "writes presets.json and the decision needs the surrounding context",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "boundary-tie-loop-around-restart-position",
-   "title": "Finish the wrap tie: fixed for voices 1 and 2, and every corpus instance is on voice 0",
-   "source": "runs.jsonl (partial, head 9ec3133)",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_wait0_tie.py",
-    "r:python/fidelity.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DURABLE, DO NOT REDO: `_tie_step` and `_apply_wrap_tie` exist, both original verify clauses were met and Commando.sng is byte-exact. PARTIAL because the mechanism is fixed only for voices 1 and 2 while every corpus instance is on VOICE 0 -- so the shipped change reaches nothing. Also recorded: reach is 2 candidate files (Chimera declines, its restart pattern row 0 is $BE), and the Star_Paws regression was row-0 command contention with CMD_SETTEMPO (patterns.TEMPO_OVERWRITABLE). Done when voice 0 is handled or shown inexpressible, with a -a 1 / -a 2 A/B showing no column falling -- the earlier flat A/B traced subtune 0, where the ties are not.",
-   "why_model": "a shared emission path whose earlier fix reached nothing and whose regression was misattributed once",
-   "why_mode": "needs a per-subtune A/B and the surrounding context",
    "why_lane": "shares a path with another task where one side writes"
   },
   {
@@ -413,72 +251,83 @@
    "why_lane": "shares a path with another task where one side writes"
   },
   {
-   "id": "skate-or-die-intro-drift-plus-200-is-not-the-gate-skip",
-   "title": "A drift outlier the report's own prose attributes to a cause that does not fit it",
-   "source": "runs.jsonl (opened by audit-other-report-lines-that-assert-a-benign-cause)",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/fidelity.py",
-    "r:docs/FIDELITY.md",
-    "r:build/fidelity.json",
-    "r:python/h2g/goatwriter.py",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The audit of report() classified 38 emitted notes and found 12 inferences that assert a benign cause and could mask a defect; this is the sharpest of them. The report explains drift by `-1/(skip+1)`, the outer gate's skipped call, but Skate or Die intro's drift does not fit that form. Done when the outlier is attributed to a mechanism or declared unexplained with a number. Read-only: produce the attribution, not a change.",
-   "why_model": "a falsification pass on prose that already explained one real defect away",
-   "why_mode": "read-only diagnosis whose deliverable is an attribution",
-   "why_lane": "shares a path with another task where one side writes"
-  },
-  {
-   "id": "pulse-phase-via-setpulseptr-per-note",
-   "title": "the sweeping instrument's pulse band is 3-7x too narrow, because Goattracker reseeds the pulse pointer at every note",
-   "source": "listener report (5 Title Tunes, voice 1, from 43s)",
+   "id": "orderlist-silent-park-for-fe",
+   "title": "End the tune instead of looping, where Hubbard's $FE says the tune ended",
+   "source": "todo.md#length-rule",
    "model": "opus",
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_pulse.py",
-    "rw:python/tests/test_table_validation.py",
-    "rw:python/tests/test_patterns.py",
-    "r:python/h2g/convert.py",
-    "r:python/h2g/detect.py",
+    "rw:python/h2g/tracks.py",
+    "rw:python/h2g/cli.py",
+    "rw:python/h2g/convert.py",
+    "rw:python/presets.py",
+    "rw:python/tests/test_tracks.py",
+    "rw:python/tests/test_presets.py",
+    "rw:python/tests/test_preset_passthrough.py",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
     "r:python/fidelity.py",
     "r:presets.json",
     "r:python/tools/siddump-rt/siddump.exe"
    ],
    "mcp": [],
    "needs_main": true,
-   "needs_main_reason": "needs a corpus A/B and a listening re-check; the emitter change reaches 24 files' worth of the triangle pulse engine",
+   "needs_main_reason": "corpus byte-hash plus FIDELITY.md and build/fidelity.json",
+   "depends_on": [
+    "len-dimension-original-vs-ours"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Hubbard's $FE means TUNE ENDED; a Goattracker orderlist cannot say it and --legal-restart rewrites it as a restart at position 0, which is what makes the file packable. The repair is a choice of restart TARGET: loop a SILENT pattern instead. MUST be opt-in -- a looping tracker song is often wanted -- and in all three places (signature, presets.FIXED or FIDELITY_TOGGLES, _preset_opts). Done when Action Biker stops within +-5 s of the original's 59.54 s instead of looping every 61.44 s, the byte-hash moves only files whose track data carries $FE, melody/seq/pitch fall nowhere, and Commando.sng stays byte-exact -- it carries three such tracks, so check its BYTES, not its length.",
+   "why_model": "changes what an orderlist means at its end across every file whose tune stops",
+   "why_mode": "sweeps the corpus and regenerates a hazard artefact",
+   "why_lane": "shares a path with another task where one side writes"
+  },
+  {
+   "id": "firstwave-set-across-the-45-hold-zero-files",
+   "title": "45 files read hold 0%; the firstwave set fixed it on two, so sweep the rest",
+   "source": "docs/FIDELITY.md (this pass), runs.jsonl (5TT and Monty adoptions)",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "rw:python/presets.py",
+    "rw:python/tests/test_presets.py",
+    "r:python/h2g/goatwriter.py",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "a per-song sweep over 45 files plus presets.json and a FIDELITY.md regeneration",
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "MEASURED, NOT ASSUMED. 5_Title_Tunes at f5306abedbfa, traced 120s both sides at lag 5, attributing each note's frames to the ADSR at its attack: voice 1 instrument $5700 (GT instrument 5) sweeps a pulse band of 1344 ($8C0-$E00) in the original and 192 ($909-$9C9) in ours; voice 2 $4700 1408 against 386; voice 3 $5830 1408 against 899. The two flat instruments on voice 1 ($2400, $0400) sit at $800 against our $808 and are inaudible, WHICH IS WHY THE LISTENER REPORTED 43s RATHER THAN 0s -- voice 1 alternates by section and the sweeping record only enters around 40s. Median |orig-ours| pulse per 10s on voice 1 is 8 8 8 8 439 471 8 8 8 8 247 471. `pspan` 0.47x has been reporting this correctly all along; `pul` counts moved frames and structurally cannot see a band.\n\nCAUSE: the player's 12-bit accumulator free-runs and is never reseeded at a note, so it crosses its band over several notes; Goattracker reloads the pulse pointer from the instrument at every note (player.s:859-861), and crossing the band at speed 32 needs 48 frames while this file's notes are 8 and 16. Confirmed at frame level: the original ramps 900 940 980 9C0 A00 A40 A80 AC0 B00 straight through note boundaries where ours resets to 909 each note and crawls to 9C9.\n\nTHE REPAIR IS CMD_SETPULSEPTR ($9) ON THE NOTE ROW, and the three facts it rests on were read before this task was written. player.s:244-250 stores mt_chnpulseptr,x and zeroes mt_chnpulsetime,x. player.s:903-906 comments 'Execute tick 0 FX AFTER newnote init', so the command BEATS the instrument's own pointer load at player.s:859-861 -- this is the load-bearing fact and without it the whole approach is inert. gplay.c:447-455 is the same store in the editor. greloc.c:1783-1787 sets nosetpulseptr = 0 on use and remaps the operand through tablemap[PTBL], so the emitter writes the PRE-relocation index exactly as the wavetable pointer path already does. Emit the sweep once as a table spanning the band and set the pointer per note to the entry matching the accumulator's phase, which is computable at emit time from a known free-running speed and known note lengths -- no new player state.\n\nFOUR THINGS THAT WILL BREAK IT, each already a documented trap here. (1) Never point at a jump entry: both players call stopsong() if ltable[PTBL][ptr-1] == 0xff (gplay.c:453), so a phase index landing on the terminator kills the song SILENTLY. (2) Declare the command in patterns.TEMPO_OVERWRITABLE AND in ONE_SHOT_COMMANDS -- they are different questions, and taking row 0's column costs that subtune its CMD_SETTEMPO and drops it to Goattracker's default 6. This has caught three changes. (3) Divide the rate by `multiplier`: a rate read out of the player is per frame and every table Goattracker applies steps per play call. 5_Title_Tunes is -S1 so this will NOT show up on it -- check a -S2+ file carrying the engine, which is how _filter_entries hid the same defect for the life of the project. (4) Table budget: ~48 entries per sweeping record against the pulse table's 255 rows, three sweeping records in this file alone; tests/test_table_validation.py replicates exectable and is the guard.\n\nDONE WHEN: behind an opt-in option (signature, presets.FIXED or FIDELITY_TOGGLES, _preset_opts -- all three, or it is inert); the corpus byte-hash moves only files carrying a sweeping record of this engine; `pspan` rises on 5_Title_Tunes with melody, seq, pitch, onset and gate unmoved; and a -S2+ file with the engine is checked explicitly. NOT done on a flat report: run fidelity.py --baseline so the run can distinguish 'no dimension sees this' from 'this reached nothing'.\n\nTHE ALTERNATIVE IS ALREADY DECLINED AND DOES NOT COVER THIS. The free-run repair via a zero pulse pointer (v0.5.379) reproduces the player only where ONE sweeping instrument owns the voice, which here is voice 3 alone -- the LEAST wrong of the three at 899 against 1408 -- and it cannot reach instrument 5 at all. That census's '5_Title_Tunes voice 2' is 0-BASED and means channel 3; its quoted band of 899 is this run's channel 3 exactly, which is what confirms the numbering.",
-   "why_model": "an emitter change against two players plus a packer, where the obvious repair was already declined once on population grounds and a plausible-but-wrong phase is silent rather than loud",
-   "why_mode": "needs a corpus A/B over the 24 files of the triangle pulse engine and a listening re-check, and it competes for the pattern command column that row 0's tempo owns",
-   "why_lane": "writes goatwriter.py and patterns.py, which nearly every other task reads"
+   "verify": "`hold` counts frames with a waveform selected, and our $09 testbit frame -- the one siddump needs to name an attack at all -- splits EVERY note's waveform run, so a file reading 0.0000 has every note the wrong LENGTH. 45 of 83 measured files read exactly 0%. Two were fixed by hand this session with `real_firstwave_instruments`: 5_Title_Tunes 0 -> 86% (wave 90 -> 99%, pitch 100 -> 98%) and Auf_Wiedersehen_Monty 0 -> 75% (wave 71 -> 75%, seq 99 -> 97%, pitch 97 -> 95%). BOTH TRADES COST SOMETHING, so this is a per-song decision and not a blanket default. Done when every one of the 45 has a measured verdict -- a set recorded in presets.json, or a refusal with the numbers. USE `sweep_option`, which generates its header from DIMENSIONS: a hand-picked column subset has produced a retracted adoption twice (v0.5.352/353, and the 5TT firstwave sweep that omitted pitch). AND CHECK BOTH SIDES' ATTACK COUNTS per file before believing a gain: removing the testbit frame can hide OUR attacks from siddump, which inflates `hold` and deflates `melody` for a measurement reason -- on 5TT and Monty the counts held (455->456 against 449), which is what made those two adoptions safe. Corpus byte-hash must move only files that take a set.",
+   "why_model": "a 45-file per-song trade where the obvious blanket default is measurably wrong",
+   "why_mode": "writes presets.json and regenerates a hazard artefact",
+   "why_lane": "presets.json and FIDELITY.md are shared with most other tasks"
   },
   {
-   "id": "listen-files-takes-a-path-and-writes-outside-outdir",
-   "title": "listen.py --files with a path stages nothing, reports success, and writes 11 files into the SID corpus",
-   "source": "hit while re-staging 5_Title_Tunes",
-   "model": "sonnet",
-   "mode": "subtask",
+   "id": "war-subtune-0-loses-92-percent-of-voice-3",
+   "title": "W_A_R's traced subtune is its one broken one; voices 2 and 3 emit identical attacks",
+   "source": "found this pass via fidelity.py --diagnose",
+   "model": "opus",
+   "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:python/listen.py",
-    "rw:python/tests/test_listen.py",
-    "r:presets.json"
+    "rw:python/h2g/tracks.py",
+    "rw:python/h2g/patterns.py",
+    "rw:python/tests/test_tracks.py",
+    "rw:python/tests/test_patterns.py",
+    "r:python/h2g/detect.py",
+    "r:python/fidelity.py",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe"
    ],
    "mcp": [],
    "needs_main": false,
@@ -486,72 +335,167 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "REPRODUCED, WITH THE DAMAGE. `python listen.py <sid_dir> --files C:/full/path/to/5_Title_Tunes.sid --voices -t 120 --presets ../presets.json` printed '5_Title_Tunes.sid staged (named)', 'staged 1 tune(s) -> build\\listen' and exited 0, while writing NOTHING to build/listen and 11 files totalling ~85 MB into the SID CORPUS DIRECTORY next to the originals: .h2g.sng, .h2g.sid, .h2g.wav, .original.wav, .trace.json and six per-voice WAVs. They were removed by hand; the corpus is clean and 5_Title_Tunes.sid itself was untouched.\n\nTHE MECHANISM IS TWO LINES. `select_names` returns `--files` verbatim, so `r['file']` is the whole path; `stem = name[:-4]` is then an ABSOLUTE path, and `outdir / f'{stem}.h2g.sng'` discards `outdir` entirely -- pathlib's `/` returns the right operand when it is absolute. `src = (sid_dir / name)` survives the same way, which is why the existence check passes and the run looks healthy. `_preset_opts(doc, name)` ALSO misses, because presets.json is keyed on the bare filename, so the tune is converted with defaults rather than its measured options -- the conversion is wrong as well as misplaced (sha 6adcc4cfd3e4 against the correct f5306abedbfa).\n\nA bare `--files 5_Title_Tunes.sid` is correct and was verified in the same session: staged sha f5306abedbfa, written to build/listen, zero stray files in the corpus.\n\nDONE WHEN: a `--files` entry that is a path is either normalised to its basename (and then resolved against sid_dir like every other name) or rejected with a message naming the bare form; a name that matches no presets.json entry is REPORTED rather than silently converted with defaults; and no output path can escape `outdir` -- assert the resolved target is inside it before writing. Tests: a path argument, a bare name, and a name absent from presets.json. THIS CANNOT BE A DOC FIX. The failure is silent and it writes outside the tree it was given, which is the property that made it worth a task rather than a note.\n\nSECOND, SMALLER DEFECT SEEN IN THE SAME SESSION and worth fixing in the same pass: a re-stage of an already-staged tune reuses the existing WAVs (the `out.exists() and size > EMPTY_WAV` guard around listen.py:246), which is deliberate and right for rendering -- but the run then reports 'staged' for a tune whose .sng was never rewritten either, so a stale conversion survives a re-stage that claims to have refreshed it. The .sng write itself is unconditional, so this only bites via the path bug above; check whether it can happen on its own before deciding it is one defect or two.",
-   "why_model": "a bounded path-handling fix in one file with a clear reproduction and an obvious correct behaviour",
-   "why_mode": "confined to listen.py and its tests, verified by running the two invocations and checking where the bytes land",
-   "why_lane": "listen.py is read by the staging lane other tasks depend on"
+   "verify": "W_A_R reads melody 19% and is the corpus's third-worst -- and `--diagnose` says the file is MOSTLY RIGHT: the correspondence is the identity, and s1->o1, s3->o3, s5->o5, s6->o6 all read 100%, s7->o7 89%, s4->o4 74%, s2->o2 67%. ONLY SUBTUNE 0 IS BROKEN, and it is both the PSID startSong and the subtune every number for this file is taken at. Its shape, traced 60s at -S4: voice 2 makes 19 attacks against the original's 224 (92% of the notes missing), voice 0 plays different music (17% pitch overlap), voice 1 is fine. THE SHARPEST CLUE, and where to start: OUR voices 2 and 3 have IDENTICAL attack frames ([6,18,30,42,54,246,294,...]) and both stop at frame 2310 against the original's 2991 -- two voices playing one stream is a track-table or orderlist defect, not a note-decode one. The notes are present in the .sng (songview counts 2806 note rows on voice 3's orderlist), so they are emitted and not played. Done when subtune 0's voice 2 attack count approaches 224 with the other seven subtunes unmoved, or the cause is named and declined with numbers.",
+   "why_model": "a root-cause hunt across the track table where a plausible wrong answer is cheap",
+   "why_mode": "needs the surrounding context and a per-subtune A/B",
+   "why_lane": "writes tracks.py and patterns.py, which nearly every task reads"
+  },
+  {
+   "id": "monty-firstwave-trade-needs-a-listen",
+   "title": "Monty's hold 0->75% costs 2.3pp of seq and 2.6pp of pitch -- is it audible?",
+   "source": "this session's Monty work (v0.5.392, uncommitted)",
+   "model": "sonnet",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "rw:presets.json",
+    "rw:approved.json",
+    "r:build/listen"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": "A listening verdict. The full firstwave set is the best arm on the numbers -- hold 0 -> 75%, wave +3.6pp, gate +3.2pp -- but unlike 5_Title_Tunes it also costs seq 99 -> 97%, pitch 97 -> 95% and melody 99 -> 98%. Attack counts held (455->456 against the original's 449), so the hold gain is real rather than vanished attacks inflating a ratio; what no column can say is whether the sequence and pitch cost is audible. Staged at sha 2507ab0e636a. If the trade sounds wrong, dropping back is one line of presets.json.",
+   "decision": null,
+   "verify": "The human listens to build/listen/Auf_Wiedersehen_Monty.html and says keep or drop. Keep -> the entry stands and the tune is a candidate for approved.json. Drop -> remove `real_firstwave_instruments` from that song's entry, regenerate docs/FIDELITY.md, and record the refusal with its numbers so the next sweep does not re-propose it.",
+   "why_model": "recording a human verdict, not deriving one",
+   "why_mode": "no measurement can settle it -- the columns disagree and the ear decides",
+   "why_lane": "writes presets.json and approved.json"
+  },
+  {
+   "id": "pulse-phase-for-the-multispeed-engine-files",
+   "title": "--pulse-phase declines every -S2+ file; the sweep's per-call rate is unmeasured there",
+   "source": "runs.jsonl (opened by pulse-phase-via-setpulseptr-per-note), v0.5.391",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/convert.py",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/h2g/patterns.py",
+    "rw:python/tests/test_pulse.py",
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerates FIDELITY.md and needs a corpus A/B over the engine's 24 files",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "convert() guards the phase plan with `multiplier == 1`, deliberately and with the reason in the code: the within-note table speed divides by the multiplier as `_pulse_tri_program` does, but whether THIS ENGINE'S OWN accumulator steps per play call or per frame on a multispeed player has never been measured, and a wrong reading there is silent. 5_Title_Tunes, the file the model was validated on, is -S1. Measure it the way the single-speed model was measured -- simulate against a multispeed file's own trace and require the onset prediction to be EXACT before emitting anything (the -S1 model predicts 848/848). Done when the guard is lifted with a validated model, or the guard is kept and the measurement that justifies it is written into the code beside it. CLAUDE.md's rule that a rate read out of the player is per FRAME while every Goattracker table steps per CALL is the trap here.",
+   "why_model": "a player-timing question where the wrong reading produces a plausible, silent error",
+   "why_mode": "corpus A/B plus a hazard artefact",
+   "why_lane": "writes the emitter files and presets.json"
+  },
+  {
+   "id": "note-flag-fallback-population-audit",
+   "title": "23 files depend on the new note-flag fallback; only 17 moved -- check the other six",
+   "source": "v0.5.391, measured this pass",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/detect.py",
+    "r:python/h2g/patterns.py",
+    "rw:python/tests/test_note_alternate.py",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The `AND #$7F / CLC / ADC transpose,X` fallback added at v0.5.391 is the ONLY source of `note_flag` for 23 corpus files, but a byte-hash says only 17 change. The six that read the flag and emit the same bytes are: BMX_Kidz, Kings_of_the_Beach_ingame, One_on_One_Jordan_vs_Bird, Powerplay_Hockey_USA_vs_USSR, Skate_or_Die_intro, Wiz. Either they carry no note byte with bit 7 set (fine, and worth pinning), or the flag is reaching them and being dropped somewhere downstream (a defect). Read-only diagnosis: produce the count of bit-7 note bytes per file and say which explanation holds for each. Add the answer as a test only if it is the first -- do not change detection on this task.",
+   "why_model": "a bounded census against an existing decoder with a mechanical conclusion",
+   "why_mode": "read-only, one test file, no artefact rebuilt",
+   "why_lane": "reads detect.py and patterns.py, which other tasks write"
+  },
+  {
+   "id": "regenerate-artefacts-after-the-monty-firstwave",
+   "title": "presets.json carries Monty's firstwave set; FIDELITY.md and the staged pages follow",
+   "source": "this session (v0.5.392, uncommitted)",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "rw:build/listen",
+    "rw:build/instrmap",
+    "rw:build/instrmap.json",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerates FIDELITY.md and re-stages build/listen over the corpus",
+   "depends_on": [
+    "monty-firstwave-trade-needs-a-listen"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Auf_Wiedersehen_Monty's conversion moved to 2507ab0e636a when the firstwave set was recorded. docs/FIDELITY.md and build/fidelity.json are already regenerated at v0.5.392; build/listen is staged for that sha and the pages are rebuilt. What is NOT done is the rest of the corpus after the note-flag fallback: 17 files' bytes moved at v0.5.391 and their staged audio is now behind. Done when every staged tune's .h2g.sng matches its current conversion (the check is a sha comparison per file, 0 stale) and the index shows no row `behind`. DEPENDS ON THE LISTEN: re-staging before the verdict wastes the run if the set is dropped.",
+   "why_model": "mechanical regeneration against an existing harness",
+   "why_mode": "rebuilds hazard artefacts over the whole corpus",
+   "why_lane": "writes build/listen and FIDELITY.md"
   }
  ],
  "closed": [
   {
-   "id": "hard-restart-frames-vs-the-original-gap",
-   "title": "5 Title Tunes' gate 50% is HARD_RESTART_FRAMES=2 against a 4-frame gap",
-   "closed_by": "4a34457",
-   "reason": "SUPERSEDED rather than finished. It was recorded `partial` because the measured +25pp gain needed a convert() option its touches forbade; that option shipped as hard-restart-frames-per-song-option and 5_Title_Tunes' gate is now 0.7494. What it could not reach -- ticks 4 -- is a format limit (gplay.c:334), recorded as five-title-tunes-gate-cannot-reach-100."
-  },
-  {
-   "id": "regenerate-fidelity-after-the-hard-restart-option",
-   "title": "Regenerate FIDELITY.md after the hard-restart option",
-   "closed_by": "a10419f",
-   "reason": "Done: one row moved (5_Title_Tunes gate 50% -> 75%) and 94 rows are byte-identical; mean gate 54% -> 55% and corpus ringing 110475 -> 109540, a drop of exactly 935."
-  },
-  {
-   "id": "five-title-tunes-wave-90-note-end-frame",
-   "title": "Isolate the frame behind 5 Title Tunes' wave 90%",
-   "closed_by": "adb5f07",
+   "id": "len-dimension-original-vs-ours",
+   "title": "Give FIDELITY.md a length column, and read original_ended as a defect queue",
+   "closed_by": "aafa2a2",
    "reason": null
   },
   {
-   "id": "note-end-envelope-zero-for-adsr",
-   "title": "5 Title Tunes' adsr 58%",
-   "closed_by": "788f0bf",
-   "reason": "Refuted as an emitter task: the verify named SR where only AD differs, and the 3743 frames split 1870 inaudible / 1873 that are the gate deficit restated."
-  },
-  {
-   "id": "hard-restart-frames-per-song-option",
-   "title": "Add --hard-restart-frames as a per-song option",
-   "closed_by": "4a34457",
+   "id": "gate-census-is-file-level-not-per-voice",
+   "title": "The gate census cannot answer a per-voice question",
+   "closed_by": "2843a38",
    "reason": null
   },
   {
-   "id": "pulse-free-run-via-zero-pulse-pointer",
-   "title": "Let a pulse sweep free-run across notes",
-   "closed_by": "be06971",
-   "reason": "Declined: 2 of 72 voices qualify, 0.76% of corpus pulse movement."
+   "id": "per-instrument-sweeps-should-print-every-scored-column",
+   "title": "A sweep helper that prints the full row",
+   "closed_by": "2843a38",
+   "reason": null
   },
   {
-   "id": "plan-declares-python-h2g-as-a-whole-directory",
-   "title": "Narrow the r:python/h2g directory declarations",
-   "closed_by": "a10419f",
-   "reason": "Fixed in this plan and the one before it: every task now declares the files it actually reads, so a task writing goatwriter.py no longer blocks one reading sidfile.py."
+   "id": "boundary-tie-loop-around-restart-position",
+   "title": "Finish the wrap tie: voice 0",
+   "closed_by": "2843a38",
+   "reason": "Declined with numbers rather than built. The task's premise was false -- Chimera's exit-tied orderlist is on VOICE 1, where the tempo veto never runs, and it declines because its restart pattern's row 0 is GT_KEYOFF. Lifting the veto was re-measured at that head and still costs Star_Paws subtune 1 melody .7481 -> .3663."
   },
   {
-   "id": "preset-opts-coerces-every-option-to-bool",
-   "title": "Any non-boolean convert() option silently arrives as True/False unless hand-listed",
-   "closed_by": "5b2f3f3",
-   "reason": "_preset_opts now reads the annotation off convert()'s signature: a brand-new int option is forwarded as an int WITHOUT being added to _PER_SONG_OPTS, pinned by 6 tests. Corpus byte-identical, 83/83, verified against a clean HEAD export."
+   "id": "skate-or-die-intro-drift-plus-200-is-not-the-gate-skip",
+   "title": "A drift outlier the report's prose attributes to a cause that does not fit",
+   "closed_by": "2843a38",
+   "reason": "Attributed: the speed/skip tables are indexed by $02A6, the PAL/NTSC flag, and we read entry 0 -- the NTSC half. 3.02 calls per tick against PAL's 2.50 is exactly the +200/1000."
   },
   {
-   "id": "c64-music-examples-phantom-subtunes-not-trimmed",
-   "title": "Land the track-table-extent bound: the fix is complete, two tests pin the old counts",
-   "closed_by": "5b2f3f3",
-   "reason": "SUPERSEDED, not merged. 98% of the branch's added lines are already in master, and its only unique content is Spellbound = 4 -- which f63caa1 settled at 3 (the init dispatch beats the layout extent). presets.json and track_table_extent both say 3 at this HEAD. The 'two red tests' are 42 passed on master."
+   "id": "listen-files-takes-a-path-and-writes-outside-outdir",
+   "title": "listen.py --files with a path writes into the SID corpus",
+   "closed_by": "2843a38",
+   "reason": null
   },
   {
-   "id": "freq-table-length-off-by-one-at-the-grid-edge",
-   "title": "Entry 95 is a clamp with two corpus spellings -- finish the length/run split",
-   "closed_by": "5b2f3f3",
-   "reason": "Census confirms 82 x $FD2E + 6 x $FFFF = 88 clamped of 97 candidates. NEW: the six are a DIFFERENT table, not the same table with a different top -- 64 of 96 entries differ by one LSB, so the clamp is 34.91 cents in one family and 54.53 in the other, and a rule keyed on the literal byte or a cents threshold would read one and miss the other. Clause (a) restated: three files move, not two -- Ricochet is a necessary consequence of the shared `index < table.length` gate, not a leak."
+   "id": "five-title-tunes-real-firstwave-preset",
+   "title": "The wave 90% is reachable via real_firstwave_instruments",
+   "closed_by": "ff33be0",
+   "reason": "Settled with EVERY column measured for every arm, using the sweep helper built for it. The set {1,2,3,5,6,8} takes wave .8958 -> .9857 and hold .0000 -> .8571 for pitch 1.0000 -> .9836 and melody .9982 -> .9950. Instrument 7 excluded: with it, melody collapses to .9475."
+  },
+  {
+   "id": "pulse-phase-via-setpulseptr-per-note",
+   "title": "The sweeping instrument's pulse band is 3-7x too narrow",
+   "closed_by": "576391e",
+   "reason": "Built and shipped as --pulse-phase. 5_Title_Tunes pspan 0.47x -> 1.05x, pphase 0.25x -> 1.00x, every other column unchanged to 4dp. The model was validated against the original's trace first -- 848/848 onsets exact. Multispeed files stay declined; that is now its own task."
   }
  ]
 }

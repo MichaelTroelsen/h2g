@@ -142,3 +142,24 @@ def test_the_carry_forward_keeps_options_no_search_can_re_derive():
     # joins by being declared rather than by being remembered here
     for key in presets.EXCLUDED_FROM_ALWAYS:
         assert key in presets.CARRIED_PER_SONG, key
+
+
+def test_the_rest_envelope_adoption_survived_regeneration():
+    """v0.5.367 measured `rest_envelope_silence` into five songs' entries and
+    a presets.py regeneration silently DELETED all five by v0.5.370 -- the
+    carry-forward then only knew FIDELITY_TOGGLES. The option spent 25
+    versions looking unreachable when it was reachable and had been reached;
+    the plan even carried a task saying '0 of 83 songs carry it'.
+
+    Restored at this head for the four non-approved songs of the five (ACE_II
+    stays out: it is human-approved and its recorded sha matches the no-flag
+    conversion). This test is the alarm if any future regeneration drops them
+    again -- with both keys in CARRIED_PER_SONG it should be impossible, and
+    impossible things are what the suite is for.
+    """
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    carrying = {n for n, e in doc["songs"].items()
+                if e.get("rest_envelope_silence")}
+    assert carrying >= {"Auf_Wiedersehen_Monty.sid", "BMX_Kidz.sid",
+                        "Shockway_Rider.sid", "Thundercats.sid"}, (
+        f"the measured rest-envelope adoption was lost again: {carrying}")

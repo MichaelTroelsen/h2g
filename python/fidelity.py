@@ -1247,6 +1247,11 @@ def gate_census_report(rows: list[dict]) -> str:
     return "\n".join(out) + "\n"
 
 
+# $D404 bit 0. Gate-off does not mean silent: it starts the release
+# phase, which is still sounding -- see adsr_compare's census.
+GATE_BIT = 0x01
+
+
 def adsr_compare(orig: list[Voice], ours: list[Voice],
                  nframes: int, lag: int = 0) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
@@ -1262,10 +1267,50 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     an envelope is not evidence either way. A frame where one side has an
     envelope and the other still reads zero counts as a disagreement.
 
-    Gating is deliberately not consulted. The register holds its value while
-    the voice is released, so the envelope of a silent frame is still the
-    envelope the next note will open with, and folding the gate in here would
-    re-measure the note lengths the attack columns already measure.
+    Gating is deliberately not consulted in the SCORE, and the reason first
+    written here was wrong in a way worth keeping: it said the envelope of a
+    silent frame "is still the envelope the next note will open with". It is
+    not -- both players reload the pair from the instrument at the next
+    gate-on (gplay.c:397-398, player.s:882-892), which is what
+    `patterns.py:389-393` already says. The reason that survives is the second
+    one: folding the gate in here would re-measure the note lengths the attack
+    columns already measure.
+
+    **A PROPOSAL TO DROP THE GATED-OFF FRAMES WAS REFUTED BY MEASURING IT, and
+    the numbers are recorded because the proposal is a natural one to have
+    again.** The argument was that AD governs nothing while the gate is off,
+    so those frames are unhearable and flatter nothing by leaving. On
+    5_Title_Tunes that happened to be true -- its differing register is AD,
+    SR-only differs on 0 frames -- and generalising from it is the trap.
+    Censused over all 83 convertible files, 243436 disagreeing frames:
+
+        both sides gated off        71945   29.6% of the deficit
+          release nibble the same   23281   32.4% of those -- inaudible
+          release nibble DIFFERS    48664   67.6% of those -- AUDIBLE
+
+    **Those figures are the harness's own, and a scratch probe got them
+    wrong first** -- it read 78395/49000 because it traced a flat 60 s where
+    `original_ended` shortens the window for Geoff Capes and Kings of the
+    Beach, and Geoff Capes alone is 6915 gated-off frames of surplus loop.
+    That is the standing rule about a probe re-deriving what the harness has
+    already resolved, caught here by the shipped row disagreeing with the
+    probe that motivated it. Take these from `adsr_gated_off` in the row.
+
+    **A gate-off frame is not a silent frame**: gate-off begins the RELEASE
+    phase, which is still sounding, and the release nibble is what governs it.
+    Dropping all 71945 would discard 48664 frames of a real, audible
+    difference -- the same shape as v0.5.200, where widening a window to a
+    minimum "could not depend on which frame the player writes on" and
+    silently scored every instrument as cut. Only 9.6% of the column's total
+    deficit (23281 of 243436) is genuinely unhearable, and that is not enough
+    to be worth a denominator that can only ever move the score upward.
+
+    The split is REPORTED instead of acted on: `adsr_gated_off` and
+    `adsr_gated_off_audible` ride in the row, so a reader can see how much of
+    a given file's deficit is release-phase disagreement without trusting this
+    paragraph. Battle of Britain is the case that decides it: 3717 of its
+    gated-off frames carry 3030 that differ in release, and every one of them
+    is a tail the two sides do not share.
 
     `lag` is the startup latency from `startup_lag`, applied for the reason
     given there: this walks the traces frame against frame, and a packed .sid
@@ -1279,17 +1324,28 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     to a figure taken with a nonzero lag.
     """
     agree = total = 0
+    # Disagreeing frames where BOTH sides are gated off, and how many of those
+    # differ in the release nibble. Counted rather than acted on -- see the
+    # census above. The gate is $D404 bit 0, the bit gate_compare owns and
+    # every other column here ignores.
+    off = off_audible = 0
     per_voice = []
     for a, b in zip(orig, ours):
         ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
                           register_timeline(b.adsr_events, nframes), lag)
+        wa, wb = _aligned(register_timeline(a.wf_events, nframes),
+                          register_timeline(b.wf_events, nframes), lag)
         va = vt = 0
-        for x, y in zip(ta, tb):
+        for x, y, ga, gb in zip(ta, tb, wa, wb):
             if x == 0 and y == 0:
                 continue
             vt += 1
             if x == y:
                 va += 1
+            elif not ((ga or 0) & GATE_BIT) and not ((gb or 0) & GATE_BIT):
+                off += 1
+                if (x & 0x0F) != (y & 0x0F):
+                    off_audible += 1
         per_voice.append({"adsr": (va / vt) if vt else None, "frames": vt})
         agree += va
         total += vt
@@ -1297,6 +1353,8 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
         "adsr": (agree / total) if total else None,
         "adsr_frames": total,
         "adsr_voices": per_voice,
+        "adsr_gated_off": off,
+        "adsr_gated_off_audible": off_audible,
     }
 
 
@@ -4925,9 +4983,17 @@ def report(rows: list[dict], args) -> str:
         "not sound comparisons. `adsr` scores the envelope pair frame by "
         "frame, so it sees a wrong sustain or an invented hard restart, and "
         "it cannot see an envelope that is right but reached a few frames "
-        "late; `pul` counts duty-cycle movement and says nothing about the "
-        "width, the direction or the phase of the sweep -- a pulse swept the "
-        "wrong way at the right rate scores the same as one swept correctly; "
+        "late. **Roughly a third of its deficit is on frames where BOTH "
+        "sides are gated off** (71945 of 243436 corpus-wide), and dropping "
+        "them was proposed and REFUTED: gate-off starts the release phase, "
+        "which is still sounding, and 67.6% of those frames differ in the "
+        "release nibble. Only 9.6% of the deficit is genuinely unhearable. "
+        "The row carries `adsr_gated_off` and `adsr_gated_off_audible` so "
+        "the split is readable per file; the score itself drops nothing. "
+        "`pul` counts duty-cycle movement and says nothing about the width "
+        "or the direction of the sweep -- a pulse swept the wrong way at the "
+        "right rate scores the same as one swept correctly, though `pspan` "
+        "now reads the width and `pphase` where in the band a note opens; "
         "`filt` counts frames in circuit and `cut` how far the cutoff "
         "travels, neither of which says the sweep runs in the same direction "
         "or at the same moment. Resonance is inside the same $D417 byte as "

@@ -2105,3 +2105,53 @@ def test_gate_census_report_by_voice_section_sums_to_the_top_table():
     # The held-runs table must now say *which voice*, not just which file.
     held_section = report.split("## Where the held ones are", 1)[1]
     assert "voice" in held_section.splitlines()[2]  # header row names it
+
+
+# --- `adsr` on gated-off frames: measured, and the drop REFUTED -------------
+#
+# The standing proposal was to drop frames where BOTH sides are gated off,
+# on the argument that AD governs nothing while the gate is off. Censused
+# over all 83 convertible files at -t 60: of 249886 disagreeing frames, 78395
+# (31.4%) are gated off on both sides -- and 49000 of THOSE (62.5%) differ in
+# the RELEASE nibble. Gate-off starts the release phase, which is still
+# sounding, so those are audible. Dropping them would flatter the column by
+# discarding a real difference, the v0.5.200 shape. Only 11.8% of the total
+# deficit is genuinely unhearable. The split is reported, not acted on.
+
+def _adsr_pair(orig_adsr, ours_adsr, orig_wf, ours_wf, n=4):
+    a = [fidelity.Voice(adsr_events=[(0, orig_adsr)], wf_events=[(0, orig_wf)]),
+         fidelity.Voice(), fidelity.Voice()]
+    b = [fidelity.Voice(adsr_events=[(0, ours_adsr)], wf_events=[(0, ours_wf)]),
+         fidelity.Voice(), fidelity.Voice()]
+    return fidelity.adsr_compare(a, b, n)
+
+
+def test_a_gated_off_disagreement_is_counted_and_split_by_release():
+    """Both gated off ($40 = waveform selected, gate bit clear) and the
+    release nibble differs: counted, and counted as AUDIBLE."""
+    got = _adsr_pair(0x2401, 0x2402, 0x40, 0x40)
+    assert got["adsr_gated_off"] == 4
+    assert got["adsr_gated_off_audible"] == 4
+
+
+def test_a_gated_off_disagreement_sharing_a_release_is_inaudible():
+    """Same release nibble, different attack/decay: counted as gated off and
+    NOT as audible -- this is the only part of the deficit the original
+    proposal was right about, and corpus-wide it is 11.8% of it."""
+    got = _adsr_pair(0x2401, 0x9401, 0x40, 0x40)
+    assert got["adsr_gated_off"] == 4
+    assert got["adsr_gated_off_audible"] == 0
+
+
+def test_a_disagreement_with_either_side_gated_on_is_not_counted_off():
+    got = _adsr_pair(0x2401, 0x2402, 0x41, 0x40)
+    assert got["adsr_gated_off"] == 0, "one side is gated ON"
+
+
+def test_the_score_itself_is_unchanged_by_the_gate_split():
+    """The counts are reported, never subtracted: a gated-off disagreement is
+    still a disagreement in `adsr`. If this ever fails, someone has turned the
+    census into a denominator change -- which the corpus refutes."""
+    got = _adsr_pair(0x2401, 0x2402, 0x40, 0x40)
+    assert got["adsr"] == 0.0, "the gated-off frames were dropped from the score"
+    assert got["adsr_frames"] == 4

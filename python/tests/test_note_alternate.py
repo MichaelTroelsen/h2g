@@ -398,3 +398,100 @@ def test_no_note_is_clamped_onto_the_top_of_the_range():
     assert top <= runner_up, (
         f"G#7 used {top} times against a next-highest of {runner_up} -- "
         "that is a clamp, not a melody")
+
+
+# --- Population audit: the fallback's reach vs its effect ------------------
+#
+# 23 corpus files carry `note_flag` purely via the transposing-fallback shape
+# above (none of them also matches the classic AND #$7F / STA / ASL / TAY
+# shape). Converting all 23 and hashing the output shows only 17 of them
+# change -- BMX_Kidz, Kings_of_the_Beach_ingame, One_on_One_Jordan_vs_Bird,
+# Powerplay_Hockey_USA_vs_USSR, Skate_or_Die_intro and Wiz emit byte-identical
+# `.sng`s whether the flag is applied or not.
+#
+# Traced with `sys.settrace` on `_build_raw_pattern`'s masking line, the
+# explanation is the innocent one, and it is the same shape for all six: no
+# note byte with bit 7 set ever reaches the pattern data `convert_patterns`
+# actually emits.
+#
+#   * One_on_One_Jordan_vs_Bird and Powerplay_Hockey_USA_vs_USSR are
+#     `pattern_dialect == "digi"`. `_build_raw_pattern_digi` has no
+#     `note_flag` parameter at all -- in that grammar bit 7 is not a legato
+#     flag on a note, it is the tag for a *command* byte ($80 set-instrument,
+#     $81 end, $82/$83 two-operand, $C0-$FF duration; $84-$BF is refused
+#     outright as not-a-pattern). A digi note byte is structurally 0-$7F, so
+#     the fallback signature matching somewhere in the file's code is true
+#     and irrelevant: the grammar this file is actually decoded under never
+#     asks the question.
+#   * BMX_Kidz, Kings_of_the_Beach_ingame and Skate_or_Die_intro are
+#     classic-dialect and DO decode bit-7 note bytes under `note_flag=True`
+#     -- 397, 78 and 101 of them respectively, where masking picks a
+#     different (unclamped) note than the raw byte would. Every one of those
+#     hits traces back to `phantom_patterns`, never to `convert_patterns`'
+#     own `decode_entry` call: the table entries that contain them are also
+#     entries whose decoded span overlaps the pattern pointer tables or a
+#     signature-matched run of player code (`det.code_spans`), so
+#     `phantom_patterns` marks them phantom and `convert_patterns` never
+#     decodes them for the real output. What looks like a flagged note is the
+#     player's own code, misread as pattern data by a table entry that is not
+#     one.
+#   * Wiz decodes 1437 notes under `note_flag=True` and not one has bit 7
+#     set, in `convert_patterns` or `phantom_patterns` alike.
+#
+# None of the six is the "flag reaches a real note and is dropped downstream"
+# case, so nothing here changes detection. The test pins the finding:
+# forcing the flag off leaves every one of the six byte-identical, which is
+# only true if nothing the fallback would touch is real output.
+NOTE_FLAG_FALLBACK_INERT_FILES = {
+    "BMX_Kidz": "classic",
+    "Kings_of_the_Beach_ingame": "classic",
+    "One_on_One_Jordan_vs_Bird": "digi",
+    "Powerplay_Hockey_USA_vs_USSR": "digi",
+    "Skate_or_Die_intro": "classic",
+    "Wiz": "classic",
+}
+
+
+@needs_corpus
+@pytest.mark.parametrize("name,dialect", sorted(NOTE_FLAG_FALLBACK_INERT_FILES.items()))
+def test_the_six_unmoved_files_carry_no_bit7_note_in_real_output(name, dialect, monkeypatch):
+    """The pin for the audit above.
+
+    Forcing `det.note_flag` off after the real detection ran must leave the
+    conversion byte-identical -- if it ever does not, the flag has started
+    reaching a real note byte for this file and is being silently dropped
+    somewhere downstream, which would be the defect this task went looking
+    for and did not find.
+    """
+    import json
+
+    import h2g.convert as convmod
+    import fidelity as F
+    from h2g.convert import convert
+    from h2g.sidfile import load_sid
+
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    path = CORPUS / f"{name}.sid"
+    opts = F._preset_opts(doc, f"{name}.sid")
+
+    sid = load_sid(str(path))
+    det = detect(sid, lambda m: None)
+    assert det.note_flag, f"{name} no longer depends on the note-flag fallback"
+    assert det.pattern_dialect == dialect, (
+        f"{name}: expected pattern_dialect {dialect!r}, got "
+        f"{det.pattern_dialect!r} -- re-check the explanation above")
+
+    real_detect = convmod.detect
+
+    def forced_off(sid, log, engine=0):
+        d = real_detect(sid, log, engine)
+        d.note_flag = False
+        return d
+
+    real = convert(str(path), log=lambda m: None, **opts)
+    monkeypatch.setattr(convmod, "detect", forced_off)
+    forced = convert(str(path), log=lambda m: None, **opts)
+
+    assert forced == real, (
+        f"{name}: forcing note_flag off changed the output -- the flag IS "
+        "reaching a real note byte here and is being dropped downstream")
