@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.405 — 2026-08-28
+
+- the pattern-count guard gets a test, and melody says what collapsing hides
+
 ## 0.5.404 — 2026-08-28
 
 - the handoff doc stops being a knowledge store

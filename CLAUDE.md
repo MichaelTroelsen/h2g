@@ -1189,8 +1189,22 @@ test dependency).
   GoatTracker's own `MAX_PATT` (gcommon.h:30), and three call sites already
   respect it -- `apply_tempos` drops a clone rather than exceed it,
   `reindex_tracks` refuses a copy at the limit. `legalise_restarts` did not:
-  `--silent-park` appends one silent pattern per file, and W_A_R converts to
-  exactly 208, so it shipped **209**. Nothing anywhere reported that. gt2reloc
+  `--silent-park` appends one silent pattern per file, and W_A_R converted to
+  exactly 208 **at v0.5.400**, so it shipped **209**.
+  **That number is history, not a present fact, and the tense matters.** At
+  v0.5.404 W_A_R converts to 163 patterns (164 with the park) and the corpus
+  maximum is Gremlins at 195 -- its `rows` field moved 47102 -> 45674 in
+  `087f192`, the speed-gate commit, and nothing since sits near the boundary.
+  So the literal historical repro no longer occurs through the live pipeline,
+  and two OTHER guards (`convert_patterns`' own `>= MAX_PATTERNS: raise` and
+  `apply_initial_instruments`' `break`) keep every appender below it before
+  `legalise_restarts` is reached. The guard is a second line of defence now
+  rather than the only one. Found by the agent asked to write the test for
+  it, which had to construct the boundary state deliberately to prove its
+  test could fail -- and that is the lesson worth keeping: **a regression
+  test whose scenario the pipeline has drifted away from will pass forever
+  without ever exercising the guard**, so pin it at the seam the guard owns
+  rather than at the file that once reached it. Nothing anywhere reported that. gt2reloc
   packed it and returned success, the byte-exact fixture was unaffected, the
   suite was green, and `survey.py` counted it as converted -- while the packed
   player ran subtune 0 at gplay.c:198's DEFAULT tick (`6 * multiplier - 1`)

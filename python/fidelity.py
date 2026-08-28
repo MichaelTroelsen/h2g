@@ -43,7 +43,11 @@ Two numbers come out of that:
  * **melody similarity** -- difflib ratio over the attack-note sequence with
    consecutive duplicates collapsed, which removes exactly the re-trigger
    noise and leaves the question "are these the same notes in the same
-   order". Reported alongside the uncollapsed ratio.
+   order". Reported alongside the uncollapsed ratio (**sequence**, below).
+   Because it is collapsed, melody cannot see a note that gets re-struck: a
+   change that re-articulates an already-sounding note is invisible to it as
+   a *wrong* note and shows up only as a *longer* sequence to align against
+   -- read **retrigger ratio** and **sequence** for that, not melody.
 
 Separately from note attacks, the **wave** metric compares the waveform
 register ($D404) frame by frame: siddump's WF column, carried forward across
@@ -818,6 +822,9 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
             "orig_notes": len(a.collapsed),
             "our_notes": len(b.collapsed),
             "sequence": _ratio(a.attacks, b.attacks),
+            # .collapsed removes consecutive repeats -- see the module
+            # docstring's "melody similarity" bullet. Read `.attacks`
+            # (uncollapsed) here and this stops reproducing the report.
             "melody": _ratio(a.collapsed, b.collapsed),
             "orig_pitches": sorted(set(a.attacks)),
             "our_pitches": sorted(set(b.attacks)),
@@ -3320,7 +3327,9 @@ _PITCH_REGS = ("$D400/$D401", "$D404")
 
 DIMENSIONS = (
     Dimension("melody", "melody", _PITCH_REGS, "fraction",
-              "the attack-note sequence with consecutive repeats collapsed"),
+              "the attack-note sequence with consecutive repeats collapsed "
+              "-- blind to a re-struck note, which reads as a longer "
+              "sequence rather than a wrong one"),
     Dimension("sequence", "seq", _PITCH_REGS, "fraction",
               "the same sequence uncollapsed"),
     Dimension("pitch_jaccard", "pitch", _PITCH_REGS, "fraction",
@@ -4555,7 +4564,9 @@ def report(rows: list[dict], args) -> str:
         "are the ones the player gate-retriggers.",
         "",
         "* **melody** -- similarity of the attack sequence with consecutive "
-        "repeats collapsed: the right notes in the right order.",
+        "repeats collapsed: the right notes in the right order. Collapsed "
+        "means it cannot see a re-struck note -- a re-articulation reads "
+        "here only as the sequence getting longer, never as a wrong note.",
         "* **seq** -- the same without collapsing, so a note struck eight times "
         "where the original struck it once counts against it.",
         "* **retrig** -- our attacks over the original's. 1.0 is right; higher "

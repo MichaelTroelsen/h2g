@@ -2245,3 +2245,48 @@ def test_a_tune_that_stops_just_before_the_window_edge_is_invisible_to_it():
     assert F.stopped_at(side, 60) is None, "invisible at the run's own window"
     # and visible once the window is long enough for the silence to show
     assert F.stopped_at(side, 180) is not None, "visible at the probe window"
+
+
+# --- melody is collapsed, and the docs must say so ---------------------------
+#
+# `melody` reads `.collapsed` (consecutive repeats removed), not `.attacks`.
+# A probe that read `.attacks` instead could not reproduce the report and
+# misdiagnosed a real 0.000 as its own bug rather than the file's. These pin
+# the implementation to the description so the two documents (module
+# docstring, Dimension registry, generated-report template) cannot drift
+# from the code or from each other again.
+
+def test_melody_is_computed_from_the_collapsed_sequence():
+    """The implementation `compare()` actually has -- read from source so a
+    future rewrite that switches the field back to `.attacks` fails here."""
+    import inspect
+    src = inspect.getsource(fidelity.compare)
+    assert '"melody": _ratio(a.collapsed, b.collapsed)' in src
+    assert '"sequence": _ratio(a.attacks, b.attacks)' in src
+
+
+def test_melody_documentation_says_collapsed_and_what_that_hides():
+    """Every place `fidelity.py` describes the `melody` column must call out
+    that it is collapsed, and that collapsing makes it blind to a re-struck
+    note -- the fact a probe reading `.attacks` instead cannot reproduce."""
+    module_doc = fidelity.__doc__
+    assert "melody similarity" in module_doc
+    melody_bullet_start = module_doc.index("melody similarity")
+    melody_bullet = module_doc[melody_bullet_start:melody_bullet_start + 600]
+    assert "collapsed" in melody_bullet
+    assert "re-struck" in melody_bullet
+
+    dim = next(d for d in fidelity.DIMENSIONS if d.key == "melody")
+    assert dim.column == "melody"
+    assert "collapsed" in dim.of
+    assert "re-struck" in dim.of
+
+    # The generated-report template lives in the module as a literal string
+    # table; search the whole module source for the melody bullet rather than
+    # one function, since which function builds the report may itself move.
+    import pathlib
+    module_src = pathlib.Path(fidelity.__file__).read_text(encoding="utf-8")
+    idx = module_src.index("**melody** -- similarity of the attack sequence")
+    template_bullet = module_src[idx:idx + 400]
+    assert "collapsed" in template_bullet
+    assert "re-struck" in template_bullet

@@ -28,6 +28,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 import fidelity as F  # noqa: E402
 import songview  # noqa: E402
+from h2g.patterns import MAX_PATTERNS  # noqa: E402
 
 MAX_TABLELEN = 255          # gcommon.h
 POINTERS = {"WTBL": "wave_ptr", "PTBL": "pulse_ptr", "FTBL": "filt_ptr"}
@@ -100,6 +101,30 @@ def test_the_three_files_with_command_range_opcodes_are_clean():
         opts["wave_program"] = True
         blob = F.convert(str(CORPUS / name), log=lambda m: None, **opts)
         assert table_errors(blob) == [], name
+
+
+@needs_corpus
+def test_no_corpus_conversion_emits_more_patterns_than_goattracker_holds():
+    """W_A_R converted to 209 patterns against GoatTracker's MAX_PATT of 208
+    (gcommon.h:30, mirrored as patterns.MAX_PATTERNS): gt2reloc packed it and
+    returned SUCCESS, survey.py counted it converted, the byte-exact fixture
+    was unaffected and the suite was green -- while the packed player ran
+    subtune 0 at its default tick. `tracks.legalise_restarts` now declines the
+    silent park when the table is full, but nothing asserted the invariant
+    itself. This does."""
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    bad = {}
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            blob = F.convert(str(path), log=lambda m: None,
+                             **F._preset_opts(doc, path.name))
+        except Exception:                              # noqa: BLE001
+            continue                                   # SURVEY.md's business
+        song = songview.parse_sng(blob)
+        if len(song.patterns) > MAX_PATTERNS:
+            bad[path.name] = len(song.patterns)
+    assert not bad, bad
 
 
 def test_the_walk_reports_a_jump_and_an_overflow():
