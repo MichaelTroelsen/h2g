@@ -2004,7 +2004,27 @@ STATUS_BIT6_SHAPE = "B1 ?? 9D ?? ?? 8D ?? ?? 29 1F 9D ?? ?? 2C ?? ?? 70"
 # The cell is identified rather than assumed: it is the address the player tests
 # with at least two of the bit masks whose meaning is already known, which is
 # what makes it the effect byte's copy and not some other flag word.
-EFFECT_KNOWN_MASKS = (0x01, 0x02, 0x04, 0x08, 0x10)
+# The masks a cell must be tested with, at least twice over, before it counts
+# as an instrument effect byte. The gate is against false positives: `BIT
+# addr / BVC` is a common idiom and the address only means "effect byte" if
+# the player also tests it with bits whose meaning is already known.
+#
+# **$20 belongs here and its absence cost a listener report.** Auf Wiedersehen
+# Monty tests its effect cell ($EB10) with `AND #$04` and `AND #$20`; against
+# the old set that intersects to ONE mask, the cell was skipped, and the
+# `BIT $EB10 / BVC` at $E7CB -- bit $40's fixed attack pitch, sitting right
+# there -- went unread. Its two drum records both name note 79 ($685C, 26700)
+# and the conversion played the pattern's own note instead: 51 semitones low,
+# reported as "drums and perc are not there". No column could see it -- `noise`
+# counts frames (96%), `nrun` compares run LENGTHS (1.00), `melody` reads the
+# note name at an attack -- which is the blind spot CLAUDE.md records for a
+# noise frame's pitch, here cashed in for real.
+#
+# Adding it is scoped rather than hopeful: over the corpus it flips
+# `effect_bit40` on exactly TWO files, Auf Wiedersehen Monty and Sigma Seven,
+# and both carry records with bit $40 actually SET (Monty 0 and 3, Sigma Seven
+# 2). Nothing else moves.
+EFFECT_KNOWN_MASKS = (0x01, 0x02, 0x04, 0x08, 0x10, 0x20)
 EFFECT_BIT40_MASK = 0x40
 
 
@@ -2025,7 +2045,7 @@ def _effect_cells(data: bytes) -> dict:
 
 
 def _find_effect_bit40(sid: SidFile) -> bool:
-    """Whether this player reads effect bit $40 (41 of 95 corpus files).
+    """Whether this player reads effect bit $40 (43 of 95 corpus files).
 
     Its body writes both halves of the voice frequency from the player's own
     note table while a countdown runs -- a fixed pitch for the attack, sharing

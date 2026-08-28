@@ -277,7 +277,13 @@ def test_it_reads_across_the_corpus_and_commando_does_not_have_it():
         except Exception:                                  # noqa: BLE001
             continue
         seen += det.effect_bit40
-    assert seen == 41, seen
+    # 41 -> 43 at the mask fix: EFFECT_KNOWN_MASKS gained $20, and Auf
+    # Wiedersehen Monty and Sigma Seven both test their effect cell with $20
+    # plus one other known bit, so their `BIT cell / BVC` reads of bit $40
+    # were below the >=2 gate and invisible. Both have records with $40
+    # actually set (Monty 0 and 3, Sigma Seven 2). This pin is what said the
+    # population moved -- keep it exact.
+    assert seen == 43, seen
 
 
 @needs_corpus

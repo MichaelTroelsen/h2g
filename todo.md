@@ -232,3 +232,57 @@ that verdict does.
 
 `[main]` — every item writes `presets.json` or an emitter and needs a corpus
 A/B; the gate census itself is `[subagent]`, read-only.
+
+## Auf Wiedersehen Monty: the drums play four octaves too low
+
+Listener report after v0.5.394: "Drums and perc are not there." They ARE there
+— every column says so — at a pitch that makes them inaudible as percussion.
+
+MEASURED, voice 3, 60 s, both sides traced through the harness:
+
+    original   240 noise frames, frequency CONSTANT at 26700 on every one
+    ours       213 noise frames, frequency FOLLOWS THE PATTERN NOTE
+                                 (1404, 2501, 2807, ... median 1404)
+
+26700 is frequency-table index **79**; 1404 is index **28**. Fifty-one
+semitones — four octaves and a minor third — below where the drum belongs.
+
+NO COLUMN CAN SEE THIS, which is why it took an ear. `noise` counts frames
+(634/660, 96%), `nrun` compares run LENGTHS and is position- and
+pitch-independent (1.00, 4 of 4 instruments matched), `melody` reads the note
+NAME at an attack. CLAUDE.md already records the blind spot — "no report column
+sees a noise frame's pitch" — and this is the first time it has cost a listener
+report rather than a silent regression.
+
+WHAT IS KNOWN ABOUT THE MECHANISM:
+
+* The two drum records are 0 and 3 (`00 02 41 09 B9 00 30 64` and
+  `00 02 41 0A F9 00 50 64`). Both carry effect byte **`$64`** = bits `$04`,
+  `$20` and **`$40`**.
+* `det.effect_bit40` is **False** for this file: detection found no bit-$40
+  reader in this player. CLAUDE.md's rule says a record having the bit set and
+  the player reading it are two different facts — here the record has it and
+  the player's read has not been located.
+* THE LIKELY REASON DETECTION MISSES IT: this player reaches its instrument
+  records **through a pointer**, not indexed loads. A scan for any
+  `LDA/BIT/AND` naming `instr_start + k` for every k in 0..7 finds **zero**
+  instructions in the whole file, so `_effect_byte_address` has nothing to
+  anchor on. That is the same shape as `INSTRUMENT_INDEX_SHAPE`, which exists
+  because "a player that reaches the SID through subroutines matched none of
+  them".
+* `--sfx-drum` is NOT the fix: forced on, the voice-3 noise pitch is unchanged
+  (213 frames, median 1404, byte-identical trace).
+
+WHERE TO START: find how this player loads a record — the zero-page pointer and
+the routine that fills it — then look for the bit-6 test near the frequency
+write. Remember `BIT`/`BVC`/`BVS` is invisible to an `AND #$40` scan; that is
+how bit `$40` went unread across the whole project once already.
+
+DO NOT guess an emitter change from the symptom. The fix is a fixed attack
+pitch on two records, and CLAUDE.md records that emitting bit `$40`'s pitch on
+the wrong FRAME cost Pandora 281 frames at a wrong pitch and took melody
+85% → 39% on the balloon song. Measure the original's per-offset-from-attack
+profile before emitting anything.
+
+`[main]`, opus — spans detection and emission, and a plausible-but-wrong answer
+is both cheap to produce and inaudible to every column.

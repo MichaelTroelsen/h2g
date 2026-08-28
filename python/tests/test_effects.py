@@ -828,3 +828,51 @@ def test_off_by_default_and_searched_per_song():
     root = pathlib.Path(__file__).resolve().parents[2]
     assert convert(str(root / "Commando.sid"), log=lambda m: None) == \
         (root / "Commando.sng").read_bytes()
+
+
+# --- effect bit $40 behind an unlisted mask --------------------------------
+
+@needs_corpus
+def test_the_monty_drums_carry_a_fixed_attack_note():
+    """A listener reported Auf Wiedersehen Monty's drums as "not there". They
+    were there, 51 semitones low: the player overrides the played note with a
+    fixed one while a counter runs (`BIT $EB10 / BVC` at $E7CB, then
+    `LDA $EE08,Y` -- the per-instrument note array), and detection never saw
+    it because `_effect_cells` requires TWO masks from EFFECT_KNOWN_MASKS and
+    that set omitted $20. Monty's cell is tested with $04 and $20 only, so it
+    intersected to one and the cell was skipped.
+
+    Both drum records name note 79 -- frequency 26700, which the original
+    holds on every one of its 240 voice-3 noise frames.
+    """
+    from h2g.convert import _detect_tables
+    from h2g.goatwriter import _fixed_attack_note
+    from h2g.sidfile import load_sid
+    sid = load_sid(str(CORPUS / "Auf_Wiedersehen_Monty.sid"))
+    sid, det = _detect_tables(sid, lambda m: None, 0)
+    assert det.effect_bit40, "the BIT/BVC read of bit $40 was missed again"
+    # Asserted on the FREQUENCY rather than the returned byte: the byte is a
+    # wavetable right-side encoding and the thing that has to be right is the
+    # pitch the drum sounds. The original holds 26700 on every one of voice
+    # 3's 240 noise frames; anything within a semitone of it is the same drum.
+    table = det.freq_table
+    at = sid.to_offset(table.addr)
+    for i in (0, 3):
+        got = _fixed_attack_note(sid, det, i)
+        assert got is not None, f"record {i} produced no fixed note"
+        idx = got & 0x7F
+        hz = sid.data[at + 2 * idx] | (sid.data[at + 2 * idx + 1] << 8)
+        assert abs(hz - 26700) < 800, f"record {i}: {hz} is not the drum's pitch"
+    # and a record without the bit gets nothing, the per-record rule
+    assert _fixed_attack_note(sid, det, 5) is None
+
+
+def test_the_known_mask_set_still_gates_on_two():
+    """$20 was added to EFFECT_KNOWN_MASKS; the >=2 requirement is what keeps
+    that from turning `BIT addr / BVC` -- a common idiom -- into a false
+    positive on any cell that happens to be tested once."""
+    from h2g.detect import EFFECT_KNOWN_MASKS
+    assert 0x20 in EFFECT_KNOWN_MASKS
+    assert 0x40 not in EFFECT_KNOWN_MASKS, (
+        "bit $40 is what the gate is used to FIND; counting it as evidence "
+        "for itself would make the gate circular")
