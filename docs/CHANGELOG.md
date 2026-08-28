@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.401 — 2026-08-28
+
+- the zero-page and PAL spellings of the speed gate, and two tunes stop when they should
+
 ## 0.5.400 — 2026-08-28
 
 - the silent park stops pushing W_A_R one pattern past Goattracker's limit

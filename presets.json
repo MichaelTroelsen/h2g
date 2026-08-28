@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.397 presets.py",
+  "generator": "h2g 0.5.400 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -500,10 +500,10 @@
       "pack": false,
       "prune": false,
       "dedup": true,
-      "bytes": 12444,
+      "bytes": 12446,
       "subtunes": 16,
       "rows": 6844,
-      "multiplier": 1
+      "multiplier": 4
     },
     "Last_V8.sid": {
       "max_rows": 94,
@@ -790,7 +790,7 @@
       "bytes": 14883,
       "subtunes": 14,
       "rows": 7978,
-      "multiplier": 1
+      "multiplier": 4
     },
     "Sanxion.sid": {
       "max_rows": 94,
@@ -848,10 +848,10 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 35228,
+      "bytes": 35322,
       "subtunes": 3,
       "rows": 27200,
-      "multiplier": 2
+      "multiplier": 5
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -942,12 +942,12 @@
     },
     "W_A_R.sid": {
       "max_rows": 128,
-      "pack": false,
+      "pack": true,
       "prune": true,
-      "dedup": false,
-      "bytes": 69426,
+      "dedup": true,
+      "bytes": 58295,
       "subtunes": 8,
-      "rows": 47102,
+      "rows": 45674,
       "multiplier": 4,
       "two_stage": true,
       "max_hard_restart": true

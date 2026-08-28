@@ -1095,6 +1095,44 @@ test dependency).
   files describe (an option's effect, a player dialect, a limit), the edit
   belongs in the same commit. Docs that drift are worse than absent ones: the
   method write-up is used as reference material by another project.
+- **A gate signature encodes an ADDRESSING MODE, and three files were paying
+  for it.** `SPEED_GATE`, `SPEED_GATE_IMM`, `OUTER_GATE` and `OUTER_GATE_RTS`
+  all open on `Î` -- `DEC abs`. A player whose counter lives in ZERO PAGE
+  spells the identical idiom `DEC zp` (two bytes) and `STA zp` (two), so the
+  branch between them steps over one byte fewer and reads `BPL +5` where the
+  absolute form needs `+6`. **Two differences, not one**, which is why a
+  near-miss search never finds it. This is the third sighting of that shape:
+  Ninja's `SPEED_GATE_IMM` (v0.5.248) and the `OUTER_GATE_RTS` spelling before
+  it. `SPEED_GATE_ZP` and `OUTER_GATE_RTS_ZP` are the zero-page pair, each
+  consulted only where the existing spellings matched nothing.
+  **And one gate picks its reload from the PAL/NTSC flag**, which is the
+  standing hypothesis this file carries for Skate or Die intro, found real
+  somewhere else: Las Vegas reads `$02A6` (the KERNAL flag, 0 = NTSC) and
+  chooses between two immediates, carrying the value in **Y** -- `LDY #imm ...
+  STY` where every other spelling is `LDA #imm ... STA`. Nothing anchored on
+  an `LDA #` opcode could ever have seen it. `OUTER_GATE_PAL` takes the PAL
+  branch, because this corpus is PAL and every measurement here compares
+  against a 50 Hz trace.
+  Both files were reported by the `len` column as ending ~20 s early, which is
+  how they were found at all -- **no other column can see a tune that plays
+  the right notes at the wrong speed**, and both read `melody` in the high 80s
+  or 90s throughout. `--pace` named the cause in one line each: a ratio of
+  exactly 0.800 with an interquartile range of 0.800-0.800 and MAD 0.0, which
+  is *a wrong constant, not a mechanism*, and `drift = -1/(skip + 1)` with
+  drift -200/1000 gives skip 4 before any disassembly. Both files' gates
+  reload 4.
+  Fixed: Las Vegas and Samantha Fox both reach **attacks exact (1051/1051 and
+  958/958), melody/sequence/pitch 100% and `len` +0.1 s**; Spellbound, which
+  carried the same unread zero-page gate, goes melody 93 -> 95% and
+  `drift -90.9 -> len +0.1s`. Exactly three corpus files move.
+  **The multiplier is part of the fix, not a separate step.** Reading a gate
+  changes `effective_frames`, so `recommended_multiplier` changes, so
+  `presets.json`'s `multiplier` is stale until regenerated -- Las Vegas and
+  Samantha Fox `-S1 -> -S4`, Spellbound `-S2 -> -S5`. Between the two, the
+  conversion emits a row for one rate and is packed at another: Las Vegas
+  converted to **silence** and Samantha Fox played three times too fast, both
+  with `melody` still reading 100%. A detection change that moves a row length
+  is not testable until presets are regenerated with it.
 - **A bound the codebase KNOWS is not a bound the emitter ENFORCES, and
   gt2reloc will not tell you.** `patterns.MAX_PATTERNS` is 208, matching
   GoatTracker's own `MAX_PATT` (gcommon.h:30), and three call sites already

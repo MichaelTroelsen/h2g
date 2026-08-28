@@ -175,3 +175,52 @@ def test_the_denominator_is_capped_by_playability():
 def test_an_integer_row_still_takes_no_multiplier():
     sp = _speeds((2,), (2,))
     assert recommended_multiplier(sp, 0, skip_gate=True) == 1
+
+
+def _sid(body, load=0x7000):
+    """A minimal SidFile-alike holding one player image."""
+    from h2g.sidfile import load_sid
+    import struct, tempfile, os
+    hdr = bytearray(0x7C)
+    hdr[0:4] = b"PSID"
+    hdr[4:6] = (2).to_bytes(2, "big")
+    hdr[6:8] = (0x7C).to_bytes(2, "big")
+    hdr[8:10] = load.to_bytes(2, "big")
+    hdr[0x0A:0x0C] = load.to_bytes(2, "big")
+    hdr[0x0C:0x0E] = load.to_bytes(2, "big")
+    hdr[0x0E:0x10] = (1).to_bytes(2, "big")
+    hdr[0x10:0x12] = (1).to_bytes(2, "big")
+    fd, path = tempfile.mkstemp(suffix=".sid")
+    os.write(fd, bytes(hdr) + bytes(body)); os.close(fd)
+    try:
+        return load_sid(path)
+    finally:
+        os.unlink(path)
+
+
+def test_the_zero_page_outer_gate_is_read():
+    """DEC zp is two bytes where DEC abs is three, so the branch reads +5 and
+    not +6 -- and the reload store is STA zp, not STA abs. Samantha Fox."""
+    from h2g.goatwriter import outer_gate_skip
+    # DEC $EA / BPL +5 / LDA #$04 / STA $EA / RTS
+    sid = _sid(bytes([0xC6, 0xEA, 0x10, 0x05, 0xA9, 0x04, 0x85, 0xEA, 0x60]))
+    assert outer_gate_skip(sid, 0) == 4
+
+
+def test_the_pal_ntsc_outer_gate_takes_the_pal_reload():
+    """The gate selects its reload from the KERNAL flag at $02A6 and carries
+    it in Y, so there are two immediates. This corpus is PAL. Las Vegas."""
+    from h2g.goatwriter import outer_gate_skip
+    # DEC $54E8 / BPL +13 / LDY #$02 / LDA $02A6 / BEQ +2 / LDY #$04
+    # / STY $54E8 / RTS
+    sid = _sid(bytes([0xCE, 0xE8, 0x54, 0x10, 0x0D, 0xA0, 0x02,
+                      0xAD, 0xA6, 0x02, 0xF0, 0x02, 0xA0, 0x04,
+                      0x8C, 0xE8, 0x54, 0x60]), load=0x5000)
+    assert outer_gate_skip(sid, 0) == 4, "the PAL branch, not the NTSC one"
+
+
+def test_an_outer_gate_reloading_a_different_cell_is_refused():
+    """DEC one cell and reload another is not a gate."""
+    from h2g.goatwriter import outer_gate_skip
+    sid = _sid(bytes([0xC6, 0xEA, 0x10, 0x05, 0xA9, 0x04, 0x85, 0xEB, 0x60]))
+    assert outer_gate_skip(sid, 0) is None

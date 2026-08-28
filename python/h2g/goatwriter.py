@@ -1933,6 +1933,21 @@ SPEED_GATE = re.compile(rb"\xce(..)\x10\x06\xad(..)\x8d(..)", re.DOTALL)
 # What the other 33 count is not established, and a wrong tempo is worse than
 # the old constant.
 SPEED_GATE_IMM = re.compile(rb"\xce(..)\x10\x05\xa9(.)\x8d(..)", re.DOTALL)
+
+# THE SAME GATE WITH ITS COUNTER IN ZERO PAGE. `DEC zp` is two bytes where
+# `DEC abs` is three and `STA zp` two where `STA abs` is three, so the branch
+# steps over one byte fewer and reads `+5` rather than `+6`. The reload is
+# still absolute -- it is a per-subtune table address, not a zero-page cell.
+#
+#     70C7  DEC $E9 / BPL $70CE / LDA $7405 / STA $E9   (Samantha Fox)
+#
+# Consulted only where BOTH spellings above matched nothing, so no file that
+# reads a gate today can be moved by it. Without it Samantha Fox found no
+# inner gate at all and `frames_for` fell back to 1, which -- against a real
+# row of 3 -- put the whole tune three times too fast once its outer gate was
+# read (`--pace`: "speed gate reads nothing frame(s) per duration unit").
+SPEED_GATE_ZP = re.compile(rb"\xc6(.)\x10\x05\xad(..)\x85(.)", re.DOTALL)
+
 SPEED_TABLE_LOAD = b"\xbd"       # LDA abs,X -- X is the subtune number
 SPEED_RELOAD_STORE = b"\x8d"     # STA abs
 
@@ -1966,6 +1981,37 @@ OUTER_GATE = re.compile(rb"\xce(..)\x10\x08\xa9(.)\x8d(..)\x4c(..)", re.DOTALL)
 # and `_skip_gate_multiplier` is what expresses such a row when the
 # denominator is small enough.
 OUTER_GATE_RTS = re.compile(rb"\xce(..)\x10\x06\xa9(.)\x8d(..)\x60", re.DOTALL)
+
+# TWO MORE SPELLINGS OF THE SAME GATE, each of which was costing a whole song.
+# Consulted ONLY where the two above find nothing -- the rescue rule
+# `find_relocation` and `INSTRUMENT_INDEX_SHAPE` already follow -- so no file
+# that reads a gate correctly today can be disturbed by either.
+#
+# ZERO PAGE. The counter and its reload both live in zero page, so `DEC` is two
+# bytes rather than three and `STA` likewise -- and the branch offset moves with
+# them, `+5` where the absolute form needs `+6`. That is the trap this file has
+# now hit three times: a signature encoding an addressing mode encodes an
+# instruction LENGTH, and that length is in every branch offset around it, so
+# two spellings of one idiom differ in two places at once.
+#
+#     7084  DEC $EA / BPL $708D / LDA #$04 / STA $EA / RTS    (Samantha Fox)
+OUTER_GATE_RTS_ZP = re.compile(rb"\xc6(.)\x10\x05\xa9(.)\x85(.)\x60", re.DOTALL)
+
+# PAL/NTSC-SELECTED RELOAD. The gate picks its reload from the KERNAL's PAL/NTSC
+# flag at $02A6 (0 = NTSC), so there are two immediates and the PAL branch is the
+# one this corpus runs. It also carries the value in Y rather than A --
+# `LDY #imm ... STY` where every other spelling is `LDA #imm ... STA` -- which is
+# why nothing anchored on an `LDA #` opcode could ever have seen it.
+#
+#     5084  DEC $54E8 / BPL $5096 / LDY #$02 / LDA $02A6 / BEQ $5092
+#           / LDY #$04 / STY $54E8 / RTS                      (Las Vegas)
+#
+# This is the mechanism CLAUDE.md carries as a standing hypothesis for Skate or
+# Die intro ("its speed table is indexed by the PAL/NTSC flag rather than the
+# subtune"). It is real, and these are the two files that carry it.
+OUTER_GATE_PAL = re.compile(
+    rb"\xce(..)\x10\x0d\xa0.\xad\xa6\x02\xf0\x02\xa0(.)\x8c(..)\x60", re.DOTALL)
+
 
 # A reload byte above this is not a song speed. Real corpus values are 0-8
 # (f = 1..9); per-subtune tables are read past their end for files whose
@@ -2083,6 +2129,16 @@ def _gate_hits(sid: SidFile):
         if m.group(1) != m.group(3):
             continue
         hits.append((m.start(), m.start() + 6 + base))
+    if hits:
+        return hits
+    # Last, and only for a file neither spelling above could read: the
+    # zero-page counter. Its reload is still an absolute table address,
+    # so `_speeds_for_reload` needs nothing new.
+    for m in SPEED_GATE_ZP.finditer(data):
+        if m.group(1) != m.group(3):
+            continue
+        rel = m.group(2)
+        hits.append((m.start(), rel[0] | rel[1] << 8))
     return hits
 
 
@@ -2172,6 +2228,21 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
     """
     m = OUTER_GATE.search(sid.data) or OUTER_GATE_RTS.search(sid.data)
     if not m:
+        # The two rescue spellings, in the order that keeps them
+        # harmless: only a file the pair above could not read reaches
+        # here. Both carry a LITERAL reload rather than a per-subtune
+        # table, so there is no init write to chase -- the immediate IS
+        # the answer for every subtune.
+        mz = OUTER_GATE_RTS_ZP.search(sid.data)
+        if mz is not None and mz.group(1) == mz.group(3):
+            return (mz.group(2)[0] or None,) * max(subtunes, 1), None
+        mp = OUTER_GATE_PAL.search(sid.data)
+        if mp is not None and mp.group(1) == mp.group(3):
+            # group(2) is the PAL immediate -- the second LDY, taken
+            # when $02A6 is non-zero. The NTSC one is deliberately not
+            # read: this corpus is PAL and every measurement here
+            # compares against a 50Hz trace.
+            return (mp.group(2)[0] or None,) * max(subtunes, 1), None
         return (), None
     ctr = m.group(1)[0] | (m.group(1)[1] << 8)
     if ctr != (m.group(3)[0] | (m.group(3)[1] << 8)):
