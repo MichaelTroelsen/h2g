@@ -237,3 +237,48 @@ def test_the_constant_cannot_move_a_four_call_row():
             assert G._hard_restart_ticks(1, 4) == 2, n
     finally:
         G.HARD_RESTART_FRAMES = old
+
+def test_the_gate_bound_is_per_instrument_over_the_subtunes_it_plays_in():
+    """The minimum, never the median -- too large stops the song outright."""
+    from h2g.tracks import instrument_row_calls
+
+    # Two subtunes, one voice each shown: subtune 0 plays pattern 0 at 3
+    # calls a row, subtune 1 plays pattern 1 at 5.
+    tracks = [[0], [], [], [1], [], []]
+    patterns = [
+        [0, 7, 0, 0],          # pattern 0 sets instrument 7
+        [0, 9, 0, 0],          # pattern 1 sets instrument 9
+    ]
+    got = instrument_row_calls(tracks, patterns, [3, 5])
+    assert got == {7: 3, 9: 5}, got
+
+
+def test_an_instrument_shared_between_two_tempos_takes_the_shorter_row():
+    """gplay.c:334 stops the song when the gatetimer reaches the tick, so a
+    pattern played in the fast subtune is played at the fast tempo."""
+    from h2g.tracks import instrument_row_calls
+
+    tracks = [[0], [], [], [0], [], []]   # both subtunes play pattern 0
+    patterns = [[0, 7, 0, 0]]
+    assert instrument_row_calls(tracks, patterns, [3, 5]) == {7: 3}
+
+
+def test_it_refuses_rather_than_guessing_when_the_numbering_does_not_line_up():
+    """A wrong attribution here is a stopped song, so {} -- and the caller
+    then keeps the file-wide bound, which is the old behaviour."""
+    from h2g.tracks import instrument_row_calls
+
+    tracks = [[0], [], [], [0], [], []]        # two subtunes
+    patterns = [[0, 7, 0, 0]]
+    assert instrument_row_calls(tracks, patterns, [3]) == {}   # one tempo only
+    assert instrument_row_calls(tracks, patterns, []) == {}
+
+
+def test_a_single_tempo_file_is_unchanged_by_the_per_instrument_bound():
+    """Commando has one tempo, so every instrument's bound equals the
+    file-wide one and the byte-exact fixture cannot move."""
+    from h2g.convert import convert
+
+    root = pathlib.Path(__file__).resolve().parents[2]
+    ref = (root / "Commando.sng").read_bytes()
+    assert convert(str(root / "Commando.sid")) == ref

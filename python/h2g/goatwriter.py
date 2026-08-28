@@ -206,9 +206,21 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     **gplay.c:334 stops the song outright** when the gatetimer exceeds the
     channel's tick, so this can never reach the row length -- and the failure
     is total, not graceful: swept past the bound, Commando drops from 716
-    attacks to 3 and Sanxion from 956 to 1. `row_calls` is the *shortest* row
-    the file writes (convert passes `short_row_calls`), because a pattern
-    shared between two tempos is short in the faster one.
+    attacks to 3 and Sanxion from 956 to 1. `row_calls` is the shortest row
+    the INSTRUMENT is played at -- `tracks.instrument_row_calls`, the minimum
+    over the subtunes its orderlists reach, because a pattern shared between
+    two tempos is short in the faster one. It falls back to the file-wide
+    `short_row_calls` wherever that attribution is unsafe (one tempo, or a
+    split that shifted the numbering), which is what it was for every
+    instrument until v0.5.396.
+
+    That change moves 7 corpus files and is worth stating narrowly: five of
+    them move bytes and no column, Warhawk gains `gate` 84.1 -> 88.5 and
+    Bump Set Spike loses 0.2pp of it. **It does nothing for Auf Wiedersehen
+    Monty**, the file it was opened for -- its tempos are [3, 4, 5] and all
+    sixteen of its instruments sound in the tempo-3 subtune, so every one of
+    them is bounded at 3 either way. The per-song `gate` lever really is
+    exhausted there.
 
     **At most half the row**, which is a claim about the music rather than
     about the player: a note that spends more of its slot released than
@@ -2528,7 +2540,8 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        wide_hard_restart: bool = False,
                        max_hard_restart: bool = False,
                        hard_restart_frames: int | None = None,
-                       real_firstwave_instruments: tuple = ()) -> int:
+                       real_firstwave_instruments: tuple = (),
+                       instr_row_calls: dict | None = None) -> int:
     out.append(instr_used)
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
@@ -2599,8 +2612,15 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
         # for one frame before every note. Hubbard's players never do that:
         # $0F00 appears in none of the corpus originals and is the most common
         # ADSR value in every conversion without this flag.
+        # The bound is per instrument where the orderlists say so: `row_calls`
+        # is the shortest row ANY subtune writes, and an instrument that never
+        # sounds in the fast subtune is charged for it anyway. See
+        # tracks.instrument_row_calls -- it returns no entry rather than a
+        # default wherever the attribution is unsafe, so the file-wide value
+        # is what stands in, and a file with one tempo is unchanged.
+        own_row_calls = (instr_row_calls or {}).get(i + lead, row_calls)
         gatetimer = ((0x80 if no_hard_restart else 0)
-                     | (_hard_restart_ticks(multiplier, row_calls,
+                     | (_hard_restart_ticks(multiplier, own_row_calls,
                                             wide_hard_restart,
                                             max_hard_restart,
                                             hard_restart_frames) & 0x3F))
@@ -5016,6 +5036,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               row_calls: int = 0,
               voice_two_stage: bool = False,
               instr_voices: Optional[dict] = None,
+              instr_row_calls: Optional[dict] = None,
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
               max_hard_restart: bool = False,
@@ -5091,7 +5112,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                        wide_hard_restart=wide_hard_restart,
                        max_hard_restart=max_hard_restart,
                        hard_restart_frames=hard_restart_frames,
-                       real_firstwave_instruments=real_firstwave_instruments)
+                       real_firstwave_instruments=real_firstwave_instruments,
+                       instr_row_calls=instr_row_calls)
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)
     _write_pulsetable(out, pulse_entries)

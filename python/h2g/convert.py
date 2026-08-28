@@ -20,7 +20,8 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
-                     instrument_voices, legalise_restarts)
+                     instrument_row_calls, instrument_voices,
+                     legalise_restarts)
 
 Logger = Callable[[str], None]
 
@@ -568,6 +569,13 @@ def convert(sid_path: str, log: Logger = print,
                      two_stage=two_stage,
                      voice_two_stage=voice_two_stage,
                      instr_voices=instrument_voices(tracks, new_patterns),
+                     # Per instrument where the orderlists allow it: the
+                     # file-wide `short_row_calls` below caps EVERY instrument
+                     # at the fastest subtune's row, including the ones that
+                     # never sound in it. Returns {} wherever the attribution
+                     # is unsafe, and then the file-wide bound stands.
+                     instr_row_calls=instrument_row_calls(
+                         tracks, new_patterns, group_tempos or []),
                      gate_skip=gate_skip,
                      sfx_drum=sfx_drum,
                      wave_program=wave_program,

@@ -849,6 +849,70 @@ def instrument_voices(tracks: List[List[int]],
     return out
 
 
+def instrument_row_calls(tracks: List[List[int]],
+                         patterns: List[List[int]],
+                         group_tempos: List[int]) -> Dict[int, int]:
+    """{Goattracker instrument: the shortest row it is ever played at}.
+
+    `convert` derives one `short_row_calls` for the whole file -- the minimum
+    over every subtune's tempo -- and `goatwriter._hard_restart_ticks` bounds
+    the gatetimer by it, because `gplay.c:334` stops the song outright when
+    the gatetimer reaches the channel's tick. That bound is correct and it is
+    charged to every instrument in the file, including the ones that never
+    sound in the fast subtune: Auf Wiedersehen Monty runs tempos [3, 4, 5], so
+    every one of its sixteen instruments is capped at `3 // 2` = 1 raised to
+    the floor of 2, where an instrument played only in the tempo-5 subtunes
+    could afford 2 more calls of gate-off before its note. Its `gate` column
+    reads 48% against an original that releases for about three frames.
+
+    The right bound is per instrument and it is the MINIMUM over the subtunes
+    that instrument actually plays in -- never the median or the mode. This is
+    the safety-bound half of the rule `_drum_max_steps` records: a value that
+    is too large does not degrade the note, it stops the song, and an
+    instrument shared between a tempo-3 and a tempo-5 subtune is played at 3
+    for as long as the fast subtune runs.
+
+    Read from the finished orderlists and patterns, exactly as
+    `instrument_voices` is and for the same reason -- the tune's own tracks
+    say which subtune plays which pattern, and the player does not. The one
+    difference is the key: `ti % 3` is the voice, `ti // 3` is the subtune.
+
+    An instrument nothing plays gets no entry rather than a default, so the
+    caller keeps the file-wide bound for it; `group_tempos` shorter than the
+    track list (a split subtune shifted the numbering) falls back the same
+    way, because a wrong attribution here is a stopped song.
+    """
+    if not group_tempos:
+        return {}
+    plays: Dict[int, set] = {}
+    for ti, track in enumerate(tracks):
+        group = ti // 3
+        if group >= len(group_tempos):
+            # The numbering no longer lines up with the tempo list; refuse
+            # rather than attribute this track's patterns to the wrong clock.
+            return {}
+        operand = False
+        for entry in track:
+            if operand:                 # $FF's restart position, not a pattern
+                operand = False
+            elif entry == GT_ORDER_RESTART:
+                operand = True
+            elif entry < MAX_PATTERNS:
+                plays.setdefault(entry, set()).add(group)
+    out: Dict[int, int] = {}
+    for pattern, groups in plays.items():
+        if pattern >= len(patterns):
+            continue
+        rows = patterns[pattern]
+        shortest = min(group_tempos[g] for g in groups)
+        for k in range(1, len(rows), 4):
+            instr = rows[k]
+            if instr:
+                prev = out.get(instr)
+                out[instr] = shortest if prev is None else min(prev, shortest)
+    return out
+
+
 def _initial_for(det: Detection, voice: int) -> Optional[int]:
     """The Goattracker instrument number `voice` starts on, or None.
 
