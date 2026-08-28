@@ -177,50 +177,75 @@ def test_an_integer_row_still_takes_no_multiplier():
     assert recommended_multiplier(sp, 0, skip_gate=True) == 1
 
 
-def _sid(body, load=0x7000):
-    """A minimal SidFile-alike holding one player image."""
-    from h2g.sidfile import load_sid
-    import struct, tempfile, os
-    hdr = bytearray(0x7C)
-    hdr[0:4] = b"PSID"
-    hdr[4:6] = (2).to_bytes(2, "big")
-    hdr[6:8] = (0x7C).to_bytes(2, "big")
-    hdr[8:10] = load.to_bytes(2, "big")
-    hdr[0x0A:0x0C] = load.to_bytes(2, "big")
-    hdr[0x0C:0x0E] = load.to_bytes(2, "big")
-    hdr[0x0E:0x10] = (1).to_bytes(2, "big")
-    hdr[0x10:0x12] = (1).to_bytes(2, "big")
-    fd, path = tempfile.mkstemp(suffix=".sid")
-    os.write(fd, bytes(hdr) + bytes(body)); os.close(fd)
-    try:
-        return load_sid(path)
-    finally:
-        os.unlink(path)
-
-
+@needs_corpus
 def test_the_zero_page_outer_gate_is_read():
     """DEC zp is two bytes where DEC abs is three, so the branch reads +5 and
-    not +6 -- and the reload store is STA zp, not STA abs. Samantha Fox."""
+    not +6, and the reload store is STA zp. Samantha Fox, at its play address
+    $7006: DEC $EA / BPL / LDA #$04 / STA $EA / RTS."""
     from h2g.goatwriter import outer_gate_skip
-    # DEC $EA / BPL +5 / LDA #$04 / STA $EA / RTS
-    sid = _sid(bytes([0xC6, 0xEA, 0x10, 0x05, 0xA9, 0x04, 0x85, 0xEA, 0x60]))
+    from h2g.sidfile import load_sid
+
+    sid = load_sid(str(CORPUS / "Samantha_Fox_Strip_Poker.sid"))
+    assert sid.play_addr == 0x7006
     assert outer_gate_skip(sid, 0) == 4
 
 
+@needs_corpus
 def test_the_pal_ntsc_outer_gate_takes_the_pal_reload():
-    """The gate selects its reload from the KERNAL flag at $02A6 and carries
-    it in Y, so there are two immediates. This corpus is PAL. Las Vegas."""
+    """Las Vegas's gate reads the KERNAL PAL/NTSC flag at $02A6 and chooses
+    between two immediates, carrying the value in Y. This corpus is PAL, so
+    the reload is the second one, 4 -- not the NTSC 2."""
     from h2g.goatwriter import outer_gate_skip
-    # DEC $54E8 / BPL +13 / LDY #$02 / LDA $02A6 / BEQ +2 / LDY #$04
-    # / STY $54E8 / RTS
-    sid = _sid(bytes([0xCE, 0xE8, 0x54, 0x10, 0x0D, 0xA0, 0x02,
-                      0xAD, 0xA6, 0x02, 0xF0, 0x02, 0xA0, 0x04,
-                      0x8C, 0xE8, 0x54, 0x60]), load=0x5000)
-    assert outer_gate_skip(sid, 0) == 4, "the PAL branch, not the NTSC one"
+    from h2g.sidfile import load_sid
+
+    sid = load_sid(str(CORPUS / "Las_Vegas_Video_Poker.sid"))
+    assert sid.play_addr == 0x5006
+    assert outer_gate_skip(sid, 0) == 4
 
 
-def test_an_outer_gate_reloading_a_different_cell_is_refused():
-    """DEC one cell and reload another is not a gate."""
+@needs_corpus
+def test_spellbounds_gate_reads_the_skip_its_drift_predicted():
+    """Spellbound carried the same unread zero-page gate. Its committed row
+    read `drift -90.9`, which is -1/11, i.e. skip 10 -- so the signature and
+    the trace agree without either being fitted to the other."""
     from h2g.goatwriter import outer_gate_skip
-    sid = _sid(bytes([0xC6, 0xEA, 0x10, 0x05, 0xA9, 0x04, 0x85, 0xEB, 0x60]))
-    assert outer_gate_skip(sid, 0) is None
+    from h2g.sidfile import load_sid
+
+    sid = load_sid(str(CORPUS / "Spellbound.sid"))
+    assert sid.play_addr == 0xE012
+    assert outer_gate_skip(sid, 0) == 10
+
+
+@needs_corpus
+def test_the_rescue_spellings_are_anchored_at_the_play_address():
+    """THE ANCHOR, AND THE DEFECT IT EXISTS FOR.
+
+    `DEC zp / BPL / LDA # / STA zp / RTS` is a common enough idiom that a
+    file-wide search matched ordinary code in Spellbound and took its melody
+    from 93% to 38%. An outer gate is the first thing the frame routine does,
+    so it sits AT the header's playAddress. Moving the anchor off by a single
+    byte must therefore find nothing.
+    """
+    import h2g.goatwriter as G
+    from h2g.sidfile import load_sid
+
+    sid = load_sid(str(CORPUS / "Samantha_Fox_Strip_Poker.sid"))
+    at = sid.to_offset(sid.play_addr)
+    assert G.OUTER_GATE_RTS_ZP.match(sid.data, at) is not None
+    assert G.OUTER_GATE_RTS_ZP.match(sid.data, at + 1) is None, (
+        "the anchor must be exact -- a file-wide search is what caused the "
+        "Spellbound false positive")
+
+
+@needs_corpus
+def test_a_file_naming_no_play_routine_declines_rather_than_guessing():
+    """playAddress 0 means the tune installs its own IRQ handler, so there is
+    nothing to anchor on -- and a guess is worse than no reading."""
+    import dataclasses
+
+    from h2g.goatwriter import outer_gate_skip
+    from h2g.sidfile import load_sid
+
+    sid = load_sid(str(CORPUS / "Samantha_Fox_Strip_Poker.sid"))
+    assert outer_gate_skip(dataclasses.replace(sid, play_addr=0), 0) is None
+

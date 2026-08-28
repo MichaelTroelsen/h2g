@@ -534,6 +534,17 @@ class SidFile:
     magic: str = "PSID"     # "PSID" or "RSID", header 0x00-0x03
     version: int = 0        # header `version`, 16-bit BE at 0x04
     init_addr: int = 0      # header `initAddress`, 16-bit BE at 0x0A
+    # header `playAddress`, 16-bit BE at 0x0C. The routine the C64 calls
+    # every frame, and therefore where a player's OUTER gate lives -- the
+    # counter that decides whether this call does anything at all. Read
+    # for detection only: `_find_outer_gate` anchors its rescue spellings
+    # here, because `DEC zp / BPL / LDA # / STA zp / RTS` is a common
+    # enough idiom that a file-wide search matched non-gate code and cost
+    # Spellbound 55 points of melody before it was caught. Zero means the
+    # tune installs its own interrupt handler and the header names no
+    # routine, in which case nothing can be anchored and the rescue
+    # spellings simply decline.
+    play_addr: int = 0
     relocation: Optional[Relocation] = None  # block moved at init, see to_offset
 
     @property
@@ -638,6 +649,7 @@ def load_sid(path: str) -> SidFile:
     # initAddress. Read only so find_init_writes has an entry point; nothing
     # else consults it, and a file whose player needs no patching never does.
     init_addr = int.from_bytes(data[0x0A:0x0C], "big")
+    play_addr = int.from_bytes(data[0x0C:0x0E], "big")
 
     return SidFile(
         path=path,
@@ -652,5 +664,6 @@ def load_sid(path: str) -> SidFile:
         magic=magic,
         version=version,
         init_addr=init_addr,
+        play_addr=play_addr,
         relocation=find_relocation(data),
     )

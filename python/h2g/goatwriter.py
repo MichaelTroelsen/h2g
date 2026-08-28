@@ -2233,10 +2233,23 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
         # here. Both carry a LITERAL reload rather than a per-subtune
         # table, so there is no init write to chase -- the immediate IS
         # the answer for every subtune.
-        mz = OUTER_GATE_RTS_ZP.search(sid.data)
+        # ANCHORED AT THE PSID PLAY ADDRESS, not searched file-wide.
+        # An outer gate is the first thing the frame routine does, so it
+        # sits exactly there -- Samantha Fox $7006, Las Vegas $5006,
+        # Spellbound $E012, all three the header's own playAddress. The
+        # zero-page shape is otherwise common enough that a file-wide
+        # search matched ordinary code in Spellbound and took its melody
+        # from 93% to 38%; the byte offset is what makes these safe.
+        # A file whose header names no play routine (it installs its own
+        # IRQ) anchors nothing and declines, which is the right answer
+        # rather than a fallback to guessing.
+        at = sid.to_offset(sid.play_addr) if sid.play_addr else None
+        if at is None or not 0 <= at < len(sid.data):
+            return (), None
+        mz = OUTER_GATE_RTS_ZP.match(sid.data, at)
         if mz is not None and mz.group(1) == mz.group(3):
             return (mz.group(2)[0] or None,) * max(subtunes, 1), None
-        mp = OUTER_GATE_PAL.search(sid.data)
+        mp = OUTER_GATE_PAL.match(sid.data, at)
         if mp is not None and mp.group(1) == mp.group(3):
             # group(2) is the PAL immediate -- the second LDY, taken
             # when $02A6 is non-zero. The NTSC one is deliberately not

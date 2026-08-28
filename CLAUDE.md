@@ -1121,6 +1121,17 @@ test dependency).
   is *a wrong constant, not a mechanism*, and `drift = -1/(skip + 1)` with
   drift -200/1000 gives skip 4 before any disassembly. Both files' gates
   reload 4.
+  **The rescue spellings are ANCHORED AT THE PSID PLAY ADDRESS** (v0.5.402),
+  and that is not tidiness: searched file-wide, the zero-page shape matched
+  ordinary code in Spellbound and took its melody from 93% to 38%. An outer
+  gate is the first thing the frame routine does, so it sits exactly at the
+  header's `playAddress` -- Samantha Fox $7006, Las Vegas $5006, Spellbound
+  $E012 are all precisely that, and moving the anchor ONE BYTE finds nothing.
+  A file whose header names no play routine (it installs its own IRQ) anchors
+  nothing and declines, which is the right answer rather than a guess. Note
+  the asymmetry: only the OUTER gates take this anchor. `SPEED_GATE_ZP` is the
+  inner gate and lives wherever the player put it (Samantha Fox $70C7), so it
+  is still a file-wide search and still carries that risk.
   Fixed: Las Vegas and Samantha Fox both reach **attacks exact (1051/1051 and
   958/958), melody/sequence/pitch 100% and `len` +0.1 s**; Spellbound, which
   carried the same unread zero-page gate, goes melody 93 -> 95% and
