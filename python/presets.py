@@ -145,6 +145,24 @@ EXCLUDED_FROM_ALWAYS = {
     # on exactly 0.00 -- but melody COLLAPSES on two (One_on_One -37.0pp,
     # Sanxion -19.9pp), which is why it can never be a default.
     "regrid",
+    # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
+    # walk cannot search it and there is no single value for `always`. It
+    # names the instruments whose first frame should carry the record's own
+    # waveform rather than the testbit -- right for some records in a file and
+    # poison for others (5 Title Tunes' instrument 7), which is exactly why it
+    # is a set and not a flag.
+    #
+    # IT WAS NOT IN THIS REGISTRY UNTIL v0.5.398 AND THE v0.5.397 REGENERATION
+    # DELETED IT. Both songs that carried it lost it -- 5_Title_Tunes, whose
+    # set is HUMAN-APPROVED and worth wave 90 -> 99% and hold 0 -> 86%, and
+    # Auf Wiedersehen Monty (hold 0 -> 75%). That is the fourth time an
+    # artefact regeneration has silently destroyed a measured decision here
+    # (hard_restart_frames at v0.5.389, five rest_envelope_silence entries
+    # lost for 25 versions, and this). The rule the repeats point at: an
+    # option that is not a boolean cannot be re-derived by the search, so the
+    # ONLY copy of the decision is the file -- adding it here is not
+    # bookkeeping, it is the whole record.
+    "real_firstwave_instruments",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
     # carries one -- Powerplay Hockey's nine game cues against the tune its

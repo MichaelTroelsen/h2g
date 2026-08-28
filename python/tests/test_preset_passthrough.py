@@ -421,3 +421,42 @@ def test_the_search_window_is_the_window_the_report_is_published_at():
     decided that way. Pinned so the window cannot drift back silently."""
     import presets as P
     assert P.build_parser().get_default("seconds") == 60
+
+
+def test_every_per_song_decision_in_the_artefact_survives_a_regeneration():
+    """A per-song option not in CARRIED_PER_SONG is deleted by the next
+    `presets.py` run, silently.
+
+    This is the fourth sighting of that failure and the first guard against
+    the general case. `hard_restart_frames` was caught in the act at
+    v0.5.389; five `rest_envelope_silence` entries were gone for 25 versions;
+    and the v0.5.397 regeneration deleted `real_firstwave_instruments` from
+    both songs carrying it -- one of them human-approved. The earlier guards
+    were each written for one named option, so each new option arrived
+    unprotected.
+
+    The question this asks is not "does the option reach `convert`" (the
+    tests above) but "is the artefact the only copy of this decision, and can
+    a regeneration destroy it". Any convert() option that appears per song and
+    is not in the `always` block has exactly one home, and CARRIED_PER_SONG is
+    what preserves it.
+    """
+    doc = json.loads(PRESETS.read_text(encoding="utf-8"))
+    options = set(inspect.signature(convert).parameters)
+    always = set(doc.get("always", {}))
+    # presets.py re-derives these structurally on every run, so they need no
+    # carrying -- they are measurements of the FILE, not decisions about it.
+    derived = {"bytes", "rows", "subtunes", "multiplier", "max_rows",
+               "dedup", "prune", "pack"}
+
+    unprotected = {}
+    for name, entry in doc.get("songs", {}).items():
+        for key, value in entry.items():
+            if not value or key in derived or key in always:
+                continue
+            if key in options and key not in presets.CARRIED_PER_SONG:
+                unprotected.setdefault(key, []).append(name)
+    assert not unprotected, (
+        "these per-song decisions would be deleted by the next presets.py "
+        f"run: { {k: v[:3] for k, v in unprotected.items()} } -- add each key "
+        "to presets.EXCLUDED_FROM_ALWAYS (which feeds CARRIED_PER_SONG)")
