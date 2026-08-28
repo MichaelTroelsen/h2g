@@ -463,6 +463,27 @@ _ALWAYS_NAME = {"fmt": "format"}
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
                     "wave_program", "pitch_seq", "wide_hard_restart",
                     "max_hard_restart")
+# `hard_restart_frames` is an INT and cannot join the product above: adding one
+# more boolean doubles 127 combinations, and adding a four-valued axis would
+# quadruple it. So it is searched in a SECOND PASS over whichever combination
+# the boolean walk selected -- four extra candidates a song rather than four
+# times as many, which is the difference between minutes and hours.
+#
+# The values are the ones a player can plausibly hold the gate off for. 2 is
+# the built-in default and is the reference the pass measures against, so it is
+# not in the list. The upper end is bounded for free: `_hard_restart_ticks`
+# clamps the emitted gatetimer by the row length (half the row, or two thirds
+# under `--wide-hard-restart`), because gplay.c:334 STOPS THE SONG when the
+# gatetimer reaches the channel's tick. So a value too large for a file is
+# clamped rather than fatal, and the search cannot break a song by trying one.
+#
+# It is searched at all because 5_Title_Tunes measured 4 by hand -- its player
+# releases for a uniform 4 frames where the constant asks for 2 -- and took
+# `gate` 0.4996 -> 0.7494 with melody, seq, pitch and wave every one unchanged.
+# That was a hand measurement written into presets.json because nothing could
+# find it; this is what finds it.
+HARD_RESTART_SEARCH = (3, 4, 5)
+
 CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
     k for k in sorted(EXCLUDED_FROM_ALWAYS) if k not in FIDELITY_TOGGLES)
 # Seven toggles is 127 combinations a song, each a convert, a pack and two
@@ -775,6 +796,26 @@ def _closer(cand: float | None, ref: float | None, target: float,
     return abs(math.log(cand) - want) < abs(math.log(ref) - want) - margin
 
 
+def _inert_frames(sid_path, base: dict, out: dict) -> bool:
+    """True when dropping `hard_restart_frames` changes not one byte.
+
+    The same test `prune_inert` applies to the booleans, in the same currency:
+    a setting whose removal leaves the conversion identical cannot have been
+    what a measurement preferred. It happens here rather than inside
+    `prune_inert` because that function walks a dict of flags it can toggle to
+    False, and an int has no False.
+    """
+    import hashlib
+
+    without = {k: v for k, v in out.items() if k != "hard_restart_frames"}
+    try:
+        a = convert(str(sid_path), log=lambda m: None, **base, **FIXED, **out)
+        b = convert(str(sid_path), log=lambda m: None, **base, **FIXED, **without)
+    except Exception:                                # noqa: BLE001
+        return False                                 # cannot prove it inert
+    return hashlib.sha1(a).hexdigest() == hashlib.sha1(b).hexdigest()
+
+
 def prune_inert(sid_path: Path, base: dict, chosen: dict) -> dict:
     """`chosen` without the flags that change none of the converted bytes.
 
@@ -937,6 +978,30 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # leaves the conversion identical cannot have been what any measurement
     # preferred. One conversion per selected flag, no traces.
     out = prune_inert(sid_path, base, out)
+
+    # THE INTEGER PASS. Run against the boolean winner rather than against the
+    # default, because the two interact: `hard_restart_frames` raises `want`
+    # and `--wide-hard-restart`/`--max-hard-restart` raise the BOUND that caps
+    # it, so a frame count is worth nothing on a file whose bound is already
+    # the binding constraint. Measuring it after the toggles have settled is
+    # what lets `fidelity_better` see the pair.
+    #
+    # `ref` is already the winning candidate, so an accepted value has beaten
+    # the same combination at the default 2 -- not merely beaten the defaults.
+    for frames in HARD_RESTART_SEARCH:
+        cand = play(dict(out, hard_restart_frames=frames))
+        if cand is None:
+            continue
+        if fidelity_better(cand, ref):
+            ref, out = cand, dict(out, hard_restart_frames=frames)
+    # `prune_inert` walks the booleans it was given and would not know what to
+    # do with an int, so the frame count is checked here in the same currency:
+    # a value whose removal leaves the conversion byte-identical was never what
+    # any measurement preferred, and recording it would put an unmeasured
+    # decision in the artefact.
+    if out.get("hard_restart_frames") and _inert_frames(sid_path, base, out):
+        out.pop("hard_restart_frames")
+
     if out:
         log(f"    {sid_path.name}: {' '.join(sorted(out))} "
             f"(melody {ref[0]:.0%})")

@@ -163,3 +163,68 @@ def test_the_rest_envelope_adoption_survived_regeneration():
     assert carrying >= {"Auf_Wiedersehen_Monty.sid", "BMX_Kidz.sid",
                         "Shockway_Rider.sid", "Thundercats.sid"}, (
         f"the measured rest-envelope adoption was lost again: {carrying}")
+
+
+def test_the_frame_count_is_searched_as_values_not_as_another_toggle():
+    """An int cannot join the boolean product without multiplying it.
+
+    Seven toggles is 127 combinations a song; a four-valued axis would make it
+    508. The values are searched in a second pass over the boolean winner
+    instead, so the cost is `len(HARD_RESTART_SEARCH)` extra conversions per
+    song rather than four times as many.
+    """
+    import presets as P
+
+    assert "hard_restart_frames" not in P.FIDELITY_TOGGLES, (
+        "an int in the boolean product would be coerced to True/False")
+    assert P.HARD_RESTART_SEARCH, "the pass needs values to try"
+    assert all(isinstance(v, int) and v > 0 for v in P.HARD_RESTART_SEARCH)
+    assert 2 not in P.HARD_RESTART_SEARCH, (
+        "2 is HARD_RESTART_FRAMES, the reference the pass measures against")
+
+
+def test_the_frame_count_survives_a_regeneration():
+    """It is in CARRIED_PER_SONG, so a plain run keeps a measured value.
+
+    This is the guard the option needed before it was searchable at all: a
+    regeneration deleted 5_Title_Tunes' hand-measured 4 once already.
+    """
+    import presets as P
+
+    assert "hard_restart_frames" in P.CARRIED_PER_SONG
+
+
+def test_an_inert_frame_count_is_dropped(tmp_path, monkeypatch):
+    """A value whose removal changes not one byte was never what a
+    measurement preferred -- the same rule `prune_inert` applies to flags,
+    in the same currency."""
+    import presets as P
+
+    monkeypatch.setattr(P, "convert",
+                        lambda path, log=None, **opts: b"identical")
+    assert P._inert_frames(tmp_path / "x.sid", {},
+                           {"hard_restart_frames": 4}) is True
+
+
+def test_a_frame_count_that_moves_bytes_is_kept(tmp_path, monkeypatch):
+    import presets as P
+
+    def fake(path, log=None, **opts):
+        return b"with" if opts.get("hard_restart_frames") else b"without"
+
+    monkeypatch.setattr(P, "convert", fake)
+    assert P._inert_frames(tmp_path / "x.sid", {},
+                           {"hard_restart_frames": 4}) is False
+
+
+def test_a_conversion_that_raises_is_not_called_inert(tmp_path, monkeypatch):
+    """Cannot prove it inert is not the same as proved inert -- dropping a
+    measured value because the check crashed would be the worse error."""
+    import presets as P
+
+    def boom(path, log=None, **opts):
+        raise ValueError("nope")
+
+    monkeypatch.setattr(P, "convert", boom)
+    assert P._inert_frames(tmp_path / "x.sid", {},
+                           {"hard_restart_frames": 4}) is False

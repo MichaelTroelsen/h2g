@@ -407,8 +407,18 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
     assert got == {}
     assert len(skipped) == raising
     assert all("will not convert" in m for m in skipped)
-    # the scored candidates, the reference, and the subtune probe before it.
-    assert len(converted) == scored + 2
+    # The scored candidates, the reference, the subtune probe before it, and
+    # the integer pass over `hard_restart_frames` -- one conversion per value
+    # in HARD_RESTART_SEARCH, run against whichever combination the boolean
+    # walk selected. DERIVED from the module rather than written down, for the
+    # reason above: this assertion was hardcoded at 31/16/15/17 while n was 5
+    # and broke on the sixth toggle. It would break again on a fourth frame
+    # value.
+    #
+    # `_inert_frames` adds two more conversions, but only when the pass
+    # actually selects a value; here every candidate scores identically so
+    # none is accepted, `got` is empty, and the byte check never runs.
+    assert len(converted) == scored + 2 + len(P.HARD_RESTART_SEARCH)
 
 
 def test_the_search_window_is_the_window_the_report_is_published_at():
