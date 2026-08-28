@@ -1144,6 +1144,46 @@ test dependency).
   converted to **silence** and Samantha Fox played three times too fast, both
   with `melody` still reading 100%. A detection change that moves a row length
   is not testable until presets are regenerated with it.
+- **The corpus byte-hash is the check of last resort, and this is its recipe.**
+  Named all over this file and never spelled out until now, which is how it
+  ended up living in a handoff doc:
+
+      rm -rf <scratch> && mkdir -p <scratch>
+      git archive HEAD | tar -x -C <scratch>
+      cp python/tools/siddump-rt/siddump.exe <scratch>/python/tools/siddump-rt/
+
+  then convert every corpus `.sid` on both sides through
+  `fidelity._preset_opts` against the repo's `presets.json`, sha the bytes, and
+  report *converted / refused / compared / moved*. The `cp` is not optional:
+  `siddump.exe` is gitignored, so a clean export has none, and without it the
+  harness silently measures only the single-speed files -- v0.5.235 read a
+  whole invalid baseline that way.
+  It answers the one question nothing else does -- **which files a change
+  actually reaches** -- and it has repeatedly been the thing that separated
+  "no dimension can see this" from "this reaches nothing". Expect an exact
+  number and name the files: "exactly 1 moved (W_A_R)" is evidence, "no
+  regressions" is not.
+- **Four small readings that cost a session each, and lived only in a handoff
+  doc until now.** None is a lesson about method; each is a fact about this
+  code that reads the opposite way round if you guess.
+  * **`instr 00` means "keep the current instrument", not "no instrument".**
+    Goattracker holds the last non-zero instrument column until a row sets one
+    (`gplay.c:914`), so a pattern full of `00` is inheriting, not silent. 5
+    Title Tunes has 160/160/32 such rows and they are all correct; Pygmies
+    Revenge's 256/4/128 are all *before* that channel's first instrument and
+    are also correct. International Karate is the one real case -- channels 1
+    and 3 set no instrument on ANY row, so the conversion plays whatever
+    carried in. Three files, one symptom, one defect.
+  * **`songview`'s `instruments[0]` has `number = 1`.** The list is 0-based and
+    the numbering is not; with Goattracker numbering patterns in HEX and the
+    editor's pattern being post-dedup, three separate off-by-somethings sit
+    between a listener's screenshot and an index in this code.
+  * **`_preset_opts` passes `False` for an absent key, never `None`.** So
+    `opts.get(k) is None` is never how to ask whether a song set an option, and
+    a probe testing for `None` sees every option as unset.
+  * **`gplay.c:334` stops the song outright** when the gatetimer reaches the
+    channel's tick -- total, not graceful, which is why `_hard_restart_ticks`
+    bounds by the row and why the silent park bounds by `MAX_PATTERNS`.
 - **A bound the codebase KNOWS is not a bound the emitter ENFORCES, and
   gt2reloc will not tell you.** `patterns.MAX_PATTERNS` is 208, matching
   GoatTracker's own `MAX_PATT` (gcommon.h:30), and three call sites already
