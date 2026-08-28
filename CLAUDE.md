@@ -1047,6 +1047,35 @@ test dependency).
   row can be packed (Delta 5/2 at `-S2`) and declines when it cannot (IK+'s
   3 x 113/112 wants 339 calls at `-S112`). So it is a known limitation with
   a number on it, not a new defect; the fix is re-gridding, not a tempo.
+  **`--regrid` is that fix, and it shipped in v0.5.397.** A row is a whole
+  number of play calls, so a player whose row is 384/127 = 3.0236 frames
+  (Monty subtune 0) ships at 3 and runs 0.78% fast -- and 3 is the nearest
+  ratio at *every* denominator up to 10, so no tempo can do better and the
+  exact value wants `-S127`. The option gives one row in 42 an extra call
+  with `CMD_SETTEMPO` and takes it back on the next row. It reaches 18 corpus
+  files, drift improves on 14 and five land on exactly 0.00 (After_8
+  -12.35 -> 0.00, Arcade Classics -7.79 -> 0.00, Nemesis -7.75 -> 0.00);
+  Monty goes -9.30 -> -1.56 with `hold` +12.5, `adsr` +5.9, `gate` +3.1 and
+  `pitch` -2.7. **Per song, never a default** -- `melody` collapses on
+  One_on_One (-37.0pp) and Sanxion (-19.9pp).
+  Three things worth carrying beyond the option. **The schedule is one voice
+  per subtune**, because `CMD_SETTEMPO` under $80 sets all three channels --
+  compensating in all three lengthens the same row three times, which turned
+  Monty's 15-frame deficit into a 21-frame surplus and read, wrongly, as the
+  mechanism not working. **The compensation is a property of the PATTERN, not
+  the orderlist position**, which is what makes it affordable: patterns are
+  global and 56 of Monty's 153 are replayed, so a per-position schedule would
+  need a copy per phase -- the cost that stopped the pulse-phase work. And
+  **the restoring row must stay inside the pattern**: the row after the last
+  is whatever the orderlist plays next, and a first version let the restore
+  land on the `GT_END_PATTERN` marker, leaking the raised tempo into the
+  next pattern. A test caught that one, not a listener.
+  **And nothing in `FIDELITY.md` can adjudicate this option** -- every column
+  compares *what* is played, so a tune playing the right music 0.78% fast
+  forever scores perfectly. `--pace`'s `drift` line is the only instrument
+  that reads it, and it is not a report column, so each of the 12 adoptions
+  in `presets.json` is a hand-recorded measurement rather than a search
+  result. `fidelity_better` cannot select it and must not be given it.
   Its intercept is the startup lag as a free by-product, and **that
   by-product is what caught two wrong estimators** — a least-squares fit
   reporting +38 frames of lag where the harness measures 5 was the signal

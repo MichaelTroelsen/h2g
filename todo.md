@@ -286,3 +286,70 @@ profile before emitting anything.
 
 `[main]`, opus — spans detection and emission, and a plausible-but-wrong answer
 is both cheap to produce and inaudible to every column.
+
+## Auf Wiedersehen Monty: voice 2 enters 15 frames early at 38 s (the row is 3.0236 frames, we emit 3)
+
+A listener: "monty around 38 second voice 2 is not fidelity", with voices 1 and
+3 reported as sounding good.
+
+DIAGNOSED EXACTLY, and the prediction matches the trace to the frame. Voice 2
+plays the RIGHT notes, in the RIGHT order, with the RIGHT instruments and the
+RIGHT spacing -- it is 15 frames (0.30 s) early. It rests from 26.6 s and the
+original re-enters at 38.74 s where we enter at 38.44 s.
+
+    subtune 0   frames_for 3   exact_row 384/127 = 3.0236   effective 3
+
+`MAX_ROW_DENOMINATOR = 10` refuses a denominator of 127, so `effective_frames`
+falls back to 3 and we lose 0.0236 frames a row. At 38 s that is 1900 x 0.78%
+= 14.8 frames predicted against 15 observed. `--pace` reads the same thing from
+the other end: ratio 1.000 over 436 gaps (the row length is right) with
+**drift -9.30 frames/1000, 27.8 frames early across 2987**.
+
+Visible in the gap histograms as the original spending gaps we never spend:
+
+    orig  6x8  7x2  12x76  13x6  24x45  25x10  605x1
+    ours  6x10      12x83        24x55         600x1
+
+An 8-row note is 8 x 3.0236 = 24.19 frames, so siddump prints 24 most of the
+time and 25 about 19% of the time -- observed 10 of 55, i.e. 18%. All three
+voices carry it (16/19/19 off-grid gaps in the original, 0 in ours).
+
+THE TEMPO LEVER IS EXHAUSTED, checked rather than assumed: 3 is the best
+rational approximation to 3.0236 at EVERY denominator up to 10 (the next
+candidate, 31/10, is three times worse). The exact row needs `-S127`, which is
+the same refusal IK+ gets for 3 x 113/112 wanting `-S112`. So this is the
+documented `drift = -1/(skip+1)` limitation with a number on it, not a new
+defect, and CLAUDE.md already says of it: **the fix is re-gridding, not a
+tempo.**
+
+WHY VOICE 2 AND NOT 1 OR 3. All three drift identically, so they stay in sync
+with EACH OTHER and the tune merely runs 0.78% fast -- which is inaudible.
+Voice 2 is the one reported because it re-enters after a 12.1-second rest at
+38 s, and an entry after a long rest is where an accumulated 0.3 s offset is
+audible against voices that never stopped. The defect is global; the SYMPTOM is
+wherever a voice re-enters late in a section.
+
+THE FIX, if it is wanted: re-gridding. One extra frame every 42.3 rows absorbs
+the drift exactly -- a row given `CMD_SETTEMPO 3` (4 calls, gplay.c:325 makes a
+row last tempo+1) instead of 2 (3 calls), on 1 row in 42. It is expressible in
+the format we already emit and needs no new player state.
+
+Three hazards, all already recorded in CLAUDE.md and all of which have bitten:
+  * it consumes the command column on the rows it lands on, so it must declare
+    itself in `patterns.TEMPO_OVERWRITABLE` and `ONE_SHOT_COMMANDS` -- the pair
+    that has caught three changes, and row 0 belongs to the subtune's clock;
+  * a `CMD_SETTEMPO` under $80 sets all three channels and Goattracker's
+    patterns are GLOBAL, so a compensating row in a shared pattern is played by
+    every subtune that reaches it (the v0.5.330 `apply_tempos` defect);
+  * no column in FIDELITY.md measures cumulative drift -- `melody` is a difflib
+    ratio, `retrig` and `--pace`'s ratio are both satisfied by a tune running
+    0.78% fast forever. `--pace`'s `drift` line is the only instrument that
+    reads it, and it is not a report column. Build the column or A/B on
+    `--pace` output; a flat table here would mean nothing.
+
+Population: every file whose `exact_row` has a denominator over
+MAX_ROW_DENOMINATOR. Census it before building -- 37 corpus files drift and 29
+do not, per CLAUDE.md, so this is not a one-file fix.
+
+[main], touches python/h2g/patterns.py, python/h2g/goatwriter.py,
+python/h2g/convert.py, python/tests/test_pace.py.

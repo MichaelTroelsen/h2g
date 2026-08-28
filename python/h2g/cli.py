@@ -84,6 +84,19 @@ def main(argv=None) -> int:
              "which loses the composer's intent but is what makes a packed "
              ".sid possible at all. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--regrid", action="store_true",
+        help="spend the fractional part of a row the tempo cannot express. "
+             "Auf Wiedersehen Monty's row is 384/127 = 3.0236 frames and is "
+             "emitted at 3, so it runs 0.78%% fast -- inaudible as a rate, but "
+             "the error INTEGRATES: 15 frames by 38 seconds, which is where a "
+             "listener heard voice 2 enter early after a 12-second rest. 3 is "
+             "the best tempo available (it is the nearest ratio at every "
+             "denominator up to 10; exact wants -S127), so the repair is to "
+             "give one row in 42 an extra call and take it back on the next. "
+             "Corpus: reaches 18 files, drift improves on 14 and five reach "
+             "exactly 0.00 -- but melody collapses on two, so it is per song "
+             "and never a default. Off by default: it changes the output bytes")
+    parser.add_argument(
         "--silent-park", action="store_true",
         help="with --legal-restart, park a tune that ENDED on a silent pattern "
              "instead of looping it from the top. Hubbard's $FE means 'tune "

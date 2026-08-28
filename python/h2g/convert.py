@@ -7,11 +7,11 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
-                         build_pulse_phase_table, _instruments_used)
+                         build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
-                       convert_patterns, apply_tempo, apply_tempos,
+                       convert_patterns, apply_tempo, apply_tempos, regrid_tempos,
                        cmdtable_frames_per_row,
                        min_played_notes, median_played_durations,
                        pattern_references, phantom_patterns,
@@ -114,6 +114,7 @@ def convert(sid_path: str, log: Logger = print,
             pack: bool = False,
             legal_restart: bool = False,
             silent_park: bool = False,
+            regrid: bool = False,
             slides: bool = False,
             effects: bool = False,
             status_bit6: bool = False,
@@ -464,6 +465,23 @@ def convert(sid_path: str, log: Logger = print,
         # one's clock. See patterns.apply_tempos.
         written = apply_tempos(new_patterns, tracks, values, log)
         group_tempos = list(values)
+        if regrid:
+            # The fractional part of a row the tempo cannot express. Only
+            # where `effective_frames` DECLINED the exact row -- if it was
+            # encodable, the tempo already carries it and compensating again
+            # would double-count. See patterns.regrid_tempos.
+            speeds = find_song_speeds(sid, det)
+            deficits = []
+            for k in range(groups):
+                exact = speeds.exact_row(k) if speeds is not None else None
+                eff = effective_frames(speeds, k, skip_gate)
+                if exact is None or eff is None or float(eff) != float(values[k]):
+                    deficits.append(0.0)
+                else:
+                    deficits.append(max(0.0, float(exact) - float(values[k])))
+            if any(deficits):
+                regrid_tempos(new_patterns, tracks, values, deficits,
+                              multiplier, log)
         row_calls = max(values) if values else 0
         short_row_calls = min(values) if values else 0
         log(f"Tempo...................: CMD_SETTEMPO "

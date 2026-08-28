@@ -133,6 +133,18 @@ EXCLUDED_FROM_ALWAYS = {
     # melody, onset and noise cannot see a duty cycle's phase; `pspan` and
     # `pphase` can, and neither is a search criterion.
     "pulse_phase",
+    # Per song, and the reason is that NOTHING `fidelity_better` scores can
+    # see what it fixes. `--regrid` spends the fractional part of a row the
+    # tempo cannot express (Monty's is 384/127 = 3.0236 frames against the 3
+    # we emit), and the defect it removes is CUMULATIVE DRIFT -- which melody
+    # is blind to by construction: it is a difflib ratio over a note sequence
+    # and is satisfied by a tune playing the right music 0.78% fast forever.
+    # `--pace`'s drift line is the only instrument that reads it and it is not
+    # a report column, so every entry here is a hand-recorded measurement.
+    # Corpus: it reaches 18 files, drift improves on 14 of them and five land
+    # on exactly 0.00 -- but melody COLLAPSES on two (One_on_One -37.0pp,
+    # Sanxion -19.9pp), which is why it can never be a default.
+    "regrid",
     # Not a setting for a song: it selects a DIFFERENT song out of the same
     # file. `--engine 1` rips the second player a .sid carries, where it
     # carries one -- Powerplay Hockey's nine game cues against the tune its

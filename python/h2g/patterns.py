@@ -1865,6 +1865,161 @@ def _entry_reference(track: List[int]) -> int | None:
     return None
 
 
+def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
+                  bases: List[int], deficits: List[float],
+                  multiplier: int = 1, log=None) -> int:
+    """Spend the fractional part of a row the tempo cannot express.
+
+    A Goattracker row is a whole number of play calls, so a player whose row
+    is 384/127 = 3.0236 frames (Auf Wiedersehen Monty, subtune 0) is emitted
+    at 3 and loses 0.0236 frames every row. Nothing about the music is wrong
+    -- `--pace` reads the ratio as 1.000 over 436 gaps -- but the tune runs
+    0.78% fast and the error INTEGRATES: 15 frames by 38 seconds, which is
+    where a listener reported voice 2 entering early after a 12-second rest.
+    A voice that never stops is inaudibly fast; a voice that re-enters is
+    audibly early against the ones that did not.
+
+    `effective_frames` already declines the exact row when its denominator
+    exceeds MAX_ROW_DENOMINATOR, because 384/127 wants `-S127`. That refusal
+    is right and this is the other half of it: **3 is the best rational
+    approximation to 3.0236 at every denominator up to 10** (the next
+    candidate, 31/10, is three times worse), so no tempo can fix this and the
+    only repair is to give one row in 42 an extra call and take it back.
+
+    THE COMPENSATION IS A PROPERTY OF THE PATTERN, NEVER OF THE ORDERLIST
+    POSITION, and that is what makes it affordable. Goattracker's patterns are
+    global -- 56 of Monty's 153 are played more than once -- so a per-position
+    schedule would need a copy per phase, the cost that stopped the pulse-phase
+    work. Choosing the rows from the pattern's own geometry means every
+    occurrence behaves identically, which is what a global structure requires.
+
+    Three refusals, each of which is a defect this repo has already shipped
+    once:
+
+    * **Row 0 is never taken.** It belongs to the subtune's clock
+      (`TEMPO_OVERWRITABLE`), and a row-0 command silently costs a subtune its
+      `CMD_SETTEMPO` -- three changes have been caught by that.
+    * **The restore stays inside the pattern.** The row after a lengthened one
+      must put the tempo back, and the row after the LAST row is whatever the
+      orderlist plays next -- which is position-dependent, so the last row is
+      never chosen.
+    * **A pattern reached by subtunes with different clocks is left alone.**
+      `CMD_SETTEMPO` under $80 sets all three channels, so the restore value
+      would be wrong for the other subtune -- the v0.5.330 defect exactly.
+
+    `deficits` is in FRAMES per row and the command counts CALLS, so a
+    multispeed song needs `frames * multiplier` calls of compensation; below
+    one whole call the pattern is skipped rather than rounded up.
+    """
+    groups = len(tracks) // 3
+    if groups != len(bases) or groups != len(deficits):
+        raise ValueError(f"{groups} subtune(s) but {len(bases)} base(s) "
+                         f"and {len(deficits)} deficit(s)")
+
+    # Which subtunes reach each pattern, and therefore whose clock the
+    # restore would have to name -- and how often each pattern is PLAYED,
+    # which is the quantity the budget below is denominated in. A pattern
+    # played five times delivers its compensation five times; budgeting it
+    # once over-supplies by exactly that factor, which is how the first
+    # version of this turned a 15-frame deficit into a 16-frame surplus.
+    reach: dict = {}
+    where: dict = {}
+    plays: dict = {}
+    for k in range(groups):
+        for ti in range(3 * k, 3 * k + 3):
+            if ti >= len(tracks):
+                continue
+            operand = False
+            for entry in tracks[ti]:
+                if operand:
+                    operand = False
+                elif entry == GT_ORDER_RESTART:
+                    operand = True
+                elif entry < GT_COMMAND_FLOOR:
+                    reach.setdefault(entry, set()).add(k)
+                    where.setdefault(entry, set()).add((k, ti - 3 * k))
+                    plays[entry] = plays.get(entry, 0) + 1
+
+    # THE BUDGET IS PER SUBTUNE, over that subtune's own orderlist, and it
+    # only spends patterns that subtune has to itself. A pattern several
+    # subtunes play delivers its compensation inside every one of their
+    # timelines, so budgeting it against its total play count over-supplies
+    # whichever subtune plays it least -- measured on Monty, that turned a
+    # 15-frame deficit into a 24-frame surplus, the same size of error in the
+    # other direction. An exclusive pattern is the only one whose deliveries
+    # a single subtune's debt can account for.
+    plan: dict = {}
+    for k in range(groups):
+        d = deficits[k]
+        base = bases[k]
+        if d <= 0:
+            continue
+        # ONE VOICE ONLY. `CMD_SETTEMPO` under $80 sets all three channels
+        # (gplay.c:494), so a compensating row placed in each of the three
+        # voices' patterns lengthens the same row three times -- measured, a
+        # 15-frame deficit became a 21-frame surplus, and the 2.4x is the
+        # three voices minus what the occupied-column check declined. The
+        # debt is one subtune's, so the schedule that pays it is one voice's.
+        order = []
+        ti = 3 * k
+        if ti < len(tracks):
+            operand = False
+            for entry in tracks[ti]:
+                if operand:
+                    operand = False
+                elif entry == GT_ORDER_RESTART:
+                    operand = True
+                elif entry < GT_COMMAND_FLOOR and entry < len(patterns):
+                    order.append(entry)
+        if not order:
+            continue
+        # Exclusive to this subtune AND to this voice: a pattern voice 1 also
+        # plays would deliver the same row twice inside one subtune.
+        exclusive = {p for p in set(order)
+                     if reach.get(p) == {k} and where.get(p) == {(k, 0)}}
+        # Error diffusion along the orderlist: every played row adds its own
+        # fraction of a call to the debt, and only an exclusive pattern can
+        # pay it. The debt a shared pattern raises is carried forward rather
+        # than dropped, so the exclusive ones absorb the whole subtune's
+        # deficit and the rate stays right on average.
+        acc = 0.0
+        want: dict = {}
+        for pat in order:
+            rows = len(patterns[pat]) // 4
+            acc += d * rows * multiplier
+            # `rows` counts the GT_END_PATTERN row, so the last MUSICAL
+            # row is rows - 2 and a lengthened row needs rows - 3 at the
+            # latest: its restore must be a real row, not the end marker,
+            # or the raised tempo leaks into whatever plays next.
+            if pat in exclusive and acc >= 1.0 and rows >= 4:
+                n = min(int(acc), max(1, (rows - 3) // 2))
+                want[pat] = max(want.get(pat, 0), n)
+                acc -= n
+        for pat, n in want.items():
+            plan[pat] = (base, n)
+
+    written = skipped = 0
+    for pat, (base, n) in plan.items():
+        rows = len(patterns[pat]) // 4
+        # Spread them: never row 0, and never the last row, whose restore
+        # would land in whatever the orderlist plays next.
+        spots = [max(1, min(rows - 3, round((i + 1) * rows / (n + 1))))
+                 for i in range(n)]
+        for r in dict.fromkeys(spots):
+            row, nxt = r * 4 + 2, (r + 1) * 4 + 2
+            if patterns[pat][row] or patterns[pat][nxt]:
+                skipped += 1             # the column is spoken for; leave it
+                continue
+            patterns[pat][row], patterns[pat][row + 1] = CMD_SETTEMPO, base + 1
+            patterns[pat][nxt], patterns[pat][nxt + 1] = CMD_SETTEMPO, base
+            written += 1
+    if log:
+        log(f"Re-grid.................: {written} compensating row(s) in "
+            f"{len(plan)} pattern(s) for a fractional row"
+            + (f", {skipped} skipped (command column in use)" if skipped else ""))
+    return written
+
+
 def apply_tempos(patterns: List[List[int]], tracks: List[List[int]],
                  values: List[int], log=None) -> int:
     """`apply_tempo` for a song whose subtunes want *different* tempos.

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.397 — 2026-08-28
+
+- re-gridding: the fractional row the tempo cannot express
+
 ## 0.5.396 — 2026-08-28
 
 - the gate bound is per instrument, over the subtunes it actually plays in
