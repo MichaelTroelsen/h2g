@@ -29,3 +29,29 @@ monlog_out.txt
 # UNTRACKED files -- so one stray file marks FIDELITY.md `-dirty` however clean
 # the tracked tree is.
 6581.pdf
+
+# The graphify knowledge graph (63 MB of graph.json/graph.html/GRAPH_REPORT.md
+# plus the wiki). Generated from the tree by `graphify update .`, which
+# CLAUDE.md asks for after every code change -- so it is rebuilt constantly and
+# would conflict on every line of every parallel branch. Listed rather than
+# left untracked for the reason every entry below it is: fidelity.py:3165
+# stamps each generated report with `git status --porcelain -- .`, which counts
+# UNTRACKED files, so one stray path marks FIDELITY.md `-dirty` however clean
+# the tracked tree is.
+graphify-out/
+# graphify rewrites .claude/settings.json when it installs its hook and leaves
+# the previous copy beside it. Machine state, not source.
+.claude/settings.json.graphify-bak
+
+# Conversions staged beside the archive by hand while listening -- `.sng` files
+# this converter produced, and the corpus copies they were made from. Both are
+# OUTPUT: the `.sid` inputs the tests and the report actually use live in the
+# corpus directory passed to survey.py/fidelity.py, never here. The four
+# tracked entries in arkiv/ (the VB6 build, its zip, and the two reference
+# .sid rips) are deliberate and unaffected -- .gitignore does not untrack what
+# is already committed. `arkiv/*.sid` is NOT ignored as a class for that
+# reason: two are tracked, and a blanket rule would make the next deliberate
+# one need `git add -f` with nothing saying why.
+arkiv/*.sng
+arkiv/Hubbard_Rob/
+arkiv/Zoids.sid

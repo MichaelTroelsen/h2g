@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.399 — 2026-08-28
+
+- the generated graph and the staged listening conversions are ignored
+
 ## 0.5.398 — 2026-08-28
 
 - the regeneration stops deleting a per-song decision it cannot re-derive
