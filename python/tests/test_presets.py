@@ -228,3 +228,45 @@ def test_a_conversion_that_raises_is_not_called_inert(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "convert", boom)
     assert P._inert_frames(tmp_path / "x.sid", {},
                            {"hard_restart_frames": 4}) is False
+
+
+def test_a_fidelity_search_carries_what_it_cannot_re_derive():
+    """The carry-forward used to apply only on the NO-SEARCH path.
+
+    `presets.py` carried previous per-song settings under an `elif`, so a
+    SUCCESSFUL `--fidelity` run dropped every per-song decision outside
+    FIDELITY_TOGGLES -- it carried only when the search had raised. Measured
+    over the corpus before the fix: 19 lost. `regrid` on all 12 files carrying
+    it, `rest_envelope_silence` on 4, `real_firstwave_instruments` on 2 (one of
+    them human-approved) and `pulse_phase` on 1.
+
+    FOURTH sighting of a regeneration deleting a measured decision:
+    hard_restart_frames at v0.5.389, five rest_envelope_silence entries lost
+    for 25 versions, real_firstwave_instruments at v0.5.398, and this. The
+    three earlier fixes each widened WHAT is carried; none noticed the carry
+    was skipped on the path that re-decides the most. So this pins the RULE --
+    carry anything the run cannot re-derive -- rather than any one option.
+    """
+    import presets as P
+
+    derivable = set(P.FIDELITY_TOGGLES) | {"hard_restart_frames"}
+    must_survive = [k for k in P.CARRIED_PER_SONG if k not in derivable]
+    assert must_survive, (
+        "nothing left to carry -- either the search grew or CARRIED_PER_SONG "
+        "shrank; check which before deleting this test")
+    for k in ("regrid", "rest_envelope_silence", "real_firstwave_instruments",
+              "pulse_phase"):
+        assert k in must_survive, f"{k} would be dropped by a --fidelity run"
+
+
+def test_the_frame_count_is_derivable_and_so_is_not_blindly_carried():
+    """`hard_restart_frames` became searchable, so a `--fidelity` run must be
+    free to overwrite a carried value -- otherwise the first hand measurement
+    would be permanent and the search could never correct it."""
+    import presets as P
+
+    assert "hard_restart_frames" in P.CARRIED_PER_SONG, (
+        "still carried on a plain run, where nothing re-derives it")
+    assert P.HARD_RESTART_SEARCH and P.HARD_RESTART_ENABLERS, (
+        "and derivable on a --fidelity run, which is why it is excluded there")
+

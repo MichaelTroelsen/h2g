@@ -415,10 +415,17 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
     # and broke on the sixth toggle. It would break again on a fourth frame
     # value.
     #
+    # The frame pass tries each value against the selection AND against each
+    # bound-raiser, because `hard_restart_frames` and `--max-hard-restart` are
+    # worthless apart -- neither changes a byte alone on 5_Title_Tunes and
+    # together they are worth 25 points of `gate`. So the term is
+    # values x (1 + enablers), derived rather than written down.
+    #
     # `_inert_frames` adds two more conversions, but only when the pass
     # actually selects a value; here every candidate scores identically so
     # none is accepted, `got` is empty, and the byte check never runs.
-    assert len(converted) == scored + 2 + len(P.HARD_RESTART_SEARCH)
+    frame_pass = len(P.HARD_RESTART_SEARCH) * (1 + len(P.HARD_RESTART_ENABLERS))
+    assert len(converted) == scored + 2 + frame_pass
 
 
 def test_the_search_window_is_the_window_the_report_is_published_at():

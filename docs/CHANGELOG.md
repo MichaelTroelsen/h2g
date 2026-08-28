@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.406 — 2026-08-28
+
+- the frame count and its bound are searched as a pair, and a fidelity run stops deleting what it cannot re-derive
+
 ## 0.5.405 — 2026-08-28
 
 - the pattern-count guard gets a test, and melody says what collapsing hides

@@ -483,6 +483,11 @@ FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
 # That was a hand measurement written into presets.json because nothing could
 # find it; this is what finds it.
 HARD_RESTART_SEARCH = (3, 4, 5)
+# The toggles that raise the bound the frame count is capped by. Kept
+# beside the values because the pair is the unit that means anything:
+# `_hard_restart_ticks` computes `min(want, bound)`, so a larger `want`
+# with the default bound is exactly the same emitted gatetimer.
+HARD_RESTART_ENABLERS = ("max_hard_restart", "wide_hard_restart")
 
 CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
     k for k in sorted(EXCLUDED_FROM_ALWAYS) if k not in FIDELITY_TOGGLES)
@@ -988,12 +993,39 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     #
     # `ref` is already the winning candidate, so an accepted value has beaten
     # the same combination at the default 2 -- not merely beaten the defaults.
+    # SEARCHED JOINTLY WITH THE TOGGLES THAT RAISE ITS BOUND, because each is
+    # worthless without the other and a greedy any-one-improving walk cannot
+    # reach a pair.
+    #
+    # `hard_restart_frames` raises `want`; `--max-hard-restart` and
+    # `--wide-hard-restart` raise the BOUND that caps it. On 5_Title_Tunes
+    # neither alone changes ONE BYTE -- `max_hard_restart` on its own scores an
+    # identical tuple, so the boolean walk never accepts it, and the frame
+    # count against a selection without it is clamped straight back. Together
+    # they are worth `gate` 50.0% -> 74.9% with melody, sequence and the attack
+    # count unmoved. That value had to be hand-measured into presets.json
+    # because nothing here could find it, and the reason was never the
+    # criterion: `gates_right` has read this since v0.5.271.
+    #
+    # And `prune_inert` would finish the job if the pair ever were selected by
+    # accident: it drops a flag whose removal leaves the bytes identical, which
+    # is right for a passenger and wrong for an ENABLER. It is safe here only
+    # because it re-converts against the whole selection -- with the frame
+    # count present, removing the bound-raiser does move bytes, so it is kept.
+    #
+    # The cost is `len(HARD_RESTART_SEARCH) * (1 + len(HARD_RESTART_ENABLERS))`
+    # conversions a song, run once after the 127-combination walk rather than
+    # inside it.
     for frames in HARD_RESTART_SEARCH:
-        cand = play(dict(out, hard_restart_frames=frames))
-        if cand is None:
-            continue
-        if fidelity_better(cand, ref):
-            ref, out = cand, dict(out, hard_restart_frames=frames)
+        for enabler in (None, *HARD_RESTART_ENABLERS):
+            extra = dict(out, hard_restart_frames=frames)
+            if enabler is not None:
+                extra[enabler] = True
+            cand = play(extra)
+            if cand is None:
+                continue
+            if fidelity_better(cand, ref):
+                ref, out = cand, extra
     # `prune_inert` walks the booleans it was given and would not know what to
     # do with an int, so the frame count is checked here in the same currency:
     # a value whose removal leaves the conversion byte-identical was never what
@@ -1173,6 +1205,33 @@ def main(argv=None) -> int:
                           file=sys.stderr)
             elif path.name in carried:
                 found.update(carried[path.name])
+            # AND WITH --fidelity TOO, for the options the search CANNOT
+            # re-derive. The `elif` above carries only on the no-search path,
+            # so a SUCCESSFUL search silently dropped every per-song decision
+            # outside FIDELITY_TOGGLES: measured over the corpus, 19 of them --
+            # `regrid` on all 12 files that carry it, `rest_envelope_silence`
+            # on 4, `real_firstwave_instruments` on 2 (one of them
+            # human-approved) and `pulse_phase` on 1.
+            #
+            # This is the FOURTH sighting of a regeneration deleting a measured
+            # decision -- hard_restart_frames at v0.5.389, five
+            # rest_envelope_silence entries lost for 25 versions,
+            # real_firstwave_instruments at v0.5.398, and now the whole
+            # non-searchable set whenever anyone runs --fidelity. Each earlier
+            # fix widened what is CARRIED; none noticed that the carry is
+            # skipped entirely on the path that re-decides the most.
+            #
+            # The rule, stated so the next option does not need a fifth fix:
+            # carry anything the run cannot RE-DERIVE, on every path. The
+            # search derives FIDELITY_TOGGLES and, since the frame pass,
+            # `hard_restart_frames`; everything else in CARRIED_PER_SONG is a
+            # hand measurement and the artefact is its only copy.
+            if args.fidelity:
+                keep = {k: v for k, v in (carried.get(path.name) or {}).items()
+                        if k not in FIDELITY_TOGGLES
+                        and k != "hard_restart_frames"}
+                if keep:
+                    found.update(keep)
             for key in FIDELITY_VETOED.get(path.name, ()):
                 if found.pop(key, None):
                     print(f"    {path.name}: {key} vetoed (see FIDELITY_VETOED)",
