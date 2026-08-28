@@ -1083,7 +1083,27 @@ def legalise_restarts(tracks: List[List[int]], log=None,
             # its whole subtune whether or not the restart position is legal,
             # so it must not depend on this opt-in flag.
             continue
-        if patterns is not None and len(track) < MAX_TRACK_LEN:
+        # The silent pattern is allocated ONCE for the whole file, so parking
+        # is affordable when it already exists or when there is a slot left
+        # for it. `len(patterns) < MAX_PATTERNS` is the half that was missing
+        # and it cost a whole song: W_A_R converts to exactly 208 patterns,
+        # Goattracker's limit (MAX_PATT, gcommon.h:30), and this append took
+        # it to 209. gt2reloc packs that without a word -- the file is
+        # produced, the suite is green, nothing reports it -- and the packed
+        # player then runs subtune 0 at its DEFAULT tick instead of the
+        # CMD_SETTEMPO sitting on row 0 of the pattern its orderlist enters
+        # on. Measured either side of this one condition: melody 18.6% ->
+        # 100%, sequence 19.4% -> 100%, pitch 73.7% -> 100%, adsr 25.7% ->
+        # 100%, wave 59.6% -> 97.9%, gate 14.7% -> 79.9%, and the attack count
+        # 70 -> 327 against the original's 327 exactly.
+        #
+        # Declining is the right failure and the reasoning is already beside
+        # it: MAX_TRACK_LEN falls back to restart 0 "because an unpackable
+        # file is worse than a looping one". A file one pattern over the limit
+        # is that same case -- it is not unpackable, which is worse, because
+        # nothing announces it.
+        if (patterns is not None and len(track) < MAX_TRACK_LEN
+                and (silent[0] is not None or len(patterns) < MAX_PATTERNS)):
             # PARK ON SILENCE INSTEAD OF LOOPING FROM THE TOP. Restart 0 is
             # what makes the file packable, and it is also why every such tune
             # plays forever -- the `len` column reads Kings of the Beach at

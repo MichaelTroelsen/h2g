@@ -1095,6 +1095,38 @@ test dependency).
   files describe (an option's effect, a player dialect, a limit), the edit
   belongs in the same commit. Docs that drift are worse than absent ones: the
   method write-up is used as reference material by another project.
+- **A bound the codebase KNOWS is not a bound the emitter ENFORCES, and
+  gt2reloc will not tell you.** `patterns.MAX_PATTERNS` is 208, matching
+  GoatTracker's own `MAX_PATT` (gcommon.h:30), and three call sites already
+  respect it -- `apply_tempos` drops a clone rather than exceed it,
+  `reindex_tracks` refuses a copy at the limit. `legalise_restarts` did not:
+  `--silent-park` appends one silent pattern per file, and W_A_R converts to
+  exactly 208, so it shipped **209**. Nothing anywhere reported that. gt2reloc
+  packed it and returned success, the byte-exact fixture was unaffected, the
+  suite was green, and `survey.py` counted it as converted -- while the packed
+  player ran subtune 0 at gplay.c:198's DEFAULT tick (`6 * multiplier - 1`)
+  instead of the `CMD_SETTEMPO 9` sitting on row 0 of the pattern its orderlist
+  enters on. 24 calls a row against 9 is the 8/3 that a previous session
+  measured and could not explain.
+  Fixing the one condition took the corpus's third-worst melody row to a
+  perfect one: **melody 18.6% -> 100%, sequence 19.4% -> 100%, pitch 73.7% ->
+  100%, adsr 25.7% -> 100%, wave 59.6% -> 97.9%, gate 14.7% -> 79.9%, and the
+  attack count 70 -> 327 against the original's 327 exactly.** One corpus file
+  moves and it is W_A_R.
+  Three things generalise. **The failure was silent in every channel this repo
+  has** -- an overrun one index past a table's end is the same class as the
+  `exectable` case that `tests/test_table_validation.py` exists for, and the
+  pattern COUNT had no such test. **The right failure was already written down
+  beside the missing guard**: the `MAX_TRACK_LEN` branch declines to park
+  "because an unpackable file is worse than a looping one", and a file one
+  pattern over the limit is worse still, because it is not unpackable and so
+  nothing announces it. And **the previous session's frame was the trap**: it
+  had located the symptom exactly ("subtune 0 runs at the default tick") and
+  named the next step as reading `greloc.c`'s tempo handling -- which is
+  correct code doing nothing wrong (`greloc.c:1823-1830` keeps a global tempo
+  and merely decrements it). A correctly located symptom can still point at
+  the wrong file; the census that found it was "which files exceed a limit the
+  code already names", not more disassembly.
 - **Packing passes `gt2reloc -O0`, and that is not optional.** Its
   pulse-optimization skipping is default-on and makes the packed player execute
   no pulse table on the note-fetch tick, so a duty cycle advances on two calls
@@ -1617,3 +1649,18 @@ Rules:
 - If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
 - Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
 - After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+- **`graphify update` is the orchestrator's job, not a delegated agent's.** A
+  fan-out task's declared `touches` list is what makes concurrent agents safe
+  to run at once (rule 1 in every dispatched task), and `graphify-out/` is
+  essentially never in it — so an agent that ran `graphify update .` anyway
+  would be writing an undeclared path, exactly the failure mode `touches`
+  exists to prevent. One agent in this repo hit that and correctly refused to
+  update the graph rather than grant itself the path. Nothing else ran it
+  either, and the graph rotted silently across the whole fan-out: found once
+  15.5 hours stale with six modified files unreflected in it. The fix is not
+  to make the rule looser for agents — it is to put the refresh where the
+  contention control already lives: whoever owns the cycle (the orchestrator
+  or the main session, after the fan-out's writes have landed) runs
+  `graphify update .` once, the same way `SURVEY.md`/`presets.json`/
+  `FIDELITY.md` are regenerated once on `master` after merges rather than by
+  each branch.

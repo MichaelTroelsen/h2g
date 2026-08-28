@@ -3744,6 +3744,14 @@ def length_compare(orig, ours, seconds: int) -> dict:
 # The listener's rule, in seconds. "The original and the H2G should have the
 # same length +- 5 seconds."
 LENGTH_TOLERANCE = 5.0
+# How much longer than the run's window to look when the original is still
+# sounding at the edge. Three is chosen rather than fitted: Action Biker's
+# original ends at 59.54s and ours loops with a period of 61.44s, so anything
+# above 2x separates them, and 3x leaves room for a second loop to be obvious
+# rather than marginal. A file whose original genuinely plays past 3x the
+# window is still reported as `-`, which is the column declining to score what
+# it cannot see rather than passing it.
+LENGTH_PROBE_FACTOR = 3
 
 
 def original_ended(orig, seconds: int) -> int | None:
@@ -3790,6 +3798,29 @@ def original_ended(orig, seconds: int) -> int | None:
     # window, and never longer than the caller asked for.
     ended = min(seconds, last // 50 + 2)
     return ended if ended >= 5 else None
+
+
+def length_rule_failures(rows: list[dict]) -> list[dict]:
+    """Rows whose MEASURED length delta actually breaches LENGTH_TOLERANCE.
+
+    `original_ends` marks every row whose comparison WINDOW was shortened by
+    `original_ended` -- a different question from whether the rule was
+    *broken*. That shortening fires whenever the original stops inside the
+    window, whether or not our side also stops close to it: Geoff Capes and
+    Kings of the Beach ingame are both in that set and both read `length_delta`
+    of +0.16s and +0.92s (see `length_compare`, called before the window
+    shrinks), nowhere near the +-5s tolerance. Counting the shortened set as
+    failures reported two passing files as a defect queue.
+
+    A row can appear here only if it is also in the shortened set: outside
+    it `length_compare` is never called (see `_measure`) and `length_delta`
+    is never populated at all -- which is the existing "the column is blind
+    past the window edge" caveat, not something this function needs to
+    re-derive.
+    """
+    return [r for r in rows
+            if r.get("length_delta") is not None
+            and abs(r["length_delta"]) > LENGTH_TOLERANCE]
 
 
 def _preset_opts(doc: dict, name: str) -> dict:
@@ -4049,6 +4080,36 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             seconds))
         row["original_ends"] = seconds = ended
         a = run_siddump(local_orig, seconds, sub, args.siddump, cal)
+    elif ended is None:
+        # THE COLUMN'S BLIND SPOT, and it is the interesting half. `ended` is
+        # None when the original is still sounding at the window edge -- which
+        # covers BOTH a tune that genuinely plays on AND a tune that stops
+        # half a second before the trace does, and nothing inside this window
+        # can tell those apart. Action Biker is the second kind: its last
+        # attack is at 59.54s against a 60s window, so it read `-` here while
+        # running three times too long at its real length.
+        #
+        # So probe: trace the ORIGINAL over a longer window and ask the same
+        # question again. Only if it ends there is our side traced too, which
+        # is what keeps this affordable -- the second trace falls on the files
+        # that can actually fail the rule, exactly as the shortening branch
+        # above does. The probe is skipped when the original has no attacks at
+        # all, and when a caller has pinned the window (`--length-probe 1`).
+        factor = getattr(args, "length_probe", None) or LENGTH_PROBE_FACTOR
+        if factor > 1 and any(v.attack_frames for v in a):
+            long_seconds = seconds * factor
+            a_long = run_siddump(local_orig, long_seconds, sub, args.siddump, cal)
+            if original_ended(a_long, long_seconds) is not None:
+                row.update(length_compare(
+                    a_long,
+                    run_siddump(packed, long_seconds, sub, args.siddump,
+                                calls=getattr(args, "calls_per_frame", None)
+                                or multiplier),
+                    long_seconds))
+                # Named so a reader can see the figure did not come from the
+                # run's own `-t`: a delta measured over 180s is not comparable
+                # to one measured over 60s, and the report says which.
+                row["length_probe_seconds"] = long_seconds
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
     # that is the rate its tempo values were written for. Tracing each at its
     # own rate is what puts both on one time axis -- see run_siddump.
@@ -4823,39 +4884,66 @@ def report(rows: list[dict], args) -> str:
                 f"{r['file'].replace('.sid', '')} {r['original_ends']}s"
                 for r in sorted(ended, key=lambda r: r["file"].lower()))
             out.append(
-                f"- **{len(ended)} file(s) FAIL the length rule**, and this "
+                f"- {len(ended)} file(s) have their comparison WINDOW "
+                "shortened by the length rule: these are the files whose "
+                "original STOPS inside the window while ours plays on, so "
+                "the harness compares over the music the original actually "
+                "plays rather than over our restart of it. This is a note "
+                "on method, not a defect queue by itself -- see the next "
+                "bullet for which of them actually breach the rule. Read "
+                "the shortening for what it is: the score is protected and "
+                "**the shipped `.sng` still plays forever**. It is the same "
+                "shape as the `--search-subtunes` compensation corrected in "
+                "v0.5.375 -- a shim that hides a defect from the score does "
+                "not hide it from the file. Hubbard's `$FE` means *tune "
+                "ended*, a Goattracker orderlist cannot say it, and "
+                "`--legal-restart` turns it into a restart at position 0; "
+                "the repair is a choice of restart TARGET, looping a silent "
+                "pattern instead. The `len` column carries the measured "
+                f"delta per file. ({names})")
+
+        failed = length_rule_failures(rows)
+        if failed:
+            fnames = ", ".join(
+                f"{r['file'].replace('.sid', '')} {r['length_delta']:+.1f}s"
+                for r in sorted(failed, key=lambda r: r["file"].lower()))
+            out.append(
+                f"- **{len(failed)} file(s) FAIL the length rule**, and this "
                 "list is a defect queue rather than a note on method. A "
                 "conversion must end within +-5s of the original; these are "
-                "the files whose original STOPS inside the window while ours "
-                "plays on, so the harness shortens their comparison to the "
-                "music the original actually has. Read that shortening for "
-                "what it is: the score is protected and **the shipped `.sng` "
-                "still plays forever**. It is the same shape as the "
-                "`--search-subtunes` compensation corrected in v0.5.375 -- a "
-                "shim that hides a defect from the score does not hide it "
-                "from the file. Hubbard's `$FE` means *tune ended*, a "
-                "Goattracker orderlist cannot say it, and `--legal-restart` "
-                "turns it into a restart at position 0; the repair is a "
-                "choice of restart TARGET, looping a silent pattern instead. "
-                "The `len` column carries the surplus per file where the "
-                "window is long enough to measure one. Without the "
-                "shortening Geoff Capes reads `retrig` 3.21 and `melody` 49% "
-                "against 1.02 and 100% over its real length, so the "
-                "truncation is right for the SCORE and says nothing good "
-                f"about the conversion. ({names})")
+                "the files whose MEASURED `len` -- taken over the window "
+                "above, before it shrinks (see `length_compare`) -- exceeds "
+                f"that. ({fnames})")
+        elif ended:
             out.append(
-                "- **The length rule reaches only as far as the window.** "
-                "`len` can see a surplus only where the original stops with "
-                "more than 5s of trace left after it, so at `-t 60` it finds "
-                "the tunes that end EARLY and is blind to the ones that end "
-                "near the edge. Action Biker is the known case it cannot "
-                "reach: its original's last attack is at 59.54s and ours "
-                "loops with a period of 61.44s, so it runs three times too "
-                "long and this column prints `-` for it at this window. That "
-                "is the column declining to score what it cannot see rather "
-                "than passing it; a `-t 180` run is what measures that file. "
-                "The count above is therefore a FLOOR on how many files "
-                "break the rule, not a census of them.")
+                "- None of the window-shortened files above breach the "
+                f"+-{LENGTH_TOLERANCE:.0f}s length tolerance once measured "
+                "against the original's own length -- e.g. Geoff Capes and "
+                "Kings of the Beach ingame, whose windows are shortened for "
+                "the reason above but whose `len` reads +0.2s and +0.9s. "
+                "The shortening is a measurement necessity, not evidence of "
+                "a defect, for every file it currently applies to.")
+        if ended:
+            out.append(
+                "- **The length rule reaches past the window, but not "
+                "forever.** Inside its own window a tune that stops half a "
+                "second before the trace does looks exactly like one that "
+                "plays on, so `len` used to print `-` for every such file --  "
+                "Action Biker, whose original's last attack is at 59.54s of a "
+                "60s trace, was the known case it could not reach. It is "
+                "reached now: when the original is still sounding at the edge "
+                "the harness re-asks over "
+                f"{LENGTH_PROBE_FACTOR}x the window (`--length-probe`), and "
+                "traces our side again only if the original turns out to end "
+                "there -- so the extra work falls on the files that can "
+                "actually fail. A file whose original outlasts even that "
+                "still reads `-`, which is the column declining to score what "
+                "it cannot see rather than passing it, so the FAIL count "
+                "remains a floor rather than a census -- just a much lower "
+                "one. The probed rows carry `length_probe_seconds` in "
+                "`--json`, because a delta measured over "
+                f"{LENGTH_PROBE_FACTOR}x the window is not comparable to one "
+                "measured inside it.")
 
         # The mean hides the shape, and the shape is the finding: this is not
         # a corpus that is uniformly 2/3 right, it is one where most files are
@@ -6326,6 +6414,18 @@ def main(argv=None) -> int:
                         "stdout (the report still goes to -o)")
     p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
                                             / "presets.json"))
+    p.add_argument("--length-probe", type=int, default=None, metavar="N",
+                   help="when the original is still sounding at the window "
+                        "edge, re-ask whether it ends over N x the window "
+                        f"(default {LENGTH_PROBE_FACTOR}). Inside its own "
+                        "window a tune that stops half a second early looks "
+                        "exactly like one that plays on -- Action Biker's "
+                        "original ends at 59.54s of a 60s trace -- so the "
+                        "`len` column prints `-` for it without this. Pass 1 "
+                        "to switch the probe off and pin the window; a file "
+                        "whose original outlasts N x the window still reads "
+                        "`-`, which is the column declining rather than "
+                        "passing it")
     p.add_argument("--census", metavar="PATH",
                    help="classify every onset disagreement by kind "
                         "and write the work list here")

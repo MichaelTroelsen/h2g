@@ -1149,6 +1149,57 @@ def test_a_conversion_inside_the_tolerance_is_not_flagged():
     assert "!" not in fidelity._fmt_length(got)
 
 
+def test_length_rule_failures_excludes_a_shortened_window_that_passes():
+    """The defect this pins: `original_ends` marks every row whose WINDOW was
+    shortened, which is a different question from whether the rule was
+    BROKEN. Geoff Capes and Kings of the Beach ingame are exactly this case
+    -- shortened windows, deltas of +0.16s and +0.92s, nowhere near
+    LENGTH_TOLERANCE -- and the old summary bullet counted rows by
+    `original_ends` alone, so it named both as FAILing the length rule
+    despite `len` reading well inside tolerance for each."""
+    passing = [
+        {"file": "Geoff_Capes_Strongman_Challenge.sid", "original_ends": 17,
+         "length_delta": 0.16, "length_bounded": False},
+        {"file": "Kings_of_the_Beach_ingame.sid", "original_ends": 8,
+         "length_delta": 0.92, "length_bounded": False},
+    ]
+    assert fidelity.length_rule_failures(passing) == []
+
+
+def test_length_rule_failures_names_a_row_that_actually_breaches_tolerance():
+    failing = [
+        {"file": "Geoff_Capes_Strongman_Challenge.sid", "original_ends": 17,
+         "length_delta": 0.16, "length_bounded": False},
+        {"file": "Some_Runaway_Loop.sid", "original_ends": 20,
+         "length_delta": 12.3, "length_bounded": False},
+    ]
+    got = fidelity.length_rule_failures(failing)
+    assert [r["file"] for r in got] == ["Some_Runaway_Loop.sid"]
+
+
+def test_summary_bullet_does_not_name_a_passing_shortened_row_as_a_failure():
+    """Same claim as the two tests above, read off the actual report text --
+    the shape a reader of FIDELITY.md sees."""
+    rows = [_row("Geoff_Capes_Strongman_Challenge.sid", "measured", 1.0)]
+    rows[0].update(original_ends=17, length_delta=0.16, length_bounded=False)
+    rows.append(_row("Kings_of_the_Beach_ingame.sid", "measured", 1.0))
+    rows[-1].update(original_ends=8, length_delta=0.92, length_bounded=False)
+    text = fidelity.report(rows, _Args())
+    assert "FAIL the length rule" not in text
+    assert "window shortened" in text or "WINDOW shortened" in text
+
+
+def test_summary_bullet_names_a_row_that_breaches_the_length_tolerance():
+    rows = [_row("Geoff_Capes_Strongman_Challenge.sid", "measured", 1.0)]
+    rows[0].update(original_ends=17, length_delta=0.16, length_bounded=False)
+    rows.append(_row("Runaway.sid", "measured", 1.0))
+    rows[-1].update(original_ends=20, length_delta=12.3, length_bounded=False)
+    text = fidelity.report(rows, _Args())
+    assert "1 file(s) FAIL the length rule" in text
+    assert "Runaway +12.3s" in text
+    assert "Geoff_Capes_Strongman_Challenge +" not in text
+
+
 def test_an_unmeasured_row_is_as_wide_as_a_measured_one():
     """The `not converted` rows go through a different branch that fills the
     table with dashes, and its count was HARDCODED at 21 against a header
@@ -2155,3 +2206,42 @@ def test_the_score_itself_is_unchanged_by_the_gate_split():
     got = _adsr_pair(0x2401, 0x2402, 0x40, 0x40)
     assert got["adsr"] == 0.0, "the gated-off frames were dropped from the score"
     assert got["adsr_frames"] == 4
+
+
+def test_the_length_probe_factor_is_above_two_so_a_loop_is_separable():
+    """Action Biker's original ends at 59.54s and ours looped with a period of
+    61.44s, so anything at or below 2x cannot separate them."""
+    import fidelity as F
+    assert F.LENGTH_PROBE_FACTOR > 2
+
+
+def test_an_original_still_sounding_at_the_edge_is_not_scored_as_passing():
+    """`-` is the column declining, never a pass. A tune that plays past the
+    probe window keeps declining rather than being given a number."""
+    import fidelity as F
+
+    class V:
+        def __init__(self, frames):
+            self.attack_frames = frames
+
+    # attacks right up to the edge of a 60s window, and no trailing silence
+    dense = [V([f for f in range(0, 60 * 50, 10)]), V([]), V([])]
+    assert F.original_ended(dense, 60) is None
+    assert F.stopped_at(dense, 60) is None
+
+
+def test_a_tune_that_stops_just_before_the_window_edge_is_invisible_to_it():
+    """The blind spot the probe exists to cover: stopping 0.46s before the
+    trace does looks identical to playing on, from inside that window."""
+    import fidelity as F
+
+    class V:
+        def __init__(self, frames):
+            self.attack_frames = frames
+
+    # last attack at 59.54s of a 60s window, evenly spaced before it
+    frames = list(range(0, int(59.54 * 50), 25))
+    side = [V(frames), V([]), V([])]
+    assert F.stopped_at(side, 60) is None, "invisible at the run's own window"
+    # and visible once the window is long enough for the silence to show
+    assert F.stopped_at(side, 180) is not None, "visible at the probe window"

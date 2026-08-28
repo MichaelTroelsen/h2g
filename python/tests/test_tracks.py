@@ -231,3 +231,59 @@ def test_a_track_that_already_loops_is_left_alone_either_way():
     assert legalise_restarts([track], None, patterns) == 0
     assert track == [0, 1, 2, 0xFF, 0x01]
     assert len(patterns) == 1
+
+
+def test_the_silent_park_declines_when_the_pattern_table_is_full():
+    """W_A_R converts to exactly 208 patterns -- Goattracker's MAX_PATT -- and
+    appending a silent pattern took it to 209.
+
+    gt2reloc packs 209 without a word, so nothing reported it: the file was
+    produced, the suite was green, and the packed player then ran subtune 0 at
+    its default tick instead of the CMD_SETTEMPO on row 0 of the pattern its
+    orderlist enters on. melody read 18.6% against 100% with the park declined.
+    """
+    from h2g.patterns import MAX_PATTERNS
+    from h2g.tracks import (GT_END_PATTERN, GT_ORDER_RESTART,
+                            legalise_restarts)
+
+    # one track ending on the $FE marker, and a pattern table already full
+    patterns = [[0x60, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+                for _ in range(MAX_PATTERNS)]
+    tracks = [[0, GT_ORDER_RESTART, 0xFF], [], []]
+    fixed = legalise_restarts(tracks, None, patterns)
+
+    assert fixed == 1, "the illegal restart still has to be repaired"
+    assert len(patterns) == MAX_PATTERNS, (
+        f"emitted {len(patterns)} patterns, one past Goattracker's "
+        f"{MAX_PATTERNS} limit")
+    assert tracks[0][-1] == 0, "with no slot to park in, it restarts at 0"
+
+
+def test_the_silent_park_still_happens_with_one_slot_left():
+    """The guard is `< MAX_PATTERNS`, not a blanket refusal: a file with room
+    for the silent pattern must still get it."""
+    from h2g.patterns import MAX_PATTERNS
+    from h2g.tracks import (GT_END_PATTERN, GT_ORDER_RESTART,
+                            legalise_restarts)
+
+    patterns = [[0x60, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+                for _ in range(MAX_PATTERNS - 1)]
+    tracks = [[0, GT_ORDER_RESTART, 0xFF], [], []]
+    legalise_restarts(tracks, None, patterns)
+    assert len(patterns) == MAX_PATTERNS, "the one free slot should be used"
+
+
+def test_one_silent_pattern_serves_every_parked_track_at_the_boundary():
+    """The pattern is allocated once, so a second parked track must not be
+    refused merely because the table is full AFTER the first allocation."""
+    from h2g.patterns import MAX_PATTERNS
+    from h2g.tracks import (GT_END_PATTERN, GT_ORDER_RESTART,
+                            legalise_restarts)
+
+    patterns = [[0x60, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+                for _ in range(MAX_PATTERNS - 1)]
+    tracks = [[0, GT_ORDER_RESTART, 0xFF], [1, GT_ORDER_RESTART, 0xFF], []]
+    legalise_restarts(tracks, None, patterns)
+    assert len(patterns) == MAX_PATTERNS, "still exactly one silent pattern"
+    parked = [t for t in tracks[:2] if t and t[-1] != 0]
+    assert len(parked) == 2, "both tracks park on the one silent pattern"
