@@ -44,8 +44,9 @@ test dependency).
   repo root, `.\convert.ps1` wraps the same thing and `.\play.ps1` also opens the
   result in GoatTracker.
 - **Open a song for listening with `.\play.ps1 -Presets presets.json`, never by
-  launching `goattrk2.exe` yourself.** 37 of the 82 measured files advance a row
-  every 2-3 frames, and the editor calls the player once a frame, so a bare
+  launching `goattrk2.exe` yourself.** 44 of the 83 preset songs pack above
+  `-S1` -- 26 of them at `-S2` or `-S3` -- so they advance a row every 2-3
+  frames or faster, and the editor calls the player once a frame, so a bare
   launch plays them at 1/multiplier speed. The `.sng` cannot encode the rate —
   Goattracker's fastest steady row is 3 calls (`TEMPO_FASTEST_STEADY`) — but the
   *editor* can be set to it with **SHIFT+F6**, and `play.ps1` reads the song's
@@ -234,7 +235,8 @@ test dependency).
   one of the player's *frames* -- `multiplier` play calls -- so at `-S2` and
   above the waveform entry does not need them all and the spare call carries
   the portamento inside the same frame. 8 corpus files move, exactly
-  `{wave_program AND multiplier > 1}`; the 13 single-speed ones are
+  `{wave_program AND multiplier > 1}` -- **still exactly 8 and 13 at v0.5.407**,
+  re-counted from `presets.json`; the 13 single-speed ones are
   byte-identical, because at `-S1` a second entry would halve the program's
   rate (the trade v0.5.203 measured and refused). ACE II `$EB0A` now
   reproduces the original frequency for frequency -- `0EA3 40A3 0B23 0923
@@ -1041,8 +1043,13 @@ test dependency).
   occasional one, and the median of those ratios is exactly 1.000. That is
   structural, not a threshold to tune: the fix was a different statistic of
   the same two traces, `--pace`'s `drift` line, which integrates the offset
-  instead of averaging ratios. 37 corpus files drift by zero and 29 drift,
-  and the cause is exact — **`drift = -1/(skip + 1)`**, the outer gate's
+  instead of averaging ratios. **That 37-by-zero / 29-drifting split is
+  HISTORY: it was measured before `--regrid` shipped at v0.5.397**, which
+  exists to remove exactly this drift and is adopted on 12 songs. The report's
+  own `drift` column reads 59 of 80 measured files at zero and 21 drifting at
+  v0.5.407 -- a different instrument from `--pace`'s integrated offset, and
+  the two have never been checked against each other, so neither figure
+  licenses the other. The cause is exact — **`drift = -1/(skip + 1)`**, the outer gate's
   skipped call, which `effective_frames` corrects only when the corrected
   row can be packed (Delta 5/2 at `-S2`) and declines when it cannot (IK+'s
   3 x 113/112 wants 339 calls at `-S112`). So it is a known limitation with
@@ -1095,6 +1102,29 @@ test dependency).
   files describe (an option's effect, a player dialect, a limit), the edit
   belongs in the same commit. Docs that drift are worse than absent ones: the
   method write-up is used as reference material by another project.
+- **A measured figure written in the present tense decays into a false one,
+  so GRADE IT.** This file is largely numbers -- corpus counts, per-option
+  populations, before/after percentages -- and nothing re-derives them. A
+  figure is either **historical**, and then it carries the version it was
+  measured at ("W_A_R converted to exactly 208 **at v0.5.400**"), or it is
+  **live**, and then someone has re-checked it and says so. The ungraded
+  middle is the dangerous one, because it reads as current and is cited as
+  current: `melody 18.6% -> 100%` was quoted from this file into a task's
+  verify long after the tree had moved, and W_A_R's 208 was four commits
+  stale before an agent building a test tripped over it.
+  Graded at v0.5.407, cheaply, from `presets.json` and `build/fidelity.json`
+  rather than from a sweep: **stale** -- "37 of the 82 measured files" (83
+  files, and 44 pack above `-S1`), "33 of the 83 preset songs pack at `-S2`"
+  (18 do), "37 corpus files drift by zero and 29 drift" (59 and 21, and the
+  figure predates `--regrid`). **Re-verified live** -- wave_program's 8
+  multispeed against 13 single-speed, `--regrid`'s 12 adoptions, the corpus's
+  95 files / 83 converting, Skate or Die intro's 829 attacks against the
+  original's 1021, Kings of the Beach ingame's wave 57.3% / gate 11.0%. The
+  last two matter because two OPEN tasks key their verify on them: a task
+  whose verify quotes a stale number is a task that cannot be judged done.
+  **The cheap grader is the pair of generated artefacts**, not a corpus run --
+  `presets.json` for populations and `build/fidelity.json` for per-file
+  figures, both regenerated on the commit that changed them.
 - **A gate signature encodes an ADDRESSING MODE, and three files were paying
   for it.** `SPEED_GATE`, `SPEED_GATE_IMM`, `OUTER_GATE` and `OUTER_GATE_RTS`
   all open on `Î` -- `DEC abs`. A player whose counter lives in ZERO PAGE
@@ -1331,7 +1361,8 @@ test dependency).
   point on anything. See § 7.hhhhh.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
-  and 33 of the 83 preset songs pack at `-S2`. Anything new that carries a
+  and 44 of the 83 preset songs pack above `-S1` -- 18 at `-S2`, 26 at `-S2`
+  or `-S3`, the rest higher (v0.5.407, counted from `presets.json`). Anything new that carries a
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
   `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_hold_byte`

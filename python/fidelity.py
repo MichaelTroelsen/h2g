@@ -4926,15 +4926,54 @@ def report(rows: list[dict], args) -> str:
                 "above, before it shrinks (see `length_compare`) -- exceeds "
                 f"that. ({fnames})")
         elif ended:
-            out.append(
-                "- None of the window-shortened files above breach the "
-                f"+-{LENGTH_TOLERANCE:.0f}s length tolerance once measured "
-                "against the original's own length -- e.g. Geoff Capes and "
-                "Kings of the Beach ingame, whose windows are shortened for "
-                "the reason above but whose `len` reads +0.2s and +0.9s. "
-                "The shortening is a measurement necessity, not evidence of "
-                "a defect, for every file it currently applies to.")
-        if ended:
+            # Used to name "Geoff Capes and Kings of the Beach ingame" and
+            # their deltas as bare English text -- an example baked into the
+            # prose rather than read from `ended`, so a run whose corpus does
+            # not carry those two files (or whose measured deltas for them
+            # move) would keep citing numbers no row here backs. Derived from
+            # `ended` instead, the same fix `skip_declined` got a few bullets
+            # up for the identical reason: a stale literal in prose is
+            # invisible to every test that only checks the row it came from.
+            passing = sorted(ended, key=lambda r: r["file"].lower())
+            examples = [r for r in passing if r.get("length_delta") is not None]
+            if examples:
+                enames = ", ".join(
+                    f"{r['file'].replace('.sid', '')} {r['length_delta']:+.1f}s"
+                    for r in examples[:2])
+                out.append(
+                    "- None of the window-shortened files above breach the "
+                    f"+-{LENGTH_TOLERANCE:.0f}s length tolerance once "
+                    f"measured against the original's own length -- e.g. "
+                    f"{enames}, whose windows are shortened for the reason "
+                    "above but whose `len` reads well inside it. The "
+                    "shortening is a measurement necessity, not evidence of "
+                    "a defect, for every file it currently applies to.")
+            else:
+                # Every `ended` row is still bounded (still playing with no
+                # room left to prove a surplus): there is no measured delta
+                # to cite, so say that rather than naming a file with one.
+                out.append(
+                    "- None of the window-shortened files above breach the "
+                    f"+-{LENGTH_TOLERANCE:.0f}s length tolerance -- their "
+                    "`len` is unmeasured rather than failing (still playing, "
+                    "with less than the tolerance left inside the shortened "
+                    "window to prove a surplus). The shortening is a "
+                    "measurement necessity, not evidence of a defect, for "
+                    "every file it currently applies to.")
+        # Gated on whether the probe actually fired in THIS run
+        # (`length_probe_seconds` present on some row), not on `ended` --
+        # those are unrelated sets that only happened to co-occur on the
+        # corpus this bullet was written against. Gating on `ended` let the
+        # bullet assert "it is reached now" for a run where nothing was ever
+        # probed (`--length-probe 1`, or a corpus with no still-at-the-edge
+        # file), which is the exact failure this repo keeps finding: prose
+        # describing what the mechanism does, not what this run's own rows
+        # show it did. Action Biker stays as the illustrative history -- it
+        # is not read from `rows`, so it cannot itself go stale -- but the
+        # "reached now" claim is now backed by a count from this run.
+        probed = [r for r in rows if r.get("length_probe_seconds") is not None]
+        if probed:
+            reached = sum(1 for r in probed if r.get("length_delta") is not None)
             out.append(
                 "- **The length rule reaches past the window, but not "
                 "forever.** Inside its own window a tune that stops half a "
@@ -4946,15 +4985,28 @@ def report(rows: list[dict], args) -> str:
                 "the harness re-asks over "
                 f"{LENGTH_PROBE_FACTOR}x the window (`--length-probe`), and "
                 "traces our side again only if the original turns out to end "
-                "there -- so the extra work falls on the files that can "
-                "actually fail. A file whose original outlasts even that "
-                "still reads `-`, which is the column declining to score what "
-                "it cannot see rather than passing it, so the FAIL count "
-                "remains a floor rather than a census -- just a much lower "
-                "one. The probed rows carry `length_probe_seconds` in "
+                f"there -- this run probed {len(probed)} file(s) this way and "
+                f"measured {reached} of them, so the extra work falls on the "
+                "files that can actually fail. A file whose original outlasts "
+                "even that still reads `-`, which is the column declining to "
+                "score what it cannot see rather than passing it, so the FAIL "
+                "count remains a floor rather than a census -- just a much "
+                "lower one. The probed rows carry `length_probe_seconds` in "
                 "`--json`, because a delta measured over "
                 f"{LENGTH_PROBE_FACTOR}x the window is not comparable to one "
                 "measured inside it.")
+        elif ended:
+            out.append(
+                "- **The length rule reaches past the window, but not "
+                "forever -- and no file in this run needed the probe.** "
+                "Inside its own window a tune that stops half a second "
+                "before the trace does looks exactly like one that plays on, "
+                "so `len` prints `-` for such a file unless a longer probe "
+                "confirms where it ends (`--length-probe`, default "
+                f"{LENGTH_PROBE_FACTOR}x the window) -- Action Biker is the "
+                "known case that forced the mechanism to exist. None of "
+                "this run's files were still sounding at the window edge in "
+                "a way that needed it.")
 
         # The mean hides the shape, and the shape is the finding: this is not
         # a corpus that is uniformly 2/3 right, it is one where most files are

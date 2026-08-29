@@ -1200,6 +1200,83 @@ def test_summary_bullet_names_a_row_that_breaches_the_length_tolerance():
     assert "Geoff_Capes_Strongman_Challenge +" not in text
 
 
+# --- the length-rule summary text is derived from `rows`, not baked in ------
+#
+# Once already, this report shipped a sentence naming Action Biker as a case
+# the length rule "could not reach", in the very report whose `len` column
+# had *just* been extended (the `--length-probe` mechanism) to reach it --
+# prose and number are emitted by the same `report()` function and had moved
+# in opposite directions. The passing-example bullet had the same shape one
+# level down: "Geoff Capes and Kings of the Beach ingame ... +0.2s and
+# +0.9s" was bare English text, not read from any row, so a corpus that
+# stopped carrying those two files (or whose measured deltas for them moved)
+# would keep citing numbers no row here backs. These tests pin both
+# directions of the invariant: a bullet must never claim a figure is
+# unreachable for a run that actually measured it, and never claim a figure
+# was reached when no row in this run backs that claim.
+
+def test_passing_shortened_example_bullet_is_derived_from_rows():
+    """A shortened, passing file that is neither Geoff Capes nor Kings of
+    the Beach ingame must appear under its own name and its own measured
+    delta -- proving the example is read from `rows` -- and the old
+    hardcoded literal must not survive when it does not belong to this
+    run's rows."""
+    rows = [_row("Some_Other_Tune.sid", "measured", 1.0)]
+    rows[0].update(original_ends=9, length_delta=1.23, length_bounded=False)
+    text = fidelity.report(rows, _Args())
+    assert "Some_Other_Tune +1.2s" in text
+    assert "Geoff Capes" not in text
+    assert "+0.2s and +0.9s" not in text
+
+
+def test_passing_shortened_example_bullet_names_no_file_without_a_delta():
+    """Every `ended` row here is still bounded (still playing, with no room
+    left inside the shortened window to prove a surplus) -- there is no
+    measured delta to cite, so the bullet must say that rather than naming a
+    file next to a number it does not have."""
+    rows = [_row("Still_Playing.sid", "measured", 1.0)]
+    rows[0].update(original_ends=9, length_delta=None, length_bounded=True)
+    text = fidelity.report(rows, _Args())
+    bullet = next(l for l in text.splitlines()
+                  if "unmeasured rather than failing" in l)
+    assert "Still_Playing" not in bullet
+
+
+def test_reached_now_claim_is_backed_by_a_probed_row_in_this_run():
+    """The core invariant, in the direction that actually broke once: a row
+    whose `len` was reached through the probe (`length_probe_seconds` set,
+    a measured `length_delta`) must make the summary say the mechanism
+    reached something in THIS run -- not fall back to the "nothing needed
+    it" phrasing, which would misdescribe a row sitting right above it in
+    the same report."""
+    rows = [_row("Edge_Case.sid", "measured", 1.0)]
+    rows[0].update(length_probe_seconds=180, length_delta=0.4,
+                   length_bounded=False)
+    text = fidelity.report(rows, _Args())
+    assert "It is reached now" in text
+    assert "no file in this run needed the probe" not in text
+    assert "probed 1 file(s) this way and measured 1 of them" in text
+
+
+def test_reached_now_claim_is_absent_when_no_row_in_this_run_was_probed():
+    """The other direction, and the one this report actually shipped wrong:
+    the bullet used to be gated on `ended` (files whose window was
+    shortened), a set unrelated to whether the *probe* -- the mechanism the
+    sentence describes -- ever fired. A run with a shortened window but no
+    row carrying `length_probe_seconds` must not claim the mechanism reached
+    anything, because no row backs that claim; it must say so plainly
+    instead of asserting a present-tense capability nothing here exercised."""
+    rows = [_row("Geoff_Capes_Strongman_Challenge.sid", "measured", 1.0)]
+    rows[0].update(original_ends=17, length_delta=0.16, length_bounded=False)
+    text = fidelity.report(rows, _Args())
+    assert "It is reached now" not in text
+    assert "no file in this run needed the probe" in text
+    assert not any(
+        r.get("length_probe_seconds") is not None for r in rows), (
+        "this test's own rows must not carry a probed figure -- otherwise "
+        "it is not testing the unprobed branch")
+
+
 def test_an_unmeasured_row_is_as_wide_as_a_measured_one():
     """The `not converted` rows go through a different branch that fills the
     table with dashes, and its count was HARDCODED at 21 against a header

@@ -1910,6 +1910,45 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     `deficits` is in FRAMES per row and the command counts CALLS, so a
     multispeed song needs `frames * multiplier` calls of compensation; below
     one whole call the pattern is skipped rather than rounded up.
+
+    WHY THIS IS PER SONG AND NEVER A DEFAULT, measured at v0.5.407.
+    One_on_One loses 37.0pp of melody and Sanxion 19.9pp, and the cause is
+    now bounded from both sides:
+
+    * **It is the EXTRA CALL, not the command.** Writing the same
+      `CMD_SETTEMPO` pair with `base` instead of `base + 1` -- the column
+      occupied identically, the row not lengthened -- costs **0.0pp on both
+      files**, and each damaged voice's collapsed-note count returns exactly
+      to its baseline (One_on_One v3 189, Sanxion v2 346). So nothing about
+      placing the command is wrong.
+    * **The damage is WRONG PITCHES, not extra attacks.** In the damaged
+      voice the attack count *falls* slightly (One_on_One v3 375 -> 371)
+      while the COLLAPSED count rises (189 -> 211 against the original's
+      186). `melody` collapses consecutive duplicates, so a longer collapsed
+      sequence means more adjacent notes now DIFFER -- notes being named as
+      neighbouring semitones, which is what a per-call pitch generator
+      sampled at a shifted phase produces. siddump names a note from the
+      frequency on the frame the gate rises, so one extra call before that
+      frame is enough.
+    * **Never voice 0.** The guard above checks the command column of the
+      pattern it writes into, which is voice 0's; `CMD_SETTEMPO` under $80
+      sets all three channels (gplay.c:494), so the lengthening reaches
+      voices 1 and 2 where nothing looked. The damaged voice is v3 on
+      One_on_One and v2 on Sanxion.
+
+    TWO LEADS ARE DEAD, and one of them was this defect's own title.
+    An "extended in-progress slide" is refuted: with `slides` off entirely
+    the collapse is IDENTICAL (-37.0pp and -19.9pp, 189 -> 211 and
+    346 -> 357), and `slides: False` demonstrably changes both files' bytes,
+    so the arm is not vacuous. Three earlier hypotheses -- the funktempo
+    restore value, over-delivery, and slide-heaviness -- are recorded dead in
+    `runs.jsonl` under `regrid-melody-collapse-on-the-six-refused-files`.
+
+    AND THE TWO FILES DO NOT SHARE ONE CAUSE. With vibrato off One_on_One's
+    cost falls from -37.0pp to **-0.2pp** (v3 189 -> 187), so its per-call
+    pitch generator is the vibrato. Sanxion is UNMOVED by the same switch
+    (-19.9pp, 346 -> 357), so a second per-call pitch source is doing it
+    there and has not been identified. Do not treat them as one phenomenon.
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):

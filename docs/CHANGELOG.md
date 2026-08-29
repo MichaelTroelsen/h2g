@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.408 — 2026-08-29
+
+- a /runqueue drain: four cycles, the regrid title lead refuted, and a forced tempo stops lying about its pack factor
+
 ## 0.5.407 — 2026-08-29
 
 - the gate search result is adjudicated and adopted: 16 files gain a hard-restart pair, three settings the search reads backwards are pinned by hand

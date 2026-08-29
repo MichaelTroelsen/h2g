@@ -7,7 +7,8 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
-                         build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames)
+                         build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
+                         recommended_multiplier)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -103,6 +104,34 @@ def check_detection_sound(tracks, pattern_used: int, log: Logger,
         log(f"*** {share} OF ORDERLIST ENTRIES NAME PATTERNS THAT DO NOT EXIST ***")
         raise UnsupportedSidError(
             "ORDERLISTS DO NOT MATCH THE PATTERN TABLE, DETECTION IS UNSOUND")
+
+
+def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
+    """The `gt2reloc -S` factor this tune will be packed at.
+
+    Derived the way the PACKER derives it, which is the point: the harness
+    computes the pack factor for itself (`fidelity._skip_gate_multiplier`
+    re-runs `find_song_speeds` / `recommended_multiplier`), so a conversion
+    that leaves its own `multiplier` at 1 does not thereby get packed at -S1 --
+    it gets packed at -S{M} with every per-call rate written for -S1. Slide
+    steps, drum sweeps, wavetable delays and the pulse programs are all divided
+    by this number at the point they are encoded, so a wrong value here is
+    silent and total.
+
+    That is exactly what `tempo != "auto"` used to do: `multiplier` was
+    assigned only on the fully-derived path, so forcing a tempo left every rate
+    at the -S1 scaling while the file was still packed at its real factor. It
+    read as the probe breaking rather than the hypothesis -- a forced-tempo
+    A/B of Skate or Die intro measured melody 0.0%.
+
+    Falls back to 1 on any failure, which is the same answer the caller used to
+    hardcode, so a file whose speeds cannot be read is no worse off than before.
+    """
+    try:
+        speeds = find_song_speeds(sid, det)
+        return recommended_multiplier(speeds, 0, skip_gate)
+    except Exception:                                          # noqa: BLE001
+        return 1
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -419,11 +448,23 @@ def convert(sid_path: str, log: Logger = print,
     short_row_calls = 0
     if tempo != "auto":
         resolved_tempo = tempo
+        # A forced tempo still gets packed at the factor the file needs, so it
+        # needs the same divisor every rate table is encoded against. See
+        # _derived_multiplier.
+        multiplier = _derived_multiplier(sid, det, skip_gate)
+        if multiplier > 1:
+            log(f"Call multiplier.........: -S{multiplier} (derived; the "
+                f"forced tempo {tempo} is in play calls, not frames)")
     elif det.frames_per_row > 1:
         # gplay.c:494 decrements a value >= 3 and gplay.c:325 makes a row last
         # tempo+1 calls, so for values in this range the command value *is*
         # the number of player calls per row.
         resolved_tempo = det.frames_per_row
+        # Same reasoning as the forced branch above. No corpus file reaches
+        # this branch today (95 of 95 take the derived path), so it is fixed
+        # for the shape rather than for a measured file -- a lesson recorded
+        # in one branch is not a lesson in the file.
+        multiplier = _derived_multiplier(sid, det, skip_gate)
         log(f"Row length..............: {det.frames_per_row} player calls "
             "(from the note-duration table's common factor)")
     else:

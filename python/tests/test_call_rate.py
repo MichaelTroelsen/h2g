@@ -10,9 +10,12 @@ Every place Goattracker takes those numbers is *per play call*: speed-table
 deltas apply inside the per-call TICKNEFFECTS (gplay.c:748/758) and the
 wavetable advances one entry per call (gplay.c:707).
 
-Those units agree only at `gt2reloc -S1`. 33 of the 83 preset corpus songs
-pack at -S2 -- a CIA stub calling the player at 100 Hz -- and every one of
-those rates ran at twice the player's until v0.5.82.
+Those units agree only at `gt2reloc -S1`. 44 of the 83 preset corpus songs
+pack above -S1 -- 18 of them at -S2, a CIA stub calling the player at 100 Hz
+-- and every one of those rates ran at twice the player's until v0.5.82.
+(That count was "33 ... at -S2" here and in CLAUDE.md until v0.5.407, when it
+was re-counted from presets.json; see CLAUDE.md's rule on grading a measured
+figure historical or live.)
 
 **Nothing in FIDELITY.md could move on this until v0.5.99.** Stock siddump
 calls the play routine `seconds * 50` times whatever the PSID speed field says
@@ -505,3 +508,72 @@ def test_the_filter_step_stays_in_one_signed_byte():
     for step in range(256):
         for m in (1, 2, 3, 5, 10):
             assert 0 <= f(step, m) <= 255, (step, m)
+
+
+# ---------------------------------------------------------------------------
+# A forced tempo is still packed at the file's own -S factor.
+#
+# `convert()` assigned `multiplier` only on the fully-derived path, so
+# `convert(tempo=N)` left it at 1 while `fidelity._skip_gate_multiplier`
+# independently derived the real factor and packed at it. Every rate in this
+# file -- drum step, rise shift, wavetable hold, slide step, pulse program --
+# is divided by that number at the point it is encoded, so the mismatch was
+# silent and total: the tables said -S1 and the player ran at -S3.
+#
+# It reads as the probe breaking rather than the hypothesis. A forced-tempo
+# A/B of Skate or Die intro measured melody 0.0% and the tempo override, not
+# the file, was the reason.
+
+
+def _corpus(name):
+    import pathlib
+    corpus = pathlib.Path("C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    p = corpus / name
+    return str(p) if p.is_file() else None
+
+
+def test_a_forced_tempo_uses_the_pack_factor_the_auto_path_derives():
+    """The two paths must agree; they differed by the whole factor."""
+    import h2g.convert as C
+    from h2g.goatwriter import derived_group_tempos
+    from h2g.sidfile import load_sid
+    path = _corpus("ACE_II.sid")
+    if path is None:
+        return                                                   # no corpus
+    quiet = lambda *a, **k: None                                 # noqa: E731
+    sid, det = C._detect_tables(load_sid(path), quiet)
+    forced = C._derived_multiplier(sid, det, True)
+    _, auto, _ = derived_group_tempos(sid, det, 1, True)
+    assert forced == auto, (forced, auto)
+    # Non-vacuous only if this file is actually multispeed.
+    assert forced > 1, forced
+
+
+def test_the_derived_multiplier_reaches_the_bytes_under_a_forced_tempo():
+    """Pin it on OUTPUT, not on the value: a rate divisor that never reaches
+    an encoder is the same defect one layer down.
+
+    Note the two conversions are the SAME LENGTH (16014 bytes for ACE_II) and
+    differ only in the table bytes -- `len(...) == N` would pass either way,
+    which is this repo's standing lesson about checking bytes over length.
+    """
+    import h2g.convert as C
+    quiet = lambda *a, **k: None                                 # noqa: E731
+
+    multi = _corpus("ACE_II.sid")           # packs at -S3
+    single = _corpus("Action_Biker.sid")    # packs at -S1
+    if multi is None or single is None:
+        return                                                   # no corpus
+
+    def convert_with(path, pinned):
+        real = C._derived_multiplier
+        if pinned:
+            C._derived_multiplier = lambda *a, **k: 1
+        try:
+            return C.convert(path, quiet, tempo=6)
+        finally:
+            C._derived_multiplier = real
+
+    assert convert_with(multi, False) != convert_with(multi, True)
+    # And a genuinely single-speed file must be untouched by the change.
+    assert convert_with(single, False) == convert_with(single, True)
