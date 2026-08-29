@@ -1322,12 +1322,17 @@ def test_the_registers_no_dimension_reads_are_named():
     is left, including the volume nibble of a register `filt` reads."""
     assert fidelity.registers_unread({d.key for d in fidelity.DIMENSIONS}) == []
     assert any("master volume" in item for item in fidelity.NOT_MEASURED)
-    # Losing a dimension re-opens exactly its own registers rather than
-    # leaving the account fixed: a run that scored no notes cannot claim to
-    # have compared pitch, and one that scored no envelope is blind to
-    # $D405/$D406 again. ($D404 stays read either way -- the attack metrics
-    # need its gate bit as an edge, which is why note *length* is in
-    # NOT_MEASURED rather than here.)
+    # `hold` (v0.5.196) DOES read $D404 as a duration now, not only as an
+    # edge -- see its own bullet below -- so note length is not something
+    # `registers_unread` can express as a register gap: $D404 is read by
+    # several dimensions (the attack metrics as an edge, `hold` as a
+    # duration) and stays "read" whichever of them survives. That is why
+    # note length gets its own NOT_MEASURED bullet rather than showing up
+    # as a register this function reports unread.
+    note_length_item = next(item for item in fidelity.NOT_MEASURED
+                             if item.startswith("**note length"))
+    assert "hold" in note_length_item and "sound_run_agreement" in note_length_item
+    assert "never as a duration" not in note_length_item
     assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
     # `adsr` and `tail` both read the envelope pair -- one while the note
     # plays, one after it ends -- so dropping either alone leaves it read.

@@ -987,6 +987,26 @@ test dependency).
   affected file's derived value happened to equal the constant it replaced.
   `assert old in s` before every replace, and check the change is in
   `git diff`, not merely that the tests still pass.
+- **`cd X && <edit>` when already in X short-circuits, and the check on the
+  next line passes anyway.** The Bash tool's working directory PERSISTS
+  between calls, so `cd python && <cmd>` succeeds the first time and FAILS the
+  next -- the shell is already in `python/`, `cd python` errors, and `&&`
+  never runs what follows. The exit is non-zero, but the *output* reads like
+  an ordinary command failure, not "your edit did not happen". THREE
+  sightings. Twice in one session the shape was `cd python && python - <<PY`
+  editing a file, followed on the next line by `pytest` -- the edit never
+  ran, and the pytest then PASSED because it ran the unmodified file; belief
+  and reality diverged silently, and only `git status` / `git diff`
+  disagreeing with belief exposed it. Third, v0.5.408:
+  `cd python && python fidelity.py ... -o ../docs/FIDELITY.md`, a ~12-minute
+  corpus regeneration, silently did not run at all --
+  `cd: python: No such file or directory`, exit 1, no artefact written. Use
+  ABSOLUTE paths, or assert the command actually ran; never infer from a
+  later check that an earlier edit landed. Same failure as the rule above
+  with a different mechanism: there, a non-matching `str.replace` returns
+  input unchanged and raises nothing; here, a failed `cd` short-circuits
+  `&&` and the shell reports failure honestly but the next command still
+  reads as though nothing upstream went wrong.
 - **THE CONVERSION MUST BE THE SAME LENGTH AS THE ORIGINAL, WITHIN ±5 SECONDS.**
   A listener's rule, and it is an invariant no column enforces. Where the
   original *ends*, ours must end too. This is not about tempo — `drift`,

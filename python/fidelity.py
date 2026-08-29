@@ -3238,9 +3238,16 @@ SID_REGISTERS = (
 # half the account, and these three have each already been mistaken for a
 # result.
 NOT_MEASURED = (
-    "**note length** -- `$D404`'s gate bit is read as an *edge* (which is what "
-    "makes an attack an attack) and never as a duration, so a note held twice "
-    "as long with the right waveform scores the same",
+    "**note length above `-S3`** -- since v0.5.196, `hold` "
+    "(`sound_run_agreement`) reads `$D404` as a *duration*, not only an edge, "
+    "scoring whether a note keeps its waveform selected as long as the "
+    "original's. But the deficit it exists to catch is a fixed number of "
+    "play *calls*, so at `-S4` and above it is a fraction of a frame and "
+    "siddump -- one sample a frame -- reports zero: a `hold` of 100% there "
+    "means \"not visible\", not \"correct\". Below that rate `--hold-census` "
+    "shows most of what remains still is not a length defect: of 432 census "
+    "rows, 211 are the next-note fetch and 117 the note's own *slot* "
+    "differing rather than the note; the true short/long residue is nine",
     "**a conversion packed above `-S4`** -- siddump samples the SID registers "
     "once per frame whatever the call rate, so a multiplier-5 file has four "
     "calls in five discarded and every gate edge inside them with it. Those "

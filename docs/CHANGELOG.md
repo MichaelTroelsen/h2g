@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.409 — 2026-08-29
+
+- the regrid melody collapse is --no-test-restart, and v0.5.408's two-causes reading is retracted
+
 ## 0.5.408 — 2026-08-29
 
 - a /runqueue drain: four cycles, the regrid title lead refuted, and a forced tempo stops lying about its pack factor

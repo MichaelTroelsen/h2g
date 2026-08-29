@@ -1944,11 +1944,42 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     restore value, over-delivery, and slide-heaviness -- are recorded dead in
     `runs.jsonl` under `regrid-melody-collapse-on-the-six-refused-files`.
 
-    AND THE TWO FILES DO NOT SHARE ONE CAUSE. With vibrato off One_on_One's
-    cost falls from -37.0pp to **-0.2pp** (v3 189 -> 187), so its per-call
-    pitch generator is the vibrato. Sanxion is UNMOVED by the same switch
-    (-19.9pp, 346 -> 357), so a second per-call pitch source is doing it
-    there and has not been identified. Do not treat them as one phenomenon.
+    THEY DO SHARE ONE CAUSE, AND IT IS `--no-test-restart`. The paragraph
+    this replaces said the opposite -- "the two files do not share one cause"
+    -- on the strength of a vibrato A/B, and that reading was WRONG. It is
+    corrected here rather than only in a commit message, because the wrong
+    version is exactly the kind of sentence that gets quoted forward.
+
+    Turning `no_test_restart` off removes the collapse on BOTH files, and the
+    damaged voice lands on the original's own note count:
+
+        Sanxion     -19.9pp -> **+0.2pp**   v2 collapsed 346 -> 343 (orig 344)
+        One_on_One  -37.0pp -> **+0.5pp**   v3 collapsed 188 -> 186 (orig 186)
+
+    Neither `slides`, `vibrato` nor `two_stage` moves Sanxion's -19.9pp by a
+    tenth of a point. Vibrato DOES mask One_on_One's (-37.0 -> -0.2), which is
+    what produced the wrong reading: it is a CO-FACTOR on that file, not the
+    cause, and one A/B that happens to remove a symptom is not an attribution.
+
+    The mechanism is the one this option is already documented for.
+    `--no-test-restart` deletes the testbit frame, which is the only frame our
+    conversions spend below $10, and siddump needs a frame below $10 to name an
+    attack at all (siddump.c:434-437). So that option OWNS FRAME 0 -- and a
+    compensating row moves the frame boundary underneath it. Nothing here is a
+    pitch generator; it is two options contending for one frame, which is the
+    Star Paws shape CLAUDE.md already records: when a forced option produces a
+    COLLAPSE rather than a shortfall, suspect the combination before the
+    mechanism.
+
+    NECESSARY, NOT SUFFICIENT -- and that is the open question, which is also
+    the Rikky question in its sharper form. Six corpus files carry
+    `no_test_restart` and could take `--regrid`; FOUR ship with it adopted and
+    are fine (Arcade_Classics, **Rikky**, Sigma_Seven, Wiz) while two collapse
+    (Sanxion, One_on_One). All six are `-S1`, and their row counts interleave
+    (Sigma_Seven 3599 against One_on_One 5584; Wiz 20373 against Sanxion
+    17660), so neither the multiplier nor the size is the discriminator.
+    Whatever gates it is unknown. Do not adopt `--regrid` on a file carrying
+    `no_test_restart` without measuring that file.
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):
