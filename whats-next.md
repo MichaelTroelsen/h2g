@@ -1,105 +1,129 @@
 <original_task>
-Resume h2g work at HEAD `a5335f9` (v0.5.403).
+**Adopt the gate search result** — the tail of
+`fidelity-better-has-no-gate-term` (`.claude/tasks/whattask.json`), whose
+premise was false and whose real defect was fixed in v0.5.406. What remained
+was to regenerate the artefacts against the adjudicated `presets.json`,
+confirm the gate column moves on the files it should and nowhere else, and
+commit.
 
-**This file is not the open-task list and is not a knowledge store.**
-`.claude/tasks/whattask.json` is the list — `/whattask` regenerates it,
-`/whattask --dry-run` prints it without paying for a pass. The durable
-knowledge is in `CLAUDE.md`, which is loaded into every session automatically
-and is therefore the only place a fact cannot quietly rot.
-
-What is left here is the one thing neither of those holds: what is IN FLIGHT
-right now, and what a fresh session would otherwise have to re-derive about
-the state of the tree.
-
-This file has twice been read as an open backlog after its contents landed —
-once for fifteen commits. If the section below is long, check it against
-`git log` before believing a word of it.
+This file is **state, not a knowledge store** — the design decision shipped in
+v0.5.404. Durable facts belong in `CLAUDE.md`, which loads into every session;
+the open-task list is `.claude/tasks/whattask.json`. What is here is what is
+IN FLIGHT and would otherwise have to be re-derived.
 </original_task>
 
 <work_completed>
-Nothing is in flight. The tree is clean at `a5335f9` and everything through
-v0.5.403 is pushed.
+## Committed
 
-The recent stretch, newest first — read `git log` for the rest:
+- **v0.5.404 `8d45bdd`** — `whats-next.md` stops being a knowledge store.
+- **v0.5.405 `9b939a6`** — the `MAX_PATTERNS` guard gets a corpus test;
+  `melody`'s description gains what collapsing *hides*.
+- **v0.5.406 `4d9d9f2`** — `HARD_RESTART_ENABLERS` (the search can now reach
+  a pair), the `--fidelity` carry-forward fix, and a retraction of v0.5.403's
+  false claim.
+- **v0.5.407 (this commit)** — the adjudicated search result adopted:
+  `presets.json`, the three hand adjudications in `python/presets.py`, the two
+  test guards they require, and a regenerated `docs/FIDELITY.md`.
 
-- **v0.5.403** — `hard_restart_frames` is searchable, and the search still
-  cannot select it: `fidelity_better` has no `gate` term, so a value worth
-  gate 50→75% with every other column identical reads as a tie.
-- **v0.5.402** — the outer-gate rescue spellings are anchored at the PSID play
-  address. Zero corpus files move; the anchor is what makes them safe rather
-  than lucky.
-- **v0.5.401** — three unread speed gates (two zero-page spellings and a
-  PAL/NTSC-selected reload). **The corpus now has ZERO files failing the ±5 s
-  length rule**, from two.
-- **v0.5.400** — W_A_R shipped 209 patterns into a 208-pattern format and
-  nothing said so. melody 18.6 → 100%, attacks 327/327.
-- **v0.5.397** — `--regrid`, for the fractional part of a row the tempo cannot
-  express.
+## What v0.5.407 contains
+
+`presets.json` diff against the pre-search snapshot, adjudicated by hand:
+**LOST 2 / GAINED 24 across 16 files / CHANGED 1**.
+
+`FIDELITY_CONFIRMED` (three `no_test_restart` settings the fresh search drops
+and should not have — the melody/pitch gain is siddump's artefact and the
+`hold` loss is real): Arcade_Classics, Powerplay, Pygmies_Revenge.
+
+`FIDELITY_VETOED` (ACE_II `hard_restart_frames`): +15.1 gate and nothing
+worse, but it changes a `.sng` a listener approved. Withheld pending item 1
+below. `max_hard_restart` is NOT vetoed — it was already in the approved
+bytes, and a first version that vetoed it too changed the very file the entry
+exists to protect.
+
+## The regeneration, verified
+
+`docs/FIDELITY.md` and `build/fidelity.json` regenerated at `-t 60` against
+the adopted presets, then A/B'd against a snapshot of the previous run.
+
+- **`output_sha` moved on exactly 17 files** — the 16 that gained a setting,
+  plus `Dragons_Lair_Part_II` (documented LOST #1). Nothing else moved.
+- **`melody`, `sequence`, `pitch` and both attack counts are identical to
+  three decimals on all 16.** Only `gate` moves, which is the shape a
+  hard-restart change is supposed to have.
+- Largest gains: Thanatos 49.0 → 96.0, Las Vegas 51.7 → 91.2,
+  Delta_Mix-E-Load_loader 59.6 → 93.6, Kings_of_the_Beach_intro 76.6 → 91.9,
+  Ninja 50.1 → 74.7, Samantha_Fox_Strip_Poker 32.6 → 65.4.
+  The four the previous session spot-measured by hand reproduce exactly.
+- **One cell worse corpus-wide**: `Dragons_Lair_Part_II` `wave` 73.1 → 70.4,
+  from the adjudicated `no_test_restart` loss, on a row that is a known
+  harness artefact (melody 14%, 359 attacks against the original's 556).
+- **`len`: zero breaches of the ±5 s rule**, measured on 6 of 83 rows both
+  before and after — unchanged coverage, so nothing regressed.
 </work_completed>
 
 <work_remaining>
-**Read `.claude/tasks/whattask.json`.** It is generated, keyed to a commit, and
-`/whattask --dry-run` prints it without regenerating.
-
-At `a5335f9` it held 18 tasks, 10 ready. The two waiting on a human, which no
-amount of work resolves:
-
-- **`monty-firstwave-trade-needs-a-listen`** — Monty's
-  `real_firstwave_instruments` [1..16] buys `hold` 0→88% and costs `pitch`
-  (95→92). Three columns hang on which sounds closer.
-- **`ace-ii-rest-envelope-awaits-a-listen`** — ACE_II measures adsr 93→96 with
-  `rest_envelope_silence`, but its human approval pins the no-flag bytes.
-
-The highest-value ready one is **`fidelity-better-has-no-gate-term`**: it is
-the measured blocker for `hard_restart_frames`, and the common cause behind
-three options (`silent_park`, `regrid`, `hard_restart_frames`) that all sit
-outside the preset search for the same reason.
+1. **`[user]` ACE_II carries TWO withheld gains awaiting one listening
+   session** — `rest_envelope_silence` (+3 adsr, v0.5.394) and
+   `hard_restart_frames` (+15.1 gate, v0.5.407). Both are recorded with their
+   numbers, so the ask is one question rather than a re-measurement. Stage the
+   pair with `listen.py`.
+2. **`[subagent]` Add a CLAUDE.md line about the `cd X && …` short-circuit.**
+   It has now bitten three times: twice in the previous session (the edit
+   never ran and the following `pytest` passed against the unmodified file),
+   once in this one (the whole `fidelity.py` regeneration silently did
+   nothing, `cd: python: No such file or directory`, exit 1). The session cwd
+   persists across Bash calls, so a `cd python` that succeeded once fails the
+   next time. Use absolute paths, or assert the command ran.
+3. **`[main]` `.claude/tasks/runs.jsonl` has no line for either half of this
+   work.** Both halves were run directly rather than through `/runtask`, so
+   the lock was claimed and released without a record. The lock registry
+   (`.claude/tasks/serial.lock`) is empty; nothing is held.
 </work_remaining>
 
 <attempted_approaches>
-Refutations live in `CLAUDE.md` beside the mechanisms they refute, because
-that is where someone about to repeat one will be reading. The ones from the
-most recent work, so a fresh session does not re-run them:
-
-- **Three dead hypotheses for `--regrid`'s melody collapse** on One_on_One
-  (−37pp) and Sanxion (−20pp): funktempo restore value (Monty has tempo 2 and
-  *gains*), over-delivery (delivered/owed is 1.08/1.01/1.07/0.93 across gainers
-  and losers alike), and slide-heaviness (Rikky carries 5982 slides and gains).
-  The surviving symptom is a per-voice **collapsed-sequence lengthening**, and
-  any candidate must also explain why Rikky is unaffected.
-- **`greloc.c` is innocent of W_A_R's tempo loss.** Lines 1823-1830 keep a
-  global tempo and merely decrement it. Two sessions pointed there; the cause
-  was a pattern-count overrun.
-- **Forcing `tempo=N` is not a valid A/B lever for a rate question.** It skips
-  the branch assigning `multiplier`, leaving every per-call rate at the −S1
-  scaling. It read melody 0.0% and that was the probe breaking.
+- **`cd python && <cmd>` when the session cwd is already `python/`** — the
+  `cd` fails, `&&` short-circuits, and the command reports exit 1 having done
+  nothing. Third sighting. See item 2 above.
+- **An A/B probe asserting `status == "ok"`** — the real value is
+  `"measured"`, and the assertion is the only reason that surfaced instead of
+  the probe silently comparing zero rows. Same class as the two probe failures
+  CLAUDE.md records; the fix is that the probe asserts the columns and rows it
+  claims to read, before reading them.
+- **`gate` and the other columns in `build/fidelity.json` are fractions
+  (0.0–1.0), not percentages** — the report prints percentages.
+- **`build/` is gitignored**, so `build/fidelity.json` is not committed;
+  only `docs/FIDELITY.md` is. `docs/SURVEY.md` carries no version stamp and is
+  presets-independent, so it did not need regenerating for this change.
 </attempted_approaches>
 
 <critical_context>
-Everything durable that used to live here is now in `CLAUDE.md` — the
-verification patterns, the gotchas, the two-genuinely-different-cases note.
-It is loaded automatically every session, which this file is not.
+Durable repo knowledge is in `CLAUDE.md` and is not repeated here.
 
-## Environment
-- Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob` (95 files, 83 convert)
-- `sidplayfp`: `C:/Users/mit/Downloads/sidplayfp-2.15.2-32bit-mmx/sidplayfp.exe`
-- GoatTracker sources: `C:/Users/mit/Downloads/GoatTracker_2.76/src` — this is
-  where `gplay.c`, `greloc.c` and `gcommon.h` are read from, and
-  `goattracker2/src` has `player.s`, the PACKED player, which is the one that
-  ships and which disagrees with `gplay.c` about the first call.
-- `build/` and `graphify-out/` are gitignored. 12 CPUs. Full suite ≈ 5m45s.
-- Locking: `serial.lock` + `serial.lock.d` mutex; `.tmp` + `mv -f`, never
-  truncate; a helper that records its own pid reaps its own live records, so
-  record `null`.
+- **`FIDELITY_CONFIRMED` / `FIDELITY_VETOED`** (`python/presets.py`) are the
+  repo's mechanism for a setting the search gets wrong, and each entry says
+  WHICH reason. `test_wave_program.py` pins `FIDELITY_VETOED` by whole-dict
+  equality — adding an entry requires updating that assertion, deliberately.
+- **A veto/confirmation may name only a searchable option.**
+  `test_preset_passthrough.py` asserts `keys <= set(FIDELITY_TOGGLES)`,
+  widened in v0.5.406 to `| {"hard_restart_frames"}` because the frame pass
+  made it searchable.
+- **The search's `base` excludes the per-song options** (`regrid`,
+  `real_firstwave_instruments`, `pulse_phase`, `rest_envelope_silence`), so a
+  setting the search measured was measured WITHOUT them. The 24 gains were
+  spot-checked with full presets on 4 of the 16 files, and the regenerated
+  report — which does use full presets — now confirms all 16.
+- **A `--fidelity` search costs ~30 min**, not the ~10 an earlier note
+  claimed; the joint frame pass tripled the integer-pass cost.
+- Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob` (95 files,
+  83 convert). Full suite ~6 min. GoatTracker sources:
+  `C:/Users/mit/Downloads/GoatTracker_2.76/src`.
 </critical_context>
 
 <current_state>
-Clean at `a5335f9` (v0.5.403), pushed, `git status --porcelain` empty.
-Suite 1615 passed / 2 skipped. All three human approvals (ACE_II,
-Action_Biker, 5_Title_Tunes) verify HOLDS by sha256.
+HEAD v0.5.407, everything above committed. Working tree clean.
 
-Artefacts are current as of v0.5.401's conversions. `presets.json` is
-unchanged since v0.5.401 — v0.5.402 and v0.5.403 moved no conversion bytes.
+**Verified before committing:** full suite green; the A/B above; all three
+human approvals (ACE_II, Action_Biker, 5_Title_Tunes) HOLD by sha256.
 
-The open list is `.claude/tasks/whattask.json`. This file is state, not a queue.
+**Open for the user:** the ACE_II listening question in item 1.
 </current_state>

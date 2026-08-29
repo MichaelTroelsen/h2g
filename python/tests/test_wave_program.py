@@ -552,8 +552,15 @@ def test_the_listening_confirmation_is_recorded_with_its_reason():
     # Dragons_Lair_Part_II's subtune-correspondence bug (its init routine
     # remaps subtune 0 to our subtune 9) had invalidated its pitch_seq
     # measurement, an unrelated veto reason from the retired listening one.
+    # v0.5.406 adds the second entry, and for a THIRD kind of reason: not a
+    # listening veto and not an invalidated measurement, but a setting the
+    # search measures as better (ACE_II gate 78.3 -> 93.4%, every other column
+    # identical) that cannot be taken because it changes the .sng a listener
+    # approved. The trade belongs to the listener; the entry says so and
+    # carries the number so the ask is one question rather than a re-run.
     assert presets.FIDELITY_VETOED == {
-        "Dragons_Lair_Part_II.sid": {"pitch_seq"}}
+        "Dragons_Lair_Part_II.sid": {"pitch_seq"},
+        "ACE_II.sid": {"hard_restart_frames"}}
 
 
 def test_the_budget_counts_the_hold_entry_too():

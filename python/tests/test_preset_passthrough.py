@@ -225,7 +225,11 @@ def test_a_listening_veto_names_a_real_option_and_a_real_file():
     and it was wrong. A stale key here would silently stop vetoing."""
     for name, keys in presets.FIDELITY_VETOED.items():
         assert name.endswith(".sid"), name
-        assert keys <= set(presets.FIDELITY_TOGGLES), (name, keys)
+        # `hard_restart_frames` joined the searchable set at
+        # v0.5.406 via the frame pass, so a veto or a
+        # confirmation may name it: it is a real decision
+        # the search can now make, and un-make.
+        assert keys <= set(presets.FIDELITY_TOGGLES) | {"hard_restart_frames"}, (name, keys)
 
 
 def test_the_shipped_presets_honour_every_veto():

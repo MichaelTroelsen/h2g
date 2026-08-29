@@ -277,6 +277,28 @@ EXCLUDED_FROM_ALWAYS = {
 # generated and would lose the edit -- along with the reason -- on every
 # regeneration, including a plain carry-forward run.
 FIDELITY_VETOED: dict[str, set[str]] = {
+    # ACE_II's frame pair, withheld because it INVALIDATES A HUMAN APPROVAL.
+    # The 0.5.406 search selects `hard_restart_frames: 3` with
+    # `max_hard_restart`, and it is a real gain -- measured at 60s with
+    # everything else held:
+    #
+    #   approved bytes   gate 78.3%   mel 99.7  seq 99.8  pit 100  wav 87.3  ads 93.3  hld 42.9
+    #   search's choice  gate 93.4%   ... every other column IDENTICAL
+    #
+    # +15.1 points of gate and nothing worse. But approved.json pins the sha256
+    # of the .sng a listener signed off, and adopting this changes it -- so the
+    # trade is the listener's to make, not a search's and not this commit's.
+    # Exactly the call v0.5.394 made on the same file for
+    # `rest_envelope_silence` (+3 adsr, also withheld, also still owed).
+    #
+    # Lift it by getting the verdict, not by re-reading the number: if the
+    # listener prefers the new build, delete this entry and re-approve.
+    # ONLY the frame count: `max_hard_restart` was already in the
+    # approved bytes, and vetoing it would change the .sng this entry
+    # exists to protect -- which it briefly did, caught by the approval
+    # check rather than by reading the diff.
+    "ACE_II.sid": {"hard_restart_frames"},
+
     "Dragons_Lair_Part_II.sid": {"pitch_seq"},
     # The v0.5.208+ --fidelity run traced this file's subtune 0 (its PSID
     # startSong) and scored a default-config melody of 9%, low enough for
@@ -306,6 +328,37 @@ FIDELITY_VETOED: dict[str, set[str]] = {
 # them up has not happened. Each entry says which. Same reason for living here rather than in the
 # generated presets.json -- the file would lose both the edit and the reason.
 FIDELITY_CONFIRMED: dict[str, set[str]] = {
+    # THREE FILES WHOSE `no_test_restart` THE 0.5.406 SEARCH DROPS, and the
+    # measurement that says keep it. The joint frame pass shifted the greedy
+    # path, and on these the walk now prefers a combination without it:
+    #
+    #                    melody      pitch       hold        wave
+    #   Arcade Classics  98.5->100   92.9->100   75.0->0.0   68.1->66.2
+    #   Powerplay        99.3=99.3   97.3->100   75.0->0.0   95.5->91.8
+    #   Pygmies Revenge  97.0=97.4   97.5->100   83.3->0.0   61.0->56.0
+    #
+    # The melody and pitch gains are the ARTEFACT and the hold loss is the
+    # real change, which is this option's documented shape read backwards:
+    # `--no-test-restart` deletes the testbit frame, the only frame our
+    # conversions spend below $10, and siddump needs one to name an attack at
+    # all (siddump.c:434-437). So without the option siddump sees our attacks
+    # and `melody`/`pitch` read higher -- while `hold`, which measures note
+    # LENGTH from sound runs, loses everything it had.
+    #
+    # `fidelity_better` has a `holds_right` term and still prefers the swap,
+    # because its questions are one-sided: a melody gain is enough to accept
+    # regardless of what hold does, and only `keeps_notes` and `gave_back` can
+    # veto. Neither reads hold. That is the "any one improving is a sound
+    # acceptance rule and an unsound replacement rule" case, and it is why
+    # these are pinned rather than argued.
+    #
+    # Dragons_Lair_Part_II drops the same option and is NOT pinned: its hold
+    # is 0.0 either way, so the option buys it nothing, and its row is a known
+    # harness artefact (melody 14%, the subtune correspondence).
+    "Arcade_Classics.sid": {"no_test_restart"},
+    "Powerplay_Hockey_USA_vs_USSR.sid": {"no_test_restart"},
+    "Pygmies_Revenge.sid": {"no_test_restart"},
+
     # The snare FIDELITY_VETOED's entry above names as the real one. With
     # v0.5.203's two fixes -- one wavetable entry per opcode, and the record's
     # own waveform restored before the program stops -- its noise runs are

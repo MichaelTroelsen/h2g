@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.407 — 2026-08-29
+
+- the gate search result is adjudicated and adopted: 16 files gain a hard-restart pair, three settings the search reads backwards are pinned by hand
+
 ## 0.5.406 — 2026-08-28
 
 - the frame count and its bound are searched as a pair, and a fidelity run stops deleting what it cannot re-derive
