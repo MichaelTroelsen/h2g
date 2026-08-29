@@ -1554,6 +1554,28 @@ So, for any work that runs concurrently:
   copy the file, or use a scratch branch. The same caution applies to anything
   else stored per-repo rather than per-worktree — `refs/stash`, the object
   store, `.git/config`, and the index of any worktree you did not create.
+- **A worktree isolates the CHECKOUT. It does not isolate the SCRATCHPAD, and
+  concurrent agents share the orchestrator's.** Seen at v0.5.409: a delegated
+  agent's `bh_probe.py` and a whole `bh_scratch/` corpus export appeared in the
+  *orchestrator's* scratchpad directory, and the orchestrator's own
+  identically-purposed `bytehash.py` had vanished by the time it was next
+  needed. Nothing announced either. This is exactly the shared-fixed-filename
+  failure this project already fixed **inside** `fidelity.py` at v0.5.66 --
+  two runs writing one directory with the same filenames and silently
+  measuring each other's intermediates, producing plausible numbers about the
+  wrong tune -- reappearing one level up, between the agents instead of
+  between the runs. The isolation flag does not reach it because the
+  scratchpad is not in the repo and so is not in anybody's `touches`.
+  The convention: **give every probe a name no sibling would choose** -- a
+  per-agent subdirectory, or a task-id/cycle prefix on the file itself
+  (`bh_cycle1.py`, `rec1.jsonl`) -- and never a bare `probe.py`, `scratch/` or
+  `out.json`. The same rule covers a scratch path that escapes the session
+  directory at all: `cp x /tmp/...` **succeeds** on this machine, so an
+  `|| <scratchpad fallback>` after it never runs and the file lands somewhere
+  the next command cannot find. Two sightings, one session apart.
+  The dispatch-template half of this -- telling each agent where to put its
+  scratch -- lives in the `mit-setup` plugin outside this tree, so it cannot
+  be fixed here; this bullet is the half that belongs to the repo.
 - **No PR touches `SURVEY.md`, `presets.json` or `FIDELITY.md`.** They are
   generated; parallel branches conflict on every line of them, and a
   per-branch regeneration records a tree state that never existed.

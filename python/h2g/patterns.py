@@ -1930,11 +1930,17 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
       sampled at a shifted phase produces. siddump names a note from the
       frequency on the frame the gate rises, so one extra call before that
       frame is enough.
-    * **Never voice 0.** The guard above checks the command column of the
-      pattern it writes into, which is voice 0's; `CMD_SETTEMPO` under $80
-      sets all three channels (gplay.c:494), so the lengthening reaches
-      voices 1 and 2 where nothing looked. The damaged voice is v3 on
-      One_on_One and v2 on Sanxion.
+    * **One voice per file, and NOT always voice 0's neighbours.** The guard
+      above checks the command column of the pattern it writes into, which is
+      voice 0's; `CMD_SETTEMPO` under $80 sets all three channels
+      (gplay.c:494), so the lengthening reaches voices 1 and 2 where nothing
+      looked. This bullet used to say "Never voice 0", inferred from two
+      files; measured over all seven at v0.5.410, **Powerplay Hockey's damaged
+      voice IS voice 0**. What does hold is that exactly one voice per file is
+      damaged, and `--diagnose`'s worst-voice ratio is monotone in the file's
+      loss: One_on_One v2 0.47 (-37.0pp), Sanxion v1 0.55 (-19.9pp), Wiz v1
+      0.79 (+0.8pp), Powerplay v0 0.84 (-2.9pp), and Rikky, Sigma Seven and
+      Arcade Classics all >= 0.97 (~0pp).
 
     TWO LEADS ARE DEAD, and one of them was this defect's own title.
     An "extended in-progress slide" is refuted: with `slides` off entirely
@@ -1972,14 +1978,52 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     mechanism.
 
     NECESSARY, NOT SUFFICIENT -- and that is the open question, which is also
-    the Rikky question in its sharper form. Six corpus files carry
-    `no_test_restart` and could take `--regrid`; FOUR ship with it adopted and
-    are fine (Arcade_Classics, **Rikky**, Sigma_Seven, Wiz) while two collapse
-    (Sanxion, One_on_One). All six are `-S1`, and their row counts interleave
-    (Sigma_Seven 3599 against One_on_One 5584; Wiz 20373 against Sanxion
-    17660), so neither the multiplier nor the size is the discriminator.
-    Whatever gates it is unknown. Do not adopt `--regrid` on a file carrying
-    `no_test_restart` without measuring that file.
+    the Rikky question in its sharper form. **SEVEN** corpus files carry
+    `no_test_restart` and are regrid-eligible, not six: Powerplay Hockey is
+    the one this paragraph used to miss, and it ships `regrid: false` because
+    it was never measured rather than because it was refused -- `--regrid` is
+    not searchable by `fidelity_better`, so every adoption is hand-recorded
+    and an unmeasured file is indistinguishable from a rejected one. Measured
+    at v0.5.410 (melody, regrid off -> on): Arcade_Classics -0.01, Sigma_Seven
+    -0.14, Rikky -0.79, Wiz **+0.84**, Powerplay **-2.87**, Sanxion -19.87,
+    One_on_One -37.02. It is a continuum, and "four immune, two collapse" was
+    an artefact of the missing seventh and of reading a per-FILE number: Wiz
+    carries a voice at 0.79 while its file score improves.
+
+    THREE CANDIDATE DISCRIMINATORS ARE DEAD, all measured at v0.5.410.
+    **Dose**: compensating rows per 1000 song rows run Wiz 2.90, Arcade 3.73,
+    Sigma_Seven 3.89, Sanxion 4.13, Powerplay 4.83, One_on_One 7.34, **Rikky
+    13.18** -- Rikky takes the heaviest dose of all seven, 196 rows against
+    One_on_One's 41, and is unharmed. **Per-call pitch movement**, at file
+    level: Rikky has the most slides per attack (29.5) and is immune, while
+    Sanxion has the FEWEST of everything (0.43 slides, 0.82 reversals, 48.5
+    bend per attack) and collapses second-worst -- exactly backwards. **A
+    harness subtune artefact**: the correspondence is the identity 0->0 and
+    `startup_lag` is identical in both arms on all seven, so the two arms do
+    compare the same music.
+
+    AND THE TWO CASUALTIES DO NOT SHARE A PROXIMATE DAMAGE, though
+    `no_test_restart` remains necessary for both. Sanxion's damaged voice has
+    its pitches **97% the same** at ratio 0.55 -- spurious or missing note
+    EVENTS, not misnaming -- where One_on_One's has pitches 40% the same and
+    no constant shift beats it. Note also that `--regrid` moves our attack
+    count toward the original's on all seven and exactly onto it on five,
+    One_on_One included (543 -> 537 against 537) while its melody falls 37pp:
+    the right notes, in the right number, with the wrong names.
+
+    THE STANDING LEAD, unfalsified, is cross-voice pattern GEOMETRY. The
+    compensation is chosen from voice 0's exclusive patterns and placed by
+    voice 0's geometry, but the lengthening reaches all three channels -- so
+    where the other voices share voice 0's pattern lengths it lands at a
+    musically equivalent point, and where they do not it lands arbitrarily.
+    Rikky's three voices are near-identical ([2,4,5,65,68,127] /
+    [2,3,5,65,68,127] / [2,3,5,17,68,127]) and it absorbs 196 compensations;
+    Sigma Seven's v0 and v1 are identical; One_on_One's damaged v2 is [17,65]
+    against v0's [2,3,33,53,65,127] and is the worst. Falsify it by forcing
+    compensation into a length-matched and a mismatched pattern on ONE file
+    and seeing whether the effect follows the geometry rather than the file.
+    Until then: do not adopt `--regrid` on a file carrying `no_test_restart`
+    without measuring that file.
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):

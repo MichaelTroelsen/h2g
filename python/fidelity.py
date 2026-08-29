@@ -6093,11 +6093,15 @@ def _skip_gate_multiplier(sid: Path) -> int | None:
     """recommended_multiplier with the skip counter taken into account."""
     try:
         from h2g.convert import _detect_tables
-        from h2g.goatwriter import find_song_speeds, recommended_multiplier
+        from h2g.goatwriter import (find_song_speeds, pack_subtune,
+                                    recommended_multiplier)
         s = load_sid(str(sid))
+        # Captured BEFORE _detect_tables reassigns `s`, and off the loaded
+        # file rather than off `sid`, which is a Path here and not a SidFile.
+        start_song = s.start_song
         s, det = _detect_tables(s, lambda m: None)
         sp = find_song_speeds(s, det if det.can_convert else None)
-        return recommended_multiplier(sp, 0, True)
+        return recommended_multiplier(sp, pack_subtune(sp, start_song), True)
     except Exception:                                          # noqa: BLE001
         return None
 

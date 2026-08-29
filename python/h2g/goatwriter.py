@@ -2426,6 +2426,54 @@ def effective_frames(speeds: Optional[SongSpeeds], subtune: int = 0,
     return speeds.frames_for(subtune)
 
 
+def pack_subtune(speeds: Optional[SongSpeeds], start_song: int) -> int:
+    """The subtune whose clock the packed `.sid`'s `-S` factor must serve.
+
+    A packed file has ONE call rate and its subtunes disagree about what they
+    want. Until v0.5.410 the rate was taken from subtune 0, with
+    `derived_group_tempos` calling it "the canonical tune, and what a packed
+    .sid plays by default". The second half of that is simply false: what a
+    packed `.sid` plays by default is the PSID header's `startSong`, which is
+    `fidelity.resolve_subtune`'s rule and the reason it exists -- "the subtune
+    a player selects when the user selects none, and therefore the one that is
+    *the tune*". Six corpus files set it past subtune 0.
+
+    Measured over the corpus at v0.5.409, 12 files have SOME subtune wanting a
+    higher multiplier than subtune 0 -- but only TWO have a *start* subtune
+    that does, and those two are the whole of this rule's reach:
+
+        Kings_of_the_Beach_ingame  start 4   8/3 frames  -S1 -> -S3
+        Knucklebusters             start 1   7/3 frames  -S1 -> -S3
+
+    **Serving every subtune is not the alternative it looks like.** A row of
+    p/q frames is exact at any multiple of q, so a rate exact for all of them
+    is the LCM of their denominators: 24 for Monty and Knucklebusters, 40 for
+    Delta and Wiz, and **140 for Flash Gordon**. MAX_ROW_DENOMINATOR is 10 and
+    its comment sizes that at about three quarters of a PAL frame's 19656
+    cycles, with 127 "not a call rate at all" -- so the exact rule is
+    unreachable for half this population, and `max()` over the subtunes is not
+    a weaker version of it but a different, inexact compromise that ALSO costs
+    the subtune everyone actually hears: every per-call rate this writer emits
+    is divided by the multiplier at the point it is encoded, and CLAUDE.md
+    records that a file packed above `-S4` cannot be judged on a normal trace.
+    Delta would go to `-S10` to serve its subtune 10.
+
+    So the other ten files keep a rate that is wrong for one of their
+    non-starting subtunes, and that is a real and UNFIXED defect -- it is just
+    not one a single packed file can fix. Anything wanting per-subtune rates
+    needs a file per subtune, which is a different feature.
+
+    Clamped to the speeds table, which every caller derives from the same
+    `find_song_speeds`, because ALL FIVE call sites must agree: a `.sng`
+    written for one rate and packed at another is the Las Vegas failure --
+    silence, with `melody` still reading 100%.
+    """
+    s = max(0, start_song - 1)
+    if speeds is not None and s >= len(speeds.frames):
+        return 0
+    return s
+
+
 def recommended_multiplier(speeds: Optional[SongSpeeds],
                            subtune: int = 0, skip_gate: bool = False) -> int:
     """gt2reloc -S value under which this tune's tempo is expressible.
@@ -2520,7 +2568,10 @@ def orderlist_tempo_values(sid: SidFile, det: Detection,
     speeds = find_song_speeds(sid, det)
     mult = 1
     if tempo == "auto" and det.frames_per_row <= 1:
-        mult = recommended_multiplier(speeds, 0, skip_gate)
+        # The same pack factor `derived_group_tempos` picks, from the same
+        # subtune -- these two write operands onto one timebase.
+        mult = recommended_multiplier(
+            speeds, pack_subtune(speeds, sid.start_song), skip_gate)
     out: List[dict] = []
     for ti, m in enumerate(reloads):
         # `frames_for`, not `effective_frames`: the outer counter's factor is
@@ -2541,12 +2592,16 @@ def derived_group_tempos(sid: SidFile, det: Detection, groups: int,
 
     `groups` is how many 3-track groups the caller has, which equals the
     header subtune numbering as long as no subtune has been split (the caller
-    checks that). The multiplier is chosen from subtune 0 -- the canonical
-    tune, and what a packed .sid plays by default -- and every subtune's value
-    is scaled by it, so the whole file shares one timebase.
+    checks that). The multiplier is chosen from the subtune the file STARTS on
+    (`pack_subtune`) and every subtune's value is scaled by it, so the whole
+    file shares one timebase. It used to be chosen from subtune 0 on the
+    reasoning that this is "what a packed .sid plays by default"; a packed
+    .sid plays its header's `startSong`, and two corpus files were packed for
+    a subtune they do not open on.
     """
     speeds = find_song_speeds(sid, det)
-    mult = recommended_multiplier(speeds, 0, skip_gate)
+    mult = recommended_multiplier(speeds, pack_subtune(speeds, sid.start_song),
+                                  skip_gate)
     values = [tempo_command_value(sid, s, speeds, mult, skip_gate)
               for s in range(groups)]
     note = speeds.source if speeds is not None else \

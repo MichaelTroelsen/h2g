@@ -81,7 +81,7 @@ from pathlib import Path
 from h2g import __version__
 from h2g.convert import _detect_tables, convert
 from h2g.goatwriter import (FORMAT_GTS5, find_song_speeds,
-                            recommended_multiplier)
+                            pack_subtune, recommended_multiplier)
 from h2g.patterns import DEFAULT_TRACK
 from h2g.sidfile import find_freq_table, load_sid
 
@@ -468,7 +468,8 @@ def pack_multiplier(sid_path: Path) -> int:
         sid = load_sid(str(sid_path))
         sid, det = _detect_tables(sid, lambda m: None)
         speeds = find_song_speeds(sid, det if det.can_convert else None)
-        return recommended_multiplier(speeds, 0,
+        return recommended_multiplier(speeds,
+                                      pack_subtune(speeds, sid.start_song),
                                       FIXED.get("skip_gate", False))
     except Exception:  # noqa: BLE001 - an unreadable song just packs plainly
         return 1

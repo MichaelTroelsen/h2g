@@ -8,7 +8,7 @@ from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
-                         recommended_multiplier)
+                         pack_subtune, recommended_multiplier)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        ConversionAbort, build_speed_table,
                        scale_portamento_data, command_floor,
@@ -129,7 +129,8 @@ def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
     """
     try:
         speeds = find_song_speeds(sid, det)
-        return recommended_multiplier(speeds, 0, skip_gate)
+        return recommended_multiplier(
+            speeds, pack_subtune(speeds, sid.start_song), skip_gate)
     except Exception:                                          # noqa: BLE001
         return 1
 
