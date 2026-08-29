@@ -2142,6 +2142,64 @@ def _gate_hits(sid: SidFile):
     return hits
 
 
+# The KERNAL's PAL/NTSC flag: 0 is NTSC, non-zero PAL. A player that ships one
+# binary for both territories selects its rates through it.
+PAL_NTSC_FLAG_LDX = b"\xae\xa6\x02"        # LDX $02A6
+# Anything that would put a different value in X between that load and ours.
+_X_RELOADERS = frozenset({0xA2, 0xAE, 0xA6, 0xB6, 0xBE})
+# How far back to look. The three loads of Skate or Die intro's init span 18
+# bytes from its `LDX $02A6`; 24 covers that without reaching the previous
+# routine. Widening it is what would start matching an unrelated `LDX $02A6`.
+PAL_NTSC_WINDOW = 24
+# Which entry to take when a table is flag-indexed rather than subtune-indexed.
+# This corpus is PAL and every measurement here compares against a 50 Hz
+# trace, the same reason `OUTER_GATE_PAL` reads its second immediate.
+PAL_NTSC_ENTRY = 1
+
+
+def _pal_ntsc_indexed(data: bytes, load_pos: int) -> bool:
+    """Whether the `LDA table,X` at `load_pos` indexes by TERRITORY, not subtune.
+
+    Both gate readers assume X holds the subtune number, because in 82 of the
+    83 convertible files it does. Skate or Die intro is the exception, and it
+    is the one this repo had already guessed at: CLAUDE.md carried "one gate
+    picks its reload from the PAL/NTSC flag" as a standing hypothesis for this
+    very file, found real in Las Vegas first. Its init is
+
+        $3FE0  LDX $02A6        ; 0 = NTSC
+        $3FE3  LDA $3FDA,X      ; 7F 04   -- the OUTER gate's skip
+        $3FE6  STA $45DD
+        $3FE9  STA $4B14
+        $3FEC  LDA $3FDC,X
+        $3FEF  STA $4801
+        $3FF2  LDA $3FDE,X      ; 02 01   -- the inner gate's reload
+        $3FF5  STA $4B13
+
+    -- two of the three tables the gate readers already locate, indexed by
+    territory. Reading entry 0 gave NTSC's 127 and 2, so the row came out
+    384/127 = 3.024 frames; MAX_ROW_DENOMINATOR refuses 127 and it fell back
+    to a flat 3, which `--pace` measured as a ratio of exactly 1.200 with an
+    IQR of 1.200-1.200 over 826 gaps -- a wrong constant, not a mechanism.
+    PAL's entries are 4 and 1, so the row is 2 x 5/4 = **5/2 = 2.50 frames**,
+    which packs exactly as tempo 5 at `-S2`.
+
+    Note what makes this file need its own reading at all: it installs its own
+    IRQ, so its PSID header names NO play routine, and `_find_outer_gate`'s
+    rescue spellings are anchored at the play address and correctly decline.
+    Nothing anchored there could ever have reached it.
+
+    Scoped by construction to a load whose index register was last set from
+    `$02A6`: censused over the corpus this matches EXACTLY ONE FILE, and the
+    `LDY $02A6` spelling occurs in none, so only the X form is read.
+    """
+    lo = max(0, load_pos - PAL_NTSC_WINDOW)
+    seg = data[lo:load_pos]
+    i = seg.rfind(PAL_NTSC_FLAG_LDX)
+    if i < 0:
+        return False
+    return not any(b in _X_RELOADERS for b in seg[i + 3:])
+
+
 def _speeds_for_reload(sid: SidFile, rel_addr: int) -> Optional[SongSpeeds]:
     """SongSpeeds for one gate, from its init table or its static byte."""
     data = sid.data
@@ -2155,7 +2213,11 @@ def _speeds_for_reload(sid: SidFile, rel_addr: int) -> Optional[SongSpeeds]:
         off = sid.to_offset(table_addr)
         if not 0 <= off < len(data):
             continue
-        vals = data[off:off + n]
+        if _pal_ntsc_indexed(data, m.start()):
+            # Territory-indexed: one value for every subtune, not one each.
+            vals = data[off + PAL_NTSC_ENTRY:off + PAL_NTSC_ENTRY + 1] * n
+        else:
+            vals = data[off:off + n]
         frames = tuple(v + 1 if v <= MAX_SANE_SPEED_RELOAD else None
                        for v in vals)
         if frames and frames[0] is not None:
@@ -2270,6 +2332,12 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
             off = sid.to_offset(table)
             if 0 <= off < len(sid.data):
                 n = max(subtunes, 1)
+                if _pal_ntsc_indexed(sid.data, i - 3):
+                    # Territory-indexed, so neither the subtune count nor the
+                    # adjacent-table bound applies -- there is one value.
+                    vals = sid.data[off + PAL_NTSC_ENTRY:
+                                    off + PAL_NTSC_ENTRY + 1] * n
+                    return tuple(v or None for v in vals), table
                 bound = _adjacent_table_bound(sid, i - 3, table)
                 if bound is not None and bound < n:
                     n = bound

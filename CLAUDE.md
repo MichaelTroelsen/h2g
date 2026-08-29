@@ -465,7 +465,8 @@ test dependency).
   gate (`$E1E6 LDA #$FE` into the mask `AND`ed at `$E464`) and the release
   really does sound. Two mechanisms, two populations, and they are
   **disjoint**: `envelope_cut` 33 files, `rest_silence_envelope` 21, zero
-  overlap, which is the check that says they are different players rather
+  overlap — **re-verified live at v0.5.410**, all three numbers unchanged —
+  which is the check that says they are different players rather
   than one probe missing a spelling. The faithful write is a `CMD_SETSR $00`
   on the rest row, self-restoring exactly as the player's is (the next note
   reloads it, gplay.c:398 / player.s:882). See README § `--rest-envelope-
@@ -676,10 +677,17 @@ test dependency).
   measures a note-length deficit that is a fixed number of play *calls* -- the
   next-note fetch is `gatetimer & $3f` calls early -- so at `-S4` it is a
   quarter of a frame and siddump, sampling once per frame, reports zero. The
-  corpus splits exactly that way: `-S1` 106 of 121 instruments at -1, `-S4`
-  17 of 17 at 0. **A zero up there means "not visible", not "correct"**, and it
-  predicts that the preset search can never take `--no-test-restart` above
-  `-S3` -- all nine files that carry it are `-S1` but for Delta. State the
+  corpus splits exactly that way. **Re-measured at v0.5.410** from
+  `fidelity.py --hold-census` over 526 instruments in 82 files, the `fetch`
+  kind (the -1 deficit) runs **109 of 138 instruments at `-S1`**, 144 of 154
+  at `-S2`, 12 of 66 at `-S3` and **0 of 28 at `-S4`**, 0 above it. The old
+  figures here were `-S1` 106 of 121 and `-S4` 17 of 17, which were right in
+  shape and stale in both counts. **A zero up there means "not visible", not
+  "correct"**, and it predicts that the preset search can never take
+  `--no-test-restart` above `-S3` -- all nine files that carry it are `-S1`
+  but for Delta. The census makes the same point a second way: the `-S1` rows
+  WITH `--no-test-restart` show `fetch` 0 of 59, because that option deletes
+  the very frame the column reads. State the
   blindness in the Dimension itself; a column reading well for the wrong reason
   is worse than one reading badly.
 - **The multiplier belongs to our side only.** `_measure` traces the original
@@ -1049,8 +1057,22 @@ test dependency).
   is its mechanism**: every file this paragraph used to cite as proof — Tarzan,
   Delta, ACE II, Deep Strike, Lightforce, Thanatos, Pygmies Revenge, Human
   Race — now measures **0% out**, packed exactly via the multiplier (Delta's
-  row is 5/2 at `-S2`, Deep Strike's 8/3 at `-S3`). Corpus today: of 63 timed
-  files, **47 exact and 50 within 2%**. That idiom — an outer gate ending in
+  row is 5/2 at `-S2`, Deep Strike's 8/3 at `-S3`). **Corpus re-swept at
+  v0.5.410**: of the 83 converting files, 69 carry enough matched notes to be
+  timed at all, and **all 69 read 0% out at the rate they are packed for** --
+  the printed figure is an integer percentage, so 0% means under half a
+  percent. The line here used to read "of 63 timed files, 47 exact and 50
+  within 2%"; the distribution has closed completely since, which is the
+  accumulated effect of the gate readings (`SPEED_GATE_IMM` v0.5.248, the
+  rescue spellings v0.5.402, the PAL/NTSC table v0.5.410) rather than of any
+  one of them. TWO THINGS THAT NUMBER DOES NOT SAY, both of which this
+  paragraph goes on to make elsewhere and which a bare "69 of 69" would
+  contradict. The 14 files that cannot be timed are NOT evidence of correct
+  pacing -- `--pace` declines them because too few of the original's notes
+  matched. And "0% out" is the MEDIAN RATIO, which is structurally blind to a
+  row wrong by a fraction of a frame: Auf Wiedersehen Monty reads 0% out here
+  and still drifted -9.30 before `--regrid`. The integrated `drift` line, not
+  this one, is the instrument for that. That idiom — an outer gate ending in
   `RTS` rather than `JMP past-the-gate`, which `OUTER_GATE` did not match, in
   **9 files** — is read since v0.5.248: Formula 1 Simulator's melody went
   88 → 100% and Thrust's 75 → 94%, both with `retrig` landing on 1.00 and
@@ -1155,9 +1177,23 @@ test dependency).
   Ninja's `SPEED_GATE_IMM` (v0.5.248) and the `OUTER_GATE_RTS` spelling before
   it. `SPEED_GATE_ZP` and `OUTER_GATE_RTS_ZP` are the zero-page pair, each
   consulted only where the existing spellings matched nothing.
-  **And one gate picks its reload from the PAL/NTSC flag**, which is the
-  standing hypothesis this file carries for Skate or Die intro, found real
-  somewhere else: Las Vegas reads `$02A6` (the KERNAL flag, 0 = NTSC) and
+  **And one gate picks its reload from the PAL/NTSC flag.** This was written
+  as "the standing hypothesis this file carries for Skate or Die intro, found
+  real somewhere else". **It is no longer a hypothesis: at v0.5.410 it was
+  found real in Skate or Die intro itself**, and it was the whole of that
+  file's 20% deficit. Its init reads `LDX $02A6` and indexes THREE tables by
+  it — two of which the gate readers already locate — so entry 0 gave NTSC's
+  127 and 2 (row 384/127, refused by `MAX_ROW_DENOMINATOR`, falling back to a
+  flat 3) where PAL's 4 and 1 give `2 x 5/4 = 5/2 = 2.50` frames, packing
+  exactly as tempo 5 at `-S2`. `--pace` read the old state as a ratio of
+  exactly 1.200 with IQR 1.200-1.200 over 826 gaps, and the fixed state as
+  1.000 with IQR 1.000-1.000 and drift 0.00. `_pal_ntsc_indexed` is the
+  reading, shared by both gate readers, and it matches **exactly one corpus
+  file**. Note why nothing had reached it: that file installs its own IRQ, so
+  its header's `playAddress` is 0 and the play-address-anchored rescue
+  spellings below correctly decline — a file can be unreachable by every
+  spelling and still have a readable gate. The original sighting was Las
+  Vegas, which reads `$02A6` (the KERNAL flag, 0 = NTSC) and
   chooses between two immediates, carrying the value in **Y** -- `LDY #imm ...
   STY` where every other spelling is `LDA #imm ... STA`. Nothing anchored on
   an `LDA #` opcode could ever have seen it. `OUTER_GATE_PAL` takes the PAL
@@ -1221,9 +1257,19 @@ test dependency).
     (`gplay.c:914`), so a pattern full of `00` is inheriting, not silent. 5
     Title Tunes has 160/160/32 such rows and they are all correct; Pygmies
     Revenge's 256/4/128 are all *before* that channel's first instrument and
-    are also correct. International Karate is the one real case -- channels 1
-    and 3 set no instrument on ANY row, so the conversion plays whatever
-    carried in. Three files, one symptom, one defect.
+    are also correct. **The third sentence used to name International Karate
+    as "the one real case -- channels 1 and 3 set no instrument on ANY row".
+    That is FALSE and was checked at v0.5.410**: its three voices name an
+    instrument on 263 / 71 / 94 rows and IK+'s on 105 / 127 / 27, censused
+    over every pattern each voice's orderlist reaches and read back with
+    `songview.parse_sng` rather than from the emitter. Ask the precise
+    question instead -- how many NOTES sound before their own voice has ever
+    named an instrument, walking the orderlist in play order -- and the answer
+    is **four files and 61 notes**: Dragons_Lair_Part_II 32 (subtunes 5 and 6,
+    voice 2), Bangkok_Knights 20 (voice 0), Delta_Mix-E-Load_loader 8 (voices
+    0 and 2), Gremlins 1. Neither IK file is among them. The lesson is the one
+    this bullet is about: `instr 00` is inheritance, so "names no instrument"
+    is never the quantity you want -- "sounds a note before the first one" is.
   * **`songview`'s `instruments[0]` has `number = 1`.** The list is 0-based and
     the numbering is not; with Goattracker numbering patterns in HEX and the
     editor's pattern being post-dedup, three separate off-by-somethings sit
@@ -1496,8 +1542,18 @@ test dependency).
     voice the instrument the player starts it on where no pattern names one.
     **Off by default and deliberately not in `presets.json`'s `always`
     block**: the index array is mutable player state, so its file-image value
-    is the starting instrument only for a rip of a single tune — right for
-    `Delta_Mix-E-Load_loader`, wrong for a fifteen-subtune demo. See
+    is the starting instrument only for a rip of a single tune, and wrong for
+    a fifteen-subtune demo. **This used to add "right for
+    `Delta_Mix-E-Load_loader`", and the measurement says otherwise** — forced
+    on at v0.5.410 that file loses `wave` 99.7 → 66.4%, `adsr` 66.7 → 33.3%
+    and `pulse_span` 1.007 → 0.387, with `our_noise_frames` 0 → 1503;
+    Bangkok_Knights, the only other file where the hazard permits the option,
+    also loses (`wave` 42.8 → 40.5%, `gate` 64.1 → 60.2%). So the option is
+    not merely unselected, it is measurably wrong on both files it can legally
+    apply to, and it has no measured beneficiary today. Note too that
+    `Delta_Mix-E-Load_loader`'s PSID header declares **16** subtunes while its
+    `.sng` emits **1**: the criterion for the hazard is the EMITTED count, not
+    the header's, and the docstring does not say which it means. See
     README.md § `--initial-instrument`.
   - `patterns.py` — `convert_patterns` + `reindex_tracks`, port of `GoatConvertPattern`
     (pattern decode, >376-byte pattern slicing, track pattern-number re-indexing).

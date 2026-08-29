@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.411 — 2026-08-29
+
+- Skate or Die intro's gate is indexed by territory, not by subtune
+
 ## 0.5.410 — 2026-08-29
 
 - the pack factor belongs to the subtune the file starts on
