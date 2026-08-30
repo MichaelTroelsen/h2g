@@ -5873,9 +5873,48 @@ def ticks_report(sid: Path, args) -> str:
 # whose row length is independently confirmed carry 100-400 gaps at an IQR of
 # 0-3%, while the two that produced §7c carried 7 and 19.
 MIN_PACE_GAPS = 40
-MAX_PACE_IQR = 0.10
+# **RE-DERIVED AT v0.5.417, and the bound sits in an EMPTY REGION.** It was 0.10,
+# calibrated when the confirmed files carried "an IQR of 0-3%" -- true then, and
+# false since the gate readings of v0.5.248/402/410 gave many files an exactly
+# FRACTIONAL row, whose gaps legitimately alternate (8/3 frames is 3,3,2).
+#
+# Measured, not guessed, and NON-CIRCULARLY: take the 43 files whose pacing is
+# confirmed by OTHER columns (melody >= 99%, drift 0.00, retrigger within 2% of
+# 1.00) and look at the IQR they actually show. Median 0.000, p90 0.191, MAX
+# **0.310** -- so 0.10 was refusing 8 of the 43 files it should have been
+# vouching for. Every one of the 8 has a fractional row.
+#
+# The whole corpus's IQRs, sorted, around the decision region:
+#
+#     ... 0.133  0.152  0.191 x6  0.310  |  1.500  1.600  2.455  5.727
+#
+# There is NOTHING between 0.31 and 1.50, so any bound in [0.32, 1.49] gives
+# identical behaviour and this is a threshold with a gap under it rather than a
+# number fitted to the data. 0.35 is the conservative end of that range.
+#
+# The four that stay refused are the right four -- Dragons_Lair_Part_II (5.727,
+# melody 14%), Commodore_64_Music_Examples (1.600, melody 14%), Chicken_Song
+# (1.500) and Rikky (2.455). They are the separate "wildly spread ratio"
+# population and must NOT be folded into this bound.
+#
+# THE COUNTERFACTUAL WAS CHECKED BEFORE THE CHANGE, because a loosened veto is
+# only safe if what it admits is sound: the 10 newly-timed files return a median
+# of exactly 1.000 in NINE cases (the tenth, Bump_Set_Spike, reads 1.077 and is
+# a real measurement). Thundercats is the one worth naming -- melody 77% and a
+# median of exactly 1.000, which is precisely the melody-is-not-a-clock
+# distinction --pace exists to draw.
+MAX_PACE_IQR = 0.35
 # ...and the matched notes must cover enough of the original to be a sample of
 # it rather than of whichever fragment happened to survive the conversion.
+#
+# LEFT ALONE AT v0.5.417, with the measurement written down rather than a change
+# made: NONE of the 43 independently-confirmed files falls below 0.30 (their
+# minimum coverage is 0.718), so there is no evidence to move it. The note that
+# prompted the re-derivation -- "five of the six files refused for COVERAGE
+# convert at 97-100% melody" -- is STALE: only TWO files are coverage-refused
+# today, Commodore_64_Music_Examples (0.102) and Dragons_Lair_Part_II (0.081),
+# and both convert at 14% melody, so both refusals are correct. The other four
+# stopped being refused on their own as note matching improved.
 MIN_PACE_COVERAGE = 0.30
 
 # Two onsets close together say nothing about a drift of a frame per hundred:

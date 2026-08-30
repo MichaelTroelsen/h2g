@@ -219,3 +219,38 @@ def test_the_two_pace_gates_are_the_only_reasons_a_file_is_untimed():
     """
     assert 0 < fidelity.MIN_PACE_COVERAGE < 1
     assert 0 < fidelity.MAX_PACE_IQR < 1
+
+def test_the_iqr_bound_sits_in_an_empty_region_of_the_corpus():
+    """The bound is a gap, not a fitted number.
+
+    Re-derived at v0.5.417 from the 43 files whose pacing is confirmed by OTHER
+    columns (melody >= 99%, drift 0.00, retrigger ~1.00), so the calibration is
+    not circular. Their IQRs run to a MAXIMUM of 0.310; the whole corpus's next
+    values up are 1.500, 1.600, 2.455 and 5.727. Nothing lies between, so any
+    bound in [0.32, 1.49] behaves identically and 0.35 is the conservative end.
+
+    Pinned at both ends because both ends are load-bearing: below 0.32 the eight
+    confirmed fractional-row files are refused again (ACE_II, Chain_Reaction,
+    Food_Feud, Game_Killer, Kings_of_the_Beach_intro, Saboteur_II,
+    Samantha_Fox_Strip_Poker, Zoolook), and at or above 1.50 the four genuinely
+    wildly-spread files start being timed (Dragons_Lair_Part_II at melody 14%
+    among them).
+    """
+    import fidelity as F
+    assert 0.32 <= F.MAX_PACE_IQR < 1.50, (
+        "MAX_PACE_IQR has left the empty region between the confirmed files' "
+        "maximum (0.310) and the wildly-spread population's minimum (1.500)")
+
+
+def test_the_coverage_bound_is_below_every_confirmed_files_coverage():
+    """Left at 0.30 deliberately, and this says why it was not moved.
+
+    None of the 43 independently-confirmed files falls below it -- their minimum
+    coverage is 0.718 -- so there was no evidence to change it. The two files it
+    refuses today, Commodore_64_Music_Examples (0.102) and Dragons_Lair_Part_II
+    (0.081), both convert at 14% melody, so both refusals are correct.
+    """
+    import fidelity as F
+    assert F.MIN_PACE_COVERAGE <= 0.71, (
+        "MIN_PACE_COVERAGE has risen above the lowest coverage among files "
+        "whose pacing is independently confirmed (Saboteur_II, 0.718)")
