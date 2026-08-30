@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.415 — 2026-08-30
+
+- the 5 Title Tunes register attribution
+
 ## 0.5.414 — 2026-08-30
 
 - four task records and the regenerated plan
