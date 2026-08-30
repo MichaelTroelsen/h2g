@@ -137,3 +137,38 @@ def test_the_aligned_percentages_are_flagged_as_not_the_report_columns():
     exactly that confusion."""
     text = "\n".join(M.aligned_dump(ALIGN_DUMP, ALIGN_DUMP, 0, 10))
     assert "not `FIDELITY.md`'s columns" in text
+
+def test_the_map_joins_through_paired_keys_not_through_equality():
+    """One instrument must not print as two because --cut-release moved its key.
+
+    The ADSR pair identifies an instrument only while both sides carry the same
+    one, and `--cut-release` zeroes the release nibble in OURS. Joined on `==`,
+    Action_Biker's single 125-note pulse instrument printed as `$0730` "we play
+    it, the original does not" ABOVE `$0739` "sounded by the original, with no
+    instrument of ours" -- same waveform, same note count, two rows.
+
+    fidelity solved this at v0.5.292 and instrmap never used the solution. The
+    behaviour is pinned at the fidelity level (the join really does pair a
+    release-only difference, and really does NOT pair a difference elsewhere)
+    and the wiring is pinned at the instrmap level, because a correct matcher
+    that nothing calls is what this was.
+    """
+    import pathlib
+    import fidelity as F
+
+    # release-only difference: joined
+    assert dict(F.paired_keys({0x0739: 1}, {0x0730: 1})) == {0x0739: 0x0730}
+    # difference OUTSIDE the release nibble: not joined
+    assert dict(F.paired_keys({0x0839: 1}, {0x0730: 1})) == {}
+    # an exact match is preferred and leaves the masked one alone
+    got = dict(F.paired_keys({0x0730: 1, 0x0739: 1}, {0x0730: 1}))
+    assert got == {0x0730: 0x0730}, got
+
+    src = pathlib.Path(M.__file__).read_text(encoding="utf-8")
+    assert "F.paired_keys(o_by, u_by)" in src, (
+        "the mapping table no longer joins through the shared matcher")
+    assert "_ours_to_theirs" in src, (
+        "the mapping table no longer resolves our ADSR to the original's")
+    assert "ins[_their] = ins[_our]" in src, (
+        "the ORIGINAL's siddump is no longer labelled through the same join, "
+        "so the dump and the table above it can disagree")

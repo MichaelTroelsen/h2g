@@ -561,12 +561,40 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
 
     lines.append("## Mapping")
     lines.append("")
+    # **JOIN THROUGH fidelity.paired_keys, NOT THROUGH `==`.** The ADSR pair
+    # identifies an instrument only while both sides carry the same one, and
+    # `--cut-release` zeroes the release nibble in OURS -- so on the 33 files
+    # with `envelope_cut` an exact join splits one instrument into two rows,
+    # "we play it, the original does not" above "sounded by the original, with
+    # no instrument of ours", with identical note counts. Action_Biker printed
+    # $0730 and $0739 that way, 125 notes each.
+    #
+    # fidelity solved this at v0.5.292 and this file never used the solution:
+    # exact matches first, and a release-masked match only for keys left over
+    # on both sides and only where exactly one candidate remains, so
+    # instruments that really do differ only in release keep their identity.
+    # Reusing it rather than re-deriving it also means the map cannot disagree
+    # with the columns scored beside it.
+    _pairs = dict(F.paired_keys(o_by, u_by))          # their key -> our key
+    _ours_to_theirs = {v: k for k, v in _pairs.items()}
+
+    def _orig_hist(our_adsr):
+        """The original's histogram for one of our ADSR pairs, matched."""
+        h = o_by.get(our_adsr)
+        if h is not None:
+            return h
+        t = _ours_to_theirs.get(our_adsr)
+        return o_by.get(t) if t is not None else None
+
     rows, seen = [], set()
     for i, r in enumerate(recs):
         adsr = (r[0] << 8) | r[1]
         seen.add(adsr)
+        t = _ours_to_theirs.get(adsr)
+        if t is not None:
+            seen.add(t)                 # so it is not also listed as unmatched
         ow = first_wave(r[2])
-        oh, uh = o_by.get(adsr), u_by.get(adsr)
+        oh, uh = _orig_hist(adsr), u_by.get(adsr)
         o_n = sum(oh.values()) if oh else 0
         u_n = sum(uh.values()) if uh else 0
         o_w = _wave_name(oh.most_common(1)[0][0][0]) if oh else "—"
@@ -754,6 +782,15 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
         ins = defaultdict(list)
         for i, r in enumerate(recs):
             ins[(r[0] << 8) | r[1]].append(i + 1)
+        # The ORIGINAL's dump is labelled with OUR instrument numbers, so it
+        # needs the same join the mapping table uses -- otherwise an ADSR that
+        # --cut-release moved is lettered as unmatched here while the table
+        # above has just matched it, and the two halves of one page disagree.
+        # Aliases only: a their-key entry is added when it is unclaimed, so an
+        # instrument that carries its own ADSR on both sides is untouched.
+        for _their, _our in _pairs.items():
+            if _our in ins and _their not in ins:
+                ins[_their] = ins[_our]
 
         # The aligned view goes FIRST, before the two raw dumps: it is the one
         # that answers "where do these differ", and the raw dumps are the

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.423 — 2026-08-30
+
+- instrmap joins through paired_keys
+
 ## 0.5.422 — 2026-08-30
 
 - todo.md#138 re-read against the current report
