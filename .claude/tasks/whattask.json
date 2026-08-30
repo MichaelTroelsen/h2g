@@ -1,14 +1,14 @@
 {
   "generated_from": {
-    "head": "cb2011c",
+    "head": "01d80e6",
     "sources": [
-      "whats-next.md",
+      "whats-next.md (spent)",
       "todo.md",
-      "TODO.md",
       ".claude/tasks/runs.jsonl",
       ".claude/tasks/whattask.json (carried)",
       "docs/FIDELITY.md",
       "presets.json",
+      "approved.json",
       "graphify-out/graph.json",
       "git log",
       "issues (none reachable)",
@@ -52,7 +52,9 @@
       "mcp": [],
       "needs_main": true,
       "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
+      "depends_on": [
+        "rikky-immunity-to-regrid-is-unexplained"
+      ],
       "blocked_on": null,
       "decision": null,
       "verify": "each refusal adopted with drift improved and melody held, or refused with the mechanism written down. It is NECESSARY BUT NOT SUFFICIENT that the file carries --no-test-restart (v0.5.409), and the discriminator is still unknown after SIX dead candidates -- see rikky-immunity-to-regrid-is-unexplained, which is the same question and carries the full list. Do not start here: this task cannot close until that one does.",
@@ -104,7 +106,7 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "each register-column deficit on Action_Biker is attributed to a mechanism or shown to be a harness artefact. Its notes are already exact (melody/seq/pitch 100%, retrig 1.00, drift +0.0, 291 against 291), so nothing here is about the notes -- and CLAUDE.md warns that a register agreement must be read next to both sides' note counts",
+      "verify": "PARTLY DONE AT a10ad02 -- five of seven columns are attributed and MUST NOT be redone. adsr 69% is --cut-release, PROVEN by turning it off (adsr 0.6919 -> 0.9005, voice 2 0.187 -> 0.813, wave / gate / melody all exactly unchanged). hold 0% is `fetch`, 4 of 4, sound_run_delta -1. nrun 0% is ONE comparison (noise_run_instruments: 1). vib 0.68x has zero `absent` and zero `slow` instruments, so it is not a missing mechanism; depth 1.36x is an overshoot. WHAT IS LEFT, both localised and neither explained: gate 72% -- gate_ours_ringing 415, gate_ours_silent 0, all 288 of the original's releases matched, 311 of the 415 in voice 2 -- and wave 97%, which is voice 2's 62-frame noise shortfall (682 against 744). Note EVERY deficit on this file is voice 2; voices 0 and 1 read adsr 94.4% and wave 98.3%.",
       "why_model": "attributing register deficits is the falsification-shaped work this repo keeps getting wrong",
       "why_mode": "a diagnosis whose value is the attribution, not a number",
       "why_lane": "reads build/instrmap, which the instrmap rebuild writes"
@@ -129,7 +131,7 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "each register-column deficit on 5_Title_Tunes is attributed or shown to be a harness artefact. Sequence is already exact (melody/seq/pitch 100%, retrig 1.00, drift +0.0, onset 100%, 938 original notes against 935). It is one of the three HUMAN-APPROVED files, so any change must be checked against approved.json's sha256 before it ships",
+      "verify": "PARTLY DONE AT 01d80e6 -- four of six columns are attributed and MUST NOT be redone. hold 86% is one instrument (`fetch`, delta -1; sound_run_delta 0 overall). nrun `-` is correct: noise_run_instruments 0, the tune sounds no noise, which also explains slides 0/0, filt 0/0 and the bend/depth/cut dashes. gate 75% is exactly one frame of surplus ringing per release -- 0.750000 on all three voices, 935 releases and 935 ringing frames -- and max_hard_restart has SATURATED it: at hard_restart_frames 0/1/2 or with the option off we ring two frames (gate 0.5000, ring 1864), at 3/4/6 we ring one. pul 1.93x is a subdivision, not a travel deficit (pspan 1.047x, pphase 1.000x). WHAT IS LEFT: the 935 unattributed adsr frames. 2805 of the 3740 are gated-off with adsr_gated_off_audible 0. AND DO NOT RE-DERIVE THE REFUTED LINK: 935 is also the gate column's ringing count, which makes the two look like one defect, and it is a coincidence -- adsr reads 0.5838 to four decimals in all eight hard-restart arms while gate swings 0.7500 <-> 0.5000. This file is HUMAN-APPROVED: check approved.json's sha256 before shipping anything.",
       "why_model": "same shape as Action Biker, on a file whose approval a change would invalidate",
       "why_mode": "a diagnosis, and its outcome may need a listening verdict",
       "why_lane": "reads build/instrmap, which the instrmap rebuild writes"
@@ -401,7 +403,7 @@
       "needs_main": true,
       "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
       "depends_on": [
-        "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern"
+        "a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta"
       ],
       "blocked_on": null,
       "decision": null,
@@ -512,30 +514,28 @@
     },
     {
       "id": "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern",
-      "title": "Bangkok Knights voice 0's track list opens with a 20-note pattern the original plays on voice 2",
+      "title": "Bangkok voice 0's orderlist entry is FAITHFUL -- both readings refuted, content moved to the pre-instrument task",
       "source": "runs.jsonl#bangkok-knights-voice-0-disagrees-on-half-its-pitches.opened",
       "model": "opus",
       "mode": "main",
       "lane": "serial",
       "touches": [
-        "rw:python/h2g/tracks.py",
-        "rw:python/h2g/patterns.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
+        "r:python/h2g/tracks.py",
+        "r:presets.json",
         "r:python/fidelity.py",
         "r:python/tools/siddump-rt/siddump.exe"
       ],
       "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [
+        "a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta"
+      ],
       "blocked_on": null,
       "decision": null,
-      "verify": "THE PRIOR RUN COULD NOT DO THIS BECAUSE python/h2g/tracks.py WAS NOT IN ITS touches -- that is the only reason it is a separate task, and the diagnosis is finished. Voice 0's orderlist decodes to TRANSUP+0, REPEAT x16, pattern 0 / REPEAT x4, pattern 0 / pattern 9 / pattern 3 ...; pattern 0 is silent, pattern 9 carries exactly the 20 spurious notes, pattern 3 begins the music that aligns. The original's voice 0 plays ZERO of those pitches in 60 s; its voice 2 plays 223 of 347 attacks on exactly them. The orderlist is built by convert_tracks (tracks.py:379). SEPARATE TWO READINGS BEFORE EDITING ANYTHING, and do not pick the tidier one: either convert_tracks reads voice 0's list from the wrong place or one entry too early -- compare against VOICE 2's list, and if pattern 9 is also voice 2's first entry that is a straight aliasing/off-by-one read -- or the player starts voice 0 at a later track position and the entry is genuinely in the table but skipped, which makes it a start-position bug with a different fix. DONE WHEN: voice 0 reads at least 0.96 ratio under `fidelity.py Bangkok_Knights.sid --diagnose` with voices 1 and 2 unmoved at 1.00/100% and 0.96/100%; a test in python/tests/test_tracks.py pins the rule and FAILS with only the call site reverted; and a corpus byte-hash names EXACTLY the files that move, stated as a number up front. A leading-entry rule that moves 40 files is scoped wrongly -- that is the lesson the $FD/$FE terminator work already paid for.",
+      "verify": "REFUTED AT a10ad02 AND ESSENTIALLY SPENT -- do not re-run the investigation. Both readings this task named are dead. The raw bytes kill the aliasing one: Hubbard's voice-0 list reads `80 | 00 x20 | 07` and ours reproduces it exactly, twenty repeats and all, with $07 genuinely in voice 2's list too. The frames kill the start-position one: lag 6, the other voices aligned within 3-6 frames, the original's voice 0 silent until frame 2145 while ours sounds those notes at 1928-2102 and joins at 2132 -- the original is ON that pattern and plays it SILENTLY. convert_tracks is correct and MUST NOT be edited for this. This record closes when its dependency lands and Bangkok's voice 0 reads at least 0.96 ratio under --diagnose with voices 1 and 2 unmoved; it exists only so the dependency is not lost.",
       "why_model": "a player-dialect read where two different bugs produce the same symptom and the wrong one is the tidier story",
-      "why_mode": "changes conversion output for at least one file, so presets and the report must be regenerated",
+      "why_mode": "closes by re-measuring after the dependency lands; no edit of its own",
       "why_lane": "writes tracks.py, patterns.py, presets.json and the report, all shared with other tasks here"
     },
     {
@@ -590,6 +590,109 @@
       "why_model": "the question is what the search criterion is allowed to optimise, which is the design decision this repo has got wrong before",
       "why_mode": "a cost/scope decision no measurement settles",
       "why_lane": "writes presets.py, presets.json and the report"
+    },
+    {
+      "id": "a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta",
+      "title": "A note before its voice's first instrument must not sound on Bangkok, and must on Delta",
+      "source": "runs.jsonl#bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/tracks.py",
+        "rw:python/h2g/patterns.py",
+        "rw:python/h2g/detect.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE CENSUS AND THE TWO ENDPOINTS ARE ALREADY MEASURED -- do not redo them. Bangkok_Knights: voice 0 sounds 20 notes before its own first instrument, the pattern carrying them has 20 notes with every instrument byte 0, the first instrument voice 0 names is instrument 3 in pattern 3, and the original is silent across exactly that window (its voice 0's first attack is frame 2145; ours sound at 1928-2102). Delta_Mix-E-Load_loader: 8 pre-instrument notes that are EXACT -- 15 attacks against 15 on both affected voices at the same frames within the lag. So a blanket rule is wrong in one direction and no rule is wrong in the other. DONE WHEN: the discriminator is read out of the PLAYERS -- what each does with a note whose voice has no instrument loaded -- rather than inferred from the traces, which only say 'no sound' and have at least two ways to produce that (no gate, or a waveform of $00). Then Bangkok's voice 0 reaches at least 0.96 ratio under `fidelity.py Bangkok_Knights.sid --diagnose` with voices 1 and 2 unmoved at 1.00/100% and 0.96/100%, Delta's affected voices stay exact, a test pins the rule and FAILS with only the call site reverted, and a corpus byte-hash names EXACTLY the files that move, stated as a number up front. NOTE --initial-instrument IS NOT THE FIX and was measured inert here at 8bb87e9: it moved the bytes (sha c2afd5e7a9a8 -> a208e3cc5cfd) and cost wave 42.8 -> 40.5% while leaving voice 0 unchanged to the decimal.",
+      "why_model": "a player-dialect read whose obvious fix is measurably wrong on one of the two files it must serve",
+      "why_mode": "changes conversion output, so presets and the report must be regenerated",
+      "why_lane": "writes three h2g modules, presets.json and the report"
+    },
+    {
+      "id": "ties-not-pitch-travel-may-be-what-regrid-damages",
+      "title": "Ties, not pitch travel, track --regrid's damage almost one for one -- unchecked",
+      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "r:python/h2g/patterns.py",
+        "r:presets.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE LEAD, WITH ITS NUMBERS, from a10ad02: a tie is siddump's note change with NO gate retrigger, and its delta tracks the damage nearly one for one -- Sanxion v1 ties +9 against collapsed +11, One_on_One v2 +19 against +22, Powerplay v0 +6 against +4 -- while every immune voice measured runs ties <= 0 and collapsed <= 0 (Rikky -1/-1 on all three, Arcade 0/-11/-1 against 0/-2/0). The mechanism it proposes predicts that ratio: a tie between two attacks renames the second, so the pair no longer collapses and the collapsed count rises by one per event. It also survives the case that killed the previous lead -- Sanxion's damaged voice has bend 0 and slides 0 in BOTH arms. DONE WHEN the proposed cause is TURNED OFF and the effect is shown to go with it, which is this repo's own standard and is exactly what has not been done: suppress or relocate the added ties and confirm the collapsed count returns. A correlation across three files is not a cause; four explanations that fit the shape of this same regression have already been published and retracted. AND NOTE WHAT IT WOULD STILL NOT ANSWER: it explains the DAMAGE, not the IMMUNITY, so it re-poses rikky-immunity as 'why does a lengthened row admit an extra tie in these three voices and not in Rikky's' rather than closing it.",
+      "why_model": "a falsification pass on a lead that already looks right, which is the case where a wrong answer is cheapest to produce",
+      "why_mode": "read-only but needs the nine dead candidates in context to avoid re-treading them",
+      "why_lane": "reads patterns.py and presets.json, which several writing tasks here hold"
+    },
+    {
+      "id": "cut-release-splits-the-adsr-key-so-instrument-matched-columns-lose-the-instrument",
+      "title": "--cut-release moves our ADSR off the original's, so every ADSR-keyed column drops that instrument",
+      "source": "runs.jsonl#action-bikers-fidelity-is-not-99-percent.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/instrmap.py",
+        "rw:python/tests",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "rw:build/instrmap",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "regenerating FIDELITY.md and rebuilding build/instrmap are multi-hour corpus jobs no delegated agent outlives",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE EXACT SHAPE, from Action_Biker at a10ad02: the instrument map prints ONE instrument TWICE -- GT 3 `$0730` 'we play it, the original does not' with 125 notes, and `$0739` 'sounded by the original, with no instrument of ours' with the same 125 notes. One release nibble apart, which `--cut-release` zeroes. The same split leaves `noise_runs` comparing ONE instrument on that file (noise_run_instruments: 1), which is why its nrun reads 0%. THIS IS A SOLVED PROBLEM ONE COLUMN OVER. CLAUDE.md records it for `tail`: 'an attribution key must not contain the quantity being attributed', fixed there by masking the measured field out of the key. That fix was never applied to `noise_runs` (python/fidelity.py:1741, whose only caller is noise_run_agreement at :2797) or to instrmap.py. DONE WHEN the release nibble is masked out of the ADSR key wherever the key is used for MATCHING rather than for measuring, a test pins it and FAILS with only the mask reverted, and the report is regenerated: Action_Biker's nrun must stop being a one-instrument comparison and its instrument map must show one instrument rather than two. Report the corpus reach as a NUMBER of files up front -- 33 carry `envelope_cut`, so the expectation is that scale and anything much larger means the mask is too wide.",
+      "why_model": "a shared-key change reaching several columns and two tools, where over-masking silently merges genuinely different instruments",
+      "why_mode": "regenerates FIDELITY.md and build/instrmap, both hazard paths",
+      "why_lane": "writes fidelity.py, instrmap.py, the report and build/instrmap"
+    },
+    {
+      "id": "todo-138s-pulse-arithmetic-is-stale-pspan-moved-0-47x-to-1-05x",
+      "title": "todo.md#138's pulse argument is arithmetically dead: pspan moved 0.47x -> 1.05x",
+      "source": "runs.jsonl#five-title-tunes-fidelity.opened, todo.md#138",
+      "model": "sonnet",
+      "mode": "subtask",
+      "lane": "serial",
+      "touches": [
+        "rw:todo.md",
+        "r:docs/FIDELITY.md"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "todo.md#138 reads '5 Title Tunes: pul 4459/2240 = 1.99x with pspan 0.47x, and 1.99 x 0.47 = 0.94 -- total travel about right, sweep subdivided twice as finely'. The product argument is DEAD: measured at 01d80e6 the row is pul 4318/2240 with pspan **1.05x** and pphase 1.00x, so the product is 2.03, not 0.94. The CONCLUSION survives and is now carried directly by pspan ~ 1 -- the same span with twice as many steps, per voice 1.87x / 1.86x / 1.97x over spans 1536->1542, 1536->1542 and 1408->1606. DONE WHEN the entry states the current figures and says the product argument no longer holds, so nobody re-derives from 0.47x. Do NOT delete the entry -- the underlying question (the triangle engine's `& $E0` step against `& $1F` frames-between-steps at record +6) is still open, and it is explicitly NOT the per-frame-vs-per-call multiplier family, since the file is `-S1` where that correction is the identity. Text only: no code, no regeneration, and `git diff` must show todo.md alone.",
+      "why_model": "a bounded doc correction whose replacement numbers are already measured and quoted",
+      "why_mode": "self-contained and the conclusion is mechanical -- copy measured figures into one entry",
+      "why_lane": "writes only todo.md, which no other task touches"
     }
   ],
   "closed": [

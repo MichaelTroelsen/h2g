@@ -324,7 +324,8 @@ def audio_provenance(name: str, shas: dict | None = None) -> tuple[str, str, str
     return ("current" if was == now else "behind", was, now)
 
 
-def audio_banner(name: str, shas: dict | None = None) -> str:
+def audio_banner(name: str, shas: dict | None = None,
+                 withheld: bool = False) -> str:
     """The warning a page carries when its own audio is behind the converter.
 
     Rendered above the human verdict, because it outranks it: an approval that
@@ -337,6 +338,19 @@ def audio_banner(name: str, shas: dict | None = None) -> str:
     state, was, now = audio_provenance(name, shas)
     if state != "behind":
         return ""
+    if withheld:
+        return ('<div class="staleaudio"><b>The H2G audio has been WITHHELD from '
+                'this page</b><span>The staged <code>%s.h2g.wav</code> was rendered '
+                'from a <code>.sng</code> whose sha256 begins <code>%s</code>; '
+                'converting this tune with today&rsquo;s code and presets gives '
+                '<code>%s</code>. It is therefore not playable here, because a '
+                'listening verdict taken on it would describe a build the '
+                'converter no longer produces &mdash; which is exactly what '
+                'happened to Auf Wiedersehen Monty. The original <code>.sid</code> '
+                'side is unaffected and still plays. Re-run <code>listen.py '
+                '--files %s</code> to restore the comparison, or pass '
+                '<code>--allow-stale-audio</code> to hear the older one anyway.</span></div>'
+                % (name, was[:12], now[:12], name))
     return ('<div class="staleaudio"><b>The audio on this page is an older '
             'conversion</b><span>The <code>%s.h2g.wav</code> played here was '
             'rendered from a <code>.sng</code> whose sha256 begins '
@@ -2444,7 +2458,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
          fidjson: dict | None = None,
          instrmap: dict | None = None, instrmap_seconds: int = 0,
          approval: dict | None = None,
-         now_shas: dict | None = None) -> str:
+         now_shas: dict | None = None,
+         allow_stale: bool = False) -> str:
     """One tune's page.
 
     `now_shas` is `conversion_shas()` -- the sha256 each staged tune converts
@@ -2482,6 +2497,25 @@ def page(name: str, row: dict, notes: list[str], version: str,
                       "<code>%s.h2g.wav</code> from this directory. If the "
                       "browser refuses <code>file://</code> media, serve the "
                       "directory over http instead." % (name, name))
+
+    # **REFUSE to serve a stale H2G render**, rather than only warning.
+    # The banner has said 'this audio predates the converter' for many
+    # versions and a listener could still press play -- which is how
+    # monty-firstwave-trade-needs-a-listen came to be pointing at a build
+    # the converter no longer produces. A warning that can be clicked past
+    # is not a guard; it is the same shape as a shim that hides a defect
+    # from the score without hiding it from the file.
+    #
+    # PER TUNE, AND THE H2G SIDE ONLY. An original .sid render cannot go
+    # stale from a converter change, so it keeps playing and the page stays
+    # useful for 'what should this sound like'. And 43 of the 83 staged
+    # tunes are current, so failing the whole build -- the other obvious
+    # design -- would take those down for the sake of the 40 that are not.
+    withheld = (not allow_stale and
+                audio_provenance(name, now_shas)[0] == "behind")
+    b_audio = ('<audio id="bu" preload="auto"></audio>' if withheld
+               else '<audio id="bu" preload="auto" src="%s"></audio>'
+               % b_src)
 
     # Per-voice pairs, if `listen.py --voices` staged them beside the pair.
     # Never under --embed: six more ~10 MB data URIs is not a page.
@@ -2605,13 +2639,14 @@ def page(name: str, row: dict, notes: list[str], version: str,
 </footer>
 </div>
 <audio id="au" preload="auto" src="%(a_src)s"></audio>
-<audio id="bu" preload="auto" src="%(b_src)s"></audio>
+%(b_audio)s
 <script>window.__abVoices = %(voice_map)s;
 window.__abTrace = "%(trace_src)s";
 window.__abSpectrogram = %(spectrogram_json)s;</script>
 <script>%(script)s</script>
 """ % dict(pretty=pretty, css=CSS, back=back, version=version, chips=chips,
-           bullets=bullets, provenance=provenance, a_src=a_src, b_src=b_src,
+           bullets=bullets, provenance=provenance, a_src=a_src,
+           b_audio=b_audio,
            a_rendered=a_rendered, b_rendered=b_rendered,
            voice_row=voice_row, voice_map=json.dumps(voice_map),
            facts=facts_card(name, survey or {}, preset or {}),
@@ -2621,7 +2656,7 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
            approval=approval_badge(name, approval or {}, version, now_shas),
-           staleaudio=audio_banner(name, now_shas),
+           staleaudio=audio_banner(name, now_shas, withheld),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
            trace_src="%s.trace.json" % name,
@@ -2986,6 +3021,12 @@ def run_instrmap(sid_dir: str, names: list[str], force: bool = False) -> int:
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="abpage")
+    ap.add_argument("--allow-stale-audio", action="store_true",
+                    help="serve a tune's H2G render even when it predates "
+                         "the current converter. Off by default: such a "
+                         "render is withheld, because a listening verdict "
+                         "taken on it describes a build that no longer "
+                         "exists.")
     ap.add_argument("--embed", metavar="TUNE",
                     help="build one self-contained page with the audio inlined")
     ap.add_argument("-o", "--output", default=None,
@@ -3094,6 +3135,13 @@ def main() -> int:
     if behind:
         print("audio predates the current converter for %d of %d tune(s): %s"
               % (len(behind), len(names), ", ".join(behind)))
+        # Say what was DONE, not only what was found. The count alone read
+        # as a note while the pages went on serving the audio regardless.
+        print("  H2G render %s for those tune(s)%s"
+              % ("SERVED ANYWAY (--allow-stale-audio)"
+                 if args.allow_stale_audio else "WITHHELD",
+                 "" if args.allow_stale_audio else
+                 " -- re-run listen.py --files <name> to restore them"))
     if imrows:
         print("instrument map: %d song(s) at %ds" % (len(imrows), imseconds))
         missing = [n for n in names if n not in imrows]
@@ -3115,7 +3163,8 @@ def main() -> int:
                     fidjson=fidjson.get(args.embed, {}),
                     instrmap=imrows.get(args.embed, {}),
                     instrmap_seconds=imseconds, approval=appr,
-                    now_shas=now_shas)
+                    now_shas=now_shas,
+                    allow_stale=args.allow_stale_audio)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -3139,7 +3188,8 @@ def main() -> int:
                     survey=survey.get(n, {}), preset=presets.get(n, {}),
                     fidjson=fidjson.get(n, {}),
                     instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
-                    approval=appr, now_shas=now_shas)
+                    approval=appr, now_shas=now_shas,
+                    allow_stale=args.allow_stale_audio)
         rendered[n] = _stamp(build_id, html)
     index_html = _stamp(build_id, index(names, rows, version, appr, now_shas))
 

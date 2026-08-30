@@ -554,14 +554,28 @@ def test_the_banner_appears_only_when_the_audio_is_behind(tmp_path, monkeypatch)
 
 def test_the_page_carries_the_banner_when_its_audio_is_behind(tmp_path, monkeypatch):
     """The DoD clause: a page whose staged `.h2g.wav` came from a `.sng` that
-    no longer matches today's conversion says so on its face."""
+    no longer matches today's conversion says so on its face.
+
+    STRENGTHENED, not relaxed: by default such a page now WITHHOLDS the render
+    as well as labelling it, so the default banner is the withheld one. The
+    original wording is still what a reader sees under `--allow-stale-audio`,
+    where the audio really is served and "older conversion" is the accurate
+    thing to say -- so both are asserted rather than one being swapped for the
+    other.
+    """
     monkeypatch.setattr(A, "LISTEN", tmp_path)
     _stage(tmp_path, "Tune", SNG_OLD)
     got = A.page("Tune", ROW, [], "v0.5.373", embed=False, index_link=True,
                  now_shas={"Tune": _sha(SNG_NEW)})
     assert BANNER in got
-    assert "older conversion" in got
+    assert "WITHHELD from this page" in got
     assert _balanced(got) == []
+
+    served = A.page("Tune", ROW, [], "v0.5.373", embed=False, index_link=True,
+                    now_shas={"Tune": _sha(SNG_NEW)}, allow_stale=True)
+    assert BANNER in served
+    assert "older conversion" in served
+    assert _balanced(served) == []
 
 
 def test_the_page_is_silent_when_its_audio_is_the_current_conversion(tmp_path, monkeypatch):
@@ -927,3 +941,46 @@ def test_a_row_that_sets_an_instrument_is_not_flagged(tmp_path, monkeypatch):
     for r in setters:
         assert r[8] == 0
         assert r[7] == r[2]
+
+def test_a_stale_h2g_render_is_withheld_not_merely_labelled(monkeypatch):
+    """A warning that can be clicked past is not a guard.
+
+    `audio_provenance` has flagged "behind" for many versions and the page went
+    on serving the audio anyway, which is how a listening task came to be
+    pointing at a build the converter no longer produces. The H2G `<audio>`
+    element must carry no `src` for such a tune, so it cannot be played at all.
+
+    Three cases, because the interesting part is what is NOT withheld: the
+    original render (a converter change cannot make it stale), and a tune whose
+    own render is current (43 of the 83 staged tunes were, so an all-or-nothing
+    refusal would have taken those down too).
+    """
+    import abpage as A
+
+    def fake(name, shas=None):
+        return ("behind" if name == "Stale_Tune" else "current", "a" * 64, "b" * 64)
+
+    monkeypatch.setattr(A, "audio_provenance", fake)
+    stale = A.page("Stale_Tune", {}, [], "v", embed=False, index_link=True,
+                   now_shas={})
+    fresh = A.page("Fresh_Tune", {}, [], "v", embed=False, index_link=True,
+                   now_shas={})
+    allowed = A.page("Stale_Tune", {}, [], "v", embed=False, index_link=True,
+                     now_shas={}, allow_stale=True)
+
+    assert 'id="bu" preload="auto" src=' not in stale, (
+        "a stale H2G render is still playable")
+    assert "WITHHELD from this page" in stale, (
+        "the page does not say the render was withheld")
+    assert 'id="au" preload="auto" src=' in stale, (
+        "the ORIGINAL render must keep playing -- a converter change cannot "
+        "make it stale, and the page stays useful for what the tune should "
+        "sound like")
+
+    assert 'id="bu" preload="auto" src=' in fresh, (
+        "a current render must not be withheld")
+    assert "WITHHELD from this page" not in fresh
+
+    assert 'id="bu" preload="auto" src=' in allowed, (
+        "--allow-stale-audio no longer restores the older render")
+    assert "WITHHELD from this page" not in allowed

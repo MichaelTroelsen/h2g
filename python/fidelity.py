@@ -3761,13 +3761,37 @@ def length_compare(orig, ours, seconds: int) -> dict:
 # same length +- 5 seconds."
 LENGTH_TOLERANCE = 5.0
 # How much longer than the run's window to look when the original is still
-# sounding at the edge. Three is chosen rather than fitted: Action Biker's
-# original ends at 59.54s and ours loops with a period of 61.44s, so anything
-# above 2x separates them, and 3x leaves room for a second loop to be obvious
-# rather than marginal. A file whose original genuinely plays past 3x the
-# window is still reported as `-`, which is the column declining to score what
-# it cannot see rather than passing it.
-LENGTH_PROBE_FACTOR = 3
+# sounding at the edge. It was 3 until v0.5.416, chosen against Action Biker
+# alone: its original ends at 59.54s and ours loops with a period of 61.44s, so
+# anything above 2x separates them. That reasoning was sound and the number was
+# too small, which a census over the whole corpus settled -- 83 originals traced
+# at four windows and reduced with `stopped_at`, the same function the column
+# uses:
+#
+#       window     originals that STOP
+#         60 s       2
+#        180 s       6      <- what the report reached at factor 3
+#        600 s      14
+#       1800 s      14      <- saturated; a wider window finds nothing more
+#
+# So 10 rather than 3, and 10 rather than 30 because the set SATURATES at 600s:
+# tripling the window again adds not one file. The eight it buys are Confuzion
+# (305.08s), Flash_Gordon (374.96), Food_Feud (245.40), Knucklebusters (195.44),
+# Rock_Tells_the_Tale (380.84), Saboteur_II (249.18), Sanxion (336.98) and
+# Zoolook (259.22).
+#
+# COST WAS NEVER THE CONSTRAINT and that is worth stating, because "probe
+# further" reads expensive: a 600s siddump of one original takes 0.25s, and the
+# whole 83-file four-window census above ran in 119 seconds. The probe also
+# traces OUR side only when the original turns out to end, so the long second
+# trace falls on 14 files rather than 83.
+#
+# **AND 14 IS THE CEILING, NOT A STAGING POST.** The other 69 originals do not
+# stop within half an hour -- they loop, so there is no ending for ours to
+# match and the rule is INAPPLICABLE to them rather than unmeasured. A file
+# whose original outlasts the probe still reads `-`, which remains the column
+# declining to score what it cannot see rather than passing it.
+LENGTH_PROBE_FACTOR = 10
 
 
 def original_ended(orig, seconds: int) -> int | None:
@@ -4115,7 +4139,15 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         if factor > 1 and any(v.attack_frames for v in a):
             long_seconds = seconds * factor
             a_long = run_siddump(local_orig, long_seconds, sub, args.siddump, cal)
-            if original_ended(a_long, long_seconds) is not None:
+            if original_ended(a_long, long_seconds) is None:
+                # The original does not end even here, so the rule cannot apply
+                # to this file at all. Recorded rather than left silent: the
+                # report's honest ceiling is a count of these, and without a
+                # marker "not measured" and "cannot be measured" look the same
+                # in the rows -- the distinction `compare_runs` had to learn
+                # for subtunes, one column over.
+                row["length_never_ends"] = True
+            else:
                 row.update(length_compare(
                     a_long,
                     run_siddump(packed, long_seconds, sub, args.siddump,
@@ -4123,8 +4155,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                 or multiplier),
                     long_seconds))
                 # Named so a reader can see the figure did not come from the
-                # run's own `-t`: a delta measured over 180s is not comparable
-                # to one measured over 60s, and the report says which.
+                # run's own `-t`: a delta measured over the probe's window is
+                # not comparable to one measured over 60s, and the report says
+                # which. Left in terms of the factor rather than a literal
+                # 180s, which is what it said until the factor moved to 10.
                 row["length_probe_seconds"] = long_seconds
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
     # that is the rate its tempo values were written for. Tracing each at its
@@ -5002,6 +5036,22 @@ def report(rows: list[dict], args) -> str:
                 "`--json`, because a delta measured over "
                 f"{LENGTH_PROBE_FACTOR}x the window is not comparable to one "
                 "measured inside it.")
+        never = [r for r in rows if r.get("length_never_ends")]
+        if never:
+            out.append(
+                "- **And the rule is INAPPLICABLE to most of the corpus, "
+                "which is a fact about the tunes rather than a gap in the "
+                f"harness.** {len(never)} of this run's {len(rows)} file(s) "
+                f"have an original that never stops within {LENGTH_PROBE_FACTOR}x "
+                "the window: it loops, so there is no ending for ours to match "
+                "and `-` is the only honest reading. Widening the probe does "
+                "not help them -- the corpus census that chose "
+                f"{LENGTH_PROBE_FACTOR} found the measurable set SATURATED, "
+                "with 14 files ending by 600s and tripling the window again "
+                "adding none. So the number of rows this column can ever score "
+                "is a property of the corpus, and the FAIL count should be "
+                "read against that denominator rather than against the file "
+                "count.")
         elif ended:
             out.append(
                 "- **The length rule reaches past the window, but not "

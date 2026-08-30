@@ -2372,3 +2372,46 @@ def test_melody_documentation_says_collapsed_and_what_that_hides():
     template_bullet = module_src[idx:idx + 400]
     assert "collapsed" in template_bullet
     assert "re-struck" in template_bullet
+
+def test_the_probe_reaches_every_corpus_original_that_ever_stops():
+    """The factor is chosen from a census, and the census SATURATES.
+
+    83 originals traced at four windows and reduced with `stopped_at` -- the
+    same function the column uses -- stop like this: 2 by 60s, 6 by 180s, 14 by
+    600s, and 14 by 1800s. So a factor of 3 against the report's 60s window
+    reached 6 files and 10 reaches all 14 there are, while 30 would reach not
+    one more. Pinned because the value looks arbitrary and is not: below 10 the
+    column silently loses eight measurable files, above it the extra tracing
+    buys nothing.
+    """
+    import fidelity as F
+    assert F.LENGTH_PROBE_FACTOR >= 10, (
+        "a factor below 10 cannot reach the 8 corpus originals that end "
+        "between 180s and 600s (Confuzion 305.08s, Flash_Gordon 374.96, "
+        "Food_Feud 245.40, Knucklebusters 195.44, Rock_Tells_the_Tale 380.84, "
+        "Saboteur_II 249.18, Sanxion 336.98, Zoolook 259.22)")
+
+
+def test_a_probed_original_that_never_ends_is_marked_rather_than_left_silent():
+    """`length_never_ends` is what lets the report state an honest CEILING.
+
+    69 of the 83 corpus originals never stop, so the rule cannot apply to them
+    at all -- and without a marker on the row, "not measured" and "cannot be
+    measured" are indistinguishable, which is the same confusion `compare_runs`
+    had to resolve for subtunes. The report's inapplicable-count bullet is
+    generated from these rows, so it fails with the flag rather than drifting.
+    """
+    import fidelity as F
+    src = pathlib.Path(F.__file__).read_text(encoding="utf-8")
+    assert 'row["length_never_ends"] = True' in src, (
+        "the probe no longer marks an original that outlasts it")
+    marker = src.index("length_never_ends")
+    guard = src.index("original_ended(a_long, long_seconds) is None")
+    # Ordering plus proximity, not a fixed slice: the first version of this
+    # test read a 400-character window and the real gap is 506, so it failed on
+    # correct code -- a bound asserted rather than measured.
+    assert 0 < marker - guard < 1000, (
+        "the marker is no longer set on the branch where the probe found no "
+        f"end (gap {marker - guard} chars)")
+    assert 'r.get("length_never_ends")' in src, (
+        "the report no longer counts the inapplicable rows from its own rows")
