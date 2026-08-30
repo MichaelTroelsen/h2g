@@ -2663,10 +2663,58 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            script=SCRIPT)
 
 
+# SIDId names are long and the index has 83 rows of them. Abbreviated by RULE
+# rather than by a lookup of the eight values the corpus happens to carry today,
+# so a file bringing a ninth degrades to "shortened sensibly" instead of falling
+# through to a blank: anything unknown keeps its own text, and only the parts we
+# have a shorter name for are replaced.
+#
+# Nothing is LOST -- the cell carries the full string in `title`, so the long
+# form is one hover away. An abbreviation that cannot be expanded again is a
+# worse table, not a denser one.
+def _attr(text: str) -> str:
+    """Escape for a double-quoted HTML attribute."""
+    return (text.replace("&", "&amp;").replace("<", "&lt;")
+                .replace(">", "&gt;").replace('"', "&quot;"))
+
+
+SIDID_SHORT = {
+    "Rob_Hubbard": "RH",
+    "Rob_Hubbard_Digi": "digi",
+    "Voicemaster_Covox": "Covox",
+    "Jason_Page/RobTracker": "RobTracker",
+    "SidTracker64": "ST64",
+    "(none)": "&mdash;",
+}
+
+
+def abbrev_sidid(text: str) -> str:
+    """`Rob_Hubbard, (Rob_Hubbard_Digi)` -> `RH+digi`."""
+    if not text:
+        return "&mdash;"
+    parts = []
+    for raw in text.split(","):
+        p = raw.strip()
+        if not p:
+            continue
+        # Look up the string as written BEFORE stripping parentheses: SIDId
+        # writes its "nothing matched" marker as the literal `(none)`, and
+        # stripping first turned that into the word "none" in a column whose
+        # every other cell is a player name.
+        if p in SIDID_SHORT:
+            parts.append(SIDID_SHORT[p])
+            continue
+        bare = p.strip("()")
+        parts.append(SIDID_SHORT.get(bare, bare))
+    return "+".join(parts) if parts else "&mdash;"
+
+
 def index(names: list[str], rows: dict, version: str,
-          appr: dict | None = None, shas: dict | None = None) -> str:
+          appr: dict | None = None, shas: dict | None = None,
+          survey: dict | None = None) -> str:
     appr = appr or {}
     shas = shas or {}
+    survey = survey or {}
 
     def verdict(n):
         """The human column. Three states, and `stale` is the one that matters:
@@ -2705,10 +2753,19 @@ def index(names: list[str], rows: dict, version: str,
     body = ""
     for n in names:
         r = rows.get(n, {})
-        body += ("<tr><td><a href=\"%s.html\">%s</a></td><td class=\"appr\">%s</td>"
+        full = (survey.get(n) or {}).get("SIDId", "")
+        body += ("<tr><td><a href=\"%s.html\">%s</a></td>"
+                 "<td class=\"sidid\" title=\"%s\">%s</td>"
+                 "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
                  "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-                 % (n, n.replace("_", " "), verdict(n), audio(n),
+                 % (n, n.replace("_", " "),
+                    # Escaped the way this file already escapes (see md()),
+                    # rather than importing `html` into a module that binds
+                    # `html` as a local name in two other functions.
+                    _attr(full) if full else "not surveyed",
+                    abbrev_sidid(full),
+                    verdict(n), audio(n),
                     r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
@@ -2723,7 +2780,7 @@ def index(names: list[str], rows: dict, version: str,
 <div class="card">
   <h2>Staged tunes</h2>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>human</th><th>audio</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
+    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
@@ -2731,6 +2788,13 @@ def index(names: list[str], rows: dict, version: str,
   <div>Columns are from <code>FIDELITY.md</code> at %(version)s. They compare what is played, never how it sounds &mdash; which is what these pages are for.</div>
   <div><b>human</b> is the only column here that is not a measurement: it is read from <code>approved.json</code>, which a person writes by hand and no tool may rewrite. <code>stale</code> means someone approved an earlier version and the conversion has changed since &mdash; the verdict does not cover what the page now plays.</div>
   <div><b>audio</b> compares the sha256 of the <code>.sng</code> each staged <code>.h2g.wav</code> was rendered from against what the tune converts to now. <code>behind</code> means the page plays an older conversion, whatever its other columns say &mdash; re-run <code>listen.py</code> for it. It is keyed on the conversion, never on the version: a version-keyed check would report every tune behind after any commit, including the ones that only touch this file.</div>
+  <div><b>SIDId</b> is the PLAYER, identified independently of this tool's own
+  detection chains by the SIDId signature database &mdash; abbreviated here
+  (<code>RH</code> is Rob_Hubbard, <code>+digi</code> its sample engine), with
+  the full identification on hover. It is worth a column because the two
+  disagreeing is informative: a tune SIDId does not call Rob_Hubbard is one
+  this converter should not be confident about, whatever its other columns
+  say.</div>
   <div><code>gate</code> is the newest of them and the least validated: it was built at v0.5.270 because no other column could see the register it reads, and no listener has confirmed it corresponds to anything audible.</div>
 </footer>
 </div>
@@ -3191,7 +3255,8 @@ def main() -> int:
                     approval=appr, now_shas=now_shas,
                     allow_stale=args.allow_stale_audio)
         rendered[n] = _stamp(build_id, html)
-    index_html = _stamp(build_id, index(names, rows, version, appr, now_shas))
+    index_html = _stamp(build_id, index(names, rows, version, appr, now_shas,
+                                        survey=survey))
 
     for n in names:
         _atomic_write(LISTEN / ("%s.html" % n), rendered[n])

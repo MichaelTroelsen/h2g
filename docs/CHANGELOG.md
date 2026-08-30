@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.419 — 2026-08-30
+
+- SIDId on the index, and Devils Galop approved
+
 ## 0.5.418 — 2026-08-30
 
 - the regrid dose sweep

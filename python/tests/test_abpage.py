@@ -984,3 +984,37 @@ def test_a_stale_h2g_render_is_withheld_not_merely_labelled(monkeypatch):
     assert 'id="bu" preload="auto" src=' in allowed, (
         "--allow-stale-audio no longer restores the older render")
     assert "WITHHELD from this page" not in allowed
+
+def test_sidid_is_abbreviated_by_rule_not_by_a_lookup_of_todays_values():
+    """A ninth value must degrade to its own text, never to a blank.
+
+    The corpus carries eight SIDId strings today. Abbreviating by table alone
+    would render a file bringing a ninth as nothing at all, which in a column
+    of player names reads as "not identified" -- the opposite of the truth.
+    """
+    assert A.abbrev_sidid("Rob_Hubbard") == "RH"
+    assert A.abbrev_sidid("Rob_Hubbard, (Rob_Hubbard_Digi)") == "RH+digi"
+    assert A.abbrev_sidid("Rob_Hubbard, Voicemaster_Covox") == "RH+Covox"
+    assert A.abbrev_sidid("Companion, Rob_Hubbard") == "Companion+RH"
+    # unknown: kept verbatim rather than dropped
+    assert A.abbrev_sidid("Brand_New_Player_9000") == "Brand_New_Player_9000"
+    assert A.abbrev_sidid("Rob_Hubbard, Nine_Thousand") == "RH+Nine_Thousand"
+    # SIDId's own "nothing matched" marker, and a missing row, both read as a
+    # dash rather than as the word "none" among player names.
+    assert A.abbrev_sidid("(none)") == "&mdash;"
+    assert A.abbrev_sidid("") == "&mdash;"
+
+
+def test_the_index_carries_an_abbreviated_sidid_with_the_full_text_on_hover():
+    """Abbreviating is only acceptable because nothing is lost by it."""
+    rows = {"Tune": {"melody": "100%"}}
+    survey = {"Tune": {"SIDId": "Rob_Hubbard, (Rob_Hubbard_Digi)"}}
+    got = A.index(["Tune"], rows, "v", survey=survey)
+    assert "<th>SIDId</th>" in got
+    assert '>RH+digi<' in got
+    assert 'title="Rob_Hubbard, (Rob_Hubbard_Digi)"' in got, (
+        "the long form must remain one hover away")
+    # a tune with no survey row must not claim an identification
+    bare = A.index(["Tune"], rows, "v", survey={})
+    assert "not surveyed" in bare
+    assert _balanced(got) == []

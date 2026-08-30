@@ -1,6 +1,6 @@
 {
   "generated_from": {
-    "head": "01d80e6",
+    "head": "7a65278",
     "sources": [
       "whats-next.md (spent)",
       "todo.md",
@@ -11,6 +11,7 @@
       "approved.json",
       "graphify-out/graph.json",
       "git log",
+      "listener reports 2026-08-30",
       "issues (none reachable)",
       "prs (none reachable)"
     ],
@@ -135,32 +136,6 @@
       "why_model": "same shape as Action Biker, on a file whose approval a change would invalidate",
       "why_mode": "a diagnosis, and its outcome may need a listening verdict",
       "why_lane": "reads build/instrmap, which the instrmap rebuild writes"
-    },
-    {
-      "id": "length-rule-is-measured-on-only-6-of-83-rows",
-      "title": "The +-5s length invariant is enforced on 6 of 83 rows; the other 77 print `-`",
-      "source": "todo.md#94, docs/FIDELITY.md",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/fidelity.py",
-        "rw:python/tests/test_fidelity.py",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:presets.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "the `len` column reaches materially more than 6 of 83 rows, or the report states why the remaining files cannot be measured and that count is the honest floor. v0.5.408's --length-probe already probed 4 files over 3x the window; the question is what the other 77 need. CLAUDE.md records this as a LISTENER'S invariant that no other column enforces",
-      "why_model": "extending an existing measurement with its methodology already written",
-      "why_mode": "it regenerates docs/FIDELITY.md",
-      "why_lane": "writes python/fidelity.py and the report"
     },
     {
       "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
@@ -413,106 +388,6 @@
       "why_lane": "writes patterns.py, goatwriter.py, presets.json and the report"
     },
     {
-      "id": "staged-listening-audio-predates-the-converter-for-40-of-83-tunes",
-      "title": "Nearly half the staged listening audio is older than the converter, Monty included",
-      "source": "runs.jsonl#instrmap-is-stale-against-v0-5-407.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:build/listen",
-        "rw:build/instrmap",
-        "rw:build/instrmap.json",
-        "rw:python/abpage.py",
-        "rw:python/tests",
-        "r:presets.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "either the staged audio is regenerated for the 40 tunes, or abpage.py REFUSES to serve a tune whose audio predates the converter rather than only printing a line about it. Reported by abpage.py itself at v0.5.412: 'audio predates the current converter for 40 of 83 tune(s)'. IT MATTERS NOW: Auf_Wiedersehen_Monty is among the 40 and is the subject of monty-firstwave-trade-needs-a-listen, so that ear-check would today judge a build the converter no longer produces. ACE_II and Action_Biker are current, so the other two listening tasks are safe. The detection already exists; what is missing is that nothing refuses on it.",
-      "why_model": "running a generator and adding a guard whose condition is already computed",
-      "why_mode": "it rebuilds build/listen, a hazard, and re-emulates 40 tunes",
-      "why_lane": "writes build/listen and build/instrmap, which the diagnosis tasks read"
-    },
-    {
-      "id": "pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved",
-      "title": "--pace's IQR and coverage bounds were set when confirmed files carried 0-3% IQR",
-      "source": "runs.jsonl#fourteen-files-cannot-be-timed-by-pace-at-all.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/fidelity.py",
-        "rw:python/tests/test_pace.py",
-        "rw:python/tests/test_fidelity.py",
-        "rw:python/tests",
-        "r:presets.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "MIN_PACE_COVERAGE and MAX_PACE_IQR are re-derived from the current corpus with the noise floor measured, or left alone with that measurement written down. The constants' own comment says they were calibrated when 'the files whose row length is independently confirmed carry 100-400 gaps at an IQR of 0-3%'; the gate readings of v0.5.248, v0.5.402 and v0.5.410 have since given many files an exactly fractional row whose gaps legitimately alternate. Evidence at v0.5.412: five of the six files refused for COVERAGE convert at 97-100% melody. CAUTION -- CLAUDE.md's rule is that a veto on a ratio must be SIZED, not merely signed, so measure the distribution before moving either number, and note that a fractional row is a five-fold risk factor (11/35 against 3/48) and NOT a sufficient cause, since 24 fractional-row files pass the gate.",
-      "why_model": "a threshold change this repo has a recorded history of getting wrong by fitting",
-      "why_mode": "re-deriving the bound needs a corpus --pace sweep",
-      "why_lane": "writes python/fidelity.py, which several tasks read"
-    },
-    {
-      "id": "four-files-have-a-wildly-spread-pace-ratio-150-to-573-percent",
-      "title": "Chicken Song, Commodore 64 Music Examples, Rikky and Dragons Lair II spread 150-573%",
-      "source": "runs.jsonl#fourteen-files-cannot-be-timed-by-pace-at-all.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "r:python/fidelity.py",
-        "r:presets.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "each of the four is attributed. These are a DIFFERENT population from the modest IQR refusals (13-19%) and should not be folded into a threshold change: Chicken_Song 150%, Commodore_64_Music_Examples 160%, Rikky 245%, Dragons_Lair_Part_II 573%. RIKKY IS THE ONE THAT FITS NO STORY -- it has an INTEGER row of 4 frames at -S1, so the fractional-row explanation that covers the others cannot apply, and it is also one of the --regrid immune files. A ratio spread over twice its own median means the matched notes disagree wildly, which is either real irregularity in the tune or a matching failure; --diagnose distinguishes them.",
-      "why_model": "a diagnosis where a plausible-but-wrong attribution is cheap to produce",
-      "why_mode": "read-only, but its conclusion gates the threshold task",
-      "why_lane": "reads python/fidelity.py, which the IQR task writes"
-    },
-    {
-      "id": "regrid-damage-is-not-additive-in-the-compensation-count",
-      "title": "Two compensation rows cost One_on_One more melody than all forty-one",
-      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "r:python/h2g/patterns.py",
-        "r:presets.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "the non-monotonicity is explained or shown to be an artefact of the window. Measured at v0.5.412 on One_on_One: no compensation 98.64% melody, all 41 rows 61.62%, the 39 length-matched ones 68.53%, and the 2 mismatched ones alone 54.34% -- so two rows cost more than forty-one. THE CAVEAT IS PART OF THE TASK: those arms confound PLACEMENT with DOSE, because removing compensations also leaves the song under-corrected in net timing, and melody is a difflib ratio over a fixed 60 s window. Settle that first -- if it is the window, this is not a finding about regrid at all; if it survives, then 'which rows' matters in a way no dose argument can express and every regrid A/B that varies the compensation SET is comparing unlike things.",
-      "why_model": "a result that is either a real mechanism or an artefact of the scorer, and telling them apart is the work",
-      "why_mode": "read-only diagnosis whose answer changes how the other regrid A/Bs are read",
-      "why_lane": "reads patterns.py and presets.json, which the regrid tasks write"
-    },
-    {
       "id": "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern",
       "title": "Bangkok voice 0's orderlist entry is FAITHFUL -- both readings refuted, content moved to the pre-instrument task",
       "source": "runs.jsonl#bangkok-knights-voice-0-disagrees-on-half-its-pitches.opened",
@@ -693,6 +568,141 @@
       "why_model": "a bounded doc correction whose replacement numbers are already measured and quoted",
       "why_mode": "self-contained and the conclusion is mechanical -- copy measured figures into one entry",
       "why_lane": "writes only todo.md, which no other task touches"
+    },
+    {
+      "id": "battle-of-britain-sounds-wrong-and-it-is-the-envelope-not-the-speed",
+      "title": "Battle of Britain: listener reports wrong speed; the timing is exact and the envelopes are not",
+      "source": "listener report 2026-08-30",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "regenerating docs/FIDELITY.md and build/fidelity.json is a ~12 minute corpus job no delegated agent outlives, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE SPEED IS NOT THE PROBLEM AND THAT IS MEASURED -- do not re-derive it. --pace at the packed -S2 reads our row 2.00 frames, ratio 1.000, IQR 1.000-1.000 over 423 gaps, drift +0.00, '0% out'; the report row is 426/426 attacks with melody/seq/pitch 100%, retrig 1.00, onset 100%. The note gaps are IDENTICAL per voice (median 16/16/8 frames, same counts 133/125/165, same range 8-648). And the audio the listener heard was `current`, not stale. WHAT DIFFERS IS THE ENVELOPE, on two of three voices: per-voice adsr is 3.9% / 3.2% / 46.5%, and 3030 of the 3717 gated-off disagreeing frames are AUDIBLE (against 0 on 5_Title_Tunes, so this is not the usual inaudible gated-off deficit). The original re-writes the ADSR on EVERY note -- voice 0 alternates $0000 x185 and $5852 x150, a hard restart -- where we write $5850 ONCE. Two distinct causes, both options currently ON for this file: `no_hard_restart` (why we do not re-write per note) and `cut_release` (why the release nibble is 2 -> 0). DONE WHEN each is A/B'd off on this file and the outcome recorded either way: if turning them off raises adsr materially without costing melody/seq/onset, the preset changes and the report is regenerated; if it costs elsewhere, the trade is written down and the listener is told what they are hearing. NOTE `fidelity_better` scores NEITHER adsr NOR gate, so the preset search cannot have weighed this and never will -- that is why it needs a hand measurement.",
+      "why_model": "two interacting options on a file whose obvious reading (speed) is already refuted",
+      "why_mode": "any preset change regenerates presets.json and the report",
+      "why_lane": "writes goatwriter.py, presets.json and the report"
+    },
+    {
+      "id": "commando-voice-1-plays-g-sharp-7-where-the-original-plays-b-5",
+      "title": "Commando: one note on voice 1 clamps to G#7, 96 times, where the original plays B-5",
+      "source": "listener report 2026-08-30 (reported as 'voice 2 arps too low')",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/patterns.py",
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "regenerating docs/FIDELITY.md and build/fidelity.json is a ~12 minute corpus job no delegated agent outlives, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "MEASURED ON THE TRACED SUBTUNE (s0, correspondence s0->o0 92%, voices 0 and 2 both ratio 1.00 / pitches 100%). Voice index 1 is ratio 0.77 / pitches 62%, and the whole of it is ONE note: the original plays **B-5 95 times** and we play **G#7 96 times**, 22 semitones high. Every other note on that voice is exact -- E-4 81/81, G-4 28/28, F-4 16/16, D-4 12/12, G#4 4/4. G#7 is this repo's known CLAMP CEILING (see v0.5.391, '155 of Monty's notes stop clamping to G#7'), so the pitch ran off the top of the note table and was pinned there rather than being transposed. **THE LISTENER SAID 'TOO LOW' AND THE TRACE SAYS TOO HIGH.** Do not assume the trace is right and the ear wrong, and do not assume the reverse: FIRST establish which subtune was heard. Commando has 19 and the pages play the default; a clamped ceiling note in an arpeggio can also be perceived as the figure sitting wrong rather than as one note being high. If the heard subtune is not s0 this row is not the reported defect and a new measurement is needed. DONE WHEN the clamp's cause is found (which transpose or table lookup takes B-5 above the range), the fix keeps every other note on the voice exact, a test pins it, and a corpus byte-hash names exactly the files that move.",
+      "why_model": "a pitch-table/transpose bug where the listener's description and the measurement disagree in direction",
+      "why_mode": "changes conversion output on at least one file, so the report must be regenerated",
+      "why_lane": "writes patterns.py, goatwriter.py, presets.json and the report"
+    },
+    {
+      "id": "confuzion-runs-295s-past-its-original-the-only-measured-length-failure",
+      "title": "Confuzion plays ~295s past an original that ends at 305s -- the corpus's only len failure",
+      "source": "runs.jsonl#length-rule-is-measured-on-only-6-of-83-rows.opened, listener report 2026-08-30",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/tracks.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "regenerating docs/FIDELITY.md and build/fidelity.json is a ~12 minute corpus job no delegated agent outlives, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "CONFIRMED INDEPENDENTLY BY A LISTENER, who reported it as a SPEED mismatch -- and the speed is exact: --pace reads our row 3.00 frames, ratio 1.000, IQR 1.000-1.000 over 295 gaps, drift +0.00, '0% out', with melody 100% and 298/298 attacks. It is LENGTH: `len` reads `>+294.9s !`, the corpus's only measured failure of the +-5s rule, against an original that stops at 305.08s. THE CAUSE IS LOCATED AND IS NOT THE $FE PATH. `legalise_restarts` reports **0 restarts changed** on this file, so `--legal-restart` and `--silent-park` (both ON in its presets) have nothing to act on. Its tracks end `$FF` with an operand, and voice 2's reads `FF 4B` -- restart position 75 in a list of about 39. An OUT-OF-RANGE restart is precisely how this project models 'tune ended', so the ending signal is being normalised or clamped away inside convert_tracks before it can reach the .sng. Read the $FF handling in tracks.py against the raw bytes. DONE WHEN Confuzion's `len` lands within the +-5s tolerance, a test pins the $FF-out-of-range reading, and a corpus byte-hash names EXACTLY the files that move -- state the number up front. A $FF rule that moves 40 files is scoped wrongly; that is the lesson the $FD/$FE terminator work already paid for.",
+      "why_model": "a track-terminator dialect question whose wrong generalisation rewrites the corpus",
+      "why_mode": "changes conversion output, so presets and the report must be regenerated",
+      "why_lane": "writes tracks.py, presets.json and the report"
+    },
+    {
+      "id": "regrid-damage-on-two-files-is-attacks-reading-one-semitone-flat",
+      "title": "One_on_One and Powerplay gain note names a semitone under existing ones under --regrid",
+      "source": "runs.jsonl#ties-not-pitch-travel-may-be-what-regrid-damages.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "r:python/h2g/patterns.py",
+        "r:presets.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "PARTLY ANSWERED ALREADY AND THE ANSWER IS SUBTLER THAN THE TITLE. The five new note names are each exactly one semitone under an existing one (One_on_One v2 gains B-4 and G-4 under C-5 and G#4; Powerplay v0 gains A-4, C#5, F#5 under A#4, D-5, G-5), but the FREQUENCIES differ by only 1.5-3.1%, not a semitone's 5.95% -- the two arms sit a fraction apart and siddump rounds them to opposite sides of a naming boundary. On the difflib-`replace` pairs the arms then converge EXACTLY four frames later (identical raw values, ratio 1.00000), i.e. the note is the same and only the naming frame moved. WHAT IS UNRESOLVED IS HOW MUCH OF THE DAMAGE THAT COVERS, and two alignments disagree by 4-6x: difflib-`replace` gives 4 and 7 pairs, 100% converging; nearest-frame within 6 frames gives 146 / 13 / 279 renames converging at 64% / 15% / 29%, with Sanxion going from ZERO renames to 279 -- the tell that the wide pairing matches non-counterparts. Per this repo's rule neither number is reportable until they are reconciled. DONE WHEN one alignment is justified and the share of --regrid's melody loss that is a NAMING artefact is stated with it. That share decides whether --regrid should be adopted on One_on_One and Sanxion, so it is an adoption input, not a curiosity.",
+      "why_model": "two reductions of one signal disagreeing 4-6x, which is exactly where a plausible wrong answer is cheap",
+      "why_mode": "read-only but needs the eleven dead candidates in context",
+      "why_lane": "reads patterns.py and presets.json, which several writing tasks hold"
+    },
+    {
+      "id": "melody-may-be-misreading-attacks-that-land-mid-glide",
+      "title": "melody names a note from the gate-rising frame, so a note still gliding is named wrong",
+      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/tests/test_fidelity.py",
+        "rw:python/tests",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "any change to a scoring column requires regenerating docs/FIDELITY.md, a ~12 minute corpus job",
+      "depends_on": [
+        "regrid-damage-on-two-files-is-attacks-reading-one-semitone-flat"
+      ],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE GENERAL FORM of the --regrid finding, and it reaches far past that option: siddump names a note from the frequency on the frame the gate RISES, so any voice whose pitch is still moving at the attack can be named differently by the two sides while playing the same note. v0.5.369's vibrato-depth work rests on the same fact from the other direction. If this is real, `melody`, `sequence` and `pitch_jaccard` all understate such voices, and every A/B that moved a grid by a play call has been reading part naming artefact. DO NOT 'FIX' melody BEFORE SIZING IT. The measurement is the deliverable: over the corpus, how many attacks are named from a frame on which the frequency is still changing, and what would melody read if those were named a few frames later? A column that silently re-times its own attacks is worse than one with a known blind spot -- and CLAUDE.md's rule is that a shift chosen to raise agreement can only raise agreement. DONE WHEN the size is measured and either a change ships with a corpus A/B, or the blind spot is documented in the Dimension itself the way `hold`'s is.",
+      "why_model": "a change to the report's headline column, where an improvement and a self-fulfilling shift look identical",
+      "why_mode": "regenerates FIDELITY.md, and the diagnosis matters more than the measurement",
+      "why_lane": "writes fidelity.py and the report"
     }
   ],
   "closed": [
@@ -952,6 +962,36 @@
       "id": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
       "title": "the guard is two-sided against the original's attack count; two full corpus searches, 0 settings lost",
       "closed_by": "cb2011c",
+      "reason": null
+    },
+    {
+      "id": "length-rule-is-measured-on-only-6-of-83-rows",
+      "title": "the probe reaches 14 rows instead of 6 and the report states its own ceiling",
+      "closed_by": "c381acd",
+      "reason": null
+    },
+    {
+      "id": "staged-listening-audio-predates-the-converter-for-40-of-83-tunes",
+      "title": "abpage withholds a stale H2G render instead of only labelling it",
+      "closed_by": "c381acd",
+      "reason": null
+    },
+    {
+      "id": "pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved",
+      "title": "MAX_PACE_IQR re-derived into an empty region; coverage left alone with the measurement",
+      "closed_by": "9dac92b",
+      "reason": null
+    },
+    {
+      "id": "four-files-have-a-wildly-spread-pace-ratio-150-to-573-percent",
+      "title": "two wrong-subtune pairs and two wrong-repetition matches; none a pacing defect",
+      "closed_by": "9dac92b",
+      "reason": null
+    },
+    {
+      "id": "regrid-damage-is-not-additive-in-the-compensation-count",
+      "title": "non-monotone in the dose, so no thinning guard can work",
+      "closed_by": "7a65278",
       "reason": null
     }
   ]
