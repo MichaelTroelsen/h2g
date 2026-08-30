@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.425 — 2026-08-30
+
+- three task records: two refutations and a correction
+
 ## 0.5.424 — 2026-08-30
 
 - Bangkok's no-instrument gate is the stored waveform cell
