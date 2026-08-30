@@ -182,3 +182,40 @@ def test_a_file_with_neither_gate_still_declines():
     for name in ("Chicken_Song.sid", "Task_Force.sid", "Robs_Life.sid",
                  "Up_up_and_Away.sid"):
         assert find_song_speeds(load_sid(str(CORPUS / name))) is None, name
+
+
+def test_a_refusal_says_it_is_this_instrument_and_not_the_conversion():
+    """`--pace` declining a file is not a verdict on the conversion.
+
+    Censused at v0.5.411: 14 of the 83 converting files are refused by one of
+    these two gates, and of the six refused for COVERAGE, five convert at
+    97-100% melody -- Saboteur_II, Chain_Reaction, Kings_of_the_Beach_intro
+    and Zoolook at 100% with every voice at ratio 1.00 and pitches 100% the
+    same, Bump_Set_Spike at 97%. The old wording, "too little of the tune to
+    time", read as though the tune were at fault. This pins that both
+    refusals disclaim that reading, because the whole value of the untimed
+    list is knowing which kind of thing it is a list of.
+    """
+    # 150 original notes; ours reproduces a contiguous run of 41 of them, so
+    # there are 40 matched gaps (enough for a median) at 27% coverage (below
+    # the 30% gate). That is the shape of the six real files above.
+    names = [f"C-{i % 8}" for i in range(150)]
+    at = [i * 10 for i in range(150)]
+    got = pace(trace(voice(names, at), voice([], []), voice([], [])),
+               trace(voice(names[:41], at[:41]), voice([], []), voice([], [])))
+    assert got["n"] >= fidelity.MIN_PACE_GAPS, got
+    assert got["coverage"] < fidelity.MIN_PACE_COVERAGE, got["coverage"]
+    assert "not a verdict on the conversion" in got["unreliable"], got
+    assert "--diagnose" in got["unreliable"]
+
+
+def test_the_two_pace_gates_are_the_only_reasons_a_file_is_untimed():
+    """Both bounds are named in the refusal, so a reader can check the number.
+
+    A refusal that states its own threshold is one a reader can argue with;
+    one that does not is a black box. Both were calibrated against a corpus
+    that has since moved -- the gate readings of v0.5.248/402/410 gave many
+    files an exactly fractional row, whose gaps legitimately alternate.
+    """
+    assert 0 < fidelity.MIN_PACE_COVERAGE < 1
+    assert 0 < fidelity.MAX_PACE_IQR < 1

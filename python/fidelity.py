@@ -6077,15 +6077,40 @@ def pace(orig: Trace, ours: Trace) -> dict:
     out = {"n": len(g), "slope": num / den if den else None,
            "median": median, "q1": q1, "q3": q3, "spread": q3 - q1,
            "coverage": (len(g) + 1) / total if total else 0.0}
+    # BOTH refusals below say "this instrument cannot measure this file", and
+    # NEITHER says "the conversion is wrong". The distinction is not pedantry:
+    # censused at v0.5.411, 14 of the 83 converting files are refused here, and
+    # of the six refused for coverage, FIVE convert at 97-100% melody --
+    # Saboteur_II, Chain_Reaction, Kings_of_the_Beach_intro and Zoolook all at
+    # 100% with every voice at ratio 1.00 and pitches 100% the same, and
+    # Bump_Set_Spike at 97%. So a refusal here is overwhelmingly --pace's own
+    # note matching failing, not a tune it declines to vouch for, and the old
+    # wording ("too little of the tune to time") read as the second.
     if out["coverage"] < MIN_PACE_COVERAGE:
-        out["unreliable"] = (f"only {out['coverage']:.0%} of the original's "
-                             f"notes were matched -- too little of the tune "
-                             f"to time")
+        out["unreliable"] = (f"--pace matched only {out['coverage']:.0%} of "
+                             f"the original's notes, below the {MIN_PACE_COVERAGE:.0%} "
+                             f"it needs to time anything -- a limit of THIS "
+                             f"measurement, not a verdict on the conversion; "
+                             f"read melody/--diagnose for that")
     # A wide IQR means the matched notes do not agree with each other about
     # the ratio, so their median is not a row length whatever its value.
+    #
+    # The bound was calibrated when "the files whose row length is
+    # independently confirmed carry 100-400 gaps at an IQR of 0-3%" (above),
+    # and the corpus has moved under it: the gate readings of v0.5.248,
+    # v0.5.402 and v0.5.410 gave many files an exactly FRACTIONAL row, whose
+    # gaps legitimately alternate (8/3 frames is 3,3,2), which spreads the
+    # ratio without anything being wrong. Fractional-row files are refused
+    # here 11 times in 35 against 3 in 48 for integer rows -- a five-fold
+    # risk, though NOT a sufficient cause, since 24 fractional-row files pass
+    # this gate. Re-calibrating it is a threshold change and wants the noise
+    # floor measured first, so it is named rather than tuned.
     if median and (q3 - q1) / median > MAX_PACE_IQR:
         out["unreliable"] = (f"IQR spans {(q3 - q1) / median:.0%} of the "
-                             f"median -- the matched notes disagree")
+                             f"median, over the {MAX_PACE_IQR:.0%} bound -- "
+                             f"the matched notes disagree about the ratio, so "
+                             f"their median is not a row length; again a limit "
+                             f"of this measurement rather than of the tune")
     return out
 
 

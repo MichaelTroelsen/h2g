@@ -1,6 +1,6 @@
 {
   "generated_from": {
-    "head": "cd2db79",
+    "head": "8bb87e9",
     "sources": [
       "whats-next.md",
       "todo.md",
@@ -33,90 +33,6 @@
     ".claude/tasks/serial.lock.d"
   ],
   "tasks": [
-    {
-      "id": "multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune",
-      "title": "One call rate is picked from subtune 0, and 12 corpus files have a subtune that needs a higher one",
-      "source": "whattask.json (carried), runs.jsonl#kings-of-the-beach-drift-plus-125.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/goatwriter.py",
-        "rw:python/tests",
-        "rw:python/presets.py",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "Kings of the Beach reaches wave 72.8% and gate 33.1% (measured at -S3 against 57.3/11.0 at -S1, melody/seq/pitch unchanged at 100%), and a corpus byte-hash moves only files whose per-subtune recommended_multiplier exceeds their recorded one. Take the 12 ONE AT A TIME with --search-subtunes: Delta wants -S10 and CLAUDE.md records that a file above -S4 cannot be judged on a normal trace",
-      "why_model": "a packed .sid has one rate and its subtunes disagree, so which subtune to serve is a design decision",
-      "why_mode": "writes presets.json and regenerates the report",
-      "why_lane": "writes presets.json, docs/FIDELITY.md and goatwriter.py, each shared with other tasks here"
-    },
-    {
-      "id": "skate-or-die-row-is-5-halves-not-3",
-      "title": "Skate or Die intro's row is 2.50 frames where the gate is read as 3 -- a uniform 6/5",
-      "source": "whattask.json (carried), runs.jsonl#skate-or-die-intro-drift-plus-200.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/goatwriter.py",
-        "rw:python/h2g/detect.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "`fidelity.py <sid> --pace` reads the row at 2.50 frames rather than 3 and drift falls from +200/1000, attacks 829 -> ~1020 against the original's 1021 (both figures RE-VERIFIED LIVE at v0.5.407). Fix where the row is DERIVED (find_song_speeds / the gate reading), NOT through the `tempo` override",
-      "why_model": "a signature hunt whose previous attempt's own A/B was invalid and read as a refutation",
-      "why_mode": "a detection change moves row length, so presets must be regenerated before it can be judged",
-      "why_lane": "a detection change moves row length, so it writes presets.json and the report alongside three other tasks"
-    },
-    {
-      "id": "international-karate-voices-never-set-an-instrument",
-      "title": "IK+'s voices name no instrument on any row, so the conversion plays whatever carried in",
-      "source": "whats-next.md, carried",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/tracks.py",
-        "rw:python/tests/test_tracks.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "IK+'s rows name an instrument where the player would have one and its adsr/wave move without melody falling; --initial-instrument's per-subtune hazard is respected (the index array is mutable player state, so its file-image value is the starting instrument only for a single-tune rip)",
-      "why_model": "mutable player state read as a constant is a whole-file regression",
-      "why_mode": "the fix needs a presets.json entry and a regenerated report to be judged",
-      "why_lane": "writes presets.json and the report, shared with the other converter tasks"
-    },
     {
       "id": "regrid-melody-collapse-on-the-six-refused-files",
       "title": "The six files --regrid is refused for: adopt each with drift improved, or refuse it with the mechanism named",
@@ -163,7 +79,7 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "Rikky's immunity is explained in the same terms as the losses, checked rather than asserted. THE QUESTION IS NOW SHARPER than when this was opened: v0.5.409 showed --no-test-restart is the collision, and six corpus files carry it and could take --regrid -- four ship with it adopted and are fine (Arcade_Classics, Rikky, Sigma_Seven, Wiz), two collapse (Sanxion, One_on_One). All six are -S1 and their row counts interleave (Sigma_Seven 3599 vs One_on_One 5584; Wiz 20373 vs Sanxion 17660), so neither multiplier nor size is the discriminator. Any candidate mechanism must explain all four immune files, not just Rikky",
+      "verify": "Rikky's immunity explained in the same terms as the losses, CHECKED rather than asserted. RESUME FROM v0.5.410's partial, which reframed the question and killed three candidates -- do not redo them. THE POPULATION IS SEVEN, not six (Powerplay Hockey is regrid-eligible and was simply never measured, at -2.87pp). THE DAMAGE IS PER VOICE and the worst-voice ratio is monotone in the file's loss: One_on_One v2 0.47 (-37.0pp), Sanxion v1 0.55 (-19.9pp), Wiz v1 0.79 (+0.8pp), Powerplay v0 0.84 (-2.9pp), Rikky/Sigma_Seven/Arcade all >= 0.97. DEAD: the compensation dose (Rikky takes the heaviest of all seven and is immune), file-level pitch movement (Sanxion has the least of everything and collapses second-worst), and a harness subtune artefact (correspondence identical in both arms). THE STANDING LEAD is cross-voice pattern GEOMETRY -- compensation is placed by voice 0's geometry but lengthens all three channels, and the immune files are the ones whose voices share voice 0's pattern lengths. FALSIFY IT by forcing compensation into a length-matched and a mismatched pattern on ONE file and seeing whether the effect follows the geometry rather than the file.",
       "why_model": "the constraint that has killed four hypotheses is the one nobody has measured directly",
       "why_mode": "read-only diagnosis, but it is the acceptance test for the other regrid tasks",
       "why_lane": "reads patterns.py and presets.json, which the regrid tasks write"
@@ -194,30 +110,6 @@
       "why_lane": "writes patterns.py, shared with the other regrid tasks"
     },
     {
-      "id": "claude-md-states-measured-numbers-in-the-present-tense",
-      "title": "Grade the CLAUDE.md figures that need a corpus sweep (the cheap half landed in v0.5.408)",
-      "source": "runs.jsonl (partial), runs.jsonl#claude-md-states-...opened=grade-the-claude-md-figures-that-need-a-corpus-sweep",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:CLAUDE.md",
-        "r:presets.json",
-        "r:build/fidelity.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "every remaining ungraded measured figure in CLAUDE.md is marked historical (carrying the version it was measured at) or live. RESUME FROM v0.5.408, do not restart: the grading RULE is already written, three figures were corrected as stale (37-of-82, 33-at-S2, 37/29 drift) and five re-verified live. What is left needs sweeps -- 'envelope_cut 33 files, rest_silence_envelope 21, zero overlap', '-S1 106 of 121 instruments at -1', 'of 63 timed files, 47 exact and 50 within 2%'",
-      "why_model": "a doc reconciliation against figures the repo can re-measure",
-      "why_mode": "the remaining figures need corpus sweeps, and the human should see which claims are demoted to history",
-      "why_lane": "writes CLAUDE.md, shared with the cd-then-heredoc task"
-    },
-    {
       "id": "gate-blind-options-are-now-three",
       "title": "fidelity_better cannot see drift or length, so --regrid and --silent-park can never be searched",
       "source": "runs.jsonl#hard-restart-frames-is-not-searchable.opened",
@@ -244,7 +136,7 @@
     },
     {
       "id": "instrmap-is-stale-against-v0-5-407",
-      "title": "build/instrmap predates v0.5.407, which changed the conversion of 17 files",
+      "title": "build/instrmap predates v0.5.407 and is now three conversion-changing commits behind",
       "source": "todo.md#12 (reopened)",
       "model": "sonnet",
       "mode": "main",
@@ -263,7 +155,7 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "`cd python && python abpage.py --instrmap <corpus>` (use ABSOLUTE paths -- see the cd-short-circuit task) and every build/instrmap/*.md is newer than 8967b3f. The dumps are mtime 2026-08-28 18:03 while v0.5.407 landed after them and moved the bytes of 17 files, so every dump for those files predates the conversion it describes. This is the SECOND time this artefact has gone stale the same way",
+      "verify": "`python abpage.py --instrmap <corpus>` run with ABSOLUTE paths from python/, and every build/instrmap/*.md newer than 8bb87e9. The artefact has fallen further behind since this task was written: v0.5.407 moved 17 files, v0.5.410 moved Kings_of_the_Beach_ingame and Knucklebusters, and v0.5.411 moved Skate_or_Die_intro -- 20 files whose dumps describe a conversion that no longer exists. Third time this artefact has gone stale the same way, so say in the run record whether anything should regenerate it automatically.",
       "why_model": "running a generator and checking mtimes against a commit",
       "why_mode": "it rebuilds build/instrmap and build/listen, both hazards",
       "why_lane": "writes build/instrmap and build/listen, which the two fidelity-diagnosis tasks read"
@@ -345,27 +237,6 @@
       "why_lane": "writes python/fidelity.py and the report"
     },
     {
-      "id": "stale-worktrees-accumulate",
-      "title": "51 registered git worktrees, none prunable, including two merged at cd2db79",
-      "source": "runs.jsonl (v0.5.408 drain report)",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:.claude/worktrees"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "every worktree whose branch is merged or whose diff is empty is removed, the count is reported before and after (51 registered as counted live at cd2db79), and any worktree holding UNMERGED work is listed rather than deleted. The two worktrees from the v0.5.409 drain are now redundant -- their content is in cd2db79. HAZARD found at v0.5.409: rw:.claude/worktrees collides with every delegated agent's own isolation worktree, which no task declares, so this must never run beside a fan-out. CLAUDE.md's parallel-work section records worktrees swapping agents' work, so nothing is removed without checking `git -C <wt> status --short` and `git log` against master first",
-      "why_model": "mechanical once the safety check is defined",
-      "why_mode": "deleting a worktree that holds unmerged work is unrecoverable, so a human should see the list",
-      "why_lane": "mutates the repo's worktree registry, which is exclusive by nature -- serial even though no other task names the path"
-    },
-    {
       "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
       "title": "ACE_II: +15.1 gate and +3 adsr, both withheld because they change approved bytes",
       "source": "whats-next.md, python/presets.py FIDELITY_VETOED",
@@ -433,33 +304,6 @@
       "why_model": "the measurement is done; only the confirmation is missing",
       "why_mode": "a pairing judgement is a listening verdict",
       "why_lane": "reads presets.json and approved.json, which other tasks write"
-    },
-    {
-      "id": "kings-of-the-beach-wants-multiplier-3",
-      "title": "Measured: wave 57.3->72.8%, gate 11.0->33.1%, nothing worse",
-      "source": "runs.jsonl#kings-of-the-beach-drift-plus-125.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [
-        "multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune"
-      ],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "presets.json records multiplier 3 for Kings_of_the_Beach_ingame, the regenerated row shows the measured gains, and a corpus byte-hash moves only that file. The baseline was RE-VERIFIED LIVE at v0.5.407: wave 57.3%, gate 11.0%, multiplier 1",
-      "why_model": "the measurement is taken; only the entry is missing",
-      "why_mode": "writes presets.json and regenerates the report",
-      "why_lane": "writes presets.json and the report"
     },
     {
       "id": "rest-wave-and-envelope-compete-for-the-rest-rows-command-column",
@@ -550,27 +394,6 @@
       "why_lane": "writes patterns.py, presets.py, presets.json and the report, each shared with several other tasks here"
     },
     {
-      "id": "agent-scratchpads-are-not-isolated-from-the-orchestrators",
-      "title": "Concurrent agents share one scratchpad directory; a probe overwrote the orchestrator's",
-      "source": "runs.jsonl#lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:CLAUDE.md"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "CLAUDE.md's parallel-work section records the hazard and the convention that fixes it (a per-agent subdirectory, or a unique filename per probe), beside the worktree and refs/stash hazards it already documents. OBSERVED at v0.5.409: a delegated agent's bh_probe.py and a full bh_scratch/ corpus export appeared in the orchestrator's scratchpad, and the orchestrator's own identically-purposed bytehash.py had vanished by the time it was next needed. This is the shared-fixed-filename failure the repo already fixed once INSIDE fidelity.py at v0.5.66, one level up. The dispatch-template half lives in the mit-setup plugin OUTSIDE this tree and is not in scope here -- say so rather than editing it",
-      "why_model": "writing down an observed hazard beside the ones already documented",
-      "why_mode": "it edits CLAUDE.md, which is loaded every session and which the grading task also writes",
-      "why_lane": "writes CLAUDE.md, shared with claude-md-states-measured-numbers-in-the-present-tense"
-    },
-    {
       "id": "orphaned-tail-processes-survive-their-sessions",
       "title": "Three tail -f processes from previous sessions are still running, one since Aug 22",
       "source": "runs.jsonl#lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule.opened",
@@ -611,6 +434,157 @@
       "why_model": "a commit in another repo once the human has decided what to do with the second edit",
       "why_mode": "committing another session's unfinished work in an external repo is an authorisation, not a judgement",
       "why_lane": "an external repo's working tree is exclusive by nature -- serial even though no other task names it"
+    },
+    {
+      "id": "presets-json-committed-form-does-not-match-its-generator",
+      "title": "presets.json is committed at indent=1 while presets.py writes indent=2, so every regeneration is a 1035-line diff",
+      "source": "runs.jsonl#multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune.opened",
+      "model": "sonnet",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:presets.json",
+        "rw:python/presets.py",
+        "rw:python/tests",
+        "r:python/abpage.py"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "a regeneration of presets.json that changes nothing semantically produces a diff of ZERO lines (or only the generator stamp). Today the committed file is written with indent=1 while presets.py's json.dumps uses indent=2, so ANY regeneration rewrites all 1035 lines regardless of what changed -- which defeats the point of a generated artefact being reviewable and would hide a real change. Decide which form is canonical and make the generator and the committed file agree; a one-line check that re-dumps the file and asserts byte-equality would keep them so. Confirmed at v0.5.410 that the mismatch is pre-existing, not introduced by that commit.",
+      "why_model": "a formatting reconciliation with the discrepancy already located",
+      "why_mode": "it rewrites presets.json, the artefact every other task here regenerates",
+      "why_lane": "writes presets.json and python/presets.py, both shared with several tasks"
+    },
+    {
+      "id": "ten-files-still-pack-for-a-non-starting-subtune",
+      "title": "Ten files keep a call rate wrong for one of their non-starting subtunes, and no single packed file can fix it",
+      "source": "runs.jsonl#multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "either a mechanism that serves a non-starting subtune's rate, or the limitation written down where a reader of the emitter will find it. v0.5.410 fixed the START subtune for all 12 affected files; ten keep a wrong rate for some OTHER subtune (Monty, Delta, Dragons_Lair_Part_II, Flash_Gordon, Star_Paws, W_A_R, Wiz, Tarzan, Gerry_the_Germ, Human_Race). A rate exact for every subtune is the LCM of their row denominators -- 24, 40, and 140 for Flash Gordon -- against a MAX_ROW_DENOMINATOR of 10, so the exact rule is unreachable and max() is an inexact compromise that costs the subtune everyone hears. The honest answer may be 'one file per subtune', which is a different feature: if so, say so and close it rather than half-building it.",
+      "why_model": "a design question whose obvious answer is already measured to be wrong",
+      "why_mode": "any candidate changes the pack rate, so presets and the report must be regenerated to judge it",
+      "why_lane": "writes goatwriter.py, presets.json and the report"
+    },
+    {
+      "id": "powerplay-hockey-regrid-was-never-measured",
+      "title": "Powerplay Hockey is regrid-eligible, ships regrid:false, and was never measured either way",
+      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
+      "model": "sonnet",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/h2g/patterns.py",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "presets.json records a MEASURED decision for Powerplay_Hockey_USA_vs_USSR rather than an absent one, and the run record says which. Measured at v0.5.410: --regrid costs it melody -2.87pp (99.30 -> 96.43) and sequence -2.56pp while taking drift -7.90 -> +1.12 and gate 44.1 -> 55.9%. That is a genuine trade, not an obvious refusal, and `fidelity_better` cannot adjudicate it because no report column reads drift -- see gate-blind-options-are-now-three. Note the general hazard this file exposed: --regrid is hand-adopted, so an unmeasured file and a refused one are indistinguishable in presets.json.",
+      "why_model": "the measurement exists; what is missing is a recorded decision",
+      "why_mode": "writes presets.json and regenerates the report",
+      "why_lane": "writes presets.json and the report"
+    },
+    {
+      "id": "four-files-sound-notes-before-their-voices-first-instrument",
+      "title": "61 notes across four files sound before their own voice has named an instrument",
+      "source": "runs.jsonl#international-karate-voices-never-set-an-instrument.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/tracks.py",
+        "rw:python/tests/test_tracks.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "the 61 notes either play the instrument the player would have given them, or the shortfall is written down with its reason. Censused at v0.5.410 through songview: Dragons_Lair_Part_II 32 (subtunes 5 and 6, voice 2), Bangkok_Knights 20 (voice 0), Delta_Mix-E-Load_loader 8 (voices 0 and 2), Gremlins 1. THE OBVIOUS REMEDY IS ALREADY REFUTED: --initial-instrument is measurably worse on both files where its hazard permits it (Delta loses wave 99.7 -> 66.4% and adsr 66.7 -> 33.3%), so this needs a different mechanism, not that flag. Note also that the hazard's criterion is the EMITTED subtune count, not the header's -- Delta declares 16 and emits 1.",
+      "why_model": "the one mechanism in the tree for this is measured to be harmful, so a new one has to be reasoned out",
+      "why_mode": "writes tracks.py and needs the report regenerated to judge",
+      "why_lane": "writes tracks.py, presets.json and the report"
+    },
+    {
+      "id": "fourteen-files-cannot-be-timed-by-pace-at-all",
+      "title": "14 of 83 files match too few notes for --pace to time, and that is not evidence of correct pacing",
+      "source": "runs.jsonl#claude-md-states-measured-numbers-in-the-present-tense.opened",
+      "model": "sonnet",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/tests/test_pace.py",
+        "rw:python/tests",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "each of the 14 untimed files is attributed -- too short a window, a subtune mismatch, a genuinely different conversion, or a harness limit -- and the count is either reduced or stated as the honest floor. Found at v0.5.410 while re-sweeping --pace: of the 83 converting files 69 time and ALL 69 read 0% out, so the remaining 14 are the whole of what that instrument cannot see, and 17 arms are additionally flagged unreliable for a wide IQR. CLAUDE.md now says explicitly that these are not evidence of correct pacing; this task is to find out what they are.",
+      "why_model": "extending an existing diagnostic whose methodology is already written",
+      "why_mode": "a corpus --pace sweep outlives a delegated agent",
+      "why_lane": "writes python/fidelity.py, which several tasks read"
+    },
+    {
+      "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
+      "title": "24 registered worktrees hold uncommitted edits, including two test files that exist nowhere else",
+      "source": "runs.jsonl#stale-worktrees-accumulate.opened",
+      "model": "sonnet",
+      "mode": "requires-user",
+      "lane": "serial",
+      "touches": [
+        "rw:.claude/worktrees"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": "After v0.5.410 pruned the 8 removable worktrees, 42 remain and ALL of them hold work: 24 are dirty with uncommitted modifications to python/h2g/patterns.py, goatwriter.py, fidelity.py, abpage.py, detect.py, sidfile.py, survey.py and their tests, plus two UNTRACKED test files -- test_robs_life.py and test_pitch_seq_shapes.py -- that exist nowhere else in the repo; the other 18 are clean but one commit ahead of master. The 18 commits are safe where they are (removing a worktree does not delete its branch); the 24 diffs are NOT recoverable if those directories are ever cleaned. Someone has to decide, per worktree, whether that work is wanted -- no measurement settles it, and a runner must not guess.",
+      "decision": null,
+      "verify": "every one of the 24 dirty worktrees is either salvaged (its diff applied or saved as a patch) or knowingly discarded, and the two untracked test files are recovered or explicitly abandoned. Report the count before and after. HAZARD: rw:.claude/worktrees collides with every delegated agent's own isolation worktree, which no task declares, so this must never run beside a fan-out.",
+      "why_model": "mechanical salvage once the human has said what is wanted",
+      "why_mode": "discarding another session's unrecoverable work is an authorisation, not a judgement",
+      "why_lane": "mutates the worktree registry, exclusive by nature and hostile to any fan-out"
     }
   ],
   "closed": [
@@ -744,6 +718,72 @@
       "id": "cd-then-heredoc-depends-on-should-be-contention-not-dependency",
       "title": "The cd-then-heredoc task's bogus depends_on edge removed from the plan",
       "closed_by": "cd2db79",
+      "reason": null
+    },
+    {
+      "id": "multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune",
+      "title": "The gt2reloc -S factor is chosen from the subtune the file starts on, not subtune 0",
+      "closed_by": "d346fe8",
+      "reason": null
+    },
+    {
+      "id": "kings-of-the-beach-wants-multiplier-3",
+      "title": "Kings of the Beach packs at -S3, derived rather than hand-entered",
+      "closed_by": "d346fe8",
+      "reason": null
+    },
+    {
+      "id": "agent-scratchpads-are-not-isolated-from-the-orchestrators",
+      "title": "The scratchpad-isolation hazard is recorded in CLAUDE.md's parallel-work section",
+      "closed_by": "d346fe8",
+      "reason": null
+    },
+    {
+      "id": "stale-worktrees-accumulate",
+      "title": "51 -> 43 worktrees; the removable set is saturated at 0",
+      "closed_by": "d346fe8",
+      "reason": "Closed by exhaustion rather than by tidiness: all 8 clean-and-merged worktrees were removed and nothing further qualifies. What remains is tracked as twenty-four-worktrees-hold-uncommitted-work-from-past-sessions, which is a decision rather than a cleanup."
+    },
+    {
+      "id": "skate-or-die-row-is-5-halves-not-3",
+      "title": "Skate or Die intro's gate is indexed by the PAL/NTSC flag; the row is 5/2 and drift is 0",
+      "closed_by": "8bb87e9",
+      "reason": null
+    },
+    {
+      "id": "international-karate-voices-never-set-an-instrument",
+      "title": "REFUTED: IK's voices do name instruments, and --initial-instrument is harmful",
+      "closed_by": "8bb87e9",
+      "reason": "The premise is false -- International Karate's voices name an instrument on 263/71/94 rows. The real defect is four other files and 61 notes, tracked as four-files-sound-notes-before-their-voices-first-instrument, and the only mechanism in the tree for it was measured harmful."
+    },
+    {
+      "id": "claude-md-states-measured-numbers-in-the-present-tense",
+      "title": "All three named figures graded, plus three false claims corrected",
+      "closed_by": "8bb87e9",
+      "reason": null
+    },
+    {
+      "id": "claude-md-pal-ntsc-gate-is-no-longer-a-hypothesis",
+      "title": "CLAUDE.md's PAL/NTSC gate paragraph updated from hypothesis to finding",
+      "closed_by": "8bb87e9",
+      "reason": null
+    },
+    {
+      "id": "claude-md-international-karate-instrument-claim-is-false",
+      "title": "CLAUDE.md's International Karate instrument claim corrected",
+      "closed_by": "8bb87e9",
+      "reason": null
+    },
+    {
+      "id": "initial-instrument-is-worse-on-the-file-it-was-built-for",
+      "title": "CLAUDE.md's '--initial-instrument is right for Delta_Mix-E-Load_loader' corrected",
+      "closed_by": "8bb87e9",
+      "reason": "The DOC claim is corrected with the measurement. The option having no measured beneficiary at all is folded into four-files-sound-notes-before-their-voices-first-instrument rather than tracked separately."
+    },
+    {
+      "id": "regrid-docstring-says-six-files-and-never-voice-0-both-wrong",
+      "title": "regrid_tempos' docstring corrected: seven files, and voice 0 can be the damaged one",
+      "closed_by": "d346fe8",
       "reason": null
     }
   ]

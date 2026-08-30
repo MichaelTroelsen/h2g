@@ -139,11 +139,54 @@ EXCLUDED_FROM_ALWAYS = {
     # we emit), and the defect it removes is CUMULATIVE DRIFT -- which melody
     # is blind to by construction: it is a difflib ratio over a note sequence
     # and is satisfied by a tune playing the right music 0.78% fast forever.
-    # `--pace`'s drift line is the only instrument that reads it and it is not
-    # a report column, so every entry here is a hand-recorded measurement.
     # Corpus: it reaches 18 files, drift improves on 14 of them and five land
     # on exactly 0.00 -- but melody COLLAPSES on two (One_on_One -37.0pp,
     # Sanxion -19.9pp), which is why it can never be a default.
+    #
+    # WHY IT IS UNSEARCHABLE -- DECIDED AT v0.5.411, AND NOT FOR THE REASON
+    # THIS COMMENT USED TO GIVE. It said "`--pace`'s drift line is the only
+    # instrument that reads it and it is not a report column". Both halves are
+    # wrong. `fidelity.drift(orig, ours)` takes the SAME TWO TRACES `play()`
+    # already holds, and `drift_per_1000` IS a registered `Dimension` in the
+    # report (checked, beside `melody`; CLAUDE.md records its coverage as 80 of
+    # 83 rows at v0.5.407, which is that commit's figure and not re-measured
+    # here). So growing a drift term is roughly two lines, and the exclusion is
+    # not forced by any measurement gap.
+    #
+    # It would also not help, and that is the finding. `fidelity_better`'s
+    # `keeps_notes` requires `cand[2] >= ref[2]` -- OUR raw attack count, with
+    # no margin -- and it gates every acceptance term in the function. But the
+    # whole benefit of `--regrid` includes REMOVING SURPLUS ATTACKS, measured
+    # at v0.5.411 on the four eligible files that take it well:
+    #
+    #     Arcade_Classics   375 -> 372   original 372   exact
+    #     Sigma_Seven       417 -> 414   original 414   exact
+    #     Wiz               446 -> 437   original 437   exact
+    #     Rikky             201 -> 196   original 197   within one
+    #
+    # Every one is a strict improvement that the guard reads as a loss, so all
+    # four are refused before any term is consulted -- with or without a drift
+    # term. The guard compares OURS TO OURS and the original's count never
+    # enters the tuple, so it cannot tell "deleted three real notes" from
+    # "stopped inventing three". That is the same trap CLAUDE.md states for
+    # register agreements ("read any register agreement next to both sides'
+    # note counts"), in the one place here that already has both counts to
+    # hand and uses only one.
+    #
+    # The guard is load-bearing and deliberate -- the comment in
+    # `fidelity_better` calls it the anti-gaming clause that "has protected
+    # every term here since the first", because a conversion with fewer notes
+    # scores better on `wave` and `gate` for having fewer events to disagree
+    # about. So the change is NOT to relax it but to make it TWO-SIDED against
+    # `orig_attacks`: a reduction that moves toward the original's count is an
+    # improvement, a reduction past it is the gaming the guard exists to stop.
+    #
+    # NOT IMPLEMENTED HERE, deliberately. Widening this function's criterion is
+    # exactly the change that cost seven measured settings and gained one (see
+    # `gave_back` below), so it wants a corpus `--fidelity` A/B against the
+    # shipped presets before it lands, not a plausible argument. The decision
+    # recorded is: the exclusion list should NOT keep growing, and the term to
+    # add is not `drift` but the original's attack count in `keeps_notes`.
     "regrid",
     # A LIST of instrument numbers, not a toggle, so the boolean --fidelity
     # walk cannot search it and there is no single value for `always`. It

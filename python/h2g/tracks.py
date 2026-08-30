@@ -725,6 +725,36 @@ def fold_transposes(sid: SidFile, det: Detection, tracks: List[List[int]],
     return variants
 
 
+# A NOTE SOUNDING BEFORE ITS VOICE NAMES AN INSTRUMENT IS NOT, BY ITSELF, A
+# DEFECT -- measured at v0.5.411, because it looks like one and is the obvious
+# thing to reach for this function to fix.
+#
+# Censused through `songview` over the whole corpus, exactly FOUR files sound a
+# note before that voice has ever named an instrument, 61 notes in total:
+# Dragons_Lair_Part_II 32 (subtunes 5 and 6, voice 2), Bangkok_Knights 20
+# (voice 0), Delta_Mix-E-Load_loader 8 (voices 0 and 2), Gremlins 1. Note first
+# that 33 of the 61 are in subtunes no report traces, so nothing can see them.
+#
+# Of the 28 that are visible, the two files disagree completely:
+#
+#   Delta_Mix-E-Load_loader  its 8 notes are EXACT -- 15 attacks against the
+#                            original's 15, the same notes at the same frames
+#                            within the startup lag, on both affected voices.
+#   Bangkok_Knights          its voice 0 IS damaged: `--diagnose` reads ratio
+#                            0.87 and pitches 50% the same, against voices 1
+#                            and 2 at 1.00/100% and 0.96/100%.
+#
+# So the condition is present in both and audible in one. And on the damaged
+# one THIS FUNCTION IS INERT: forcing `--initial-instrument` leaves voice 0 at
+# ratio 0.87 and pitches 50% the same, unchanged to the decimal, while
+# demonstrably moving the file's bytes (sha c2afd5e7a9a8 -> a208e3cc5cfd) and
+# costing `wave` 42.8 -> 40.5% and `gate` 64.1 -> 60.2%. That is what the
+# measurement says and it is what the mechanism predicts: an instrument
+# governs timbre and envelope, and Bangkok's voice 0 disagrees about PITCH,
+# which the note column decides.
+#
+# Bangkok's voice 0 is a real and separate defect; the missing instrument is
+# not its cause. Do not widen this function to chase it.
 def apply_initial_instruments(tracks: List[List[int]],
                               patterns: List[List[int]],
                               det: Detection, log=None) -> int:

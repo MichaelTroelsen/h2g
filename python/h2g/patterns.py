@@ -2121,6 +2121,28 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                  for i in range(n)]
         for r in dict.fromkeys(spots):
             row, nxt = r * 4 + 2, (r + 1) * 4 + 2
+            # ONE VOICE'S COLUMN IS THE WHOLE OF WHAT THIS GUARD OWES, and it
+            # was proposed at v0.5.411 that it should consult voices 1 and 2
+            # at the same row, since CMD_SETTEMPO lengthens all three. That
+            # conflates two different things and is a category error.
+            # Overwriting a command is this guard's job; the tempo reaching
+            # the other voices is a TIMING effect, and no column-occupancy
+            # test can address it -- v0.5.408 measured the command's mere
+            # presence at 0.0pp on both casualties (base+0, column occupied
+            # identically, row not lengthened), so the damage is the extra
+            # CALL, which declining columns cannot prevent.
+            # And there is nothing there to clobber: `exclusive` above admits
+            # only patterns whose `where` is exactly {(k, 0)}, so voices 1 and
+            # 2 never play a pattern this writes into. Checked over all 12
+            # files that ship --regrid: 304 patterns written, and every one
+            # has `where == {(k, 0)}`. (A first census said 2 of them leaked;
+            # it was counting the byte AFTER GT_ORDER_RESTART as a pattern
+            # reference, which the `operand` skip above exists to avoid.)
+            # A positional guard would also be ill-defined: 169 of those 304
+            # (55.6%) are replayed, Wiz's up to 14 times, so "what voices 1
+            # and 2 are doing at the same row" has up to 14 answers -- and
+            # answering it per position is the per-copy cost this schedule is
+            # pattern-global to avoid.
             if patterns[pat][row] or patterns[pat][nxt]:
                 skipped += 1             # the column is spoken for; leave it
                 continue
