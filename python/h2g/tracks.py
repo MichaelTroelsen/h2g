@@ -771,11 +771,34 @@ def apply_initial_instruments(tracks: List[List[int]],
     pattern selects an instrument therefore plays with attack/decay 0 and
     sustain/release 0, which is silence.
 
-    That is Delta Mix-E-Load's two dead voices exactly: its orderlists are one
-    pattern each, patterns $18 and $17 carry no instrument byte, and the array
-    at $C535 reads `03 09 00` -- the three instruments siddump shows the
-    original playing. It is 41 of the corpus's 821 voice orderlists in nine
-    files.
+    That was Delta Mix-E-Load's two dead voices: its orderlists are one pattern
+    each, patterns $18 and $17 carry no instrument byte, and the array at $C535
+    reads `03 09 00` -- the three instruments siddump shows the original
+    playing. It is 41 of the corpus's 821 voice orderlists in nine files.
+
+    **Past tense deliberately: this function has no measured beneficiary.**
+    Delta's voices are not silent any more -- at v0.5.429 they read wave
+    99.4 / 99.9 / 99.9 percent WITHOUT this function, so the defect it was
+    written for was fixed elsewhere and the baseline moved. Forced on today it
+    is a large regression on the very file it was derived from: file `wave`
+    99.7 -> 66.4%, `adsr` 66.7 -> 33.3%, `pulse_span` 1.007 -> 0.387, with
+    voice 2 going 99.9 -> 0.5% and gaining 1488 noise frames against an
+    original that sounds none. `Bangkok_Knights`, the only other file the
+    subtune hazard permits, also loses (wave 42.8 -> 40.5%, gate 64.1 ->
+    60.2%). `melody`, `sequence` and `pitch_jaccard` are identical either way
+    on Delta, so nothing in the sequence family reports any of this.
+
+    Do not widen it on the strength of the paragraph above; widen it only if
+    some file is measured BETTER with it. Note also that voice 2 moves at all
+    despite `initial_instruments` being `(3, 9, 0)` and `_initial_for`
+    rejecting 0 -- the collapse arrives through the pattern copying rather
+    than through a selected instrument, and that is unexplained.
+
+    THE HAZARD'S CRITERION IS THE EMITTED SUBTUNE COUNT, NOT THE HEADER'S.
+    The index array is mutable player state, so its file-image value is the
+    starting instrument only for a rip of a single tune. Delta's PSID header
+    declares 16 subtunes while the converter emits 1 -- by the header it looks
+    like the multi-subtune hazard, by what is written it is a single-tune rip.
 
     Applied by copying the pattern and pointing that one orderlist step at the
     copy, never by patching in place: the same pattern is played again later

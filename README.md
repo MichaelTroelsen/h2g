@@ -654,12 +654,30 @@ non-zero -- but a different starting point: `gplay.c:223` sets every channel
 to instrument **1**, which this writer emits as the empty "Clear Voice"
 record (attack/decay 0, sustain/release 0). Those voices came out silent.
 
-`Delta_Mix-E-Load_loader` is the clear case. Its orderlists are one pattern
-per voice, patterns `$18` and `$17` carry no instrument byte at all, and the
-array at `$C535` reads `03 09 00` -- exactly the three records whose ADSR
-siddump shows the original playing (`3A98`, `BC5D`, `0CF8`). Voice 1 is the
-control: its pattern selects `$09` explicitly, and the array agrees. With the
-flag its waveform agreement goes 33% → 97% and its melody 10% → 29%.
+`Delta_Mix-E-Load_loader` is the file the flag was derived from. Its
+orderlists are one pattern per voice, patterns `$18` and `$17` carry no
+instrument byte at all, and the array at `$C535` reads `03 09 00` -- exactly
+the three records whose ADSR siddump shows the original playing (`3A98`,
+`BC5D`, `0CF8`). All of that is still true.
+
+**The gain it was built for is not, and the flag is now measurably wrong on
+this file.** The historical figure here read "with the flag voice 1's waveform
+agreement goes 33% → 97%". Re-measured at **v0.5.429**, that voice reads
+**99.9% without the flag**: whatever made those voices silent was fixed
+elsewhere, and the baseline moved out from under the option. Forced on today,
+Delta *loses* -- file `wave` 99.7% → 66.4%, `adsr` 66.7% → 33.3%, `pulse_span`
+1.007 → 0.387, and voice 2 collapses from **99.9% → 0.5%** while gaining
+**1488 noise frames against an original that sounds none**. `melody`,
+`sequence` and `pitch_jaccard` are 1.0 either way, so no sequence column can
+see any of it.
+
+`Bangkok_Knights`, the only other file the subtune hazard below permits, also
+loses: `wave` 42.8% → 40.5%, `gate` 64.1% → 60.2%, and its noise frames move
+*away* from the original (1537 → 1508 against 1640).
+
+So the flag has **no measured beneficiary today**. It is kept, off, because
+the mechanism it implements is real and the silence it targeted may recur;
+it is not kept because any file is currently better with it.
 
 The flag copies the pattern and repoints that one orderlist step at the copy,
 rather than patching in place: the same pattern is played again later in half
@@ -675,8 +693,13 @@ subtunes, and its array (`00 07 05`) names records whose ADSR is `4764`,
 `2524` and `2740` while the original plays `5C3A`, `1858` and `0868` -- the
 snapshot caught the array mid-tune, and no static read can recover what each
 subtune starts from. Turning the flag on there raises melody 15% → 19% and
-drops waveform agreement 29% → 0%. Use it on single-tune rips; the two files
-it was derived from are both of those.
+drops waveform agreement 29% → 0%.
+
+**The criterion is the EMITTED subtune count, not the header's**, and the two
+differ constantly. `Delta_Mix-E-Load_loader`'s PSID header declares **16**
+subtunes while the converter emits **1** -- so by the header it looks like the
+fifteen-subtune hazard above and by what is actually written it is a
+single-tune rip. Read the emitted count.
 
 ### `--engine N` (a file that carries two players)
 
@@ -2189,6 +2212,37 @@ options are measurable in place; the historical figures here are kept as
 measured and are not restated from the report. Both options were prompted by a
 listening pass -- "the notes sound correct, but the sounds are not correct" --
 which is still the only check in the project that could have raised them.
+
+**It reaches every file, and on the three measured in detail no column reads
+it.** Byte-hashed at **v0.5.429** with the option flipped against each song's
+shipped settings: `--no-hard-restart` changes the conversion on **83 of 83**
+convertible files -- it is universally live, not a minority option. On the
+three examined column by column (Action_Biker `3554a89bc1c0` →
+`3069dc70d9a9`, Battle_of_Britain `c84b09a41da5` → `fc9861a42842`,
+5_Title_Tunes `762b0457ae84` → `de760820adf8`) `gate`, `adsr`, `melody` and
+`sequence` are identical to four decimals. That is the first of the two
+readings this project distinguishes -- *no dimension this report measures can
+see this change* -- and not the second. It is why the option sits in the
+`always` block on a listening verdict rather than on a search result:
+`fidelity_better` cannot select what no column scores.
+
+**Do not assume the neighbouring hard-restart options are dead because this
+one is on.** A record at v0.5.426 generalised from 5_Title_Tunes that with
+`--no-hard-restart` set, `--hard-restart-frames` and `--wide-hard-restart`
+are byte-level no-ops, and proposed pruning them from the search. **That is
+false** and is retracted here: measured over the corpus, `hard_restart_frames`
+= 8 moves the bytes on **15 of 83** files and `--wide-hard-restart` on **14 of
+83**, which is exactly why the search selects `max_hard_restart` on 26 songs
+and `hard_restart_frames` on 17. 5_Title_Tunes was the special case, not the
+rule.
+
+**One real pruning does hold**, and it is measured rather than argued:
+`--wide-hard-restart` is inert on **0 of the 26** files that carry
+`--max-hard-restart`, and moves bytes on 14 of the 57 that do not. So the
+width only matters when the maximum is not being taken. A search walking both
+booleans together spends a quarter of its combinations on a distinction that
+cannot exist; that pruning is not implemented, because changing the walk needs
+its own two-arm corpus A/B before adoption.
 
 ### Per-song presets — `presets.json`
 
