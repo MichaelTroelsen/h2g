@@ -623,6 +623,40 @@ def _noise_pitch(trace, nframes: int) -> int:
     return sorted(vals)[len(vals) // 2] if vals else 0
 
 
+def carried_entry(entry: dict) -> dict:
+    """What a regeneration must carry forward from a song's previous entry.
+
+    Membership, NOT truthiness. This read `if entry.get(k)` until v0.5.413,
+    which silently dropped an explicit `false` -- so an option could be
+    ADOPTED in the artefact and never REFUSED in it, and "measured and
+    rejected" was byte-identical to "never tried" for all sixteen
+    CARRIED_PER_SONG options.
+
+    That is not a cosmetic gap. `--regrid` is hand-adopted on twelve files
+    because `fidelity_better` cannot select it (see the `regrid` entry in
+    EXCLUDED_FROM_ALWAYS), so the artefact is the only record of any decision
+    about it -- and it could only ever record the yeses. Powerplay Hockey was
+    measured at v0.5.412 (melody -2.87pp against drift -7.90 -> +1.12) and
+    DECIDED against, and that decision had nowhere to live: writing
+    `regrid: false` would have survived exactly one commit and then vanished
+    on the next regeneration, which is worse than leaving it absent because it
+    reads as measured while it lasts.
+
+    Safe to widen because nothing currently relies on the drop: checked at
+    v0.5.413, ZERO of the CARRIED_PER_SONG keys present in presets.json carry
+    a falsy value (two_stage 38, max_hard_restart 26, wave_program 21,
+    hard_restart_frames 17, no_test_restart 12, pitch_seq 12, regrid 12,
+    rest_envelope_silence 4, real_firstwave_instruments 2, pulse_phase 1, all
+    truthy), so the change carries nothing new today and only becomes visible
+    the first time somebody records a refusal.
+
+    An explicit `false` is also inert in conversion: `_preset_opts` already
+    passes False for an absent key, so `regrid: false` and no `regrid` produce
+    the same bytes. Proven by corpus byte-hash rather than assumed.
+    """
+    return {k: entry[k] for k in CARRIED_PER_SONG if k in entry}
+
+
 def fidelity_better(cand: tuple, ref: tuple,
                     margin: float = FIDELITY_MARGIN) -> bool:
     """Is `cand` a better-playing (melody, sequence, attacks, noise) than `ref`?
@@ -656,8 +690,42 @@ def fidelity_better(cand: tuple, ref: tuple,
     onsets at exactly the original's counts and takes `wave` from 71% to 65%.
     """
     plays_more = cand[0] >= ref[0] + margin
+
+    # **The attack guard is two-sided against the ORIGINAL's count** (v0.5.413).
+    # It read `cand[2] >= ref[2]` -- ours against ours, no margin -- and gated
+    # every acceptance term below. That is the anti-gaming clause and it has to
+    # stay: a conversion with fewer notes scores better on `wave` and `gate` for
+    # having fewer events to disagree about (section 7.eee). But ours-against-
+    # ours cannot tell "deleted three real notes" from "stopped inventing
+    # three", and the second is an improvement it was refusing outright.
+    # Measured on the files `--regrid` helps: Arcade_Classics 375 -> 372 against
+    # the original's 372, Sigma_Seven 417 -> 414/414, Wiz 446 -> 437/437,
+    # Rikky 201 -> 196/197.
+    #
+    # The rule is CLOSER, not `>= orig`: Rikky's 196 undershoots 197 by one and
+    # a `>=` form would refuse it while accepting the other three, which is a
+    # threshold masquerading as a principle. Distance to the original's count is
+    # the same shape as `_closer` above -- a statement that the quantity moved
+    # toward its target, with no fitted number in it.
+    #
+    # A state built before this term existed carries no original count, and then
+    # the old one-sided rule stands: an absent dimension must not recommend
+    # anything, the same convention `osc`, `opens`, `holds` and `gates` use.
+    def orig_attacks(state):
+        return state[8] if len(state) > 8 else None
+
+    oa = orig_attacks(cand)
+    if oa is None:
+        oa = orig_attacks(ref)
+    if cand[2] >= ref[2]:
+        attacks_ok = True                      # never fewer: unchanged
+    elif oa is None:
+        attacks_ok = False                     # no original to judge against
+    else:
+        attacks_ok = abs(cand[2] - oa) < abs(ref[2] - oa)
+
     keeps_notes = (cand[1] >= ref[1] - margin
-                   and cand[2] >= ref[2]
+                   and attacks_ok
                    and cand[0] >= ref[0] - margin)
     # "Closer to the original than none at all", which is what restoring a
     # register has to mean: |ours - theirs| < |0 - theirs|. Not a fitted
@@ -1026,7 +1094,11 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 F.onset_agreement(orig, dump, nf)["onset_frame_agreement"],
                 F.sound_run_agreement(orig, dump, nf)["sound_run_agreement"],
                 F.gate_compare(orig, dump, nf,
-                               lag=F.startup_lag(orig, dump)[0])["gate"])
+                               lag=F.startup_lag(orig, dump)[0])["gate"],
+                # The ORIGINAL's attack count, so `keeps_notes` can tell a
+                # deletion from a correction. It was always to hand here and
+                # never passed; see that guard for what its absence cost.
+                sum(len(v.attacks) for v in orig))
 
     # Fix `ours_sub` before any scoring, on the default conversion, by the same
     # rule `_measure` uses: the window is the traced subtune and one either
@@ -1257,7 +1329,7 @@ def main(argv=None) -> int:
                 # silently returning it to the built-in 2 and its gate
                 # to 50%. Anything the artefact already records that
                 # this run cannot re-derive is carried.
-                keep = {k: e[k] for k in CARRIED_PER_SONG if e.get(k)}
+                keep = carried_entry(e)
                 if keep:
                     carried[name] = keep
         except (OSError, ValueError):

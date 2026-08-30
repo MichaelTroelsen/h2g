@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.413 — 2026-08-30
+
+- a measured refusal can be recorded, and the attack guard is two-sided
+
 ## 0.5.412 — 2026-08-30
 
 - eight /runtask iterations -- six premises refuted, no converted byte moved

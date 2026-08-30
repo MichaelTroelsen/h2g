@@ -270,3 +270,46 @@ def test_the_frame_count_is_derivable_and_so_is_not_blindly_carried():
     assert P.HARD_RESTART_SEARCH and P.HARD_RESTART_ENABLERS, (
         "and derivable on a --fidelity run, which is why it is excluded there")
 
+
+
+# --------------------------------------------------------------------------
+# A regeneration must be able to carry a measured NO, not only a measured YES.
+# --------------------------------------------------------------------------
+
+def test_carried_entry_keeps_an_explicit_false():
+    """The whole point: `regrid: false` is a DECISION and must survive.
+
+    Until v0.5.413 the carry tested `entry.get(k)`, so an explicit false was
+    silently dropped and "measured and rejected" was byte-identical to "never
+    tried" for all sixteen CARRIED_PER_SONG options. That matters most for the
+    options `fidelity_better` cannot select at all -- `--regrid` is hand-adopted
+    on twelve files, so the artefact is the only record of any decision about
+    it, and it could only ever record the yeses.
+    """
+    import presets
+    assert presets.carried_entry({"regrid": False}) == {"regrid": False}
+
+
+def test_carried_entry_still_keeps_a_true_and_still_ignores_absent():
+    import presets
+    assert presets.carried_entry({"regrid": True}) == {"regrid": True}
+    assert presets.carried_entry({"max_rows": 94}) == {}
+
+
+def test_carried_entry_carries_a_false_beside_a_true():
+    """Membership, not truthiness -- and the two must not interfere."""
+    import presets
+    got = presets.carried_entry({"regrid": False, "two_stage": True,
+                                 "max_rows": 94})
+    assert got == {"regrid": False, "two_stage": True}
+
+
+def test_every_carried_key_is_a_membership_test_not_a_truthiness_one():
+    """Pins the property for the whole set rather than for one key.
+
+    A future option joins CARRIED_PER_SONG by being declared, so a test naming
+    only `regrid` would not notice the next one being added under the old rule.
+    """
+    import presets
+    falsey = {k: False for k in presets.CARRIED_PER_SONG}
+    assert presets.carried_entry(falsey) == falsey

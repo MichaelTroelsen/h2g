@@ -1,13 +1,12 @@
 {
   "generated_from": {
-    "head": "8bb87e9",
+    "head": "ed7f7bc",
     "sources": [
       "whats-next.md",
       "todo.md",
       ".claude/tasks/runs.jsonl",
       ".claude/tasks/whattask.json (carried)",
       "docs/FIDELITY.md",
-      "build/fidelity.json",
       "presets.json",
       "graphify-out/graph.json",
       "git log",
@@ -55,7 +54,7 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "each of the six refusals is adopted with drift improved and melody held, or refused with the mechanism written down. RESUME FROM v0.5.409, which attributed the collapse: it is --no-test-restart, not a per-call pitch source. Turning no_test_restart off erases both casualties (Sanxion -19.9pp -> +0.2pp, One_on_One -37.0pp -> +0.5pp); --no-test-restart deletes the testbit frame, the only frame our conversions spend below $10, and siddump needs one below $10 to name an attack -- it OWNS frame 0 and a compensating row moves the boundary underneath it. FIVE hypotheses are now dead: funktempo restore value, over-delivery, slide-heaviness, the extended in-progress slide, and 'the two casualties do not share one cause' (this session's own v0.5.408 conclusion, retracted). It is NECESSARY BUT NOT SUFFICIENT -- four files carry both options happily, so the remaining question is the discriminator, which is rikky-immunity-to-regrid-is-unexplained",
+      "verify": "each refusal adopted with drift improved and melody held, or refused with the mechanism written down. It is NECESSARY BUT NOT SUFFICIENT that the file carries --no-test-restart (v0.5.409), and the discriminator is still unknown after SIX dead candidates -- see rikky-immunity-to-regrid-is-unexplained, which is the same question and carries the full list. Do not start here: this task cannot close until that one does.",
       "why_model": "a falsification pass where four plausible causes have already been wrong",
       "why_mode": "needs the compensation schedule's derivation in context, and regenerates the report",
       "why_lane": "writes patterns.py, presets.json and the report"
@@ -79,86 +78,10 @@
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "Rikky's immunity explained in the same terms as the losses, CHECKED rather than asserted. RESUME FROM v0.5.410's partial, which reframed the question and killed three candidates -- do not redo them. THE POPULATION IS SEVEN, not six (Powerplay Hockey is regrid-eligible and was simply never measured, at -2.87pp). THE DAMAGE IS PER VOICE and the worst-voice ratio is monotone in the file's loss: One_on_One v2 0.47 (-37.0pp), Sanxion v1 0.55 (-19.9pp), Wiz v1 0.79 (+0.8pp), Powerplay v0 0.84 (-2.9pp), Rikky/Sigma_Seven/Arcade all >= 0.97. DEAD: the compensation dose (Rikky takes the heaviest of all seven and is immune), file-level pitch movement (Sanxion has the least of everything and collapses second-worst), and a harness subtune artefact (correspondence identical in both arms). THE STANDING LEAD is cross-voice pattern GEOMETRY -- compensation is placed by voice 0's geometry but lengthens all three channels, and the immune files are the ones whose voices share voice 0's pattern lengths. FALSIFY IT by forcing compensation into a length-matched and a mismatched pattern on ONE file and seeing whether the effect follows the geometry rather than the file.",
+      "verify": "Rikky's immunity explained in the same terms as the losses, CHECKED. SIX candidate causes are now dead -- do not redo any: (1) the compensation dose (Rikky takes the heaviest of all seven, 196 rows, and is immune), (2) file-level per-call pitch movement (Sanxion has the least of everything and collapses second-worst), (3) a harness subtune artefact (correspondence identical in both arms), (4) cross-voice pattern GEOMETRY -- refuted at v0.5.412 by a direct counterexample, Arcade_Classics is 96% MISMATCHED and immune while Powerplay is 100% MATCHED and damaged, (5) the base row length (immune Rikky reads 4 and damaged One_on_One reads 4), (6) the occupied-column guard (a category error; regrid writes only into voice-0-exclusive patterns, 304 of 304 checked). THE ONE UNTESTED CANDIDATE is what the other voices are DOING at the compensated moment -- not their pattern LENGTHS, which is what (4) tested, but whether a note ONSET in voice 1 or 2 falls on the lengthened row. That needs cumulative row positions across three voices of differing pattern lengths. REUSE THE HARNESS from v0.5.412: wrap regrid_tempos, let it place, revert the pairs you want excluded, and measure IN-PROCESS (an out-of-process fidelity run converts with the unpatched emitter and silently compares identical arms).",
       "why_model": "the constraint that has killed four hypotheses is the one nobody has measured directly",
       "why_mode": "read-only diagnosis, but it is the acceptance test for the other regrid tasks",
       "why_lane": "reads patterns.py and presets.json, which the regrid tasks write"
-    },
-    {
-      "id": "regrid-occupied-column-guard-only-checks-voice-0",
-      "title": "regrid's occupied-column guard checks the pattern it writes into, but CMD_SETTEMPO lengthens all three voices",
-      "source": "runs.jsonl#regrid-lengthened-row-may-extend-an-in-progress-slide.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/patterns.py",
-        "rw:python/tests",
-        "r:presets.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "the guard consults voices 1 and 2 at the same row before lengthening, a test pins that a compensation row is declined when another voice is mid-effect there, and a corpus byte-hash names exactly the files that move. Note this may not FIX the collapse -- v0.5.408 showed the command's presence is harmless and the extra call is the damage -- so measure before claiming it does",
-      "why_model": "a bounded change to one guard with the mechanism already written down",
-      "why_mode": "it changes which rows regrid takes, so the 12 adopting files must be re-measured",
-      "why_lane": "writes patterns.py, shared with the other regrid tasks"
-    },
-    {
-      "id": "gate-blind-options-are-now-three",
-      "title": "fidelity_better cannot see drift or length, so --regrid and --silent-park can never be searched",
-      "source": "runs.jsonl#hard-restart-frames-is-not-searchable.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/presets.py",
-        "rw:python/tests/test_presets.py",
-        "rw:python/tests/test_preset_passthrough.py",
-        "r:python/fidelity.py",
-        "r:presets.json"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "a decision, written down, on whether fidelity_better grows a drift/length term or the exclusion list keeps growing. NOTE THE PREMISE HAS MOVED: of the three options this was opened about, `hard_restart_frames` became searchable AND selectable at v0.5.406, so it is down to `regrid` and `silent_park`. Both are drift/length effects, and CLAUDE.md records that --pace's drift line is the ONLY instrument that reads them and is not a report column -- so all 12 regrid adoptions are hand-recorded measurements. Any new term must not repeat the version that lost seven measured settings and gained one",
-      "why_model": "a criterion change with a recorded history of losing measured settings",
-      "why_mode": "a design decision about the search's acceptance rule",
-      "why_lane": "writes python/presets.py, which the listening task reads"
-    },
-    {
-      "id": "instrmap-is-stale-against-v0-5-407",
-      "title": "build/instrmap predates v0.5.407 and is now three conversion-changing commits behind",
-      "source": "todo.md#12 (reopened)",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:build/instrmap",
-        "rw:build/instrmap.json",
-        "rw:build/listen",
-        "r:presets.json",
-        "r:python/abpage.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "`python abpage.py --instrmap <corpus>` run with ABSOLUTE paths from python/, and every build/instrmap/*.md newer than 8bb87e9. The artefact has fallen further behind since this task was written: v0.5.407 moved 17 files, v0.5.410 moved Kings_of_the_Beach_ingame and Knucklebusters, and v0.5.411 moved Skate_or_Die_intro -- 20 files whose dumps describe a conversion that no longer exists. Third time this artefact has gone stale the same way, so say in the run record whether anything should regenerate it automatically.",
-      "why_model": "running a generator and checking mtimes against a commit",
-      "why_mode": "it rebuilds build/instrmap and build/listen, both hazards",
-      "why_lane": "writes build/instrmap and build/listen, which the two fidelity-diagnosis tasks read"
     },
     {
       "id": "action-bikers-fidelity-is-not-99-percent",
@@ -436,57 +359,6 @@
       "why_lane": "an external repo's working tree is exclusive by nature -- serial even though no other task names it"
     },
     {
-      "id": "presets-json-committed-form-does-not-match-its-generator",
-      "title": "presets.json is committed at indent=1 while presets.py writes indent=2, so every regeneration is a 1035-line diff",
-      "source": "runs.jsonl#multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:presets.json",
-        "rw:python/presets.py",
-        "rw:python/tests",
-        "r:python/abpage.py"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "a regeneration of presets.json that changes nothing semantically produces a diff of ZERO lines (or only the generator stamp). Today the committed file is written with indent=1 while presets.py's json.dumps uses indent=2, so ANY regeneration rewrites all 1035 lines regardless of what changed -- which defeats the point of a generated artefact being reviewable and would hide a real change. Decide which form is canonical and make the generator and the committed file agree; a one-line check that re-dumps the file and asserts byte-equality would keep them so. Confirmed at v0.5.410 that the mismatch is pre-existing, not introduced by that commit.",
-      "why_model": "a formatting reconciliation with the discrepancy already located",
-      "why_mode": "it rewrites presets.json, the artefact every other task here regenerates",
-      "why_lane": "writes presets.json and python/presets.py, both shared with several tasks"
-    },
-    {
-      "id": "ten-files-still-pack-for-a-non-starting-subtune",
-      "title": "Ten files keep a call rate wrong for one of their non-starting subtunes, and no single packed file can fix it",
-      "source": "runs.jsonl#multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/goatwriter.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "either a mechanism that serves a non-starting subtune's rate, or the limitation written down where a reader of the emitter will find it. v0.5.410 fixed the START subtune for all 12 affected files; ten keep a wrong rate for some OTHER subtune (Monty, Delta, Dragons_Lair_Part_II, Flash_Gordon, Star_Paws, W_A_R, Wiz, Tarzan, Gerry_the_Germ, Human_Race). A rate exact for every subtune is the LCM of their row denominators -- 24, 40, and 140 for Flash Gordon -- against a MAX_ROW_DENOMINATOR of 10, so the exact rule is unreachable and max() is an inexact compromise that costs the subtune everyone hears. The honest answer may be 'one file per subtune', which is a different feature: if so, say so and close it rather than half-building it.",
-      "why_model": "a design question whose obvious answer is already measured to be wrong",
-      "why_mode": "any candidate changes the pack rate, so presets and the report must be regenerated to judge it",
-      "why_lane": "writes goatwriter.py, presets.json and the report"
-    },
-    {
       "id": "powerplay-hockey-regrid-was-never-measured",
       "title": "Powerplay Hockey is regrid-eligible, ships regrid:false, and was never measured either way",
       "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
@@ -504,66 +376,15 @@
       "mcp": [],
       "needs_main": true,
       "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
+      "depends_on": [
+        "presets-json-cannot-record-a-measured-refusal-for-any-option"
+      ],
       "blocked_on": null,
       "decision": null,
-      "verify": "presets.json records a MEASURED decision for Powerplay_Hockey_USA_vs_USSR rather than an absent one, and the run record says which. Measured at v0.5.410: --regrid costs it melody -2.87pp (99.30 -> 96.43) and sequence -2.56pp while taking drift -7.90 -> +1.12 and gate 44.1 -> 55.9%. That is a genuine trade, not an obvious refusal, and `fidelity_better` cannot adjudicate it because no report column reads drift -- see gate-blind-options-are-now-three. Note the general hazard this file exposed: --regrid is hand-adopted, so an unmeasured file and a refused one are indistinguishable in presets.json.",
+      "verify": "presets.json records a MEASURED decision for Powerplay_Hockey_USA_vs_USSR. THE MEASUREMENT AND THE DECISION ARE BOTH DONE (v0.5.412) -- do not re-measure. At HEAD, arms non-vacuous by sha: melody 99.30 -> 96.43 (-2.87pp), sequence -2.56pp, pitch_jaccard 97.30 -> 92.31, against gate 44.1 -> 55.9%, drift -7.90 -> +1.12, retrig 1.0114 -> 1.0000 and attacks 355 -> 351 against the original's 351 exactly. DECIDED: REFUSE -- the adoption bar set by the twelve files already carrying --regrid is melody held within ~1pp, and the shape is the known defect (timing exact, all three sequence columns down) on a file carrying no_test_restart. What remains is only to RECORD that refusal, which presets.json cannot express until its carry filter distinguishes absent from false.",
       "why_model": "the measurement exists; what is missing is a recorded decision",
       "why_mode": "writes presets.json and regenerates the report",
       "why_lane": "writes presets.json and the report"
-    },
-    {
-      "id": "four-files-sound-notes-before-their-voices-first-instrument",
-      "title": "61 notes across four files sound before their own voice has named an instrument",
-      "source": "runs.jsonl#international-karate-voices-never-set-an-instrument.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/h2g/tracks.py",
-        "rw:python/tests/test_tracks.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "the 61 notes either play the instrument the player would have given them, or the shortfall is written down with its reason. Censused at v0.5.410 through songview: Dragons_Lair_Part_II 32 (subtunes 5 and 6, voice 2), Bangkok_Knights 20 (voice 0), Delta_Mix-E-Load_loader 8 (voices 0 and 2), Gremlins 1. THE OBVIOUS REMEDY IS ALREADY REFUTED: --initial-instrument is measurably worse on both files where its hazard permits it (Delta loses wave 99.7 -> 66.4% and adsr 66.7 -> 33.3%), so this needs a different mechanism, not that flag. Note also that the hazard's criterion is the EMITTED subtune count, not the header's -- Delta declares 16 and emits 1.",
-      "why_model": "the one mechanism in the tree for this is measured to be harmful, so a new one has to be reasoned out",
-      "why_mode": "writes tracks.py and needs the report regenerated to judge",
-      "why_lane": "writes tracks.py, presets.json and the report"
-    },
-    {
-      "id": "fourteen-files-cannot-be-timed-by-pace-at-all",
-      "title": "14 of 83 files match too few notes for --pace to time, and that is not evidence of correct pacing",
-      "source": "runs.jsonl#claude-md-states-measured-numbers-in-the-present-tense.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/fidelity.py",
-        "rw:python/tests/test_pace.py",
-        "rw:python/tests",
-        "r:presets.json",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "each of the 14 untimed files is attributed -- too short a window, a subtune mismatch, a genuinely different conversion, or a harness limit -- and the count is either reduced or stated as the honest floor. Found at v0.5.410 while re-sweeping --pace: of the 83 converting files 69 time and ALL 69 read 0% out, so the remaining 14 are the whole of what that instrument cannot see, and 17 arms are additionally flagged unreliable for a wide IQR. CLAUDE.md now says explicitly that these are not evidence of correct pacing; this task is to find out what they are.",
-      "why_model": "extending an existing diagnostic whose methodology is already written",
-      "why_mode": "a corpus --pace sweep outlives a delegated agent",
-      "why_lane": "writes python/fidelity.py, which several tasks read"
     },
     {
       "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
@@ -585,6 +406,187 @@
       "why_model": "mechanical salvage once the human has said what is wanted",
       "why_mode": "discarding another session's unrecoverable work is an authorisation, not a judgement",
       "why_lane": "mutates the worktree registry, exclusive by nature and hostile to any fan-out"
+    },
+    {
+      "id": "presets-json-cannot-record-a-measured-refusal-for-any-option",
+      "title": "presets.json's carry filter is truthy, so no per-song option can record a measured NO",
+      "source": "runs.jsonl#powerplay-hockey-regrid-was-never-measured.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/presets.py",
+        "rw:python/tests/test_presets.py",
+        "rw:python/tests/test_preset_passthrough.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "r:python/fidelity.py",
+        "r:python/abpage.py"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "an explicit per-song `false` survives a `presets.py` regeneration, with a test that fails on the current behaviour. The cause is one line: presets.py's carry is `keep = {k: e[k] for k in CARRIED_PER_SONG if e.get(k)}` -- a TRUTHY test, so `regrid: true` carries and `regrid: false` is silently dropped. That makes 'measured and rejected' and 'never tried' the same file for ALL 16 CARRIED_PER_SONG options, not just regrid. The obvious fix is `if k in e`, but check what an explicit false then does downstream -- `_preset_opts` passes False for an absent key already, so the conversion should not move; prove that with a corpus byte-hash rather than assuming it.",
+      "why_model": "a one-line change to the artefact's contract whose blast radius is every per-song option",
+      "why_mode": "it rewrites presets.json's semantics, which every other task here regenerates",
+      "why_lane": "writes presets.py and presets.json, shared with most of this list"
+    },
+    {
+      "id": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
+      "title": "fidelity_better refuses any option that removes surplus attacks, because its guard compares ours to ours",
+      "source": "runs.jsonl#gate-blind-options-are-now-three.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/presets.py",
+        "rw:python/tests/test_presets.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "`keeps_notes` accepts a reduction in our attack count that moves TOWARD the original's, and still refuses one that overshoots, with a corpus `--fidelity` A/B against the shipped presets showing no measured setting lost. THE DECISION IS ALREADY RECORDED (v0.5.412, in presets.py beside the `regrid` exclusion): `cand[2] >= ref[2]` is OUR raw count with no margin and gates every acceptance term, so --regrid is refused on exactly the files it helps -- Arcade_Classics 375 -> 372 against the original's 372, Sigma_Seven 417 -> 414/414, Wiz 446 -> 437/437, Rikky 201 -> 196/197. THE GUARD IS LOAD-BEARING: its own comment calls it the anti-gaming clause that has protected every term since the first, because fewer notes score better on wave and gate. Make it TWO-SIDED, never relax it. And CLAUDE.md records that widening this criterion once cost seven measured settings and gained one, so the A/B is the gate, not a formality.",
+      "why_model": "a change to the search's acceptance rule with a recorded history of losing measured settings",
+      "why_mode": "the A/B is a corpus --fidelity search, which outlives a delegated agent",
+      "why_lane": "writes presets.py and presets.json"
+    },
+    {
+      "id": "bangkok-knights-voice-0-disagrees-on-half-its-pitches",
+      "title": "Bangkok Knights voice 0 is at ratio 0.87 and 50% pitch agreement while the file reads melody 97%",
+      "source": "runs.jsonl#four-files-sound-notes-before-their-voices-first-instrument.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/patterns.py",
+        "rw:python/h2g/goatwriter.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "voice 0's pitch agreement rises materially from 50% without voices 1 and 2 (1.00/100% and 0.96/100%) falling. Found at v0.5.412 while refuting the pre-instrument theory. TWO THINGS ALREADY EXCLUDED: it is NOT the missing instrument -- forcing --initial-instrument leaves voice 0 unchanged to the decimal while moving the file's bytes -- and an instrument governs timbre and envelope, not which note sounds. Our voice 0 sounds 75 attacks against the original's 55; the surplus of 20 happens to equal the count of pre-instrument notes, which is worth checking and not believing, since the instrument mechanism is shown inert. Note the file reads melody 97% overall, so nothing at file level flags it -- use --diagnose's per-voice output.",
+      "why_model": "a per-voice root-cause hunt where the obvious cause is already measured inert",
+      "why_mode": "any fix changes conversion output and needs the report regenerated",
+      "why_lane": "writes patterns.py, goatwriter.py, presets.json and the report"
+    },
+    {
+      "id": "staged-listening-audio-predates-the-converter-for-40-of-83-tunes",
+      "title": "Nearly half the staged listening audio is older than the converter, Monty included",
+      "source": "runs.jsonl#instrmap-is-stale-against-v0-5-407.opened",
+      "model": "sonnet",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:build/listen",
+        "rw:build/instrmap",
+        "rw:build/instrmap.json",
+        "rw:python/abpage.py",
+        "rw:python/tests",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "either the staged audio is regenerated for the 40 tunes, or abpage.py REFUSES to serve a tune whose audio predates the converter rather than only printing a line about it. Reported by abpage.py itself at v0.5.412: 'audio predates the current converter for 40 of 83 tune(s)'. IT MATTERS NOW: Auf_Wiedersehen_Monty is among the 40 and is the subject of monty-firstwave-trade-needs-a-listen, so that ear-check would today judge a build the converter no longer produces. ACE_II and Action_Biker are current, so the other two listening tasks are safe. The detection already exists; what is missing is that nothing refuses on it.",
+      "why_model": "running a generator and adding a guard whose condition is already computed",
+      "why_mode": "it rebuilds build/listen, a hazard, and re-emulates 40 tunes",
+      "why_lane": "writes build/listen and build/instrmap, which the diagnosis tasks read"
+    },
+    {
+      "id": "pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved",
+      "title": "--pace's IQR and coverage bounds were set when confirmed files carried 0-3% IQR",
+      "source": "runs.jsonl#fourteen-files-cannot-be-timed-by-pace-at-all.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/fidelity.py",
+        "rw:python/tests/test_pace.py",
+        "rw:python/tests/test_fidelity.py",
+        "rw:python/tests",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "MIN_PACE_COVERAGE and MAX_PACE_IQR are re-derived from the current corpus with the noise floor measured, or left alone with that measurement written down. The constants' own comment says they were calibrated when 'the files whose row length is independently confirmed carry 100-400 gaps at an IQR of 0-3%'; the gate readings of v0.5.248, v0.5.402 and v0.5.410 have since given many files an exactly fractional row whose gaps legitimately alternate. Evidence at v0.5.412: five of the six files refused for COVERAGE convert at 97-100% melody. CAUTION -- CLAUDE.md's rule is that a veto on a ratio must be SIZED, not merely signed, so measure the distribution before moving either number, and note that a fractional row is a five-fold risk factor (11/35 against 3/48) and NOT a sufficient cause, since 24 fractional-row files pass the gate.",
+      "why_model": "a threshold change this repo has a recorded history of getting wrong by fitting",
+      "why_mode": "re-deriving the bound needs a corpus --pace sweep",
+      "why_lane": "writes python/fidelity.py, which several tasks read"
+    },
+    {
+      "id": "four-files-have-a-wildly-spread-pace-ratio-150-to-573-percent",
+      "title": "Chicken Song, Commodore 64 Music Examples, Rikky and Dragons Lair II spread 150-573%",
+      "source": "runs.jsonl#fourteen-files-cannot-be-timed-by-pace-at-all.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "r:python/fidelity.py",
+        "r:presets.json",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "each of the four is attributed. These are a DIFFERENT population from the modest IQR refusals (13-19%) and should not be folded into a threshold change: Chicken_Song 150%, Commodore_64_Music_Examples 160%, Rikky 245%, Dragons_Lair_Part_II 573%. RIKKY IS THE ONE THAT FITS NO STORY -- it has an INTEGER row of 4 frames at -S1, so the fractional-row explanation that covers the others cannot apply, and it is also one of the --regrid immune files. A ratio spread over twice its own median means the matched notes disagree wildly, which is either real irregularity in the tune or a matching failure; --diagnose distinguishes them.",
+      "why_model": "a diagnosis where a plausible-but-wrong attribution is cheap to produce",
+      "why_mode": "read-only, but its conclusion gates the threshold task",
+      "why_lane": "reads python/fidelity.py, which the IQR task writes"
+    },
+    {
+      "id": "regrid-damage-is-not-additive-in-the-compensation-count",
+      "title": "Two compensation rows cost One_on_One more melody than all forty-one",
+      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "r:python/h2g/patterns.py",
+        "r:presets.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": false,
+      "needs_main_reason": null,
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "the non-monotonicity is explained or shown to be an artefact of the window. Measured at v0.5.412 on One_on_One: no compensation 98.64% melody, all 41 rows 61.62%, the 39 length-matched ones 68.53%, and the 2 mismatched ones alone 54.34% -- so two rows cost more than forty-one. THE CAVEAT IS PART OF THE TASK: those arms confound PLACEMENT with DOSE, because removing compensations also leaves the song under-corrected in net timing, and melody is a difflib ratio over a fixed 60 s window. Settle that first -- if it is the window, this is not a finding about regrid at all; if it survives, then 'which rows' matters in a way no dose argument can express and every regrid A/B that varies the compensation SET is comparing unlike things.",
+      "why_model": "a result that is either a real mechanism or an artefact of the scorer, and telling them apart is the work",
+      "why_mode": "read-only diagnosis whose answer changes how the other regrid A/Bs are read",
+      "why_lane": "reads patterns.py and presets.json, which the regrid tasks write"
     }
   ],
   "closed": [
@@ -785,6 +787,48 @@
       "title": "regrid_tempos' docstring corrected: seven files, and voice 0 can be the damaged one",
       "closed_by": "d346fe8",
       "reason": null
+    },
+    {
+      "id": "presets-json-committed-form-does-not-match-its-generator",
+      "title": "presets.json is in its generator's form, and a test now stops it drifting back",
+      "closed_by": "ed7f7bc",
+      "reason": "The form itself was fixed incidentally by v0.5.410's regeneration; what this run added is tests/test_presets_format.py, without which the drift could recur as silently as it did before."
+    },
+    {
+      "id": "fourteen-files-cannot-be-timed-by-pace-at-all",
+      "title": "All 14 attributed to two gates; five of six coverage refusals convert at 97-100% melody",
+      "closed_by": "ed7f7bc",
+      "reason": "The count is stated as the honest floor rather than reduced, because moving either bound is a threshold change -- tracked as pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved."
+    },
+    {
+      "id": "gate-blind-options-are-now-three",
+      "title": "REFUTED: drift is a report column and a drift term would not help; the attack guard is the blocker",
+      "closed_by": "ed7f7bc",
+      "reason": "Decision written down in presets.py. The implementation is deliberately separate -- keeps-notes-attack-guard-should-be-two-sided-against-the-original -- because widening this criterion once cost seven measured settings."
+    },
+    {
+      "id": "regrid-occupied-column-guard-only-checks-voice-0",
+      "title": "REFUTED as a category error: regrid writes only into voice-0-exclusive patterns, 304 of 304",
+      "closed_by": "ed7f7bc",
+      "reason": null
+    },
+    {
+      "id": "four-files-sound-notes-before-their-voices-first-instrument",
+      "title": "REFUTED: Delta's pre-instrument notes are exact, and --initial-instrument is inert on Bangkok's",
+      "closed_by": "ed7f7bc",
+      "reason": "The condition is real and is not a defect. Bangkok's voice 0 IS damaged but not by this cause, and is tracked as bangkok-knights-voice-0-disagrees-on-half-its-pitches."
+    },
+    {
+      "id": "instrmap-is-stale-against-v0-5-407",
+      "title": "Rebuilt: 84 of 84 dumps newer than 8bb87e9",
+      "closed_by": "ed7f7bc",
+      "reason": "build/ is gitignored so nothing landed in the commit; the rebuild's value is that the two fidelity-diagnosis tasks now read current dumps. It also surfaced the 40-of-83 stale-audio finding."
+    },
+    {
+      "id": "ten-files-still-pack-for-a-non-starting-subtune",
+      "title": "The limitation is written into pack_subtune's docstring where a reader of the emitter finds it",
+      "closed_by": "d346fe8",
+      "reason": "Closed by inspection rather than by a run: the verify's second branch asks for the limitation written down at the emitter, and pack_subtune's docstring already carries it verbatim -- that a rate exact for every subtune is the LCM of their denominators (24, 40, 140 for Flash Gordon) against a cap of 10, and that per-subtune rates need a file per subtune, which is a different feature."
     }
   ]
 }
