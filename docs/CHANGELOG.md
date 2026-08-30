@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.428 — 2026-08-30
+
+- the 5 Title Tunes adsr attribution is retracted; Bangkok's silence is the test bit
+
 ## 0.5.427 — 2026-08-30
 
 - Powerplay's regrid loss is 94% naming, and the plan is regenerated
