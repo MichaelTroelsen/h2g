@@ -3333,10 +3333,33 @@ class Dimension:
 _PITCH_REGS = ("$D400/$D401", "$D404")
 
 DIMENSIONS = (
+    # **AND IT NAMES A THIRD OF ITS NOTES FROM A PITCH THAT IS STILL MOVING.**
+    # siddump names a note from the frequency on the frame the gate RISES, so a
+    # note glided into is named at a point on the ramp rather than at the note.
+    # Censused over the corpus at v0.5.421, on the ORIGINAL side (the reference
+    # every column scores against, so an attack ambiguous there is ambiguous for
+    # both): an attack counts when the name at the attack frame differs from the
+    # name four frames later, and **15130 of 47674 attacks -- 31.7% -- do**.
+    # Median 24.3% a file, p90 60.3%, worst Nineteen at 74.5%; 64 of 83 files
+    # are above 10% and only 9 are at zero.
+    #
+    # THAT IS A POPULATION AT RISK, NOT AN ERROR RATE, and the difference
+    # matters: where both sides glide identically the names agree and nothing is
+    # lost. It is the population in which a grid moved by one play call can
+    # rename a note that did not change -- measured once, on One_on_One under
+    # --regrid, at 29% of that file's melody loss (v0.5.420).
+    #
+    # NOT CORRECTED, DELIBERATELY. Re-timing the attack to a settled frame would
+    # raise agreement, and a shift chosen to raise agreement can only raise
+    # agreement -- the same trap `startup_lag` avoids by estimating from the
+    # signal rather than fitting. Stated here instead, the way `hold` states the
+    # rate at which it goes blind.
     Dimension("melody", "melody", _PITCH_REGS, "fraction",
               "the attack-note sequence with consecutive repeats collapsed "
               "-- blind to a re-struck note, which reads as a longer "
-              "sequence rather than a wrong one"),
+              "sequence rather than a wrong one; and 31.7% of corpus attacks "
+              "are named from a frame whose pitch is still gliding, so a grid "
+              "moved by one play call can rename a note that did not change"),
     Dimension("sequence", "seq", _PITCH_REGS, "fraction",
               "the same sequence uncollapsed"),
     Dimension("pitch_jaccard", "pitch", _PITCH_REGS, "fraction",

@@ -2415,3 +2415,27 @@ def test_a_probed_original_that_never_ends_is_marked_rather_than_left_silent():
         f"end (gap {marker - guard} chars)")
     assert 'r.get("length_never_ends")' in src, (
         "the report no longer counts the inapplicable rows from its own rows")
+
+def test_melody_declares_the_mid_glide_naming_blind_spot():
+    """A column reading well for a reason it does not state is worse than one
+    reading badly.
+
+    siddump names a note from the frequency on the frame the gate rises, and
+    31.7% of corpus attacks are named while the pitch is still gliding (15130 of
+    47674, censused on the original side at v0.5.421). Where both sides glide
+    identically nothing is lost -- it is a population at risk, not an error rate
+    -- but it is the population in which a grid moved by one play call renames a
+    note that did not change.
+
+    Pinned on the DESCRIPTION rather than on a number in code, because there is
+    no constant to pin: the finding is that `melody`'s own text must say this,
+    the way `hold`'s says at what rate it goes blind.
+    """
+    import fidelity as F
+    d = next(x for x in F.DIMENSIONS if x.key == "melody")
+    assert "gliding" in d.of, (
+        "the melody dimension no longer declares that a third of its attacks "
+        "are named from a still-moving pitch")
+    assert "one play call" in d.of, (
+        "the consequence -- a grid shift renaming an unchanged note -- is no "
+        "longer stated, and the share alone does not imply it")

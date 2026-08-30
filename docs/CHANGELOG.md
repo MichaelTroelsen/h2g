@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.421 — 2026-08-30
+
+- melody declares its mid-glide naming blind spot
+
 ## 0.5.420 — 2026-08-30
 
 - four task records: three retractions and two done
