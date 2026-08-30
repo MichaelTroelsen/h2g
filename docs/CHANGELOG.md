@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.414 — 2026-08-30
+
+- four task records and the regenerated plan
+
 ## 0.5.413 — 2026-08-30
 
 - a measured refusal can be recorded, and the attack guard is two-sided

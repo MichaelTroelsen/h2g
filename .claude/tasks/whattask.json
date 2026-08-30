@@ -1,17 +1,18 @@
 {
   "generated_from": {
-    "head": "ed7f7bc",
+    "head": "cb2011c",
     "sources": [
       "whats-next.md",
       "todo.md",
+      "TODO.md",
       ".claude/tasks/runs.jsonl",
       ".claude/tasks/whattask.json (carried)",
       "docs/FIDELITY.md",
       "presets.json",
       "graphify-out/graph.json",
       "git log",
-      "issues",
-      "prs"
+      "issues (none reachable)",
+      "prs (none reachable)"
     ],
     "focus": null
   },
@@ -322,7 +323,7 @@
       "source": "runs.jsonl#lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule.opened",
       "model": "sonnet",
       "mode": "requires-user",
-      "lane": "serial",
+      "lane": "parallel",
       "touches": [
         "rw:host:process-table"
       ],
@@ -343,7 +344,7 @@
       "source": "whats-next.md#6",
       "model": "sonnet",
       "mode": "requires-user",
-      "lane": "serial",
+      "lane": "parallel",
       "touches": [
         "rw:external:mit-claude-setup/plugins/mit-setup/LOCKING.md"
       ],
@@ -359,40 +360,12 @@
       "why_lane": "an external repo's working tree is exclusive by nature -- serial even though no other task names it"
     },
     {
-      "id": "powerplay-hockey-regrid-was-never-measured",
-      "title": "Powerplay Hockey is regrid-eligible, ships regrid:false, and was never measured either way",
-      "source": "runs.jsonl#rikky-immunity-to-regrid-is-unexplained.opened",
-      "model": "sonnet",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:presets.json",
-        "rw:docs/FIDELITY.md",
-        "rw:build/fidelity.json",
-        "r:python/h2g/patterns.py",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [
-        "presets-json-cannot-record-a-measured-refusal-for-any-option"
-      ],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "presets.json records a MEASURED decision for Powerplay_Hockey_USA_vs_USSR. THE MEASUREMENT AND THE DECISION ARE BOTH DONE (v0.5.412) -- do not re-measure. At HEAD, arms non-vacuous by sha: melody 99.30 -> 96.43 (-2.87pp), sequence -2.56pp, pitch_jaccard 97.30 -> 92.31, against gate 44.1 -> 55.9%, drift -7.90 -> +1.12, retrig 1.0114 -> 1.0000 and attacks 355 -> 351 against the original's 351 exactly. DECIDED: REFUSE -- the adoption bar set by the twelve files already carrying --regrid is melody held within ~1pp, and the shape is the known defect (timing exact, all three sequence columns down) on a file carrying no_test_restart. What remains is only to RECORD that refusal, which presets.json cannot express until its carry filter distinguishes absent from false.",
-      "why_model": "the measurement exists; what is missing is a recorded decision",
-      "why_mode": "writes presets.json and regenerates the report",
-      "why_lane": "writes presets.json and the report"
-    },
-    {
       "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
       "title": "24 registered worktrees hold uncommitted edits, including two test files that exist nowhere else",
       "source": "runs.jsonl#stale-worktrees-accumulate.opened",
       "model": "sonnet",
       "mode": "requires-user",
-      "lane": "serial",
+      "lane": "parallel",
       "touches": [
         "rw:.claude/worktrees"
       ],
@@ -406,59 +379,6 @@
       "why_model": "mechanical salvage once the human has said what is wanted",
       "why_mode": "discarding another session's unrecoverable work is an authorisation, not a judgement",
       "why_lane": "mutates the worktree registry, exclusive by nature and hostile to any fan-out"
-    },
-    {
-      "id": "presets-json-cannot-record-a-measured-refusal-for-any-option",
-      "title": "presets.json's carry filter is truthy, so no per-song option can record a measured NO",
-      "source": "runs.jsonl#powerplay-hockey-regrid-was-never-measured.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/presets.py",
-        "rw:python/tests/test_presets.py",
-        "rw:python/tests/test_preset_passthrough.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "r:python/fidelity.py",
-        "r:python/abpage.py"
-      ],
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "an explicit per-song `false` survives a `presets.py` regeneration, with a test that fails on the current behaviour. The cause is one line: presets.py's carry is `keep = {k: e[k] for k in CARRIED_PER_SONG if e.get(k)}` -- a TRUTHY test, so `regrid: true` carries and `regrid: false` is silently dropped. That makes 'measured and rejected' and 'never tried' the same file for ALL 16 CARRIED_PER_SONG options, not just regrid. The obvious fix is `if k in e`, but check what an explicit false then does downstream -- `_preset_opts` passes False for an absent key already, so the conversion should not move; prove that with a corpus byte-hash rather than assuming it.",
-      "why_model": "a one-line change to the artefact's contract whose blast radius is every per-song option",
-      "why_mode": "it rewrites presets.json's semantics, which every other task here regenerates",
-      "why_lane": "writes presets.py and presets.json, shared with most of this list"
-    },
-    {
-      "id": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
-      "title": "fidelity_better refuses any option that removes surplus attacks, because its guard compares ours to ours",
-      "source": "runs.jsonl#gate-blind-options-are-now-three.opened",
-      "model": "opus",
-      "mode": "main",
-      "lane": "serial",
-      "touches": [
-        "rw:python/presets.py",
-        "rw:python/tests/test_presets.py",
-        "rw:python/tests",
-        "rw:presets.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe"
-      ],
-      "mcp": [],
-      "needs_main": true,
-      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "verify": "`keeps_notes` accepts a reduction in our attack count that moves TOWARD the original's, and still refuses one that overshoots, with a corpus `--fidelity` A/B against the shipped presets showing no measured setting lost. THE DECISION IS ALREADY RECORDED (v0.5.412, in presets.py beside the `regrid` exclusion): `cand[2] >= ref[2]` is OUR raw count with no margin and gates every acceptance term, so --regrid is refused on exactly the files it helps -- Arcade_Classics 375 -> 372 against the original's 372, Sigma_Seven 417 -> 414/414, Wiz 446 -> 437/437, Rikky 201 -> 196/197. THE GUARD IS LOAD-BEARING: its own comment calls it the anti-gaming clause that has protected every term since the first, because fewer notes score better on wave and gate. Make it TWO-SIDED, never relax it. And CLAUDE.md records that widening this criterion once cost seven measured settings and gained one, so the A/B is the gate, not a formality.",
-      "why_model": "a change to the search's acceptance rule with a recorded history of losing measured settings",
-      "why_mode": "the A/B is a corpus --fidelity search, which outlives a delegated agent",
-      "why_lane": "writes presets.py and presets.json"
     },
     {
       "id": "bangkok-knights-voice-0-disagrees-on-half-its-pitches",
@@ -480,12 +400,14 @@
       "mcp": [],
       "needs_main": true,
       "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
-      "depends_on": [],
+      "depends_on": [
+        "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern"
+      ],
       "blocked_on": null,
       "decision": null,
-      "verify": "voice 0's pitch agreement rises materially from 50% without voices 1 and 2 (1.00/100% and 0.96/100%) falling. Found at v0.5.412 while refuting the pre-instrument theory. TWO THINGS ALREADY EXCLUDED: it is NOT the missing instrument -- forcing --initial-instrument leaves voice 0 unchanged to the decimal while moving the file's bytes -- and an instrument governs timbre and envelope, not which note sounds. Our voice 0 sounds 75 attacks against the original's 55; the surplus of 20 happens to equal the count of pre-instrument notes, which is worth checking and not believing, since the instrument mechanism is shown inert. Note the file reads melody 97% overall, so nothing at file level flags it -- use --diagnose's per-voice output.",
+      "verify": "DIAGNOSED at cb2011c (runs.jsonl, outcome partial) -- do NOT re-derive it. The title is a misreading of the instrument: classify_voice's `exact` is a JACCARD OVER SETS OF DISTINCT NOTE NAMES, so '50% the same' never meant half the notes are wrong. ONLY THEIRS is EMPTY and difflib gives exactly `insert ours[0:20]` then `equal orig[0:55] ours[20:75]` -- the original's 55 attacks reproduced exactly and in order with 20 bolted on the FRONT, all from one leading orderlist entry (pattern 9, 20 notes, material the original plays on VOICE 2). Confirmed by deleting that entry from the tracks build_sng is handed: voice 0 0.87/50% -> 0.96/78%, voices 1 and 2 unmoved, melody 0.9678 -> 0.9751. THIS TASK NOW CLOSES ON THE FIX: with the dependency landed, voice 0 reads at least 0.96 ratio in `fidelity.py Bangkok_Knights.sid --diagnose` with voices 1 and 2 still at 1.00/100% and 0.96/100%. The residual after the fix is a DIFFERENT known defect and is NOT this task's to close: the only remaining opcode is a TRAILING `insert ours[55:67]`, our voice 0 playing on after the original's stopped -- the $FE tune-end surplus CLAUDE.md documents under the same-length rule.",
       "why_model": "a per-voice root-cause hunt where the obvious cause is already measured inert",
-      "why_mode": "any fix changes conversion output and needs the report regenerated",
+      "why_mode": "closes by re-measuring after the dependency lands; the report must be regenerated",
       "why_lane": "writes patterns.py, goatwriter.py, presets.json and the report"
     },
     {
@@ -587,6 +509,87 @@
       "why_model": "a result that is either a real mechanism or an artefact of the scorer, and telling them apart is the work",
       "why_mode": "read-only diagnosis whose answer changes how the other regrid A/Bs are read",
       "why_lane": "reads patterns.py and presets.json, which the regrid tasks write"
+    },
+    {
+      "id": "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern",
+      "title": "Bangkok Knights voice 0's track list opens with a 20-note pattern the original plays on voice 2",
+      "source": "runs.jsonl#bangkok-knights-voice-0-disagrees-on-half-its-pitches.opened",
+      "model": "opus",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:python/h2g/tracks.py",
+        "rw:python/h2g/patterns.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "a corpus sweep or artefact regeneration outlives a delegated agent, and a fresh worktree lacks the gitignored python/tools/siddump-rt/siddump.exe -- without it the harness silently measures only the single-speed files",
+      "depends_on": [],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE PRIOR RUN COULD NOT DO THIS BECAUSE python/h2g/tracks.py WAS NOT IN ITS touches -- that is the only reason it is a separate task, and the diagnosis is finished. Voice 0's orderlist decodes to TRANSUP+0, REPEAT x16, pattern 0 / REPEAT x4, pattern 0 / pattern 9 / pattern 3 ...; pattern 0 is silent, pattern 9 carries exactly the 20 spurious notes, pattern 3 begins the music that aligns. The original's voice 0 plays ZERO of those pitches in 60 s; its voice 2 plays 223 of 347 attacks on exactly them. The orderlist is built by convert_tracks (tracks.py:379). SEPARATE TWO READINGS BEFORE EDITING ANYTHING, and do not pick the tidier one: either convert_tracks reads voice 0's list from the wrong place or one entry too early -- compare against VOICE 2's list, and if pattern 9 is also voice 2's first entry that is a straight aliasing/off-by-one read -- or the player starts voice 0 at a later track position and the entry is genuinely in the table but skipped, which makes it a start-position bug with a different fix. DONE WHEN: voice 0 reads at least 0.96 ratio under `fidelity.py Bangkok_Knights.sid --diagnose` with voices 1 and 2 unmoved at 1.00/100% and 0.96/100%; a test in python/tests/test_tracks.py pins the rule and FAILS with only the call site reverted; and a corpus byte-hash names EXACTLY the files that move, stated as a number up front. A leading-entry rule that moves 40 files is scoped wrongly -- that is the lesson the $FD/$FE terminator work already paid for.",
+      "why_model": "a player-dialect read where two different bugs produce the same symptom and the wrong one is the tidier story",
+      "why_mode": "changes conversion output for at least one file, so presets and the report must be regenerated",
+      "why_lane": "writes tracks.py, patterns.py, presets.json and the report, all shared with other tasks here"
+    },
+    {
+      "id": "pandora-regresses-under-the-two-sided-attack-guard",
+      "title": "Adopt arm A's --fidelity search result? Four gains against Pandora losing under a point on three columns",
+      "source": "runs.jsonl#keeps-notes-attack-guard-should-be-two-sided-against-the-original.opened",
+      "model": "opus",
+      "mode": "requires-user",
+      "lane": "serial",
+      "touches": [
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/presets.py",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "adopting means regenerating presets.json and the report -- a multi-hour corpus job no delegated agent outlives",
+      "depends_on": [],
+      "blocked_on": "An ADOPTION call, not a guard call, and the guard already shipped in cb2011c. The tree carries the new two-sided guard while presets.json still records the OLD guard's selections; a structural regeneration does not re-search, but the next --fidelity run WILL pick arm A up, Pandora included. THE TRADE, measured at -t 60 over the five songs that differ: Off_the_Cuff gate 54.8 -> 90.3, Spellbound melody 95.4 -> 98.7 / pitch 80.0 -> 96.0 / gate +5.7, Mr_Meaner gate 75.1 -> 89.0, Shockway_Rider gate 75.0 -> 83.4, against PANDORA melody -0.67pp, sequence -0.65pp, gate -0.59pp. If Pandora is unacceptable the lever is `gave_back`, not the guard -- the reduction really did move toward the original, and what let a worse candidate through is the greedy path.",
+      "decision": null,
+      "verify": "presets.json records the human's answer -- arm A adopted wholesale, or adopted minus Pandora with that refusal recorded as an explicit per-song false (which carried_entry can now hold), or refused with the reason in runs.jsonl",
+      "why_model": "the trade is a judgement about audibility across five songs, not a measurement",
+      "why_mode": "no amount of work resolves it; the numbers are already in hand and the call is the user's",
+      "why_lane": "writes presets.json and the report"
+    },
+    {
+      "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
+      "title": "Should --regrid join FIDELITY_TOGGLES? It doubles the 127-combination search",
+      "source": "runs.jsonl#keeps-notes-attack-guard-should-be-two-sided-against-the-original.opened",
+      "model": "opus",
+      "mode": "requires-user",
+      "lane": "serial",
+      "touches": [
+        "rw:python/presets.py",
+        "rw:python/tests",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "an eighth toggle takes the corpus search from ~8 minutes to roughly twice that per shard; a full re-search outlives any delegated agent",
+      "depends_on": [],
+      "blocked_on": "A COST DECISION THE USER OWNS. --regrid is adopted on twelve files ENTIRELY BY HAND because fidelity_better cannot select it -- and CLAUDE.md says outright that it MUST NOT be given it, since every FIDELITY.md column compares WHAT is played and a tune playing the right music 0.78% fast forever scores perfectly. So this is not simply 'add the toggle': making it searchable needs an acceptance term that reads --pace's integrated drift, which no Dimension currently exposes. The user's call is whether to pay for both -- the eighth toggle doubling 127 combinations, AND a drift term in the criterion -- or to leave regrid hand-adopted and say so in presets.py. Note the cost figures here are the timed ones: a 60 s corpus search is 8 minutes over 83 songs, and --shard I/N splits it.",
+      "decision": null,
+      "verify": "either regrid is in FIDELITY_TOGGLES with a drift-aware acceptance term and a corpus re-search showing which files it now selects, or presets.py carries a comment naming why it is deliberately hand-adopted and what a scorer would need",
+      "why_model": "the question is what the search criterion is allowed to optimise, which is the design decision this repo has got wrong before",
+      "why_mode": "a cost/scope decision no measurement settles",
+      "why_lane": "writes presets.py, presets.json and the report"
     }
   ],
   "closed": [
@@ -829,6 +832,24 @@
       "title": "The limitation is written into pack_subtune's docstring where a reader of the emitter finds it",
       "closed_by": "d346fe8",
       "reason": "Closed by inspection rather than by a run: the verify's second branch asks for the limitation written down at the emitter, and pack_subtune's docstring already carries it verbatim -- that a rate exact for every subtune is the LCM of their denominators (24, 40, 140 for Flash Gordon) against a cap of 10, and that per-subtune rates need a file per subtune, which is a different feature."
+    },
+    {
+      "id": "presets-json-cannot-record-a-measured-refusal-for-any-option",
+      "title": "carried_entry(): membership not truthiness, so presets.json can hold a measured false",
+      "closed_by": "cb2011c",
+      "reason": null
+    },
+    {
+      "id": "powerplay-hockey-regrid-was-never-measured",
+      "title": "presets.json now carries regrid:false for Powerplay, and it survived a real regeneration",
+      "closed_by": "cb2011c",
+      "reason": null
+    },
+    {
+      "id": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
+      "title": "the guard is two-sided against the original's attack count; two full corpus searches, 0 settings lost",
+      "closed_by": "cb2011c",
+      "reason": null
     }
   ]
 }
