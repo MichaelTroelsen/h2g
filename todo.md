@@ -135,33 +135,48 @@ Keep items actionable: what to run, and what makes it done.
   Done when the report names every file failing the ±5 s rule, and a listener
   confirms one of them ends.
 
-- **5 Title Tunes fidelity.** Like Action Biker, the sequence is already exact —
-  `melody`, `seq`, `pitch` all 100%, `retrig` 1.00, `drift` +0.0, `onset` 100%,
-  938 original notes against 935. So nothing here is about the notes. The row
-  (`docs/FIDELITY.md:25`):
+- **5 Title Tunes fidelity.** Like Action Biker, the sequence is essentially
+  exact — `melody` and `seq` 100%, `retrig` 1.00, `drift` +0.0, `onset` 100%,
+  and **938 original notes against 938** (this read "against 935" when written).
+  `pitch` is **98%**, not the 100% once claimed here — one distinct pitch in
+  sixty-one, too small to be this entry's subject but not nothing. So almost
+  nothing here is about the notes. The row (`docs/FIDELITY.md:25`):
 
-  | column | 5_Title_Tunes | reading |
-  |---|---|---|
-  | `pul` | **4459/2240 = 1.99x** | we move the duty cycle almost exactly TWICE as often as the original |
-  | `pspan` | **0.47x** | and each move is about HALF as wide |
-  | `gate` | 50% | |
-  | `adsr` | 58% | |
-  | `wave` | 90% | |
-  | `hold` | 0% | check against `--hold-census` FIRST, per the Action Biker precedent |
+  **EVERY FIGURE BELOW WAS RE-READ AT v0.5.421 AND MOST OF THEM HAD MOVED.**
+  The old column is kept beside the new one because this entry's argument was
+  built on the old numbers and a reader needs to see which of it survives.
+
+  | column | was | NOW | reading |
+  |---|---|---|---|
+  | `pul` | 4459/2240 = 1.99x | **4318/2240 = 1.93x** | still about twice as many duty-cycle moves as the original |
+  | `pspan` | 0.47x | **1.05x** | **RESOLVED.** The band is right now; see below |
+  | `pphase` | — | 1.00x | |
+  | `gate` | 50% | **75%** | one frame of surplus ringing per release, and `max_hard_restart` has SATURATED it |
+  | `adsr` | 58% | 58% | unchanged, and 75% of the deficit is inaudible gated-off frames |
+  | `wave` | 90% | **99%** | |
+  | `hold` | 0% | **86%** | one instrument of seven, kind `fetch` |
+  | `nrun` | — | `-` | correct: the tune sounds no noise at all |
 
   **CENSUSED at v0.5.376 — `pul` is NOT a defect and the claim once written
   here that "1.99 x 0.47 = 0.94, so the total travel is about right" was wrong:
   `pspan` is the max-min BAND, not a per-step size, so multiplying the two
   decomposes nothing.** Measured, our travel is 1.64-1.85x the original's.
 
-  `pul` 1.99x is the documented half-step substitution and is correct. The
+  `pul` 1.93x (1.99x when written) is the documented half-step substitution
+  and is correct. The
   records confirm it exactly: `rec+6` `$41` -> step 64 / delay 2 -> speed 32,
   and `$81` -> step 128 / delay 2 -> speed 64, which are precisely the step
   sizes observed on the trace (32, and 64/65). Same average sweep rate, taken
   in half-size steps twice as often. `fidelity._span`'s own docstring already
   says so: "the count doubles while the sound is the same".
 
-  THE REAL DEFECT IS `pspan` 0.47x — our band is 449/771/899 against the
+  **`pspan` IS NO LONGER A DEFECT AND THIS PARAGRAPH IS HISTORY.** It read
+  0.47x when written and reads **1.05x** at v0.5.421 — the band now matches the
+  original's. `pulse_phase` is in this song's presets, which is the change that
+  closed it. What follows is kept as the record of the diagnosis, not as an open
+  item; do not re-derive from the 449/771/899 figures, which are gone.
+
+  THE REAL DEFECT WAS `pspan` 0.47x — our band was 449/771/899 against the
   original's 1536/1536/1408, and the band the engine is told to sweep is
   `$800..$E00` = 1536. CAUSE: Goattracker reloads the pulse pointer at every
   note (`gplay.c:375-379`) while the player's 12-bit accumulator FREE-RUNS
