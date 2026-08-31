@@ -241,3 +241,70 @@ def test_force_park_needs_the_pattern_table_like_silent_park_does():
     t = [[1, 2, 3, GT_ORDER_RESTART, 0]]
     assert legalise_restarts(t, None, None, force_park=True) == 0
     assert t[0] == [1, 2, 3, GT_ORDER_RESTART, 0]
+
+
+def _pat(rows):
+    """A pattern of `rows` sounding rows, then ENDPATT."""
+    from h2g.patterns import GT_END_PATTERN
+    return [0, 0, 0, 0] * rows + [GT_END_PATTERN, 0, 0, 0]
+
+
+def test_voice_rows_counts_rows_not_orderlist_entries():
+    """An entry COUNT is not a duration -- repeats multiply and transposes
+    occupy no step. Reading Confuzion's 36/163/39 entries as one voice being
+    four times another was exactly that mistake; its voices span an identical
+    5216 rows."""
+    from h2g.tracks import voice_rows
+    from h2g.patterns import GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN
+    pats = [_pat(4), _pat(10)]
+    assert voice_rows([0, 1, GT_ORDER_RESTART, 0], pats) == 14
+    # one entry, repeated three times, is three patterns' worth of rows
+    assert voice_rows([GT_REPEAT + 2, 0, GT_ORDER_RESTART, 0], pats) == 12
+    # a transpose is not a step
+    assert voice_rows([GT_TRANSPOSE_DOWN, 0, GT_ORDER_RESTART, 0], pats) == 4
+
+
+def test_force_park_declines_a_subtune_whose_voices_do_not_end_together():
+    """The safety condition, which went unchecked from v0.5.431 to v0.5.433.
+
+    Parking puts each voice on a silent pattern at the end of its OWN
+    orderlist, which ends the tune only if they finish together. Where one is
+    shorter it is currently looping and playing on under the others; parking
+    it silences it early. Measured over the corpus, **76 of 237 subtunes in 28
+    files** have voices that do not end together, so this is the common case
+    rather than a corner.
+    """
+    from h2g.tracks import legalise_restarts, voices_end_together
+    from h2g.patterns import GT_ORDER_RESTART
+    pats = [_pat(4), _pat(8)]
+
+    even = [[0, 0, GT_ORDER_RESTART, 0] for _ in range(3)]      # 8 rows each
+    odd = [[0, 0, GT_ORDER_RESTART, 0], [0, 0, GT_ORDER_RESTART, 0],
+           [0, GT_ORDER_RESTART, 0]]                            # 8, 8, 4
+    assert voices_end_together(even, pats)
+    assert not voices_end_together(odd, pats)
+
+    t = [list(x) for x in even] + [list(x) for x in odd]
+    n = legalise_restarts(t, None, [list(p) for p in pats], force_park=True)
+    assert n == 3, f"only the even subtune's three voices may park, got {n}"
+    for v in t[:3]:
+        assert v.index(GT_ORDER_RESTART) == 3, "the even subtune parked"
+    for v in t[3:]:
+        assert v[v.index(GT_ORDER_RESTART) + 1] == 0, \
+            "the uneven subtune must be left looping from the top"
+
+
+def test_the_end_together_test_is_taken_before_anything_is_parked():
+    """Parking APPENDS a position, so a group tested track by track reads
+    [8, 8, 8] for its first voice and [12, 8, 8] for its second -- the guard
+    would decline the very voices it had just made unequal.
+
+    That is not hypothetical: computed inside the loop it parked Confuzion's
+    voice 0 alone and moved the shipped bytes (246c879a020a -> 7654033d8806).
+    """
+    from h2g.tracks import legalise_restarts
+    from h2g.patterns import GT_ORDER_RESTART
+    pats = [_pat(8)]
+    t = [[0, GT_ORDER_RESTART, 0] for _ in range(3)]
+    n = legalise_restarts(t, None, [list(p) for p in pats], force_park=True)
+    assert n == 3, f"all three voices must park, not just the first -- got {n}"

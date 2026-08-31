@@ -10,7 +10,8 @@ from typing import Dict, List, Optional, Tuple
 
 from .detect import Detection
 from .patterns import (DEFAULT_TRACK, GT_END_PATTERN, GT_KEYOFF, GT_LASTNOTE,
-                       GT_ORDER_RESTART, MAX_PATTERNS, MAX_TRACK_LEN,
+                       GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
+                       MAX_PATTERNS, MAX_TRACK_LEN,
                        command_floor, decode_entry, pattern_references,
                        pattern_top_note)
 
@@ -1071,6 +1072,62 @@ def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:
     return revived
 
 
+def _pattern_rows(pattern: List[int]) -> int:
+    """Rows a pattern plays: up to its ENDPATT marker, four bytes a row."""
+    for i in range(0, len(pattern), 4):
+        if pattern[i] == GT_END_PATTERN:
+            return i // 4
+    return len(pattern) // 4
+
+
+def voice_rows(track: List[int], patterns: List[List[int]]) -> int:
+    """How many rows one orderlist plays before it loops.
+
+    Repeats multiply and transposes occupy no step, which is why an ENTRY
+    COUNT is not a duration -- reading Confuzion's 36/163/39 entries as one
+    voice being four times another was exactly that mistake, and its three
+    voices turn out to span an identical 5216 rows.
+    """
+    rows, repeat = 0, 1
+    for b in track:
+        if b == GT_ORDER_RESTART:
+            break
+        if GT_REPEAT <= b < GT_TRANSPOSE_DOWN:
+            repeat = b - GT_REPEAT + 1
+            continue
+        if b >= GT_TRANSPOSE_DOWN:
+            continue
+        if b < len(patterns):
+            rows += _pattern_rows(patterns[b]) * repeat
+        repeat = 1
+    return rows
+
+
+def voices_end_together(group: List[List[int]],
+                        patterns: List[List[int]]) -> bool:
+    """Do this subtune's three voices reach their loop point on the same row?
+
+    THE SAFETY CONDITION `--force-park` NEEDS, and until v0.5.433 nothing
+    checked it. Parking puts every voice on a silent pattern at the end of its
+    OWN orderlist, which ends the tune only if they finish together. Where one
+    voice is shorter it is currently looping back and playing on under the
+    others; parking it instead silences it early.
+
+    Not hypothetical: Geoff_Capes_Strongman_Challenge's subtunes 6 and 7 have
+    voice 2 spanning 33 rows against voices 0 and 1 at 49 and 47, measured off
+    the final `.sng`. That file does not use the option -- it already ends via
+    `--silent-park`, having a real `$FE` -- so nothing shipped was wrong, but
+    the condition is violated by a corpus file and the option offered no
+    protection at all.
+
+    Declining is per SUBTUNE rather than per file: a tune may be safe in most
+    of its subtunes and not in one, and there is no reason to lose the safe
+    ones.
+    """
+    rows = [voice_rows(t, patterns) for t in group if t]
+    return len(set(rows)) <= 1
+
+
 def legalise_restarts(tracks: List[List[int]], log=None,
                       patterns: List[List[int]] | None = None,
                       force_park: bool = False) -> int:
@@ -1143,7 +1200,16 @@ def legalise_restarts(tracks: List[List[int]], log=None,
     # by every track that parks -- it carries no per-track state, so a copy
     # each would spend pattern slots for nothing.
     silent: list = [None]
-    for track in tracks:
+    # DECIDED ONCE PER SUBTUNE, BEFORE ANYTHING IS PARKED. Parking appends a
+    # position to the orderlist it parks, so a group tested track by track
+    # reads [5216, 5216, 5216] for its first voice and [5217, 5216, 5216] for
+    # the second -- the guard would then decline the very voices it had just
+    # made unequal. Confuzion is the case: computed inside the loop it parked
+    # voice 0 alone and moved the shipped bytes.
+    safe = ({(i // 3) for i in range(0, len(tracks), 3)
+             if voices_end_together(tracks[i:i + 3], patterns)}
+            if force_park and patterns is not None else set())
+    for ti, track in enumerate(tracks):
         # Walk to the LOOPSONG rather than scanning for the first small byte.
         # In a reindexed orderlist nothing but LOOPSONG can be $FF -- pattern
         # numbers are < $D0, repeats $D0-$DF, transposes clamped to $FE -- but
@@ -1153,7 +1219,8 @@ def legalise_restarts(tracks: List[List[int]], log=None,
                        None)
         if songlen is None or songlen + 1 >= len(track):
             continue                       # no marker, or no operand to judge
-        if track[songlen + 1] < songlen and not (force_park and patterns is not None):
+        forced = ti // 3 in safe
+        if track[songlen + 1] < songlen and not forced:
             # Already legal. `force_park` overrides this ONLY when there is a
             # pattern table to append the silent pattern to -- without one the
             # branch below would fall through to 'restart at 0', which is what
