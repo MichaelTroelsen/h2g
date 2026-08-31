@@ -443,7 +443,8 @@
       "subtunes": 1,
       "rows": 23374,
       "multiplier": 1,
-      "wave_program": true
+      "wave_program": true,
+      "regrid": true
     },
     "International_Karate.sid": {
       "max_rows": 94,

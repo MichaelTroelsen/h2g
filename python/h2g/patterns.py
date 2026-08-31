@@ -2024,6 +2024,61 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     and seeing whether the effect follows the geometry rather than the file.
     Until then: do not adopt `--regrid` on a file carrying `no_test_restart`
     without measuring that file.
+
+    **THE DISCRIMINATOR IS FOUND, AND IT IS NOT A PROPERTY OF THE FILE BUT OF
+    WHAT `melody` SCORES** (v0.5.436). `melody` is a difflib ratio over the
+    COLLAPSED attack sequence -- consecutive repeats removed, `compare()` at
+    fidelity.py:828 -- so the cost of an attack being renamed depends entirely
+    on its neighbours:
+
+        inside a run   X X X  ->  X Y X   one collapsed note becomes THREE
+        isolated       W X Y  ->  W Y Y   one substitution, possibly none
+
+    So `--regrid` perturbs every file's attack grid, and that only costs
+    anything where the perturbation SPLITS A RUN of repeated attacks. Measured
+    as the collapsed-note count against the ORIGINAL's: without `--regrid`
+    every file sits just above it (+2..+9), and with it the refused files'
+    surplus GROWS while the adopted files' SHRINKS TOWARD ZERO --
+
+        REFUSED   One_on_One +6 -> +24   Sanxion +6 -> +12   Powerplay +4 -> +6
+        ADOPTED   Rikky +4 -> -1   Sigma_Seven +2 -> +1   Arcade +3 -> +1
+                  Wiz +9 -> +3
+
+    -- a separation by DIRECTION with no overlap, and the melody loss is
+    monotone in the growth (+18 -> -37.0pp, +6 -> -19.9pp, +2 -> -2.9pp).
+    Renames landing inside a run agree: 86 / 100 / 29 on the refused files
+    against 4 / 14 / 10 / 4 on the adopted. This also explains why the RENAME
+    RATE never separated them -- Wiz churns 127 renames and GAINS 0.8pp
+    because its voice 0 alternates on 99% of consecutive pairs and has almost
+    nothing to split, where One_on_One's voice 2 is 93 singles and 93 TRIPLES.
+    It does not retire the cross-voice geometry lead above; geometry may well
+    be what decides WHERE a compensation lands, and this says what it costs
+    when it lands in a run.
+
+    **THE POPULATION IS 17 REACHED / 5 REFUSED, NOT THE 18 / 6 THIS FILE AND
+    CLAUDE.md BOTH RECORDED.** Re-measured at v0.5.436 by corpus byte-hash --
+    convert every file on its shipped preset with `regrid` forced False and
+    True, 83 of 83 converting -- `--regrid` moves 17 files, 12 are adopted,
+    and the refusals are BMX_Kidz, IK_plus, One_on_One, Powerplay and Sanxion.
+    Settled on that measurement, with `drift` from `fidelity.drift()`:
+
+        IK_plus     melody 99.0 -> 99.4   surplus +6 -> -4   drift 8.85 -> 4.10
+                    ADOPTED: the adopted signature on every column.
+        BMX_Kidz    melody 100.0 -> 100.0 surplus +0 -> +0   drift -7.87 -> -7.87
+                    REFUSED: the bytes move and NOTHING else does -- the drift
+                    is identical to two decimals, so the compensation does not
+                    reach this file's phase error at all. No upside to record.
+        Sanxion     melody 96.6 -> 76.7   surplus +6 -> +12  drift 9.17 -> 4.42
+                    REFUSED: drift more than halves and melody collapses 19.9pp
+                    -- the option working as designed and destroying the score.
+        One_on_One  melody 98.6 -> 61.6   surplus +6 -> +24  drift UNFITTABLE
+                    REFUSED: with `--regrid` the offsets scatter 725 frames
+                    about the fit over 2967, i.e. the two sides stop drifting
+                    and start wandering; no rate describes them.
+        Powerplay   melody 99.3 -> 96.4   surplus +4 -> +6   drift 7.90 -> 1.12
+                    NOT SETTLED HERE -- a user adoption call carried by
+                    `powerplay-regrid-refusal-rests-on-a-naming-artefact`.
+                    Note for that decision: its drift improves SEVENFOLD.
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):

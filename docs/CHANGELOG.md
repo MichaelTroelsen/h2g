@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.437 — 2026-08-31
+
+- IK+ adopts --regrid, and the other four refusals get a mechanism
+
 ## 0.5.436 — 2026-08-31
 
 - output_sha's algorithm is pinned by a test, and two Bangkok tasks close
