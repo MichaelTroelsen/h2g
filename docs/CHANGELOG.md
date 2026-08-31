@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.439 — 2026-08-31
+
+- six investigation records: four dead hypotheses and a touches defect
+
 ## 0.5.438 — 2026-08-31
 
 - Monty's bit-40 bullet is corrected, and the 44-vs-50 population is attributed
