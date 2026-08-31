@@ -1,416 +1,384 @@
 <original_task>
-**"Read what next", then "regenerate the artefacts."** The session opened by
-reading the previous handoff and picking up its `<work_remaining>` item 1:
-regenerate `docs/FIDELITY.md` and `build/fidelity.json` against the already-
-adjudicated `presets.json` sitting uncommitted in the tree, confirm the `gate`
-column moved on the 16 files that had gained a hard-restart setting and nowhere
-else, then bump and commit.
+Drive the open-task backlog of the H2G repo (VB6 -> Python port converting Rob
+Hubbard `.SID` files to GoatTracker `.sng`), one task per iteration, with every
+claim measured rather than asserted.
 
-Everything after that was requested explicitly, one instruction at a time:
-`bump and commit` -> `push it` -> `/runqueue --until-blocked` ->
-`commit this` -> `push it` -> `/whattask` -> `/runqueue --until-blocked` ->
-`merge both worktrees and commit` -> `push it` -> this handoff.
+The session was driven by repeated `/loop N /runtask next` series and two
+`/mit-setup:runqueue` drains, interleaved with `/mit-setup:whattask` plan
+regeneration. The user made every publish decision themselves ("commit this"
+x8, "push it" x2). No task command ever commits, merges, pushes or branches --
+that is the user's, deliberately, and it was honoured throughout.
 
 **A NOTE ON THIS FILE'S SCOPE.** v0.5.404 established that `whats-next.md` is
-STATE, not a knowledge store: durable facts belong in `CLAUDE.md` (loaded every
+STATE, not a knowledge store. Durable facts belong in `CLAUDE.md` (loaded every
 session), the open-task list is `.claude/tasks/whattask.json`, and the run
-history is `.claude/tasks/runs.jsonl`. This document is written comprehensively
-as requested, but it deliberately POINTS AT those files rather than copying
-them — duplicated prose is what drifts. Where a fact is durable it says where
-it now lives.
+history is `.claude/tasks/runs.jsonl` (259 lines). This document POINTS AT those
+rather than copying them; duplicated prose is what drifts. The previous
+`whats-next.md` was declared spent at v0.5.426 and this replaces it.
 </original_task>
 
 <work_completed>
 
-## Three commits, all pushed to `origin/master`
+## Ten commits, v0.5.424 through v0.5.433
 
-### v0.5.407 `8967b3f` — the gate search result adopted
+Four are UNPUSHED (see `<current_state>`). Every one carries its evidence in the
+commit message; `git log` is the authority, not this summary.
 
-The tree already held an adjudicated `presets.json` (LOST 2 / GAINED 24 across
-16 files / CHANGED 1) plus three hand adjudications in `python/presets.py`.
-What this session added was the *verification* and the commit.
+    d3d7e3f  v0.5.433  --force-park declines a subtune whose voices do not end together
+    2367f03  v0.5.432  the report's shortening clause is read off the data, not asserted
+    8bff6bc  v0.5.431  --force-park ends Confuzion, the corpus's last length failure
+    8a9ba0d  v0.5.430  a quarter of the preset search is pruned, two corpus invariants get tests
+    9b382b9  v0.5.429  two option docs corrected on measurement, a pruning claim retracted
+    82e2d48  v0.5.428  the 5 Title Tunes adsr attribution is retracted
+    6c99816  v0.5.427  Powerplay's --regrid loss is 94% a naming artefact
+    c9fa41a  v0.5.426  5 Title Tunes fully attributed
+    987a254  v0.5.425  no_hard_restart moves bytes and no column can see it
+    25ae324  v0.5.424  Bangkok's no-instrument gate settled by patching the file
 
-- Regenerated `docs/FIDELITY.md` + `build/fidelity.json` at `-t 60` against the
-  adopted presets.
-- **A/B'd against a snapshot of the previous run** rather than eyeballing the
-  new table. `output_sha` moved on **exactly 17 files** — the 16 that gained a
-  setting plus `Dragons_Lair_Part_II`, the documented LOST #1. Nothing else.
-- On all 16, `melody` / `sequence` / `pitch_jaccard` and **both attack counts
-  are identical to three decimals**. Only `gate` moves. That is the shape a
-  hard-restart change must have, and it is what distinguishes this from a
-  change that merely scores better.
-- Gate gains: Thanatos 49.0→96.0, Las_Vegas 51.7→91.2, Delta_Mix-E-Load
-  59.6→93.6, Kings_of_the_Beach_intro 76.6→91.9, Ninja 50.1→74.7,
-  Samantha_Fox_Strip_Poker 32.6→65.4, Rock_Tells_the_Tale 48.1→61.7,
-  Mr_Meaner 63.3→75.1, Food_Feud 64.2→74.6, Human_Race 59.8→67.4,
-  Chain_Reaction 62.8→67.0, Deep_Strike 49.6→55.7, Pygmies_Revenge 49.1→55.0,
-  Lightforce 41.0→61.5, Thundercats 87.5→92.5, Zoolook 33.1→38.6.
-  **The four the previous session had spot-measured by hand reproduce
-  exactly** — an independent second reading of the same decision.
-- Exactly one cell worse corpus-wide: `Dragons_Lair_Part_II` `wave`
-  0.731→0.704, from the adjudicated `no_test_restart` loss, on a row that is a
-  known harness artefact (melody 14%, 359 attacks vs the original's 556).
-- `len`: **zero breaches** of the ±5s rule, measured on 6 of 83 rows both
-  before and after — unchanged coverage.
-- Suite 1620 passed / 2 skipped. All three human approvals **HOLD by sha256**,
-  recomputed through `abpage.conversion_shas()` rather than inherited:
-  5_Title_Tunes `762b0457ae84`, ACE_II `7bc6dfad62f1`, Action_Biker
-  `3554a89bc1c0`.
+## Conversion behaviour that changed (two commits only)
 
-### v0.5.408 `ef7caee` — a `/runqueue --until-blocked` drain, four cycles
+**`--force-park` (v0.5.431, `python/h2g/tracks.py`)** -- parks every voice on the
+silent pattern even where the restart is ALREADY legal. `--silent-park` acts only
+on an out-of-range restart, which `convert_tracks` writes only for Hubbard's
+`$FE`; a tune that ends and never says so keeps a legal restart 0 and plays
+forever. Confuzion's track region is six bytes containing **no `$FE` at all**.
 
-| cycle | lane | task | outcome |
-| --- | --- | --- | --- |
-| 1 | delegated | `report-text-can-be-invalidated-by-the-change-that-regenerates-it` | done |
-| 1 | main | `claude-md-states-measured-numbers-in-the-present-tense` | **partial** |
-| 2 | main | `forcing-tempo-bypasses-multiplier-assignment` | done |
-| 3 | main | `record-the-gate-term-task-in-the-run-log` | done |
-| 4 | main | `regrid-lengthened-row-may-extend-an-in-progress-slide` | done |
+  * Confuzion `len` **294.92 s -> 0.12 s**, with melody 1.0, sequence 1.0,
+    pitch 1.0, gate 0.7850, adsr 0.2194, wave 0.9631 and attacks 298/298 all
+    IDENTICAL between the arms -- the shape a pure ending fix must have.
+  * Corpus byte-hash: **MOVED 1 (Confuzion)**. Forced on everywhere it reaches
+    **73 of 83**, which is why it is per song.
+  * Adopted in `presets.json` for Confuzion only. `docs/FIDELITY.md` regenerated;
+    its summary now states NO file breaches the +-5 s rule.
 
-- **`convert()` now derives its own pack factor.** `multiplier` was assigned
-  only on the fully-derived tempo branch, so `convert(tempo=N)` left it at 1
-  while `fidelity._skip_gate_multiplier` INDEPENDENTLY re-derives the factor and
-  packs at it — every per-call rate encoded for `-S1` while the file ran at
-  `-SM`. New helper `_derived_multiplier(sid, det, skip_gate)` in
-  `python/h2g/convert.py`, called from both branches that skipped it. A census
-  scoped the fix: **0 of 95 corpus files take the `det.frames_per_row > 1`
-  branch**, so only the forced path was live.
-- **`fidelity.py`'s report prose pinned to its own rows** (delegated): two
-  claims were hardcoded English never read from `rows`.
-- **CLAUDE.md's measured figures graded** (partial): a new rule plus three
-  stale figures corrected, five re-verified live.
-- **The regrid investigation**: refuted the task's own title (see
-  `<attempted_approaches>`).
+**The `voices_end_together` guard (v0.5.433, same file)** -- v0.5.431 shipped
+`--force-park` with its safety condition documented and UNCHECKED. Censused:
+**76 of 237 subtunes across 28 files (32%)** have voices that do not end
+together, so parking would silence the short voice early. Now declined per
+SUBTUNE. Corpus byte-hash **MOVED 0** (Confuzion's one subtune is safe).
 
-### v0.5.409 `cd2db79` — a second drain, two cycles, merged from worktrees
+## Search, harness and documentation changes
 
-| cycle | lane | task | outcome |
-| --- | --- | --- | --- |
-| 5 | delegated | `not-measured-note-length-claim-is-stale-…` | done |
-| 5 | delegated | `cd-then-heredoc-short-circuits-…` | done |
-| 5 | main | `lock-records-with-a-null-pid-…` | done |
-| 6 | main | `sanxion-regrid-collapse-has-a-second-per-call-pitch-source` | done |
+  * **`presets._redundant_combination` (v0.5.430)** -- skips the 32 of 127
+    combinations setting both `max_hard_restart` and `wide_hard_restart`.
+    Measured both ways: with max forced ON, `wide` changes bytes on **0 of 83**;
+    with max OFF, on **36 of 83**. Byte-identical to a combination still
+    visited, so the search result cannot change. A quarter of the walk.
+  * **`fidelity.shortening_fate` (v0.5.432)** -- the report used to assert of
+    every window-shortened row that "the shipped `.sng` still plays forever".
+    True while the only repair was restart-at-0, false once one is parked. Now
+    read off `length_bounded`.
+  * **`sound_runs` docstring (v0.5.430)** -- carried the PRE-v0.5.410 census
+    (415 instruments) that `--hold-census` had superseded. Replaced with the
+    re-measured table, old figures named as superseded.
+  * **README + `apply_initial_instruments` docstring (v0.5.429)** -- both said
+    Delta was `--initial-instrument`'s beneficiary. Delta's voices now read
+    99.4/99.9/99.9 WITHOUT it; forced on, voice 2 goes 99.9% -> 0.5% with 1488
+    noise frames against an original with none. The option has no measured
+    beneficiary. Also records that the hazard's criterion is the EMITTED subtune
+    count, not the header's (Delta declares 16, emits 1).
+  * **README `--no-hard-restart` (v0.5.429)** -- it changes the conversion on
+    **83 of 83** files and no column reads it on the three examined.
 
-**The headline is a retraction of this session's own earlier work.** v0.5.408
-concluded, from a vibrato A/B, that One_on_One's and Sanxion's `--regrid`
-collapses "do not share one cause". Wrong. Turning `no_test_restart` off erases
-both:
+## Tests added (9, suite 1657 -> 1666)
 
-    Sanxion     -19.9pp -> +0.2pp    voice 2 collapsed 346 -> 343 (orig 344)
-    One_on_One  -37.0pp -> +0.5pp    voice 3 collapsed 188 -> 186 (orig 186)
+    test_pack_subtune.py    no corpus file packs for a subtune it does not start on
+                            every derivation site agrees on every corpus file
+    test_presets.py         the only pruned combination is wide under max
+                            no combination without max is pruned
+    test_original_ended.py  the shortening clause reads whether the file stops
+    test_legal_restart.py   force_park parks a track whose restart is already legal
+                            force_park needs the pattern table
+                            force_park declines a subtune whose voices differ
+                            the end-together test is taken before anything is parked
+                            voice_rows counts rows not orderlist entries
 
-`slides`, `vibrato` and `two_stage` each leave Sanxion's figure unmoved to a
-tenth of a point. Vibrato masks One_on_One's — a **co-factor**, not the cause.
-Mechanism: `--no-test-restart` deletes the testbit frame, the only frame our
-conversions spend below `$10`, and siddump needs one below `$10` to name an
-attack (siddump.c:434-437). It **owns frame 0**; a compensating row moves the
-boundary underneath it. Not a pitch generator — two options contending for one
-frame. Written into `regrid_tempos`' docstring, replacing the paragraph it
-retracts.
+## Measurements and findings worth keeping (all in runs.jsonl)
 
-**Necessary but not sufficient**, which is the live open question: six corpus
-files carry `no_test_restart` and could take `--regrid`; four ship with it
-adopted and are fine (Arcade_Classics, **Rikky**, Sigma_Seven, Wiz), two
-collapse. All are `-S1` and their row counts interleave (Sigma_Seven 3599 vs
-One_on_One 5584; Wiz 20373 vs Sanxion 17660), so neither multiplier nor size is
-the discriminator.
+  * **Powerplay's `--regrid` loss is 94% a naming artefact.** Its whole -2.88pp
+    is seven attacks on voice 0, all within 0.13 semitones of the original.
+    Per pitch the no-regrid arm sits **+0.38 st** from the original and the
+    regrid arm **+0.12 st** -- the arm we ship is three times further away and
+    scores better, because a quarter-tone drop crosses a naming boundary. The
+    refusal recorded at v0.5.412 rests on that.
+  * **The pre-instrument discriminator, by ablation.** NOPing Bangkok's `$802A`
+    makes voice 0 keep `$41` and attack at frame 1 instead of 2145; NOPing
+    Delta's counterpart `$C032` changes nothing. Ground truth for all **44
+    corpus files carrying the idiom**: **20 clear / 24 do not**, agreeing
+    **3 of 3** with the independent pre-instrument census.
+  * **Bangkok's pre-instrument silence is the TEST BIT `$08`**, held 1949 of
+    2145 frames -- not `$00`, and `$41 AND anything` cannot be `$08`.
+  * **No corpus file packs for a subtune it does not start on** (0 of 83), and
+    0 ship a multiplier differing from the recommendation. The task claiming
+    otherwise was backwards.
+  * **14 rows carry a `length_delta` and `length_bounded` is false on all 14** --
+    every measurable conversion stops. 69 rows have an original that never ends
+    even at 10x the window.
+  * **`hold`'s fetch deficit is refused with its reason**: the lost frame is
+    Goattracker's own next-note fetch (gplay.c:905), not anything this converter
+    writes. `--no-test-restart` removes it and costs melody -26.3pp over 68 files.
 
-### `/whattask` regeneration at `ef7caee`
+## Seven of my own published claims retracted
 
-Rewrote `.claude/tasks/whattask.json` whole: **23 open tasks, 17 closed**.
-Sources: `whats-next.md`, `todo.md`, the whole `runs.jsonl` (154 distinct ids),
-the previous plan, `docs/FIDELITY.md`, `presets.json`, `build/fidelity.json`,
-`graphify-out/graph.json`, and the commits. `gh` was authenticated and the repo
-has **zero open issues and zero open PRs**. No `decisions.jsonl` exists.
+Listed because each is greppable from its own words and a reader will otherwise
+trust the older record:
 
-Reconciliations worth keeping:
-- **`todo.md`'s "Rebuild `build/instrmap`" reopened.** Closed at `9b939a6`, but
-  the dumps are mtime *2026-08-28 18:03* while v0.5.407 landed after them and
-  moved the bytes of 17 files. Tracked as a NEW id
-  (`instrmap-is-stale-against-v0-5-407`) rather than reopening one whose run
-  log reads `done`.
-- **`external_locks` fixed.** The previous plan named
-  `.claude/tasks/serial.lock` — the registry itself, which exists permanently —
-  so read literally every `/runqueue` had to stop before starting. Now only
-  `.claude/tasks/serial.lock.d`, the mutex directory.
-- **`cd-then-heredoc`'s bogus `depends_on` removed** — its only real relation to
-  the CLAUDE.md task was that both write that file, which is contention
-  `touches` already handles. As a dependency, a `partial` blocked it forever.
-- **Two counts corrected from live data**: the firstwave task said "45+ files
-  read hold 0%"; it is **39**. Skate or Die's 829-against-1021 and Kings of the
-  Beach ingame's wave 57.3% / gate 11.0% were re-verified live, so both those
-  tasks remain judgeable.
-- **`touches` widened from the graph.** The mechanical `test_<name>.py` rule
-  finds nothing for `patterns.py` and `goatwriter.py` — this repo names tests by
-  FEATURE. `graphify query` showed 20+ test files depending on `goatwriter.py`,
-  so tasks writing a core module declare `rw:python/tests` as a directory.
-- Only ONE of 23 tasks is `parallel`. That is arithmetic, not laziness: nearly
-  everything reads or writes `presets.json` and `docs/FIDELITY.md`.
+  1. v0.5.426's "the 932 gated-ON adsr frames are cut_release's residual" -- the
+     original's gate is OFF on all 3742; the 937 are the gate surplus seen
+     through another register, checked frame by frame.
+  2. v0.5.426's retraction of the 932/935 coincidence as "chance" -- they are
+     the same frames.
+  3. v0.5.426's "$C032 is inside the PSID header" -- `to_offset` maps the header
+     BELOW `load_addr`; Delta's strings are at `$BF98-$BFF7`.
+  4. v0.5.426's "with no_hard_restart set the hard-restart axes are byte-level
+     no-ops" -- generalised from ONE file; `hard_restart_frames=8` moves 15 of
+     83 and `wide_hard_restart` 14 of 83.
+  5. v0.5.433's "the INIT clear loop" -- init reaches that store on **0 of 20**
+     files; it is on the play path.
+  6. "clears the cell" throughout -- the value is `$08`, not `$00`.
+  7. The Bangkok idiom's address: `$8539` was a raw search INDEX printed as an
+     address; it is at **`$84BD`** with its store at `$84C3`.
 
-## Durable knowledge added to CLAUDE.md (do not duplicate here)
+## Plan regenerated once
 
-- The **grading rule** for measured figures (historical-with-a-version, or live
-  and re-checked; the ungraded middle is what gets cited after the tree moves).
-- The **`cd X && <edit>` short-circuit** rule, beside the `str.replace` rule it
-  generalises, with all three sightings named.
+`/mit-setup:whattask` at `c9fa41a` -- 27 tasks, 15 closed, 12 ready. Two verify
+strings were CORRECTED rather than carried (`rikky`'s named a dead candidate as
+untested; `a-note-before`'s carried three dead static readings).
 </work_completed>
 
 <work_remaining>
 
-## 0. FIRST: the plan is stale — re-run `/whattask`
+## 0. FIRST: regenerate the plan
 
-`.claude/tasks/whattask.json` has `generated_from.head = ef7caee`; HEAD is
-`cd2db79`. **Four of its 23 tasks are now `done`** in `runs.jsonl` and the file
-still lists them as open:
+`.claude/tasks/whattask.json` is stamped `c9fa41a`; HEAD is `d3d7e3f`. **7 of its
+27 tasks are now `done`**, and `runs.jsonl` carries opened ids that are not in it
+(including `force-park-has-no-voices-end-together-check...`, which was run
+OFF-PLAN and is now done). Run `/mit-setup:whattask` before another drain.
 
-    sanxion-regrid-collapse-has-a-second-per-call-pitch-source
-    not-measured-note-length-claim-is-stale-since-hold-column-partially-reaches-it
-    cd-then-heredoc-short-circuits-and-the-next-check-passes-anyway
-    lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule
+## 1. `[main]` The pre-instrument task -- SHIP THE DATA TABLE
 
-Also missing from it: the ids opened during the second drain —
-`agent-scratchpads-are-not-isolated-from-the-orchestrators`,
-`regrid-and-no-test-restart-need-a-guard-or-a-documented-incompatibility`,
-`orphaned-tail-processes-survive-their-sessions`. A `/runqueue` will still work
-(it recomputes readiness from `runs.jsonl`) but the table will mislead a human.
+`a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta`
+was run FOUR times this session and is `partial`. The diagnosis is finished; only
+the emitter remains, and the route is now a recommendation rather than an open
+question.
 
-Current standing: **19 open — 13 ready main, 3 requires-user, 3 blocked.**
+**Do NOT try to derive the flag again.** Three routes are refuted, each scored
+against the same 44-file ablation ground truth (see `<attempted_approaches>`).
+Ship the 20/24 split as a DATA TABLE keyed by file, which is what
+`ENVELOPE_CUT_SHAPES` and the gate spellings already are in spirit. Regenerate
+the ground truth with the ablation rather than trusting the scratchpad JSON --
+44 files x 2 traces at `-t 30` is a few minutes and is cheap enough to be a test.
 
-## 1. `[main]` The highest-value ready task
+Then: a note before its voice's first instrument must not sound on the 20, and
+Delta's 8 must stay exact. Expected reach -- Bangkok 20 notes, Dragons_Lair 32
+(subtunes 5 and 6, untraced), Gremlins 1. Closes `bangkok-knights-voice-0-...`
+and `bangkok-voice-0-orderlist-...` behind it. Verify: Bangkok voice 0 >= 0.96
+ratio under `--diagnose` with voices 1 and 2 unmoved, a test that fails with only
+the call site reverted, and a byte-hash naming exactly the files that move.
 
-`multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune` (opus,
-`needs_main`). One call rate is picked from subtune 0 and 12 corpus files have
-a subtune needing a higher one. It unblocks `kings-of-the-beach-wants-
-multiplier-3`, and it must precede the other `presets.json` writers because
-each regenerates the report the others would invalidate.
-Verify: Kings of the Beach reaches wave 72.8% / gate 33.1% (against 57.3/11.0
-at `-S1`, melody/seq/pitch unchanged at 100%), and a corpus byte-hash moves
-only files whose per-subtune `recommended_multiplier` exceeds their recorded
-one. Take the 12 ONE AT A TIME with `--search-subtunes`; Delta wants `-S10` and
-CLAUDE.md records that a file above `-S4` cannot be judged on a normal trace.
+## 2. `[user]` Five listening and adoption decisions
 
-## 2. `[user]` Three listening verdicts, none settleable by measurement
+None is settleable by measurement. **The A/B server is NOT running** -- it was
+killed mid-session and the user asked for it once already.
 
-- **ACE_II** carries TWO withheld gains, both changing the `.sng` sha256 a
-  listener approved: `hard_restart_frames` (gate 78.3→93.4%, every other column
-  identical, in `presets.FIDELITY_VETOED` since v0.5.407) and
-  `rest_envelope_silence` (adsr 93→96, withheld at v0.5.394). **One session
-  settles both.** Stage the approved build against one carrying both.
-- **Monty**: `real_firstwave_instruments [1..16]` buys hold 0→88% and some
-  wave, costs pitch 95→92.
-- **Action Biker**: the subtune-order fix landed (`f63caa1`) but the ear check
-  was never retaken. Its sha in `approved.json` should be confirmed as the
-  post-fix one.
+  * `ace-ii-has-two-withheld-gains-awaiting-one-listen`
+  * `monty-firstwave-trade-needs-a-listen` (blocks `firstwave-set-across-...`)
+  * `action-biker-subtune-pairing-needs-an-ear`
+  * `pandora-regresses-under-the-two-sided-attack-guard` -- adoption call
+  * `regrid-is-not-in-fidelity-toggles-...` -- cost decision
+  * NEW: **should Powerplay's `--regrid` refusal be reversed?** Its -2.87pp is
+    now known to be 94% a naming artefact of a pitch that moved TOWARD the
+    original. `presets.json` still records `regrid: false`.
 
-## 3. `[main]` `--regrid` + `--no-test-restart` needs a guard or a documented incompatibility
+## 3. `[main]` `monty-drums-play-four-octaves-too-low`
 
-Now that the collision is attributed. **A blanket veto would be wrong** — four
-files carry both happily. The discriminator is unknown; see
-`rikky-immunity-to-regrid-is-unexplained`, which is the same question.
+The defect MOVED since todo.md was written. Voice 2 is now 179 of 209 frames at
+the right pitch (entry 79); **voice 1 carries the mechanism now** -- 140 frames
+at +7.16 st and 70 at -7.84 st, only 121 correct. Aim at voice 1 (210 wrong
+frames), not voice 2 (22). todo.md's entry is stale in its numbers and names the
+wrong voice; it was NOT edited (not in that task's `touches`).
 
-## 4. `[main]` `build/instrmap` is stale, second time
+## 4. `[main]` `commando-voice-1-plays-g-sharp-7`
 
-Dumps predate v0.5.407, which moved 17 files' bytes.
-`python abpage.py --instrmap <corpus>` from `python/` — use ABSOLUTE paths.
-Rebuilds `build/instrmap` AND `build/listen`, both hazards, so it must not run
-beside anything reading them.
+One well-posed question left: what does the player do with a note byte for
+RECORD 4? The 50 clamped `$68` bytes are confirmed from the converter's own
+reader; the player's 96-entry table gives `$0000` for index 104 while the
+original sounds index 71. Transposes are ruled out (nine empty maps) and the
+command-byte reading is inverted by ADSR attribution. **Constraint the task never
+stated: Commando is the byte-exact fixture.**
 
-## 5. `[main]` 51 registered worktrees, none prunable
+## 5. `[main]` Smaller, well-specified
 
-Including the two merged this session, now redundant (their content is in
-`cd2db79`). **HAZARD FOUND THIS SESSION:** `rw:.claude/worktrees` collides with
-every delegated agent's own isolation worktree, which no task declares — so
-this must never run beside a fan-out. Check `git -C <wt> status --short` and
-`git log` against master before removing anything.
-
-## 6. Outside this repo, uncommitted
-
-`plugins/mit-setup/LOCKING.md` in
-`C:/Users/mit/.claude/plugins/marketplaces/mit-claude-setup` (its own git repo,
-plugin v1.9.5) — my parent-chain-walk fix for the null-pid problem, 43 lines,
-sitting alongside a **pre-existing uncommitted 27-line edit from an earlier
-session** about `refs/stash` being shared across worktrees. Both verified
-intact. The cache copy at `plugins/cache/mit-claude-setup/mit-setup/1.9.5/` was
-deliberately NOT edited — a reinstall would overwrite it.
+  * `hard-restart-frames-is-not-searchable` -- still nothing scores it.
+  * `action-bikers-fidelity-is-not-99-percent` -- `gate` 72% / `wave` 97%,
+    localised to voice 2; its adsr is a REAL envelope defect (4631 both-gates-on
+    frames), not a gate artefact.
+  * `convert-through-preset-opts-and-the-harness-produce-different-bytes` --
+    opened and untouched; see `<critical_context>`, it deserves a session.
 </work_remaining>
 
 <attempted_approaches>
 
-## Refuted hypotheses (do not redo)
+## Refuted for the pre-instrument discriminator (do not repeat)
 
-- **"`fidelity_better` has no gate term"** — FALSE, and it was this project's
-  own claim. `gates_right` has existed since v0.5.271. Retracted in v0.5.406's
-  message; recorded in `runs.jsonl`.
-- **"A lengthened regrid row extends an in-progress slide"** — the task's own
-  TITLE. Refuted: with `slides` off entirely the collapse is IDENTICAL
-  (−37.0pp, −19.9pp; 189→211, 346→357), and `slides: False` demonstrably moves
-  both files' bytes so the arm is not vacuous.
-- **"The two regrid casualties do not share one cause"** — my own v0.5.408
-  conclusion, refuted in v0.5.409 (above). The lesson: **one A/B that removes a
-  symptom is not an attribution.** Vibrato removed One_on_One's symptom while
-  being a co-factor, not the cause.
-- Four hypotheses were already dead before this session (funktempo restore
-  value, over-delivery, slide-heaviness, and the slide extension) — recorded
-  under `regrid-melody-collapse-on-the-six-refused-files`.
+  1. **Four cheap static rules**, scored against the 44-file ground truth: cell
+     file image == 0 catches 4/20 with 14 false positives; store within `$30` of
+     `load_addr` catches 14/20 with 8 false positives; `$40` and `$50` are worse;
+     store count useless. Offsets overlap almost completely.
+  2. **An init interpreter** (~130 lines, decodes 42 of 44 init blocks). It is a
+     CONSTANT CLASSIFIER -- predicts "no clear" for everything, and its 23/42
+     "accuracy" is just the files whose truth is False. Its real contribution
+     was reachability: init reaches the store on **0 of 20**.
+  3. **A play interpreter** (~200 lines). 6/20 decided, 24 undecidable. Two
+     structural blockers: an unsupported addressing mode, and **at least six
+     files install their own IRQ and carry no `playAddress` at all** -- no
+     interpreter can reach the store on those, however complete.
+  4. Earlier and already recorded: the guard-byte reading (bit 6 of a run-once
+     latch), refuted by ablation; the cell's file image (`$41` on both
+     endpoints).
 
-## Probe and tooling failures hit this session
+## Refuted elsewhere this session
 
-- **`cd python && <cmd>` when the shell was already in `python/`.** The `cd`
-  fails, `&&` short-circuits, and a 12-minute `FIDELITY.md` regeneration
-  silently did not run (exit 1, `cd: python: No such file or directory`). THIRD
-  sighting; now a CLAUDE.md rule.
-- **An A/B probe asserting `status == "ok"`.** The real value in
-  `build/fidelity.json` is `"measured"`. The assertion fired; without it the
-  probe would have compared ZERO rows and reported a clean corpus.
-- **A scripted edit whose assert fired on LINE ENDINGS, not content.**
-  `patterns.py` is CRLF and the search string used `\n`. Fix: read in
-  universal-newline mode, write in default text mode, so the file's endings
-  round-trip.
-- **A nested heredoc mangled a patch script's escapes** (`\r\n` became literal
-  newlines, producing a SyntaxError). The repo's own rule covers it: write the
-  script to a file with the Write tool and run `python <path>`.
-- **`tar -x -C` cannot take a Windows drive-letter path.** The corpus byte-hash
-  recipe needs `git archive HEAD -o <tarball>` plus Python's `tarfile`.
-- **A stray `cp ... /tmp/...` succeeded**, so an `||` fallback to the scratchpad
-  never ran and a backup landed outside the session directory.
+  * **`--rest-envelope-silence`-style widening for 5_Title_Tunes' adsr** -- there
+    is no `cut_release` residual there at all; the deficit is the gate surplus.
+  * **The hard-restart family for Action_Biker's gate** -- seven arms, all
+    identical to four decimals.
+  * **Ties as `--regrid`'s damage mechanism** -- impossible on Powerplay, whose
+    mid-glide share is 0.0%.
+  * **Fifteen candidates for Rikky's `--regrid` immunity**, the last being the
+    persistent pitch offset, which looked decisive on a BIASED SUBSET (all
+    damaged voices plus three arbitrary immune ones) and overlaps totally across
+    all 21 voices.
 
-## Orchestration findings (recorded in `runs.jsonl`, NOT fixed)
+## Probe errors made and corrected (each cost a run)
 
-- **`serial.lock` was NOT empty** when this session's first drain started,
-  contrary to the previous handoff's claim: it held a record for
-  `fidelity-better-has-no-gate-term` (`pid: null`, host `TDZASUS`, head
-  `c376622`) — a task `whattask.json` lists as CLOSED. It holds
-  `r:python/fidelity.py` and would have blocked the drain's only delegable
-  task. **A null-pid record cannot be reaped by the pid rule at all**; it was
-  cleared only by a second signal (the task being closed in the plan), which
-  LOCKING.md explicitly says not to guess at.
-- **The null-pid fix's two obvious forms are BOTH wrong.** (1) The writing
-  shell's pid dies within milliseconds — every tool call is its own shell — so
-  every later run would reap a holder whose task is still running; strictly
-  worse than null, which fails safe. (2) A lookup by process name is useless:
-  **13 `claude.exe` processes** were running at once. The answer is to walk the
-  parent chain to the FIRST `claude.exe` ancestor; verified chain
-  `pwsh.exe -> claude.exe -> pwsh.exe -> WindowsTerminal.exe -> explorer.exe`.
-- **Agent scratchpads are NOT isolated from the orchestrator's.** An agent's
-  `bh_probe.py` and a full `bh_scratch/` export appeared in this session's
-  scratchpad, and the orchestrator's own identically-purposed `bytehash.py` had
-  vanished by the time it was next needed. Two concurrent agents doing corpus
-  byte-hashes in one directory is the shared-fixed-filename failure this repo
-  already fixed once inside `fidelity.py` (v0.5.66).
-- **Three orphaned `tail -f` processes** from PREVIOUS sessions are still
-  running, one since Aug 22. Not this session's children, so reported rather
-  than killed.
-- **The Edit tool refuses the shared checkout path from inside an isolated
-  agent**, directing it to the worktree copy. So a `touches` path is implicitly
-  rewritten to the agent's worktree.
-
-## Deliberately not pursued
-
-- Adding a new term to `fidelity_better` — unnecessary (the term existed), and
-  CLAUDE.md records a version of that change which lost seven measured settings
-  and gained one.
-- Deleting any worktree, despite 51 being registered — CLAUDE.md records
-  worktrees swapping agents' work, and two held unmerged work until this
-  session's final commit.
-- Committing anything during a `/runqueue` drain — the command forbids it, and
-  both drains reported and stopped instead.
+  * **Omitted the frequency-table calibration** -- read Powerplay at 22% where
+    the harness reads 99%. `engine_freq_table`'s docstring names Powerplay as
+    its worked example and says which table you pick "decides whether a row
+    reads 99% or 12%".
+  * **Traced OUR side at subtune 0** while `_measure` resolves the pairing with
+    `--search-subtunes`. Produced gate 0.28 / adsr 0.00 against the artefact's
+    0.72 / 0.69 and I was one step from filing a severe live regression.
+  * **A guard evaluated per TRACK inside the parking loop** -- parking appends a
+    position, so the group became unequal and the guard declined the voices it
+    had just unbalanced. Every test still passed; the sha caught it.
+  * **`-x` on a whole test file as a non-vacuousness check** -- it stopped on a
+    PRE-EXISTING test and said nothing about the ones being proved.
+  * **A hand-edit of `presets.json` at `indent=1`** -- `test_presets_format.py`
+    requires byte-identity with `json.dumps(doc, indent=2)`.
+  * **Heredoc mangling** (`\\n` collapsing, embedded quotes) broke three scripted
+    edits. Asserts caught all three. Use the Write tool for anything long.
 </attempted_approaches>
 
 <critical_context>
 
-## Verification standards actually applied (and worth keeping)
+## The rule this session paid for repeatedly
 
-- **Non-vacuousness was proven for every new test**, not asserted. The strongest
-  form used: for `_derived_multiplier`, the helper was left in place and only
-  its CALL SITE removed — the byte test still failed, which is the regression
-  that actually matters. (Reverting the whole file only proves the test touches
-  new code.)
-- **Corpus byte-hash after every change**: 83 converted / 12 refused / 0 errors
-  both sides, compared 83, **moved 0** for all three commits.
-- **Report regeneration as a second, independent reader.** Regenerating
-  `docs/FIDELITY.md` and finding *4 lines changed, ZERO table rows* is what
-  confirmed the delegated prose fix works on the real corpus rather than only in
-  a test.
-- **Agent records were verified, never trusted**: id equality first, then scope
-  (`git status` in the worktree), then re-running the reported numbers, then
-  non-vacuousness.
+**An ablation tells you THAT a byte matters, never WHERE it runs and never WHAT
+it writes.** Three labels in a row were wrong while every measurement held: the
+guard byte, "the init clear loop", "clears the cell". Both corrections are cheap
+-- reachability is a set of PCs, the value is one memory read -- and both must be
+instrumented in the same run as the ablation.
 
-## Repo facts that bit this session
+**Recompute a number a task tells you to trust.** Six task figures were stale or
+wrong. The sharpest case: a record saying work was "NOT PUSHED, NOT MERGED" on a
+branch -- read today that invites a cherry-pick onto a tree that already has the
+work. It had landed rebased; `find_gate_hold` is in master and returns True on
+68 of 83 exactly as recorded. **A record claiming work is stranded is the most
+urgent kind to re-verify, not the least.**
 
-- `build/fidelity.json` rows use `status == "measured"` (NOT `"ok"`), and its
-  columns are FRACTIONS (0.0–1.0) where the report prints percentages.
-- `fidelity.py` has **no per-option flags**. Forcing an option for an A/B means
-  writing a patched `presets.json` copy OUTSIDE the repo and passing
-  `--presets`. **Check the option is actually ON in the shipped entry first** —
-  Rikky already ships `regrid: true`, so a naive "control" arm compared two
-  identical runs.
-- `build/` is gitignored, so `build/fidelity.json` is never committed; only
-  `docs/FIDELITY.md` is. `docs/SURVEY.md` carries no version stamp and is
-  presets-independent.
-- `bump_version.py` runs AFTER artefact regeneration, so a commit ships an
-  artefact stamped one version behind. Known and accepted.
+**A verify string is load-bearing and nothing re-checks one.** Three plan
+verifies were stale; `/whattask` regeneration carries the old text forward rather
+than re-deriving it from the newest record. Opened as
+`whattask-regeneration-carries-stale-verify-text-forward-instead-of-re-deriving-it`.
 
-## Timings (measured this session, not estimated)
+## An unexplained discrepancy that touches a technique used all session
 
-- Full suite: **~6 min** (1626 passed, 2 skipped at `cd2db79`).
-- `docs/FIDELITY.md` regeneration at `-t 60`: **~12 min**.
-- A single-file `fidelity.py` run at `-t 60`: ~40 s.
+`convert()` called with `fidelity._preset_opts(doc, name)` gives Action_Biker sha
+**3554a89bc1c0**; the harness's own row for the same file at the same settings
+records **51256f225818**. My path disagrees with the artefact on **all 83** files.
 
-## Environment
+Every byte-hash conclusion this session is DIFFERENTIAL -- arm A against arm B
+through the same path -- so a systematic offset cancels and they stand. What is
+NOT valid is comparing a sha from that path against one the harness recorded.
+v0.5.425's record quotes 3554a89bc1c0 as Action_Biker's shipped sha, which by
+this measurement is not what the harness converts. Opened as its own task.
 
-- Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob` — 95 files, 83
-  convert, 12 correctly refused (`UnsupportedSidError`).
-- `python/tools/siddump-rt/siddump.exe` is **gitignored**; any clean export or
-  fresh worktree must have it copied in first, or the harness silently measures
-  only the single-speed files.
-- GoatTracker sources: `C:/Users/mit/Downloads/GoatTracker_2.76/src`.
-- `gh` is installed and authenticated as `MichaelTroelsen`; the repo has no
-  issues or PRs.
-- `graphify update` reports "No code-graph topology changes detected" when
-  current; it warns that `python/tools/siddump-rt/cpu.c` is partially extracted
-  (C syntax error at line 31), so C nodes there are incomplete.
+## Non-vacuousness is per test, not per change
+
+Repeatedly this session a change had two or three tests and only ONE was
+non-vacuous for it. State which, and prove each against the defect it guards:
+`--force-park`'s pattern-table guard passes under the call-site revert (it
+declines for a different reason); the wide-under-max converse guard holds
+trivially when nothing is pruned; a derivation deliberately computed FROM a
+predicate adapts instead of detecting.
+
+## Environment and conventions
+
+  * Corpus: `C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob`, 95 files,
+    83 convertible. Override with `H2G_CORPUS`.
+  * Suite: `python -m pytest tests/ -q` from `python/` -- ~6 minutes, 1666
+    passed / 2 skipped at `d3d7e3f`.
+  * `docs/FIDELITY.md` regeneration: ~12 minutes at `-t 60`. It stamps the
+    version it was generated at, which is one behind the commit because
+    `bump_version.py` runs after -- the ordering CLAUDE.md records.
+  * **`cd python && <cmd>` short-circuits** because the Bash cwd persists. Use
+    absolute paths. Hit ~4 times.
+  * Scratchpad probes are prefixed per task (`nb3_`, `fp1_`, `cz2_`) because
+    the scratchpad is SHARED between agents even when worktrees are not.
+  * `graphify update .` was run once, at the `/whattask` pass; the graph is
+    stale again by ten commits.
 </critical_context>
 
 <current_state>
 
-## Finalised
+## Repository
 
-- **HEAD `cd2db79` (v0.5.409), pushed. Local and `origin/master` are level.
-  Working tree CLEAN.**
-- Three commits this session, all pushed: `8967b3f`, `ef7caee`, `cd2db79`.
-- `.claude/tasks/runs.jsonl`: **189 lines**, 8 appended this session.
-- Lock registry `.claude/tasks/serial.lock` is `[]`; the mutex directory
-  `.claude/tasks/serial.lock.d` does not exist. **Nothing is held.**
-- `graphify-out/` refreshed after the final commit.
-- Both agent worktrees from the second drain are MERGED — their content is in
-  `cd2db79`, so those checkouts are redundant duplicates now.
+`HEAD = d3d7e3f` (v0.5.433), branch `master`, **working tree CLEAN**.
 
-## Draft / temporary / outside this repo
+**4 commits are UNPUSHED**: `8a9ba0d`, `8bff6bc`, `2367f03`, `d3d7e3f`.
+`origin/master` is at `9b382b9`. Pushing is the user's call and has not been
+asked for since v0.5.429.
 
-- **`.claude/tasks/whattask.json` is STALE** — `generated_from.head = ef7caee`
-  against HEAD `cd2db79`, with 4 tasks it lists as open now `done`. It is
-  committed in that stale form. Re-run `/whattask`.
-- **`plugins/mit-setup/LOCKING.md` is uncommitted**, in the plugin marketplace
-  repo outside this tree, carrying two independent edits (mine + an earlier
-  session's).
-- 51 registered worktrees, none pruned.
-- Session scratchpad holds ~75 files including probe scripts, presets A/B
-  copies and corpus exports — all disposable, and it is shared with delegated
-  agents (see `<attempted_approaches>`).
+Suite green (1666 passed, 2 skipped). `docs/FIDELITY.md` and
+`build/fidelity.json` are CURRENT -- regenerated at v0.5.432 and confirmed by
+running the CLI on Action_Biker and reproducing the artefact digit for digit.
+`presets.json` is current and carries Confuzion's `force_park: true`.
+
+## Generated artefacts
+
+  * `docs/FIDELITY.md` -- current, stamped 0.5.432.
+  * `build/fidelity.json` -- current, gitignored.
+  * `presets.json` -- current; the only hand-recorded change this session is
+    Confuzion's `force_park`.
+  * `docs/SURVEY.md`, `docs/SUBTUNES.md` -- NOT regenerated this session and not
+    known stale (no detection change landed).
+  * `graphify-out/` -- stale by ten commits.
+
+## Task machinery
+
+  * `.claude/tasks/runs.jsonl` -- 259 lines, append-only, committed.
+  * `.claude/tasks/whattask.json` -- **STALE**, stamped `c9fa41a`, 7 of 27 tasks
+    done, missing several opened ids. Byte-identical to how the last `/whattask`
+    wrote it (no drain ever patched it).
+  * `.claude/tasks/serial.lock` -- `[]`, no holders, no mutex directory.
+  * `.claude/tasks/decisions.jsonl` -- does not exist; no `/runhuman` has run.
+
+## Running processes
+
+  * **The A/B listening server is NOT running.** It was killed mid-session
+    (background task `b9c954u4j`); port 8000 does not respond. The staged pages
+    are on disk under `build/`. The user asked for it once and will need it for
+    the five listening decisions.
+  * Three orphaned `tail -f` processes from PREVIOUS sessions survive; killing
+    them is a `requires-user` task, deliberately not done.
 
 ## Open questions
 
-1. **What gates the `--regrid` + `--no-test-restart` collision?** Necessary but
-   not sufficient; four files carry both and are fine. Same question as
-   `rikky-immunity-to-regrid-is-unexplained`.
-2. **Three listening verdicts** (ACE_II ×2, Monty, Action Biker) — no
-   measurement can settle any of them.
-3. `claude-md-states-measured-numbers-in-the-present-tense` is `partial` by
-   design: the cheaply checkable figures and every figure an open task's verify
-   keys on are graded; the rest need corpus sweeps.
-
-## Recommended next action
-
-Run `/whattask` to refresh the stale plan, then take
-`multiplier-is-chosen-from-subtune-0-but-belongs-to-the-subtune`.
+  * Should Powerplay's `--regrid` refusal be reversed given its loss is 94%
+    naming artefact? (user's call, not recorded anywhere but runs.jsonl)
+  * Data table vs. derived flag for the pre-instrument rule -- recommendation
+    made, decision not taken.
+  * Why do `convert()` via `_preset_opts` and the harness produce different
+    bytes on all 83 files?
 </current_state>
