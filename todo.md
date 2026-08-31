@@ -312,26 +312,47 @@ WHAT IS KNOWN ABOUT THE MECHANISM:
 * The two drum records are 0 and 3 (`00 02 41 09 B9 00 30 64` and
   `00 02 41 0A F9 00 50 64`). Both carry effect byte **`$64`** = bits `$04`,
   `$20` and **`$40`**.
-* `det.effect_bit40` is **False** for this file: detection found no bit-$40
-  reader in this player. CLAUDE.md's rule says a record having the bit set and
-  the player reading it are two different facts — here the record has it and
-  the player's read has not been located.
-* THE LIKELY REASON DETECTION MISSES IT: this player reaches its instrument
-  records **through a pointer**, not indexed loads. A scan for any
-  `LDA/BIT/AND` naming `instr_start + k` for every k in 0..7 finds **zero**
-  instructions in the whole file, so `_effect_byte_address` has nothing to
-  anchor on. That is the same shape as `INSTRUMENT_INDEX_SHAPE`, which exists
-  because "a player that reaches the SID through subroutines matched none of
-  them".
+* `det.effect_bit40` is **True** for this file — CORRECTED, measured at
+  v0.5.435 and re-verified live at v0.5.437. This bullet previously said
+  **False**, "detection found no bit-$40 reader in this player", and every
+  bullet under it was reasoned from that. The reader IS found and IS used:
+  `goatwriter._fixed_attack_note(sid, det, i)` returns **207** (= note 79 |
+  `0x80`) for records 0 and 3, and `None` for the other six — i.e. exactly the
+  two drum records above, at exactly the frequency-table index 79 this entry
+  identifies as where the drum belongs. So do not go hunting a reader; it is
+  already located and already emitting.
+* WHAT IS ACTUALLY MISSING IS A DIFFERENT THING, and conflating the two is
+  what produced the wrong bullet. `det.effect_byte_address` is **None** on
+  this file (measured at v0.5.437), which is the PER-RECORD effect byte, where
+  `effect_bit40` is a FILE-level flag saying the player reads the bit at all.
+  CLAUDE.md's rule cuts the other way from how this entry used it: "a
+  detection flag about a player is not a fact about a record" — here the
+  player-level flag is true and the record-level address is the unlocated one.
+* THE LIKELY REASON `_effect_byte_address` FINDS NOTHING (re-pointed, not
+  removed — the observation is sound, only its subject was wrong): this player
+  reaches its instrument records **through a pointer**, not indexed loads, so
+  `_effect_byte_address` has nothing to anchor on. That is the same shape as
+  `INSTRUMENT_INDEX_SHAPE`, which exists because "a player that reaches the SID
+  through subroutines matched none of them". The scan figure this bullet used
+  to quote is NOT restated here, because it was recorded alongside the false
+  claim and has not been re-measured.
 * `--sfx-drum` is NOT the fix: forced on, voice 2's noise pitch was unchanged
   (213 frames, median 1404, byte-identical trace) — measured at v0.5.394, and
   written there as "voice-3" in the 1-indexed convention this entry has now
   dropped. Not re-checked since, and voice 1 was never tested this way at all.
 
-WHERE TO START: find how this player loads a record — the zero-page pointer and
-the routine that fills it — then look for the bit-6 test near the frequency
-write. Remember `BIT`/`BVC`/`BVS` is invisible to an `AND #$40` scan; that is
-how bit `$40` went unread across the whole project once already.
+WHERE TO START — REWRITTEN at v0.5.437, because the old text was premised on
+the same false claim as the bullet above and pointed at work that is already
+done. It read: "find how this player loads a record ... then look for the
+bit-6 test near the frequency write." There is no reader left to find:
+`effect_bit40` is True and `_fixed_attack_note` already returns 207 for the two
+drum records. Start instead from **which source is wrong for voice 1**, whose
+292 wrong frames are the ones at stake — the fixed attack pitch is already
+correct for voice 2's constant-pitch drum, and voice 1 FOLLOWS THE MUSIC, so a
+fixed pitch is wrong there by construction. The still-true caution from the old
+text, kept because it is about the general scan and not about this file:
+`BIT`/`BVC`/`BVS` is invisible to an `AND #$40` scan, which is how bit `$40`
+went unread across the whole project once already.
 
 DO NOT guess an emitter change from the symptom. The fix is a fixed attack
 pitch on two records, and CLAUDE.md records that emitting bit `$40`'s pitch on
