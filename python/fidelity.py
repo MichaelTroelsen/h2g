@@ -4164,6 +4164,17 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # from "the change reached nothing" -- two readings of the same flat
     # table, and the second one has shipped here twice (--slides for four
     # versions, --filter for two). Without it an A/B cannot tell them apart.
+    #
+    # **SHA-1, TRUNCATED TO 12 HEX CHARS, over the bytes `convert()` returns.**
+    # Spelled out because getting it wrong costs a session rather than a
+    # minute: a scratch probe hashed the same bytes with sha256, found its
+    # digest differed from this column on ALL 83 corpus files, and filed that
+    # as an unexplained divergence between the harness's conversion path and
+    # `convert(**_preset_opts(doc, name))`. There is no such divergence --
+    # `tests/test_output_sha.py` pins 83 of 83 agreement -- and a systematic
+    # disagreement on *every* file is the signature of a different reduction,
+    # never of a different input. Compare a sha against this column only after
+    # checking you computed it the same way.
     row["output_sha"] = hashlib.sha1(sng).hexdigest()[:12]
     # Per-subtune, so an A/B can name WHICH subtune's bytes moved rather than
     # only that the file's did -- see subtune_content_shas.
