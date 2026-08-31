@@ -11391,3 +11391,76 @@ none of it had been factored out to reuse. It is now.
 > question the existing ones already answer, and check the two agree. Las
 > Vegas's `onset` had compared 6 instruments since v0.5.292 while this census
 > saw eleven; that discrepancy was visible the whole time.
+
+### 7.aaaaaa A note before its voice's first instrument, and a table shipped after five derivations failed
+
+Twenty of the fifty corpus player builds that carry the idiom
+
+    LDA stored,X / AND gatemask,X / STA $D404,Y      BD ?? ?? 3D ?? ?? 99 04 D4
+
+park `$08` in the per-voice stored-waveform cell the first operand names —
+the test bit with every waveform bit clear — and hold it there until a pattern
+names the voice an instrument. Since that store is what ends every play call,
+a note reaching the SID before then sounds **nothing**. Goattracker has no
+equivalent state: its channel starts on instrument 1 and a note row sounds it.
+So those notes came out audible. `Bangkok_Knights` voice 0 sounds 20 of them
+across frames 1928-2102 while the original is silent until 2145, which is the
+whole of that voice's deficit — ratio 0.87 and 50% pitch agreement, against
+**1.00 and 100%** once the rule is applied.
+
+**The rule is a measured table, and five attempts to derive it are why.**
+Each was scored against the same instrument — ablate the lowest-addressed
+store into the cell (NOP its three bytes), re-trace, and ask whether the trace
+changed — which reproduces on both endpoints digit for digit and agrees 3 of 3
+with an independently-taken pre-instrument census:
+
+| route | result |
+|---|---|
+| four cheap static rules | best catches 14 of 20 with 8 false positives |
+| the cell's file image | `$41` on both endpoints — opposite outcomes |
+| an init interpreter | a **constant classifier**: init reaches the store on 0 of the 20, so the clearing is on the *play* path |
+| a play interpreter | 6 decided of 20; at least six files install their own IRQ and carry no `playAddress` at all |
+| the value the store writes | set far upstream — 49 of 50 have no `LDA #imm` within twelve bytes, every instance sitting in a run of consecutive `STA abs,X` |
+
+`detect.PRE_INSTRUMENT_SILENCE` is therefore the 20/30 split itself, keyed on
+`(cell address, clearing-store address)`. That key is read out of the file's
+own bytes, so it names the player **build** and not the file: the five corpus
+files sharing `$1A43/$104B` and the two sharing `$1654/$103B` each share one
+key and one verdict, and **no key in the population spans both verdicts**,
+which is what makes the collisions correct rather than latent bugs.
+`tests/test_pre_instrument.py` re-runs the ablation for both endpoints on
+every suite run, so the table fails loudly if the locator or either verdict
+drifts.
+
+`tracks.silence_pre_instrument_notes` writes a `KEYOFF` in the note column —
+it clears the gate and nothing else, which is what the player's mask does —
+and copies the pattern before doing it, repointing that one orderlist step.
+Patching in place would be wrong for the reason `apply_initial_instruments`
+gives for the same manoeuvre: patterns are global, and Bangkok's own leading
+entry is pattern 9, material voice 2 plays normally later.
+
+It is the **exact converse** of `--initial-instrument`, which gives a voice
+the instrument the player's index array holds. Both cannot be right about one
+file, so `convert()` makes them mutually exclusive; the measured table wins.
+
+**Read the gain next to the note counts.** The change deletes 20 notes, and a
+column that scores fewer events will always appear to improve. Bangkok's row:
+melody 96.78 → 97.89%, sequence 97.24 → 98.56%, adsr 68.66 → 70.72%, drift
+−6.34 → −5.33, pitch and onset both unchanged at 100%; against that, retrig
+1.0031 → 0.9719, gate 64.05 → 61.31%, wave 42.83 → 41.91%. The retrig move is
+the honest one: we were **+2** attacks against the original and are now
+**−18**, so removing 20 genuinely spurious notes *unmasks* a pre-existing
+deficit of about 18 attacks elsewhere in the file that they had been
+cancelling out. That is not a regression introduced by the rule, and it is the
+visible defect on that file now.
+
+**The method lesson.** An ablation tells you THAT a byte matters — never WHERE
+it runs, and never WHAT it writes. Four consecutive attempts at this question
+each produced a correct measurement and a wrong name for it: the guard byte
+(refuted by ablation), "the init clear loop" (refuted by reachability
+instrumentation), and "clears the cell" (the value is `$08`, not `$00`, which
+is why a zero test could never have worked). The measurements never disagreed
+with each other; only the labels were wrong. Both corrections are cheap —
+reachability is a set of PCs, the value is one memory read — and both have to
+be instrumented in the *same run* as the ablation, or the label is a guess
+dressed as an observation.

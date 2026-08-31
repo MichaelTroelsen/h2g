@@ -90,6 +90,10 @@ class Detection:
     # Whether the player kills the envelope when a note ends, so the record's
     # release nibble is never audible -- find_envelope_cut().
     envelope_cut: bool = False
+    # Whether this player parks silence in a voice's stored waveform until the
+    # voice's first instrument is named, so a note reaching the SID before then
+    # sounds nothing -- find_pre_instrument_silence().
+    pre_instrument_silence: bool = False
     # Whether the note-end gate-off sits behind `LDA counter,X / BNE` on the
     # hold path of a `DEC counter,X / BMI fetch` sequencer, so a zero-`wait`
     # event never reaches it and ties into the next note -- find_gate_hold().
@@ -1145,6 +1149,11 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Note end................: gate off and envelope zeroed "
             "(release nibble never sounds)")
 
+    det.pre_instrument_silence = find_pre_instrument_silence(sid)
+    if det.pre_instrument_silence:
+        log("Voice start.............: silence parked in the stored waveform "
+            "until the first instrument")
+
     det.gate_hold = find_gate_hold(sid)
     if det.gate_hold:
         log("Zero-wait event.........: skips the note-end gate-off "
@@ -2151,6 +2160,119 @@ ENVELOPE_CUT_SHAPES = (
 def find_envelope_cut(sid: SidFile) -> bool:
     """Whether this player zeroes AD and SR when a note ends (33 files)."""
     return any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES)
+
+
+# `LDA stored,X / AND gatemask,X / STA $D404,Y` -- the write of a voice's
+# stored waveform into the SID. The first operand names the per-voice cell;
+# 50 corpus files carry the shape. See goatwriter.py's Saboteur II/Shockway
+# Rider transcript for the same idiom read in its full context.
+STORED_WAVE_SHAPE = "BD ?? ?? 3D ?? ?? 99 04 D4"
+
+# Absolute stores, all three bytes wide. An indexed store still names the
+# table base in its operand, which is what the cell scan matches on.
+_STORE_OPCODES = (0x8D, 0x9D, 0x99, 0x8E, 0x8C)
+
+
+def find_stored_wave_cell(sid: SidFile) -> Optional[int]:
+    """C64 address of the per-voice stored-waveform table, or None."""
+    at = search_file(sid.data, STORED_WAVE_SHAPE)
+    if at < 0:
+        return None
+    return sid.data[at + 1] | (sid.data[at + 2] << 8)
+
+
+def find_stored_wave_store(sid: SidFile, cell: int) -> Optional[int]:
+    """C64 address of the lowest-addressed store into the cell, or None.
+
+    Every corpus instance is an `STA abs,X` sitting in a run of consecutive
+    stores that blanks a whole set of per-voice tables. Which run, and when it
+    executes, is exactly what is NOT statically decidable here -- see
+    PRE_INSTRUMENT_SILENCE.
+    """
+    data = sid.data
+    for i in range(1, len(data) - 2):
+        if data[i] in _STORE_OPCODES:
+            addr = data[i + 1] | (data[i + 2] << 8)
+            if cell <= addr <= cell + 2:
+                return sid.load_addr + i - HLEN + 1
+    return None
+
+
+# Player builds that park silence in the stored-waveform cell before a voice's
+# first instrument is named, so a note reaching the SID before then sounds
+# NOTHING. Keyed on (cell address, clearing store address) -- two numbers read
+# out of the file's own bytes, so the key names the PLAYER BUILD rather than
+# the file: the five corpus files sharing $1A43/$104B and the two sharing
+# $1654/$103B each share one key and one verdict, and no key in the population
+# of 50 spans both verdicts.
+#
+# **THIS TABLE IS A MEASUREMENT, NOT A DERIVATION, AND THAT IS DELIBERATE.**
+# Four routes to deriving the flag were each scored against this same ground
+# truth and each refuted: four cheap static rules (the cell's file image being
+# zero catches 4 of 20 with 14 false positives; the store sitting within $30 of
+# load_addr catches 14 of 20 with 8); an init interpreter, which turned out to
+# be a constant classifier -- init reaches the store on 0 of the 20, so the
+# clearing is on the PLAY path; a play interpreter, 6 decided of 20, blocked
+# because at least six of these files install their own IRQ and carry no
+# `playAddress` at all; and the value the store writes, which is set far
+# upstream -- 49 of the 50 have no `LDA #imm` within twelve bytes of the store.
+# The value is `$08`, the test bit with every waveform bit clear, NOT `$00`;
+# calling it "clearing" is a convenience, and reading it as a zero test is what
+# cost one of those four attempts its run.
+#
+# The instrument that HAS been right every time is ablation: NOP the store,
+# re-trace, and compare. `tests/test_pre_instrument.py` re-runs that ablation
+# for the two ENDPOINTS on every suite run -- Bangkok, which must still clear,
+# and Delta, which must still not -- so a drift in the locator or in either
+# verdict fails loudly. It does NOT re-ablate all fifty: that is 100 traces,
+# and the sweep that produced the table is a probe rather than a test. Read
+# the twenty entries below as measured on 2026-08-31 at v0.5.434 and checked
+# at two points since, not as continuously verified.
+#
+# The population was 50 files when this was taken, and the previous sweep of
+# the same idiom reported 44 with a 20/24 split. The CLEARS set is 20 in both
+# readings and the six extra files all fall on the "does not" side, so the
+# discrepancy is in the population count rather than in any verdict -- but it
+# is unexplained, and a re-sweep that finds a 21st clearing file should be
+# believed over this comment.
+PRE_INSTRUMENT_SILENCE = frozenset({
+    (0xE924, 0xE42A),   # Auf_Wiedersehen_Monty
+    (0x85B8, 0x802A),   # Bangkok_Knights
+    (0xC2F8, 0xBE06),   # Delta
+    (0x9520, 0x902F),   # Food_Feud
+    (0x9415, 0x9094),   # Kings_of_the_Beach_ingame
+    (0x1228, 0x0CAA),   # Kings_of_the_Beach_intro
+    (0xE4FA, 0xE029),   # Nemesis_the_Warlock
+    (0x959E, 0x902A),   # Nineteen
+    (0xCC2B, 0xC945),   # Ninja
+    (0x1193, 0x0C41),   # One_on_One_Jordan_vs_Bird
+    (0xF94E, 0xF42D),   # Pandora
+    (0xB51F, 0xB028),   # Sanxion
+    (0xF1FA, 0xED28),   # Shockway_Rider
+    (0x8461, 0x802E),   # Sigma_Seven
+    (0x4B00, 0x45A5),   # Skate_or_Die_intro
+    (0xC441, 0xC02F),   # Thanatos
+    (0x0D5E, 0x0824),   # Trans-Atlantic_Balloon_Challenge
+    (0xE8EE, 0xE456),   # W_A_R
+    (0x0CE7, 0x0838),   # W_A_R_Preview
+    (0x34F1, 0x302A),   # Wiz
+})
+
+
+def find_pre_instrument_silence(sid: SidFile) -> bool:
+    """Whether a note before its voice's first instrument sounds nothing.
+
+    False for a player not in the table, which is the safe direction: the
+    conversion then keeps the note it already emitted, exactly as every
+    version before this one did.
+    """
+    cell = find_stored_wave_cell(sid)
+    if cell is None:
+        return False
+    store = find_stored_wave_store(sid, cell)
+    if store is None:
+        return False
+    return (cell, store) in PRE_INSTRUMENT_SILENCE
 
 
 # `LDA status,X / AND #$20 / BNE skip / LDA counter,X / BNE skip` -- the two

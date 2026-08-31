@@ -31,7 +31,8 @@ from h2g.patterns import (GT_DEFAULT_ROWS, GT_MAX_ROWS, ConversionAbort,
                           referenced_patterns, reindex_tracks)
 from h2g.sidfile import SidFormatError, load_sid
 from h2g.sidid import Database, find_database
-from h2g.tracks import convert_tracks, legalise_restarts
+from h2g.tracks import (convert_tracks, legalise_restarts,
+                        silence_pre_instrument_notes)
 
 VERSION_NAMES = {
     0: "Warhawk", 1: "Last V8", 2: "Auf Wiedersehen Monty", 3: "Samantha Fox",
@@ -216,6 +217,18 @@ def survey_one(path: Path, sng_dir: Path | None,
                                 dropped=dropped, patterns=new_patterns,
                                 max_rows=max_rows)
         r.subtunes_dropped = len(dropped)
+        # Same slot convert() uses: after reindexing, so the orderlist bytes
+        # and `new_patterns` indices are both Goattracker's, and before the
+        # restart pass, which reads orderlist lengths. Unconditional there and
+        # here, because it is a property of the player rather than an option.
+        #
+        # NOTE this file reimplements convert()'s pipeline rather than calling
+        # it, and the two have never been identical -- `ensure_playable_
+        # orderlists` and `apply_initial_instruments` are convert()-only, so
+        # the `.sng bytes` and `Patterns` columns are a SIMPLIFIED build. This
+        # call is here so the rule does not widen that gap; it does not close
+        # it.
+        silence_pre_instrument_notes(tracks, new_patterns, det)
         if legal_restart:
             legalise_restarts(tracks)
     except ConversionAbort as exc:

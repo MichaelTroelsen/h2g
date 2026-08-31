@@ -21,6 +21,7 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
+                     silence_pre_instrument_notes,
                      instrument_row_calls, instrument_voices,
                      legalise_restarts)
 
@@ -408,8 +409,16 @@ def convert(sid_path: str, log: Logger = print,
     # After reindexing, so the orderlist bytes and `new_patterns` indices are
     # both Goattracker's; before the restart pass, which reads orderlist
     # lengths this may not change but must not race.
-    if initial_instrument:
+    if initial_instrument and not det.pre_instrument_silence:
         apply_initial_instruments(tracks, new_patterns, det, log)
+    # Unconditional, and the exact converse of the line above -- which is why
+    # the two are mutually exclusive rather than merely ordered. Where the
+    # player parks silence in the stored waveform until a voice's first
+    # instrument, a note before then sounds NOTHING, so giving the voice an
+    # instrument there is precisely the wrong repair. Not gated behind an
+    # option because it is a property of the player, measured per build, not a
+    # preference: see detect.PRE_INSTRUMENT_SILENCE.
+    silence_pre_instrument_notes(tracks, new_patterns, det, log)
     if legal_restart:
         # After reindexing, packing, merging and splitting: those all change an
         # orderlist's length, and whether a restart position is in range is a

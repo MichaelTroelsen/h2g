@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.435 — 2026-08-31
+
+- a note before its voice's first instrument is silenced on the twenty players that park $08
+
 ## 0.5.434 — 2026-08-31
 
 - the handoff doc is rewritten for the ten-commit session

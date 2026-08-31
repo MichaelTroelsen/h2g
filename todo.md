@@ -253,7 +253,14 @@ A/B; the gate census itself is `[subagent]`, read-only.
 Listener report after v0.5.394: "Drums and perc are not there." They ARE there
 — every column says so — at a pitch that makes them inaudible as percussion.
 
-MEASURED, voice 3, 60 s, both sides traced through the harness:
+**INDEXING CONVENTION FOR EVERYTHING BELOW: 0-indexed, the convention
+`fidelity.py` uses (voices 0, 1, 2).** The original MEASURED line here read
+"voice 3" — that was 1-indexed (the third voice), which is voice **2** below.
+State this explicitly because the re-measurement's "voice 1" is a *different*
+physical voice from the entry's old "voice 3"/voice 2 — do not conflate them.
+
+MEASURED AT v0.5.394, HISTORICAL — 60 s, both sides traced through the
+harness, voice 2 (this entry's original "voice 3"):
 
     original   240 noise frames, frequency CONSTANT at 26700 on every one
     ours       213 noise frames, frequency FOLLOWS THE PATTERN NOTE
@@ -261,6 +268,37 @@ MEASURED, voice 3, 60 s, both sides traced through the harness:
 
 26700 is frequency-table index **79**; 1404 is index **28**. Fifty-one
 semitones — four octaves and a minor third — below where the drum belongs.
+
+**THE DEFECT MOVED RATHER THAN CLOSED. Re-measured live at v0.5.434**, same
+60 s harness trace, both voices, raw noise-frame frequencies:
+
+    voice 2  original  210 frames, CONSTANT 26700 (entry 79)
+             ours      209 frames: 26707 x179, then 1404 x16, 1250 x6,
+                                   993 x4, 835 x4
+    voice 1  original  420 frames, 16 distinct values spanning 4112-16547
+             ours      413 frames, 5 distinct: 12604 x140, 8412 x121,
+                                   5299 x70, 4206 x60, 16824 x22
+    voice 0  no noise on either side
+
+Voice 2 — the voice this entry was written about — is now mostly RIGHT: 179 of
+209 frames sit on the original's constant, and **30 frames remain wrong** (not
+22; 179 + 22 does not equal 209, and the 22 was propagated through two records
+before anyone added it up). Those 30 are spread over FOUR wrong values, not
+one.
+
+**Voice 1 now carries the defect, and it is a different defect.** Ours puts
+140 frames at 12604, 70 at 5299, 60 at 4206 and 22 at 16824, against only 121
+near the original's cluster — 292 of 413 wrong. But note what the original's voice 1 actually
+does: **16 distinct pitches from 4112 to 16547, i.e. it FOLLOWS THE MUSIC.**
+It is not a fixed-pitch drum like voice 2's, so the voice-2 story — "the
+original holds one constant and we follow the pattern note" — is NOT the story
+here, and an attempt to fix voice 1 by pinning a constant attack pitch would be
+wrong by construction. What is wrong on voice 1 is that we sound 5 distinct
+pitches where the original sounds 16.
+
+A run that trusted "do not re-derive" and started from the v0.5.394 figures
+alone would have spent itself hunting a bit-`$40` reader for voice 2, where 30
+frames are at stake, instead of voice 1, where 292 are.
 
 NO COLUMN CAN SEE THIS, which is why it took an ear. `noise` counts frames
 (634/660, 96%), `nrun` compares run LENGTHS and is position- and
@@ -285,8 +323,10 @@ WHAT IS KNOWN ABOUT THE MECHANISM:
   anchor on. That is the same shape as `INSTRUMENT_INDEX_SHAPE`, which exists
   because "a player that reaches the SID through subroutines matched none of
   them".
-* `--sfx-drum` is NOT the fix: forced on, the voice-3 noise pitch is unchanged
-  (213 frames, median 1404, byte-identical trace).
+* `--sfx-drum` is NOT the fix: forced on, voice 2's noise pitch was unchanged
+  (213 frames, median 1404, byte-identical trace) — measured at v0.5.394, and
+  written there as "voice-3" in the 1-indexed convention this entry has now
+  dropped. Not re-checked since, and voice 1 was never tested this way at all.
 
 WHERE TO START: find how this player loads a record — the zero-page pointer and
 the routine that fills it — then look for the bit-6 test near the frequency

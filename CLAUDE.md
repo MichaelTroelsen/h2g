@@ -265,6 +265,37 @@ test dependency).
   argument. On a **delay** entry the two are equivalent: `player.s` reads as
   though the jump path leaves carry set (a semitone up), and tracing W_A_R both
   ways gives 0 of 1500 frames differing on all three voices.
+- **When five derivations fail against one measurement, ship the measurement.**
+  Twenty player builds park `$08` in a voice's stored waveform until its first
+  instrument is named, so a note before then sounds NOTHING; Goattracker has no
+  such state and sounded them. Five routes to deriving that flag statically were
+  each scored against the same ablation ground truth and each refuted -- four
+  cheap static rules, an init interpreter, a play interpreter, and the value the
+  store writes. `detect.PRE_INSTRUMENT_SILENCE` is the 20/30 split shipped as a
+  DATA TABLE, keyed on `(cell, clearing-store)` -- two addresses read out of the
+  file, so the key names the player BUILD and files sharing a build share a
+  verdict (no key in the population of 50 spans both). **A measured table is
+  honest where a fifth guess would not be**, and the honesty is in the check:
+  `tests/test_pre_instrument.py` re-ablates both endpoints every suite run.
+  Three lessons around it. **An ablation tells you THAT a byte matters, never
+  WHERE it runs and never WHAT it writes** -- four consecutive runs produced a
+  correct measurement and a wrong label for it (the guard byte, "the init clear
+  loop", "clears the cell"); reachability is a set of PCs and the value is one
+  memory read, and both must be instrumented in the SAME run as the ablation.
+  The value is `$08`, the test bit, not `$00`. And **a byte-hash over PRESET
+  options does not bound a change's reach over FORCED ones**: this change
+  reported MOVED 1 under presets and also silently made `--initial-instrument`
+  inert on Bangkok, which no preset run could see.
+- **`_initial_for` is off by one on every song, and the option it feeds has
+  therefore never been measured in a state where it could help.** It returns
+  `initial_instruments[voice] + 2` unconditionally and its docstring claims that
+  matches "the `+ 2` in `patterns.decode_entry`" -- but `convert()` passes
+  `instr_base = 1 if compact_instruments else 2`, and `compact_instruments` is in
+  `presets.json`'s `always` block. Delta's `(3, 9, 0)` yields `[5, 11, 2]`; voice
+  2 should get instrument 1 and gets 2, a drum/wave-program record carrying
+  `$81`. Measured at v0.5.435: with compact numbering ON the flag invents
+  `[15, 0, 1488]` noise frames, with it OFF `[0, 0, 0]`. So README's "no measured
+  beneficiary" is a statement about a bug, not about the mechanism. NOT FIXED.
 - **A fixture is not the corpus.** `_noise_tick_frames` took the modal speed
   gate over a file's subtunes; the corpus rip of Commando carries 19 (four
   songs and fourteen one-frame sound effects, which outvote the music) where

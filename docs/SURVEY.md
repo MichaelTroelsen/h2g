@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.410**
+- Converter: `h2g` **0.5.434**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -68,7 +68,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `After_8.sid` | After 8 | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 182 | - | 61666 | y | digi channel dropped |
 | `Arcade_Classics.sid` | Arcade Classics | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 12 | 110 | - | 32889 | y |  |
 | `Auf_Wiedersehen_Monty.sid` | Auf Wiedersehen Monty | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 13 | 17 | 169 | - | 42861 | y |  |
-| `Bangkok_Knights.sid` | Bangkok Knights | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 30 | 52 | - | 14068 | y |  |
+| `Bangkok_Knights.sid` | Bangkok Knights | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 30 | 53 | - | 14329 | y |  |
 | `Battle_of_Britain.sid` | Battle of Britain | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 20 | 110 | - | 36024 | y |  |
 | `BMX_Kidz.sid` | BMX Kidz | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi), Sidplayer | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 12 | 93 | - | 30580 | y |  |
 | `Bump_Set_Spike.sid` | Bump Set Spike | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 | 26 | 78 | - | 19770 | y |  |

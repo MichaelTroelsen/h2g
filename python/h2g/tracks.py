@@ -852,6 +852,82 @@ def apply_initial_instruments(tracks: List[List[int]],
     return fixed
 
 
+def silence_pre_instrument_notes(tracks: List[List[int]],
+                                 patterns: List[List[int]],
+                                 det: Detection, log=None) -> int:
+    """Silence notes a voice plays before any pattern names its instrument.
+
+    The exact converse of `apply_initial_instruments`, and the two must never
+    both run on one file: that one gives the voice the instrument the player's
+    index array holds, this one says the player sounds NOTHING there. Which is
+    right is a property of the player, and `det.pre_instrument_silence` is the
+    measurement -- twenty player builds park `$08` (the test bit, every
+    waveform bit clear) in the voice's stored waveform, so the `LDA stored,X /
+    AND gatemask,X / STA $D404,Y` that ends every play call writes silence
+    until an instrument arrives.
+
+    Goattracker has no equivalent state. Its channel starts on instrument 1 and
+    a note row sounds it, so the notes come out audible -- Bangkok Knights'
+    voice 0 sounds 20 of them across frames 1928-2102 while the original is
+    silent until 2145, which is the whole of that voice's melody deficit
+    (ratio 0.87, pitch 50%). A KEYOFF in the note column is the faithful write:
+    it clears the gate and nothing else, which is what the player's mask does.
+
+    Applied by COPYING the pattern and repointing that orderlist step, never by
+    patching in place -- patterns are global and the same one is reached by
+    other voices and other subtunes, where the voice DOES have an instrument by
+    then and the note must still sound. Bangkok's own leading entry is pattern
+    9, material voice 2 plays normally later.
+
+    Returns the number of notes silenced.
+    """
+    if not det.pre_instrument_silence:
+        return 0
+    copies: Dict[Tuple[int, ...], int] = {}
+    silenced = 0
+    for track in tracks:
+        done = False
+        for pos, entry in enumerate(track):
+            if done or entry == GT_ORDER_RESTART:
+                break
+            if entry >= MAX_PATTERNS or entry >= len(patterns):
+                continue
+            events = patterns[entry]
+            rows: List[int] = []
+            for row in range(len(events) // 4):
+                note, instr = events[row * 4], events[row * 4 + 1]
+                if instr:               # the voice has its instrument now
+                    done = True
+                    break
+                if note <= GT_LASTNOTE:
+                    rows.append(row)
+            if not rows:
+                continue
+            key = (entry, *rows)
+            if key not in copies:
+                if len(patterns) >= MAX_PATTERNS:
+                    # The same surrender apply_initial_instruments makes, for
+                    # the same reason: a file one pattern over Goattracker's
+                    # limit is not unpackable, so nothing would announce it.
+                    if log:
+                        log("*** NO ROOM FOR A PRE-INSTRUMENT PATTERN COPY "
+                            f"(AT GOATTRACKER'S {MAX_PATTERNS} LIMIT) ***")
+                    done = True
+                    break
+                copy = list(events)
+                for row in rows:
+                    copy[row * 4] = GT_KEYOFF
+                copies[key] = len(patterns)
+                patterns.append(copy)
+            track[pos] = copies[key]
+            silenced += len(rows)
+    if silenced and log:
+        log(f"Pre-instrument notes....: {silenced} note(s) silenced before "
+            f"their voice's first instrument; {len(copies)} pattern copy/"
+            "copies added")
+    return silenced
+
+
 def instrument_voices(tracks: List[List[int]],
                       patterns: List[List[int]]) -> Dict[int, Dict[int, int]]:
     """{Goattracker instrument: {voice: rows}} over the finished song.

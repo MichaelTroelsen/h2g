@@ -673,11 +673,32 @@ see any of it.
 
 `Bangkok_Knights`, the only other file the subtune hazard below permits, also
 loses: `wave` 42.8% → 40.5%, `gate` 64.1% → 60.2%, and its noise frames move
-*away* from the original (1537 → 1508 against 1640).
+*away* from the original (1537 → 1508 against 1640). **Those figures are
+historical as of v0.5.435**: the flag is now inert on that file, because
+`--initial-instrument` and the pre-instrument silence rule below are mutually
+exclusive and `Bangkok_Knights` carries the latter. Converted both ways today
+its `.sng` is byte-identical.
 
 So the flag has **no measured beneficiary today**. It is kept, off, because
 the mechanism it implements is real and the silence it targeted may recur;
 it is not kept because any file is currently better with it.
+
+**AND THE REASON IT HAS NO BENEFICIARY IS AN OFF-BY-ONE, NOT THE MECHANISM.**
+`tracks._initial_for` returns `initial_instruments[voice] + 2`
+unconditionally, and its docstring says that matches "the `+ 2` in
+`patterns.decode_entry`". It no longer does: `convert()` passes
+`instr_base = 1 if compact_instruments else 2`, so under compact numbering
+every real slot is one **lower** than `_initial_for` assumes, and
+`compact_instruments` sits in `presets.json`'s `always` block — on for all 83
+songs. Delta's array `(3, 9, 0)` yields `[5, 11, 2]`; voice 2 should get
+Goattracker instrument 1 and gets **2**, a drum/wave-program record whose
+wavetable carries `$81` (noise + gate). That is what sounds the 1488 frames.
+Measured at v0.5.435, noise frames per voice over 60 s: with
+`compact_instruments` **on** the flag gives `[15, 0, 1488]`, and with it
+**off** it gives `[0, 0, 0]` — the same flag, the same file, zero invented
+noise once the numbering agrees. So the option has never been measured in a
+state where it could help, and "no measured beneficiary" is a statement about
+the bug rather than about the mechanism. The fix is not applied here.
 
 The flag copies the pattern and repoints that one orderlist step at the copy,
 rather than patching in place: the same pattern is played again later in half
@@ -700,6 +721,48 @@ differ constantly. `Delta_Mix-E-Load_loader`'s PSID header declares **16**
 subtunes while the converter emits **1** -- so by the header it looks like the
 fifteen-subtune hazard above and by what is actually written it is a
 single-tune rip. Read the emitted count.
+
+### A note before its voice's first instrument (no flag; per player)
+
+The exact converse of `--initial-instrument`, and the reason the two are
+mutually exclusive. Twenty player builds park `$08` — the test bit, every
+waveform bit clear — in a voice's stored waveform until an instrument is
+named, so the `LDA stored,X / AND gatemask,X / STA $D404,Y` that ends every
+play call writes **silence** there. A note reaching the SID before the voice's
+first instrument sounds nothing at all. Goattracker has no equivalent state:
+its channel starts on instrument 1 and a note row sounds it, so those notes
+came out audible. `Bangkok_Knights`' voice 0 sounded 20 of them across frames
+1928-2102 while the original is silent until 2145 — the whole of that voice's
+deficit (ratio 0.87, pitch 50%; **1.00 and 100%** with the rule applied).
+
+The faithful write is a `KEYOFF` in the note column, which clears the gate and
+nothing else — what the player's mask does. It is applied by copying the
+pattern and repointing that orderlist step, never by patching in place, for
+the same reason `--initial-instrument` does: Bangkok's own leading entry is
+pattern 9, material voice 2 plays normally later.
+
+**It is a measured table, not a derivation, and that is deliberate.**
+`detect.PRE_INSTRUMENT_SILENCE` is keyed on `(cell address, clearing-store
+address)` — two numbers read out of the file's own bytes, so the key names the
+player *build* rather than the file; the five corpus files sharing
+`$1A43/$104B` and the two sharing `$1654/$103B` each share one key and one
+verdict, and no key in the population of 50 spans both verdicts. Five routes
+to deriving the flag were each scored against the same ablation ground truth
+and each refuted: four cheap static rules, an init interpreter (which turned
+out to be a constant classifier — init reaches the store on 0 of the 20, so
+the clearing is on the *play* path), a play interpreter (blocked because at
+least six of these files install their own IRQ and carry no `playAddress`),
+and the value the store writes (set far upstream; 49 of 50 have no `LDA #imm`
+within twelve bytes). The instrument that has been right every time is
+ablation — NOP the store, re-trace, compare — and
+`tests/test_pre_instrument.py` re-runs it for both endpoints on every suite
+run, so the table is checkable rather than asserted.
+
+Not an option: it is a property of the player, so there is nothing to switch.
+It reaches one corpus file today (`Bangkok_Knights`, 20 notes), because on the
+other nineteen every voice happens to name an instrument before its first
+note — but the rule applies to all twenty and an orderlist change could expose
+it anywhere.
 
 ### `--engine N` (a file that carries two players)
 

@@ -3380,12 +3380,41 @@ DIMENSIONS = (
     # agreement -- the same trap `startup_lag` avoids by estimating from the
     # signal rather than fitting. Stated here instead, the way `hold` states the
     # rate at which it goes blind.
+    #
+    # **AND IT CAN SCORE A CONVERSION WORSE FOR A PITCH THAT MOVED CLOSER TO
+    # THE ORIGINAL.** A note is named from the frequency at its attack frame,
+    # so a pitch shifted by a fraction of a semitone can cross a note-naming
+    # boundary and be renamed -- even when the shift is toward the original.
+    # Measured live at v0.5.434, Powerplay_Hockey_USA_vs_USSR.sid voice 0, 60s,
+    # subtune 0: --regrid costs melody 0.9930 -> 0.9643 (-2.88pp), and at every
+    # attack it renames, the regrid arm's pitch sits CLOSER to the original
+    # than the arm that shipped unrenamed --
+    #     A#4->A-4  regrid +0.117st from original, no-regrid +0.380st (4 attacks)
+    #     D-5->C#5  regrid +0.122st,                no-regrid +0.513st (2 attacks)
+    #     G-5->F#5  regrid +0.125st,                no-regrid +0.774st (2 attacks)
+    # three to six times closer, and scored 2.88pp worse. The tune's own
+    # frequency table sits 0.696 semitones below the semitone grid (siddump
+    # calibration -c10B8), which is why its notes sit near naming boundaries
+    # at all.
+    #
+    # TWO QUALIFICATIONS. The improvement is LOCAL to the renamed attacks, not
+    # a global pitch gain: over the whole voice the two arms agree on 6 of the
+    # 8 notes they share, and the mean offset from the original is +0.467st
+    # without --regrid against +0.484st with it -- --regrid does not make this
+    # voice's pitch better overall. And the COUNT of renamed attacks is
+    # method-dependent, not the property itself: strict positional difflib
+    # pairing reads 3, an earlier v0.5.427 run read 7, grouping by note name
+    # (the table above) reads 8 -- a handful, depending on how the two attack
+    # sequences are aligned, not a fixed number.
     Dimension("melody", "melody", _PITCH_REGS, "fraction",
               "the attack-note sequence with consecutive repeats collapsed "
               "-- blind to a re-struck note, which reads as a longer "
               "sequence rather than a wrong one; and 31.7% of corpus attacks "
               "are named from a frame whose pitch is still gliding, so a grid "
-              "moved by one play call can rename a note that did not change"),
+              "moved by one play call can rename a note that did not change "
+              "-- and by the same note-naming-boundary effect, a pitch that "
+              "moved CLOSER to the original can be scored as a worse match; "
+              "see the comment above"),
     Dimension("sequence", "seq", _PITCH_REGS, "fraction",
               "the same sequence uncollapsed"),
     Dimension("pitch_jaccard", "pitch", _PITCH_REGS, "fraction",
