@@ -240,7 +240,8 @@
       "bytes": 14966,
       "subtunes": 1,
       "rows": 15886,
-      "multiplier": 1
+      "multiplier": 1,
+      "force_park": true
     },
     "Crazy_Comets.sid": {
       "max_rows": 94,

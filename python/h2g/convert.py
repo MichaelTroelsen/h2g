@@ -144,6 +144,7 @@ def convert(sid_path: str, log: Logger = print,
             pack: bool = False,
             legal_restart: bool = False,
             silent_park: bool = False,
+            force_park: bool = False,
             regrid: bool = False,
             slides: bool = False,
             effects: bool = False,
@@ -421,7 +422,8 @@ def convert(sid_path: str, log: Logger = print,
         # the same decision about the same byte: without that flag there is no
         # restart position to choose.
         legalise_restarts(tracks, log,
-                          new_patterns if silent_park else None)
+                          new_patterns if silent_park else None,
+                          force_park=force_park)
     # Every subtune dropped means the file carries no orderlist at all -- the
     # same refusal the empty-tracks case gets, for the same reason.
     if all(t == DEFAULT_TRACK for t in tracks):

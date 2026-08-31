@@ -197,3 +197,47 @@ def test_gt2reloc_packs_only_the_fixed_file(tmp_path, opts, expect_sid):
     subprocess.run([GT2RELOC, sng.name, sid.name], cwd=str(tmp_path),
                    capture_output=True, timeout=120)
     assert sid.exists() == expect_sid
+
+
+def test_force_park_parks_a_track_whose_restart_is_already_legal():
+    """The one thing `--silent-park` cannot do.
+
+    `legalise_restarts` acts on an OUT-OF-RANGE restart, which convert_tracks
+    writes only for Hubbard's `$FE`. A tune that ends and never says so keeps a
+    legal restart 0 and plays forever -- Confuzion's track region is six bytes
+    with no `$FE` in it at all.
+    """
+    from h2g.tracks import legalise_restarts, SILENT_PATTERN
+    from h2g.patterns import GT_ORDER_RESTART
+
+    def track():                       # three positions, restart 0: legal
+        return [1, 2, 3, GT_ORDER_RESTART, 0]
+
+    # Without the flag a legal restart is left exactly alone.
+    pats = [[0] * 8]
+    t = [track()]
+    assert legalise_restarts(t, None, pats, force_park=False) == 0
+    assert t[0] == [1, 2, 3, GT_ORDER_RESTART, 0]
+    assert len(pats) == 1
+
+    # With it, a silent pattern is appended and the restart points AT it, so
+    # the orderlist loops something that makes no sound.
+    pats = [[0] * 8]
+    t = [track()]
+    assert legalise_restarts(t, None, pats, force_park=True) == 1
+    assert len(pats) == 2, "the silent pattern must be appended"
+    assert pats[1] == list(SILENT_PATTERN)
+    songlen = t[0].index(GT_ORDER_RESTART)
+    assert t[0][songlen - 1] == 1, "the silent pattern is the last position"
+    assert t[0][songlen + 1] == songlen - 1, "restart points at the silent entry"
+    assert t[0][:3] == [1, 2, 3], "the tune's own positions are untouched"
+
+
+def test_force_park_needs_the_pattern_table_like_silent_park_does():
+    """No pattern table means no silent pattern to park on, so it declines
+    rather than inventing one -- the same refusal `silent_park` makes."""
+    from h2g.tracks import legalise_restarts
+    from h2g.patterns import GT_ORDER_RESTART
+    t = [[1, 2, 3, GT_ORDER_RESTART, 0]]
+    assert legalise_restarts(t, None, None, force_park=True) == 0
+    assert t[0] == [1, 2, 3, GT_ORDER_RESTART, 0]

@@ -124,6 +124,20 @@ EXCLUDED_FROM_ALWAYS = {
     # half the row) its gate goes 0.4996 -> 0.7494 with melody, seq, pitch and
     # wave every one unchanged. Unset it changes no byte anywhere.
     "hard_restart_frames",
+    # Per song and never a default, because SAFETY here is a property of the
+    # tune rather than of the option. `--force-park` parks every voice on the
+    # silent pattern even where the restart is already legal, which is the
+    # only way to end a tune whose data never says it ended -- Confuzion has
+    # no `$FE` anywhere in its six-byte track region and runs ~295 s past a
+    # 305 s original, the corpus's only measured failure of the +-5 s length
+    # rule. It is correct there because that file's three voices end TOGETHER
+    # (all exactly 5216 rows, measured on the final .sng through songview),
+    # and it would TRUNCATE a tune whose voices do not. Nothing checks that,
+    # so it cannot be a blanket setting. Invisible to `fidelity_better` for
+    # the same reason `silent_park` and `regrid` are: every column compares
+    # WHAT is played, and a tune playing the right music forever scores
+    # perfectly. `len` is the only instrument that reads it.
+    "force_park",
     # Per song, like hard_restart_frames, and for a structural reason as well
     # as a search one: the phase plan costs pattern copies and pulse-table
     # rows, both bounded, and a file where either budget overflows silently

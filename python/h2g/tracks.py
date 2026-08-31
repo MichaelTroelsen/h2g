@@ -1072,7 +1072,8 @@ def ensure_playable_orderlists(tracks: List[List[int]], log=None) -> int:
 
 
 def legalise_restarts(tracks: List[List[int]], log=None,
-                      patterns: List[List[int]] | None = None) -> int:
+                      patterns: List[List[int]] | None = None,
+                      force_park: bool = False) -> int:
     """Replace restart positions Goattracker's exporter refuses, in place.
 
     Hubbard's `$FE` track marker means *this tune has ended*. Every dialect
@@ -1110,6 +1111,31 @@ def legalise_restarts(tracks: List[List[int]], log=None,
     to its own orderlist instead of being restarted at 0. See the branch
     below. Without it the behaviour is exactly as before.
 
+    `force_park` parks a track whose restart is ALREADY LEGAL, which is the
+    only way to end a tune whose data never says it ended. Confuzion is the
+    case: its track region is six bytes containing no `$FE` at all, so every
+    orderlist converts to a legal restart 0 and this function correctly
+    reports nothing changed -- while the tune plays for ~295 s past an
+    original that stops at 305 s, the corpus's only measured failure of the
+    +-5 s length rule.
+
+    **Safe there because its three voices end TOGETHER**, which was measured
+    on the final `.sng` rather than assumed: reading each orderlist through
+    `songview` with repeats resolved, all three span exactly **5216 rows**,
+    and at its 3.00-frame row that is 15648 frames = 312.96 s against the
+    original's measured halt at 312.98 s. The conversion is one exact pass of
+    the tune and then restarts. An earlier reading of this file took the
+    orderlists from `convert_tracks` BEFORE reindexing and saw 36/163/39
+    entries, concluding one voice was four times the others and had to be the
+    clock; that asymmetry is pattern GRANULARITY, not duration, and the
+    conclusion was wrong. Measure a duration in rows, never in orderlist
+    entries.
+
+    Per song, never a default: a tune whose voices do NOT end together would
+    be truncated at its shortest, and nothing here checks that. The option is
+    adjudicated the way `--regrid` is -- by the `len` column, which is the
+    only instrument that reads it.
+
     Returns the number of tracks changed.
     """
     fixed = parked = 0
@@ -1127,8 +1153,12 @@ def legalise_restarts(tracks: List[List[int]], log=None,
                        None)
         if songlen is None or songlen + 1 >= len(track):
             continue                       # no marker, or no operand to judge
-        if track[songlen + 1] < songlen:
-            continue                       # already legal
+        if track[songlen + 1] < songlen and not (force_park and patterns is not None):
+            # Already legal. `force_park` overrides this ONLY when there is a
+            # pattern table to append the silent pattern to -- without one the
+            # branch below would fall through to 'restart at 0', which is what
+            # this track already does, and would count a change it did not make.
+            continue
         if songlen == 0:
             # No position to restart at, and nothing this function can do about
             # it. ensure_playable_orderlists owns that repair and convert()

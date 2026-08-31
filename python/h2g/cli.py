@@ -97,6 +97,17 @@ def main(argv=None) -> int:
              "exactly 0.00 -- but melody collapses on two, so it is per song "
              "and never a default. Off by default: it changes the output bytes")
     parser.add_argument(
+        "--force-park", action="store_true",
+        help="park every voice on the silent pattern even where the restart "
+             "is ALREADY LEGAL. --silent-park only acts on a tune whose data "
+             "SAYS it ended (Hubbard's $FE); a tune that ends and never says "
+             "so keeps a legal restart 0 and plays forever. Confuzion is the "
+             "case -- no $FE anywhere in its six-byte track region, and it "
+             "runs ~295s past a 305s original, the corpus's only measured "
+             "failure of the +-5s length rule. ONLY SAFE WHERE THE VOICES END "
+             "TOGETHER, which nothing here checks: per song, never a default, "
+             "adjudicated by the `len` column"),
+    parser.add_argument(
         "--silent-park", action="store_true",
         help="with --legal-restart, park a tune that ENDED on a silent pattern "
              "instead of looping it from the top. Hubbard's $FE means 'tune "
@@ -500,6 +511,8 @@ def main(argv=None) -> int:
             args.legal_restart = True
         if not _given("--silent-park") and always.get("silent_park"):
             args.silent_park = True
+        if not _given("--force-park") and always.get("force_park"):
+            args.force_park = True
         entry = doc.get("songs", {}).get(os.path.basename(args.sid_file)) or {}
         for flag, key in (("--slides", "slides"), ("--vibrato", "vibrato"),
                           ("--effects", "effects"),
@@ -585,6 +598,7 @@ def main(argv=None) -> int:
                       pack=args.pack_repeats,
                       legal_restart=args.legal_restart,
                       silent_park=args.silent_park,
+                      force_park=args.force_park,
                       pulse_phase=args.pulse_phase,
                       slides=args.slides, vibrato=args.vibrato,
                       effects=args.effects,
