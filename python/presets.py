@@ -560,6 +560,39 @@ _ALWAYS_NAME = {"fmt": "format"}
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
                     "wave_program", "pitch_seq", "wide_hard_restart",
                     "max_hard_restart")
+
+
+def _redundant_combination(extra: dict) -> bool:
+    """True where this combination is byte-identical to one already walked.
+
+    Skipping such a combination cannot change what the search selects: the
+    conversion it would score is the same file, so `fidelity_better` would see
+    the same numbers, and the surviving twin is still visited.
+
+    ONE PAIR QUALIFIES, and it is measured rather than reasoned from the
+    option names. `--wide-hard-restart` widens the gate-off window from half
+    the row to two thirds; `--max-hard-restart` takes the player's own limit
+    instead, which supersedes the width outright. Byte-hashed at v0.5.429 with
+    `max_hard_restart` FORCED ON across the corpus, `wide_hard_restart`
+    changes the conversion on **0 of 83** files -- and with max forced OFF it
+    changes **36 of 83**, which is what says the toggle is worth having at all
+    and this prune is not merely deleting a dead option.
+
+    Worth a quarter of the walk: seven booleans are 127 combinations, and half
+    of those set `max_hard_restart`, half of which also set
+    `wide_hard_restart`. That is 32 conversions, packs and traces a song that
+    cannot affect the outcome.
+
+    **This is the only safe shape for a prune here.** A combination may be
+    skipped when a combination the walk still visits produces the SAME BYTES;
+    it may never be skipped because an option looks unlikely to help, because
+    `fidelity_better` is not a total order and the greedy path's outcome
+    depends on what it sees. A prune justified on plausibility rather than on
+    byte-identity is a silent change to the search result -- see the v0.5.426
+    claim that the hard-restart axes are dead under `no_hard_restart`, which
+    was generalised from one file and is false on 15 and 14 of them.
+    """
+    return bool(extra.get("max_hard_restart") and extra.get("wide_hard_restart"))
 # `hard_restart_frames` is an INT and cannot join the product above: adding one
 # more boolean doubles 127 combinations, and adding a four-valued axis would
 # quadruple it. So it is searched in a SECOND PASS over whichever combination
@@ -1124,6 +1157,8 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
         if not any(flags):
             continue
         extra = dict(zip(FIDELITY_TOGGLES, flags))
+        if _redundant_combination(extra):
+            continue
         cand = play(extra)
         if cand is None:
             continue

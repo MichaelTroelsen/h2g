@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.430 — 2026-08-31
+
+- a quarter of the preset search is pruned, and two corpus invariants get tests
+
 ## 0.5.429 — 2026-08-30
 
 - the initial-instrument and no-hard-restart docs are corrected on measurement

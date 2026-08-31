@@ -2533,15 +2533,25 @@ def sound_runs(voices: list[Voice], nframes: int) -> dict:
     one frame short for that reason.
 
     **The deficit is a number of play calls, not of frames, and that is what
-    makes the column's zeros ambiguous.** Over the 415 instruments the corpus
-    compares, grouped by the rate each file is packed at:
+    makes the column's zeros ambiguous.** Re-measured at **v0.5.429** with
+    `--hold-census`, which classifies each instrument by *why* its modal note
+    length differs rather than by a raw offset -- 526 instruments across 82
+    files, `fetch` counted against that rate's whole population:
 
-        -S1  106 at -1, 8 at -2, 5 at -3, 2 at -4      (no --no-test-restart)
-        -S2   92 at -1, 16 at -2
-        -S3   31 at -1, 16 at  0
-        -S4   17 of 17 at 0
-        -S5   11 of 13 at 0
-        with --no-test-restart: 44 of 45 at 0, at any rate
+        -S1   fetch 109 of 138        (no --no-test-restart)
+        -S1   fetch   0 of  59        (with --no-test-restart)
+        -S2   fetch 144 of 154
+        -S3   fetch  12 of  66
+        -S4   fetch   0 of  28
+        -S5   fetch   0 of  34
+        -S6   fetch   2 of   2
+        -S7   fetch   0 of  21
+        -S9   fetch   0 of   9
+
+    The figures this block carried until v0.5.429 were an earlier statistic
+    over 415 instruments (`-S1` 106 at -1, `-S4` 17 of 17 at 0). They were
+    right in shape and stale in both counts; `--hold-census` superseded the
+    offset reduction and the numbers had not followed it here.
 
     The next-note fetch is `gatetimer & $3f` **calls** early, so at `-S4` it
     costs a quarter of a frame and siddump -- which samples once per frame --
@@ -2551,6 +2561,22 @@ def sound_runs(voices: list[Voice], nframes: int) -> dict:
     search takes it only on files below `-S4`: all nine that carry it are
     `-S1` but for Delta at `-S2`, and that is a prediction this made before
     the list was looked at.
+
+    **THE DEFICIT IS REFUSED RATHER THAN EMITTED, AND THIS IS THE REASON.**
+    `fetch` is the largest kind in the census -- 267 of 526 instruments,
+    50.8% -- so the temptation to close it is real. It cannot be closed by
+    lengthening a note: the frame is lost to *Goattracker's own* next-note
+    fetch (gplay.c:905), not to anything this converter emits, so there is no
+    row length or gatetimer that returns it. The one thing that does remove it
+    is `--no-test-restart`, which deletes the frame our conversion spends on
+    `$09` -- and that is already a searchable per-song option, selected on nine
+    files. Forced corpus-wide it costs **melody -26.3pp over 68 files** and
+    takes Delta Mix-E-Load to 0%, because siddump needs a frame below `$10` to
+    name an attack at all and four columns collapse when the instrument can no
+    longer see our note starts. So the deficit is a known, measured, priced
+    limitation of the target player, not an open defect: closing it globally
+    costs more than it buys, and closing it per song is what the search
+    already does.
 
     The far tail is a different thing again and not note length at all: the
     six instruments beyond +50 frames are one held note apiece, or a voice

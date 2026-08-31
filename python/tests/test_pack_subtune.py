@@ -99,3 +99,76 @@ def test_every_derivation_site_agrees_on_the_pack_factor():
         assert presets.pack_multiplier(path) == want, f"presets {name}"
         assert fidelity._skip_gate_multiplier(path) == want, f"fidelity {name}"
         assert _derived_multiplier(sid, det, True) == want, f"convert {name}"
+
+
+def _speeds_for(path):
+    """(sid, det, speeds) for a corpus file, or None if detection declines."""
+    try:
+        sid = load_sid(str(path))
+        sid2, det = _detect_tables(sid, lambda m: None)
+        return sid, det, find_song_speeds(sid2, det)
+    except Exception:                                            # noqa: BLE001
+        return None
+
+
+@needs_corpus
+def test_no_corpus_file_packs_for_a_subtune_it_does_not_start_on():
+    """The rule of v0.5.410, asserted over the whole corpus rather than the
+    two files it moved.
+
+    `pack_subtune` must return the subtune `fidelity.resolve_subtune` names --
+    the header's `startSong`, what a packed .sid plays by default -- except
+    where that index is past the speeds table, which a header over-declares
+    routinely and where the documented fallback is 0.
+
+    The two existing corpus tests above pin the files the rule CHANGED. This
+    pins that it did not quietly change anyone else, which is the half a
+    regression would land in: every file it must leave alone.
+    """
+    seen = agreed = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        got = _speeds_for(path)
+        if got is None:
+            continue
+        sid, _det, speeds = got
+        seen += 1
+        want = fidelity.resolve_subtune(path, "auto")
+        ps = pack_subtune(speeds, sid.start_song)
+        if speeds is not None and want >= len(speeds.frames):
+            assert ps == 0, f"{path.name}: over-declared start must fall back to 0"
+        else:
+            assert ps == want, f"{path.name}: packs s{ps}, starts on s{want}"
+        agreed += 1
+    assert seen > 50, "corpus present but almost nothing parsed -- vacuous"
+    assert agreed == seen
+
+
+@needs_corpus
+def test_every_derivation_site_agrees_on_every_corpus_file():
+    """The Las Vegas invariant, widened from two files to all of them.
+
+    `test_every_derivation_site_agrees_on_the_pack_factor` above checks the
+    three sites against a hard-coded expectation for the two files the rule
+    moved. The failure that shipped silence was a site NOT moving with a
+    detection change, and that can land on any file -- so the three are checked
+    against EACH OTHER here, on every tune, with no expected value to go stale.
+
+    Computed from the files, never read from presets.json: the artefact is
+    regenerated after a conversion-changing commit rather than during one, so
+    asserting against it would fail for the one reason this test is not about.
+    """
+    checked = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        got = _speeds_for(path)
+        if got is None:
+            continue
+        sid, det, _speeds = got
+        try:
+            a = presets.pack_multiplier(path)
+            b = fidelity._skip_gate_multiplier(path)
+            c = _derived_multiplier(sid, det, True)
+        except Exception:                                        # noqa: BLE001
+            continue
+        assert a == b == c, f"{path.name}: presets {a}, fidelity {b}, convert {c}"
+        checked += 1
+    assert checked > 50, f"only {checked} files compared -- vacuous"

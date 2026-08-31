@@ -406,8 +406,18 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
     # declares drifts from it, which is the same lesson as the vibrato
     # census's bit table (7.yyyyy).
     n = len(P.FIDELITY_TOGGLES)
-    raising = 2 ** (n - 1)
-    scored = (2 ** n - 1) - raising
+    # v0.5.429 prunes the combinations that set both `max_hard_restart` and
+    # `wide_hard_restart`, which are byte-identical to the same flags without
+    # the width (see presets._redundant_combination). Counted from the
+    # predicate rather than written down, for the same reason the toggle count
+    # is: a number restating what the module declares drifts from it.
+    import itertools as _it
+    _combos = [dict(zip(P.FIDELITY_TOGGLES, f))
+               for f in _it.product((False, True), repeat=n)
+               if any(f) and not P._redundant_combination(
+                   dict(zip(P.FIDELITY_TOGGLES, f)))]
+    raising = sum(1 for c in _combos if c["two_stage"])
+    scored = len(_combos) - raising
     assert got == {}
     assert len(skipped) == raising
     assert all("will not convert" in m for m in skipped)

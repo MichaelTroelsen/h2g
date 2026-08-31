@@ -313,3 +313,44 @@ def test_every_carried_key_is_a_membership_test_not_a_truthiness_one():
     import presets
     falsey = {k: False for k in presets.CARRIED_PER_SONG}
     assert presets.carried_entry(falsey) == falsey
+
+
+def test_the_only_pruned_combination_is_wide_under_max():
+    """The prune is narrow by construction and nothing else is skipped.
+
+    A combination may be dropped from the walk ONLY when a combination still
+    visited produces the same bytes. Anything wider silently changes what the
+    search selects, because `fidelity_better` is not a total order.
+    """
+    import itertools
+    import presets as P
+    combos = [dict(zip(P.FIDELITY_TOGGLES, f))
+              for f in itertools.product((False, True),
+                                         repeat=len(P.FIDELITY_TOGGLES))
+              if any(f)]
+    skipped = [c for c in combos if P._redundant_combination(c)]
+    assert skipped, "the prune must actually skip something"
+    for extra in skipped:
+        assert extra["max_hard_restart"] and extra["wide_hard_restart"]
+        # Every skipped combination has a surviving twin -- the same flags with
+        # the width cleared -- which is what makes the skip lossless.
+        twin = {**extra, "wide_hard_restart": False}
+        assert not P._redundant_combination(twin), extra
+    assert len(combos) == 127
+    assert len(skipped) == 32, len(skipped)
+
+
+def test_no_combination_without_max_is_pruned():
+    """The converse guard.
+
+    `wide_hard_restart` moves the bytes on 36 of 83 corpus files when
+    `max_hard_restart` is off, so pruning it there would delete a live axis --
+    the v0.5.426 defect `_redundant_combination`'s docstring cites.
+    """
+    import itertools
+    import presets as P
+    for f in itertools.product((False, True),
+                               repeat=len(P.FIDELITY_TOGGLES)):
+        extra = dict(zip(P.FIDELITY_TOGGLES, f))
+        if not extra["max_hard_restart"]:
+            assert not P._redundant_combination(extra), extra
