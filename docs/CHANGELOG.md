@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.432 — 2026-08-31
+
+- the shortening clause is read off the data, not asserted
+
 ## 0.5.431 — 2026-08-31
 
 - --force-park ends Confuzion, the corpus's last length failure

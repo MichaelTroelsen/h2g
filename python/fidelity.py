@@ -3889,6 +3889,33 @@ def original_ended(orig, seconds: int) -> int | None:
     return ended if ended >= 5 else None
 
 
+def shortening_fate(ended: list[dict]) -> str:
+    """What became of the files whose comparison window the length rule cut.
+
+    READ OFF THE DATA, NEVER ASSERTED. This clause used to say "the shipped
+    `.sng` still plays forever" of every shortened row, which was true while
+    the only repair was a restart at position 0 and went false the moment one
+    was parked -- at v0.5.431 both shortened corpus rows carry
+    `length_bounded` false, i.e. they END. `length_compare` sets that flag
+    exactly when our side did not stop inside the long probe, so it is the
+    thing to ask.
+
+    A sentence a report asserts about every row is a sentence that can go
+    false without anything failing, which is why this is a function with a
+    test rather than a string.
+    """
+    forever = [r for r in ended if r.get("length_bounded")]
+    stops = [r for r in ended if not r.get("length_bounded")]
+    if forever and stops:
+        return (f"**{len(forever)} of them still play forever** and "
+                f"{len(stops)} now END, having been parked")
+    if forever:
+        return "**every one of them still plays forever**"
+    return ("**every one of them now ENDS** -- each was parked on a silent "
+            "pattern, so the shortening is a measurement necessity here and "
+            "nothing more")
+
+
 def length_rule_failures(rows: list[dict]) -> list[dict]:
     """Rows whose MEASURED length delta actually breaches LENGTH_TOLERANCE.
 
@@ -4984,6 +5011,16 @@ def report(rows: list[dict], args) -> str:
             names = ", ".join(
                 f"{r['file'].replace('.sid', '')} {r['original_ends']}s"
                 for r in sorted(ended, key=lambda r: r["file"].lower()))
+            # WHETHER THE SHIPPED FILE ACTUALLY PLAYS ON IS A MEASUREMENT,
+            # NOT A PROPERTY OF BEING SHORTENED. This bullet asserted
+            # "the shipped `.sng` still plays forever" for every shortened
+            # row, which was true when the only repair was a restart at 0 and
+            # is false once one is parked: `length_compare` sets
+            # `length_bounded` exactly when our side did NOT stop inside the
+            # long probe, so the claim is read off that rather than restated.
+            # Same principle as counting through a predicate instead of
+            # hardcoding what it would return.
+            fate = shortening_fate(ended)
             out.append(
                 f"- {len(ended)} file(s) have their comparison WINDOW "
                 "shortened by the length rule: these are the files whose "
@@ -4992,16 +5029,17 @@ def report(rows: list[dict], args) -> str:
                 "plays rather than over our restart of it. This is a note "
                 "on method, not a defect queue by itself -- see the next "
                 "bullet for which of them actually breach the rule. Read "
-                "the shortening for what it is: the score is protected and "
-                "**the shipped `.sng` still plays forever**. It is the same "
+                f"the shortening for what it is: the score is protected, and "
+                f"{fate}. Where a shortened file DOES play on it is the same "
                 "shape as the `--search-subtunes` compensation corrected in "
                 "v0.5.375 -- a shim that hides a defect from the score does "
                 "not hide it from the file. Hubbard's `$FE` means *tune "
                 "ended*, a Goattracker orderlist cannot say it, and "
                 "`--legal-restart` turns it into a restart at position 0; "
                 "the repair is a choice of restart TARGET, looping a silent "
-                "pattern instead. The `len` column carries the measured "
-                f"delta per file. ({names})")
+                "pattern instead (`--silent-park`, or `--force-park` for a "
+                "tune whose data never says it ended). The `len` column "
+                f"carries the measured delta per file. ({names})")
 
         failed = length_rule_failures(rows)
         if failed:

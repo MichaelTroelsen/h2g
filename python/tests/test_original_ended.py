@@ -69,3 +69,34 @@ def test_it_never_lengthens_the_window():
     for seconds in (10, 60):
         got = original_ended(trace(list(range(0, 200, 10))), seconds)
         assert got is None or got <= seconds
+
+
+def test_the_shortening_clause_reads_whether_the_file_stops_it_does_not_assert_it():
+    """It used to say "the shipped `.sng` still plays forever" of EVERY
+    shortened row.
+
+    True while the only repair was a restart at 0, and false the moment one is
+    parked -- at v0.5.431 both shortened corpus rows read `length_bounded`
+    false, i.e. they END. The clause is now read off that flag.
+    """
+    import fidelity as F
+
+    def row(bounded):
+        return {"file": "x.sid", "length_bounded": bounded}
+
+    both_stop = F.shortening_fate([row(False), row(False)])
+    assert "now ENDS" in both_stop, both_stop
+    assert "forever" not in both_stop, both_stop
+
+    both_loop = F.shortening_fate([row(True), row(True)])
+    assert "still plays forever" in both_loop, both_loop
+    assert "now END" not in both_loop, both_loop
+
+    mixed = F.shortening_fate([row(True), row(False)])
+    assert "1 of them still play forever" in mixed, mixed
+    assert "1 now END" in mixed, mixed
+
+    # An absent flag means our side stopped -- the same convention
+    # length_compare uses, and the shape every backward-compatible field in
+    # this module takes.
+    assert "now ENDS" in F.shortening_fate([{"file": "x.sid"}])
