@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.441 — 2026-09-01
+
+- the fidelity report's provenance names a real commit
+
 ## 0.5.440 — 2026-09-01
 
 - the naming share of a melody delta becomes a census flag
