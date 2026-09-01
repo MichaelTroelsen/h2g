@@ -2103,6 +2103,27 @@ class PitchSeq:
     so the emitted arpeggio's phase can sit up to `steps - 1` frames off the
     player's. On a three-frame cycle that is inaudible; it is recorded because it
     is a real difference and not a rounding.
+
+    **The block has four spellings and `PITCH_SEQ_SHAPES` carries them all**;
+    see the constants below for which instruction differs in each. What is
+    NOT matched, and why, because "the player has no such block" and "the
+    shape missed it" are indistinguishable from the outside:
+
+    - Kings_of_the_Beach_intro `$1011` has the phase load and the base add but
+      **no per-instrument pair copy at all** -- `$126B` holds a static
+      `00 0C 18`, nothing in the file writes `$126C`/`$126D`, and there is no
+      index array. `PitchSeq` cannot say "the same three steps for every
+      record" (`goatwriter._pitch_seq_notes` reads `pairs + 2 * index`), so
+      matching it here would need a writer change too.
+    - ACE_II `$E3F7` and Ricochet `$9421` copy **one** pair byte and never
+      load the phase, so their `ADC base,Y` runs with `Y = 2 * index` -- a
+      constant transpose per record, not an oscillation. Neither appears in
+      `VIBRATO.md`'s `pitchseq` rows.
+    - International_Karate and Formula_1_Simulator contain **no `AND #$10`
+      at all**; their effect cell ($B2F7 / $C4F7) is tested only against
+      `$01`, `$02`, `$04`, `$08`, and then `LSR x4` -- the high nibble is
+      bit $04's arpeggio *depth*, so a record's `$55` means "arp, depth 5"
+      and its bit 4 is a magnitude bit, not a flag.
     """
 
     index: int                  # offset of the per-instrument index array
@@ -2111,20 +2132,66 @@ class PitchSeq:
     steps: int = 3
 
 
-PITCH_SEQ_SHAPE = ("29 10 F0 ?? B9 ?? ?? 0A A8 B9 ?? ?? 8D ?? ?? B9 ?? ?? "
-                   "8D ?? ?? AC ?? ?? 18 BD ?? ?? 79 ?? ?? 0A A8")
+# Everything up to and including the `CLC` is the same in every file that has
+# the block: the gate, the per-instrument index, the two pair copies, the
+# global phase load. 25 bytes, and the three operand offsets below index into
+# it, so they hold for every spelling of what follows.
+PITCH_SEQ_HEAD = ("29 10 F0 ?? B9 ?? ?? 0A A8 B9 ?? ?? 8D ?? ?? "
+                  "B9 ?? ?? 8D ?? ?? AC ?? ?? 18")
+# `LDA note,X` -- the played note. 33 corpus files address it absolutely; Mega
+# Apocalypse keeps its note bytes in **zero page** ($4E0D: `LDA $B9,X`), which
+# is two bytes where `LDA abs,X` is three. Same class as `SPEED_GATE_IMM`: the
+# spelling changes an instruction *length*, so it moves the `BEQ` offset in
+# front of it and every operand behind it at once, and one fixed shape can
+# match neither. See CLAUDE.md's note on § 7.eeeee.
+PITCH_SEQ_NOTE_LOADS = ("BD ?? ??", "B5 ??")
+# `ADC base,Y`, then out through the note table. Food_Feud ($9382) subtracts
+# its own note-table origin between the two -- `SEC / SBC #$30` -- where the
+# other files go straight to `ASL / TAY`. It is a third addend on the same
+# sum, not a different mechanism: index, both pair copies, the phase and the
+# base add are all present and at the same offsets.
+PITCH_SEQ_TAILS = ("0A A8", "38 E9 ?? 0A A8")
 PITCH_SEQ_AT_INDEX = 5          # operand offsets within the shape
 PITCH_SEQ_AT_PAIRS = 10
 PITCH_SEQ_AT_PHASE = 22
-PITCH_SEQ_AT_BASE = 29
 PITCH_SEQ_STEPS = 3             # the default when the reload cannot be read
+
+# The head is 25 bytes; `base` is the operand of the `ADC` one byte past the
+# note load, so its offset is derived from that load's length rather than
+# counted by hand -- four combinations cannot then disagree about it.
+_PITCH_SEQ_HEAD_LEN = 25
+
+
+def _pitch_seq_shapes() -> "list[tuple[str, int]]":
+    """(shape, offset of the ADC's operand) for every spelling, canonical first.
+
+    Order matters: the absolute-note / bare-tail spelling is what 33 of the 34
+    files already detected carry, so trying it first means a widened search
+    cannot move a match that already reads correctly -- the same rule as
+    `find_relocation`, `find_init_writes` and `INSTRUMENT_INDEX_SHAPE`.
+    """
+    out = []
+    for load in PITCH_SEQ_NOTE_LOADS:
+        load_len = len(load.split())
+        for tail in PITCH_SEQ_TAILS:
+            out.append((f"{PITCH_SEQ_HEAD} {load} 79 ?? ?? {tail}",
+                        _PITCH_SEQ_HEAD_LEN + load_len + 1))
+    return out
+
+
+PITCH_SEQ_SHAPES = _pitch_seq_shapes()
+PITCH_SEQ_SHAPE = PITCH_SEQ_SHAPES[0][0]        # the canonical spelling
+PITCH_SEQ_AT_BASE = PITCH_SEQ_SHAPES[0][1]
 
 
 def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
     """The bit-$10 arpeggio's three tables, or None."""
     data = sid.data
-    at = search_file(data, PITCH_SEQ_SHAPE)
-    if at < 1:
+    for shape, at_base in PITCH_SEQ_SHAPES:
+        at = search_file(data, shape)
+        if at >= 1:
+            break
+    else:
         return None
 
     def operand(k: int) -> int:
@@ -2144,7 +2211,7 @@ def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
             break
     seq = PitchSeq(index=sid.to_offset(operand(PITCH_SEQ_AT_INDEX)),
                    pairs=sid.to_offset(operand(PITCH_SEQ_AT_PAIRS)),
-                   base=sid.to_offset(operand(PITCH_SEQ_AT_BASE)),
+                   base=sid.to_offset(operand(at_base)),
                    steps=max(2, steps))
     if min(seq.index, seq.pairs, seq.base) < 0:
         return None

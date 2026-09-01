@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.446 — 2026-09-01
+
+- the pitch_seq shape work is salvaged from its worktree
+
 ## 0.5.445 — 2026-09-01
 
 - Action Biker's drum is instrument 4, and its gate surplus is at the opening
