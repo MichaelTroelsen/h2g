@@ -72,6 +72,7 @@ project has shipped the second believing the first twice.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import difflib
 import functools
 import hashlib
@@ -872,6 +873,108 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "bend_ratio": (ub / ob) if ob else None,
         "voices": per_voice,
     }
+
+
+def naming_split(orig: list[Voice], arm_a: list[Voice],
+                 arm_b: list[Voice]) -> dict:
+    """How much of a melody delta between two arms is RENAMING.
+
+    A conversion option that moves `melody` can move it two ways, and they
+    want opposite fixes: it can change WHICH notes are struck (a structural
+    change), or it can leave the same notes and change what siddump CALLS
+    them (a naming change, which may not be audible at all -- v0.5.427 found
+    Powerplay's renamed attacks land on a pitch CLOSER to the original and
+    score worse only because a quarter-tone crosses a naming boundary).
+
+    The split is measured by REPAIR rather than by counting: align the two
+    arms' attacks positionally, substitute arm A's names into arm B wherever
+    an aligned pair disagrees, and re-score. Whatever the repair recovers was
+    the naming half; whatever survives it was not.
+
+    **`melody` comes from `compare()`, never from a reimplementation.** A
+    hand-rolled per-voice weighting matched the harness on one arm BY LUCK and
+    missed the other, which cost a run; the repaired arm is a `Voice` built
+    with `dataclasses.replace`, whose `collapsed` is a property and so
+    recomputes itself, and it goes back through `compare()` unchanged.
+
+    **THE COUNT IS METHOD-DEPENDENT AND THE SHARE IS LESS SO.** How many
+    renames you find depends entirely on how the two attack sequences are
+    aligned -- the same file has been read as 3, 7 and 8 renames by three
+    alignments, and on the FRAME axis rather than the sequence axis
+    One_on_One reads 39% of its attacks renamed where difflib reads one
+    (v0.5.436). `renames` below is therefore reported as the positional
+    difflib count and must be quoted with that qualifier; `naming_share` is
+    the number to reason with, because it is anchored on a re-score rather
+    than on a tally.
+    """
+    a_score = compare(orig, arm_a)["melody"]
+    b_score = compare(orig, arm_b)["melody"]
+
+    repaired: list[Voice] = []
+    renames = 0
+    for va, vb in zip(arm_a, arm_b):
+        names = list(vb.attacks)
+        sm = difflib.SequenceMatcher(a=va.attacks, b=vb.attacks,
+                                     autojunk=False)
+        for tag, i1, i2, j1, j2 in sm.get_opcodes():
+            # Only equal-length replacements are RENAMES; an unequal span is
+            # an insertion or a deletion wearing a replace opcode, and
+            # substituting across it would repair a structural change and
+            # credit it to the naming half.
+            if tag != "replace" or (i2 - i1) != (j2 - j1):
+                continue
+            for k in range(i2 - i1):
+                if names[j1 + k] != va.attacks[i1 + k]:
+                    names[j1 + k] = va.attacks[i1 + k]
+                    renames += 1
+        repaired.append(dataclasses.replace(vb, attacks=names))
+
+    r_score = compare(orig, repaired)["melody"]
+    loss = a_score - b_score
+    recovered = r_score - b_score
+    return {
+        "melody_a": a_score,
+        "melody_b": b_score,
+        "melody_repaired": r_score,
+        "loss": loss,
+        "recovered": recovered,
+        "renames": renames,
+        # None rather than a number when arm B did not lose: a share of a
+        # non-loss is not meaningful, and returning 0.0 there would read as
+        # "none of it was naming" rather than "there was nothing to split".
+        "naming_share": (recovered / loss) if loss > 1e-12 else None,
+    }
+
+
+def naming_census_report(recs: list[dict]) -> str:
+    """The naming/non-naming split, one row per file."""
+    out = ["# Naming share of a melody delta", "",
+           "Each row A/Bs one file's shipped preset against the same preset "
+           "plus the forced option(s), and splits the `melody` difference "
+           "into the half a RENAME repair recovers and the half it does not.",
+           "",
+           "`renames` is a POSITIONAL DIFFLIB count and is method-dependent -- "
+           "the same file has been read as 3, 7 and 8 renames by three "
+           "alignments, and on the frame axis One_on_One reads 39% of its "
+           "attacks renamed where difflib reads one. Reason with "
+           "`naming share`, which is anchored on a re-score rather than a "
+           "tally.",
+           "",
+           "| file | melody A | melody B | repaired | loss | recovered | "
+           "naming share | renames |",
+           "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for r in recs:
+        if r.get("error"):
+            out.append(f"| {r['file']} | {r['error']} | | | | | | |")
+            continue
+        share = ("-" if r["naming_share"] is None
+                 else f"{100 * r['naming_share']:.0f}%")
+        out.append(
+            f"| {r['file']} | {100 * r['melody_a']:.1f}% | "
+            f"{100 * r['melody_b']:.1f}% | {100 * r['melody_repaired']:.1f}% | "
+            f"{100 * r['loss']:+.2f}pp | {100 * r['recovered']:+.2f}pp | "
+            f"{share} | {r['renames']} |")
+    return "\n".join(out) + "\n"
 
 
 # Largest startup lag `startup_lag` will apply. A packed .sid takes a handful
@@ -6756,12 +6859,25 @@ def main(argv=None) -> int:
                    help="classify every release the original makes by what "
                         "we did there (retrigger / matched / short / held) "
                         "and write the work list here")
+    p.add_argument("--naming-census", metavar="PATH",
+                   help="split each file's melody delta between the shipped "
+                        "preset and the same preset plus the forced option "
+                        "flag(s) into its naming and non-naming halves, and "
+                        "write the work list here. Needs at least one forcing "
+                        "flag (--regrid, --slides, ...), since without one "
+                        "both arms are the same conversion")
     p.add_argument("-t", "--seconds", type=int, default=DEFAULT_SECONDS)
     p.add_argument("-a", "--subtune", default="auto",
                    help="which subtune of the original to trace: a number, or "
                         "'auto' (the default) for the PSID header's own "
                         "startSong -- the subtune a player picks when the user "
                         "picks none, which is not 0 in seven corpus files")
+    p.add_argument("--regrid", action="store_true",
+                   help="convert with --regrid (one row in N gets an extra "
+                        "play call, and the next gives it back) regardless of "
+                        "what the presets say. `fidelity_better` cannot select "
+                        "this option, so every adoption is hand-measured and "
+                        "this is how it gets measured")
     p.add_argument("--slides", action="store_true",
                    help="convert with --slides (the two-byte pitch-slide "
                         "operand) regardless of what the presets say, so the "
@@ -6958,8 +7074,56 @@ def _run(p, args, workdir: Path) -> int:
                     opts["effects"] = True
                 if args.fold_transpose:
                     opts["fold_transpose"] = True
+                if args.regrid:
+                    opts["regrid"] = True
                 print(diagnose(sid, workdir, opts, args,
                                _preset_multiplier(doc, sid.name)))
+            return 0
+
+        if args.naming_census:
+            # Two arms per file, so this cannot ride on the ordinary row
+            # sweep the other censuses read: arm A is the shipped preset and
+            # arm B is the same preset plus whatever forcing flags were given.
+            forced = [k for k in ("regrid", "slides", "effects",
+                                  "fold_transpose", "skip_gate")
+                      if getattr(args, k, False)]
+            if not forced:
+                print("--naming-census needs a forcing flag (--regrid, "
+                      "--slides, ...); without one both arms are the same "
+                      "conversion and every delta is zero", file=sys.stderr)
+                return 2
+            recs = []
+            for sid in sids:
+                base = _preset_opts(doc, sid.name)
+                forced_opts = dict(base)
+                for k in forced:
+                    forced_opts[k] = True
+                rec = {"file": sid.name}
+                try:
+                    mult = _preset_multiplier(doc, sid.name)
+                    sub = resolve_subtune(sid, args.subtune)
+                    cal, _ft = table_calibration(sid, base)
+                    local = workdir / "o.sid"
+                    shutil.copyfile(sid, local)
+                    orig = run_siddump(local, args.seconds, sub,
+                                       args.siddump, cal)
+                    arms = []
+                    for o in (base, forced_opts):
+                        blob, _n = legalise_restarts(
+                            convert(str(sid), log=lambda m: None, **o))
+                        packed = pack_sid(blob, workdir, args.gt2reloc, mult)
+                        if packed is None:
+                            raise RuntimeError("gt2reloc wrote no .sid")
+                        arms.append(run_siddump(packed, args.seconds, sub,
+                                                args.siddump, 0, calls=mult))
+                    rec.update(naming_split(orig, arms[0], arms[1]))
+                except Exception as exc:            # noqa: BLE001
+                    rec["error"] = f"{type(exc).__name__}: {exc}"
+                recs.append(rec)
+            Path(args.naming_census).write_text(
+                naming_census_report(recs), encoding="utf-8")
+            print(f"wrote {args.naming_census} "
+                  f"(forced: {', '.join(forced)})", file=sys.stderr)
             return 0
         rows = []
         for sid in sids:
@@ -6970,6 +7134,8 @@ def _run(p, args, workdir: Path) -> int:
                 opts["effects"] = True
             if args.fold_transpose:
                 opts["fold_transpose"] = True
+            if args.regrid:
+                opts["regrid"] = True
             if getattr(args, "skip_gate", False):
                 opts["skip_gate"] = True
             # Applied to the packing step, not to the trace: gt2reloc's -S
