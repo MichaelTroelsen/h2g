@@ -23,7 +23,7 @@ from h2g.convert import convert                       # noqa: E402
 from h2g.detect import INSTRUMENT_INDEX_SHAPE, Detection, detect  # noqa: E402
 from h2g.search import search_file                    # noqa: E402
 from h2g.sidfile import load_sid                      # noqa: E402
-from h2g.tracks import apply_initial_instruments      # noqa: E402
+from h2g.tracks import _initial_for, apply_initial_instruments  # noqa: E402
 
 CORPUS = _CORPUS
 # The repo's own Commando.sid, not the corpus copy -- they are different rips
@@ -204,3 +204,89 @@ def test_an_index_past_the_written_instruments_is_refused():
     tracks = [[0, 0xFF, 0]]
     assert apply_initial_instruments(tracks, patterns,
                                      _det((90, 0, 0), instr_used=8)) == 0
+
+
+# --- the instrument BASE ---------------------------------------------------
+# For 45 versions `_initial_for` added a hardcoded `+ 2` while
+# `patterns.decode_entry` used `instr_base`, which `convert()` sets to 1
+# whenever --compact-instruments is on -- and that option is in presets.json's
+# `always` block, so the selection was one slot high for EVERY corpus song.
+# The two properties below are opposite in kind and are pinned separately: a
+# test that only checked the first would pass on a no-op.
+
+
+def test_base_two_reproduces_the_old_hardcoded_plus_two():
+    """The inherited layout must be unchanged by the fix.
+
+    Every assertion above this section calls `apply_initial_instruments`
+    without a base and so exercises the default of 2; this states the same
+    invariant directly on the function that was wrong.
+    """
+    det = _det((3, 9, 0))
+    assert [_initial_for(det, v, 2) for v in range(3)] == [5, 11, 2]
+
+
+def test_base_one_is_one_lower_which_is_the_whole_defect():
+    det = _det((3, 9, 0))
+    assert [_initial_for(det, v, 1) for v in range(3)] == [4, 10, 1]
+
+
+def test_index_zero_is_admitted_at_either_base():
+    """The old docstring claimed `_initial_for` rejected 0. It never does.
+
+    The guard's lower bound IS `instr_base`, so index 0 maps to the first slot
+    a Hubbard record occupies and always clears it -- instrument 2 under the
+    inherited layout, whose slot 1 is the empty "Clear Voice", and instrument
+    1 under compact numbering, where that slot is record 0 itself. What the
+    fix changes is WHICH instrument index 0 selects, not whether it selects
+    one.
+    """
+    det = _det((0, 0, 0))
+    assert _initial_for(det, 0, 2) == 2
+    assert _initial_for(det, 0, 1) == 1
+    for base in (1, 2):
+        pats = [[0x70, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]]
+        tracks = [[0, 0xFF, 0]]
+        assert apply_initial_instruments(tracks, pats, _det((0, 0, 0)),
+                                         instr_base=base) == 1
+        assert pats[tracks[0][0]][1] == base
+
+
+def test_the_guard_admits_the_last_record_at_either_base():
+    """Both bounds move with the base, not just the lower one.
+
+    `instr_base <= instr <= instr_used + instr_base - 1`. A fix that moved
+    only the lower bound would still admit an instrument the .sng does not
+    contain, which is what the ceiling exists to prevent.
+    """
+    patterns_for = lambda: [[0x70, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]]
+    for base in (1, 2):
+        # the highest real record (index instr_used - 1) must be accepted
+        pats, tracks = patterns_for(), [[0, 0xFF, 0]]
+        assert apply_initial_instruments(tracks, pats, _det((7, 0, 0), 8),
+                                         instr_base=base) == 1
+        # one past it must not be
+        pats, tracks = patterns_for(), [[0, 0xFF, 0]]
+        assert apply_initial_instruments(tracks, pats, _det((8, 0, 0), 8),
+                                         instr_base=base) == 0
+
+
+def test_delta_selects_one_slot_lower_at_the_compact_base():
+    """Delta's `(3, 9, 0)`: `[5, 11, 2]` before the fix, `[4, 10, 1]` after.
+
+    `instr_used` is 12 here rather than the helper's default 8, because at 8
+    the ceiling refuses index 9 at BOTH bases and the row would say nothing
+    about the base at all -- which is the mistake the first version of this
+    test made.
+    """
+    patterns = [[0x70, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]]
+    tracks = [[0, 0xFF, 0], [0, 0xFF, 0], [0, 0xFF, 0]]
+    apply_initial_instruments(tracks, patterns, _det((3, 9, 0), 12),
+                              instr_base=1)
+    assert [patterns[t[0]][1] for t in tracks] == [4, 10, 1]
+
+    patterns = [[0x70, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]]
+    tracks = [[0, 0xFF, 0], [0, 0xFF, 0], [0, 0xFF, 0]]
+    apply_initial_instruments(tracks, patterns, _det((3, 9, 0), 12),
+                              instr_base=2)
+    assert [patterns[t[0]][1] for t in tracks] == [5, 11, 2]

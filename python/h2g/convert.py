@@ -368,6 +368,7 @@ def convert(sid_path: str, log: Logger = print,
             or det.pattern_dialect == "digi"
             or (det.pattern_dialect == "cmdtable" and det.cmd_slide >= 0)):
         slide_steps = []
+    instr_base = 1 if compact_instruments else 2
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -384,7 +385,7 @@ def convert(sid_path: str, log: Logger = print,
         # the half a KEYOFF cannot say. See
         # detect._find_rest_silence_envelope.
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
-        instr_base=1 if compact_instruments else 2, tie=tie)
+        instr_base=instr_base, tie=tie)
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
@@ -410,7 +411,8 @@ def convert(sid_path: str, log: Logger = print,
     # both Goattracker's; before the restart pass, which reads orderlist
     # lengths this may not change but must not race.
     if initial_instrument and not det.pre_instrument_silence:
-        apply_initial_instruments(tracks, new_patterns, det, log)
+        apply_initial_instruments(tracks, new_patterns, det, log,
+                                  instr_base=instr_base)
     # Unconditional, and the exact converse of the line above -- which is why
     # the two are mutually exclusive rather than merely ordered. Where the
     # player parks silence in the stored waveform until a voice's first

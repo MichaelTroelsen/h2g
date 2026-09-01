@@ -698,14 +698,39 @@ Measured at v0.5.435, noise frames per voice over 60 s: with
 **off** it gives `[0, 0, 0]` — the same flag, the same file, zero invented
 noise once the numbering agrees. So the option has never been measured in a
 state where it could help, and "no measured beneficiary" is a statement about
-the bug rather than about the mechanism. The fix is not applied here.
+the bug rather than about the mechanism.
+
+**THE FIX IS APPLIED AS OF v0.5.443.** `_initial_for` takes the base the
+conversion is actually numbering against, and `apply_initial_instruments`
+derives BOTH ends of its guard from it -- goatwriter's `lead = 0 if
+compact_instruments else 1` means `lead == instr_base - 1`, so a Hubbard
+record occupies `instr_base .. instr_used + instr_base - 1`, which at base 2
+is the `2 .. instr_used + 1` the code used to hardcode. The inherited layout
+is therefore reproduced by construction, and that identity is pinned by
+`tests/test_initial_instrument.py` rather than trusted. Delta's `(3, 9, 0)`
+now selects `[4, 10, 1]` where it selected `[5, 11, 2]`.
+
+Corpus byte-hash at v0.5.443, both arms: with the flag **off** -- every
+preset's setting -- **0 of 83 files move**, so the fix is inert on everything
+that ships; with it **forced on**, **3 of 83 move**, and those three
+(`Delta_Mix-E-Load_loader`, `Dragons_Lair_Part_II`, `Gremlins`) are exactly
+the files the option reaches at all. **Whether the option now has a
+beneficiary is still unmeasured**: the numbering is right, but nobody has
+re-run the fidelity comparison on those three with it on, and the paragraphs
+above -- Delta losing `wave` 99.7% -> 66.4% and so on -- were all taken
+BEFORE the fix and describe the old numbering. Do not quote them as evidence
+about the option today.
 
 The flag copies the pattern and repoints that one orderlist step at the copy,
 rather than patching in place: the same pattern is played again later in half
 these files, where the voice already has an instrument, and a column written
 into the shared copy would re-select it every time round. Costs one
-pattern-table entry per distinct (pattern, instrument) pair. It reaches 11
-corpus files.
+pattern-table entry per distinct (pattern, instrument) pair. **It changes the
+output of 3 corpus files** -- `Delta_Mix-E-Load_loader`, `Dragons_Lair_Part_II`
+and `Gremlins`, measured by byte-hash at v0.5.443. This line previously read
+"11", ungraded; that figure counted something else (orderlist steps repointed,
+or a wider population) and has not been reproduced, so it is replaced with the
+one measurement that was actually taken rather than reconciled with it.
 
 **Not in `presets.json`'s `always` block, and this is the reason.** The array
 is mutable player state, so its file-image value is the starting instrument

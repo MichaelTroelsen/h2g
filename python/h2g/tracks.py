@@ -758,7 +758,8 @@ def fold_transposes(sid: SidFile, det: Detection, tracks: List[List[int]],
 # not its cause. Do not widen this function to chase it.
 def apply_initial_instruments(tracks: List[List[int]],
                               patterns: List[List[int]],
-                              det: Detection, log=None) -> int:
+                              det: Detection, log=None,
+                              instr_base: int = 2) -> int:
     """Give each voice the instrument it starts on, where a pattern names none.
 
     Hubbard's player keeps a per-voice instrument *index* and writes it only
@@ -790,10 +791,20 @@ def apply_initial_instruments(tracks: List[List[int]],
     on Delta, so nothing in the sequence family reports any of this.
 
     Do not widen it on the strength of the paragraph above; widen it only if
-    some file is measured BETTER with it. Note also that voice 2 moves at all
-    despite `initial_instruments` being `(3, 9, 0)` and `_initial_for`
-    rejecting 0 -- the collapse arrives through the pattern copying rather
-    than through a selected instrument, and that is unexplained.
+    some file is measured BETTER with it.
+
+    **A CLAIM THIS DOCSTRING USED TO MAKE, AND IT IS FALSE AT EVERY BASE.** It
+    said voice 2 moved "despite `_initial_for` rejecting 0". It rejects 0 at
+    neither base, and the guard is why: the lower bound IS `instr_base`, so
+    index 0 maps to the first slot a Hubbard record occupies and is always
+    admitted. At base 2 that slot is instrument 2, because the inherited
+    layout puts the empty "Clear Voice" at 1; at the compact base it is
+    instrument 1, which under that layout is record 0 itself. Delta's
+    `(3, 9, 0)` selected `[5, 11, 2]` and selects `[4, 10, 1]` -- voice 2 now
+    gets record 0 rather than record 1, which is the whole defect. (The first
+    wording of this correction claimed index 0 became rejected once the base
+    was threaded through; `test_index_zero_is_admitted_at_either_base` was
+    written to pin that and failed, which is how the error was caught.)
 
     THE HAZARD'S CRITERION IS THE EMITTED SUBTUNE COUNT, NOT THE HEADER'S.
     The index array is mutable player state, so its file-image value is the
@@ -814,12 +825,20 @@ def apply_initial_instruments(tracks: List[List[int]],
         return 0
     # goatwriter drops instruments past MAX_INSTRUMENTS, so an initial index
     # beyond what will be written names a record the .sng does not contain.
-    ceiling = min(det.instr_used + 1, 50)
+    #
+    # BOTH BOUNDS MOVE WITH THE BASE. goatwriter's `lead = 0 if
+    # compact_instruments else 1` (goatwriter.py) means `lead == instr_base -
+    # 1`, so a Hubbard record occupies `instr_base .. instr_used + lead`. At
+    # base 2 that is `2 .. instr_used + 1`, which is exactly what this line
+    # used to hardcode -- so the generalisation reproduces the inherited
+    # layout byte for byte, and `tests/test_initial_instrument.py` pins that
+    # identity rather than trusting it.
+    ceiling = min(det.instr_used + instr_base - 1, 50)
     copies: Dict[Tuple[int, int], int] = {}
     fixed = 0
     for ti, track in enumerate(tracks):
-        instr = _initial_for(det, ti % 3)
-        if instr is None or not 2 <= instr <= ceiling:
+        instr = _initial_for(det, ti % 3, instr_base)
+        if instr is None or not instr_base <= instr <= ceiling:
             continue
         for pos, entry in enumerate(track):
             if entry == GT_ORDER_RESTART:
@@ -1043,16 +1062,26 @@ def instrument_row_calls(tracks: List[List[int]],
     return out
 
 
-def _initial_for(det: Detection, voice: int) -> Optional[int]:
+def _initial_for(det: Detection, voice: int, instr_base: int) -> Optional[int]:
     """The Goattracker instrument number `voice` starts on, or None.
 
-    Hubbard index k is written as Goattracker instrument k + 2 -- slot 1 is
-    the "Clear Voice" record goatwriter always emits -- matching the `+ 2` in
-    patterns.decode_entry.
+    Hubbard index k is written as Goattracker instrument `k + instr_base`, the
+    same base `patterns.decode_entry` applies to a pattern's instrument byte.
+
+    **THE BASE IS A PARAMETER BECAUSE IT IS NOT A CONSTANT, AND FOR 45
+    VERSIONS THIS FUNCTION ASSUMED IT WAS.** It returned `+ 2` unconditionally
+    and its docstring claimed that matched `decode_entry` -- but `convert()`
+    passes `instr_base = 1 if compact_instruments else 2`, and
+    `compact_instruments` is in presets.json's `always` block, so the base is
+    1 for every song in the corpus and this was one too high on all of them.
+    Delta's `(3, 9, 0)` yielded `[5, 11, 2]` where voice 2 should get
+    instrument 1. The base is knowable only at the call site -- `Detection`
+    carries no compact/lead field -- which is why it is threaded through
+    rather than re-derived here.
     """
     if voice >= len(det.initial_instruments):
         return None
-    return det.initial_instruments[voice] + 2
+    return det.initial_instruments[voice] + instr_base
 
 
 def _first_sounding_row(events: List[int]) -> Optional[int]:
