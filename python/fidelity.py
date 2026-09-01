@@ -3545,7 +3545,12 @@ DIMENSIONS = (
     Dimension("gate", "gate", ("$D404",), "fraction",
               "overlap of the frames each side has the voice released -- "
               "**rises when notes are removed**, so read it next to `retrig` "
-              "and both sides' note counts"),
+              "and both sides' note counts. **Not a note-length measure**, so "
+              "do not read its sign against `hold`'s: this is $D404's gate "
+              "BIT at the note's close, `hold` is the same register's waveform "
+              "nibble at its open, and on Action Biker they read +1.4 frames "
+              "long and -1 frame short at the same time while both are "
+              "correct"),
     # The only column that can see how *long* a drum sounds. Every other
     # reading of the drum anchors on a gate-edge attack, and that anchor moves
     # when the run's length changes -- which made two corpus comparisons come
@@ -3651,7 +3656,10 @@ DIMENSIONS = (
               "instruments whose notes sound for as many frames as the "
               "original's -- **blind to the deficit it measures above `-S3`**, "
               "because that deficit is a fixed number of play *calls* and a "
-              "call is a quarter-frame at `-S4`"),
+              "call is a quarter-frame at `-S4`. The -1 it reads on every file "
+              "is the `$09` firstwave frame sitting below $10 and breaking the "
+              "run, not a short note; `gate` counts that same frame's gate bit "
+              "as a surplus, which is why the two report opposite signs"),
     # The column that sees a mechanism emitted one frame out of phase. `wave`
     # averages 3000 frames, so a wrong opening on a 43-note instrument is a
     # rounding error in it; `nrun` compares run lengths and is position-

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.444 — 2026-09-01
+
+- gate and hold each say why the other reads the opposite sign
+
 ## 0.5.443 — 2026-09-01
 
 - _initial_for numbers against the base the conversion actually uses
