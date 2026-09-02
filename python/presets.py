@@ -1057,6 +1057,64 @@ def prune_inert(sid_path: Path, base: dict, chosen: dict) -> dict:
     return out
 
 
+def _hard_restart_grid_inert(sid_path, base: dict, out: dict) -> bool:
+    """True when NO point of the nine-point hard-restart grid moves a byte.
+
+    The pass below costs one convert + one gt2reloc pack + one siddump trace
+    per point, nine points a song, run after the 127-combination walk. This
+    costs nine CONVERSIONS and no emulation at all, and where it returns True
+    the pass provably cannot change the outcome: `fidelity_better` scores
+    traces, a trace is a function of the packed bytes, and the packed bytes
+    are a function of the converted ones -- so nine conversions identical to
+    the reference score identically to it, and an acceptance rule that
+    requires a strict improvement accepts none of them.
+
+    That is the whole argument for skipping, and it is why the check is on
+    BYTES rather than on scores: two settings that convert identically cannot
+    be told apart by any measurement downstream, which is the same reasoning
+    `_inert_frames` and `prune_inert` already use in the other direction.
+
+    Measured over the corpus at v0.5.451: this skips the pass on **26 of the
+    89** converting files -- 234 of the 801 grid points the search would
+    otherwise convert, pack and trace. Of the six files that joined the corpus
+    at v0.5.450, three are inert (Lakers_vs_Celtics, Pacific_Coast, Radio_ACE)
+    and three are live.
+
+    **THAT IS NOT THE 36-OF-83 THE TASK CARRIED, AND THE GAP IS THE BASE.**
+    The v0.5.435 census asked whether the grid moves a file against its
+    SHIPPED PRESET; this asks whether it moves a file against `out`, the
+    boolean winner the walk has just selected, which is what the pass it
+    guards actually runs from. Those are different questions and the stricter
+    one is the one that licenses a skip -- a grid that is inert against the
+    defaults may still be live against a winner carrying `two_stage` or
+    `max_hard_restart`. So 26 is not a shrunken 36; it is a different
+    measurement, and the corpus growing from 83 to 89 is not what moved it.
+
+    Returns False on any exception, which is the honest answer: a file whose
+    conversion raises somewhere in the grid has not been proven inert, and the
+    pass must run so that `play()` can decline the combination itself.
+    """
+    import hashlib                                    # noqa: PLC0415
+
+    def sha(extra: dict) -> str:
+        blob = convert(str(sid_path), log=lambda m: None,
+                       **base, **FIXED, **extra)
+        return hashlib.sha1(blob).hexdigest()
+
+    try:
+        ref = sha(out)
+        for frames in HARD_RESTART_SEARCH:
+            for enabler in (None, *HARD_RESTART_ENABLERS):
+                extra = dict(out, hard_restart_frames=frames)
+                if enabler is not None:
+                    extra[enabler] = True
+                if sha(extra) != ref:
+                    return False
+    except Exception:                                 # noqa: BLE001
+        return False
+    return True
+
+
 def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                      siddump: str, gt2reloc: str, seconds: int,
                      log=lambda m: None) -> dict:
@@ -1234,7 +1292,21 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # The cost is `len(HARD_RESTART_SEARCH) * (1 + len(HARD_RESTART_ENABLERS))`
     # conversions a song, run once after the 127-combination walk rather than
     # inside it.
-    for frames in HARD_RESTART_SEARCH:
+    # SKIP THE WHOLE GRID where not one of its nine points moves a byte. The
+    # axis is live corpus-wide -- 47 of 83 files responded to it when it was
+    # censused -- but it is dead on about half of them individually, and on
+    # those the nine traces below can only reproduce the reference. See
+    # `_hard_restart_grid_inert` for why identical bytes make the pass
+    # provably unable to choose.
+    #
+    # Spelled as an empty GRID rather than an `else:` around the loop, so that
+    # every line of the pass below keeps the indentation it had -- a wrapper
+    # that re-indents forty lines makes the diff unreadable and hides whether
+    # anything else changed with it.
+    grid = () if _hard_restart_grid_inert(sid_path, base, out) else HARD_RESTART_SEARCH
+    if not grid:
+        log(f"    {sid_path.name}: hard-restart grid inert, sub-search skipped")
+    for frames in grid:
         for enabler in (None, *HARD_RESTART_ENABLERS):
             extra = dict(out, hard_restart_frames=frames)
             if enabler is not None:

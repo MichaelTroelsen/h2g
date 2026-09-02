@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.452 — 2026-09-02
+
+- the hard-restart grid pre-check, and the handoff for the six-conversion session
+
 ## 0.5.451 — 2026-09-02
 
 - the six interleaved-classic files get presets entries and fidelity rows

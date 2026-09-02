@@ -419,8 +419,19 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
     raising = sum(1 for c in _combos if c["two_stage"])
     scored = len(_combos) - raising
     assert got == {}
-    assert len(skipped) == raising
-    assert all("will not convert" in m for m in skipped)
+    # Count the lines this test is ABOUT rather than every line logged: since
+    # v0.5.45x the hard-restart pre-check logs its own skip too, and a bare
+    # `len(skipped)` counted that as a refused combination. Same lesson as the
+    # toggle count above -- assert on the thing you mean, not on a total that
+    # anything else may join.
+    refused = [m for m in skipped if "will not convert" in m]
+    assert len(refused) == raising
+    # ...and nothing ELSE is logged except the one other line the walk may now
+    # emit. Kept as a whitelist rather than dropped: the guard exists so a
+    # future silent failure cannot hide inside the log, and widening it to
+    # "anything goes" would retire it.
+    assert all("will not convert" in m or "sub-search skipped" in m
+               for m in skipped)
     # The scored candidates, the reference, the subtune probe before it, and
     # the integer pass over `hard_restart_frames` -- one conversion per value
     # in HARD_RESTART_SEARCH, run against whichever combination the boolean
@@ -438,8 +449,18 @@ def test_a_candidate_that_will_not_convert_is_skipped_not_fatal(tmp_path):
     # `_inert_frames` adds two more conversions, but only when the pass
     # actually selects a value; here every candidate scores identically so
     # none is accepted, `got` is empty, and the byte check never runs.
-    frame_pass = len(P.HARD_RESTART_SEARCH) * (1 + len(P.HARD_RESTART_ENABLERS))
-    assert len(converted) == scored + 2 + frame_pass
+    #
+    # SINCE v0.5.45x THE PASS IS GUARDED BY A PRE-CHECK, and in this stub every
+    # conversion returns the same bytes, so the grid is inert and the pass does
+    # not run at all. What is counted here is therefore the PRE-CHECK's cost --
+    # one reference plus one per grid point, all conversions, no packing and no
+    # tracing -- in place of the pass's. Both terms are derived from the module
+    # so that a fourth frame value or a third enabler moves them together.
+    grid_points = len(P.HARD_RESTART_SEARCH) * (1 + len(P.HARD_RESTART_ENABLERS))
+    pre_check = 1 + grid_points
+    frame_pass = 0          # skipped: the stub converts identically every time
+    assert len(converted) == scored + 2 + pre_check + frame_pass
+    assert any("sub-search skipped" in m for m in skipped),         "the pre-check did not fire, so this is counting the wrong thing"
 
 
 def test_the_search_window_is_the_window_the_report_is_published_at():
