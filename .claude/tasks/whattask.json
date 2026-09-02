@@ -1,16 +1,16 @@
 {
   "generated_from": {
-    "head": "be759f0",
+    "head": "bd28b6a",
     "sources": [
       "whats-next.md",
       "todo.md",
-      ".claude/tasks/runs.jsonl (293 lines, last line per id)",
-      ".claude/tasks/whattask.json (previous plan, 80456df)",
+      ".claude/tasks/runs.jsonl (297 lines, last line per id)",
+      ".claude/tasks/whattask.json (previous plan, be759f0)",
       "CLAUDE.md",
       "README.md",
-      "git log 80456df..HEAD",
+      "git log fc931c1..HEAD",
       "docs/FIDELITY.md",
-      "graphify-out/graph.json (refreshed: 13 files re-extracted, 5265 nodes / 10035 edges)"
+      "graphify-out/graph.json (refreshed before the cross-check)"
     ],
     "focus": null
   },
@@ -44,22 +44,23 @@
       "touches": [
         "rw:python/h2g/detect.py",
         "rw:python/tests",
-        "r:docs/SURVEY.md",
+        "rw:docs/SURVEY.md",
+        "r:python/h2g/convert.py",
         "r:presets.json",
         "r:python/tools/siddump-rt/siddump.exe",
         "rw:host:C:/t"
       ],
-      "verify": "Measured at v0.5.438: **Go_Go_Dash, Lion_Heart, Pacific_Coast, Radio_ACE and Sun_Never_Shines all share the stored-wave key `cell=$1A43 / store=$104B`**, with Lakers_vs_Celtics one cell away at `$1A6B / $104B`. All six carry this engine's `BD ?? ?? 3D ?? ?? 99 04 D4` idiom -- positive evidence they ARE the family -- yet every one refuses with `UnsupportedSidError: NO HUBBARD PLAYER DETECTED`. By this repo's own rule a shared key names a shared player BUILD, so this is plausibly ONE unread build between five files and conversion, and it is the largest single detection gap named in this backlog. IT IS A LEAD, NOT A RESULT: nobody has read those players' bytes, and the idiom alone does not prove the engine. DONE WHEN the build is read and either a signature is added -- with a corpus byte-hash showing it moves ONLY files that previously refused, and docs/SURVEY.md's converting count rising by the number actually rescued -- or the files are shown not to be convertible with the reason written down. Do NOT widen an existing signature until the bytes have been read: this repo has a rule that a fix whose blast radius exceeds its evidence is scoped wrongly.",
+      "verify": "Measured at v0.5.438: **Go_Go_Dash, Lion_Heart, Pacific_Coast, Radio_ACE and Sun_Never_Shines all share the stored-wave key `cell=$1A43 / store=$104B`**, with Lakers_vs_Celtics one cell away at `$1A6B / $104B`. All six carry this engine's `BD ?? ?? 3D ?? ?? 99 04 D4` idiom -- positive evidence they ARE the family -- yet every one refuses with `UnsupportedSidError: NO HUBBARD PLAYER DETECTED`. By this repo's own rule a shared key names a shared player BUILD, so this is plausibly ONE unread build between five files and conversion, and it is the largest single detection gap named in this backlog. IT IS A LEAD, NOT A RESULT: nobody has read those players' bytes, and the idiom alone does not prove the engine. DONE WHEN the build is read and either a signature is added -- with a corpus byte-hash showing it moves ONLY files that previously refused, and docs/SURVEY.md's converting count rising by the number actually rescued -- or the files are shown not to be convertible with the reason written down. Do NOT widen an existing signature until the bytes have been read: this repo has a rule that a fix whose blast radius exceeds its evidence is scoped wrongly. ================ UPDATE AT bd28b6a: THE BUILD IS READ. The precondition this verify gates the implementation on is DONE, and none of it is to be re-derived. (1) `detect()` never throws on any of the six -- it finds the instrument table ($0BC6, stride 8, 27 records), the frequency table, `pulse_bounds`, `pitch_seq` and `effect_bit40`. The refusal is `convert.py:319 if not det.can_convert`, and the four missing fields are exactly `pattern_lo`, `pattern_hi`, `track_lo`, `track_hi`. All six share one build: init $100C, play $101A. (2) THE PATTERN TABLE IS INTERLEAVED at $1D50 -- `$1138 ASL A / TAY` then `$113A LDA $1D50,Y / STA $FA / LDA $1D51,Y / STA $FB`, so Y = 2 x pattern and the table is lo/hi PAIRS. That is `table_stride 2` on the PATTERN table, and no dialect here supports it -- every one assumes separate lo and hi tables. Its first pointers ($2010 $2013 $203E $204D ...) are ascending and land in plausible pattern data. (3) THE TRACK TABLE IS WRITTEN AT INIT. The runtime table the player reads ($1B3B/$1B3F, via `$1104 LDA $1B3B,X / STA $F8`) is ZERO-FILLED on disk. Init is `$100C JMP $18FF`, and $1919-$192A copies it: `LDA $1B43,X / STA $1B3B,Y / LDA $1B44,X / STA $1B3F,Y / INX INX / INY / CPY #$04 / BNE`. So the real table is **$1B43, interleaved, FOUR voices, 8 bytes per subtune** -- and `track_voices` is 3. (4) THE ANCHOR is `BD ?? ?? 99 ?? ?? BD ?? ?? 99 ?? ?? E8 E8 C8 C0 04 D0 ED`, which reads the source address out of the instruction that names it rather than off a fixed offset. Five files match at $1919 (src $1B43); Lakers_vs_Celtics matches the same shape at $1937 (src $1B6B), which is the 'one cell away' this task recorded. Subtune 0's four track pointers read out sane on all six. ================ AND THE MEASUREMENT THAT DETERMINES THE IMPLEMENTATION'S SHAPE. Corpus-wide that anchor matches **15 files, and NINE of them ALREADY CONVERT** (After_8, Kings_of_the_Beach_intro, Mr_Meaner, Off_the_Cuff, One_on_One_Jordan_vs_Bird, Powerplay_Hockey_USA_vs_USSR, Pygmies_Revenge, Rikky, Rock_Tells_the_Tale). So this MUST be a LAST-RESORT chain, consulted only where the existing track chain found nothing -- the rule `find_relocation`, `find_init_writes` and `INSTRUMENT_INDEX_SHAPE` already follow. A chain that sets track_lo/track_hi unconditionally would override nine working files, which is the blast-radius-exceeds-the-evidence failure this repo has a rule for. ================ THREE THINGS THE IMPLEMENTATION STILL NEEDS, none of which exists today, and they were opened as separate ids and folded back here because they are this task's steps rather than tasks of their own. (a) `nine-converting-files-share-the-init-copy-idiom`: the last-resort scoping above. (b) `the-pattern-table-can-be-interleaved-and-no-dialect-supports-stride-2`: pattern `table_stride 2` support, in `decode_entry`'s `step = i * det.table_stride` and wherever else the lo/hi pair is formed. (c) `a-four-voice-track-table-needs-a-fourth-voice-decision`: FIND OUT WHAT THE FOURTH TRACK DRIVES before emitting three of four. `CPY #$04` is unambiguous; emitting voices 0-2 and silently dropping track 3 would be a guess, and this repo's rule is that a guess about a player belongs in a measurement, not in an emitter. READ THE SOURCE TABLE ($1B43), not the init-written destination -- it is the only one with bytes in it. PROBES kept in C:/t, fv1_ prefixed; fv1_ptr.py is a reusable generic `LDA abs,X|Y / STA zp` pointer-table finder. ONE FIGURE TO GRADE: with DEFAULT options `convert()` refuses 15 of 95, where the preset-driven byte-hash refuses 12 of 95 -- different populations, not a discrepancy.",
       "why_model": "reading an undocumented player dialect from 6502 bytes",
       "why_mode": "detection changes reach every file, so the diagnosis matters more than the sweep",
       "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
+      "needs_main": true,
+      "needs_main_reason": "Its verify requires docs/SURVEY.md's converting count to rise, which is a full corpus regeneration -- a multi-minute job that also writes a generated artefact no delegated branch may touch.",
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
       "lane": "serial",
-      "why_lane": "writes or shares docs/SURVEY.md, host:C:/t, presets.json"
+      "why_lane": "rw:python/h2g/detect.py, rw:python/tests and rw:docs/SURVEY.md each overlap other tasks; the scratch dir is shared with every measuring task."
     },
     {
       "id": "hard-restart-frames-is-not-searchable",
@@ -147,34 +148,6 @@
       "why_lane": "writes or shares build/fidelity.json, docs/FIDELITY.md, host:C:/t"
     },
     {
-      "id": "commando-voice-1-plays-g-sharp-7-where-the-original-plays-b-5",
-      "title": "Commando: the octave is player state, not the note byte",
-      "source": "listener report 2026-08-30, runs.jsonl (partial x5)",
-      "model": "opus",
-      "mode": "main",
-      "touches": [
-        "r:python/h2g/patterns.py",
-        "r:python/h2g/detect.py",
-        "r:Commando.sid",
-        "r:presets.json",
-        "r:build/fidelity.json",
-        "r:python/fidelity.py",
-        "r:python/tools/siddump-rt/siddump.exe",
-        "rw:host:C:/t"
-      ],
-      "verify": "**FOUR HYPOTHESES ARE DEAD -- reader offset, table overrun, pitch in the record (v0.5.435), and a constant origin shift (v0.5.439). Do not retry them.** Traced like for like over one window at v0.5.439: **141 of voice 1's 237 attacks are already exact, count for count** (indices 50x12, 52x81, 53x16, 55x28, 56x4 on BOTH sides), so a global mapping error is excluded -- the whole defect is the 96 that read index 92 where the original reads 71 (x95) and 59 (x1). **DECISIVE: the same stored `$68` sounds at TWO indices exactly an octave apart**, so the octave is not carried by the note byte and no static byte-to-index function can be the answer. The table is 96 entries at $5428; entry 71 = 16824 and every measured original frequency is nearest it. DONE WHEN the octave source is named -- look for a per-voice octave register in player state written elsewhere and read at the note fetch. A LEAD ONLY, unconfirmed in the player's code: 104 - 9 = 95, the last valid index, and 95 - 24 = 71 while 95 - 36 = 59. Shipping a FIX is out of scope here and is gated on the fixture decision. CARRIED FORWARD from a9d88c7 and baa6ced. The octave is PLAYER STATE, not the note byte: a constant origin shift is refuted by the 141 voice-1 attacks that are ALREADY EXACT, and the same stored $68 sounds at two indices an octave apart, so no static byte-to-index function can be the answer. commando-note-byte-104-to-index-71-mapping-is-still-unknown is this task's open sub-question, not a separate task.",
-      "why_model": "a player-dialect read where four plausible mechanisms are already refuted",
-      "why_mode": "diagnosis whose value is the attribution; read-only but needs the dead list",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "lane": "serial",
-      "why_lane": "writes or shares Commando.sid, build/fidelity.json, host:C:/t"
-    },
-    {
       "id": "regrid-and-no-test-restart-need-a-guard-or-a-documented-incompatibility",
       "title": "--regrid and --no-test-restart contend for frame 0",
       "source": "runs.jsonl, whats-next.md",
@@ -256,27 +229,6 @@
       "decision": null,
       "lane": "serial",
       "why_lane": "writes or shares build/instrmap, build/listen, host:C:/t"
-    },
-    {
-      "id": "claude-md-says-regrid-reaches-18-files-and-the-byte-hash-says-17",
-      "title": "CLAUDE.md's --regrid population is 17/13, not 18/12",
-      "source": "runs.jsonl#regrid-melody-collapse (done).opened",
-      "model": "sonnet",
-      "mode": "subtask",
-      "touches": [
-        "rw:CLAUDE.md"
-      ],
-      "verify": "CLAUDE.md states --regrid 'reaches 18 corpus files' and has '12 adoptions'. Measured by corpus byte-hash at v0.5.437 (convert every file on its shipped preset with `regrid` forced False and True, 83 of 83 converting in both arms): it reaches **17**, and after IK_plus was adopted in bc01875 there are **13** adoptions and **4** remaining refusals (BMX_Kidz, One_on_One, Powerplay, Sanxion). DONE WHEN both figures are corrected and GRADED with the version they were measured at, per CLAUDE.md's own rule that an ungraded figure decays into a false one. `git diff --name-only` must show CLAUDE.md alone. Do not restate any figure this brief does not give you.",
-      "why_model": "a two-number doc correction against a measurement already recorded",
-      "why_mode": "one file, mechanical, and the conclusion is transcription",
-      "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
-      "depends_on": [],
-      "blocked_on": null,
-      "decision": null,
-      "lane": "serial",
-      "why_lane": "rw:CLAUDE.md now overlaps initial-instrument-may-now-have-a-beneficiary..., which must correct the same file's 'no measured beneficiary today' clause if the remeasure finds one; two writers of one path is serial by arithmetic, and the mode stays subtask because the lane and the delegability are different axes."
     },
     {
       "id": "powerplay-naming-share-must-be-re-measured-on-the-frame-axis-before-the-user-decides",
@@ -532,7 +484,7 @@
         "rw:Commando.sng",
         "rw:python/tests"
       ],
-      "blocked_on": "Commando.sng is the project's ONLY byte-exact fidelity anchor and 26 tests assert against it. Commando's voice 1 plays the wrong octave on 96 of its 237 voice-1 attacks (141 are already exact), and ANY fix necessarily changes Commando.sng and breaks those tests. THE QUESTION: may Commando.sng be re-cut when a fix is found -- and if so, against what (a new hand-verified reference, or simply the new output)? A 'no' is a good answer and closes the pitch task as won't-fix with a reason.",
+      "blocked_on": "Commando.sng is the project's ONLY byte-exact fidelity anchor and 26 tests assert against it. Commando's voice 1 plays the wrong octave on 96 of its 237 voice-1 attacks (141 are already exact), and ANY fix necessarily changes Commando.sng and breaks those tests. THE QUESTION: may Commando.sng be re-cut when a fix is found -- and if so, against what (a new hand-verified reference, or simply the new output)? A 'no' is a good answer and closes the pitch task as won't-fix with a reason. ================ UPDATE AT bd28b6a: THE DIAGNOSIS IS COMPLETE, so this is now a clean yes/no rather than a question asked against an unknown. The mechanism is settled: note byte $68 = 104 overruns the player's 96-entry frequency table, and the player reads $54F8/$54F9 -- voices 0 and 1 STORED WAVEFORM bytes -- as the frequency. Instruments carrying $41 reduce to entry 71 and the one carrying $21 to entry 59, which is exactly the original's measured 95/1 split. We clamp every note byte >= 92 to GT_LASTNOTE (`patterns.py:495`), so voice 1 plays G#7 on 110 events. WHAT A FIX WOULD COST: reproducing the original means emitting a fixed very high pitch (entry 71 for a $41 instrument) rather than a clamp to 92 -- a 21-semitone move on 110 of voice 1's notes -- and Commando.sng is the project's ONLY byte-exact anchor, asserted by 26 tests. THE QUESTION IS UNCHANGED: may Commando.sng be re-cut and those tests re-based? Note the honest counter-argument, which did not exist before the diagnosis: what the original sounds there is not a musical note at all, it is whatever two waveform registers happen to hold, so 'faithful' and 'better' may not be the same answer here and a listen should probably decide it.",
       "verify": "the answer is recorded, and either Commando.sng is re-cut with its new reference named and the 26 tests updated, or the pitch defect is closed as won't-fix with the fixture cited",
       "why_model": "the trade is about what the project's fidelity anchor means",
       "why_mode": "no measurement settles whether the anchor may move",
@@ -712,7 +664,7 @@
         "r:.claude/tasks/whattask.json",
         "r:.claude/tasks/runs.jsonl"
       ],
-      "blocked_on": "DEFECTS IN /whattask AND /runtask, fixable only in the plugin repo at C:/Users/mit/.claude/plugins/marketplaces/mit-claude-setup -- OUTSIDE this tree, and already holding two uncommitted edits from earlier sessions, so touching it needs the same authorisation as locking-md-fix. (1) STALE VERIFY TEXT: regeneration copies the previous plan's text instead of re-deriving from that id's newest runs.jsonl line. (2) ARITHMETIC NOBODY CHECKS. (3) INTERNALLY INCONSISTENT VERIFIES. (4) **TOUCHES OMITS PATHS THE VERIFY ITSELF NEEDS -- now with THREE measured instances**: `initial-for` was granted tracks.py but not convert.py and BLOCKED (v0.5.439); `gate-and-hold` was asked to edit a Dimension description with python/fidelity.py and docs/FIDELITY.md both `r:` and BLOCKED (v0.5.441); and the doc-with-code rule (rw:python/fidelity.py implies rw:docs/FIDELITY.md) is stated in the command's own text and was still missed. (5) **A WRONG CONSTANT REPEATED IN THREE TASKS**: the listening tasks all said the A/B server is on port 8000; it is 8730, and 'port 8000 does not respond' was carried as evidence of a dead server across two plans. (6) **NO ID CHECK ON MAIN-SESSION RECORDS**: /runtask rejects a delegated record whose id is not the one dispatched, but nothing checks a record the main session writes -- a mistyped id orphaned a run record at v0.5.441 and made a completed task read as never run. THREE MORE DEFECTS SINCE, all in the same plugin repo and all covered by the same one authorisation. (7) A VERIFY CAN BE INTERNALLY INCONSISTENT, not merely stale -- a regenerated verify carried two clauses that contradicted each other (baa6ced). (8) THE SELECTION RULE steers every iteration into the task with the most inbound edges, so one corner of the backlog is drained repeatedly while isolated tasks never come up (baa6ced). (9) A DIMENSION EDIT FORCES A REGENERATION /runtask CANNOT STAMP CLEANLY: the edit changes python/fidelity.py, which forces docs/FIDELITY.md to be regenerated, but /runtask must never commit, so the provenance necessarily reads `<sha>-dirty` (3262907-dirty today). Harmless when no measurement moved, misleading when one did -- v0.5.441 is the case where the content reflected an adoption the named commit did not contain. The fix is a post-commit regeneration step or a provenance line recording the tree hash, and neither belongs in this repo.",
+      "blocked_on": "DEFECTS IN /whattask AND /runtask, fixable only in the plugin repo at C:/Users/mit/.claude/plugins/marketplaces/mit-claude-setup -- OUTSIDE this tree, and already holding two uncommitted edits from earlier sessions, so touching it needs the same authorisation as locking-md-fix. (1) STALE VERIFY TEXT: regeneration copies the previous plan's text instead of re-deriving from that id's newest runs.jsonl line. (2) ARITHMETIC NOBODY CHECKS. (3) INTERNALLY INCONSISTENT VERIFIES. (4) **TOUCHES OMITS PATHS THE VERIFY ITSELF NEEDS -- now with THREE measured instances**: `initial-for` was granted tracks.py but not convert.py and BLOCKED (v0.5.439); `gate-and-hold` was asked to edit a Dimension description with python/fidelity.py and docs/FIDELITY.md both `r:` and BLOCKED (v0.5.441); and the doc-with-code rule (rw:python/fidelity.py implies rw:docs/FIDELITY.md) is stated in the command's own text and was still missed. (5) **A WRONG CONSTANT REPEATED IN THREE TASKS**: the listening tasks all said the A/B server is on port 8000; it is 8730, and 'port 8000 does not respond' was carried as evidence of a dead server across two plans. (6) **NO ID CHECK ON MAIN-SESSION RECORDS**: /runtask rejects a delegated record whose id is not the one dispatched, but nothing checks a record the main session writes -- a mistyped id orphaned a run record at v0.5.441 and made a completed task read as never run. THREE MORE DEFECTS SINCE, all in the same plugin repo and all covered by the same one authorisation. (7) A VERIFY CAN BE INTERNALLY INCONSISTENT, not merely stale -- a regenerated verify carried two clauses that contradicted each other (baa6ced). (8) THE SELECTION RULE steers every iteration into the task with the most inbound edges, so one corner of the backlog is drained repeatedly while isolated tasks never come up (baa6ced). (9) A DIMENSION EDIT FORCES A REGENERATION /runtask CANNOT STAMP CLEANLY: the edit changes python/fidelity.py, which forces docs/FIDELITY.md to be regenerated, but /runtask must never commit, so the provenance necessarily reads `<sha>-dirty` (3262907-dirty today). Harmless when no measurement moved, misleading when one did -- v0.5.441 is the case where the content reflected an adoption the named commit did not contain. The fix is a post-commit regeneration step or a provenance line recording the tree hash, and neither belongs in this repo. (10) A VERIFY THAT RUNS A BYTE-HASH OR A CORPUS SWEEP DOES NOT GET A SCRATCH PATH. Seen twice in one drain: `pulse-triangle-docstring...` had to run a corpus byte-hash with no scratch path in its `touches`, and `five-non-converting-files...` requires docs/SURVEY.md's converting count to RISE while declaring it `r:`. Both are the 'unnamed tool output' and 'r: on a path the verify writes' halves of the generator's own step 5b, which means the step is being asserted rather than executed. (11) NEAR-DUPLICATE IDS FROM ONE STALE DOC PASSAGE. `be06971`'s commit message names a task id `pulse-triangle-docstring-claims-the-band-carries-over` and says the next replan should CLOSE it rather than dispatch it. The regeneration at be759f0 created the same work under `...-says-the-band-carries-over-and-it-does-not`, so the warning did not match and an agent was sent to find work 60% already done. A replan should diff proposed ids against COMMIT MESSAGES, not only against existing ids.",
       "verify": "the defects are fixed in the plugin and committed, or the human records that the plugin is left alone and this repo's CLAUDE.md carries the warnings instead. Whichever way, say explicitly what happened to the two pre-existing uncommitted edits in that repo",
       "why_model": "a change to the process that generates every other task's acceptance criterion",
       "why_mode": "editing and committing in an external repo holding another session's work is an authorisation",
@@ -905,28 +857,61 @@
       "why_lane": "rw:python/h2g/goatwriter.py and the generated artefacts overlap several tasks."
     },
     {
-      "id": "pulse-triangle-docstring-says-the-band-carries-over-and-it-does-not",
-      "title": "_pulse_triangle's docstring claims the band carries over; the 5TT diagnosis showed it does not",
-      "source": "todo.md#5 Title Tunes fidelity",
-      "model": "sonnet",
-      "mode": "subtask",
+      "id": "commando-note-104-is-not-a-note-and-the-faithful-emission-is-a-fixed-high-pitch-not-a-clamp",
+      "title": "Commando note 104: the faithful emission is a fixed high pitch, not a clamp to G#7",
+      "source": "runs.jsonl#commando-voice-1 (done).opened, bd28b6a",
+      "model": "opus",
+      "mode": "main",
       "lane": "serial",
       "touches": [
-        "rw:python/h2g/goatwriter.py",
+        "rw:python/h2g/patterns.py",
         "rw:python/tests",
-        "rw:python/tests/test_pulse.py",
-        "rw:todo.md"
+        "rw:Commando.sng",
+        "rw:presets.json",
+        "rw:docs/FIDELITY.md",
+        "rw:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe",
+        "rw:host:C:/t"
       ],
       "mcp": [],
-      "needs_main": false,
-      "needs_main_reason": null,
+      "needs_main": true,
+      "needs_main_reason": "It re-cuts the byte-exact fixture and regenerates docs/FIDELITY.md and build/fidelity.json over the corpus.",
+      "depends_on": [
+        "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture"
+      ],
+      "blocked_on": null,
+      "decision": null,
+      "verify": "THE DIAGNOSIS IS DONE AND IS IN bd28b6a; this is the emission question it leaves. `patterns.py:495-496` is `if g_note >= 0x5C: g_note = 0x5C`, so every note byte at or above 92 becomes GT_LASTNOTE. Commando's voice 1 carries note byte 104 on 110 events (plus 95 x8 and 93 x6, 124 clamped in total), and the player sounds those by reading $54F8/$54F9 -- voices 0 and 1 stored waveform bytes -- as a frequency, which for a $41 instrument reduces to table entry 71. So the clamp is 21 semitones below what the original sounds, on 110 notes. THE QUESTION IS NOT 'REMOVE THE CLAMP'. GT's note column stops at index 92 and the player's table runs to 95, so SOMETHING must clamp; what is wrong is the VALUE. Three candidates and none is obviously right: emit entry 71 (right for the eight $41 instruments and wrong for the $21 one); emit per-instrument from the record's +2 byte (right per instrument, but the byte is voice 1's, not the sounding voice's, so it is right only when voice 1 holds what it usually holds); or keep the clamp on the ground that a 16 kHz register artefact is not music and G#7 is the closer listening match. DONE WHEN one is chosen with a corpus byte-hash naming exactly the files that move (expect Commando alone -- note bytes >= 92 need censusing across the corpus first, and that census is part of this task), FIDELITY.md regenerated, and Commando's voice-1 melody/pitch reported before and after. IT IS GATED on the fixture decision and must not start before it: every candidate changes Commando.sng.",
+      "why_model": "A choice between three defensible emissions where the wrong one silently moves the project's only byte-exact anchor.",
+      "why_mode": "It re-cuts the fixture and regenerates the corpus artefacts.",
+      "why_lane": "rw:Commando.sng, rw:python/tests and the generated artefacts all overlap other tasks."
+    },
+    {
+      "id": "regrid-drift-improves-on-14-is-from-the-same-stale-measurement-as-the-18",
+      "title": "CLAUDE.md's '--regrid drift improves on 14' is from the same measurement as the corrected 18",
+      "source": "runs.jsonl#claude-md-regrid (done).opened, bd28b6a",
+      "model": "sonnet",
+      "mode": "main",
+      "lane": "serial",
+      "touches": [
+        "rw:CLAUDE.md",
+        "r:presets.json",
+        "r:build/fidelity.json",
+        "r:python/fidelity.py",
+        "r:python/tools/siddump-rt/siddump.exe",
+        "rw:host:C:/t"
+      ],
+      "mcp": [],
+      "needs_main": true,
+      "needs_main_reason": "Re-measuring drift over the --regrid population needs a corpus trace against build/fidelity.json, which a delegated branch cannot hold.",
       "depends_on": [],
       "blocked_on": null,
       "decision": null,
-      "verify": "`_pulse_triangle`'s docstring says 'The band and the rate carry over; the phase cannot.' The 5 Title Tunes diagnosis in todo.md establishes that THE RATE CARRIES OVER AND THE BAND DOES NOT, whenever notes are short against the sweep period: Goattracker reloads the pulse pointer at every note (gplay.c:375-379) while the player's 12-bit accumulator FREE-RUNS across notes, and voice 2 proved it exactly -- 186 notes, 186 reset jumps of 899, and a band of 899, all three the same number. TWO THINGS TO GRADE RATHER THAN REPEAT while editing todo.md's 5TT section. `pspan` is NO LONGER A DEFECT: it read 0.47x when the entry was written and 1.05x at v0.5.421, closed by `pulse_phase` entering that song's presets -- so the 449/771/899 figures are HISTORY and must be marked as such. And `pul` 1.93x is not a defect either: it is the documented half-step substitution, confirmed from the records (`rec+6` $41 -> step 64 / delay 2 -> speed 32; $81 -> step 128 / delay 2 -> speed 64), and the once-written 'pspan x pul = 0.94 so the travel is about right' arithmetic is wrong because `pspan` is a max-min BAND, not a per-step size. ONE RESIDUAL STAYS OPEN and must be left open rather than written up as closed: per-note excursion is not exactly gap x speed (predicted 256/512/1024 against the measured 449/771/899), so the turn-around arithmetic is unaccounted for. DONE WHEN the docstring states the measured rule, todo.md's 5TT section carries the graded figures with that residual still named, `python -m pytest tests/ -q` is green from python/, and a corpus byte-hash shows 0 of 83 conversions move -- a docstring-and-prose change must reach no bytes, and asserting that is what separates it from an accidental edit.",
-      "why_model": "A bounded prose correction whose supporting measurement is already recorded and cited.",
-      "why_mode": "Self-contained -- one docstring and one doc section, with a mechanical byte-identical check as its conclusion.",
-      "why_lane": "rw:python/h2g/goatwriter.py overlaps several emitter tasks; the lane is serial while the mode stays delegable."
+      "verify": "bd28b6a corrected CLAUDE.md's `--regrid` reach 18 -> 17 and its adoptions 12 -> 13, both graded at v0.5.437. The SAME sentence goes on '...drift improves on 14 and five land on exactly 0.00 (After_8 -12.35 -> 0.00, Arcade Classics -7.79 -> 0.00, Nemesis -7.75 -> 0.00)', and those figures came from the measurement that produced the 18. The agent that fixed the other two correctly did NOT touch them, because its brief did not give it the numbers -- so CLAUDE.md now carries a graded figure next to two ungraded ones from the same superseded run, which is the state its own rule calls the dangerous middle. DONE WHEN '14' and 'five' are either re-measured over the 17-file population and re-stated with the version, or explicitly graded as historical with the version they were taken at. The three named per-file deltas should be spot-checked against build/fidelity.json rather than re-derived. `git diff --name-only` must show CLAUDE.md alone. Do NOT re-measure by re-running the preset search: `--regrid` is hand-adopted and `fidelity_better` cannot select it, so a search would not reproduce the population.",
+      "why_model": "A bounded doc reconciliation against an artefact that already holds the numbers.",
+      "why_mode": "It reads build/fidelity.json and may need a corpus trace to re-state a figure.",
+      "why_lane": "rw:CLAUDE.md overlaps initial-instrument-may-now-have-a-beneficiary; the scratch dir is shared."
     }
   ],
   "closed": [
@@ -1061,6 +1046,36 @@
       "title": "todo.md: the conversion must be the same length as the original, +-5 s",
       "closed_by": "8bff6bc",
       "reason": "Both halves shipped: the `len` (length_delta) Dimension is at python/fidelity.py:3737 and in the report header, and --silent-park / --force-park are in cli.py, convert.py and tracks.py (8bff6bc, d3d7e3f, 2367f03). runs.jsonl#original-ended-rows-are-a-length-defect-queue measured the queue EMPTY: 14 rows carry a length_delta, length_bounded is false on all 14, and all 14 are inside +-5 s. todo.md still lists this as open and is stale there."
+    },
+    {
+      "id": "commando-voice-1-plays-g-sharp-7-where-the-original-plays-b-5",
+      "title": "Commando: the octave is player state, not the note byte",
+      "closed_by": "bd28b6a",
+      "reason": null
+    },
+    {
+      "id": "claude-md-says-regrid-reaches-18-files-and-the-byte-hash-says-17",
+      "title": "CLAUDE.md's --regrid population is 17/13, not 18/12",
+      "closed_by": "bd28b6a",
+      "reason": null
+    },
+    {
+      "id": "pulse-triangle-docstring-says-the-band-carries-over-and-it-does-not",
+      "title": "_pulse_triangle's docstring claims the band carries over; the 5TT diagnosis showed it does not",
+      "closed_by": "bd28b6a",
+      "reason": null
+    },
+    {
+      "id": "commando-note-byte-104-to-index-71-mapping-is-still-unknown",
+      "title": "Commando: the $68 -> index 71 mapping is unknown",
+      "closed_by": "bd28b6a",
+      "reason": "ANSWERED, and the answer is that there is no mapping. Note byte 104 overruns the 96-entry table; the player reads $54F8/$54F9 -- voices 0 and 1 stored WAVEFORM bytes -- as the frequency, so the \"index\" is whatever those registers hold. $41 reduces to entry 71 and $21 to entry 59, which is the whole of the measured 95/1 split."
+    },
+    {
+      "id": "a-verify-that-runs-a-byte-hash-must-declare-a-scratch-path-in-touches",
+      "title": "A verify that runs a byte-hash must declare a scratch path in touches",
+      "closed_by": "bd28b6a",
+      "reason": "FIXED IN THIS PASS rather than left as a task: every task below whose verify runs a corpus byte-hash, a conversion sweep or a probe now carries `rw:host:C:/t`. The recurring half -- that /whattask keeps re-introducing it -- is folded into whattask-regeneration-carries-stale-verify-text-forward as defect (10)."
     }
   ]
 }

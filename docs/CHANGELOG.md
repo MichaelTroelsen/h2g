@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.449 — 2026-09-02
+
+- the interleaved-table engine is read under the classic grammar, and its six files reach the pattern stage
+
 ## 0.5.448 — 2026-09-02
 
 - Commando's octave is a waveform byte, the five-file build is read, and two doc figures are graded

@@ -131,6 +131,14 @@ class Detection:
     effect_two_stage: bool = False
     # Set from the player's own orderlist reader; see _find_track_terminators.
     track_fd_ends: bool = False
+    # `$FD nn` is a two-byte TRANSPOSE command that continues the orderlist,
+    # not a terminator. Six files carry it (Go_Go_Dash, Lion_Heart,
+    # Pacific_Coast, Radio_ACE, Sun_Never_Shines, Lakers_vs_Celtics); their
+    # reader ends on `$FF` and stores the operand into a per-voice cell that
+    # is added to a note index and bounds-checked against `#$60` -- the
+    # frequency table's own length. Read from each player's reader, never
+    # assumed from the version, for the reason `track_fd_ends` records.
+    track_fd_transpose: bool = False
     track_fe_command: bool = False
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
@@ -408,6 +416,111 @@ def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
     log("Initial instruments.....: "
         + " ".join(f"${b:02X}" for b in det.initial_instruments))
     return i
+
+
+# The same interleaved-table engine as `_detect_digi`, in a build whose
+# authored orderlist table and pattern table are NOT adjacent.
+#
+# Six corpus files carry it -- Go_Go_Dash, Lion_Heart, Pacific_Coast,
+# Radio_ACE, Sun_Never_Shines and Lakers_vs_Celtics -- and every one refused
+# with NO HUBBARD PLAYER DETECTED while `detect()` was in fact finding their
+# instrument table, frequency table, `pulse_bounds` and `pitch_seq` unaided.
+# Only `pattern_lo/hi` and `track_lo/hi` were missing.
+#
+# BOTH of `_detect_digi`'s signatures already match these files: the track
+# read at Lion_Heart `$1104 LDA $1B3B,X / STA $F8 / LDA $1B3F,X / STA $F9 /
+# LDY $1A31,X / LDA (..),Y`, and the pattern read at `$1138 ASL A / TAY /
+# LDA $1D50,Y / STA $FA / LDA $1D51,Y / STA $FB`. What rejected them is the
+# `pattern == tracks + DIGI_TRACK_TO_PATTERN` adjacency, and that relation is
+# a property of the digi BUILD rather than of the engine: here the pattern
+# table sits at $1D50 where the relation wants $1B4D. The pattern address is
+# read straight out of the instruction that names it, so nothing is lost by
+# not requiring it to sit anywhere in particular.
+#
+# WHY THIS IS A SEPARATE CHAIN AND NOT A RELAXED `_detect_digi`. That
+# function also sets `instr_stride = 16` and `pattern_dialect = "digi"`, and
+# these files are 8-byte records read by the classic grammar -- detection
+# already gets both right. Only the interleaved TABLE half is shared, so only
+# that half is taken here.
+#
+# WHY IT IS CONSULTED LAST. Measured over the corpus, `DIGI_TRACKS` and
+# `DIGI_PATTERN` both match FIFTEEN files, and NINE of them already convert
+# (After_8, Kings_of_the_Beach_intro, Mr_Meaner, Off_the_Cuff,
+# One_on_One_Jordan_vs_Bird, Powerplay_Hockey_USA_vs_USSR, Pygmies_Revenge,
+# Rikky, Rock_Tells_the_Tale). Those nine reach their tables through the
+# classic chains, and a chain that set `track_lo`/`pattern_lo` unconditionally
+# would overwrite nine working files with an interleaved reading of a
+# non-interleaved table. Gating on the classic chains having found nothing is
+# the same rule `find_relocation`, `find_init_writes` and
+# `INSTRUMENT_INDEX_SHAPE` follow: it can rescue a file that reads nothing and
+# can never disturb one that reads correctly.
+INTERLEAVED_CLASSIC_VOICES = 3
+# Three, not `DIGI_VOICES`. The copy loop that populates the runtime table
+# ends `CPY #$04`, which is about how many pointers it COPIES; the play loop's
+# own bound is a separate cell holding **2**, so X runs 2..0. Read on all six:
+# the bound cell is 2 and the per-voice SID offset table is `[0, 7, 14, 0]` --
+# three real voices at $D400/$D407/$D40E and a fourth entry that duplicates
+# voice 0. Nothing writes the bound cell, so it is a file-image constant.
+
+
+def _detect_interleaved_classic(sid: SidFile, det: Detection,
+                                log: Logger) -> bool:
+    """Interleaved track/pattern tables under the classic grammar.
+
+    Consulted only where the classic chains found neither table. Returns True
+    when it filled both, leaving every other field as detection had it.
+    """
+    data = sid.data
+    it, ip = search_file(data, DIGI_TRACKS), search_file(data, DIGI_PATTERN)
+    if it <= -1 or ip <= -1:
+        return False
+    runtime = _addr16(data, it + 1, it + 2)
+    tracks = runtime + DIGI_RUNTIME_TABLE_LEN
+    pattern = _addr16(data, ip + 9, ip + 10)
+
+    lo, plo = sid.to_offset(tracks), sid.to_offset(pattern)
+    if not (_base_ok("TRACKS LO", lo, len(data), log)
+            and _base_ok("PATTERN LO", plo, len(data), log)):
+        return False
+
+    # The runtime table is written by the init routine and is ZERO in the file
+    # image -- that is what makes `runtime + 8` rather than `runtime` the
+    # authored table, and checking it is what stops this reading a build whose
+    # runtime block holds real pointers.
+    rt = sid.to_offset(runtime)
+    if rt < 0 or rt + DIGI_RUNTIME_TABLE_LEN > len(data):
+        return False
+    if any(data[rt + k] for k in range(DIGI_RUNTIME_TABLE_LEN)):
+        return False
+
+    # Every voice's pointer must resolve before the layout is believed, the
+    # same check `_detect_digi` requires and for the same reason: matching the
+    # code shape is not proof the tables are interleaved here.
+    if not all(_digi_entry_ok(sid, lo + v * 2)
+               for v in range(INTERLEAVED_CLASSIC_VOICES)):
+        return False
+    if not _digi_entry_ok(sid, plo):
+        return False
+
+    log(f"Found Tracks LO at......: ${tracks:X} (interleaved, init-written)")
+    log(f"Found Pattern LO at.....: ${pattern:X} (interleaved)")
+    det.table_stride = 2
+    det.track_voices = INTERLEAVED_CLASSIC_VOICES
+    det.track_lo, det.track_hi = lo, lo + 1
+    det.pattern_lo, det.pattern_hi = plo, plo + 1
+    # One subtune. The header says so on all six, and the copy loop agrees the
+    # hard way: it indexes its source with `subtune * 4` while consuming eight
+    # bytes per subtune, so a second subtune would overlap the first by four.
+    # Claiming more than one would read pointers no player of this build can
+    # reach.
+    det.subtunes_available = 1
+    used = 0
+    while _digi_entry_ok(sid, plo + used * 2):
+        used += 1
+    det.pattern_used = used - 1
+    log(f"Pattern used............: ${det.pattern_used:X}")
+    return det.pattern_used >= 0
+
 
 
 def _detect_digi(sid: SidFile, det: Detection, log: Logger) -> bool:
@@ -985,6 +1098,20 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             _span_warn("PATTERN LO", det.pattern_lo, det.pattern_used, len(data), log)
             _span_warn("PATTERN HI", det.pattern_hi, det.pattern_used, len(data), log)
 
+    # --- Interleaved tables, classic grammar (last resort) -----------------
+    # Only where the classic chains found neither table, so it cannot disturb
+    # the nine converting files whose players share these two signatures.
+    # `not engine` as well as `not digi`: `engine=1` DECLINES the
+    # interleaved-table engine deliberately, and `digi` is False for that
+    # reason rather than because the file is not one. Without this the eight
+    # digi-only files fall through to here and get interleaved tables under
+    # the classic grammar -- a plausible wrong song, which is exactly what
+    # tests/test_engine.py's digi-only case exists to refuse. It caught this.
+    if not engine and not digi and (det.track_lo <= 0 or det.pattern_lo <= 0):
+        if _detect_interleaved_classic(sid, det, log):
+            log("Interleaved tables......: classic grammar, "
+                f"{det.track_voices} voices")
+
     # --- Player (track-read) version ---------------------------------------
     det.read_track_version = 0xFF
     i = find("BC ?? ?? B1 ?? C9 FF F0 ?? C9 FE")
@@ -1101,6 +1228,26 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.read_track_version == 0 and find(
             "DE ?? ?? D0 ?? FE ?? ?? BC ?? ?? B1 ?? 30 ?? 9D ?? ?? FE ?? ??") >= 1:
         det.read_track_version = 10   # Delta
+    if det.read_track_version == 0xFF:
+        # LAST IN THE CHAIN, and it must stay last. Version 0's shape with
+        # `$FD` where the others have `$FE`: the reader ends on `$FF`, and
+        # `$FD nn` is a two-byte TRANSPOSE that continues the list -- the
+        # operand is stored per voice, added to a note index and bounds-checked
+        # against `#$60`, the frequency table's own length (Lion_Heart $111B
+        # stores it, $1275 adds it, $127E checks it).
+        #
+        # Gated on nothing having matched rather than on `i`, because the
+        # chain above threads `i` between a signature and the sub-variant test
+        # that belongs to it -- an `if i <= -1` block inserted mid-chain
+        # captures the NEXT block's body. That is not hypothetical: the first
+        # version of this sat between version 2's find and its
+        # `transpose_operand` test, and Auf Wiedersehen Monty silently lost the
+        # flag and changed bytes. Testing the resolved version instead cannot
+        # do that.
+        if find("BC ?? ?? B1 ?? C9 FF F0 ?? C9 FD D0") >= 1:
+            det.read_track_version = 0
+            det.track_fd_transpose = True
+            log("Track reader............: $FF ends, $FD nn transposes")
     log(f"Player Trackread version: {det.read_track_version:X}")
     if det.transpose_operand:
         log("Track transpose form....: two-byte (value follows the command)")
@@ -1216,6 +1363,16 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                    else " -- every record, no bit $08 test"))
 
     det.track_fd_ends, det.track_fe_command = _find_track_terminators(sid)
+    if det.track_fd_transpose:
+        # `$FD` is a two-byte TRANSPOSE in this reader, not a terminator.
+        # `_find_track_terminators` looks for a `CMP #$FD` within reach of the
+        # `$FF` test and cannot tell "ends the list" from "takes an operand and
+        # continues", so it sets the flag on these six as well. The correction
+        # has to sit HERE rather than where the version is chosen, because that
+        # probe runs afterwards and would overwrite it -- which it did, and
+        # tests/test_tracks.py's Knucklebusters/Rasputin/Tarzan population is
+        # what caught it.
+        det.track_fd_ends = False
     if det.track_fd_ends:
         log("Track reader............: $FD ends a voice's orderlist"
             + (" and $FE nn is a two-byte tempo command"

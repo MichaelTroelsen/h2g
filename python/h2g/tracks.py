@@ -53,6 +53,7 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                  transposes: Optional[Dict[int, int]] = None,
                  fd_ends: bool = False,
                  fe_command: bool = False,
+                 fd_transpose: bool = False,
                  tempos: Optional[Dict[int, int]] = None) -> List[int]:
     """One voice's orderlist. `transposes` records what was clamped away.
 
@@ -279,6 +280,26 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             if b1 == 0xFF:
                 track += [0xFF, 0x00]
                 break
+            if b1 == 0xFD and fd_transpose:
+                # `$FD nn`: a per-voice transpose that CONTINUES the list --
+                # the operand is added to a note index and bounds-checked
+                # against `#$60` (Lion_Heart $1272-$127E). Same collapse rule
+                # as the `>= $80` form above: the player assigns rather than
+                # accumulates, so consecutive commands keep only the last.
+                if addr + i2 >= len(data):
+                    if log:
+                        log("*** TRACK DATA RUNS PAST END OF FILE, TRUNCATED ***")
+                    track += [0xFF, 0x00]
+                    break
+                semitones = data[addr + i2] & 0x7F
+                i2 += 1
+                if track and GT_TRANSUP <= track[-1] < 0xFF:
+                    track[-1] = _transpose_byte(semitones)
+                else:
+                    track.append(_transpose_byte(semitones))
+                if transposes is not None:
+                    transposes[len(track) - 1] = semitones
+                continue
             if b1 == 0xFD and fd_ends:
                 track += [0xFF, 0xFD]
                 break
@@ -502,6 +523,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
                                        det.transpose_operand, tmap,
                                        fd_ends=det.track_fd_ends,
                                        fe_command=det.track_fe_command,
+                                       fd_transpose=det.track_fd_transpose,
                                        tempos=smap))
         built.append(voices)
         tmaps.append(maps)
