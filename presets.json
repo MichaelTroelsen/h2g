@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.434 presets.py",
+  "generator": "h2g 0.5.450 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -378,6 +378,16 @@
       "rows": 32302,
       "multiplier": 1
     },
+    "Go_Go_Dash.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 16800,
+      "subtunes": 1,
+      "rows": 7800,
+      "multiplier": 4
+    },
     "Gremlins.sid": {
       "max_rows": 94,
       "pack": true,
@@ -502,6 +512,16 @@
       "multiplier": 3,
       "two_stage": true
     },
+    "Lakers_vs_Celtics.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 14384,
+      "subtunes": 1,
+      "rows": 8775,
+      "multiplier": 1
+    },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
       "pack": false,
@@ -546,6 +566,16 @@
       "two_stage": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
+    },
+    "Lion_Heart.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 21299,
+      "subtunes": 1,
+      "rows": 12348,
+      "multiplier": 3
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -677,6 +707,16 @@
       "no_test_restart": true,
       "two_stage": true
     },
+    "Pacific_Coast.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 16832,
+      "subtunes": 1,
+      "rows": 10530,
+      "multiplier": 1
+    },
     "Pandora.sid": {
       "max_rows": 94,
       "pack": true,
@@ -740,6 +780,16 @@
       "wave_program": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
+    },
+    "Radio_ACE.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": true,
+      "bytes": 16378,
+      "subtunes": 1,
+      "rows": 14820,
+      "multiplier": 1
     },
     "Rasputin.sid": {
       "max_rows": 128,
@@ -886,6 +936,16 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true
+    },
+    "Sun_Never_Shines.sid": {
+      "max_rows": 94,
+      "pack": true,
+      "prune": true,
+      "dedup": false,
+      "bytes": 9827,
+      "subtunes": 1,
+      "rows": 4998,
+      "multiplier": 1
     },
     "Tarzan.sid": {
       "max_rows": 128,
