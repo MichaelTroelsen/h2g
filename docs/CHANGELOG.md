@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.447 — 2026-09-02
+
+- the A/B automation design and its nine-task plan, and the plan regenerated at be759f0
+
 ## 0.5.446 — 2026-09-01
 
 - the pitch_seq shape work is salvaged from its worktree
