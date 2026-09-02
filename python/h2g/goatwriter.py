@@ -4647,6 +4647,24 @@ def _pulse_triangle(width: int, low: int, high: int,
     The descent is measured from where the ascent actually stopped rather than
     from the bound, so truncation cannot walk the band into a 12-bit wrap --
     Goattracker masks the width to `$FFF` (gplay.c:891) where the player clamps.
+
+    **This function has no note-to-note memory, and that is a real
+    approximation for `_pulse_tri_program`'s callers.** Every entries list it
+    returns starts a fresh sweep from `width`; nothing here carries a phase
+    between two notes that reuse the same record. That matches Goattracker,
+    which reloads the pulse pointer at every note trigger (gplay.c:375-379),
+    but not the player, whose 12-bit accumulator free-runs across notes and
+    is never reseeded. So the RATE this function encodes carries over
+    correctly and the BAND does not, whenever notes are short against the
+    sweep period -- measured on 5_Title_Tunes, our per-voice band comes out
+    449/771/899 against the player's 1536/1536/1408, and voice 2 proves the
+    mechanism exactly: 186 notes, 186 reset jumps of 899, and a band of 899,
+    all the same number (`_pulse_tri_program`'s docstring has the full
+    measurement and why the fix is declined; corrected there at v0.5.379
+    after standing as the opposite claim for 45 versions). One residual is
+    still open: per-note excursion is not exactly gap x speed (predicted
+    256/512/1024 against the 449/771/899 measured), so the turn-around
+    arithmetic is unaccounted for.
     """
     lo_v, hi_v = low << 8, high << 8
     # Clamped to the top only. A record's width may legitimately sit *below* the

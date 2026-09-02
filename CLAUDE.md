@@ -1118,7 +1118,8 @@ test dependency).
   the same two traces, `--pace`'s `drift` line, which integrates the offset
   instead of averaging ratios. **That 37-by-zero / 29-drifting split is
   HISTORY: it was measured before `--regrid` shipped at v0.5.397**, which
-  exists to remove exactly this drift and is adopted on 12 songs. The report's
+  exists to remove exactly this drift and is adopted on **13** songs (at
+  v0.5.437). The report's
   own `drift` column reads 59 of 80 measured files at zero and 21 drifting at
   v0.5.407 -- a different instrument from `--pace`'s integrated offset, and
   the two have never been checked against each other, so neither figure
@@ -1132,8 +1133,11 @@ test dependency).
   (Monty subtune 0) ships at 3 and runs 0.78% fast -- and 3 is the nearest
   ratio at *every* denominator up to 10, so no tempo can do better and the
   exact value wants `-S127`. The option gives one row in 42 an extra call
-  with `CMD_SETTEMPO` and takes it back on the next row. It reaches 18 corpus
-  files, drift improves on 14 and five land on exactly 0.00 (After_8
+  with `CMD_SETTEMPO` and takes it back on the next row. It reaches **17**
+  corpus files (measured by corpus byte-hash at v0.5.437: every file
+  converted on its shipped preset with `regrid` forced False and True, 83 of
+  83 converting in both arms), drift improves on 14 and five land on exactly
+  0.00 (After_8
   -12.35 -> 0.00, Arcade Classics -7.79 -> 0.00, Nemesis -7.75 -> 0.00);
   Monty goes -9.30 -> -1.56 with `hold` +12.5, `adsr` +5.9, `gate` +3.1 and
   `pitch` -2.7. **Per song, never a default** -- `melody` collapses on
@@ -1153,8 +1157,10 @@ test dependency).
   **And nothing in `FIDELITY.md` can adjudicate this option** -- every column
   compares *what* is played, so a tune playing the right music 0.78% fast
   forever scores perfectly. `--pace`'s `drift` line is the only instrument
-  that reads it, and it is not a report column, so each of the 12 adoptions
-  in `presets.json` is a hand-recorded measurement rather than a search
+  that reads it, and it is not a report column, so each of the **13**
+  adoptions (at v0.5.437, after IK_plus was adopted in bc01875; 4 remaining
+  refusals -- BMX_Kidz, One_on_One, Powerplay, Sanxion) in `presets.json` is
+  a hand-recorded measurement rather than a search
   result. `fidelity_better` cannot select it and must not be given it.
   Its intercept is the startup lag as a free by-product, and **that
   by-product is what caught two wrong estimators** — a least-squares fit

@@ -186,12 +186,21 @@ Keep items actionable: what to run, and what makes it done.
   Note gaps here are rigidly uniform (8, 8 and 16 frames), where crossing the
   band at speed 32 needs 48.
 
-  `_pulse_triangle`'s docstring claims "The band and the rate carry over; the
-  phase cannot." THE RATE CARRIES OVER; THE BAND DOES NOT, whenever notes are
-  short against the sweep period. That sentence should be corrected with the
-  fix. Residual not closed: per-note excursion is not exactly gap x speed
-  (predicted 256/512/1024 against 449/771/899), so the arithmetic of the
-  turn-around is not fully accounted for.
+  **CORRECTED, and the function name above was wrong too.** The sentence
+  "The band and the rate carry over; the phase cannot." lived in
+  `_pulse_tri_program`'s docstring, not `_pulse_triangle`'s --
+  `_pulse_triangle` is the shared triangle-shape helper both pulse engines
+  call, and the per-file approximation and its measurement belong to the
+  caller that owns this file's engine. **It was rewritten at v0.5.379**: THE
+  RATE CARRIES OVER; THE BAND DOES NOT, whenever notes are short against the
+  sweep period, and `_pulse_tri_program`'s docstring now carries this file's
+  own figures (449/771/899 against 1536/1536/1408) and voice 2's exact proof
+  in place of the old sentence. `_pulse_triangle`'s own docstring now states
+  the same rule for a reader who lands there instead, pointing at
+  `_pulse_tri_program` for the measurement. **ONE RESIDUAL STAYS OPEN, do not
+  close it without deriving it**: per-note excursion is not exactly gap x
+  speed (predicted 256/512/1024 against the measured 449/771/899), so the
+  turn-around arithmetic is unaccounted for.
 
   RULED OUT ALREADY, so do not spend the session on it: this is NOT the
   "a rate read out of the player is per frame, every table applies it per play
