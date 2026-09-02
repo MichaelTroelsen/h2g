@@ -506,6 +506,16 @@ def _detect_interleaved_classic(sid: SidFile, det: Detection,
     log(f"Found Pattern LO at.....: ${pattern:X} (interleaved)")
     det.table_stride = 2
     det.track_voices = INTERLEAVED_CLASSIC_VOICES
+    det.pattern_dialect = "ilv"
+    # SIXTEEN-byte records, like the digi engine this shares its tables with --
+    # and the previous version of this function left the classic 8 in place on
+    # the reasoning that "these files are 8-byte records detection already reads
+    # correctly". That was wrong, and the player says so in one instruction:
+    # the note path does `$1248 LDA $1A49,X / ASL ASL ASL ASL / TAX /
+    # $1256 LDA $1B52,X`, four shifts is x16, and $1B52 is seven bytes past the
+    # $1B4B the instrument chain already found. With a stride of 8 every record
+    # after the first is read from the middle of its predecessor.
+    det.instr_stride = 16
     det.track_lo, det.track_hi = lo, lo + 1
     det.pattern_lo, det.pattern_hi = plo, plo + 1
     # One subtune. The header says so on all six, and the copy loop agrees the

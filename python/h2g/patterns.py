@@ -854,6 +854,134 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
 CMDTABLE_MAX_NOTE = 0x5C
 
 
+# --- The interleaved-table engine's pattern grammar ------------------------
+#
+# A FOURTH grammar, carried by the six files `_detect_interleaved_classic`
+# rescues (Go_Go_Dash, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines,
+# Lakers_vs_Celtics). It is the mirror image of the classic reader: there bit 7
+# on a status byte means "an operand follows" and a note byte always follows;
+# here bit 7 SET is a COMMAND and bit 7 CLEAR is the note itself. Read under
+# the classic grammar these patterns come out at 945-5927 rows with a quarter
+# of them undecodable, which is why the six aborted on the pattern count
+# rather than converting wrongly.
+#
+# Transcribed from Lion_Heart's reader at $116C:
+#
+#     116C  B1 FA     LDA (patt),Y
+#     116E  30 03     BMI $1173        ; >= $80 -> command or duration
+#     1170  4C 24 12  JMP $1224        ; <  $80 -> a note event
+#     1173  48        PHA
+#     1174  29 40     AND #$40         ; bit 6 splits the two high families
+#     1176  F0 15     BEQ $118D        ; $80-$BF -> the command dispatch
+#     1178  68        PLA              ; $C0-$FF -> a DURATION byte
+#     1179  9D 3D 1A  STA $1A3D,X
+#     117C  29 20     AND #$20         ;   bit 5 is a separate per-voice flag
+#     117E  9D 94 01  STA $0194,X
+#     1184  29 1F     AND #$1F         ;   low five bits are the wait
+#     1186  9D 3A 1A  STA $1A3A,X
+#     1189  C8        INY              ;   ...and it emits NO row of its own
+#     118A  4C 6C 11  JMP $116C
+#
+# THE DURATION IS THE CLASSIC ONE. Its counter is sequenced by
+# `$10F9 DEC $1A37,X / $10FC BMI`, the same DEC/BMI shape `_build_raw_pattern`
+# documents for Commando's `$54F2,X`, so an event lasts wait+1 rows: its own
+# row plus `wait` holds.
+#
+# `$60` IS A REST, not a note. The note path tests it twice -- `$1238 CMP #$60`
+# in the lookahead and `$1264 CMP #$60 / BEQ $129D` on the note itself -- and
+# the branch decrements the voice's own counter rather than sounding anything.
+# It is one past the frequency table's 96 entries, which is what makes it
+# available as a marker.
+#
+# `$81` ENDS THE PATTERN and is NOT in the command dispatch. The player only
+# ever meets it as the byte AFTER a note, where the lookahead at `$1228 CMP #$81`
+# does `LDY #$00 / INC $1A31,X` -- reset the pattern cursor, advance the
+# orderlist. Scanning for it at the top of the loop is equivalent on
+# well-formed data (a pattern always sounds a note before it ends) and is what
+# this decoder does; reaching it any other way would spin the player, since the
+# dispatch below has no arm for it.
+ILV_END = 0x81
+ILV_REST = 0x60
+ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
+
+# `$80-$BF`, dispatched at $118D-$11AE on the EXACT value, with the operand
+# count read from each handler's own INY count. Getting one of these wrong
+# desynchronises everything after it, which is why they are a table rather
+# than a rule.
+#
+#   $80 nn      instrument       -> $1A49,X   ($1204)
+#   $82 nn mm                    -> $1AB5,X / $1AB2,X, and DEC $1AB8,X ($1211)
+#   $83 nn                       -> $1A55,X, zeroes $1A58,X            ($11F0)
+#   $84                          -> $1A86 = 1                          ($11E7)
+#   $86 nn                       -> $1A5B,X, sets $1A62                ($11C5)
+#   $87 nn mm                    -> $1A74,X / $1A71,X                  ($11B0)
+#   $88                          -> $1A64 = 1                          ($11DE)
+#   $89 nn                       -> $1A66 (global)                     ($11D4)
+#
+# Only $80 is translated. The rest are effects, and dropping one leaves its
+# note playing plainly -- but ONLY because the operand counts here are exact,
+# so the stream stays in step.
+ILV_COMMAND_OPERANDS = {0x80: 1, 0x82: 2, 0x83: 1, 0x84: 0,
+                        0x86: 1, 0x87: 2, 0x88: 0, 0x89: 1}
+
+
+def _build_raw_pattern_ilv(data: bytes, addr: int,
+                           note_base: int = 0,
+                           instr_base: int = 2,
+                           span: Optional[List[int]] = None,
+                           ) -> Optional[List[int]]:
+    """Flat event stream for one interleaved-engine pattern, or None.
+
+    Returns None rather than guessing on an unrecognised `$80-$BF` byte: the
+    player's own dispatch falls through `$11AE BNE $116C` with no INY there
+    and would spin, so such a byte means the decode has lost the stream and a
+    skip would invent music.
+    """
+    if addr <= 1 or addr >= len(data):
+        return None
+
+    events: List[int] = []
+    instrument = 0
+    wait = 0
+    i2 = 0
+
+    while True:
+        if addr + i2 <= 1 or addr + i2 >= len(data):
+            return None
+        b = data[addr + i2]
+
+        if b == ILV_END:
+            events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
+            if span is not None:
+                span.append(i2 + 1)
+            return events
+
+        if b >= 0xC0:                       # duration; emits no row
+            wait = b & 0x1F
+            i2 += 1
+            continue
+
+        if b >= 0x80:                       # command
+            n = ILV_COMMAND_OPERANDS.get(b)
+            if n is None:
+                return None
+            if b == 0x80:
+                if addr + i2 + 1 >= len(data):
+                    return None
+                instrument = data[addr + i2 + 1] + instr_base
+            i2 += 1 + n
+            continue
+
+        if b == ILV_REST:
+            events += [GT_KEYOFF, 0x00, 0x00, 0x00]
+        else:
+            note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
+            events += [note, instrument, 0x00, 0x00]
+        for _ in range(wait):
+            events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+        i2 += 1
+
+
 def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
                                 operands, instr_cmd: int,
                                 frames_per_row: int = 1,
@@ -1023,6 +1151,9 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
         return _build_raw_pattern_digi(data, addr, det.note_base,
                                        slides=slides, steps=steps,
                                        instr_base=instr_base)
+    if det.pattern_dialect == "ilv":
+        return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
+                                      instr_base=instr_base)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -1224,6 +1355,9 @@ def phantom_patterns(sid: SidFile, det: Detection,
         if det.pattern_dialect == "digi":
             events = _build_raw_pattern_digi(data, addr,
                                              slides=slides)
+        elif det.pattern_dialect == "ilv":
+            events = _build_raw_pattern_ilv(data, addr,
+                                            note_base=det.note_base)
         elif det.pattern_dialect == "cmdtable":
             events = _build_raw_pattern_cmdtable(
                 data, addr, det.duration_table, det.cmd_operands,

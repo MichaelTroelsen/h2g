@@ -18,12 +18,13 @@ What is pinned here is the part that can rot silently, in both directions:
   overwrite nine working files with an interleaved reading of tables that are
   not interleaved.
 
-They do NOT convert yet: their pattern data uses a third grammar (bit 7 SET
-is a command, bit 7 CLEAR a note -- `$116C LDA (patt),Y / BMI`), where the
-classic grammar reads bit 7 as "an operand follows". Read classically the
-patterns decode to 945-5927 rows and 28 of 114 are undecodable, so the
-conversion aborts on the pattern count. That is a separate piece of work and
-this file asserts the tables only.
+Their pattern data uses a FOURTH grammar, `pattern_dialect "ilv"`: bit 7 SET
+is a command, bit 7 CLEAR a note (`$116C LDA (patt),Y / BMI`), where the
+classic reader takes bit 7 as "an operand follows". Read classically the
+patterns came out at 945-5927 rows with 28 of 114 undecodable and the
+conversion aborted on the pattern count; read under their own grammar every
+pattern decodes, the rows land on bar lengths and nothing clamps. Both halves
+are asserted below -- the tables first, then the grammar.
 """
 import sys
 from pathlib import Path
@@ -132,3 +133,116 @@ def test_the_digi_files_that_share_both_signatures_are_untouched(stem):
     assert det.track_voices == 4
     assert det.track_fd_transpose is False
     assert det.can_convert
+
+
+# --------------------------------------------------------------------------
+# The pattern grammar. Bit 7 SET is a command, bit 7 CLEAR a note -- inverted
+# from the classic reader, which takes bit 7 as "an operand follows".
+# --------------------------------------------------------------------------
+from h2g.patterns import (_build_raw_pattern_ilv, GT_END_PATTERN,  # noqa: E402
+                          GT_KEYOFF, GT_NO_NOTE, ILV_COMMAND_OPERANDS)
+
+
+def _ilv(*by, instr_base=2):
+    return _build_raw_pattern_ilv(bytes([0, 0] + list(by)), 2,
+                                  instr_base=instr_base)
+
+
+def test_a_note_emits_one_row_plus_its_wait_in_holds():
+    """`$C0-$FF` sets the wait and emits NO row of its own; the sequencer is
+    DEC/BMI, so an event lasts wait+1 rows."""
+    got = _ilv(0xC3, 20, 0x81)
+    assert got[0:4] == [0x60 + 20, 0, 0, 0]
+    assert got[4:16] == [GT_NO_NOTE, 0, 0, 0] * 3
+    assert got[16:20] == [GT_END_PATTERN, 0, 0, 0]
+
+
+def test_a_wait_of_zero_is_a_single_row():
+    assert _ilv(0xC0, 20, 0x81)[:8] == [0x60 + 20, 0, 0, 0, GT_END_PATTERN, 0, 0, 0]
+
+
+def test_the_wait_persists_until_the_next_duration_byte():
+    got = _ilv(0xC1, 20, 21, 0x81)
+    assert got[0:4] == [0x60 + 20, 0, 0, 0]
+    assert got[4:8] == [GT_NO_NOTE, 0, 0, 0]
+    assert got[8:12] == [0x60 + 21, 0, 0, 0]      # same wait, not reset
+    assert got[12:16] == [GT_NO_NOTE, 0, 0, 0]
+
+
+def test_60_is_a_rest_and_not_a_note():
+    """$60 is one past the frequency table's 96 entries; the player tests it
+    at $1264 and branches to a path that sounds nothing."""
+    got = _ilv(0xC0, 0x60, 0x81)
+    assert got[0:4] == [GT_KEYOFF, 0, 0, 0]
+
+
+def test_80_sets_the_instrument_and_it_persists():
+    got = _ilv(0x80, 3, 0xC0, 20, 21, 0x81, instr_base=2)
+    assert got[0:4] == [0x60 + 20, 5, 0, 0]       # 3 + instr_base
+    assert got[4:8] == [0x60 + 21, 5, 0, 0]
+
+
+def test_the_instrument_base_reaches_the_row():
+    assert _ilv(0x80, 3, 0xC0, 20, 0x81, instr_base=1)[1] == 4
+
+
+def test_every_command_consumes_exactly_its_operands():
+    """The table is the point: one wrong count desynchronises everything
+    after it, and the note that follows each command here would come out as
+    an operand byte instead."""
+    for cmd, n in sorted(ILV_COMMAND_OPERANDS.items()):
+        body = [cmd] + [0x00] * n + [0xC0, 20, 0x81]
+        got = _ilv(*body)
+        assert got is not None, f"${cmd:02X} failed to decode"
+        # $80's operand here is 0x00, so its instrument is 0 + instr_base.
+        assert got[0:4] == [0x60 + 20, 2 if cmd == 0x80 else 0, 0, 0], \
+            f"${cmd:02X} with {n} operand(s) left the stream out of step"
+
+
+def test_an_unknown_command_refuses_rather_than_skipping():
+    """The player's dispatch falls through `$11AE BNE $116C` with no INY and
+    would spin, so such a byte means the decode has lost the stream. Skipping
+    it would invent music."""
+    assert _ilv(0x85, 0xC0, 20, 0x81) is None
+
+
+def test_81_ends_the_pattern():
+    got = _ilv(0xC0, 20, 0x81, 20, 20, 20)
+    assert got[-4:] == [GT_END_PATTERN, 0, 0, 0]
+    assert len(got) == 8
+
+
+def test_a_stream_that_runs_off_the_end_returns_none():
+    assert _build_raw_pattern_ilv(bytes([0, 0, 0xC0, 20]), 2) is None
+
+
+@needs_corpus
+@pytest.mark.parametrize("stem", sorted(INTERLEAVED))
+def test_the_six_convert(stem):
+    from h2g.convert import convert
+    blob = convert(str(CORPUS / f"{stem}.sid"), log=lambda m: None)
+    assert len(blob) > 1000
+
+
+@needs_corpus
+@pytest.mark.parametrize("stem", sorted(INTERLEAVED))
+def test_every_pattern_decodes_and_the_music_is_in_range(stem):
+    """The check that says the grammar is RIGHT rather than merely accepted.
+    Under the classic reading these same patterns gave 945-5927 rows with 28
+    of 114 undecodable and constant clamping at GT_LASTNOTE; under this one
+    every pattern decodes, the rows land on bar lengths, and nothing clamps."""
+    from h2g.patterns import decode_entry, GT_FIRSTNOTE, GT_LASTNOTE
+    sid = load_sid(str(CORPUS / f"{stem}.sid"))
+    det = detect(sid, lambda m: None)
+    rows, clamped, notes = [], 0, 0
+    for i in range(det.pattern_used + 1):
+        ev = decode_entry(sid, det, i)
+        assert ev is not None, f"pattern {i} did not decode"
+        rows.append(len(ev) // 4)
+        for k in range(0, len(ev), 4):
+            if GT_FIRSTNOTE <= ev[k] <= GT_LASTNOTE:
+                notes += 1
+                clamped += ev[k] == GT_LASTNOTE
+    assert notes > 100, "a whole file of patterns sounding almost nothing"
+    assert clamped == 0, "notes are hitting the GT ceiling; the reading is off"
+    assert max(rows) <= 200, f"{max(rows)} rows is not a pattern, it is a runaway"

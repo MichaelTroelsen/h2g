@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.450 — 2026-09-02
+
+- the interleaved engine's pattern grammar, and six files convert
+
 ## 0.5.449 — 2026-09-02
 
 - the interleaved-table engine is read under the classic grammar, and its six files reach the pattern stage
