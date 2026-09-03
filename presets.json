@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.450 presets.py",
+  "generator": "h2g 0.5.452 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -220,7 +220,8 @@
       "bytes": 15107,
       "subtunes": 3,
       "rows": 14041,
-      "multiplier": 1
+      "multiplier": 1,
+      "pulse_phase": true
     },
     "Commodore_64_Music_Examples.sid": {
       "max_rows": 94,
@@ -288,7 +289,8 @@
       "multiplier": 10,
       "two_stage": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 4
+      "hard_restart_frames": 4,
+      "initial_instrument": true
     },
     "Devils_Galop.sid": {
       "max_rows": 128,
@@ -376,7 +378,8 @@
       "bytes": 43485,
       "subtunes": 7,
       "rows": 32302,
-      "multiplier": 1
+      "multiplier": 1,
+      "pulse_phase": true
     },
     "Go_Go_Dash.sid": {
       "max_rows": 94,
@@ -1081,7 +1084,8 @@
       "bytes": 18520,
       "subtunes": 3,
       "rows": 18099,
-      "multiplier": 1
+      "multiplier": 1,
+      "pulse_phase": true
     },
     "Zoolook.sid": {
       "max_rows": 128,

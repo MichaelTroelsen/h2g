@@ -1580,14 +1580,19 @@ test dependency).
     **Off by default and deliberately not in `presets.json`'s `always`
     block**: the index array is mutable player state, so its file-image value
     is the starting instrument only for a rip of a single tune, and wrong for
-    a fifteen-subtune demo. **This used to add "right for
-    `Delta_Mix-E-Load_loader`", and the measurement says otherwise** — forced
-    on at v0.5.410 that file loses `wave` 99.7 → 66.4%, `adsr` 66.7 → 33.3%
-    and `pulse_span` 1.007 → 0.387, with `our_noise_frames` 0 → 1503;
-    Bangkok_Knights, the only other file where the hazard permits the option,
-    also loses (`wave` 42.8 → 40.5%, `gate` 64.1 → 60.2%). So the option is
-    not merely unselected, it is measurably wrong on both files it can legally
-    apply to, and it has no measured beneficiary today. Note too that
+    a fifteen-subtune demo. **IT HAS A BENEFICIARY, MEASURED AT f0fd20c: `Delta_
+    Mix-E-Load_loader`, which is now adopted in `presets.json`.** The v0.5.410
+    figures this bullet used to carry (Delta losing `wave` 99.7 → 66.4% and
+    `adsr` 66.7 → 33.3%, Bangkok_Knights losing too) were taken under the
+    off-by-one numbering `3262907` fixed, so they measure the bug and are
+    HISTORY -- do not re-quote them. Re-taken at -t 60 against the shipped
+    preset, Delta **gains** `adsr` 66.7 → **100.0%** with `adsr_gated_off`
+    44 → 0, `reversal_ratio` 0.484 → 0.978, `bend_ratio` 0.792 → 0.940 and
+    `wave` 99.73 → 99.83%, and its comparable-instrument count goes 2 → 3 with
+    all three matched. The option reaches **3 of 89** songs; the other two
+    (`Dragons_Lair_Part_II`, `Gremlins`) move bytes and leave EVERY numeric
+    column identical, and they emit 10 and 7 subtunes against Delta's 1, so the
+    hazard above argues against them independently of the score. Note too that
     `Delta_Mix-E-Load_loader`'s PSID header declares **16** subtunes while its
     `.sng` emits **1**: the criterion for the hazard is the EMITTED count, not
     the header's, and the docstring does not say which it means. See

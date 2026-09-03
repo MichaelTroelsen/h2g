@@ -584,6 +584,53 @@ def test_a_bit_can_be_tested_without_the_block_being_warhawks():
     assert _detect_effects("Mega_Apocalypse") == (False, False, False, False, 0)
 
 
+def test_the_effect_byte_is_not_a_field_on_detection():
+    """`_effect_byte_address` is a FUNCTION, and its result is a local at each
+    of its call sites -- it is never stored on `Detection`.
+
+    This is pinned because reading it as a field is a probe bug that returns
+    the SAME answer for every song and therefore looks like a per-file fact.
+    A task once recorded "on Auf_Wiedersehen_Monty `det.effect_byte_address`
+    is None, so the per-record effect byte is not located", and built a whole
+    explanation on it (the player reaching its records through a pointer, with
+    nothing for the probe to anchor on). The function returns `(0xEB10, False)`
+    for that file. Same shape as the sha256-for-sha1 retraction: a reduction
+    that disagrees on EVERY file is the instrument, not the subject.
+    """
+    import dataclasses
+
+    names = {f.name for f in dataclasses.fields(Detection)}
+    assert "effect_byte_address" not in names, (
+        "if this field is ever added, delete this test and the docstring's "
+        "warning with it -- until then, ask the function")
+
+
+def test_monty_locates_its_per_record_effect_byte():
+    """The refutation, on the file the claim was about.
+
+    Auf_Wiedersehen_Monty reads record 0's `+7` with a plain absolute-Y load,
+    `LDA $ECB7,Y` -- exactly the `B9 lo hi` shape `_effect_byte_address`
+    searches for -- and stores it to $EB10. There is no pointer indirection to
+    teach the probe, and nothing about this file is out of its reach.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import HLEN, detect
+    from h2g.search import search_file
+    sid = load_sid(str(CORPUS / "Auf_Wiedersehen_Monty.sid"))
+    det = detect(sid, log=lambda m: None)
+
+    assert det.effect_bit40, "the file-level bit-$40 reader is found"
+    found = _effect_byte_address(sid, det)
+    assert found is not None, "the per-record byte IS located"
+    addr, zp = found
+    assert (addr, zp) == (0xEB10, False), found
+
+    base = det.instr_start - (HLEN - 1) + sid.load_addr + 7
+    assert base == 0xECB7, hex(base)
+    assert search_file(sid.data, "B9 %02X %02X" % (base & 0xFF, base >> 8)) > -1
+
+
 def test_the_noise_tick_length_is_derived_from_the_gate():
     """v0.5.191. `run = gate - 1` is the mechanism behind the hardcoded 2: the
     drum's "first vbl" test compares against a length that decrements once per

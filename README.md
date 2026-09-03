@@ -679,9 +679,25 @@ historical as of v0.5.435**: the flag is now inert on that file, because
 exclusive and `Bangkok_Knights` carries the latter. Converted both ways today
 its `.sng` is byte-identical.
 
-So the flag has **no measured beneficiary today**. It is kept, off, because
-the mechanism it implements is real and the silence it targeted may recur;
-it is not kept because any file is currently better with it.
+**IT HAS A MEASURED BENEFICIARY AS OF f0fd20c, AND THE FIGURES ABOVE ARE
+HISTORY.** Everything above this paragraph was measured under the off-by-one
+numbering, i.e. it measures the bug; do not quote it as current. Re-taken at
+-t 60 with the numbering `3262907` corrected, each file against its shipped
+preset, the option reaches **3 of 89** songs -- the same three -- and one of
+them GAINS:
+
+| file | with the option |
+|---|---|
+| `Delta_Mix-E-Load_loader` | `adsr` **66.7% → 100.0%** (`adsr_gated_off` 44 → 0), `reversal_ratio` 0.484 → **0.978**, `bend_ratio` 0.792 → 0.940, `wave` 99.73% → 99.83%, comparable instruments 2 → 3 and all matched. `depth_ratio` 1.1045 → 0.9930 and `pulse_span` 1.0066 → 0.9949 are both *closer to 1* in log space. **Adopted.** |
+| `Dragons_Lair_Part_II` | bytes move, **every numeric column identical** |
+| `Gremlins` | bytes move, **every numeric column identical** |
+
+So the flag is now **on for `Delta_Mix-E-Load_loader`** in `presets.json` and
+off everywhere else. The other two are refused on two independent grounds: no
+dimension this report carries can see the change at all, and they emit 10 and 7
+subtunes against Delta's 1, so the mutable-index hazard below argues against
+them regardless of score. It stays off by default because the hazard is real
+and the population is three files.
 
 **AND THE REASON IT HAS NO BENEFICIARY IS AN OFF-BY-ONE, NOT THE MECHANISM.**
 `tracks._initial_for` returns `initial_instruments[voice] + 2`
@@ -2331,6 +2347,105 @@ width only matters when the maximum is not being taken. A search walking both
 booleans together spends a quarter of its combinations on a distinction that
 cannot exist; that pruning is not implemented, because changing the walk needs
 its own two-arm corpus A/B before adoption.
+
+### `--regrid` (a row that is not a whole number of play calls)
+
+A Goattracker row is a whole number of play calls, so a player whose row is
+384/127 = 3.0236 frames (Auf Wiedersehen Monty, subtune 0) is emitted at 3 and
+loses 0.0236 frames every row. Nothing about the music is wrong — `--pace` reads
+the ratio as 1.000 over 436 gaps — but the tune runs 0.78% fast and the error
+INTEGRATES: 15 frames by 38 seconds, which is where a listener reported voice 2
+entering early after a 12-second rest. A voice that never stops is inaudibly
+fast; a voice that re-enters is audibly early against the ones that did not.
+
+`effective_frames` already declines the exact row when its denominator exceeds
+`MAX_ROW_DENOMINATOR`, and 3 is the best rational approximation to 3.0236 at
+every denominator up to 10 — the next candidate, 31/10, is three times worse —
+so no tempo can fix this. The flag gives one row in 42 an extra call with
+`CMD_SETTEMPO` and takes it back on the next row. See `regrid_tempos` for the
+three refusals the schedule makes (row 0 belongs to the subtune's clock, the
+restore must stay inside the pattern, and a pattern reached by subtunes with
+different clocks is left alone).
+
+**It reaches 17 corpus files and is adopted on 13.** Measured by corpus
+byte-hash at f0fd20c: every file converted on its shipped preset with `regrid`
+forced False and then True, 89 of 89 converting in both arms, exactly 17 moved.
+The four refusals are `BMX_Kidz`, `One_on_One_Jordan_vs_Bird`,
+`Powerplay_Hockey_USA_vs_USSR` and `Sanxion` — and they are not one kind of
+refusal. BMX_Kidz's drift is `-7.87 -> -7.87`, identical to two decimals: the
+compensation does not reach that file's phase error at all, so there is no
+measured decision to record. The other three are damaged, which is the
+incompatibility below.
+
+**Nothing in `FIDELITY.md` can adjudicate this option.** Every column compares
+*what* is played, so a tune playing the right music 0.78% fast forever scores
+perfectly. `--pace`'s `drift` line is the only instrument that reads it and it is
+not a report column, so each adoption is a hand-recorded measurement rather than
+a search result — and `fidelity_better` must not be given it.
+
+#### Incompatible with `--no-test-restart` on some files, and the discriminator needs a trace
+
+`--no-test-restart` deletes the testbit frame, the only frame our conversions
+spend below `$10`, and siddump needs a frame below `$10` to name an attack at all
+(`siddump.c:434-437`). So that option OWNS FRAME 0 — and a compensating row moves
+the frame boundary underneath it. Turning `no_test_restart` off removes the
+collapse on both casualties, and the damaged voice lands on the original's own
+note count:
+
+    Sanxion     -19.9pp -> +0.2pp   v1 collapsed 346 -> 343 (orig 344)
+    One_on_One  -37.0pp -> +0.5pp   v2 collapsed 188 -> 186 (orig 186)
+
+**NECESSARY, NOT SUFFICIENT — a blanket veto would be wrong.** Seven of the 17
+carry both, and FOUR of those seven are fine and ship `--regrid`:
+
+| carries both | `--regrid` |
+|---|---|
+| `Arcade_Classics`, `Rikky`, `Sigma_Seven`, `Wiz` | **adopted, measured** |
+| `One_on_One_Jordan_vs_Bird`, `Powerplay_Hockey_USA_vs_USSR`, `Sanxion` | refused |
+
+Refusing the option whenever `no_test_restart` is set would throw away four
+measured adoptions.
+
+**THE DISCRIMINATOR IS THE DIRECTION OF THE COLLAPSED-NOTE SURPLUS** (v0.5.436),
+and it separates all seven with no overlap. `melody` is a difflib ratio over the
+COLLAPSED attack sequence, so a rename costs three collapsed notes when it lands
+INSIDE a run of identical attacks and one when it does not. Without `--regrid`
+every one of the seven sits just above the original's collapsed count; with it
+the refused files' surplus GROWS and the adopted files' SHRINKS toward zero —
+
+    REFUSED   One_on_One +6 -> +24   Sanxion +6 -> +12   Powerplay +4 -> +6
+    ADOPTED   Rikky +4 -> -1   Sigma_Seven +2 -> +1   Arcade +3 -> +1   Wiz +9 -> +3
+
+— and the melody loss is monotone in the growth (+18 -> -37.0pp, +6 -> -19.9pp,
++2 -> -2.9pp).
+
+**That test requires a trace, and no trace-free proxy for it exists.** Sixteen
+candidate discriminators are recorded dead in `runs.jsonl` under
+`rikky-immunity-to-regrid-is-unexplained`, and three more — built from the
+emitted patterns' repeated-attack run structure, with and without knowing where
+the compensation lands — were refuted at f0fd20c. The reason is structural:
+`--regrid` changes NO note the patterns emit. Across all 17 files, **0 of 67,847
+pattern rows differ in the note and instrument columns** while 2,214 differ in
+the command column and nothing else, so a collapsed-note count derived from the
+patterns is identical in both arms *by construction* and the separating quantity
+is purely a RENAMING one, decided by the per-call pitch phase at the shifted
+frame.
+
+**A ROW GUARD CANNOT SUBSTITUTE, and that was measured rather than assumed.**
+The compensation is written only into voice 0's exclusive patterns, so a guard
+declining rows where a note starts can inspect voice 0 and nothing else. Two
+numbers close it: only **142 of 1,107 lengthened rows (12.8%)** have a voice-0
+note on the row after the lengthened one — One_on_One 7 of 41, Sanxion 7 of 73,
+Powerplay 6 of 45 — and the damage is in **voice 2** on One_on_One and **voice 1**
+on Sanxion, invisible to any voice-0 test. A cross-voice positional guard is
+ill-defined for the same reason the schedule is pattern-global: 169 of the 304
+written patterns are replayed, Wiz's up to 14 times, so "what the other voices
+play at this row" has up to 14 answers.
+
+**So the rule is per song, and it is a measurement rather than a policy: do not
+adopt `--regrid` on a file carrying `--no-test-restart` without tracing that file
+and reading its collapsed surplus.**
+
 
 ### Per-song presets — `presets.json`
 

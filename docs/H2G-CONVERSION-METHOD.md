@@ -7425,6 +7425,45 @@ the derived dialect actually emitted, and `det.wave_alternate_noise` is still
 produced this correction; opened as a follow-up, which should also chase what
 moved Chicken_Song's baseline wave.
 
+#### `_wave_alternate_entries` exists, and that is not a contradiction
+
+Settled at f0fd20c, because it reads like one. The record above says the
+post-emission half "requires actually emitting bit `$02`'s derived dialect,
+which has no code path today" — and anyone checking that finds
+`goatwriter._wave_alternate_entries` at :775, added in **`6adad52`
+(v0.5.231, "emit effect bit $02's alternating waveform — 21 files, 98
+records")**, which `git merge-base --is-ancestor 6adad52 73354bd` confirms
+**predates** the record. Both statements are true, because they are about
+different things:
+
+* `_wave_alternate_entries` is the shared **helper** that writes the
+  alternating pair, and two call sites reach it — `det.wave_alternate`, the
+  **tabled** alternate of § 7.hhhh (gated on `effects and (arp_style & 0x02)`),
+  and `det.voice_wave_alternate`, the **per-voice** dialect (gated on the
+  record's bit `$01` and on the instrument resolving to a voice).
+* `det.wave_alternate_noise` — *this* section's **derived** dialect,
+  `$80 | (wave & $07)` off a global counter — has no route to that helper or
+  to anything else.
+
+So the record meant the narrower thing and its blocker was real: **the emitted
+dialect is not the derived one.** The difference is the pair named at the top
+of this section — a global frame counter rather than a per-voice one, and an
+alternate *derived* from the waveform rather than read from a table. A grep for
+the helper cannot see that difference, which is why it is written here.
+
+**And there is no `wave_alternate` option to adopt.** `convert()` has no such
+parameter, it appears in no toggle list, and it is absent from `presets.json`'s
+`always` block — so "adopted on 0 songs" is *not* the selection gap that
+`--regrid` and `pulse_phase` have, where a real option exists and the search
+cannot reach it. The two shipped dialects are gated on detection plus the
+record's own bit; the derived one is gated on nothing, because nothing calls it.
+
+Both files' baselines were re-confirmed at f0fd20c against the regenerated
+report and have **not** moved from the table above: Chicken_Song `wave 84.1%`,
+`onset_agreement 57.1%`, `our_noise_frames 0` against the original's 654,
+`melody 61.9%`; Hollywood_or_Bust `wave 83.3%`, `onset_agreement 71.4%`,
+`our_noise_frames 0` against 1500, `melody 57.6%`.
+
 Baselines as re-taken, current tree, no dialect emitted:
 
 ```

@@ -93,3 +93,54 @@ def test_a_failed_row_is_reported_rather_than_dropped():
     """A file that will not convert must appear, not vanish from the table."""
     text = F.naming_census_report([{"file": "Bad.sid", "error": "RuntimeError: x"}])
     assert "Bad.sid" in text and "RuntimeError" in text
+
+
+def test_the_substitutions_are_reported_with_their_pitch_distance():
+    """A share cannot say WHETHER a substitution was a naming artefact.
+
+    One semitone is the artefact the `melody` Dimension documents -- a
+    sub-semitone pitch shift crossing a note-naming boundary. A wider jump is
+    a different note, and this repair crediting it to the naming half would be
+    wrong, so the pairs and their distances are reported beside the share.
+    """
+    orig = voices(["C-4", "D-4", "E-4"])
+    arm_a = voices(["C-4", "D-4", "E-4"])
+    arm_b = voices(["C-4", "C#4", "E-4"])          # D-4 -> C#4, one semitone
+
+    got = F.naming_split(orig, arm_a, arm_b)
+    assert got["renames"] == 1
+    assert got["rename_pairs"] == [(("D-4", "C#4"), 1)]
+    assert got["rename_semitones"] == [-1]
+
+
+def test_a_wide_substitution_is_reported_as_wide_rather_than_hidden():
+    """The distance is what separates a naming artefact from a different note.
+
+    The repair still applies here -- difflib sees an equal-length replace and
+    cannot know better -- so the honest thing is to SAY how far it moved,
+    which is what makes a wrongly-credited structural substitution visible in
+    the census instead of silently inflating the naming share.
+    """
+    orig = voices(["C-4", "D-4", "E-4"])
+    arm_a = voices(["C-4", "D-4", "E-4"])
+    arm_b = voices(["C-4", "A-5", "E-4"])          # D-4 -> A-5, 19 semitones
+
+    got = F.naming_split(orig, arm_a, arm_b)
+    assert got["rename_pairs"] == [(("D-4", "A-5"), 1)]
+    assert got["rename_semitones"] == [19], got["rename_semitones"]
+
+
+def test_the_report_lists_what_was_substituted():
+    """The census names the pairs, so a reader can see the population rather
+    than only its size -- the distinction that showed Powerplay's 3, 7 and 8
+    renames to be three coverages of one eight-attack population."""
+    rec = {
+        "file": "x.sid", "melody_a": 0.99, "melody_b": 0.96,
+        "melody_repaired": 0.99, "loss": 0.03, "recovered": 0.03,
+        "renames": 2, "naming_share": 1.0,
+        "rename_pairs": [(("A#4", "A-4"), 2)], "rename_semitones": [-1],
+    }
+    md = F.naming_census_report([rec])
+    assert "## What was substituted" in md
+    assert "`A#4->A-4` x2" in md
+    assert "| -1 |" in md

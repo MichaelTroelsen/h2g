@@ -3881,6 +3881,43 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # wavetables (v0.5.163) are what make the extra entries affordable.
     off = 0
     if tick:
+        # **DROPPING THIS GATE BIT IS REFUSED, and the reason is measured over
+        # the population it reaches -- 33 of the 89 corpus songs at f0fd20c.**
+        # Action Biker's drum opens THREE gated frames where its original opens
+        # one (`09 | 81 81 81 80 ...` against `40 | 81 80 80 80 ...`), and
+        # forcing these noise entries to a bare `$80` is the obvious repair.
+        # A/B'd at -t 60 over all 33 reached files, it fails twice over:
+        #
+        #   * it does not fix the motivating defect. Action_Biker's
+        #     `noise_run_agreement` stays 0.0, `noise_run_matched` 0 of 1 and
+        #     `our_noise_frames` 682 against the original's 744 -- IDENTICAL in
+        #     both arms. The run LENGTH is what is wrong there (62 runs of 11
+        #     frames against the original's 12) and the leading gate bit is not
+        #     what sets it.
+        #   * and it costs melody on seven files, up to **-31.8pp**:
+        #     One_Man_and_his_Droid 100.0 -> 68.2, Spellbound 95.4 -> 72.7,
+        #     Phantoms_of_the_Asteroid 100.0 -> 92.9, Proteus 89.4 -> 81.8,
+        #     Game_Killer 100.0 -> 97.4, Chimera 99.1 -> 98.5, Warhawk
+        #     89.5 -> 89.3; Deep_Strike also loses a little `gate`.
+        #
+        # It DOES improve `gate` broadly (21 files better and nothing else
+        # worse -- Commando 42.7 -> 57.6, Crazy_Comets 58.7 -> 77.4, Warhawk
+        # 88.5 -> 95.3), and `nrun` and `wave` move on NOT ONE of the 33. So
+        # the trade is a real gate gain against a real melody loss, and this
+        # repo does not pay melody for register agreement -- the same rule
+        # `fidelity_better`'s note-keeping guard enforces.
+        #
+        # **THE OLD REASON FOR REFUSING IT WAS WRONG AND IS RETRACTED.** The
+        # standing note (v0.5.445) said "ACE_II IS THE LEAD: its original wants
+        # 0 leading gated frames, the change gives it 0, and it got WORSE -- so
+        # the OR controls something beyond the leading count". ACE_II is **not
+        # in the reach**: its conversion is byte-identical with and without this
+        # bit, so the change gave it nothing and cannot have made it worse. Its
+        # per-offset gate agreement against the original is identical to the
+        # digit in both arms on all three voices. Whatever moved ACE_II in that
+        # earlier A/B, it was not this expression -- so do not go looking for a
+        # second thing the OR controls; on this evidence it controls the leading
+        # gated frames and nothing else.
         noise = WAVE_NOISE_GATEOFF | (wave & 0x01)
         # **The tick's length is the player's speed gate less one, not the
         # constant**, exactly as it is in `_drum_entries` -- the same rule

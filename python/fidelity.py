@@ -906,12 +906,40 @@ def naming_split(orig: list[Voice], arm_a: list[Voice],
     difflib count and must be quoted with that qualifier; `naming_share` is
     the number to reason with, because it is anchored on a re-score rather
     than on a tally.
+
+    **AND THE THREE COUNTS ARE THREE COVERAGES OF ONE POPULATION, NOT THREE
+    CRITERIA -- measured, not argued.** Powerplay's renames were censused
+    independently by the `melody` Dimension at v0.5.434 as three pairs,
+    `A#4->A-4` x4, `D-5->C#5` x2 and `G-5->F#5` x2: EIGHT attacks, and every
+    pair exactly one semitone down. Read against that census:
+
+        alignment                     pairs found            share
+        ce27e41's positional difflib  A#4 x2, D-5 x1  = 3     67%
+        this function (shipped)       A#4 x3, D-5 x2, G-5 x2 = 7   94%
+        index-wise substitution       all 8                  100% by construction
+
+    So 3, 7 and 8 are 3/8, 7/8 and 8/8 of ONE eight-attack population, and
+    `rename_semitones` reads a single value, `-1`, on all of them. The 67%
+    is therefore not a rival reading to reproduce -- it is the recovery of
+    the alignment that paired the fewest of the same eight, and a target
+    figure taken from it is a property of that alignment rather than of the
+    file. **The 100% is the other end of the same artefact**: substituting by
+    INDEX makes arm B equal arm A wherever the two overlap, so it recovers
+    any loss whatever by construction and measures nothing.
+
+    That is why this function reports `rename_pairs` and `rename_semitones`
+    beside the share: the pairs make the population visible, and the
+    distances say whether a substitution is the documented naming-boundary
+    artefact (one semitone, a sub-semitone pitch shift crossing a note name)
+    or a structural change this repair should never have credited to the
+    naming half.
     """
     a_score = compare(orig, arm_a)["melody"]
     b_score = compare(orig, arm_b)["melody"]
 
     repaired: list[Voice] = []
     renames = 0
+    pairs: dict[tuple[str, str], int] = {}
     for va, vb in zip(arm_a, arm_b):
         names = list(vb.attacks)
         sm = difflib.SequenceMatcher(a=va.attacks, b=vb.attacks,
@@ -925,6 +953,11 @@ def naming_split(orig: list[Voice], arm_a: list[Voice],
                 continue
             for k in range(i2 - i1):
                 if names[j1 + k] != va.attacks[i1 + k]:
+                    # Named in the direction the OPTION moved the pitch --
+                    # arm A's name first -- so a row reads the way the melody
+                    # Dimension's own census writes it (`A#4->A-4`).
+                    key = (va.attacks[i1 + k], names[j1 + k])
+                    pairs[key] = pairs.get(key, 0) + 1
                     names[j1 + k] = va.attacks[i1 + k]
                     renames += 1
         repaired.append(dataclasses.replace(vb, attacks=names))
@@ -939,6 +972,16 @@ def naming_split(orig: list[Voice], arm_a: list[Voice],
         "loss": loss,
         "recovered": recovered,
         "renames": renames,
+        # WHAT was substituted, not just how much. A share alone cannot say
+        # whether a substitution is a naming-boundary artefact or a different
+        # note, and the two want opposite fixes -- so report the pairs and how
+        # far each moved. A gap of one semitone is the signature the melody
+        # Dimension documents (a sub-semitone pitch shift crossing a naming
+        # boundary); anything larger is structural and this repair should not
+        # have credited it to the naming half.
+        "rename_pairs": sorted(((a, b), n) for (a, b), n in pairs.items()),
+        "rename_semitones": sorted(
+            {_semitone(b) - _semitone(a) for a, b in pairs}),
         # None rather than a number when arm B did not lose: a share of a
         # non-loss is not meaningful, and returning 0.0 there would read as
         # "none of it was naming" rather than "there was nothing to split".
@@ -960,12 +1003,18 @@ def naming_census_report(recs: list[dict]) -> str:
            "`naming share`, which is anchored on a re-score rather than a "
            "tally.",
            "",
+           "A substitution ONE SEMITONE wide is the artefact the `melody` "
+           "Dimension documents -- a sub-semitone pitch shift crossing a "
+           "note-naming boundary. A WIDER one is a different note, and "
+           "crediting it to the naming half would be wrong, so `st` gives "
+           "the distances and the pairs are listed under the table.",
+           "",
            "| file | melody A | melody B | repaired | loss | recovered | "
-           "naming share | renames |",
-           "|---|---:|---:|---:|---:|---:|---:|---:|"]
+           "naming share | renames | st |",
+           "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
     for r in recs:
         if r.get("error"):
-            out.append(f"| {r['file']} | {r['error']} | | | | | | |")
+            out.append(f"| {r['file']} | {r['error']} | | | | | | | |")
             continue
         share = ("-" if r["naming_share"] is None
                  else f"{100 * r['naming_share']:.0f}%")
@@ -973,7 +1022,19 @@ def naming_census_report(recs: list[dict]) -> str:
             f"| {r['file']} | {100 * r['melody_a']:.1f}% | "
             f"{100 * r['melody_b']:.1f}% | {100 * r['melody_repaired']:.1f}% | "
             f"{100 * r['loss']:+.2f}pp | {100 * r['recovered']:+.2f}pp | "
-            f"{share} | {r['renames']} |")
+            f"{share} | {r['renames']} | "
+            # `.get`, not `[]`: a record written before these fields
+            # existed -- a hand-built rec, or a saved --json row -- must
+            # still render rather than raise, the same fallback shape
+            # `output_sha` and `subtune_shas` already use.
+            f"{','.join(f'{v:+d}' for v in r.get('rename_semitones') or ()) or '-'} |")
+    detail = [(r["file"], r["rename_pairs"]) for r in recs
+              if r.get("rename_pairs")]        # absent on an older record
+    if detail:
+        out += ["", "## What was substituted", ""]
+        for name, pairs in detail:
+            listed = "  ".join(f"`{a}->{b}` x{n}" for (a, b), n in pairs)
+            out.append(f"* **{name}** -- {listed}")
     return "\n".join(out) + "\n"
 
 

@@ -306,7 +306,11 @@ def _build_raw_pattern(data: bytes, addr: int,
         cmd2 = 0
         # (command, data) for the event's FIRST hold row, where it needs one
         # of its own rather than the repeat of `cmd1` the loop below writes.
-        hold_cmd: Optional[tuple] = None
+        # One (cmd, value) per HOLD row of a bit-6 event, in order.
+        # A list rather than a single slot because a rest can owe
+        # THREE writes -- see the rest branch below -- and a row has
+        # one command column.
+        hold_cmds: list = []
         b1 = data[addr + i2]
 
         if b1 == 0xFF:
@@ -370,7 +374,33 @@ def _build_raw_pattern(data: bytes, addr: int,
             # *loops*, WAVEEXEC runs every frame at gplay.c:525 and would
             # clobber this within the frame; that is why the claim is about
             # these files and not about the format.
-            if rest_wave:
+            # BOTH FAMILIES AT ONCE, ordered by audibility. Until
+            # v0.5.453 this was `if rest_wave: ... elif rest_envelope: ...`,
+            # so a conversion asking for both got the waveform park and the
+            # envelope write was dropped WITHOUT a word -- measured
+            # byte-identical to wave-only on ACE_II, Monty, Thundercats and
+            # Shockway_Rider. The two are not alternatives: one parks a
+            # waveform and the other stops the envelope, and the player does
+            # both on the same rest.
+            #
+            # A row has ONE command column, so the schedule spends row 0 on
+            # the audible write and the hold rows on the rest, which is the
+            # mechanism the AD half already used:
+            #
+            #     row 0        CMD_SETSR $00   the release rate the ring-out
+            #                                  plays at -- the audible one
+            #     hold row 0   CMD_SETWAVE     the parked waveform
+            #     hold row 1   CMD_SETAD $00   inaudible across a rest
+            #
+            # A `wait` too short to hold them all drops from the END, so the
+            # audible write is never the one displaced. With only one option
+            # set the emission is UNCHANGED, which is what keeps every
+            # shipped conversion byte-identical.
+            if rest_wave and rest_envelope and rest_keyoff:
+                cmd1, cmd2 = CMD_SETSR, 0x00
+                hold_cmds = [(CMD_SETWAVE, REST_SILENT_WAVE),
+                             (CMD_SETAD, 0x00)]
+            elif rest_wave:
                 cmd1, cmd2 = CMD_SETWAVE, REST_SILENT_WAVE
             # ...and the half of that branch **both** families share: the
             # envelope pair is zeroed, so the note that was sounding stops
@@ -427,7 +457,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                 # A `wait` of 0 has no hold row, so such a rest gets the SR
                 # write only. That is the right half to keep, and the AD is
                 # dropped rather than displacing it.
-                hold_cmd = (CMD_SETAD, 0x00)
+                hold_cmds = [(CMD_SETAD, 0x00)]
 
         if get_next:
             i2 += 1
@@ -643,8 +673,8 @@ def _build_raw_pattern(data: bytes, addr: int,
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
         for h in range(wait):
-            if h == 0 and hold_cmd is not None:
-                events += [GT_NO_NOTE, 0x00, hold_cmd[0], hold_cmd[1]]
+            if h < len(hold_cmds):
+                events += [GT_NO_NOTE, 0x00, hold_cmds[h][0], hold_cmds[h][1]]
                 continue
             events += [GT_NO_NOTE, 0x00, cmd1, cmd2]
 
@@ -2213,6 +2243,23 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
                     NOT SETTLED HERE -- a user adoption call carried by
                     `powerplay-regrid-refusal-rests-on-a-naming-artefact`.
                     Note for that decision: its drift improves SEVENFOLD.
+
+    **A ROW GUARD FOR THE `--no-test-restart` CLASH IS REFUTED, measured at
+    f0fd20c.** The proposal was to decline compensation on the rows where
+    `--no-test-restart` owns frame 0. This schedule writes only into voice 0's
+    exclusive patterns, so such a guard can inspect voice 0 and nothing else,
+    and two counts close it: only **142 of 1107 lengthened rows (12.8%)** have
+    a voice-0 note on the row after the lengthened one -- One_on_One 7 of 41,
+    Sanxion 7 of 73, Powerplay 6 of 45 -- and the damaged voice is **v2** on
+    One_on_One and **v1** on Sanxion, which no voice-0 test can see. Declining
+    those rows would also cost the 13 adopters budget (Rikky 14 of 196) for a
+    guard that cannot reach two of the three casualties. The cross-voice
+    version is ill-defined for the reason the paragraph above gives.
+
+    So the incompatibility is DOCUMENTED rather than guarded, and the
+    discriminator is the collapsed-surplus DIRECTION below, which needs a
+    trace. README.md § `--regrid` carries the whole account, including why no
+    trace-free proxy exists.
     """
     groups = len(tracks) // 3
     if groups != len(bases) or groups != len(deficits):

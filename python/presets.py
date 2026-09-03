@@ -1433,6 +1433,13 @@ def main(argv=None) -> int:
     # dropped them would leave three measured files silently back on the
     # default. Carried forward instead, and counted out loud.
     carried: dict[str, dict] = {}
+    # Whether -o actually named a readable previous file. Distinct from
+    # `carried` being empty: a real previous file can legitimately carry
+    # nothing (no song had a per-song decision to keep), where a MISSING
+    # or unreadable one means there was never anything to carry FROM at
+    # all -- and those two silences must not print the same way. See the
+    # warning below, near `kept`.
+    carry_source_readable = False
     # Read whatever the output file already records, whether or not this run
     # searches: without --fidelity it is what gets carried forward, and *with*
     # it, it is what a song whose search fails falls back to. Falling back to
@@ -1441,6 +1448,7 @@ def main(argv=None) -> int:
     if not args.no_carry:
         try:
             prev = json.loads(Path(args.output).read_text(encoding="utf-8"))
+            carry_source_readable = True
             for name, e in (prev.get("songs") or {}).items():
                 # FIDELITY_TOGGLES is not the whole set of per-song
                 # decisions. `hard_restart_frames` is an INT measured by
@@ -1716,6 +1724,23 @@ def main(argv=None) -> int:
         print(f"carried {kept} --fidelity setting(s) forward from "
               f"{args.output}; re-run with --fidelity to re-measure them",
               file=sys.stderr)
+    elif not args.no_carry and not carry_source_readable:
+        # THE DEFECT THIS GUARDS: with no previous file, `carried` is empty
+        # by construction (there was nothing to read), so `kept` is 0 and the
+        # branch above stays silent -- indistinguishable, from the output
+        # alone, from a run that read a real presets.json and found nothing
+        # worth carrying. A search written to a fresh -o path (the sharding
+        # case, or just a scratch path) then diffs against a shipped
+        # presets.json as though every carried setting had been destroyed,
+        # when none was ever carried in the first place. Cost a whole
+        # session at f0fd20c: 23 settings read as "destroyed" that were
+        # simply never carried, over `-o C:/t/hr1_candidate.json`. This
+        # cannot NAME the count that would have carried -- there is nothing
+        # to compare against -- so it says only what is true: none were.
+        print(f"warning: {args.output} has no previous file to carry "
+              "--fidelity settings from, so 0 were carried -- do not diff "
+              "this run's songs against another presets.json and read the "
+              "difference as settings this run destroyed", file=sys.stderr)
     if args.fidelity:
         n = sum(1 for e in songs.values()
                 if any(e.get(k) for k in FIDELITY_TOGGLES))

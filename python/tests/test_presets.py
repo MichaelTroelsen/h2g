@@ -7,6 +7,7 @@ explicit flag must still beat it.
 """
 import json
 import pathlib
+import shutil
 import subprocess
 import sys
 
@@ -354,3 +355,65 @@ def test_no_combination_without_max_is_pruned():
         extra = dict(zip(P.FIDELITY_TOGGLES, f))
         if not extra["max_hard_restart"]:
             assert not P._redundant_combination(extra), extra
+
+
+# --------------------------------------------------------------------------
+# A fresh -o path has nothing to carry FROM, and that must not be silent.
+# --------------------------------------------------------------------------
+
+def test_a_nonexistent_output_path_warns_nothing_was_carried(tmp_path, capsys):
+    """f0fd20c: a search written to a fresh `-o` path (`C:/t/hr1_candidate.json`)
+    produced a diff against the shipped presets.json that read as 23 destroyed
+    measurements -- regrid x12, rest_envelope_silence x4,
+    real_firstwave_instruments x2, pulse_phase x1, force_park x1. None was
+    destroyed; none was ever carried, because there was nothing at the output
+    path to carry FROM. `kept` was silently 0 either way (a real file with
+    nothing carryable, or no file at all), so the old code said nothing.
+
+    This is the plain structural pass (no --fidelity) -- the same silence the
+    task's own repro used, and the cheaper one to run in a test.
+    """
+    import presets as P
+
+    sid_dir = tmp_path / "sids"
+    sid_dir.mkdir()
+    shutil.copy(SID, sid_dir / SID.name)
+    out = tmp_path / "fresh.json"  # never written -- no previous file exists
+    assert not out.exists()
+
+    rc = P.main([str(sid_dir), "-o", str(out)])
+    assert rc == 0
+
+    stderr = capsys.readouterr().err
+    assert "no previous file" in stderr, stderr
+    assert "0 were carried" in stderr, stderr
+    # The old, silent behaviour: no "carried N ... forward" line at all,
+    # because kept was 0. Confirm the warning replaces that silence rather
+    # than an actual carry count being misreported.
+    assert "carried " not in stderr.split("no previous file")[0], stderr
+
+
+def test_an_existing_previous_file_still_prints_its_carried_count(tmp_path, capsys):
+    """The counterpart: -o pointing at a REAL previous file with a carryable
+    per-song setting must still print the ordinary `carried N ... forward`
+    line, and must NOT also print the new fresh-path warning -- the two are
+    mutually exclusive on purpose (one says how many, the other says why it
+    could not say how many).
+    """
+    import presets as P
+
+    sid_dir = tmp_path / "sids"
+    sid_dir.mkdir()
+    shutil.copy(SID, sid_dir / SID.name)
+
+    out = tmp_path / "existing.json"
+    out.write_text(json.dumps({
+        "always": {}, "songs": {SID.name: {"regrid": True}},
+    }), encoding="utf-8")
+
+    rc = P.main([str(sid_dir), "-o", str(out)])
+    assert rc == 0
+
+    stderr = capsys.readouterr().err
+    assert "carried 1 --fidelity setting(s) forward" in stderr, stderr
+    assert "no previous file" not in stderr, stderr

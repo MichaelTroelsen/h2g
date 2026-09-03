@@ -13,6 +13,7 @@ import pytest
 from h2g.detect import (STATUS_BIT6_SHAPE, _find_rest_silence_envelope,
                         detect)
 from h2g.patterns import (CMD_SETAD, CMD_SETSR, CMD_SETWAVE, GT_KEYOFF,
+                          REST_SILENT_WAVE,
                           GT_NO_NOTE, ONE_SHOT_COMMANDS, TEMPO_OVERWRITABLE,
                           _build_raw_pattern)
 from h2g.search import search_file
@@ -170,15 +171,53 @@ def test_it_declines_without_the_keyoff():
     assert rows[1][2] == 0, rows[1]
 
 
-def test_the_wave_silence_option_still_owns_the_column_where_both_are_asked():
+def test_both_options_share_the_event_instead_of_competing():
+    """REPLACES `..._still_owns_the_column_where_both_are_asked`, which pinned
+    the either/or this schedule removes.
+
+    Until v0.5.453 the rest row was `if rest_wave: SETWAVE elif
+    rest_envelope: SETSR`, so a conversion asking for both got the waveform
+    park and the envelope write was dropped without a word -- measured
+    byte-identical to wave-only on ACE_II, Monty, Thundercats and
+    Shockway_Rider. A row has one command column, so the three writes are
+    spread by audibility: the release rate on the rest row, the parked
+    waveform and then the AD half on the hold rows.
+    """
     rows = _rows(_decode([0x42], rest_keyoff=True, rest_wave=True,
                          rest_envelope=True))
-    assert rows[0][2] == CMD_SETWAVE
-    # The command is cleared for the hold rows and the data byte is not,
-    # which is how every ONE_SHOT_COMMANDS row has always been written --
-    # command 0 ignores its operand (gplay.c:415-418). What matters here is
-    # that no CMD_SETAD is smuggled onto the row behind the wave option.
-    assert rows[1][:3] == (GT_NO_NOTE, 0, 0), rows[1]
+    assert rows[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00), "the audible half, row 0"
+    assert rows[1] == (GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE), rows[1]
+    assert rows[2] == (GT_NO_NOTE, 0, CMD_SETAD, 0x00), rows[2]
+
+
+def test_a_short_rest_drops_from_the_end_not_from_the_front():
+    """One hold row cannot carry two writes, and the AD is the one to lose:
+    $D405 shapes only a rising envelope and the gate is off for the whole
+    rest, while the parked waveform and the release rate are both audible."""
+    one = _rows(_decode([0x41], rest_keyoff=True, rest_wave=True,
+                        rest_envelope=True))
+    assert one[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00)
+    assert one[1] == (GT_NO_NOTE, 0, CMD_SETWAVE, REST_SILENT_WAVE), one[1]
+    assert one[2][0] == 0xFF, "no second hold row, so no AD"
+
+    none = _rows(_decode([0x40], rest_keyoff=True, rest_wave=True,
+                         rest_envelope=True))
+    assert none[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00)
+    assert none[1][0] == 0xFF, "no hold row at all"
+
+
+def test_each_option_alone_is_unchanged_by_the_shared_schedule():
+    """The reason no shipped conversion moves: with one option set the
+    emission is exactly what it was, and a corpus byte-hash against HEAD
+    reads MOVED 0 of 89."""
+    wave_only = _rows(_decode([0x42], rest_keyoff=True, rest_wave=True))
+    assert wave_only[0] == (GT_KEYOFF, 0, CMD_SETWAVE, REST_SILENT_WAVE)
+    assert wave_only[1][:3] == (GT_NO_NOTE, 0, 0), wave_only[1]
+
+    env_only = _rows(_decode([0x42], rest_keyoff=True, rest_envelope=True))
+    assert env_only[0] == (GT_KEYOFF, 0, CMD_SETSR, 0x00)
+    assert env_only[1] == (GT_NO_NOTE, 0, CMD_SETAD, 0x00)
+    assert env_only[2] == (GT_NO_NOTE, 0, 0, 0)
 
 
 def test_a_note_event_is_untouched():
