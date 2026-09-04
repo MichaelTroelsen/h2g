@@ -18,6 +18,7 @@ both produced confident wrong numbers rather than failures:
 """
 import pathlib
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,6 +26,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from fidelity import (TICK_MIN_REGULAR, local_ratio, otsu,          # noqa: E402
                       tick_period)
+from h2g import detect as D                                          # noqa: E402
+from h2g import goatwriter as G                                      # noqa: E402
 
 
 def series(pattern, n, base=700, spike=950):
@@ -160,3 +163,74 @@ def test_the_guard_is_what_makes_it_an_instrument():
     assert TICK_MIN_REGULAR == 0.90
     good = tick_period(ticks_at([3], 300), skip=0)
     assert good["regular"] >= TICK_MIN_REGULAR and good["period"]
+
+
+# ---------------------------------------------------------------------------
+# The OTHER tick: the bit-$80 drum's noise hit, whose pitch is fixed.
+#
+# These live here rather than beside the sfx-drum's other tests because
+# `test_ticks.py` is the file the task that measured them was allowed to
+# write; the natural homes (`test_noise_tick.py`, `test_phantom_subtunes_sfx.py`)
+# were not declared, and an undeclared path is a stop.
+# ---------------------------------------------------------------------------
+
+CORPUS_DRUM_PITCHES = (0x38, 0x48)   # Trans-Atlantic Balloon; the other six
+
+
+def _drum_block(freq_reg, ctrl_reg, period=6):
+    """An image carrying the sfx-drum block with those two store targets."""
+    body = bytes([0xC9, period, 0xD0, 0x02,          # CMP #period / BNE +2
+                  0xA9, 0x48, 0x8D, freq_reg, 0xD4,  # LDA #$48 / STA $D4xx
+                  0xA9, 0x81, 0x8D, ctrl_reg, 0xD4])  # LDA #$81 / STA $D4xx
+    return SimpleNamespace(data=bytes(64) + body + bytes(64))
+
+
+def test_the_drum_hit_carries_an_absolute_note_and_never_the_played_one():
+    """The hit is a fixed pitch, in BOTH branches of `_sfx_drum_entries`.
+
+    Refuted three ways at 64c795b (see the function's own docstring): the
+    player's block has no store to the frequency LOW byte, so its only
+    note-dependence is the retained low byte -- 181-242 units of span over
+    1116-1423 measured drum frames a file, under 23 cents -- while emitting
+    `WAVE_NOTE_BASE` here would move the hit by a median +34 to +56 semitones
+    on the instruments that carry it, and costs melody or sequence on three
+    of the seven files at both -t 60 and -t 180 while gaining on none.
+
+    So this asserts the *absence* of the obvious repair, which is the thing a
+    reader is otherwise likely to try.
+    """
+    noise = G.WAVE_NOISE_GATEOFF | 0x01
+    for pitch_hi in CORPUS_DRUM_PITCHES:
+        note = G._sfx_note_byte(pitch_hi)
+        assert note > G.WAVE_NOTE_ABS, "an absolute note, not a relative one"
+        assert note != G.WAVE_NOTE_BASE and note != G.WAVE_NOTE_KEEP
+
+        left, right, loop = G._sfx_drum_entries(0x41, pitch_hi, 6)
+        hits = [i for i, v in enumerate(left) if v == noise]
+        assert hits and loop in hits, "the loop re-enters on the hit"
+        assert all(right[i] == note for i in hits)
+
+        # ...and with bit $40's own second pitch, which is a different fixed
+        # note and must not be mistaken for the played one either.
+        second = 0x9F
+        left, right, loop = G._sfx_drum_entries(0x41, pitch_hi, 6, 1, second)
+        hits = [i for i, v in enumerate(left) if v == noise]
+        assert hits and loop in hits
+        assert set(right[i] for i in hits) == {note, second}
+        assert G.WAVE_NOTE_BASE not in [right[i] for i in hits]
+
+
+def test_the_drum_block_writes_the_frequency_high_byte_only():
+    """A store to the frequency LOW register is not this block.
+
+    This is what makes "the player tracks the note" false rather than merely
+    unhelpful: `_find_sfx_drum` accepts the shape only when its two stores are
+    the frequency-HIGH and control registers of one voice, so a match is
+    positive evidence that the low byte is never written.
+    """
+    # $D40F / $D412 -- voice 3's frequency high byte and control register.
+    assert D._find_sfx_drum(_drum_block(0x0F, 0x12), None) == (0x48, 2, 6)
+    # $D40E is that voice's frequency LOW byte, and is refused.
+    assert D._find_sfx_drum(_drum_block(0x0E, 0x12), None) == (-1, -1, -1)
+    # ...as is a control register belonging to another voice.
+    assert D._find_sfx_drum(_drum_block(0x0F, 0x04), None) == (-1, -1, -1)

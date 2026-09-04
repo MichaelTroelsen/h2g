@@ -146,6 +146,46 @@ EXCLUDED_FROM_ALWAYS = {
     # invisible to `fidelity_better` for the same reason silent_park is:
     # melody, onset and noise cannot see a duty cycle's phase; `pspan` and
     # `pphase` can, and neither is a search criterion.
+    #
+    # **DECIDED AT 64c795b: IT STAYS HERE RATHER THAN JOINING
+    # FIDELITY_TOGGLES, AND THE REASON IS NOT COST.** Every leg of that is
+    # measured rather than reasoned.
+    #
+    # * **The criterion's entire input has no pulse term.** `tune_by_fidelity`'s
+    #   `play()` returns nine things -- melody, sequence, our attacks, a
+    #   (noise frames, theirs, our pitch, their pitch) tuple, `reversal_ratio`,
+    #   `onset_frame_agreement`, `sound_run_agreement`, `gate` and the
+    #   ORIGINAL's attack count. Not one reads $D402/$D403. (The sentence
+    #   above named three of those nine; it is nine now, and the conclusion is
+    #   unchanged.)
+    # * **So the search says no, and that is measured through the real
+    #   criterion rather than inferred from its terms.** With FIDELITY_TOGGLES
+    #   monkeypatched to `("pulse_phase",)` and the search run over the six
+    #   files the option reaches (5_Title_Tunes, Commando, Confuzion,
+    #   Geoff_Capes, Gerry_the_Germ, Zoids): **0 of 6 took it**. Run again
+    #   with the shipped seven PLUS pulse_phase: **0 of 6** again.
+    # * **AND IT WOULD DESTROY FOUR MEASURED ADOPTIONS.** `main()` carries a
+    #   previous entry's per-song decisions across a `--fidelity` run only
+    #   `if k not in FIDELITY_TOGGLES` -- membership is what makes the search
+    #   AUTHORITATIVE for a key. `pulse_phase` is adopted by hand on four of
+    #   the six (5_Title_Tunes, Commando, Gerry_the_Germ, Zoids), so promoting
+    #   it would replace four yeses with a no on the next regeneration. That
+    #   is the same failure this file records four times already, one line
+    #   down in the `regrid` entry and again in `carried_entry`.
+    # * **THE COST ARGUMENT IS REFUTED, so do not reach for it.** An eighth
+    #   toggle nominally doubles the walk (127 -> 255 combinations), but
+    #   `_redundant_combination` prunes every combination whose bytes are
+    #   already walked, so the real cost tracks the number of LIVE options per
+    #   song. Timed over the same six files: seven toggles **161.0 s**, eight
+    #   toggles **159.8 s** -- indistinguishable. (For scale, one toggle over
+    #   those six is 12 s, and 27 s a song puts a 7-toggle corpus search near
+    #   40 minutes for 89 songs, against the "about a minute a song / 80
+    #   minutes" in this file's own `--shard` help. That help is roughly 2x
+    #   pessimistic and CLAUDE.md's "8 minutes" is a FIVE-toggle figure.)
+    #
+    # If anyone does want it searchable, `FIDELITY_CONFIRMED` is the escape
+    # hatch -- but it would need all four files listed there, which is
+    # hand-recording with extra steps and strictly worse than this.
     "pulse_phase",
     # Per song, and the reason is that NOTHING `fidelity_better` scores can
     # see what it fixes. `--regrid` spends the fractional part of a row the
@@ -646,6 +686,37 @@ CARRIED_PER_SONG = tuple(FIDELITY_TOGGLES) + tuple(
 # `pitch_seq` earned its place by being invisible to every other criterion here:
 # it strikes no new notes and sounds no new register, so only the oscillation
 # term can recommend it. See fidelity_better.
+#
+# Two files that DETECT it were measured and refused, and the refusals have
+# different shapes -- see `food-feud-and-mega-apocalypse-now-detect-pitch-seq-
+# and-nobody-has-measured-enabling-it` at runs.jsonl line 322 for the full
+# trace. Re-taken over presets.json's 89 songs (0 conversion errors),
+# `pitch_seq` is DETECTED on 36, moves the bytes of 29 when forced, and is
+# ADOPTED on 12.
+#
+# **Food_Feud refuses on `vib` (`reversal_ratio`) -- the only column that
+# moves, at either window, and it moves AWAY from 1 in log space** (compare a
+# ratio in log space, per the rule above): at `-t 60` 1.1535 -> 2.3201
+# (|log| 0.1428 -> 0.8416), at `-t 180` 1.2336 -> 2.0054 (|log| 0.2100 ->
+# 0.6959). The mechanism: our reversals roughly DOUBLE (962 -> 1935 at 60 s,
+# 2957 -> 4807 at 180 s) against an original making ~834 and ~2397 -- the file
+# was already over-reversing and `pitch_seq` doubles the surplus. Melody is
+# exact either way (2524 attacks against the original's 2524), so nothing is
+# gained anywhere.
+#
+# **Mega_Apocalypse refuses on `melody`, `sequence` and `pitch`, and the
+# report's own 60 s window cannot see the trade at all.** At `-t 60` every
+# numeric column is identical between arms while `output_sha` differs
+# (bd7f58a303c4 -> b66d310d6b6f) -- the change reaches the file and nothing
+# registers it. At `-t 180` it is not flat: `vib` goes 0.8132 -> 0.9984
+# (|log| 0.2069 -> 0.0016, near-exact -- our reversals 3626 -> 4452 against
+# the original's ~4459), bought with `melody` 91.46 -> 87.02%, `sequence`
+# 92.23 -> 88.10% and `pitch_jaccard` 77.55 -> 64.81%. The file emits one
+# subtune, so the change living in an untraced subtune is excluded by
+# construction -- this is the window alone. `fidelity_better` refuses it with
+# all seven toggles free regardless of window (at 60 s because nothing
+# improves, at 180 s because melody falls), which is the per-song trade this
+# file's docstring elsewhere says the search cannot select.
 
 # How much better a setting must play before it is recorded. `melody` is a
 # difflib ratio, so small differences are noise; 2 points is well inside the
@@ -880,6 +951,11 @@ def fidelity_better(cand: tuple, ref: tuple,
     # oscillation for half a hold. `gave_back` deliberately does not watch that
     # ratio, for the reason stated above it, so `hold` has to decline the trade
     # itself.
+    #
+    # Mega_Apocalypse is this same trade from the other side, on `pitch_seq`
+    # rather than `no_test_restart`, and it is refused there by name (`melody`,
+    # `sequence`, `pitch`) rather than by a term that does not watch the ratio
+    # -- see the `pitch_seq` note above `FIDELITY_MARGIN`.
     #
     # **The veto is sized, and the second attempt got that wrong too.**
     # `_closer`'s margin is a fraction of the *remaining* gap, so on a ratio

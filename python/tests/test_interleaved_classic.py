@@ -34,7 +34,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from corpus import CORPUS, needs_corpus            # noqa: E402
-from h2g.detect import detect                      # noqa: E402
+from h2g.detect import detect, WAVEFORMS           # noqa: E402
 from h2g.sidfile import load_sid                    # noqa: E402
 
 # The six, and the address their init routine copies the authored track table
@@ -140,7 +140,8 @@ def test_the_digi_files_that_share_both_signatures_are_untouched(stem):
 # from the classic reader, which takes bit 7 as "an operand follows".
 # --------------------------------------------------------------------------
 from h2g.patterns import (_build_raw_pattern_ilv, GT_END_PATTERN,  # noqa: E402
-                          GT_KEYOFF, GT_NO_NOTE, ILV_COMMAND_OPERANDS)
+                          GT_KEYOFF, GT_NO_NOTE, ILV_COMMAND_OPERANDS,
+                          ILV_SLIDE)
 
 
 def _ilv(*by, instr_base=2):
@@ -246,3 +247,153 @@ def test_every_pattern_decodes_and_the_music_is_in_range(stem):
     assert notes > 100, "a whole file of patterns sounding almost nothing"
     assert clamped == 0, "notes are hitting the GT ceiling; the reading is off"
     assert max(rows) <= 200, f"{max(rows)} rows is not a pattern, it is a runaway"
+
+
+# --------------------------------------------------------------------------
+# Command $82 is a PORTAMENTO -- the only one of the seven effect commands
+# translated. See ILV_SLIDE in patterns.py for the routine it is read out of;
+# what matters here is the three properties that decide the emission, each of
+# which would be silently wrong in a different way.
+# --------------------------------------------------------------------------
+
+
+def _slid(*by, instr_base=2, steps=None):
+    return _build_raw_pattern_ilv(bytes([0, 0] + list(by)), 2,
+                                  instr_base=instr_base, slides=True,
+                                  steps=steps)
+
+
+def test_the_slide_operands_are_high_byte_first_and_the_pair_is_signed():
+    """`$1214 STA $1AB5,X` takes the FIRST operand and `$121A STA $1AB2,X` the
+    second, and $1668's add is one CLC/ADC pair with no direction test -- so a
+    high byte at or above $80 is a downward slide of the two's complement
+    magnitude, not an upward one of $FFxx."""
+    up = _slid(ILV_SLIDE, 0x01, 0x00, 0xC0, 20, 0x81)
+    assert up[0:4] == [0x60 + 20, 0, 1, 0x0100 // 4]        # CMD_PORTAUP
+    down = _slid(ILV_SLIDE, 0xFF, 0x00, 0xC0, 20, 0x81)
+    assert down[0:4] == [0x60 + 20, 0, 2, 0x0100 // 4]      # CMD_PORTADOWN
+    # ...and the halves are not interchangeable: $00 $01 is a step of ONE.
+    assert _slid(ILV_SLIDE, 0x00, 0x01, 0xC0, 20, 0x81)[2:4] == [1, 0]
+
+
+def test_the_slide_is_repeated_on_every_hold_row_of_its_own_event():
+    """The player adds the step once a FRAME for as long as the event lasts,
+    and a Goattracker command runs only on the row it appears on -- so a
+    continuous effect has to be written on all wait+1 rows. Emitting it once
+    would make a slide of any length last a single row."""
+    got = _slid(0xC2, ILV_SLIDE, 0x01, 0x00, 20, 0x81)
+    assert got[0:4] == [0x60 + 20, 0, 1, 0x40]
+    assert got[4:8] == [GT_NO_NOTE, 0, 1, 0x40]
+    assert got[8:12] == [GT_NO_NOTE, 0, 1, 0x40]
+    assert got[12:16] == [GT_END_PATTERN, 0, 0, 0]
+
+
+def test_the_slide_dies_with_its_event_and_needs_no_stop_command():
+    """`$1147-$114F` zeroes the step, the accumulator and the effect flags at
+    the top of EVERY pattern-byte fetch, before the command loop runs. So the
+    next event starts from no slide -- and because a Goattracker command does
+    not persist past its row, leaving the following rows blank reproduces that
+    exactly. A version that held the command would slide the whole pattern."""
+    got = _slid(0xC1, ILV_SLIDE, 0x01, 0x00, 20, 21, 0x81)
+    assert got[2:4] == [1, 0x40] and got[6:8] == [1, 0x40]
+    assert got[8:12] == [0x60 + 21, 0, 0, 0]
+    assert got[12:16] == [GT_NO_NOTE, 0, 0, 0]
+
+
+def test_a_rest_takes_the_slide_too_because_the_player_keeps_accumulating():
+    """$60 branches to a path that sounds nothing, but $1663's add is in the
+    frame routine and runs regardless, so the accumulator moves under a gated
+    -off voice. Inaudible either way; this is the reading that matches."""
+    got = _slid(ILV_SLIDE, 0x01, 0x00, 0xC0, 0x60, 0x81)
+    assert got[0:4] == [GT_KEYOFF, 0, 1, 0x40]
+
+
+def test_without_slides_the_command_is_consumed_and_no_column_is_written():
+    """Off by default, exactly like every other decoder's slide reading -- and
+    the operand count still has to be exact or the note after it would be
+    decoded as an operand."""
+    plain = _build_raw_pattern_ilv(
+        bytes([0, 0, ILV_SLIDE, 0x01, 0x00, 0xC0, 20, 0x81]), 2)
+    assert plain[0:4] == [0x60 + 20, 0, 0, 0]
+    assert plain[4:8] == [GT_END_PATTERN, 0, 0, 0]
+
+
+def test_the_step_is_collected_at_full_width_when_a_speed_table_is_offered():
+    """`min(step // 4, $FF)` saturates every step above 1020 and rounds every
+    step below 4 to nothing, so a GTS5 file carries an INDEX into its own list
+    of distinct steps instead. Both halves are asserted: the list gets the
+    16-bit value, the column gets its 1-based index."""
+    steps = []
+    got = _slid(ILV_SLIDE, 0x08, 0x00, 0xC0, 20, 0x81, steps=steps)
+    assert steps == [0x0800]
+    assert got[2:4] == [1, 1]
+    # a second, distinct step appends rather than replacing
+    got = _slid(ILV_SLIDE, 0x00, 0x02, 0xC0, 20, 0x81, steps=steps)
+    assert steps == [0x0800, 0x0002]
+    assert got[2:4] == [1, 2]
+
+
+@needs_corpus
+@pytest.mark.parametrize("stem", sorted(INTERLEAVED))
+def test_every_one_of_the_six_actually_emits_slides(stem):
+    """The reach half. All six read `slides 0/nnn` and `bend 0.00x` before
+    this command was decoded -- right notes, no pitch movement anywhere -- so
+    a file that emits none has lost the command rather than not needing it."""
+    from h2g.convert import convert
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    import songview
+    blob = convert(str(CORPUS / f"{stem}.sid"), log=lambda m: None,
+                   fmt="gts5", slides=True)
+    song = songview.parse_sng(blob)
+    slides = sum(1 for p in song.patterns
+                 for j in range(0, len(p), 4) if p[j + 2] in (1, 2))
+    assert slides > 0, f"{stem} emitted no portamento at all"
+
+
+# --------------------------------------------------------------------------
+# A KNOWN DEFECT, pinned so that fixing it announces itself.
+# --------------------------------------------------------------------------
+
+
+def _instrument_recount(sid, det, stride):
+    """`detect`'s own instrument walk, at whatever stride is passed."""
+    d = sid.data
+    j, n = det.instr_start + 2, 0
+    while True:
+        if j < 0 or j >= len(d) or d[j] not in WAVEFORMS:
+            return n
+        j += stride
+        if j >= len(d):
+            return n
+        n += 1
+
+
+@needs_corpus
+@pytest.mark.parametrize("stem", sorted(INTERLEAVED))
+def test_the_instrument_count_is_taken_at_the_dialects_own_stride(stem):
+    """The count and the record reading must use the same stride.
+
+    `_detect_interleaved_classic` is the rescue chain and is consulted LAST,
+    long after the instrument walk -- so until `detect()` re-took the count
+    where the stride settles, `instr_used` was a stride-8 count of a stride-16
+    table on every one of these six files. It was not cosmetic: a Goattracker
+    instrument number past the end of the table sounds NOTHING, and 1768 of
+    Go_Go_Dash's 2456 notes (72%) named one, which was the whole of its 36%
+    melody. Over-counting is the other half -- Lion_Heart read 27 where 17
+    records exist, so ten instruments were written out of whatever follows the
+    table.
+
+    **This was a strict xfail until the re-take landed**, and the recount here
+    is deliberately its OWN walk rather than a call to
+    `detect._count_instruments`: sharing the shipped helper would make the
+    assertion tautological, and the whole value of this test is that a second
+    reader agrees.
+
+    Censused at 64c795b: of the 15 corpus files with `instr_stride == 16`,
+    exactly these six disagreed with their own recount; the nine digi files,
+    whose chain sets the stride before the walk, always agreed.
+    """
+    sid = load_sid(str(CORPUS / f"{stem}.sid"))
+    det = detect(sid, lambda m: None)
+    assert det.instr_stride == 16
+    assert det.instr_used == _instrument_recount(sid, det, det.instr_stride)

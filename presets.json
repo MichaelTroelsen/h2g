@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.452 presets.py",
+  "generator": "h2g 0.5.454 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -323,6 +323,7 @@
       "rows": 31088,
       "multiplier": 4,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     },
     "Food_Feud.sid": {
@@ -386,10 +387,12 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16800,
+      "bytes": 17551,
       "subtunes": 1,
       "rows": 7800,
-      "multiplier": 4
+      "multiplier": 4,
+      "max_hard_restart": true,
+      "hard_restart_frames": 4
     },
     "Gremlins.sid": {
       "max_rows": 94,
@@ -520,7 +523,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 14384,
+      "bytes": 14580,
       "subtunes": 1,
       "rows": 8775,
       "multiplier": 1
@@ -567,6 +570,7 @@
       "rows": 19006,
       "multiplier": 2,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
     },
@@ -575,10 +579,12 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 21299,
+      "bytes": 20905,
       "subtunes": 1,
       "rows": 12348,
-      "multiplier": 3
+      "multiplier": 3,
+      "no_test_restart": true,
+      "wide_hard_restart": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -715,10 +721,11 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16832,
+      "bytes": 16495,
       "subtunes": 1,
       "rows": 10530,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true
     },
     "Pandora.sid": {
       "max_rows": 94,
@@ -789,7 +796,7 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16378,
+      "bytes": 16834,
       "subtunes": 1,
       "rows": 14820,
       "multiplier": 1
@@ -852,7 +859,8 @@
       "rows": 14827,
       "multiplier": 3,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "pitch_seq": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -945,10 +953,12 @@
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 9827,
+      "bytes": 10238,
       "subtunes": 1,
       "rows": 4998,
-      "multiplier": 1
+      "multiplier": 1,
+      "max_hard_restart": true,
+      "hard_restart_frames": 4
     },
     "Tarzan.sid": {
       "max_rows": 128,
@@ -1037,6 +1047,7 @@
       "rows": 45674,
       "multiplier": 4,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     },
     "W_A_R_Preview.sid": {

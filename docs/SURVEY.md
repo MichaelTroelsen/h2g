@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.449**
+- Converter: `h2g` **0.5.454**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -89,7 +89,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Game_Killer.sid` | Game Killer | PSID v2 | Rob_Hubbard | Last V8 | 1 | 1 | 12 | 38 | - | 9400 | y |  |
 | `Geoff_Capes_Strongman_Challenge.sid` | Geoff Capes Strongman Challenge | PSID v2 | Rob_Hubbard | Warhawk | 0 | 8 (hdr 24) | 22 | 55 | - | 10760 | y |  |
 | `Gerry_the_Germ.sid` | Gerry the Germ | PSID v2 | Rob_Hubbard | Warhawk | 0 | 7 (hdr 23) | 28 | 171 | - | 42153 | y |  |
-| `Go_Go_Dash.sid` | Go Go Dash | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 4 | 69 | **1** (sub0 1) | 18276 | y |  |
+| `Go_Go_Dash.sid` | Go Go Dash | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 19 | 69 | **1** (sub0 1) | 18861 | y |  |
 | `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 7 (hdr 26) | 33 | 196 | - | 51685 | y |  |
 | `Hollywood_or_Bust.sid` | Hollywood or Bust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 10) | 21 | 136 | - | 38958 | y |  |
 | `Human_Race.sid` | The Human Race | PSID v2 | Rob_Hubbard | Last V8 | 1 | 5 | 25 | 102 | - | 23230 | y |  |
@@ -101,12 +101,12 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Kings_of_the_Beach_ingame.sid` | Kings of the Beach (ingame) | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 7 | 6 | 106 | - | 35541 | y |  |
 | `Kings_of_the_Beach_intro.sid` | Kings of the Beach (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 15 | 47 | - | 12338 | y | digi channel dropped |
 | `Knucklebusters.sid` | Knucklebusters | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 11) | 30 | 186 | - | 54309 | y | 1 subtune(s) too long |
-| `Lakers_vs_Celtics.sid` | Lakers vs Celtics | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 14 | 60 | **5** (sub0 5) | 16332 | y |  |
+| `Lakers_vs_Celtics.sid` | Lakers vs Celtics | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 18 | 60 | **5** (sub0 5) | 16488 | y |  |
 | `Las_Vegas_Video_Poker.sid` | Las Vegas Video Poker | PSID v2 | Rob_Hubbard | Warhawk | 0 | 16 | 26 | 81 | - | 12483 | y |  |
 | `Last_V8.sid` | The Last V8 | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 3 (hdr 17) | 34 | 66 | - | 20877 | y |  |
 | `Last_V8_C128_version.sid` | The Last V8 (C128 version) | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 3 (hdr 18) | 34 | 56 | - | 17007 | y |  |
 | `Lightforce.sid` | Lightforce | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 23 | 64 | - | 19805 | y |  |
-| `Lion_Heart.sid` | The Lion Heart | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 28 | 114 | **2** (sub0 2) | 23473 | y |  |
+| `Lion_Heart.sid` | The Lion Heart | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 18 | 114 | **2** (sub0 2) | 23083 | y |  |
 | `Master_of_Magic.sid` | The Master of Magic | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 | 18 | 85 | - | 22346 | y |  |
 | `Mega_Apocalypse.sid` | Mega Apocalypse | RSID v2 | Rob_Hubbard | Mega Apocalypse | 6 | 1 (hdr 11) | 22 | 60 | - | 16249 | y |  |
 | `Monty_on_the_Run.sid` | Monty on the Run | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 19) | 21 | 147 | - | 42788 | y |  |
@@ -118,13 +118,13 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Off_the_Cuff.sid` | Off the Cuff | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 106 | - | 37174 | y | digi channel dropped |
 | `One_Man_and_his_Droid.sid` | One Man and his Droid | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 14) | 16 | 74 | - | 21445 | y |  |
 | `One_on_One_Jordan_vs_Bird.sid` | One on One: Jordan vs Bird | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 21 | 74 | - | 11357 | y | digi channel dropped |
-| `Pacific_Coast.sid` | Pacific Coast | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 26 | 68 | **6** (sub0 6) | 18915 | y |  |
+| `Pacific_Coast.sid` | Pacific Coast | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 19 | 68 | **6** (sub0 6) | 18642 | y |  |
 | `Pandora.sid` | Pandora | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 17 | 67 | - | 18448 | y |  |
 | `Phantoms_of_the_Asteroid.sid` | Phantoms of the Asteroid | PSID v2 | Rob_Hubbard | Last V8 | 1 | 4 | 26 | 96 | - | 27004 | y |  |
 | `Powerplay_Hockey_USA_vs_USSR.sid` | Powerplay Hockey: USA vs USSR | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 (hdr 10) | 21 | 67 | - | 16129 | y | digi channel dropped |
 | `Proteus.sid` | Proteus | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 18 | 46 | - | 12143 | y |  |
 | `Pygmies_Revenge.sid` | Pygmies Revenge | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 114 | - | 35289 | y | digi channel dropped |
-| `Radio_ACE.sid` | Radio ACE | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 10 | 118 | **1** (sub0 1) | 27887 | y |  |
+| `Radio_ACE.sid` | Radio ACE | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 18 | 118 | **1** (sub0 1) | 28199 | y |  |
 | `Rasputin.sid` | Rasputin | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 (hdr 18) | 15 | 65 | - | 15752 | y |  |
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 17 | 138 | - | 45642 | y |  |
 | `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 | y | digi channel dropped |
@@ -137,7 +137,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Skate_or_Die_intro.sid` | Skate or Die (intro) | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 9 | 53 | - | 13703 | y |  |
 | `Spellbound.sid` | Spellbound | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 13) | 26 | 111 | - | 36060 | y |  |
 | `Star_Paws.sid` | Star Paws | PSID v2 | Rob_Hubbard | IK+ | 7 | 3 | 21 | 53 | - | 13534 | y |  |
-| `Sun_Never_Shines.sid` | Sun Never Shines | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 12 | 94 | **1** (sub0 1) | 21191 | y |  |
+| `Sun_Never_Shines.sid` | Sun Never Shines | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 19 | 94 | **1** (sub0 1) | 21464 | y |  |
 | `Tarzan.sid` | Tarzan | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Warhawk | 0 | 11 (hdr 12) | 20 | 53 | 1 | 12470 | y |  |
 | `Thanatos.sid` | Thanatos | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 6 | 25 | - | 8198 | y |  |
 | `Thing_on_a_Spring.sid` | Thing on a Spring | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 17) | 16 | 66 | - | 17410 | y |  |

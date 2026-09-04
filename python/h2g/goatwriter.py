@@ -1228,7 +1228,12 @@ def _sfx_note_byte(pitch_hi: int) -> int:
     The player writes `$D401` directly and keeps the note's low byte, which a
     wavetable cannot do -- its right side names a note, not a register. The
     nearest absolute note is what it can say: `$3800` lands on index 68
-    (`$375C`) and `$4800` on 73 (`$49E5`), both inside a quarter-tone. For
+    (`$375C`) and `$4800` on 73 (`$49E5`), both inside a quarter-tone --
+    **-19.9 and +45.0 cents**, so `$4800` only just. Those two are the only
+    high bytes the corpus uses, and for both of them the nearest note by this
+    *linear* difference is also the nearest in cents (68 against 67's +80.1,
+    73 against 74's -55.0), so the usual "compare a ratio in log space"
+    correction is a no-op here rather than an unmeasured risk. For
     noise that is not an approximation anyone can hear -- the pitch sets how
     fast the shift register clocks, and a quarter-tone changes the colour of a
     drum by nothing.
@@ -1269,6 +1274,53 @@ The burst is **two** frames in the trace where the counter test (`CMP #$01`)
 
     That profile is identical on all 226 notes of that instrument, so it is the
     shape and not a sample.
+
+    **THE HIT'S PITCH IS ABSOLUTE ON PURPOSE, AND "FOLLOW THE PATTERN NOTE" IS
+    REFUTED THREE WAYS** -- measured at 64c795b over all 7 corpus files that
+    ship `--sfx-drum` (Bangkok Knights, Mega Apocalypse, Nineteen, Pandora,
+    Star Paws, Thundercats, Trans-Atlantic Balloon). The standing suggestion
+    was that this tick is "pinned to one pitch where the player tracks the
+    note", from both Bangkok and Monty showing one pitch where the original
+    shows several.
+
+    * **The player cannot track it.** `detect.SFX_DRUM_SHAPE` is
+      `A9 ?? 8D ?? D4 A9 81 8D ?? D4` and `_find_sfx_drum` *verifies* that its
+      two stores name the frequency-HIGH and control registers of one and the
+      same voice. There is no store to the frequency LOW byte in the block, so
+      the drum sounds at `$xx00` plus whatever low byte the played note left
+      behind -- a residue, not a transposition.
+    * **And the residue is measured rather than argued.** Traced 180 s of each
+      original at `-m1` (the multiplier belongs to our side only) on its own
+      `sfx_voice`, over every frame whose waveform is the drum's `$81`: the
+      high byte is the drum's on **1423 of 1423** frames on Bangkok, 1276/1276
+      on Mega Apocalypse, 1370/1370 on Nineteen and 1116/1116 on Star Paws,
+      across 10-31 distinct frequencies spanning **181-242 units** -- under 256
+      by construction and **under 23 cents** at `$48xx`. The three files that
+      are not 100% have a second mechanism on that voice, and Trans-Atlantic's
+      second high byte is `$15` on 683 frames, which is exactly the `$15EB` of
+      `second_note` above.
+    * **Following the note would move the drum by octaves.** Read back out of
+      the shipped `.sng` with `songview.parse_sng`, restricted to the
+      instruments whose wavetable actually carries this hit, the median gap
+      between the hit's note and the notes those instruments play is **+34 to
+      +56 semitones, 2.8 to 4.7 octaves** (Bangkok +34, Mega Apocalypse +42,
+      Thundercats +46, Pandora +53, Nineteen +56). The ticked records are the
+      bass and percussion ones, so they play the file's lowest notes.
+
+    A/B'd anyway, because the shape of an argument is not a measurement:
+    `$00` instead of `note` on the hit frames -- the 14 of 16 emitted records
+    that take the branch below -- over all 7 files at `-t 60` and `-t 180`.
+    Every file's bytes move; **three move a column, all three move down, and
+    identically at both windows** (Nineteen melody 98.8 -> 82.8% and sequence
+    99.2 -> 75.3%, Bangkok sequence 98.6 -> 83.2%, Pandora melody
+    99.4 -> 96.5%), and **zero files improve on anything**. The other four are
+    invisible because **no report column reads a noise frame's pitch**: the
+    change only surfaces where the tick's sub-`$10` neighbour makes siddump
+    name it as an attack, and there it renames one.
+
+    Pinned by `tests/test_ticks.py`'s two `drum_hit` tests -- one on the note
+    byte both branches emit, one on `_find_sfx_drum` refusing a block whose
+    store names the frequency LOW register.
     """
     if pitch_hi <= 0 or period <= 0:
         return None
@@ -1491,6 +1543,25 @@ def _wave_program_travels(multiplier: int, fmt: str, running: int) -> bool:
     `-S1` there is no spare call and a second entry would make the program run
     at half the player's rate -- the trade v0.5.203 measured and refused, and
     the reason this is gated rather than unconditional.
+
+    **THE `-S1` REFUSAL IS ABOUT THIS PAIRING, NOT ABOUT RELATIVE PITCH AS
+    SUCH** (established at v0.5.453, chasing Monty's drums). This entry is
+    designed to sit BESIDE a waveform entry -- two entries per opcode -- so at
+    `-S1` it doubles the program's length, which is the measured refusal
+    above. A CHAIN is a different shape and a different cost: one waveform
+    entry followed by N portamentos is N+1 entries for N steps, because a
+    command entry advances the pointer and skips the note write without
+    touching the latched waveform (the paragraph below, and `gplay.c:557-573`
+    / `player.s:1531-1547`). This file already emits exactly that shape --
+    `_drum_entries`' `[WAVECMD_PORTADOWN] * steps` -- so it is established
+    rather than speculative.
+    For a five-step sweep the chain costs SIX frames against five, a 20% rate
+    error, where the pairing costs ten and a 100% one. So "relative pitch is
+    impossible at `-S1`" is too strong a reading of this gate, and five
+    successive attempts on `monty-drums-play-four-octaves-too-low` treated it
+    as closed on that basis. What the chain cannot do is carry a waveform
+    CHANGE mid-sweep; Monty's sweep re-asserts the identical `$80` on all five
+    steps, so it loses nothing there.
     """
     return fmt == FORMAT_GTS5 and multiplier >= 2 and bool(running & 0xFFFF)
 
@@ -2750,6 +2821,51 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        real_firstwave_instruments: tuple = (),
                        instr_row_calls: dict | None = None) -> int:
     out.append(instr_used)
+    # **THIS ONE BYTE COSTS EVERY NOISE RUN ITS FIRST FRAME, and Action Biker
+    # is where that was finally measured** (v0.5.453). `FIRSTWAVE_TESTBIT` is
+    # $09 -- below $10, so it selects no waveform -- and it occupies the note's
+    # FIRST frame. Anything the instrument then does starts on frame 1, so a
+    # noise run the player holds for 12 frames reaches the chip as 11.
+    #
+    # The arithmetic is exact rather than suggestive. Action Biker: 62 runs of
+    # 11 against the original's 12, delta -1 on ALL 62, and
+    # `our_noise_frames` 682 against 744 -- a deficit of **exactly 62**, one
+    # frame per run. Setting `no_test_restart` (so `first` becomes
+    # `FIRSTWAVE_GATE_ONLY`) takes `noise_run_agreement` 0.0 -> **1.0000**,
+    # `our_noise_frames` 682 -> **744**, i.e. the original's count to the
+    # frame, and `wave` 0.9679 -> **1.0000**.
+    #
+    # **AND THE HARD RESTART IS NOT A SUBSTITUTE, refuted twice on this file.**
+    # The standing hypothesis was that the twelfth frame is the hard restart
+    # written before the next note, i.e. a `HARD_RESTART_FRAMES` question.
+    # Measured: enabling the hard restart alone moves the BYTES (sha 51256f22
+    # -> 11b0dc90) and not one column -- noise runs, frames, melody, wave,
+    # gate all identical. Combined with `no_test_restart` it does not recover
+    # melody either (0.4960 in both). A hard restart clears the GATE and
+    # leaves the waveform latched at or above $10, so it never gives siddump
+    # the sub-$10 frame it needs; that is a different quantity from the test
+    # bit and cannot stand in for it.
+    #
+    # SO THE COST OF REMOVING IT IS A BLINDNESS, NOT A DEFECT: `melody`
+    # 1.0000 -> 0.4960 and `sequence` 1.0000 -> 0.4845 while `our_attacks`
+    # stays at **291 in every arm**. The notes are all still struck; siddump
+    # simply cannot NAME them without a frame below $10 (siddump.c:434-437).
+    #
+    # **AND THE TWO FIRSTWAVE VALUES SOUND THE SAME -- they differ only in
+    # what the INSTRUMENT can see, which is the sharpest way to put the
+    # trade.** $09 is gate plus test with a zero waveform nibble; $FF is all
+    # four select bits plus test. Both are silent on a real chip, because the
+    # test bit holds the oscillator in reset and the select bits AND to
+    # silence. But $09 is BELOW $10 and $FF is not, so only the first gives
+    # siddump a note boundary. Pinned by
+    # `test_the_first_frame_of_every_run_is_spent_on_a_waveform_below_ten`,
+    # which asserts the inequality in BOTH directions -- a first version
+    # asserted $FF < $10 on my own assumption and failed, which is how this
+    # paragraph came to be right.
+    # That is why no column can adjudicate this: `nrun` and `wave` say adopt,
+    # `melody` says refuse, and `melody`'s refusal is known to be an artefact
+    # of the instrument. It wants an ear -- see
+    # `action-biker-noise-runs-want-a-listen-because-the-columns-disagree`.
     first = FIRSTWAVE_GATE_ONLY if no_test_restart else FIRSTWAVE_TESTBIT
 
     if lead:

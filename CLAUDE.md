@@ -234,11 +234,15 @@ test dependency).
   subtraction cannot go there. `WAVECMD_PORTADOWN` can, and a slide opcode is
   one of the player's *frames* -- `multiplier` play calls -- so at `-S2` and
   above the waveform entry does not need them all and the spare call carries
-  the portamento inside the same frame. 8 corpus files move, exactly
-  `{wave_program AND multiplier > 1}` -- **still exactly 8 and 13 at v0.5.407**,
-  re-counted from `presets.json`; the 13 single-speed ones are
-  byte-identical, because at `-S1` a second entry would halve the program's
-  rate (the trade v0.5.203 measured and refused). ACE II `$EB0A` now
+  the portamento inside the same frame. It moves exactly
+  `{wave_program AND multiplier > 1}` -- 8 files when it shipped, **9 now**;
+  the set is what is stated, not the count, because the count moves whenever
+  a speed-gate reading changes a multiplier. **8 and 13 at v0.5.407, re-counted
+  from `presets.json`; 9 and 12 at v0.5.453**, re-counted again from the same
+  file (89 songs now against 83 then; the population this option reaches has
+  shifted with the corpus, not been re-derived). The single-speed ones are
+  still byte-identical, because at `-S1` a second entry would halve the
+  program's rate (the trade v0.5.203 measured and refused). ACE II `$EB0A` now
   reproduces the original frequency for frequency -- `0EA3 40A3 0B23 0923
   03CE` -- where it held the base note and rang its whole release two octaves
   high. A/B over the 8: `melody`, `seq`, `pitch`, `retrig`, `wave`, `noise`,
@@ -940,6 +944,46 @@ test dependency).
   not the fix for the slide deficit** — `patterns._scaled_step`'s `row_calls`
   correction already compensates for the dropped call, so disabling the skip
   double-corrects (median slide ratio 1.04 → 1.23, worse on 47 of 75 files).
+  **AND 60 IS ALSO TOO SHORT, MEASURED AT v0.5.453 — IT STAYS ON COST, NOT ON
+  MERIT.** The move from 10 to 60 was right and did not go far enough. Two
+  censuses over the 89 files measured in both windows, `-t 60` against
+  `-t 180`, same shipped presets:
+  * **COVERAGE. Exactly 2 of 89 files are fully contained in a 60 s window.**
+    12 are known prefixes whose originals run to a **median 247 s** and a max
+    of 381 s; the other 75 have no measurable ending, i.e. are still playing.
+    So the report scores a PREFIX on essentially the whole corpus — 60 s sees
+    about a quarter of the median prefix file's music.
+  * **THE WINDOW'S OWN CONTRIBUTION. 87 of 89 files have a scored column move
+    between the two windows, 81 move by >= 5pp and 76 by >= 10pp.** Per-column
+    medians: `pphase` 0.116, `nrun` 0.144, `tail` 0.110, `onset` 0.107, `bend`
+    0.077, `pspan` 0.060. The extremes are enormous — `pspan` up to 2.71 of
+    |log| (Ricochet 0.030 -> 0.451), `depth` 2.26 (Phantoms), `bend` 1.95
+    (Thrust 17.66 -> 2.50).
+  * **`melody` and `seq` are the exception and that is why this went unnoticed
+    for so long**: median movement 0.0047 and 0.0037, max 0.088 and 0.176. The
+    two columns read first are the two the window barely touches, so a
+    window-sensitive verdict on a register column looks stable when checked
+    the usual way.
+
+  **THE CONSEQUENCE IS NOT "the numbers are noisy", IT IS "a verdict can
+  flip".** The window moves most columns by as much as the effects the preset
+  search selects on, and three files did flip in one session: Mega_Apocalypse's
+  whole `pitch_seq` trade is INVISIBLE at 60 s (every numeric column identical
+  while `output_sha` differs) and plain at 180; BMX_Kidz's `--regrid` drift is
+  bit-identical at 60 s and reads **-7.81 against +72.18** at 120; and
+  **Flash_Gordon REVERSES SIGN** — `pitch_seq` makes its `vib` worse at 60 s
+  (|log| 0.0155 -> 0.0359) and much better at 180 (0.2754 -> 0.0230), so a
+  decision taken at 60 s is wrong rather than merely uninformed.
+
+  **60 STAYS FOR NOW, AND THE REASON IS COST ALONE.** Tripling the window
+  triples every artefact and every search: the report is 15m46s at 60 s with
+  `--sound`, and `presets.py --fidelity` is 8 minutes — call it 45 minutes and
+  24 minutes at 180. `--shard I/N` splits the search and is the mitigation.
+  Until that is paid, **the working rule is per-song rather than global: before
+  adopting or refusing an option on one file, re-measure it at `-t 180`.** That
+  rule is what caught all three flips above. Raising the default is a separate
+  task because it invalidates `docs/FIDELITY.md` and `build/fidelity.json`, and
+  whoever takes it must declare both.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26
@@ -1136,12 +1180,40 @@ test dependency).
   with `CMD_SETTEMPO` and takes it back on the next row. It reaches **17**
   corpus files (measured by corpus byte-hash at v0.5.437: every file
   converted on its shipped preset with `regrid` forced False and True, 83 of
-  83 converting in both arms), drift improves on 14 and five land on exactly
-  0.00 (After_8
-  -12.35 -> 0.00, Arcade Classics -7.79 -> 0.00, Nemesis -7.75 -> 0.00);
-  Monty goes -9.30 -> -1.56 with `hold` +12.5, `adsr` +5.9, `gate` +3.1 and
-  `pitch` -2.7. **Per song, never a default** -- `melody` collapses on
-  One_on_One (-37.0pp) and Sanxion (-19.9pp).
+  83 converting in both arms; **RE-TAKEN AT v0.5.453 over 89 songs with 0
+  errors and still exactly 17**, all 13 adopted among them and the same four
+  refused -- BMX_Kidz, One_on_One, Powerplay, Sanxion).
+  **THE DRIFT FIGURES ARE GRADED AT v0.5.453, and the counts were wrong while
+  the named numbers were exact.** At `-t 60`, the window the claim was made
+  at: drift improves on **15** of the 17, not 14 (0 worse, BMX_Kidz
+  unchanged, One_on_One not measurable) -- and **3** land on exactly 0.00,
+  not five. The three are precisely the three the next clause already named,
+  reproduced to the digit: After_8 -12.35 -> 0.00, Arcade Classics
+  -7.79 -> 0.00, Nemesis -7.75 -> 0.00. So the parenthetical was right and
+  the count above it was not, which is the same shape as the wave-program
+  "8 and 13" two hundred lines up: **state the SET, and a count decays.**
+  Monty's -9.30 -> -1.56 with `hold` +12.5, `adsr` +5.9, `gate` +3.1 and
+  `pitch` -2.7 is EXACT at `-t 60`. **Per song, never a default** --
+  `melody` collapses on One_on_One (-37.0pp) and Sanxion (-19.9pp).
+  **AND EVERY DRIFT FIGURE HERE IS A 60-SECOND FIGURE, which matters more for
+  this column than for any other.** `drift_per_1000` is an INTEGRATED offset,
+  so it is the most window-sensitive number the report carries. Re-measured
+  at `-t 180`: improves on **16** of 17, **1 worse**, and only **1** lands on
+  0.00 (After_8 alone -- Arcade Classics goes to 0.15 and Nemesis to -0.47).
+  Two of those movements settle open questions rather than merely restating
+  them:
+  * **BMX_Kidz is not "unchanged", it is a 5.7x OVER-correction in the
+    opposite direction**: -7.81 -> **+44.88** at 180 s where 60 s reads
+    -7.87 -> -7.87. That is the over-supply its own task suspected and the
+    short window was hiding, now with a number on it.
+  * **One_on_One's drift IS measurable at 180 s** -- -7.81 -> -3.25,
+    improving -- where at 60 s it cannot be fitted at all. Before widening
+    `MIN_DRIFT_COVERAGE` into a spread gate, check whether the 60 s window
+    simply held too few matched onsets; that is the cheaper explanation and
+    it is now the one the evidence favours.
+  * Rikky's own drift is window-dominated either way: off-arm -13.49 at 60 s
+    against -38.93 at 180 s, so its "improves" is real at both windows and
+    its magnitude is not a fixed quantity.
   Three things worth carrying beyond the option. **The schedule is one voice
   per subtune**, because `CMD_SETTEMPO` under $80 sets all three channels --
   compensating in all three lengthens the same row three times, which turned
@@ -1194,16 +1266,25 @@ test dependency).
   Graded at v0.5.407, cheaply, from `presets.json` and `build/fidelity.json`
   rather than from a sweep: **stale** -- "37 of the 82 measured files" (83
   files, and 44 pack above `-S1`), "33 of the 83 preset songs pack at `-S2`"
-  (18 do), "37 corpus files drift by zero and 29 drift" (59 and 21, and the
-  figure predates `--regrid`). **Re-verified live** -- wave_program's 8
-  multispeed against 13 single-speed, `--regrid`'s 12 adoptions, the corpus's
+  (18 do), "37 corpus files drift by zero and 29 drift" (59 and 21 at
+  v0.5.407, and **68 and 18 of 86 measured at v0.5.453**; the original figure
+  predates `--regrid`). **Re-verified live** -- wave_program's 8
+  multispeed against 13 single-speed, `--regrid`'s 12 adoptions (**13 at
+  v0.5.453**, counted from presets.json), the corpus's
   95 files / 83 converting, Skate or Die intro's 829 attacks against the
-  original's 1021, Kings of the Beach ingame's wave 57.3% / gate 11.0%. The
-  last two matter because two OPEN tasks key their verify on them: a task
+  original's 1021, Kings of the Beach ingame's wave 57.3% / gate 11.0%. **One
+  of those "re-verified" figures was wrong anyway**: the wave_program split
+  had since moved to 9 and 12 (re-counted from `presets.json` at v0.5.453) --
+  the sharpest example this file has of its own grading rule, because it sat
+  under the heading that claims a figure was checked and was checked wrong.
+  The last two matter because two OPEN tasks key their verify on them: a task
   whose verify quotes a stale number is a task that cannot be judged done.
   **The cheap grader is the pair of generated artefacts**, not a corpus run --
   `presets.json` for populations and `build/fidelity.json` for per-file
-  figures, both regenerated on the commit that changed them.
+  figures, both regenerated on the commit that changed them. (Every
+  `README.md §` cross-reference elsewhere in this file was checked against
+  README.md at v0.5.453 and all exist, `--regrid` included -- that check
+  passes clean.)
 - **A gate signature encodes an ADDRESSING MODE, and three files were paying
   for it.** `SPEED_GATE`, `SPEED_GATE_IMM`, `OUTER_GATE` and `OUTER_GATE_RTS`
   all open on `Î` -- `DEC abs`. A player whose counter lives in ZERO PAGE
@@ -1255,18 +1336,22 @@ test dependency).
   the asymmetry: only the OUTER gates take this anchor. `SPEED_GATE_ZP` is the
   inner gate and lives wherever the player put it (Samantha Fox $70C7), so it
   is still a file-wide search and still carries that risk.
-  Fixed: Las Vegas and Samantha Fox both reach **attacks exact (1051/1051 and
-  958/958), melody/sequence/pitch 100% and `len` +0.1 s**; Spellbound, which
-  carried the same unread zero-page gate, goes melody 93 -> 95% and
-  `drift -90.9 -> len +0.1s`. Exactly three corpus files move.
+  Fixed at v0.5.401: Las Vegas and Samantha Fox both reach **attacks exact
+  (1051/1051 and 958/958), melody/sequence/pitch 100% and `len` +0.1 s**;
+  Spellbound, which carried the same unread zero-page gate, goes melody
+  93 -> 95% and `drift -90.9 -> len +0.1s`. Exactly three corpus files move.
   **The multiplier is part of the fix, not a separate step.** Reading a gate
   changes `effective_frames`, so `recommended_multiplier` changes, so
-  `presets.json`'s `multiplier` is stale until regenerated -- Las Vegas and
-  Samantha Fox `-S1 -> -S4`, Spellbound `-S2 -> -S5`. Between the two, the
-  conversion emits a row for one rate and is packed at another: Las Vegas
-  converted to **silence** and Samantha Fox played three times too fast, both
-  with `melody` still reading 100%. A detection change that moves a row length
-  is not testable until presets are regenerated with it.
+  `presets.json`'s `multiplier` is stale until regenerated -- at v0.5.401, Las
+  Vegas and Samantha Fox `-S1 -> -S4`, Spellbound `-S2 -> -S5`. Between the
+  two, the conversion emits a row for one rate and is packed at another: Las
+  Vegas converted to **silence** and Samantha Fox played three times too
+  fast, both with `melody` still reading 100%. A detection change that moves
+  a row length is not testable until presets are regenerated with it. The
+  play-address anchoring above (v0.5.402) is a later hardening of this same
+  v0.5.401 fix, not a separate one -- both this "Fixed" result and the
+  multiplier flip belong to v0.5.401, which this paragraph did not say until
+  now (its own "ungraded middle" problem, per the grading rule above).
 - **The corpus byte-hash is the check of last resort, and this is its recipe.**
   Named all over this file and never spelled out until now, which is how it
   ended up living in a handoff doc:

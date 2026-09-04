@@ -269,3 +269,37 @@ def test_the_report_count_changes_when_the_rows_do():
     text_many = F.report(many, _Args())
     assert "On **1** file(s) this is exactly `-1/(skip+1)`" in text_few
     assert "On **6** file(s) this is exactly `-1/(skip+1)`" in text_many
+
+
+def test_a_wandering_majority_voice_is_refused_where_a_wild_minority_is_not():
+    """The other half of `test_one_wild_voice_does_not_poison_the_others`, and
+    the difference is that `mad` is a MEDIAN.
+
+    That test's wild voice is a MINORITY with symmetric scatter, so its
+    residuals sit in the tails and the fit survives. Here one voice supplies
+    most of the pooled pairs and its own offsets WANDER, so its scatter *is*
+    the median: `mad` crosses `DRIFT_MAX_SCATTER * span` and `drift` refuses
+    rather than reporting a rate. That refusal is the feature -- One_on_One
+    under `--regrid` at -t 60 is the real case (mad 725 over a span of 2967,
+    voice 2 supplying 170 of 332 pairs).
+
+    Note what does NOT trigger it: a straight divergence, however steep, is a
+    drift and is fitted with a small `mad`. Only wandering is refused.
+    """
+    o, u = _pair(rate=0.0, n=40)
+    n = 400
+    base = [i * 5 for i in range(n)]
+    # Non-linear, large, and non-monotonic -- a voice whose offset has no rate.
+    wander = [x + (0 if i % 3 == 0 else (900 if i % 3 == 1 else -600))
+              for i, x in enumerate(base)]
+    names = [f"m{i}" for i in range(n)]
+    o[2].attack_frames, o[2].attacks = base, names
+    u[2].attack_frames, u[2].attacks = wander, list(names)
+
+    got = F.drift(o, u)
+    assert got["mad"] > F.DRIFT_MAX_SCATTER * got["span"], (
+        f"the wandering majority must dominate the median: mad {got['mad']} "
+        f"vs threshold {F.DRIFT_MAX_SCATTER * got['span']}")
+    assert got.get("per_1000") is None, (
+        f"a wandering majority must be refused, not fitted: {got.get('per_1000')}")
+    assert "unfitted" in got, got

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.454 — 2026-09-04
+
+- the interleaved engine's $82 is a portamento, and its instrument table is counted at the stride the dialect actually uses
+
 ## 0.5.453 — 2026-09-03
 
 - the rendered-audio harness reaches calibration, and it fails honestly

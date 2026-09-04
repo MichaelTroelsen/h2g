@@ -417,3 +417,47 @@ def test_an_existing_previous_file_still_prints_its_carried_count(tmp_path, caps
     stderr = capsys.readouterr().err
     assert "carried 1 --fidelity setting(s) forward" in stderr, stderr
     assert "no previous file" not in stderr, stderr
+
+
+def test_pulse_phase_is_carried_but_not_searched():
+    """The decision recorded at 64c795b, pinned in both directions.
+
+    `pulse_phase` must stay OUT of `FIDELITY_TOGGLES` and IN
+    `CARRIED_PER_SONG`. Measured with the real search machinery: with
+    `FIDELITY_TOGGLES` set to `("pulse_phase",)` it is selected on 0 of the 6
+    files it reaches, and with the shipped seven plus it, 0 of 6 again --
+    because nothing in the criterion's nine-element state reads $D402/$D403.
+
+    Membership is what makes the search authoritative: `main()` carries a
+    previous entry across a `--fidelity` run only `if k not in
+    FIDELITY_TOGGLES`. So promoting it would replace the four hand-recorded
+    adoptions with a measured no, which is the failure this file's `regrid`
+    entry and `carried_entry` between them record four times. Cost is not the
+    reason and must not be cited as one: seven toggles over those six files is
+    161.0 s and eight is 159.8 s.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    assert "pulse_phase" not in presets.FIDELITY_TOGGLES
+    assert "pulse_phase" in presets.EXCLUDED_FROM_ALWAYS
+    assert "pulse_phase" in presets.CARRIED_PER_SONG
+
+
+def test_a_carried_hand_measurement_survives_a_fidelity_run():
+    """`carried_entry` keeps the keys the search cannot re-derive.
+
+    This is the mechanism the four `pulse_phase` adoptions rest on -- and the
+    one that has silently failed four times (hard_restart_frames at v0.5.389,
+    rest_envelope_silence, real_firstwave_instruments at v0.5.398, and the
+    whole non-searchable set on the `--fidelity` path). Asserted on membership
+    rather than truthiness, because an explicit `False` is a recorded REFUSAL
+    and dropping it makes "measured and rejected" identical to "never tried".
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    entry = {"max_rows": 94, "pulse_phase": True, "regrid": False,
+             "two_stage": True, "bytes": 123}
+    got = presets.carried_entry(entry)
+    assert got["pulse_phase"] is True
+    assert got["regrid"] is False, "an explicit refusal must survive too"
+    assert "bytes" not in got, "derived fields are not carried"

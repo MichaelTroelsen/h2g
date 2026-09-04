@@ -3522,6 +3522,13 @@ class Dimension:
 
 _PITCH_REGS = ("$D400/$D401", "$D404")
 
+# Not a SID register: the two columns below are computed from the WAV that
+# `sidplayfp` renders, not from siddump. Declared as their `reads` so `What
+# this run compared` can say "rendered audio" honestly, and kept OUT of
+# SID_REGISTERS so `registers_unread` does not report a register that does
+# not exist.
+AUDIO = "rendered audio"
+
 DIMENSIONS = (
     # **AND IT NAMES A THIRD OF ITS NOTES FROM A PITCH THAT IS STILL MOVING.**
     # siddump names a note from the frequency on the frame the gate RISES, so a
@@ -3802,6 +3809,28 @@ DIMENSIONS = (
               "a Theil-Sen fit over matched onsets -- **the startup lag is "
               "the fit's intercept**, so unlike every column above it needs "
               "no lag correction"),
+    # THE FIRST TWO COLUMNS IN THIS REGISTRY THAT ARE NOT COMPUTED FROM A SID
+    # REGISTER AT ALL. Everything above reads siddump; these read the WAV
+    # `sidplayfp` renders from each side, which is why their `reads` is the
+    # AUDIO sentinel rather than an address. That also means the calibration
+    # in docs/SOUND-CALIBRATION.md governs how much they can be trusted --
+    # and at v0.5.453 it reports `pass: false`, so read the blind spot in the
+    # `aud` description below as a live warning rather than boilerplate.
+    Dimension("aud", "aud", (AUDIO,), "fraction",
+              "per-frame agreement of the rendered sound's log-mel spectrum, "
+              "level removed -- timbre, filter, envelope shape. Absent unless "
+              "the run was taken with --sound; both-silent frames carry no "
+              "weight; it rises when events are removed, so read it beside "
+              "the attack counts. **A CORRECT FIX CAN READ WORSE HERE**: "
+              "sound_calibrate.py's known-bad check scores all three "
+              "documented fixes under its own noise floor and TWO of them in "
+              "the wrong direction, because a per-frame agreement falls when "
+              "a fix unmasks a defect the old behaviour hid (CLAUDE.md's "
+              "Human_Race case, where the right clock cost melody 65 -> 56%)"),
+    Dimension("loud", "loud", (AUDIO,), "fraction",
+              "per-frame agreement of the rendered loudness envelope -- the "
+              "first column that reads the master-volume nibble; `loud_ratio` "
+              "in --json is our overall level over the original's"),
 )
 
 
@@ -4623,6 +4652,24 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # matches at 95% -- in the bucket labelled "plays something else" for
         # eighteen versions.
         row["status"] = "window empty" if row["orig_attacks"] == 0 else "silent"
+    if getattr(args, "sound", False):
+        # The rendered sound, both sides through one emulator. Prior for the
+        # envelope alignment is the packed player's startup lag where the
+        # trace measured one; the WAV alignment is still estimated from the
+        # envelope inside a bounded window, never fitted to the score.
+        #
+        # THE IMPORT IS DELIBERATELY FUNCTION-LEVEL, AND NOT ONLY FOR NUMPY.
+        # `sound` imports `listen`, and `listen` does `from fidelity import
+        # _preset_opts, ...` -- so a module-scope `import sound` here would
+        # close the cycle fidelity -> sound -> listen -> fidelity and raise on
+        # a partially-initialised module. By the time _measure runs, fidelity
+        # is fully loaded and the cycle cannot form. Measured at v0.5.453:
+        # `import sound` pulls in fidelity plus nine h2g modules.
+        import sound  # noqa: PLC0415 -- numpy, harness only; see above
+        prior = 0.02 * row.get("startup_lag", 0)
+        row.update(sound.compare_sids(
+            local_orig, packed, seconds, sub,
+            row.get("matched_subtune", sub), prior_s=prior))
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
@@ -4971,9 +5018,30 @@ def report(rows: list[dict], args) -> str:
         "oscillates on both sides -- a side emitting *no* oscillation drops "
         "out of this column entirely, so read it beside **vib**, which is "
         "where a missing oscillation shows up.",
+        "* **aud** -- per-frame agreement of the rendered sound's log-mel "
+        "spectrum with the level removed: timbre, filter movement, envelope "
+        "shape -- what no register column can see. Both sides are rendered "
+        "by `sidplayfp` at identical settings and aligned on their loudness "
+        "envelopes inside a bounded window. Frames both sides spend silent "
+        "carry no weight, and so do mel bands both sides leave at the floor "
+        "-- a sparse signal floors most of a 64-band spectrum, and counting "
+        "those as agreement read two tones an octave apart at 0.90. It "
+        "**rises when a change removes events**, exactly as **wave** does, so "
+        "read it beside **retrig** and the two attack counts. `-` is a run "
+        "taken without `--sound`, or a render that failed. **AND ITS OWN "
+        "CALIBRATION CURRENTLY FAILS**: docs/SOUND-CALIBRATION.md reports "
+        "`pass: false` -- a one-frame shift of either side moves this column "
+        "by 0.034, while the three documented fixes it was tested against "
+        "move it by 0.012, -0.019 and -0.005. Two of those are the WRONG "
+        "SIGN, because a per-frame agreement falls when a fix unmasks a "
+        "defect the old behaviour hid. Treat it as a coarse guard against "
+        "gross breakage until that is resolved, never as a verdict.",
+        "* **loud** -- per-frame agreement of the rendered loudness envelope; "
+        "the only column that reads the master-volume nibble. `--json` also "
+        "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -5012,6 +5080,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
             f"{_fmt_length(r)} | "
+            f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{status} |")
 
     if measured:
@@ -6273,6 +6342,49 @@ def matched_onsets(orig: Voice, ours: Voice) -> list[tuple[int, int]]:
 def drift(orig: Trace, ours: Trace) -> dict:
     """Accumulated phase error: frames gained or lost per 1000 frames.
 
+    **`unfitted` IS A CORRECT ANSWER, NOT A GAP TO BE CLOSED, and One_on_One
+    under `--regrid` is the case that establishes it** (measured v0.5.453).
+    That file was carried for two sessions as "offsets wander so drift cannot
+    be fitted", with a proposed fix of replacing `MIN_DRIFT_COVERAGE` -- "a
+    COUNT gate where the problem is the SPREAD" -- with a spread gate. Three
+    things are wrong with that framing and all three are measurable:
+
+    * **The coverage gate is not what declines it.** At `-t 60` with regrid
+      on, ALL THREE voices pass both gates (coverage 0.982 / 0.981 / 0.457).
+      The refusal is the `unfitted` branch below, on `mad` 725 frames over a
+      span of 2967 -- so **a spread gate already exists** and is exactly what
+      fired. The proposal was to build something the code already had.
+    * **Voice 2's scatter is the cause, proved by masking rather than
+      inferred.** Mask voice 2 at `-t 60` and the remaining two fit at -38.0
+      per 1000 with `mad` 21.9, against `mad` 725 and no rate with it in.
+    * **The coverage gate is too PERMISSIVE at 60 s, not too strict**, which
+      is the opposite of the diagnosis. At `-t 180` voice 2's coverage falls
+      to 0.260, `MIN_DRIFT_COVERAGE` EXCLUDES it, and the file reports a rate
+      of **-3.25** per 1000 off the remaining two. The gate is what rescues
+      the longer window.
+
+    **AND IT EXPLAINS WHY `test_one_wild_voice_does_not_poison_the_others`
+    PASSES WHILE THIS FILE IS REFUSED, which is a fact about `mad` being a
+    MEDIAN.** `mad` is the median absolute deviation of the pooled offsets
+    about the fit, and the refusal is `mad > DRIFT_MAX_SCATTER * span`. A
+    median is decided by whichever voice contributes most of the pairs:
+
+    * That test's wild voice is a MINORITY (one of three, equal counts) with
+      symmetric +/-700 scatter, so its residuals sit in the tails and never
+      reach the median. The fit survives -- correctly.
+    * One_on_One's voice 2 contributes **170 of 332 pooled pairs, a 51%
+      majority**, and its own offsets are NON-LINEAR across the window
+      (spanning 9 to 1596). Being the majority, its scatter IS the median, so
+      `mad` reads 725 against a span of 2967 and the fit is refused --
+      correctly again.
+
+    So the two outcomes are the same rule applied to a minority and to a
+    majority, not a robustness claim with a hole in it. What neither the test
+    nor this docstring should say is that voice 2 "diverges monotonically": a
+    straight divergence, however steep, is a DRIFT and gets fitted with a
+    small `mad`. It is the wandering that is refused, which is exactly what
+    the `unfitted` message says.
+
     **What `pace` cannot see, and why it is not a defect in `pace`.** That
     measure compares one gap to one gap, which is exactly right for a row of
     the wrong *length* -- such an error shows up in every gap and the median
@@ -7023,6 +7135,15 @@ def main(argv=None) -> int:
                         "visible. The sequence dimensions still come from "
                         "siddump. Slower: vsid runs at about 1.3x real time "
                         "and each row needs two traces")
+    p.add_argument("--sound", action="store_true",
+                   help="also render both sides with sidplayfp and score the "
+                        "SOUND: aud (timbre) and loud (level). Cached under "
+                        "build/audio/ by content, so a re-run of an unchanged "
+                        "conversion re-renders nothing. Not --audio, which is "
+                        "SIDM2's onset-jitter measure. Read "
+                        "docs/SOUND-CALIBRATION.md before trusting either "
+                        "column: its calibration currently reports pass: "
+                        "false.")
     p.add_argument("--vice-reduce", default="overlap",
                    choices=list(vicetrace.AGREEMENT_MODES),
                    help="per-frame agreement rule for --vice. The two sides "

@@ -2,6 +2,8 @@
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from h2g.goatwriter import CMD_SETTEMPO
@@ -92,3 +94,34 @@ def test_convert_leaves_the_byte_exact_fixture_alone_by_default():
     from h2g.convert import convert
     root = pathlib.Path(__file__).resolve().parents[2]
     assert convert(str(root / "Commando.sid")) == (root / "Commando.sng").read_bytes()
+
+
+@pytest.mark.xfail(strict=True, reason=(
+    "KNOWN DEFECT, found at v0.5.453: `plays` is built in regrid_tempos and "
+    "never read, so a compensating row written into a pattern that the "
+    "orderlist REPLAYS is delivered once per play while the debt was debited "
+    "once. BMX_Kidz over-supplies 3.72x on this path (46.28 calls of debt, "
+    "172 delivered) and its drift goes -7.81 -> +44.88 at -t 180. The fix is "
+    "not shipped because it moves all 17 reached files, including the 12 whose "
+    "adoption was measured under this arithmetic. WHEN YOU FIX IT this test "
+    "XPASSes and strict=True turns that into a failure -- remove the marker."))
+def test_a_replayed_pattern_does_not_deliver_its_compensation_once_per_play():
+    """Compensation delivered must match the debt raised, not exceed it.
+
+    One subtune, one exclusive pattern, played four times. Each play raises
+    the same fractional debt, so four plays owe four times one play's worth --
+    and the pattern is written ONCE, so whatever is written fires four times.
+    The two must agree.
+    """
+    rows, deficit = 12, 0.25
+    pats, tracks = [_pattern(rows)], [[0, 0, 0, 0], [], []]
+    written = regrid_tempos(pats, tracks, [3], [deficit], multiplier=1)
+
+    plays = 4
+    musical_rows = rows                      # rows per play, as the planner counts
+    debt_calls = deficit * musical_rows * plays
+    delivered = written * plays
+    assert delivered <= debt_calls + 1, (
+        f"delivered {delivered} calls of compensation against a debt of "
+        f"{debt_calls}: a pattern played {plays} times delivers its "
+        f"{written} written row(s) {plays} times over")

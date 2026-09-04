@@ -389,6 +389,35 @@ def _digi_entry_ok(sid: SidFile, k: int) -> bool:
 INSTRUMENT_INDEX_SHAPE = "BD ?? ?? 8E ?? ?? 0A 0A 0A AA BD ?? ??"
 
 
+def _count_instruments(data: bytes, start: int, stride: int, log: Logger) -> int:
+    """Records whose `+2` waveform byte is a waveform, walking at `stride`.
+
+    A function rather than a loop in `detect()` because it has to run TWICE:
+    once where the instrument table is found, and again if a later chain
+    changes `instr_stride` under it. See the re-take after the
+    interleaved-classic rescue for what the single-call version cost.
+
+    Guard the read itself. The loop only bounds-checks `j` after advancing, so
+    an out-of-range `start` crashed on the very first iteration and a negative
+    one would have silently indexed from the end of the file. Both are
+    start-address problems, so that check only fires on the first pass -- the
+    post-advance check still governs the count.
+    """
+    j = start + 2
+    n = 0
+    while True:
+        if j < 0 or j >= len(data):
+            log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
+            return n
+        if data[j] not in WAVEFORMS:
+            return n
+        j += stride
+        if j >= len(data):
+            log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
+            return n
+        n += 1
+
+
 def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
     """Locate the per-voice instrument array, and return the match offset.
 
@@ -880,6 +909,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # $F06E` and matches none of them, so it converted with zero instruments
     # and played silence. INSTRUMENT_INDEX_SHAPE below fingerprints the *load*
     # instead, which is common to both.
+    counted_at_stride = det.instr_stride
     idx = _find_instrument_index(sid, det, log)
     shape_used = "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4"    # Chimera
     i = find(shape_used)
@@ -932,24 +962,9 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             # Voice" record, so -1 would write a count byte of 0 that disagrees
             # with the record that follows it.
             det.instr_start, det.instr_used = -1, 0
-        j = det.instr_start + 2
-        instr_used = 0
-        while True:
-            # Guard the read itself. The loop below only bounds-checks `j` after
-            # advancing, so an out-of-range instr_start crashed on the very first
-            # iteration; a negative one would have silently indexed from the end
-            # of the file. Both are start-address problems, so this only fires on
-            # the first pass -- the post-advance check still governs the count.
-            if j < 0 or j >= len(data):
-                log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
-                break
-            if data[j] not in WAVEFORMS:
-                break
-            j += det.instr_stride
-            if j >= len(data):
-                log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
-                break
-            instr_used += 1
+        counted_at_stride = det.instr_stride
+        instr_used = _count_instruments(data, det.instr_start,
+                                        det.instr_stride, log)
         det.instr_used = instr_used
         log(f"Instruments used........: ${instr_used:X}")
         if det.instr_start >= 0:
@@ -1121,6 +1136,45 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         if _detect_interleaved_classic(sid, det, log):
             log("Interleaved tables......: classic grammar, "
                 f"{det.track_voices} voices")
+
+    # **THE INSTRUMENT COUNT IS RE-TAKEN HERE, BECAUSE THE WALK ABOVE RAN
+    # BEFORE THE STRIDE WAS KNOWN.** `_detect_digi` runs at the top of this
+    # function and sets `instr_stride = 16` before the instrument chain, so its
+    # nine files count correctly -- but `_detect_interleaved_classic` is the
+    # LAST RESORT and sets the same 16 down here, hundreds of lines after the
+    # count. So every one of its six files counted a 16-byte table at a stride
+    # of 8, and the comment beside that assignment already says what a stride
+    # of 8 does to this dialect ("with a stride of 8 every record after the
+    # first is read from the middle of its predecessor"). The record READING
+    # was fixed in 2ebf1a4; the COUNT was never re-taken.
+    #
+    # It is not cosmetic in either direction. A Goattracker instrument number
+    # past the end of the table sounds NOTHING, and an over-count writes
+    # records out of whatever follows the table. Measured at 64c795b, before
+    # this re-take (counted / at stride 16 / notes naming a record past the
+    # table):
+    #
+    #     Go_Go_Dash         3 / 18 / 1768 of 2456 notes, i.e. 72%
+    #     Radio_ACE          9 / 17 /  529
+    #     Lakers_vs_Celtics 13 / 17 /   85
+    #     Lion_Heart        27 / 17 /    0  (over-counts by ten)
+    #     Pacific_Coast     25 / 18 /    0  (over-counts)
+    #     Sun_Never_Shines  11 / 18 /    0  (under, never reached)
+    #
+    # Go_Go_Dash's 72% is the whole of its 36% melody: `--diagnose` reads its
+    # voice 2 as "absent: the original plays 175 attacks, we play none", and
+    # 718 of that voice's 719 notes name a dangling instrument.
+    #
+    # Gated on the stride having CHANGED rather than run unconditionally, so
+    # the nine digi files and every classic file are provably untouched: the
+    # re-take cannot fire where the walk already used the final value.
+    if det.instr_start >= 0 and det.instr_stride != counted_at_stride:
+        was = det.instr_used
+        det.instr_used = _count_instruments(data, det.instr_start,
+                                           det.instr_stride, log)
+        log(f"Instruments recounted...: ${det.instr_used:X} at stride "
+            f"{det.instr_stride} (${was:X} was counted at "
+            f"{counted_at_stride}, before the dialect was known)")
 
     # --- Player (track-read) version ---------------------------------------
     det.read_track_version = 0xFF
@@ -3629,17 +3683,36 @@ def _find_effect_bit80(sid: SidFile, det: Detection) -> tuple[str, int]:
     `$B3F9`, Thundercats `$F17E`, Trans-Atlantic Balloon `$0C2E`. A *global*
     state cell -- not per voice, not per instrument -- is compared against 1
     and then against 6, 8 or 9, and the arms write fixed constants into
-    `$D40F` (cutoff high, `$48`/`$38`), `$D412` (voice-3 control, `$81` =
-    noise + gate), `$D416` (`$60`/`$50`) and `$D418` (volume, `$2F`/`$1F`),
-    zeroing the cell when it runs past the end. IK+ writes two of them into
-    its own code (`$E5F2`, `$E5F5`) rather than to the chip; Ricochet's arms
-    are `LDA #$00` with the writes stripped out of the rip entirely.
+    `$D40F` (voice-3 frequency high, `$48`/`$38` -- CORRECTED here from an
+    earlier "cutoff high" mislabel: under `_find_sfx_drum`'s own arithmetic
+    (`$D401 + 7v` is a voice's frequency high byte, `$D404 + 7v` its control
+    register), `(0x0F - 0x01) % 7 == 0` and `(0x0F - 0x01) // 7 == 2`, the
+    same voice as `$D412` two entries on. The actual filter cutoff-high
+    register is `$D416`, labelled correctly below), `$D412` (voice-3
+    control, `$81` = noise + gate), `$D416` (cutoff high, `$60`/`$50`) and
+    `$D418` (volume, `$2F`/`$1F`), zeroing the cell when it runs past the
+    end. IK+ writes two of them into its own code (`$E5F2`, `$E5F5`) rather
+    than to the chip; Ricochet's arms are `LDA #$00` with the writes
+    stripped out of the rip entirely.
 
     That is the game's noise -- an explosion or a hit -- triggered by code
-    that is not in the SID file at all, and nothing a converted tune does ever
-    writes the cell. So it is not merely inexpressible in a per-instrument
-    wavetable (it is global, and it seizes voice 3 and the master volume): it
-    is **not music, and must not be converted**. This probe exists to say so.
+    that is not in the SID file at all: a *global* state cell, not per
+    voice, not per instrument, that seizes voice 3 and the master volume.
+
+    **"is not music, and must not be converted" is SUPERSEDED, and the
+    sentence stays rather than being deleted, so a reader who meets it
+    elsewhere finds the correction.** `_sfx_drum_entries`
+    (`goatwriter.py`) later read this same shape as a per-voice drum hit
+    rather than an inexpressible game event, and `--sfx-drum` ships as a
+    conversion option -- adopted on 7 of the corpus's 89 songs (re-taken
+    from `presets.json` at v0.5.454; re-take again before citing, since
+    both the corpus size and the adoption count move across versions):
+    Bangkok Knights, Mega Apocalypse, Nineteen, Pandora, Star Paws,
+    Thundercats, Trans-Atlantic Balloon Challenge. What was right here is
+    the state-machine reading above (global, not per-instrument); what was
+    wrong was the conclusion drawn from it. This probe still exists to
+    identify the shape -- it no longer exists to say the shape cannot be
+    converted.
 
     **"program", 2 files.** ACE II `$E357`, Auf Wiedersehen Monty `$E743`. A
     16-bit pointer per instrument, from an array strided like the records

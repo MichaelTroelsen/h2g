@@ -891,7 +891,14 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # had too little matched material, so a synthetic full row
                  # carries the number rather than omitting it.
                  drift_per_1000=0.0, drift_total=0.0, drift_mad=0.0,
-                 drift_lag=0.0, drift_span=1000, drift_voices=3)
+                 drift_lag=0.0, drift_span=1000, drift_voices=3,
+                 # The two rendered-audio columns. A full synthetic row must
+                 # carry them or `test_a_row_records_only_the_dimensions_it_
+                 # actually_compared` reads them as not-compared -- but a run
+                 # WITHOUT --sound legitimately omits them, which is what
+                 # test_a_row_without_sound_prints_a_dash_and_says_why pins.
+                 aud=melody, loud=melody, loud_ratio=1.0,
+                 sound_frames=100, sound_lag_ms=0.0)
     return r
 
 
@@ -2439,3 +2446,42 @@ def test_melody_declares_the_mid_glide_naming_blind_spot():
     assert "one play call" in d.of, (
         "the consequence -- a grid shift renaming an unchanged note -- is no "
         "longer stated, and the share alone does not imply it")
+
+
+def test_the_sound_dimensions_read_rendered_audio_not_a_register():
+    """They are the first columns computed from a WAV rather than from
+    siddump, and the registry has to say so: `registers_read` must not gain a
+    fake register, and `What this run compared` must name the audio."""
+    keys = {d.key for d in fidelity.DIMENSIONS}
+    assert {"aud", "loud"} <= keys
+    aud = next(d for d in fidelity.DIMENSIONS if d.key == "aud")
+    assert aud.reads == (fidelity.AUDIO,)
+    assert aud.column == "aud" and aud.kind == "fraction"
+    loud = next(d for d in fidelity.DIMENSIONS if d.key == "loud")
+    assert loud.reads == (fidelity.AUDIO,)
+    # The sentinel is not a SID register, so it must not appear as one.
+    assert fidelity.AUDIO not in dict(fidelity.SID_REGISTERS)
+    assert fidelity.registers_unread(keys) == []
+
+
+def test_a_row_without_sound_prints_a_dash_and_says_why():
+    """`--sound` is on demand. A row measured without it, or one whose render
+    failed, reports the column absent rather than 0 -- an absent dimension
+    recommends nothing."""
+    row = _row("A.sid", "measured", 0.9)
+    row.pop("aud", None)
+    row.pop("loud", None)
+    text = fidelity.report([row], _Args())
+    line = next(l for l in text.splitlines() if l.startswith("| A.sid"))
+    cols = [c.strip() for c in line.strip("|").split("|")]
+    header = next(l for l in text.splitlines() if l.startswith("| File"))
+    hcols = [c.strip() for c in header.strip("|").split("|")]
+    assert cols[hcols.index("aud")] == "-"
+    assert cols[hcols.index("loud")] == "-"
+    assert "aud" not in fidelity.dimensions_present(row)
+
+
+def test_the_sound_columns_are_described_in_the_report():
+    text = fidelity.report([_row("A.sid", "measured", 1.0, 50, 50)], _Args())
+    assert "* **aud** --" in text and "* **loud** --" in text
+    assert "removes events" in text     # the 7.eee blind spot, stated

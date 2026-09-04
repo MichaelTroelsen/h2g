@@ -8,7 +8,7 @@ cannot: timbre, filter movement, envelope shape and the volume nibble.
 Two numbers, deliberately separated:
 
 * `aud`  -- timbre. Log-mel spectrogram per side (64 bands, 20 Hz-8 kHz,
-  2048-point FFT, 512-sample hop, ~86 frames/s), each frame peak-normalised
+  2048-point FFT, 128-sample hop, ~345 frames/s), each frame peak-normalised
   so level cancels, then a per-frame L1 distance in dB over SPEC_RANGE_DB,
   averaged over the frames either side sounds. 1.0 is identical.
 * `loud` -- level. Per-frame RMS in dB; `loud` is the envelope agreement over
@@ -44,7 +44,31 @@ from pathlib import Path
 import numpy as np
 
 N_FFT = 2048
-HOP = 512
+# THE HOP IS THE NOISE FLOOR. Measured at v0.5.453 and changed 512 -> 128 on
+# the strength of it. `aud` compares log-mel frames on a fixed grid, and
+# `align` can only correct by a WHOLE hop -- so two renders whose time origins
+# differ by less than one hop carry a residue no alignment can remove, and
+# that residue IS what sound_calibrate.py's shift check measures. Proved
+# rather than argued: shifting a real render by an EXACT multiple of the hop
+# moves `aud` by **0.0000** on all four approved tunes, while the 3 ms and
+# 20 ms shifts the calibration uses (0.26 and 1.72 hops at the old 512) moved
+# it by up to 0.0343.
+#
+# So the floor scales with the grid, and it does:
+#
+#     HOP  512 (11.61 ms)  floor 0.0343      HOP  128 (2.90 ms)  floor 0.0069
+#     HOP  256 ( 5.80 ms)  floor 0.0143      HOP   64 (1.45 ms)  floor 0.0052
+#
+# 128 is the knee, and the reason is DETECTION POWER rather than any
+# threshold: the three documented fixes sound_calibrate.py tests against move
+# `aud` by 0.005 to 0.019, which a 0.0343 floor cannot see at all. It is not
+# a metric change bought with a score change -- over the 89 cached corpus
+# pairs, `aud` moves by a mean of **+0.0007** and is flat (|d| <= 0.005) on
+# **84 of 89**, so the columns say what they said before at four times the
+# time resolution. The cost is CPU: featurise-plus-compare over the corpus
+# goes 31 s -> 119 s, against a corpus pass whose 15m46s is dominated by
+# rendering.
+HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
 SILENCE_DB = -60.0      # a frame below this RMS is silent

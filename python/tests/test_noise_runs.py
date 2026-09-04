@@ -87,3 +87,41 @@ def test_a_side_sounding_noise_the_other_never_does_is_named_not_scored():
     got = F.noise_run_agreement(orig, ours, 12)
     assert got["noise_run_ours_only"] == 1
     assert got["noise_run_agreement"] is None
+
+
+def test_the_first_frame_of_every_run_is_spent_on_a_waveform_below_ten():
+    """Why our noise runs are one frame short, as a property rather than a file.
+
+    A note's first frame carries `FIRSTWAVE_TESTBIT` unless `no_test_restart`
+    is set. That byte is BELOW $10, so it selects no waveform at all -- and
+    everything the instrument then does starts on frame 1. A run the player
+    holds for N frames therefore reaches the chip as N-1.
+
+    Measured on Action_Biker at v0.5.453: 62 runs of 11 against the original's
+    12, `our_noise_frames` 682 against 744 -- a deficit of exactly 62, one
+    frame per run -- and setting `no_test_restart` takes the agreement 0.0 ->
+    1.0 with the frame count landing exactly on 744.
+
+    The `< 0x10` assertion is the load-bearing one: it is what makes the frame
+    silent to `noise_compare`, and it is also what siddump needs in order to
+    name an attack at all, which is why removing the frame trades the run
+    length for `melody`. A test on the byte's VALUE alone would not say that.
+    """
+    from h2g.goatwriter import FIRSTWAVE_GATE_ONLY, FIRSTWAVE_TESTBIT
+
+    # $09 -- gate plus the test bit, waveform nibble zero.
+    assert FIRSTWAVE_TESTBIT < 0x10, (
+        "the test-restart frame must select no waveform: that is what costs a "
+        "run its first frame, and what lets siddump name the attack")
+    # $FF -- all four select bits plus the test bit. AUDIBLY silent too (the
+    # test bit holds the oscillator in reset and the select bits AND to
+    # silence), but its VALUE is >= $10, so siddump sees a waveform and cannot
+    # use the frame as a note boundary. THAT asymmetry is the whole trade:
+    # both settings sound the same and only one is visible to the instrument.
+    assert FIRSTWAVE_GATE_ONLY >= 0x10, (
+        "the no_test_restart replacement is >= $10, which is why removing the "
+        "test frame fixes the run length and blinds `melody`")
+    assert FIRSTWAVE_TESTBIT != FIRSTWAVE_GATE_ONLY
+    # Neither is noise, so `noise_compare` counts neither on either setting --
+    # the frame is lost to the run regardless of which byte occupies it.
+    assert not (FIRSTWAVE_TESTBIT & 0x80)

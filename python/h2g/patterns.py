@@ -940,7 +940,34 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # than a rule.
 #
 #   $80 nn      instrument       -> $1A49,X   ($1204)
-#   $82 nn mm                    -> $1AB5,X / $1AB2,X, and DEC $1AB8,X ($1211)
+#
+# **AND THE NUMBER `$80` CARRIES ROUTINELY EXCEEDS THE INSTRUMENT TABLE THIS
+# CONVERTER WRITES -- 1768 of Go_Go_Dash's 2456 notes, 72%, which is the whole
+# of its 36% melody. The cause is in `detect`, not here.** `detect()` counts
+# the instrument table by walking `instr_start + 2 + n * instr_stride` while
+# the byte is in `WAVEFORMS` -- and it does that BEFORE
+# `_detect_interleaved_classic` sets `instr_stride = 16`, so all six of these
+# files count 16-byte records at a stride of 8. The comment beside that
+# assignment already says what goes wrong when the stride is 8 ("every record
+# after the first is read from the middle of its predecessor"); the count was
+# simply never re-taken. Censused over the corpus at 64c795b: 15 files have
+# `instr_stride == 16`, and **exactly the six interleaved-classic ones** have
+# an `instr_used` that disagrees with a recount at 16 --
+#
+#     Go_Go_Dash        3 counted,  18 at stride 16   1768 notes dangling
+#     Radio_ACE         9 counted,  17 at stride 16    529 notes dangling
+#     Lakers_vs_Celtics 13 counted, 17 at stride 16     85 notes dangling
+#     Lion_Heart        27 counted, 17 at stride 16      0 (over-counts)
+#     Pacific_Coast     25 counted, 18 at stride 16      0 (over-counts)
+#     Sun_Never_Shines  11 counted, 18 at stride 16      0 (under, unreached)
+#
+# -- while the nine digi files, whose chain sets the stride before the walk,
+# all agree with their own recount. Note the defect cuts both ways: an
+# under-count silences notes (a Goattracker instrument past the table sounds
+# nothing) and an over-count writes records out of whatever follows the table.
+# Pinned by `tests/test_interleaved_classic.py`'s strict xfail, which XPASSes
+# the moment the count is re-taken.
+#   $82 nn mm   PORTAMENTO       -> $1AB5,X / $1AB2,X, and DEC $1AB8,X ($1211)
 #   $83 nn                       -> $1A55,X, zeroes $1A58,X            ($11F0)
 #   $84                          -> $1A86 = 1                          ($11E7)
 #   $86 nn                       -> $1A5B,X, sets $1A62                ($11C5)
@@ -948,10 +975,44 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 #   $88                          -> $1A64 = 1                          ($11DE)
 #   $89 nn                       -> $1A66 (global)                     ($11D4)
 #
-# Only $80 is translated. The rest are effects, and dropping one leaves its
-# note playing plainly -- but ONLY because the operand counts here are exact,
-# so the stream stays in step.
-ILV_COMMAND_OPERANDS = {0x80: 1, 0x82: 2, 0x83: 1, 0x84: 0,
+# $80 and $82 are translated. The rest are effects, and dropping one leaves
+# its note playing plainly -- but ONLY because the operand counts here are
+# exact, so the stream stays in step.
+#
+# **$82 IS A PORTAMENTO, read end to end out of Lion_Heart rather than guessed
+# from its shape.** The handler stores its first operand to `$1AB5,X` and its
+# second to `$1AB2,X`, and the frame routine at $1663 adds that pair into a
+# per-voice 16-bit accumulator whenever the counter `$1AB8,X` is non-zero:
+#
+#     1663  BD B8 1A  LDA $1AB8,X      ; the counter the command DECs from 0
+#     1666  F0 13     BEQ $167B        ;   ...to $FF, i.e. "running"
+#     1668  18        CLC
+#     1669  BD B2 1A  LDA $1AB2,X      ; step low
+#     166C  7D BB 1A  ADC $1ABB,X
+#     166F  9D BB 1A  STA $1ABB,X      ; accumulator low
+#     1672  BD B5 1A  LDA $1AB5,X      ; step high
+#     1675  7D BE 1A  ADC $1ABE,X
+#     1678  9D BE 1A  STA $1ABE,X      ; accumulator high
+#
+# and the accumulator is added to the note's own table frequency on the way to
+# the chip -- $1461-$1476 for the ordinary path and $17A0-$17CC for the other,
+# which ends `STA $D401` / `STA $D400`. So it is a per-frame 16-bit frequency
+# delta, exactly the digi engine's `$82` (DIGI_SLIDE): first operand HIGH,
+# second LOW, and **signed**, because the add is one CLC/ADC pair with no
+# direction test anywhere.
+#
+# **IT IS PER EVENT, WHICH IS WHAT DECIDES THE EMISSION.** $1147-$114F zeroes
+# `$1AB8`, `$1ABB` and `$1ABE` (and the five effect flags after them) at the
+# top of every pattern-byte fetch pass, i.e. once per event, BEFORE the
+# command loop at $116C reads the bytes that set them. So a `$82` belongs to
+# the one event that follows it and dies with it. A Goattracker command byte
+# is executed only on the row it appears on (see the header comment on
+# `ONE_SHOT_COMMANDS`), so the faithful spelling is: repeat CMD_PORTAUP /
+# CMD_PORTADOWN on the event's own row AND on each of its `wait` hold rows,
+# and emit nothing on the next event's rows -- which reproduces the player's
+# reset for free rather than needing a stop command.
+ILV_SLIDE = 0x82
+ILV_COMMAND_OPERANDS = {0x80: 1, ILV_SLIDE: 2, 0x83: 1, 0x84: 0,
                         0x86: 1, 0x87: 2, 0x88: 0, 0x89: 1}
 
 
@@ -959,6 +1020,8 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            note_base: int = 0,
                            instr_base: int = 2,
                            span: Optional[List[int]] = None,
+                           slides: bool = False,
+                           steps: Optional[List[int]] = None,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
 
@@ -966,6 +1029,14 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     player's own dispatch falls through `$11AE BNE $116C` with no INY there
     and would spin, so such a byte means the decode has lost the stream and a
     skip would invent music.
+
+    With `slides`, command `$82` becomes a portamento -- see ILV_SLIDE for the
+    routine it is read from. It is attached to the event that follows it and
+    repeated on that event's hold rows, because the player clears the step at
+    every fetch and a Goattracker command runs only on its own row; the two
+    facts cancel, so no stop command is needed. Off by default like every
+    other decoder's slide reading, and `presets.json`'s `always` block turns
+    it on.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -974,6 +1045,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     instrument = 0
     wait = 0
     i2 = 0
+    pending: Optional[tuple] = None
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -995,10 +1067,18 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             n = ILV_COMMAND_OPERANDS.get(b)
             if n is None:
                 return None
+            if addr + i2 + n >= len(data):
+                return None
             if b == 0x80:
-                if addr + i2 + 1 >= len(data):
-                    return None
                 instrument = data[addr + i2 + 1] + instr_base
+            elif b == ILV_SLIDE and slides:
+                # First operand high, second low, and the pair is signed: the
+                # player has one CLC/ADC and no direction test.
+                step = (data[addr + i2 + 1] << 8) | data[addr + i2 + 2]
+                if step >= 0x8000:
+                    pending = (2, 0x10000 - step)   # CMD_PORTADOWN
+                else:
+                    pending = (1, step)             # CMD_PORTAUP
             i2 += 1 + n
             continue
 
@@ -1007,8 +1087,17 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         else:
             note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
+        cmd = _digi_command(pending, steps) if pending is not None else None
+        if cmd is not None:
+            events[-2], events[-1] = cmd
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+            if cmd is not None:
+                # Continuous, so it is repeated rather than held: gplay.c
+                # executes a command on the row it appears on and nowhere
+                # else. The player's own step lasts exactly this event.
+                events[-2], events[-1] = cmd
+        pending = None
         i2 += 1
 
 
@@ -1183,7 +1272,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                                        instr_base=instr_base)
     if det.pattern_dialect == "ilv":
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
-                                      instr_base=instr_base)
+                                      instr_base=instr_base,
+                                      slides=slides, steps=steps)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -1387,7 +1477,8 @@ def phantom_patterns(sid: SidFile, det: Detection,
                                              slides=slides)
         elif det.pattern_dialect == "ilv":
             events = _build_raw_pattern_ilv(data, addr,
-                                            note_base=det.note_base)
+                                            note_base=det.note_base,
+                                            slides=slides)
         elif det.pattern_dialect == "cmdtable":
             events = _build_raw_pattern_cmdtable(
                 data, addr, det.duration_table, det.cmd_operands,
@@ -2272,6 +2363,43 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
     # played five times delivers its compensation five times; budgeting it
     # once over-supplies by exactly that factor, which is how the first
     # version of this turned a 15-frame deficit into a 16-frame surplus.
+    # **`plays` IS BUILT AND NEVER READ, AND THE DEFECT ITS OWN COMMENT
+    # DESCRIBES IS THEREFORE LIVE** (found at v0.5.453, chasing BMX_Kidz).
+    # The debt below accumulates PER ORDERLIST ENTRY, which is right -- every
+    # play raises its own fraction. But it is spent with
+    # `want[pat] = max(want.get(pat, 0), n)`, which writes `n` rows into the
+    # PATTERN once, and a pattern is then PLAYED `plays[pat]` times. So the
+    # delivery is `n * plays[pat]` while `acc` was debited about `n`.
+    #
+    # It bites in proportion to how CONCENTRATED a subtune's exclusive
+    # patterns are and how often they replay. Measured -- debt in calls
+    # against compensation actually delivered:
+    #
+    #     BMX_Kidz     46.28 ->  172   **3.72x**   4 patterns, plays 12/6/6/1
+    #     After_8     179.95 ->  179     0.99x    34 patterns, plays mostly 1-3
+    #     Monty       145.21 ->  163     1.12x    49 patterns
+    #     Rikky       250.35 ->  251     1.00x    34 patterns
+    #     Sanxion     142.64 ->  149     1.04x    28 patterns
+    #
+    # The twelve adopters land at 0.99-1.12x because they spread the
+    # compensation over dozens of patterns played once or twice, so
+    # `n * plays == n` to within rounding and nobody noticed. BMX_Kidz writes
+    # into FOUR patterns played 12, 6, 6 and 1 times, and its drift goes
+    # -7.81 -> **+44.88** at `-t 180` (at `-t 60` it reads -7.87 -> -7.87
+    # unchanged, which is why this looked like "regrid moves the bytes and
+    # not the drift" for two sessions -- the short window hid an
+    # over-correction, not an absence).
+    #
+    # THE FIX IS NOT SHIPPED HERE and the reason is blast radius rather than
+    # difficulty: debiting `n * plays[pat]`, or capping `n` so that
+    # `n * plays[pat] <= acc`, changes the bytes of all 17 reached files --
+    # including the 12 whose adoption was MEASURED under this arithmetic, so
+    # every one of those decisions would need re-searching and both fidelity
+    # artefacts regenerating. That wants a task declaring presets.json,
+    # docs/FIDELITY.md and build/fidelity.json; see
+    # `regrid-over-supplies-a-subtune-whose-exclusive-patterns-replay`.
+    # `tests/test_regrid.py` carries an xfail(strict=True) for the correct
+    # behaviour, so whoever fixes it is told to drop the marker.
     reach: dict = {}
     where: dict = {}
     plays: dict = {}

@@ -46,7 +46,11 @@ def test_features_have_one_row_per_hop_and_64_bands():
     f = sound.features(_sine(1.0), RATE)
     assert f.logmel.shape[1] == 64
     assert f.logmel.shape[0] == f.rms_db.shape[0]
-    assert abs(f.hop_s - 512 / RATE) < 1e-9
+    # 128 samples = 2.90 ms. The value is load-bearing rather than incidental:
+    # it sets the noise floor sound_calibrate.py measures (see HOP's own
+    # comment), so a change here must be made deliberately and re-measured.
+    assert sound.HOP == 128
+    assert abs(f.hop_s - 128 / RATE) < 1e-9
 
 
 def test_identity_scores_one():
@@ -182,3 +186,33 @@ def test_compare_sids_names_the_failed_side(tmp_path):
         return True
     got = sound.compare_sids(o, u, 1, 0, 0, cache=tmp_path / "c", renderer=only_orig)
     assert got == {"sound_failed": "ours"}
+
+
+def test_a_whole_hop_shift_is_invisible_and_a_sub_hop_shift_is_not():
+    """The noise floor IS the hop, and this is the measurement that says so.
+
+    `align` corrects by a whole hop, so two renders offset by an exact
+    multiple of one align perfectly and `aud` must read exactly 1.0. Offset
+    them by HALF a hop and no integer lag can fix it -- the residue is what
+    sound_calibrate.py's shift check reports as the floor, and it is why HOP
+    was taken from 512 to 128 (floor 0.0343 -> 0.0069) at v0.5.453.
+
+    Pinning both halves matters: the first alone would pass on a metric that
+    ignored time entirely, and the second alone would pass on one that was
+    merely noisy.
+    """
+    s = _sine(2.0)
+    a = sound.features(s, RATE)
+
+    whole = np.concatenate([np.zeros(sound.HOP, dtype=np.float32), s])
+    b = sound.features(whole, RATE)
+    got = sound.compare_features(a, b, sound.align(a, b))
+    assert got["aud"] == pytest.approx(1.0, abs=1e-9), (
+        "an exact one-hop offset must be perfectly correctable")
+
+    half = np.concatenate([np.zeros(sound.HOP // 2, dtype=np.float32), s])
+    c = sound.features(half, RATE)
+    got_half = sound.compare_features(a, c, sound.align(a, c))
+    assert got_half["aud"] < 1.0, (
+        "a half-hop offset is not representable as an integer lag, so it must "
+        "leave a residue -- if this passes, the metric has stopped reading time")
