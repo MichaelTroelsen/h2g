@@ -4651,6 +4651,20 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             elif dr.get("per_1000") is not None:
                 row["drift_per_1000"] = dr["per_1000"]
                 row["drift_total"] = dr["total"]
+                # **The halves and the knee, copied from a NAMED tuple rather
+                # than by hand, because copying by hand is what went wrong.**
+                # v0.5.456 added `half_early_per_1000`, `half_late_per_1000`
+                # and `knee_per_1000` to `drift()`'s return, shipped them with
+                # six passing tests and described them in a commit message --
+                # and they reached NO row and NO artefact, because this block
+                # copies named keys and nobody added them here. The tests were
+                # not wrong: they test `drift()`, which was correct. They
+                # simply cannot see the wiring. That is the blind spot
+                # `test_preset_passthrough` exists to close for `convert()`
+                # options, one level over -- see DRIFT_ROW_KEYS.
+                for k in DRIFT_ROW_KEYS:
+                    if dr.get(k) is not None:
+                        row["drift_" + k] = dr[k]
                 # Whether *this* file's drift is the outer gate's declined
                 # skip correction -- see _drift_gate_skip_declined. Computed
                 # only where a drift figure was actually reported, since it
@@ -6428,6 +6442,16 @@ def _theil_sen_per_1000(pairs) -> float | None:
         return None
     slopes.sort()
     return slopes[len(slopes) // 2]
+
+
+# Everything `drift()` reports that a ROW carries beyond the headline rate,
+# named ONCE so `_measure` cannot fall behind `drift()` again. A key added to
+# the estimator and not to this tuple reaches no artefact, which is exactly how
+# the knee shipped inert at v0.5.456. `tests/test_drift_knee.py` asserts this
+# tuple covers every extra key `drift()` can return, so the next field cannot
+# repeat it silently.
+DRIFT_ROW_KEYS = ("half_early_per_1000", "half_late_per_1000",
+                  "knee_per_1000", "knee")
 
 
 def drift(orig: Trace, ours: Trace) -> dict:

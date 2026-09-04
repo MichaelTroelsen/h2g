@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.457 — 2026-09-04
+
+- the drift knee fields reach the row, and the copy list is derived rather than hand-maintained
+
 ## 0.5.456 — 2026-09-04
 
 - two instrument-count defects, the relocated file's effect byte, and drift learns to say two rates

@@ -103,3 +103,38 @@ def test_too_few_pairs_reports_no_halves_rather_than_guessing():
     if d.get("per_1000") is not None:
         assert "knee" not in d
         assert "half_early_per_1000" not in d
+
+
+# --------------------------------------------------------------- the WIRING
+#
+# The six tests above all passed while the fields reached no row and no
+# artefact, because they test `drift()` and the loss was in `_measure`. That
+# is the same blind spot `test_preset_passthrough.py` closes for `convert()`
+# options: a value can be correct, tested, committed and described in a commit
+# message, and still be invisible downstream.
+
+def test_every_extra_key_drift_can_return_is_in_DRIFT_ROW_KEYS():
+    """`_measure` copies DRIFT_ROW_KEYS; anything absent from it is dropped.
+
+    Derived from a real return rather than a hardcoded list, so adding a key to
+    `drift()` and forgetting the tuple fails HERE rather than silently reaching
+    no artefact.
+    """
+    a, b = _traces(*_kneed(early=-0.01, late=0.04))
+    d = F.drift(a, b)
+    # what `_measure` copies by name, plus the two it derives itself
+    named = {"n", "voices", "per_1000", "total", "span", "mad", "intercept",
+             "q1_per_1000", "q3_per_1000", "unfitted"}
+    extra = set(d) - named
+    missing = extra - set(F.DRIFT_ROW_KEYS)
+    assert not missing, (
+        f"drift() returns {sorted(missing)}, which _measure will not copy -- "
+        f"add them to DRIFT_ROW_KEYS or they reach no row")
+
+
+def test_the_row_keys_are_prefixed_the_way_the_existing_ones_are():
+    # drift_mad / drift_span / drift_lag are the convention; a field that
+    # arrived unprefixed would be the odd one out in every consumer.
+    for k in F.DRIFT_ROW_KEYS:
+        assert not k.startswith("drift_"), (
+            f"{k} is a drift() key; _measure adds the drift_ prefix")
