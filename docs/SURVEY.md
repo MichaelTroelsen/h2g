@@ -1,12 +1,15 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.455**
+- Converter: `h2g` **0.5.456**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
 - Output format: **GTS2** (of GTS2/GTS5) (3-table, original VB6 behaviour; note Goattracker's legacy GTS2 importer overruns its pattern array on the portamento commands this converter emits — prefer `--format gts5` for files you will open in Goattracker)
 - Restart position: **legalised** (`--legal-restart`) — a tune ending on Hubbard's `$FE` marker loops from the top instead of stopping, which is what lets `gt2reloc` export it at all
 - Converted: **86** of 89 in reach (97%) — Failed: **3** — Out of scope: **6** (not a Hubbard player)
+- Counted under: **default conversion options** plus this run's flags (`--dedup-patterns` off, `--prune-patterns` off, `--max-rows 94`) — **not** `presets.json`'s per-song options
+
+> The counts above are taken with the options named above, which are the converter's **defaults**. `presets.json` records a per-song option set instead, and options that are not defaults (`--prune-patterns`, `--dedup-patterns` and a raised `--max-rows` among them) rescue files that hit a Goattracker pattern or orderlist limit at the defaults. So a preset-driven run converts a **different, generally larger** set than this one, and `docs/FIDELITY.md` and `presets.json` may carry more files than this report. That is not a disagreement between the artefacts; they answer different questions and both are right.
 
 > "Converted" means the converter produced a `.sng` without erroring. It does **not** mean the output is musically correct. Only the repo's own `Commando.sid` is verified byte-exact against the original VB6 tool; note that the corpus copy of `Commando.sid` is a *different rip* (4165 B / 19 subtunes vs the repo's 4222 B / 3 subtunes), so its row here is not comparable to that fixture.
 
@@ -75,14 +78,14 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Bump_Set_Spike.sid` | Bump Set Spike | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 | 26 | 78 | - | 19770 | y |  |
 | `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | Chain Reaction | 9 | 1 | 30 | 37 | - | 10769 | y |  |
 | `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 26 | 120 | - | 34060 | y | 1 subtune(s) too long |
-| `Chimera.sid` | Chimera | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 2 (hdr 4) | 9 | 65 | - | 13878 | y |  |
+| `Chimera.sid` | Chimera | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 2 (hdr 4) | 20 | 65 | - | 14307 | y |  |
 | `Commando.sid` | Commando | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 19) | 14 | 65 | - | 15193 | y |  |
 | `Commodore_64_Music_Examples.sid` | Commodore 64 Music Examples | PSID v2 | Companion, Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 15) | 14 | 145 | - | 10134 | y |  |
-| `Confuzion.sid` | Confuzion | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 12 | 56 | - | 15599 | y |  |
+| `Confuzion.sid` | Confuzion | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 13 | 56 | - | 15638 | y |  |
 | `Crazy_Comets.sid` | Crazy Comets | PSID v2 | Rob_Hubbard | Last V8 | 1 | 2 (hdr 17) | 24 | 80 | - | 19651 | y |  |
 | `Deep_Strike.sid` | Deep Strike | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 13 | 56 | - | 13342 | y |  |
 | `Delta_Mix-E-Load_loader.sid` | Delta Mix-E-Load (loader) | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 16) | 30 | 40 | - | 11220 | y |  |
-| `Devils_Galop.sid` | Devils Galop | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 16 | 83 | - | 24046 | y |  |
+| `Devils_Galop.sid` | Devils Galop | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 17 | 83 | - | 24085 | y |  |
 | `Flash_Gordon.sid` | Flash Gordon | PSID v2 | Rob_Hubbard | Warhawk | 0 | 9 | 19 | 147 | - | 46397 | y |  |
 | `Food_Feud.sid` | Food Feud | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 15 | 57 | - | 15453 | y |  |
 | `Formula_1_Simulator.sid` | Formula 1 Simulator | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 2) | 16 | 37 | - | 10750 | y |  |
@@ -129,7 +132,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Ricochet.sid` | Ricochet | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | IK+ | 7 | 1 | 17 | 138 | - | 45642 | y |  |
 | `Rikky.sid` | Rikky | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 130 | - | 43269 | y | digi channel dropped |
 | `Rock_Tells_the_Tale.sid` | The Rock Tells the Tale | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi) | Auf Wiedersehen Monty | 2 | 1 | 18 | 89 | - | 25163 | y | digi channel dropped |
-| `Saboteur_II.sid` | Saboteur II | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 17 | 54 | - | 13888 | y |  |
+| `Saboteur_II.sid` | Saboteur II | PSID v2 | Rob_Hubbard | Auf Wiedersehen Monty | 2 | 1 | 18 | 54 | - | 13927 | y |  |
 | `Samantha_Fox_Strip_Poker.sid` | Samantha Fox Strip Poker | PSID v2 | Rob_Hubbard | Samantha Fox | 3 | 14 | 25 | 83 | - | 15220 | y |  |
 | `Sanxion.sid` | Sanxion | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 (hdr 2) | 30 | 69 | - | 21993 | y |  |
 | `Shockway_Rider.sid` | Shockway Rider | PSID v2 | Rob_Hubbard | IK+ | 7 | 1 | 14 | 76 | - | 20425 | y |  |

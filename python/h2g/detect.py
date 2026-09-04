@@ -21,6 +21,26 @@ from .sidfile import HLEN, FreqTable, SidFile, find_freq_table
 WAVEFORMS = {
     0x00, 0x01, 0x09, 0x11, 0x13, 0x15, 0x17, 0x21, 0x23, 0x25, 0x27,
     0x41, 0x43, 0x45, 0x47, 0x51, 0x53, 0x55, 0x57, 0x81,
+    # The four gate-CLEAR forms. Every other entry here sets the gate bit, so
+    # a record whose `+2` byte selects a waveform WITHOUT it terminated the
+    # instrument table -- `_count_instruments` uses this set as its end test.
+    #
+    # **Chimera proves these are records rather than terminators, and it is a
+    # mid-table proof rather than an argument.** Its `+2` column reads
+    # `41 41 41 81 41 41 41 11 [10] 81 11 41 41 41 41 41 41 41 15`: the `$10`
+    # sits at index 8 with TEN ordinary waveform records after it, and the
+    # widened walk stops on `$0A`, which is not a waveform. So the table is 19
+    # records and was being read as 8 -- an eleven-record truncation, not an
+    # off-by-one.
+    #
+    # Scoped by measurement rather than by symmetry: over the corpus these four
+    # move exactly three files (Chimera 8 -> 19, Devils_Galop 15 -> 16,
+    # Saboteur_II 16 -> 17), and `$20`/`$80` move NOTHING that `$10`/`$40` do
+    # not -- checked, so including them costs no blast radius and avoids the
+    # near-miss a half-set invites. The combination forms ($12, $22, $52 ...)
+    # are deliberately NOT added: no corpus file uses one, so they would be
+    # widening on no evidence at all.
+    0x10, 0x20, 0x40, 0x80,
 }
 
 Logger = Callable[[str], None]
@@ -392,6 +412,12 @@ INSTRUMENT_INDEX_SHAPE = "BD ?? ?? 8E ?? ?? 0A 0A 0A AA BD ?? ??"
 def _count_instruments(data: bytes, start: int, stride: int, log: Logger) -> int:
     """Records whose `+2` waveform byte is a waveform, walking at `stride`.
 
+    TWO defects lived in this loop and they are INDEPENDENT -- each was
+    measured with the other held off, because a pair shipped together reads as
+    one number. The gate-clear waveforms (see `WAVEFORMS`) move Chimera,
+    Devils_Galop and Saboteur_II; the end-of-file peek below moves Confuzion
+    and nothing else.
+
     A function rather than a loop in `detect()` because it has to run TWICE:
     once where the instrument table is found, and again if a later chain
     changes `instr_stride` under it. See the re-take after the
@@ -411,11 +437,29 @@ def _count_instruments(data: bytes, start: int, stride: int, log: Logger) -> int
             return n
         if data[j] not in WAVEFORMS:
             return n
-        j += stride
-        if j >= len(data):
+        # **The test is whether THIS record is complete, not whether the NEXT
+        # one's waveform byte is readable.** The old peek advanced first and
+        # returned without the `n += 1` the passed waveform test had already
+        # earned, so it required `stride - 2` more bytes than the record
+        # actually occupies. That is stricter than the format by most of a
+        # record, and it split the two corpus files whose table abuts the end
+        # of the file in opposite directions:
+        #
+        #   Confuzion    record 11 spans [2500, 2508) of a 2508-byte file --
+        #                COMPLETE, and was being dropped (11 read, 12 real).
+        #   Action_Biker record 12 spans [3129, 3137) of a 3136-byte file --
+        #                its `+2` byte IS readable and the record is one byte
+        #                short, so it must NOT be counted.
+        #
+        # Counting on the readable `+2` byte alone gets Confuzion right and
+        # Action_Biker WRONG: it emitted a record from truncated bytes and the
+        # conversion died with an IndexError. The corpus byte-hash is what
+        # said so -- the suite was green. Completeness gets both right.
+        if j - 2 + stride > len(data):
             log("*** CAN'T FIND INSTRUMENT-END, SET TO DEFAULT (1 INSTRUMENT) ***")
             return n
         n += 1
+        j += stride
 
 
 def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
@@ -3095,13 +3139,36 @@ def _effect_byte_address(sid: SidFile, det: Detection):
     """
     if det.instr_start < 0:
         return None
-    # Inverse of SidFile.to_offset. A relocated file (to_offset's `relocation`
-    # branch) would need the relocated form instead, but no such corpus file
-    # gets this far -- the probe returns None when the load is not found.
+    # Inverse of SidFile.to_offset, and it needs BOTH of that function's
+    # branches rather than one.
+    #
+    # **The comment here used to read "a relocated file would need the
+    # relocated form instead, but no such corpus file gets this far". That is
+    # FALSE, and I_Ball is the counterexample it was written to excuse.**
+    # I_Ball moves $1000 bytes from $9000 to $E000 at init, carries
+    # `effect_bit40` TRUE, and reaches this line -- whereupon the naive
+    # inversion computes $9712, the address in the file's own image, and
+    # searches for `LDA $9712,Y`. The player reads the RELOCATED copy and
+    # spells it `LDA $E712,Y`, which is present at offset 600. So the probe
+    # returned None on the one file in the corpus that needs it, and every
+    # routine gated on the effect byte -- the two-stage attack, bit $02's
+    # alternation, bit $40's pitch -- was switched off for it.
+    #
+    # Ordered the way `to_offset` orders its own branches, and the way
+    # `find_relocation` and `find_init_writes` are ordered: the plain form is
+    # tried FIRST and the relocation is consulted only where it found nothing,
+    # so a file that already reads correctly can never be disturbed by this.
     base = det.instr_start - (HLEN - 1) + sid.load_addr + 7
     if not 0 <= base <= 0xFFFF:
         return None
     i = search_file(sid.data, "B9 %02X %02X" % (base & 0xFF, base >> 8))
+    if i <= -1:
+        r = sid.relocation
+        if r is not None and r.src <= base < r.src + r.length:
+            moved = base - r.src + r.dst
+            if 0 <= moved <= 0xFFFF:
+                i = search_file(sid.data,
+                                "B9 %02X %02X" % (moved & 0xFF, moved >> 8))
     if i <= -1 or i + 5 >= len(sid.data):
         return None
     store = sid.data[i + 3]

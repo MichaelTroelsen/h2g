@@ -1,10 +1,11 @@
 {
  "generated_from": {
-  "head": "83ce442",
+  "head": "8b7b218",
   "sources": [
    "whats-next.md",
    "todo.md",
    ".claude/tasks/runs.jsonl",
+   ".claude/tasks/whattask.json (previous)",
    "docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
    "git log",
    "graphify-out/graph.json"
@@ -26,60 +27,6 @@
  ],
  "tasks": [
   {
-   "id": "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455",
-   "title": "Regenerate FIDELITY.md and build/fidelity.json on the clean v0.5.455 tree",
-   "source": "runs.jsonl#build-fidelity-json-is-stale-for-five-digi-files.opened,#regenerate-fidelity-md-so-the-new-cov-column-actually-appears.opened,#docs-fidelity-md-carries-aud-and-loud-at-the-old-hop.opened,#aud-and-loud-move-corpus-wide-under-the-new-align.opened",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:presets.json",
-    "rw:build/audio/",
-    "r:python/fidelity.py",
-    "r:python/sound.py",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "rebuilds the corpus fidelity artefacts; multi-hour, writes build/audio and both artefacts",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "From python/: python fidelity.py <corpus> -t 60 --presets ../presets.json --sound -o ../docs/FIDELITY.md --json ../build/fidelity.json. THEN pytest tests/test_output_sha.py -q PASSES -- it fails 17 of 89 at v0.5.455 because the artefact still records pre-fix shas -- AND the new cov column appears in every row, AND the aud/loud movement is checked against the recorded PREDICTION of mean +0.0053 rather than merely observed.",
-   "why_model": "must judge whether the corpus-wide aud/loud movement is the predicted one, not just run a command",
-   "why_mode": "a multi-hour corpus rebuild writing both artefacts; no delegated agent outlives it",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
-  },
-  {
-   "id": "the-fidelity-report-should-print-how-much-of-each-tune-its-window-contained",
-   "title": "cov column: code shipped at v0.5.455, only the artefact half remains",
-   "source": "runs.jsonl#partial",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:python/fidelity.py",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Every row of docs/FIDELITY.md carries a cov value. DURABLE ALREADY: window_coverage, length_never_ends_seconds, the Dimension entry, _fmt_coverage and the two tests all shipped in 83ce442 -- do not rebuild them. Only the regeneration remains.",
-   "why_model": "a check that the regenerated artefact carries the column",
-   "why_mode": "reads the artefact the regeneration writes",
-   "why_lane": "touches overlap another task on build/fidelity.json, docs/FIDELITY.md, host:C:/t/"
-  },
-  {
    "id": "raising-the-fidelity-window-to-180-needs-a-task-that-declares-both-artefacts",
    "title": "Decide the fidelity window at 180 s, now that its search cost is measured",
    "source": "runs.jsonl#blocked,#the-180-second-window-costs-75-minutes-of-search-not-24.opened",
@@ -97,20 +44,18 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/raising-the-fidelity-window/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "regenerates both fidelity artefacts at a new window; multi-hour",
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "A decision on the window with the cost paid or --shard used, both artefacts regenerated at the chosen window, and CLAUDE.md + README stating it. THE COST INPUT MOVED AT v0.5.455: the seven-toggle search is 25m21s at 60 s (timed), so 180 s is about 75 minutes rather than the 24 the old paragraph derived from a FIVE-toggle figure. That correction cuts AGAINST raising it.",
    "why_model": "a corpus-wide methodology decision weighing a measured cost against a measured benefit",
    "why_mode": "regenerates both artefacts and rewrites two docs",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "monty-drums-play-four-octaves-too-low",
@@ -126,7 +71,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/monty-drums-play-four-octave/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -137,7 +82,7 @@
    "verify": "Monty's voice-1 noise pitches follow the pattern note, with a corpus byte-hash naming exactly the files that move. PRIOR WORK, DURABLE: the cause is located in _two_stage_entries and the population is the bit-$40 fixed-attack files (7), NOT the wave_program files the old verify named. The block was python/tests/test_effect_bit80.py being ungranted; the whole h2g subsystem and its tests are granted here.",
    "why_model": "six partial attempts and the cause was mislocated three times",
    "why_mode": "an emitter change needing the corpus byte-hash and both artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "ik-plus-voice-2-strikes-222-attacks-against-the-originals-481",
@@ -153,7 +98,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ik-plus-voice-2-strikes-222/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -164,7 +109,7 @@
    "verify": "IK+ voice 2's attack count moves toward the original's 481 from 222, with a corpus byte-hash naming the files that move. PRIOR WORK: the fix lives in SFX_DRUM_SHAPE / _find_sfx_drum in python/h2g/detect.py, which the old touches omitted -- granted here. Ricochet carries effect_bit80 with neither drum spelling matching and is the second file of the population.",
    "why_model": "a detection-signature hunt where a plausible wrong spelling is cheap to produce",
    "why_mode": "a detection change needing the byte-hash and both artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "the-interleaved-engines-vibrato-family-is-the-rest-of-its-missing-pitch-travel",
@@ -180,7 +125,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/the-interleaved-engines-vibr/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -191,7 +136,7 @@
    "verify": "At least one of $83/$86/$87 emitted, with the column movement on the six ilv files recorded. PRIOR WORK, DURABLE: all three plus $89 are DECODED; the block was python/h2g/goatwriter.py being ungranted. $83 is a semitone arpeggio wanting the wavetable rather than a pattern command; $87 is a filter cutoff sweep wanting a pattern-level filter route. The missing bend travel is NOT in $83/$86/$87 and is still unlocated.",
    "why_model": "a decoded-but-unemitted mechanism where the encoding choice is the hard part",
    "why_mode": "an emitter change spanning patterns.py and goatwriter.py",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "aud-cannot-see-any-of-the-three-documented-fixes-at-sixty-seconds-so-the-ab-chain-needs-a-decision",
@@ -199,10 +144,10 @@
    "source": "docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
    "model": "opus",
    "mode": "requires-user",
-   "lane": "serial",
+   "lane": "parallel",
    "touches": [
     "r:docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/aud-cannot-see-any-of-the-th/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -213,7 +158,7 @@
    "verify": "A recorded answer saying whether ab-5..ab-9 proceed as specified, are re-scoped onto a measure that can see the fixes, or are dropped.",
    "why_model": "the call rests on whether a measure blind to the fixes should gate approvals",
    "why_mode": "a design decision no amount of work resolves",
-   "why_lane": "touches overlap another task on host:C:/t/"
+   "why_lane": "no touches path overlaps any other task's"
   },
   {
    "id": "ab-5-approvals-inheritance",
@@ -227,7 +172,7 @@
     "rw:python/approvals.py",
     "rw:python/tests/test_approvals.py",
     "rw:python/tests/test_abpage.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ab-5-approvals-inheritance/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -240,7 +185,7 @@
    "verify": "The plan document's own acceptance criteria for this task, run as written.",
    "why_model": "bounded work against a written spec",
    "why_mode": "self-contained against a spec",
-   "why_lane": "touches overlap another task on host:C:/t/, python/abpage.py, python/approvals.py"
+   "why_lane": "touches overlap another task on python/abpage.py, python/approvals.py, python/tests/"
   },
   {
    "id": "ab-6-abpage-three-approval-states",
@@ -254,7 +199,7 @@
     "rw:python/approvals.py",
     "rw:python/tests/test_approvals.py",
     "rw:python/tests/test_abpage.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ab-6-abpage-three-approval-s/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -267,7 +212,7 @@
    "verify": "The plan document's own acceptance criteria for this task, run as written.",
    "why_model": "bounded work against a written spec",
    "why_mode": "self-contained against a spec",
-   "why_lane": "touches overlap another task on host:C:/t/, python/abpage.py, python/approvals.py"
+   "why_lane": "touches overlap another task on python/abpage.py, python/approvals.py, python/tests/"
   },
   {
    "id": "ab-7-presets-search-respects-approvals",
@@ -283,7 +228,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ab-7-presets-search-respects/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -296,7 +241,7 @@
    "verify": "The plan document's own acceptance criteria for this task, run as written.",
    "why_model": "changes the acceptance rule the whole preset search keys on",
    "why_mode": "writes presets.json and needs the surrounding context",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "ab-8-fidelity-queue",
@@ -310,7 +255,7 @@
     "rw:python/approvals.py",
     "rw:python/tests/test_approvals.py",
     "rw:python/tests/test_abpage.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ab-8-fidelity-queue/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -324,7 +269,7 @@
    "verify": "The plan document's own acceptance criteria for this task, run as written.",
    "why_model": "bounded work against a written spec",
    "why_mode": "self-contained against a spec",
-   "why_lane": "touches overlap another task on host:C:/t/, python/abpage.py, python/approvals.py"
+   "why_lane": "touches overlap another task on python/abpage.py, python/approvals.py, python/tests/"
   },
   {
    "id": "ab-9-drift-as-acceptance-term",
@@ -340,7 +285,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ab-9-drift-as-acceptance-ter/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -353,7 +298,7 @@
    "verify": "The plan document's own acceptance criteria for this task, run as written.",
    "why_model": "changes the acceptance rule the whole preset search keys on",
    "why_mode": "writes presets.json and needs the surrounding context",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "two-stage-fixed-attack-pitch-is-dropped-after-one-call-and-its-test-pins-the-bug",
@@ -369,7 +314,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/two-stage-fixed-attack-pitch/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -380,59 +325,7 @@
    "verify": "The fixed attack pitch survives the whole attack rather than one call, with a corpus byte-hash naming the moving files, AND the test that currently pins the WRONG behaviour rewritten to pin the right one (a green check asserting a defect is worse than none).",
    "why_model": "a test agrees with the defect, so the wrong answer is already written down and looks confirmed",
    "why_mode": "an emitter change with a byte-hash and both artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
-  },
-  {
-   "id": "chimera-and-confuzion-instrument-counts-are-two-different-off-by-ones",
-   "title": "Chimera's gate-clear triangle $10 and Confuzion's EOF peek each drop a record",
-   "source": "runs.jsonl#chimera-confuzion-and-mega-apocalypse-dangle-instruments.opened",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/",
-    "rw:python/tests/",
-    "r:presets.json",
-    "r:build/fidelity.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "corpus byte-hash over the whole corpus",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Both counted correctly, with a corpus byte-hash naming exactly the files that move. Chimera: waveforms that set the gate but clear it leave triangle byte $10, which undercounts instruments. Confuzion: count_instruments' EOF peek drops the last valid record when the table abuts the file end. These are TWO causes, not one; Mega Apocalypse's instrument 66 is a THIRD and is separately listed.",
-   "why_model": "two bounded off-by-ones in code whose shape is already understood",
-   "why_mode": "a detection change wanting the corpus byte-hash",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
-  },
-  {
-   "id": "mega-apocalypse-instrument-66-may-be-an-unmasked-effect-bit-rather-than-a-record",
-   "title": "Mega Apocalypse's instrument 66: unmasked effect bit, or a genuine record?",
-   "source": "runs.jsonl#chimera-confuzion-and-mega-apocalypse-dangle-instruments.opened",
-   "model": "opus",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/h2g/",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "chimera-and-confuzion-instrument-counts-are-two-different-off-by-ones"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "A decided answer with the player bytes quoted: either instrument 66 is a real record (and the count is right) or it is an unmasked effect bit being read as one. READ-ONLY -- the fix, if any, is a separate task.",
-   "why_model": "an is-this-real question where a plausible wrong reading is cheap",
-   "why_mode": "read-only and self-contained; the conclusion is a decoded byte",
-   "why_lane": "touches overlap another task on host:C:/t/, presets.json, python/h2g/"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "effect-byte-address-inverts-only-the-naive-branch-of-to-offset-so-i-ball-is-wrong",
@@ -448,7 +341,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/effect-byte-address-inverts/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -459,7 +352,7 @@
    "verify": "I Ball's per-record effect byte is found, with a corpus byte-hash showing I Ball moves and nothing else does. I Ball is the ONLY file with bit40 true and no per-record effect byte, and it is the file that relocates itself at init -- _effect_byte_address hand-inverts to_offset's naive branch and so misses the relocated case.",
    "why_model": "an address-arithmetic bug in a file with a relocation, where a near-miss is silent",
    "why_mode": "a detection change with the byte-hash and artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "sidfile-has-no-to-address-so-every-caller-hand-inverts-to-offset",
@@ -471,7 +364,7 @@
    "touches": [
     "rw:python/h2g/sidfile.py",
     "rw:python/tests/test_sidfile.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/sidfile-has-no-to-address-so/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -484,7 +377,7 @@
    "verify": "sidfile.to_address exists, every hand-inversion of to_offset is replaced by a call to it, and the corpus byte-hash reads MOVED 0 (this is a refactor, not a behaviour change). Grep for the inversion rather than only for the new helper -- extracting a helper is not the same as every caller using it.",
    "why_model": "a mechanical refactor against an existing shape",
    "why_mode": "single-module, byte-identity is the whole acceptance test",
-   "why_lane": "touches overlap another task on host:C:/t/, python/h2g/sidfile.py, python/tests/test_sidfile.py"
+   "why_lane": "touches overlap another task on python/h2g/, python/tests/"
   },
   {
    "id": "the-interleaved-classic-dialect-emits-no-filter-at-all-on-any-of-its-six-files",
@@ -500,7 +393,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/the-interleaved-classic-dial/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -513,7 +406,7 @@
    "verify": "The filt and cut columns become non-zero on the interleaved files that carry filter material, or a recorded refusal naming the mechanism that blocks it. It is FOUR of the six that emit zero filter frames, not just Go_Go_Dash -- re-take the count before citing it.",
    "why_model": "a whole dialect emitting nothing on a register family, cause unlocated",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "go-go-dash-emits-zero-noise-frames-against-the-originals-1972",
@@ -529,7 +422,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/go-go-dash-emits-zero-noise/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -540,61 +433,7 @@
    "verify": "Go_Go_Dash's noise frames move off zero toward the original's 1972, with the mechanism named. Related and SEPARATE: its onset reads 20% with ZERO early and ZERO late, so that is a SHAPE disagreement rather than a phase one, and its --pace least-squares fit reads 0.833 where its median reads 1.000 -- read the fit, not the median.",
    "why_model": "a zero-against-1972 gap whose cause is not yet located",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
-  },
-  {
-   "id": "the-three-moving-interleaved-files-now-overshoot-the-originals-attack-count",
-   "title": "Three interleaved files overshoot the original's attack count after the stride fix",
-   "source": "runs.jsonl#instr-used-is-counted-before-the-interleaved-rescue.opened",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/h2g/",
-    "r:presets.json",
-    "r:build/fidelity.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The overshoot quantified per file and attributed to a mechanism, read from build/fidelity.json and siddump traces. READ-ONLY diagnosis; any fix is a separate task.",
-   "why_model": "a bounded measurement against an existing harness",
-   "why_mode": "read-only against artefacts another task rebuilds",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
-  },
-  {
-   "id": "the-pulse-phase-multiplier-gate-declines-eleven-files-and-has-never-been-measured-above-s1",
-   "title": "The pulse_phase multiplier gate declines eleven files and was never measured above -S1",
-   "source": "runs.jsonl#done-superseded,#game-killer-gains-pphase.opened,#rasputins-pulse-phase-plan-makes-59-pattern-copies.opened",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/",
-    "rw:python/tests/",
-    "rw:presets.json",
-    "rw:docs/FIDELITY.md",
-    "rw:build/fidelity.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "corpus byte-hash plus artefact regeneration",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The gate either lifted with the eleven files measured above -S1, or a recorded refusal with the cost named. KNOWN: Game_Killer gains pphase 0.64 -> 0.91 and is blocked only by Rasputin's pack failure; Rasputin's own pulse-phase plan makes 59 pattern copies and gt2reloc refuses the result.",
-   "why_model": "a gate whose lifting trades pattern count against a register column",
-   "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled",
@@ -610,20 +449,18 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/promote-pulse-phase-into-fid/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "runs the corpus --fidelity search and writes presets.json",
-   "depends_on": [
-    "the-pulse-phase-multiplier-gate-declines-eleven-files-and-has-never-been-measured-above-s1"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "pulse_phase is in FIDELITY_TOGGLES and the search selects it where it helps. THE ORDER MATTERS and is why this depends on the gate task: promoting it while the multiplier gate still declines eleven files would measure the gate rather than the option. Note this makes the search an EIGHT-toggle walk -- re-time the cost, do not extrapolate it.",
    "why_model": "changes what the corpus search walks, so a wrong order silently measures the wrong thing",
    "why_mode": "writes presets.json and re-runs the search",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "six-regrid-adoptions-drift-more-at-180-seconds-and-want-re-deciding",
@@ -637,20 +474,18 @@
     "r:docs/FIDELITY.md",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/six-regrid-adoptions-drift-m/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "writes presets.json and needs -t 180 measurements",
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "Each of the six re-decided at -t 180 with its drift figure recorded, AND BMX_Kidz re-decided now that the over-supply is fixed (it was a 5.7x over-correction at 180 s before the fix), AND One_on_One's sawtooth drift confirmed against pattern boundaries. drift is the most window-sensitive number the report carries, so every figure must be taken at the same window.",
    "why_model": "per-song adoption decisions on a column no report criterion can select",
    "why_mode": "hand-records adoptions into presets.json",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "sigma-seven-and-wiz-lose-half-their-hold-agreement-under-the-regrid-fix",
@@ -664,20 +499,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/sigma-seven-and-wiz-lose-hal/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "The hold loss on Sigma_Seven and Wiz explained and either accepted with a reason or fixed. This is a REGRESSION introduced by 83ce442's regrid fix, so it is the first thing to check against the regenerated artefact.",
    "why_model": "a regression from a shipped fix, where the fix itself was correct",
    "why_mode": "reads the artefact the regeneration writes and may change the emitter",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/h2g/"
   },
   {
    "id": "replacing-the-envelope-search-with-the-attack-lag-moves-aud-on-87-files",
@@ -693,14 +526,12 @@
     "rw:build/sound_calibration.json",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/replacing-the-envelope-searc/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "A decision with its own A/B: replacing the envelope search with the attack estimate would move aud and loud on ~87 of 89 rows for a mean gain of 0.0018 -- a FIFTH of the noise floor -- with individual files moving up to 0.0586 in BOTH directions. v0.5.455 already narrowed the search to +-1 frame when a prior is supplied; decide whether the remaining search should go at all.",
@@ -722,14 +553,12 @@
     "rw:build/sound_calibration.json",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/sound-calibration-known-bad/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "known_bad detects all three known-bad pairs, or the check is re-specified with a reason. Samantha_Fox_Strip_Poker reads worse_by -0.0185 and Human_Race -0.0052 -- the version known to be WORSE scores BETTER. Only Las_Vegas_Video_Poker (+0.0122) is caught. This is why the calibration reports pass: false, and it is UNRELATED to the lag question.",
@@ -750,20 +579,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/drift-fits-one-rate-to-tunes/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "drift either reports a knee or declines to fit one rate across it, with the corpus census of how many files have one. One_on_One's two-voice fit differs TENFOLD between 60 s and 180 s, which is the symptom.",
    "why_model": "a bounded statistic change against an existing harness",
    "why_mode": "one module and its test; the census is mechanical",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/fidelity.py"
   },
   {
    "id": "claude-mds-graded-figures-should-be-a-committed-check-not-a-periodic-chore",
@@ -777,53 +604,25 @@
     "r:CLAUDE.md",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/claude-mds-graded-figures-sh/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "A new test (name it python/tests/test_claude_md_figures.py -- it does not exist yet) that re-derives CLAUDE.md's live population figures from presets.json and build/fidelity.json and fails when the file disagrees. v0.5.455 did this pass by hand in a script and found three of five 're-verified live' entries stale; the whole pass was mechanical, which is the argument for committing it. SKIP it when the artefacts are absent rather than failing for that reason.",
    "why_model": "mechanical: the derivation already exists as a working script",
    "why_mode": "one new test file against two generated artefacts",
-   "why_lane": "touches overlap another task on CLAUDE.md, build/fidelity.json, host:C:/t/"
-  },
-  {
-   "id": "survey-md-reports-86-converted-without-saying-on-which-options",
-   "title": "SURVEY.md says 86 converted without saying it means DEFAULT options",
-   "source": "runs.jsonl#opened",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/survey.py",
-    "rw:python/tests/test_survey.py",
-    "rw:docs/SURVEY.md",
-    "r:presets.json",
-    "r:build/fidelity.json",
-    "rw:host:C:/t/"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "regenerates docs/SURVEY.md",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "survey.py's TEMPLATE says which options its count is taken under, and the regenerated SURVEY.md carries it. Confirmed at v0.5.455: SURVEY reads 86 of 89 in reach on DEFAULT options while presets.json and build/fidelity.json carry 89 -- the gap is Delta, Dragons_Lair_Part_II and W_A_R, rescued by their presets' prune/dedup and W_A_R's max_rows 128. Two artefacts that look contradictory and are both right. This is a TEMPLATE edit in survey.py, not a doc edit.",
-   "why_model": "a bounded template change with the discrepancy already explained",
-   "why_mode": "regenerates SURVEY.md, which is a generated artefact",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "touches overlap another task on CLAUDE.md, build/fidelity.json, presets.json"
   },
   {
    "id": "docs-survey-md-instrument-counts-are-stale-after-the-interleaved-recount",
    "title": "SURVEY.md's instrument counts are stale after the interleaved stride recount",
    "source": "runs.jsonl#opened",
    "model": "sonnet",
-   "mode": "subtask",
+   "mode": "main",
    "lane": "serial",
    "touches": [
     "rw:docs/SURVEY.md",
@@ -831,20 +630,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/docs-survey-md-instrument-co/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "regenerates docs/SURVEY.md",
-   "depends_on": [
-    "survey-md-reports-86-converted-without-saying-on-which-options"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "SURVEY.md's instrument counts regenerated so the six interleaved files' 16-byte stride is reflected. Folds into the same regeneration as the options-wording task if both are taken together.",
    "why_model": "a regeneration and a read of the diff",
    "why_mode": "regenerates a generated artefact",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "claude-md-carries-three-more-figures-the-v0-5-455-pass-did-not-reach",
@@ -858,20 +655,18 @@
     "rw:H2G-CONVERSION-METHOD.md",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/claude-md-carries-three-more/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "Three sites corrected with the version they were re-taken at: (1) CLAUDE.md still records rest_wave_silence as costing 43pp of melody, which is no longer the measured figure; (2) the 'No column moved' bullet needs a FOURTH cause -- the window lacked the material, which the pitch_seq work established; (3) H2G-CONVERSION-METHOD.md 7.iiii carries the same stale wave_alternate figures goatwriter.py's comment already retracted at v0.5.455.",
    "why_model": "doc reconciliation against measurements already taken",
    "why_mode": "edits two hand-written docs and needs the surrounding context to place the corrections",
-   "why_lane": "touches overlap another task on CLAUDE.md, build/fidelity.json, host:C:/t/"
+   "why_lane": "touches overlap another task on CLAUDE.md, build/fidelity.json, presets.json"
   },
   {
    "id": "fold-test-digi-into-test-digi-engine-and-delete-the-duplicate",
@@ -883,7 +678,7 @@
    "touches": [
     "rw:python/tests/test_digi.py",
     "rw:python/tests/test_digi_engine.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/fold-test-digi-into-test-dig/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -894,7 +689,7 @@
    "verify": "One digi test file, the suite count unchanged apart from the merge, and no assertion dropped. test_digi.py was added at v0.5.455 beside an existing test_digi_engine.py.",
    "why_model": "a pure file merge",
    "why_mode": "two test files and nothing else",
-   "why_lane": "touches overlap another task on host:C:/t/, python/tests/test_digi.py, python/tests/test_digi_engine.py"
+   "why_lane": "touches overlap another task on python/tests/"
   },
   {
    "id": "fidelity-better-has-no-term-that-can-see-a-rest-parked-waveform",
@@ -910,20 +705,18 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/fidelity-better-has-no-term/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "runs the corpus --fidelity search and writes presets.json",
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "Either a term that can see a rest-parked waveform, with the corpus re-searched, or a recorded refusal. rest_wave_silence is adopted on ZERO songs and cannot be selected because no term reads what it changes -- the same shape as --rest-keyoff before the gate column existed, where the answer was to BUILD the column rather than ship on a hand-rolled probe. Related: it costs slides and bend together on exactly five wave_program files.",
    "why_model": "adds a term to the acceptance rule the whole search keys on",
    "why_mode": "re-runs the corpus search and writes presets.json",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "fidelity-json-reports-no-noise-pitch-so-part-of-fidelity-better-cannot-be-tested",
@@ -938,20 +731,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/fidelity-json-reports-no-noi/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "The --json output carries the noise-pitch figure fidelity_better's audible veto reads, so that veto becomes testable. Note CLAUDE.md records that NO report column sees a noise frame's pitch; this is the json half of that gap, not the column.",
    "why_model": "a bounded field addition to an existing serialiser",
    "why_mode": "one module and its test",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/fidelity.py"
   },
   {
    "id": "shipped-presets-carries-four-pitch-seq-yeses-and-five-max-hard-restart-noes-to-re-check",
@@ -965,20 +756,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/shipped-presets-carries-four/"
    ],
    "mcp": [],
    "needs_main": true,
    "needs_main_reason": "writes presets.json",
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "The four pitch_seq yeses and five max_hard_restart noes re-checked against the criterion as it stands at v0.5.455 (which gained a pulse-phase term), and each either confirmed or reversed with its figure. A missing entry and a measured no are indistinguishable in presets.json, so record the confirmations too.",
    "why_model": "bounded re-measurement against an existing criterion",
    "why_mode": "writes presets.json",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "bangkok-writes-adsr-0000-with-waveform-08-on-109-frames",
@@ -994,7 +783,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/bangkok-writes-adsr-0000-wit/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -1005,7 +794,7 @@
    "verify": "The 109 frames explained and either emitted or refused with the mechanism named. Neither --rest-envelope-silence nor --rest-wave-silence covers this combination, which is why it is a third case rather than a spelling either option missed.",
    "why_model": "a combination two existing options were built for and neither matches",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "action-biker-drum-run-is-one-frame-short-at-its-start",
@@ -1021,7 +810,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/action-biker-drum-run-is-one/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -1032,7 +821,7 @@
    "verify": "The drum run's start frame corrected without lengthening the run, with the byte-hash naming the files that move. The deficit is at the START -- a fix that merely lengthens the run would score the same on nrun and be wrong.",
    "why_model": "a one-frame placement question where the obvious fix is the wrong one",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "a-fourth-pitch-seq-file-was-expected-and-only-three-are-invisible-at-60-seconds",
@@ -1046,20 +835,18 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/a-fourth-pitch-seq-file-was/"
    ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [
-    "regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455"
-   ],
+   "depends_on": [],
    "blocked_on": null,
    "decision": null,
    "verify": "The fourth file identified, or the count corrected to three with the reason. The task that produced this measured 16 of 20 pitch_seq adoptions actually moving bytes and exactly three invisible at -t 60 (Lightforce, Saboteur_II, W_A_R) where four were expected. READ-ONLY.",
    "why_model": "a bounded recount against artefacts",
    "why_mode": "read-only against artefacts another task rebuilds",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/h2g/"
   },
   {
    "id": "chicken-song-alone-qualifies-for-the-derived-wave-alternate-and-there-is-no-option",
@@ -1075,7 +862,7 @@
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/chicken-song-alone-qualifies/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -1086,7 +873,7 @@
    "verify": "Either a route from the DERIVED wave_alternate dialect to _wave_alternate_entries with Chicken Song measured, or a recorded refusal. There is NO wave_alternate option at all -- not in convert(), not in FIDELITY_TOGGLES, not in EXCLUDED_FROM_ALWAYS -- so 'adopted on 0 songs' is not a selection gap; there is nothing to adopt.",
    "why_model": "an unimplemented route where the emitter exists and the dialect cannot reach it",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "the-six-interleaved-classic-files-have-never-been-listened-to",
@@ -1100,7 +887,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/the-six-interleaved-classic/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1111,7 +898,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
@@ -1125,7 +912,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/ace-ii-has-two-withheld-gain/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1136,7 +923,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "monty-firstwave-trade-needs-a-listen",
@@ -1150,7 +937,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/monty-firstwave-trade-needs/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1161,7 +948,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "action-biker-subtune-pairing-needs-an-ear",
@@ -1175,7 +962,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/action-biker-subtune-pairing/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1186,7 +973,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "action-biker-noise-runs-want-a-listen-because-the-columns-disagree",
@@ -1200,7 +987,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/action-biker-noise-runs-want/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1211,7 +998,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "pacific-coast-no-test-restart-adoption-trades-melody-for-rendered-audio",
@@ -1225,7 +1012,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/pacific-coast-no-test-restar/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1236,7 +1023,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "mega-apocalypse-pitch-seq-is-a-near-exact-vib-fix-costing-twelve-points-of-pitch",
@@ -1250,7 +1037,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/mega-apocalypse-pitch-seq-is/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1261,7 +1048,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "pandora-regresses-under-the-two-sided-attack-guard",
@@ -1275,7 +1062,7 @@
     "r:presets.json",
     "r:build/fidelity.json",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/pandora-regresses-under-the/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1286,7 +1073,7 @@
    "verify": "A recorded listening verdict.",
    "why_model": "the verdict is a human judgement about sound",
    "why_mode": "no measurement substitutes for an ear",
-   "why_lane": "touches overlap another task on build/fidelity.json, build/listen/, host:C:/t/"
+   "why_lane": "declares a resource exclusive by nature: rw:build/listen/"
   },
   {
    "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs",
@@ -1299,7 +1086,7 @@
     "rw:presets.json",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/a-corpus-fidelity-refresh-is/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1310,7 +1097,7 @@
    "verify": "A recorded yes/no on adopting the refresh.",
    "why_model": "a corpus-wide preset change deserving its own decision",
    "why_mode": "an adoption decision, not a measurement",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json"
   },
   {
    "id": "powerplay-regrid-refusal-rests-on-a-naming-artefact-and-should-be-re-decided",
@@ -1323,7 +1110,7 @@
     "rw:presets.json",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/powerplay-regrid-refusal-res/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1334,7 +1121,7 @@
    "verify": "A recorded yes/no on adopting --regrid for Powerplay.",
    "why_model": "an adoption decision resting on a measurement already complete",
    "why_mode": "the measurement is done; only the call remains",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json"
   },
   {
    "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
@@ -1348,7 +1135,7 @@
     "rw:presets.json",
     "r:presets.json",
     "r:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/regrid-is-not-in-fidelity-to/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1359,7 +1146,7 @@
    "verify": "A recorded decision.",
    "why_model": "a criterion-design call",
    "why_mode": "changes what the search walks; a design decision",
-   "why_lane": "touches overlap another task on build/fidelity.json, host:C:/t/, presets.json"
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/presets.py"
   },
   {
    "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
@@ -1371,7 +1158,7 @@
    "touches": [
     "rw:Commando.sng",
     "rw:python/tests/test_commando.py",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/any-commando-pitch-fix-requi/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1382,7 +1169,7 @@
    "verify": "A recorded authorisation, or a refusal.",
    "why_model": "the fixture is the project's only byte-exact anchor",
    "why_mode": "an authorisation no work resolves",
-   "why_lane": "touches overlap another task on Commando.sng, host:C:/t/, python/tests/test_commando.py"
+   "why_lane": "touches overlap another task on Commando.sng, python/tests/"
   },
   {
    "id": "commando-note-104-is-not-a-note-and-the-faithful-emission-is-a-fixed-high-pitch",
@@ -1398,7 +1185,7 @@
     "rw:presets.json",
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/commando-note-104-is-not-a-n/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -1411,7 +1198,7 @@
    "verify": "Commando's note 104 emits the fixed high pitch the player produces, the re-cut fixture is byte-exact against it, and all 26 byte-exactness tests pass against the NEW fixture.",
    "why_model": "changes the project's only byte-exact anchor",
    "why_mode": "re-cuts a fixture and regenerates artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "firstwave-set-across-the-hold-zero-files",
@@ -1426,7 +1213,7 @@
     "rw:presets.json",
     "rw:docs/FIDELITY.md",
     "rw:build/fidelity.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/firstwave-set-across-the-hol/"
    ],
    "mcp": [],
    "needs_main": true,
@@ -1439,7 +1226,7 @@
    "verify": "Either the change ships with the byte-hash naming the files that move, or a recorded refusal.",
    "why_model": "an emitter change whose population is currently empty",
    "why_mode": "an emitter change with artefacts",
-   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact"
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
   },
   {
    "id": "whattask-regeneration-carries-stale-verify-text-forward",
@@ -1447,10 +1234,10 @@
    "source": "runs.jsonl",
    "model": "sonnet",
    "mode": "requires-user",
-   "lane": "serial",
+   "lane": "parallel",
    "touches": [
     "r:.claude/tasks/whattask.json",
-    "rw:host:C:/t/"
+    "rw:host:C:/t/whattask-regeneration-carrie/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1461,7 +1248,7 @@
    "verify": "A recorded decision on whether /whattask should re-derive verify strings.",
    "why_model": "a change to the command's own contract",
    "why_mode": "the command lives in the mit-setup plugin, outside this repo",
-   "why_lane": "touches overlap another task on host:C:/t/"
+   "why_lane": "no touches path overlaps any other task's"
   },
   {
    "id": "orphaned-processes-survive-their-sessions",
@@ -1470,7 +1257,9 @@
    "model": "sonnet",
    "mode": "requires-user",
    "lane": "parallel",
-   "touches": [],
+   "touches": [
+    "rw:host:C:/t/orphaned-processes-survive-t/"
+   ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
@@ -1489,7 +1278,9 @@
    "model": "sonnet",
    "mode": "requires-user",
    "lane": "parallel",
-   "touches": [],
+   "touches": [
+    "rw:host:C:/t/locking-md-fix-is-uncommitte/"
+   ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
@@ -1508,7 +1299,9 @@
    "model": "sonnet",
    "mode": "requires-user",
    "lane": "parallel",
-   "touches": [],
+   "touches": [
+    "rw:host:C:/t/twenty-four-worktrees-hold-u/"
+   ],
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
@@ -1519,6 +1312,282 @@
    "why_model": "each worktree may hold unique work",
    "why_mode": "the user must say what is worth keeping",
    "why_lane": "no touches path overlaps any other task's"
+  },
+  {
+   "id": "build-fidelity-json-is-stale-again-for-the-four-instrument-count-files",
+   "title": "Regenerate the fidelity artefacts: four rows are stale again",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:presets.json",
+    "rw:build/audio/",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/build-fidelity-json-is-stale/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerates the corpus fidelity artefacts",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "pytest tests/test_output_sha.py -q passes. It fails '4 of 89' at 8b7b218 because the instrument-count fix (Chimera, Confuzion, Devils_Galop, Saboteur_II) landed after the last regeneration. Command: python fidelity.py <corpus> -t 60 --presets ../presets.json --sound -o ../docs/FIDELITY.md --json ../build/fidelity.json. **Do this on a COMMITTED tree** -- nine files are pending at 8b7b218. Warm-cache cost is about 5 minutes.",
+   "why_model": "a regeneration whose diff has to be read, not just run",
+   "why_mode": "rebuilds both fidelity artefacts",
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
+  },
+  {
+   "id": "the-ilv-decoder-has-no-tie-parameter-and-drops-99-percent-of-the-originals-ties",
+   "title": "The interleaved decoder cannot tie, and every dropped tie becomes an extra attack",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/",
+    "rw:python/tests/",
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/the-ilv-decoder-has-no-tie-p/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "corpus byte-hash plus artefact regeneration",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The six ilv files' tie counts move toward the originals' and their attack surplus falls, with a corpus byte-hash naming exactly the files that move. MEASURED ALREADY, do not redo: originals carry 2032-4143 tie frames and ours carry 18-682 (ratios 0.005-0.174), against a classic-dialect control of 0.44-1.29 with attack deltas of -2 to 0. The surplus sits in exactly the voice whose ties are dropped (Radio_ACE v1 +52 as its ties go 193->34). CAUSE: `_build_raw_pattern_ilv` has NO `tie` parameter and the word appears 0 times in it, while the classic decoder takes `tie: bool = False` -- and `tie` is in presets.json's `always` block, so it is on for every song and cannot reach this dialect. Judge PER VOICE: a net attack delta hides an opposite undershoot on another voice.",
+   "why_model": "an emitter change in a dialect whose grammar is only partly decoded",
+   "why_mode": "an emitter change needing the byte-hash and both artefacts",
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
+  },
+  {
+   "id": "which-other-always-block-options-cannot-reach-the-ilv-decoder",
+   "title": "Which other always-block options cannot reach the interleaved decoder?",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/",
+    "r:presets.json",
+    "rw:host:C:/t/which-other-always-block-opt/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A list of every option in presets.json's `always` block, each marked reachable or not reachable by `_build_raw_pattern_ilv`, derived from its signature and body rather than guessed. `tie` is the known one; the question is whether it is alone. READ-ONLY.",
+   "why_model": "a mechanical signature-versus-options comparison",
+   "why_mode": "read-only and self-contained; the conclusion is a list",
+   "why_lane": "touches overlap another task on presets.json, python/h2g/, python/h2g/sidfile.py"
+  },
+  {
+   "id": "sun-never-shines-and-lion-heart-voice-0-undershoot-by-fifty-and-forty-four-attacks",
+   "title": "Two interleaved files UNDERSHOOT on voice 0 -- a second, opposite defect",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/",
+    "r:presets.json",
+    "r:build/fidelity.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/sun-never-shines-and-lion-he/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The undershoot attributed to a mechanism. Sun_Never_Shines voice 0 is 306 -> 256 (-50) and Lion_Heart voice 0 is 372 -> 328 (-44): MISSING notes, not surplus ones, and what makes Lion_Heart's net delta negative while its voice 1 is +24. READ-ONLY diagnosis; any fix is a separate task.",
+   "why_model": "a missing-note hunt where a plausible wrong cause is cheap",
+   "why_mode": "reads artefacts another task rebuilds",
+   "why_lane": "touches overlap another task on build/fidelity.json, presets.json, python/h2g/"
+  },
+  {
+   "id": "the-classic-dialect-instrument-mask-should-be-derived-from-the-stride-not-fixed-at-7f",
+   "title": "The classic dialect's instrument mask is $7F where the player's own ASLs make it $1F",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/",
+    "rw:python/tests/",
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/the-classic-dialect-instrume/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "corpus byte-hash plus artefact regeneration",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The mask derived from `det.instr_stride` (x8 = three ASLs = 5 bits = & 0x1F; a 16-byte record shifts four times and masks & 0x0F), with a corpus byte-hash moving EXACTLY Mega_Apocalypse. MEASURED: `patterns.py:512` does `(b2 & 0x7F) + instr_base` while the player does `LDA $C9,X / ASL A / ASL A / ASL A / TAX` at $4BA2 -- an eight-bit shift that discards everything above bit 4, so byte $41 indexes record 1, not 65. 72 of 78 classic files carry the same `0A 0A 0A AA` shape but only Mega_Apocalypse has a pattern byte that sets bit $20 or $40. Anchor on the ASL-count actually present in each player rather than widening on one file.",
+   "why_model": "a shared decode path where a wrong widening reaches 72 files",
+   "why_mode": "an emitter change needing the byte-hash and both artefacts",
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
+  },
+  {
+   "id": "ilv-83-arpeggio-needs-instrument-clones-or-cmd-setwaveptr-and-the-two-routes-should-be-costed",
+   "title": "Choose the route for the interleaved $83 arpeggio: instrument clones or CMD_SETWAVEPTR",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/",
+    "rw:python/tests/",
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/ilv-83-arpeggio-needs-instru/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "corpus byte-hash plus artefact regeneration",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A costed choice between the two routes, then the emission, with the column movement on the six ilv files recorded. DURABLE ALREADY: $83's step counter is cleared at note start ($1397 inside the note-start block at $1388) so it is PER-NOTE state and a wavetable is the right container; the cycle is 0 / high nibble / low nibble, two-step when the low nibble is zero; 391 occurrences over six files; the operand varies per instrument (Lion_Heart instrument 5 carries four), so an instrument-level bake is refuted; and exactly ONE (file, instrument) pair is safe to bake. Route A: one clone per (record, operand) -- fits, 18-19 instruments against a limit of 50, largest file needs 9. Route B: CMD_SETWAVEPTR, Goattracker command 8, NOT defined in patterns.py -- cheaper on instruments but must register in BOTH TEMPO_OVERWRITABLE and ONE_SHOT_COMMANDS and contends for the command column with $82. Predict on `vib`/`depth`, NOT `bend`: siddump names semitone steps as notes.",
+   "why_model": "an encoding choice with two viable routes and a contended command column",
+   "why_mode": "an emitter change across patterns.py and goatwriter.py",
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
+  },
+  {
+   "id": "cmd-setwaveptr-is-goattracker-command-8-and-patterns-py-does-not-define-it",
+   "title": "patterns.py defines commands 3, 5, 6, 7 and 9 but not 8 (SETWAVEPTR)",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/patterns.py",
+    "rw:host:C:/t/cmd-setwaveptr-is-goattracke/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Either CMD_SETWAVEPTR = 8 defined with its gcommon.h reference and its registration requirements documented, or a recorded finding that nothing needs it. READ-ONLY survey first: does any emitter want it? It is the cheaper of the two $83 routes.",
+   "why_model": "a bounded constant-and-convention question",
+   "why_mode": "read-only survey of one module",
+   "why_lane": "touches overlap another task on python/h2g/"
+  },
+  {
+   "id": "i-ball-should-adopt-sfx-drum-and-the-search-must-decide-it-not-a-hand-edit",
+   "title": "Adopt --sfx-drum for I_Ball -- via the search, not a hand edit",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/presets.py",
+    "rw:python/tests/test_presets.py",
+    "rw:presets.json",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/i-ball-should-adopt-sfx-drum/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "runs presets.py --fidelity and writes presets.json",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "I_Ball's presets.json entry carries sfx_drum, decided by `presets.py --fidelity` rather than hand-written. MEASURED: with the option forced, `sequence` 0.7758 -> 0.9798, `retrigger_ratio` 0.6972 -> 0.9789, `onset` 0.75 -> 0.889, attacks 594 -> 834 against the original's 852 -- the attack count RISES, so this is not the fewer-events artefact. Costs `wave` -1.8pp. The mechanism became detectable only with the relocation fix, so the search has never been able to select it.",
+   "why_model": "an adoption the acceptance criterion must decide, not a human eyeballing an A/B",
+   "why_mode": "runs the corpus search and writes presets.json",
+   "why_lane": "needs_main (corpus rebuild / artefact write) is serial by that fact alone"
+  },
+  {
+   "id": "claude-md-carries-four-more-figures-and-three-probe-lessons-from-this-drain",
+   "title": "Four CLAUDE.md figures to re-grade, and three probe lessons worth recording",
+   "source": "runs.jsonl#claude-md-says-the-fidelity-run-is-15m46s.opened,#cov-says-three-files-are-fully-contained.opened,#songview-patterns-are-flat-byte-lists.opened,#a-probe-that-reimports-a-module.opened,#a-verify-written-from-a-symptom.opened",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:CLAUDE.md",
+    "r:build/fidelity.json",
+    "rw:host:C:/t/claude-md-carries-four-more/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Each corrected with the version it was re-taken at. FIGURES: (1) the fidelity run is 15m46s in CLAUDE.md and was 5m08s warm-cache at v0.5.455 -- NEITHER is labelled cold or warm; (2) `cov` says 3 files are fully contained at 60 s where CLAUDE.md records 2 (Action_Biker, Geoff_Capes, Kings_of_the_Beach_ingame), median coverage 0.100. LESSONS: (3) `songview.parse_sng`'s patterns are FLAT BYTE LISTS, four per row -- three probes in one session mis-read them and reported vacuous zeros; (4) a probe that re-imports a module cannot compare its dataclasses with `==`, because dataclass __eq__ requires the same class object -- compare by repr; (5) a verify written from a symptom can name a fix that is worse than the defect (the Confuzion 'move the n += 1' wording crashed Action_Biker).",
+   "why_model": "doc reconciliation against measurements already taken",
+   "why_mode": "edits a hand-written doc and needs the surrounding context",
+   "why_lane": "touches overlap another task on CLAUDE.md, build/fidelity.json"
+  },
+  {
+   "id": "survey-py-build-report-is-the-only-artefact-writer-with-a-test-check-the-others",
+   "title": "survey.py's build_report got its first test; which other artefact writers have none?",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/survey.py",
+    "r:python/fidelity.py",
+    "r:python/presets.py",
+    "r:python/tests/",
+    "rw:host:C:/t/survey-py-build-report-is-th/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A list of every function that writes a generated artefact (SURVEY.md, presets.json, FIDELITY.md, build/fidelity.json, SUBTUNES.md, the calibration docs), each marked as having a test or not. build_report had none until v0.5.455. READ-ONLY.",
+   "why_model": "a mechanical inventory",
+   "why_mode": "read-only and self-contained",
+   "why_lane": "touches overlap another task on python/fidelity.py, python/presets.py, python/tests/"
+  },
+  {
+   "id": "kings-of-the-beach-ingame-loses-the-most-aud-and-sat-at-the-old-search-bound",
+   "title": "Kings of the Beach ingame: worst aud mover, and the one file at the old +-500 ms bound",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/sound.py",
+    "r:build/fidelity.json",
+    "r:build/audio/",
+    "rw:host:C:/t/kings-of-the-beach-ingame-lo/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Its -0.0459 aud movement explained. It is the ONLY file whose old `sound_lag_ms` sat at the +-500 ms search bound (583.4 ms against a prior of 80), and it is newly fully contained in the 60 s window. The plausible cause -- that it now resolves near its attack prior instead -- is NOT verified. Pygmies_Revenge (-0.0368) and I_Ball (-0.0248) are the other losers and have no such story. READ-ONLY; scoring at arbitrary lags needs no re-render.",
+   "why_model": "a single-file anomaly with a plausible-but-unverified cause",
+   "why_mode": "read-only against the render cache",
+   "why_lane": "declares a resource exclusive by nature: r:build/audio/"
   }
  ],
  "closed": [
@@ -1671,6 +1740,24 @@
    "title": "commit the drains pending converter work and regenerate both artefacts before any window change",
    "closed_by": "83ce442",
    "reason": "Commit half done at 83ce442 (v0.5.455) with SURVEY.md and presets.json regenerated. The fidelity-artefact half is carried into regenerate-the-fidelity-artefacts-on-the-clean-tree-at-v0-5-455."
+  },
+  {
+   "id": "the-fidelity-report-should-print-how-much-of-each-tune-its-window-contained",
+   "title": "cov column: code shipped at v0.5.455, only the artefact half remains",
+   "closed_by": "83ce442",
+   "reason": "The cov column is present on all 89 rows of the regenerated docs/FIDELITY.md (uncommitted at 8b7b218); the computation and its two tests shipped in 83ce442. Nothing remains."
+  },
+  {
+   "id": "whattask-tasks-declare-the-scratch-root-so-all-57-serialise-on-scratch-alone",
+   "title": "Every task declared the scratch root, so all 57 serialised on scratch alone",
+   "closed_by": "8b7b218",
+   "reason": "Fixed in THIS regeneration rather than by a commit: every task now declares its own scratch subdirectory (rw:host:C:/t/<task-slug>/), so scratch no longer makes two unrelated tasks contend. A /runtask firing found 14 of 14 ready tasks blocked, one of them by scratch and nothing else."
+  },
+  {
+   "id": "whattask-emitted-a-task-with-mode-subtask-and-needs-main-true-which-cannot-both-hold",
+   "title": "A task was emitted with mode subtask AND needs_main true, which cannot both hold",
+   "closed_by": "8b7b218",
+   "reason": "Fixed in THIS regeneration: /runtask's step 4 forbids delegating a needs_main task, so the pair is a contradiction. No task in this plan carries both, and it is asserted mechanically before the file is written."
   }
  ]
 }

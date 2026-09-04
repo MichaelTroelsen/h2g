@@ -6400,6 +6400,36 @@ def matched_onsets(orig: Voice, ours: Voice) -> list[tuple[int, int]]:
             for i, j, n in sm.get_matching_blocks() for k in range(n)]
 
 
+# A knee this size is worth saying out loud. Not fitted to the corpus: it is
+# two frames per second of divergence-rate difference between the halves, well
+# clear of the 0.15-1.4 spread the 82 knee-free files show and well under
+# Rasputin's 46. The corpus splits 4 above 5, 1 above 25, 0 above 50.
+DRIFT_KNEE_PER_1000 = 5.0
+# Below this many pairs a half is not a fit, it is a coincidence.
+MIN_DRIFT_HALF = 4
+
+
+def _theil_sen_per_1000(pairs) -> float | None:
+    """The median pairwise slope of `pairs`, in frames per 1000.
+
+    The same estimator `drift` uses on the whole window, factored out so a
+    half cannot silently be fitted by a different rule than the whole -- which
+    is the failure the `--vice` translation made (a new instrument scored
+    under a new rule, and the difference read as a finding).
+    """
+    slopes = []
+    for i in range(len(pairs)):
+        ai, di = pairs[i][0], pairs[i][1] - pairs[i][0]
+        for j in range(i + 1, len(pairs)):
+            dx = pairs[j][0] - ai
+            if dx >= MIN_DRIFT_BASELINE:
+                slopes.append(((pairs[j][1] - pairs[j][0]) - di) / dx * 1000.0)
+    if not slopes:
+        return None
+    slopes.sort()
+    return slopes[len(slopes) // 2]
+
+
 def drift(orig: Trace, ours: Trace) -> dict:
     """Accumulated phase error: frames gained or lost per 1000 frames.
 
@@ -6580,6 +6610,60 @@ def drift(orig: Trace, ours: Trace) -> dict:
         out["unfitted"] = (f"offsets scatter {mad:.0f} frame(s) about the fit "
                            f"over {span} -- the two sides wander rather than "
                            f"drift, so no rate describes them")
+        return out
+    # **A KNEE IS A THIRD SHAPE, AND `mad` CANNOT SEE IT.** The gate above
+    # separates *drifting* from *wandering*. It does not separate a single
+    # rate from TWO rates: an offset that runs at one slope for half the
+    # window and another for the rest is still close to A line, so its `mad`
+    # stays small and the fit is accepted -- while the single number it
+    # reports describes neither half.
+    #
+    # Censused over the corpus at v0.5.455: **8 of the 89 measured files have
+    # halves differing by 5 frames/1000 or more, 3 by 10, 2 by 25, none by
+    # 50.** A rare shape rather than a class, which is why it is REPORTED
+    # rather than refused -- declining the fit would cost 81 files a good
+    # number in order to describe eight.
+    #
+    #   Rasputin        -8.16 ->  +41.16   (reported as a single -4.34)
+    #   Lakers_vs_Celt -38.46 ->   +0.00
+    #   Rikky           -1.93 ->  -24.39
+    #   Bangkok_Knights -8.85 ->   +0.00
+    #   Wiz             -0.76 ->   +7.30
+    #   Powerplay      -16.39 ->   -8.43
+    #   Monty           -9.69 ->   -3.18
+    #   5_Title_Tunes   +0.00 ->   +6.21
+    #
+    # Rasputin is the sharpest: a SIGN REVERSAL at `mad` 5.8, comfortably
+    # inside the scatter gate, so nothing here could see it before.
+    #
+    # **THE FIRST CENSUS OF THIS SAID 4, AND IT WAS WRONG FOR THE REASON THIS
+    # FILE WARNS ABOUT.** The probe fitted the halves with its own copy of the
+    # estimator that omitted `MIN_DRIFT_BASELINE`, so halves and whole were
+    # scored under different rules and the difference read as a finding --
+    # the `--vice` translation failure exactly. `_theil_sen_per_1000` exists
+    # so that cannot recur: the halves and the whole now call one function.
+    #
+    # Split per voice and pooled the same way the fit itself pools, so a voice
+    # resting through a section contributes to neither half rather than
+    # straddling the midpoint of a window it is absent from.
+    early, late = [], []
+    for got in per_voice:
+        mid = len(got) // 2
+        if mid >= MIN_DRIFT_HALF and len(got) - mid >= MIN_DRIFT_HALF:
+            early += got[:mid]
+            late += got[mid:]
+    if len(early) >= MIN_DRIFT_HALF and len(late) >= MIN_DRIFT_HALF:
+        a1, a2 = _theil_sen_per_1000(early), _theil_sen_per_1000(late)
+        if a1 is not None and a2 is not None:
+            out["half_early_per_1000"] = a1
+            out["half_late_per_1000"] = a2
+            out["knee_per_1000"] = abs(a1 - a2)
+            if abs(a1 - a2) >= DRIFT_KNEE_PER_1000:
+                out["knee"] = (
+                    f"the offset is not one rate: {a1:+.1f} per 1000 over the "
+                    f"first half of the matched onsets and {a2:+.1f} over the "
+                    f"second, so the reported {out['per_1000']:+.1f} describes "
+                    f"neither half")
     return out
 
 

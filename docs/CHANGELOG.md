@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.456 — 2026-09-04
+
+- two instrument-count defects, the relocated file's effect byte, and drift learns to say two rates
+
 ## 0.5.455 — 2026-09-04
 
 - the digi slide runs for its whole event, regrid is denominated in plays, and four cost figures were wrong

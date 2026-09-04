@@ -271,7 +271,9 @@ def _md_escape(text: str) -> str:
 def build_report(results: list[Result], sid_dir: Path,
                  max_rows: int = GT_DEFAULT_ROWS,
                  fmt: str = DEFAULT_FORMAT,
-                 legal_restart: bool = False) -> str:
+                 legal_restart: bool = False,
+                 dedup: bool = False,
+                 prune: bool = False) -> str:
     ok = [r for r in results if r.ok]
     # A file whose player SIDId names as someone else's editor is not a failure
     # of this tool -- no Hubbard fingerprint can match it and no new signature
@@ -312,6 +314,32 @@ def build_report(results: list[Result], sid_dir: Path,
                   if out_of_scope else "")
     lines.append(f"- Converted: **{len(ok)}** of {reach} in reach ({pct:.0f}%) — "
                  f"Failed: **{len(bad)}**{scope_note}")
+    # WHICH OPTIONS THAT COUNT IS TAKEN UNDER. Stated because this report and
+    # `presets.json` legitimately disagree about how many files convert, and a
+    # reader with no way to tell which question each answers reads a real
+    # difference as one of them being wrong. survey.py has no `--presets`: it
+    # converts on the DEFAULTS plus whatever flags this run was given, and the
+    # pattern-reducing ones are exactly what rescues a file that hits a
+    # Goattracker limit at the defaults. Named as a SET rather than a count,
+    # because a count decays and the set does not.
+    opt_state = ", ".join([
+        f"`--dedup-patterns` {'on' if dedup else 'off'}",
+        f"`--prune-patterns` {'on' if prune else 'off'}",
+        f"`--max-rows {max_rows}`",
+    ])
+    lines.append(f"- Counted under: **default conversion options** plus this run's "
+                 f"flags ({opt_state}) — **not** `presets.json`'s per-song options")
+    lines.append("")
+    lines.append("> The counts above are taken with the options named above, which are the "
+                 "converter's **defaults**. `presets.json` records a per-song option set "
+                 "instead, and options that are not defaults (`--prune-patterns`, ")
+    lines[-1] += ("`--dedup-patterns` and a raised `--max-rows` among them) ")
+    lines[-1] += ("rescue files that hit a Goattracker pattern or orderlist limit at the "
+                  "defaults. So a preset-driven run converts a **different, generally "
+                  "larger** set than this one, and `docs/FIDELITY.md` and `presets.json` "
+                  "may carry more files than this report. That is not a disagreement "
+                  "between the artefacts; they answer different questions and both are "
+                  "right.")
     lines.append("")
     lines.append("> \"Converted\" means the converter produced a `.sng` without erroring. "
                  "It does **not** mean the output is musically correct. Only the "
@@ -884,7 +912,8 @@ def main(argv=None) -> int:
         shutil.rmtree(workdir, ignore_errors=True)
     Path(args.output).write_text(
         build_report(results, sid_dir, args.max_rows, args.format,
-                     args.legal_restart),
+                     args.legal_restart,
+                     dedup=args.dedup_patterns, prune=args.prune_patterns),
         encoding="utf-8")
     ok = sum(1 for r in results if r.ok)
     print(f"{ok}/{len(results)} converted -> {args.output}")

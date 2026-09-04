@@ -40,6 +40,30 @@ SFX = ["ACE_II", "Auf_Wiedersehen_Monty", "Bangkok_Knights", "Delta",
 # per-record rule working rather than a detection that spread.
 SFX += ["After_8", "Mr_Meaner", "Off_the_Cuff", "Pygmies_Revenge", "Rikky",
         "Rock_Tells_the_Tale"]
+# v0.5.455: I_Ball, hidden the same way by a DIFFERENT guard in the same
+# function -- `_effect_byte_address` inverted only the plain branch of
+# `to_offset`, and I_Ball is the corpus's one relocated file, so the probe
+# looked for `LDA $9712,Y` where the player reads the moved copy at $E712.
+#
+# DISASSEMBLED before being added here, because this list's own rule is that a
+# thirteenth match would be "a shape nobody has disassembled". Its block is the
+# documented family verbatim:
+#
+#   E3E9  LDA $E557        ; the effect byte -- the address the fix computes
+#   E3EC  BPL $E41B        ; the "LDA effect / BPL" entry all 12 share
+#   E3EE  LDA $E566        ; a GLOBAL cell, not per voice or per instrument
+#   E3F1  CMP #$01 ... CMP #$06
+#   E405  LDA #$48 / STA $D40F      ; voice-3 frequency high
+#   E40A  LDA #$81 / STA $D412      ; noise + gate
+#   E40F  LDA #$60 / STA $D416      ; cutoff high
+#   E414  LDA #$2F / STA $D418      ; volume
+#   E400  STA $E566                 ; zeroed when it runs past the end
+#
+# UNLIKE the six above, I_Ball DOES have records that set bit $80 -- four of
+# its nineteen -- so here the drum is read AND emitted. Forced on, it takes
+# `sequence` 0.776 -> 0.980 and `retrig` 0.697 -> 0.979 with the attack count
+# 594 -> 834 against the original's 852.
+SFX += ["I_Ball"]
 
 EXPECTED = {
     "ACE_II": "program",
@@ -130,8 +154,12 @@ def test_the_sfx_block_is_a_fixed_pitch_drum_on_one_voice():
             continue
         if det.effect_bit80 == "sfx" and det.sfx_pitch >= 0:
             found[path.stem] = (det.sfx_pitch, det.sfx_voice, det.sfx_period)
-    # 7 until v0.5.236, when lifting the stride guard reached six more.
-    assert len(found) == 13, sorted(found)
+    # 7 until v0.5.236, when lifting the stride guard reached six more; 14
+    # since v0.5.455, when `_effect_byte_address` learned to invert
+    # `to_offset`'s RELOCATION branch as well and reached I_Ball. Both
+    # increments are the same shape: a guard in that one function hiding this
+    # whole family from a subset of the corpus.
+    assert len(found) == 14, sorted(found)
     # Every one of them is voice 3, and the pitch is a constant of the player
     # rather than the note -- which is the whole point: the SID's noise is an
     # LFSR clocked by the frequency, so noise at the note's own low pitch
