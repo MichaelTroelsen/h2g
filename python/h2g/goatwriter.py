@@ -3944,26 +3944,50 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             if a < len(data):
                 alt_byte = data[a]
         # `det.wave_alternate_noise` -- the derived dialect (Hollywood or
-        # Bust, Chicken Song) -- is deliberately NOT emitted here. It is
-        # decoded and measured: Chicken_Song gains (wave 77 -> 84%, noise
-        # 490 -> 919, nrun 0 -> 100%, onset 57 -> 86%, melody unmoved) and
-        # Hollywood_or_Bust loses **11 points of melody** for the same
-        # register gains. Two files, one each way, and no per-song switch
-        # short of a sixth `--fidelity` toggle -- which doubles a search
-        # already running 31 combinations a song. See
-        # H2G-CONVERSION-METHOD.md section 7.iiii.
+        # Bust, Chicken Song, and re-counted at v0.5.454 it is still exactly
+        # those two) -- is deliberately NOT emitted here, and the figures
+        # below are MEASURED AT 0aa0d5c rather than carried forward. The
+        # emission tested was the player's own derivation, read off
+        # `detect.WAVE_ALT_NOISE_SHAPE`'s comment: `AND #$07 / ORA #$80`,
+        # noise keeping the voice's control bits, i.e.
+        # `alt_byte = (wave & 0x07) | 0x80` in place of the table read above.
         #
-        # **Those figures were taken against a baseline that no longer
-        # exists**, and the "noise 490" half of it was never this dialect's:
-        # the 490 came from bit $01 emitting a drum on Chicken Song, which
-        # `detect._find_effect_routines` stopped doing once the block was
-        # required to contain the noise constant `LDA #$80` -- Chicken Song's
-        # writes a per-voice table byte to $D404 instead. Its baseline is now
-        # **0 noise frames**, and all 654 the original makes are on the two
-        # records that carry bit $02 (ADSR $0A07 and $0900), which is this
-        # dialect and nothing else. So the trade above still has to be
-        # re-measured before it is quoted; what it says today is that the one
-        # mechanism that would put noise in this file is the one held back.
+        #   Chicken_Song      wave 84.1 -> 77.0%   noise 0 -> 545 (orig 654)
+        #                     nrun - -> 100%       melody/seq/pitch/onset and
+        #                     both attack counts EXACTLY unmoved
+        #   Hollywood_or_Bust melody 57.6 -> 46.6%  seq 57.9 -> 47.0%
+        #                     pitch 69.6 -> 67.9%   wave 83.3 -> 72.2%
+        #                     vib 0.33 -> 0.17      noise 0 -> 998 (orig 1500)
+        #                     nrun - -> 100%        attacks 1140/1142 unmoved
+        #
+        # **The figures this comment used to carry were wrong in four places
+        # and one of them was INVERTED**, which is why they are spelled out
+        # above with the version they were taken at. It claimed Chicken_Song
+        # gained `wave 77 -> 84%`: the true baseline IS 84.1% and emitting
+        # takes it DOWN to 77.0%, so the old table's "post-emission" number is
+        # today's baseline. It claimed `noise 490 -> 919`, which is 0 -> 545 --
+        # the 490 was never this dialect's, it came from bit $01 emitting a
+        # bogus drum until `detect._find_effect_routines` required the noise
+        # constant `LDA #$80`. And it claimed `onset 57 -> 86%`, which does not
+        # move at all: 0.5714 in both arms. Only `nrun 0 -> 100%` and "melody
+        # unmoved" survive. For Hollywood_or_Bust the "**11 points of melody**"
+        # is exact, but "for the same register gains" is not -- its `wave`
+        # falls 11.1 points too, so noise is the only register it gains.
+        #
+        # **So the refusal now rests on measurement rather than on a stale
+        # trade.** Emitting unconditionally ships Hollywood_or_Bust's -11pp of
+        # melody, and there is no `wave_alternate` option to make it per song:
+        # it is absent from `convert()`, from `presets.FIDELITY_TOGGLES` and
+        # from `EXCLUDED_FROM_ALWAYS`, so "adopted on 0 songs" was never a
+        # selection gap. Chicken_Song alone is the interesting half -- it loses
+        # nothing any dimension scores except `wave`, and `fidelity_better`'s
+        # `finds_noise` term exists for exactly its shape (a conversion with
+        # NO noise where the original has 654). Whether that term would fire
+        # is untested here because the run reports no noise PITCH for either
+        # file, and `audible()` needs it.
+        # H2G-CONVERSION-METHOD.md section 7.iiii carries the same stale
+        # numbers and is NOT updated here -- it was outside this task's
+        # declared paths.
         if alt_byte is not None:
             # **Effect bit $08 rides the same pair.** It is the same counter
             # and the same phase test 24 bytes further on, alternating the

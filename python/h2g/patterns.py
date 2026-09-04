@@ -735,8 +735,16 @@ DIGI_TWO_OPERAND = (0x82, 0x83)
 #
 # One `CLC / ADC` pair, so the step is *signed*: a high byte of $80 or above
 # slides down. All nine digi files carry both shapes. The gate is cleared at
-# every note start ($10F4-$10F6), which is also what Goattracker does with a
-# channel's command (gplay.c:351), so the two persist alike.
+# every note start ($10F4-$10F6), so the slide runs for the whole EVENT.
+#
+# **This used to read "which is also what Goattracker does with a channel's
+# command (gplay.c:351), so the two persist alike", and that is wrong.** It
+# conflates the player's gate, which persists until the next note, with a
+# Goattracker command byte, which executes on the row it appears on and
+# nowhere else -- see the module header on `ONE_SHOT_COMMANDS`, and the ILV
+# decoder, which was given the repeat at v0.5.454 for this reason. The two do
+# NOT persist alike, and the emission repeats the command on the event's hold
+# rows to make them.
 #
 # $83 sets a vibrato, in the same $78-bound/$07-shift format the classic
 # players use, overriding the instrument's own byte for the rest of the note
@@ -829,6 +837,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # means the pointer is not at a pattern.
             return None
 
+        cmd = _digi_command(pending, steps) if pending is not None else None
         if b == DIGI_REST:
             # The player's rest closes the gate: $1184 does DEC $165D,X, taking
             # the mask just set to $FF at $10FF down to $FE -- the same value
@@ -836,17 +845,27 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # $D404 write at $148D, so bit 0 (GATE) is cleared. A hold row
             # ($BD) would sustain the previous note instead.
             events += [GT_KEYOFF, 0x00, 0x00, 0x00]
-            if pending is not None:
-                events[-2], events[-1] = _digi_command(pending, steps)
-                pending = None
         else:
             note = max(0, min(b, DIGI_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
-            if pending is not None:
-                events[-2], events[-1] = _digi_command(pending, steps)
-                pending = None
+        if cmd is not None:
+            events[-2], events[-1] = cmd
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
+            if cmd is not None:
+                # **Repeated on every hold row, exactly as the ILV decoder
+                # does** (v0.5.454). A Goattracker command byte executes on the
+                # row it appears on and nowhere else -- the module header on
+                # `ONE_SHOT_COMMANDS` -- and `CMD_PORTAUP`/`CMD_PORTADOWN` are
+                # continuous, so one row of command is one row of slide. The
+                # player's is not: $134C adds the step on EVERY frame while
+                # `gate,X` is set, and that gate is cleared only at the next
+                # NOTE START ($10F4-$10F6), so a slide runs for its whole
+                # event -- its hold rows included. Attached to the note row
+                # alone it stopped after one row, and 6 of the 9 digi files
+                # place hold rows immediately after their slides.
+                events[-2], events[-1] = cmd
+        pending = None
         addr += 1
 
         # The terminator is only ever read as the byte after a note.
@@ -2460,6 +2479,17 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
         # pay it. The debt a shared pattern raises is carried forward rather
         # than dropped, so the exclusive ones absorb the whole subtune's
         # deficit and the rate stays right on average.
+        # **How often THIS subtune's voice 0 plays each pattern**, which is
+        # the quantity the budget is denominated in. A row written into a
+        # pattern fires once per PLAY, so `n` rows in a pattern played `p`
+        # times deliver `n * p` calls of compensation -- and until v0.5.455
+        # the debit was `n`, so a replayed pattern over-supplied by exactly
+        # `p`. `plays` above counts every subtune and voice; this counts the
+        # orderlist actually being budgeted, and for an `exclusive` pattern
+        # (reach == {k} and where == {(k, 0)}) the two agree by construction.
+        order_plays: dict = {}
+        for pat in order:
+            order_plays[pat] = order_plays.get(pat, 0) + 1
         acc = 0.0
         want: dict = {}
         for pat in order:
@@ -2470,9 +2500,21 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
             # latest: its restore must be a real row, not the end marker,
             # or the raised tempo leaks into whatever plays next.
             if pat in exclusive and acc >= 1.0 and rows >= 4:
-                n = min(int(acc), max(1, (rows - 3) // 2))
-                want[pat] = max(want.get(pat, 0), n)
-                acc -= n
+                # **Buy rows for every play at once, and pay for every play.**
+                # `prev` is what this pattern already carries, so only the
+                # INCREMENT is charged -- which keeps the error diffusion the
+                # comment above describes (a later visit can still raise the
+                # count as the debt grows) while making delivery and debit the
+                # same quantity. `int(acc / p)` is what the accumulator can
+                # afford across all `p` plays; where it is 0 the row is simply
+                # not bought yet and the debt carries forward, exactly as a
+                # shared pattern's does.
+                p = max(1, order_plays.get(pat, 1))
+                prev = want.get(pat, 0)
+                n = min(prev + int(acc / p), max(1, (rows - 3) // 2))
+                if n > prev:
+                    want[pat] = n
+                    acc -= (n - prev) * p
         for pat, n in want.items():
             plan[pat] = (base, n)
 

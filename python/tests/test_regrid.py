@@ -96,15 +96,6 @@ def test_convert_leaves_the_byte_exact_fixture_alone_by_default():
     assert convert(str(root / "Commando.sid")) == (root / "Commando.sng").read_bytes()
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "KNOWN DEFECT, found at v0.5.453: `plays` is built in regrid_tempos and "
-    "never read, so a compensating row written into a pattern that the "
-    "orderlist REPLAYS is delivered once per play while the debt was debited "
-    "once. BMX_Kidz over-supplies 3.72x on this path (46.28 calls of debt, "
-    "172 delivered) and its drift goes -7.81 -> +44.88 at -t 180. The fix is "
-    "not shipped because it moves all 17 reached files, including the 12 whose "
-    "adoption was measured under this arithmetic. WHEN YOU FIX IT this test "
-    "XPASSes and strict=True turns that into a failure -- remove the marker."))
 def test_a_replayed_pattern_does_not_deliver_its_compensation_once_per_play():
     """Compensation delivered must match the debt raised, not exceed it.
 
@@ -112,6 +103,13 @@ def test_a_replayed_pattern_does_not_deliver_its_compensation_once_per_play():
     the same fractional debt, so four plays owe four times one play's worth --
     and the pattern is written ONCE, so whatever is written fires four times.
     The two must agree.
+
+    **Carried an `xfail(strict=True)` from v0.5.453 until v0.5.455**, when
+    `regrid_tempos` began budgeting each exclusive pattern against
+    `order_plays[pat]` -- buying rows for every play at once and charging the
+    increment times that count. The marker's own reason said to remove it on
+    the day this XPASSed; that day is this one, and the removal is the whole
+    of the instruction it left.
     """
     rows, deficit = 12, 0.25
     pats, tracks = [_pattern(rows)], [[0, 0, 0, 0], [], []]

@@ -140,11 +140,44 @@ def _sounding(f: Features) -> np.ndarray:
     return f.rms_db > SILENCE_DB
 
 
-def align(a: Features, b: Features, prior_s: float = 0.0,
-          window_s: float = 0.5) -> int:
+# How far the alignment may move, in seconds either side of its starting
+# point. **PRIOR_WINDOW_S is one frame and that is not a tuned number**: a
+# supplied prior is `0.02 * startup_lag`, a whole-FRAME count, so +-1 frame is
+# the prior's own quantisation and searching inside it resolves the estimate
+# rather than replacing it. Measured over the 89 corpus renders (scoring `aud`
+# at every hop from the cache, so no re-render): choosing the best hop within
+# +-0.02 s of the attack prior loses a mean 0.0022 of `aud` against the best
+# hop anywhere in +-0.5 s, with a MEDIAN of 0.0000 and only 7 of 89 files over
+# the 0.006932 noise floor -- against the old correlation search's mean 0.0075
+# and 23 of 89, and the bare prior's 0.0057 and 26 of 89. So the narrow
+# residual search is better than both the thing it replaces and the thing it
+# refines.
+PRIOR_WINDOW_S = 0.02
+WIDE_WINDOW_S = 0.5
+
+
+def align(a: Features, b: Features, prior_s: float | None = None,
+          window_s: float | None = None) -> int:
     """Hops to delay `a` by so its envelope lines up with `b`'s.
 
-    Bounded search around `prior_s`; objective is the normalised
+    Bounded search around `prior_s`. **The objective is `aud` ITSELF, the
+    residual this alignment is used for** -- changed at v0.5.455 from the
+    normalised cross-correlation of the baseline-removed envelopes, which is a
+    DIFFERENT reduction of the same signal and demonstrably not maximised by
+    the same hop. Measured over all 89 corpus renders from the cache: the
+    correlation search lost a mean 0.0075 of `aud` against the best hop in its
+    own window, over the 0.006932 noise floor on 23 of 89 files and by up to
+    0.0613 (Last_V8_C128_version). It was not fitting to the score either --
+    scored at the attack prior instead it was HIGHER on 47 files and LOWER on
+    40 -- it was simply optimising the wrong thing.
+    **This is not a free fit, and the window is what keeps it honest**: with a
+    prior it may move +-1 frame, the prior's own quantisation. Without one
+    (`prior_s is None`) it searches +-0.5 s, and the paragraph below is why
+    that wide case still needs care.
+    The retracted note that follows concerns the ENVELOPE objective and is
+    kept because the wide search still has to behave on the case it names.
+
+    The old objective was the normalised
     cross-correlation of the baseline-removed envelopes, clipped at
     SILENCE_DB so a long rest does not dominate -- with `b` extended by
     SILENCE_DB beyond its own recorded extent, so a candidate lag that would
@@ -175,13 +208,46 @@ def align(a: Features, b: Features, prior_s: float = 0.0,
 
     Negative means `b` is the late one.
     """
+    # **`prior_s is None` means NO ESTIMATE WAS SUPPLIED, which is a different
+    # thing from an estimate of zero** -- and conflating the two is the
+    # sentinel confusion this repo has been caught by before. With no prior
+    # the search must be wide, because the offset could be anything; with one
+    # it is a frame count from `fidelity.startup_lag` and the only thing left
+    # to resolve is that count's own quantisation.
     ea = np.maximum(a.rms_db, SILENCE_DB) - SILENCE_DB
     eb = np.maximum(b.rms_db, SILENCE_DB) - SILENCE_DB
     n = len(ea)
-    prior = int(round(prior_s / a.hop_s))
+    prior = int(round((prior_s or 0.0) / a.hop_s))
+    # **Refine only when the caller gave an estimate AND no opinion about the
+    # window.** Tying the mode to the window rather than to the prior alone is
+    # what keeps `align(a, b, prior_s=0.0, window_s=0.5)` meaning what it says
+    # -- search widely from zero -- instead of being read as "refine an
+    # estimate of zero". A caller that names the window is asking for a
+    # search; one that supplies a prior and leaves the window to us is asking
+    # for that prior to be resolved.
+    refine = prior_s is not None and window_s is None
+    if window_s is None:
+        window_s = PRIOR_WINDOW_S if refine else WIDE_WINDOW_S
     span = int(math.ceil(window_s / a.hop_s))
     if n < 4:
         return prior
+    if refine:
+        # **REFINING a known offset: score on `aud`, the residual this is used
+        # for.** Sound only inside the narrow window -- measured, the residual
+        # is multi-modal over a wide one and the search wanders: with the
+        # +-0.5 s window it recovered 240.9 ms for an injected 100 ms delay on
+        # a plain tone, the same shape of failure the retracted note below
+        # records for an earlier envelope form. So the objective and the
+        # window are one decision, not two.
+        best, best_lag = -np.inf, prior
+        for lag in range(prior - span, prior + span + 1):
+            c = compare_features(a, b, lag).get("aud")
+            if c is not None and c > best:
+                best, best_lag = c, lag
+        return best_lag
+    # **FINDING an unknown offset: the envelope correlation, unchanged.** It
+    # is the right tool for a search that has to locate the offset at all, and
+    # the paragraphs below are the record of what it took to get right.
     pad = span + n + 1
     eb_p = np.pad(eb, (pad, pad), constant_values=0.0)
     ea_norm = float(np.linalg.norm(ea))
@@ -261,7 +327,7 @@ def compare_features(a: Features, b: Features, lag_hops: int) -> dict:
     return {"aud": aud, "loud": loud, "loud_ratio": ratio, "sound_frames": n}
 
 
-def compare_wavs(a: Path, b: Path, prior_s: float = 0.0) -> dict:
+def compare_wavs(a: Path, b: Path, prior_s: float | None = None) -> dict:
     """`a` is the original, `b` ours. Aligns on the envelope, then scores."""
     xa, ra = read_wav_mono(a)
     xb, rb = read_wav_mono(b)
@@ -310,7 +376,7 @@ def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
 
 
 def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
-                 sub_ours: int, prior_s: float = 0.0,
+                 sub_ours: int, prior_s: float | None = None,
                  cache: Path = AUDIO_DIR,
                  renderer=listen.render_sidplayfp) -> dict:
     """Render both sides with ONE renderer and score them.

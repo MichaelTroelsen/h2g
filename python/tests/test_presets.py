@@ -461,3 +461,65 @@ def test_a_carried_hand_measurement_survives_a_fidelity_run():
     assert got["pulse_phase"] is True
     assert got["regrid"] is False, "an explicit refusal must survive too"
     assert "bytes" not in got, "derived fields are not carried"
+
+
+def _state(melody=1.0, seq=1.0, attacks=100, noise=(0, 0, 0, 0), osc=None,
+           onset=None, hold=None, gate=None, orig_attacks=100, pphase=None):
+    """A `tune_by_fidelity` state tuple, in the order `play()` builds it."""
+    return (melody, seq, attacks, noise, osc, onset, hold, gate,
+            orig_attacks, pphase)
+
+
+def test_a_pulse_phase_gain_is_enough_to_accept():
+    """The TENTH element, and the first thing in this criterion that reads
+    $D402/$D403.
+
+    Elements 0-8 are melody, sequence, our attacks, the noise 4-tuple,
+    `reversal_ratio`, `onset_frame_agreement`, `sound_run_agreement`, `gate`
+    and the original's attack count -- and the note beside `pulse_phase` in
+    `FIXED` records, measured at 64c795b, that not one of them touches the
+    pulse registers, which is why the search took that option on 0 of the 6
+    files it reaches. `pulse_phase` is ours-over-theirs with 1.0 right, so a
+    move toward 1 is a gain and `_closer` judges it in log space like every
+    other ratio here.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    ref = _state(pphase=0.20)
+    cand = _state(pphase=0.90)
+    assert presets.fidelity_better(cand, ref), \
+        "a pulse phase moving toward the original's is an acceptance"
+    assert not presets.fidelity_better(ref, cand), \
+        "and moving away from it is not"
+
+
+def test_the_pulse_term_is_acceptance_only_and_keeps_notes_still_vetoes():
+    """Never a veto, for the reason the oscillation and noise-pitch clauses
+    give: a setting that changes WHICH notes sound changes the attack frames
+    the phase is sampled at, so a term whose sample the setting resizes must
+    not be the thing that rejects it. And `keeps_notes` outranks it -- the
+    anti-gaming guard that has protected every term here since the first.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    # a big phase gain bought with a melody collapse is still refused
+    cand = _state(melody=0.40, pphase=0.99)
+    ref = _state(melody=1.00, pphase=0.10)
+    assert not presets.fidelity_better(cand, ref), "keeps_notes outranks it"
+    # and a phase LOSS alone never rejects a candidate winning on melody
+    cand2 = _state(melody=1.00, pphase=0.10)
+    ref2 = _state(melody=0.50, pphase=0.99)
+    assert presets.fidelity_better(cand2, ref2), "acceptance only, not a veto"
+
+
+def test_a_nine_element_state_still_works():
+    """An older saved state has no tenth element, and an absent dimension must
+    not recommend anything -- the same convention `osc`, `opens`, `holds` and
+    `gates` use. Without this the term would raise IndexError on any state
+    built before it existed.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    old_ref = _state()[:9]
+    old_cand = _state(melody=1.0)[:9]
+    assert presets.fidelity_better(old_cand, old_ref) is False

@@ -882,6 +882,12 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  pulse_phase=1.0,
                  orig_ends_at=10.0, ours_ends_at=10.0,
                  length_delta=0.0, length_bounded=False,
+                 # `cov`, from the same length probe as `length_delta`. A full
+                 # synthetic row carries it for the reason the audio pair
+                 # below does: `dimensions_present` reads its absence as
+                 # not-compared. 1.0 is the honest value here because this
+                 # fixture's original ends at 10.0 s inside its own window.
+                 window_coverage=1.0,
                  orig_filtered_frames=0, our_filtered_frames=0,
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
@@ -2485,3 +2491,53 @@ def test_the_sound_columns_are_described_in_the_report():
     text = fidelity.report([_row("A.sid", "measured", 1.0, 50, 50)], _Args())
     assert "* **aud** --" in text and "* **loud** --" in text
     assert "removes events" in text     # the 7.eee blind spot, stated
+
+
+def test_coverage_says_what_share_of_the_tune_the_window_saw():
+    """`cov` is the census in the table, so nobody has to re-run it.
+
+    Only 2 of 89 corpus files are fully contained at `-t 60`; every other row
+    is a scored PREFIX, and until this column there was nothing in the table
+    saying which was which. The three branches are the three things the length
+    probe can establish, and each prints differently on purpose.
+    """
+    # the original ends inside the window: the whole tune was scored
+    ended = _row("A.sid", "measured", 1.0)
+    ended["original_ends"] = 17
+    ended["window_coverage"] = 1.0
+    assert fidelity._fmt_coverage(ended) == "100%"
+
+    # the probe found an ending past the window: a real fraction
+    part = _row("B.sid", "measured", 1.0)
+    part["window_coverage"] = 60 / 247
+    assert fidelity._fmt_coverage(part) == "24%"
+
+    # the original outlasts the probe entirely: an UPPER bound, marked
+    never = _row("C.sid", "measured", 1.0)
+    never["window_coverage"] = 0.1
+    never["window_coverage_bounded"] = True
+    assert fidelity._fmt_coverage(never) == "<10%", (
+        "an upper bound must not print as a measurement")
+
+    # not placeable either way
+    unknown = _row("D.sid", "measured", 1.0)
+    unknown.pop("window_coverage", None)
+    assert fidelity._fmt_coverage(unknown) == "-"
+
+
+def test_coverage_is_a_registered_dimension_and_reaches_the_table():
+    """The registry and the hand-built row are two different places, and the
+    module's own history is that they can disagree silently -- `pphase` went
+    out one cell short and misaligned the whole table from `pul` rightwards.
+    `test_every_row_has_exactly_as_many_cells_as_the_header` covers the width;
+    this covers that the column is actually THERE and named.
+    """
+    assert any(d.key == "window_coverage" and d.column == "cov"
+               for d in fidelity.DIMENSIONS)
+    row = _row("A.sid", "measured", 1.0)
+    row["window_coverage"] = 0.25
+    text = fidelity.report([row], _Args())
+    header = next(l for l in text.splitlines() if l.startswith("| File |"))
+    assert " cov |" in header
+    body = next(l for l in text.splitlines() if l.startswith("| A.sid |"))
+    assert " 25% |" in body, "the computed share must reach the row"

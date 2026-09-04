@@ -44,8 +44,9 @@ test dependency).
   repo root, `.\convert.ps1` wraps the same thing and `.\play.ps1` also opens the
   result in GoatTracker.
 - **Open a song for listening with `.\play.ps1 -Presets presets.json`, never by
-  launching `goattrk2.exe` yourself.** 44 of the 83 preset songs pack above
-  `-S1` -- 26 of them at `-S2` or `-S3` -- so they advance a row every 2-3
+  launching `goattrk2.exe` yourself.** **49 of the 89 preset songs pack above
+  `-S1` -- 30 of them at `-S2` or `-S3`** (v0.5.454, counted from
+  `presets.json`) -- so they advance a row every 2-3
   frames or faster, and the editor calls the player once a frame, so a bare
   launch plays them at 1/multiplier speed. The `.sng` cannot encode the rate —
   Goattracker's fastest steady row is 3 calls (`TEMPO_FASTEST_STEADY`) — but the
@@ -977,8 +978,9 @@ test dependency).
 
   **60 STAYS FOR NOW, AND THE REASON IS COST ALONE.** Tripling the window
   triples every artefact and every search: the report is 15m46s at 60 s with
-  `--sound`, and `presets.py --fidelity` is 8 minutes — call it 45 minutes and
-  24 minutes at 180. `--shard I/N` splits the search and is the mitigation.
+  `--sound`, and `presets.py --fidelity` is **25m21s at seven toggles**
+  (timed, v0.5.455; the "8 minutes" this line used to carry is the
+  FIVE-toggle figure) — call it 45 minutes and 75 minutes at 180. `--shard I/N` splits the search and is the mitigation.
   Until that is paid, **the working rule is per-song rather than global: before
   adopting or refusing an option on one file, re-measure it at `-t 180`.** That
   rule is what caught all three flips above. Raising the default is a separate
@@ -1267,18 +1269,66 @@ test dependency).
   rather than from a sweep: **stale** -- "37 of the 82 measured files" (83
   files, and 44 pack above `-S1`), "33 of the 83 preset songs pack at `-S2`"
   (18 do), "37 corpus files drift by zero and 29 drift" (59 and 21 at
-  v0.5.407, and **68 and 18 of 86 measured at v0.5.453**; the original figure
-  predates `--regrid`). **Re-verified live** -- wave_program's 8
-  multispeed against 13 single-speed, `--regrid`'s 12 adoptions (**13 at
-  v0.5.453**, counted from presets.json), the corpus's
-  95 files / 83 converting, Skate or Die intro's 829 attacks against the
-  original's 1021, Kings of the Beach ingame's wave 57.3% / gate 11.0%. **One
-  of those "re-verified" figures was wrong anyway**: the wave_program split
-  had since moved to 9 and 12 (re-counted from `presets.json` at v0.5.453) --
-  the sharpest example this file has of its own grading rule, because it sat
-  under the heading that claims a figure was checked and was checked wrong.
-  The last two matter because two OPEN tasks key their verify on them: a task
-  whose verify quotes a stale number is a task that cannot be judged done.
+  v0.5.407; the original figure predates `--regrid`). **Re-verified live** --
+  wave_program's 8 multispeed against 13 single-speed, `--regrid`'s 12
+  adoptions, the corpus's 95 files / 83 converting, Skate or Die intro's 829
+  attacks against the original's 1021, Kings of the Beach ingame's wave 57.3%
+  / gate 11.0%. **One of those "re-verified" figures was wrong anyway**: the
+  wave_program split had since moved to 9 and 12 (re-counted from
+  `presets.json` at v0.5.453) -- the sharpest example this file has of its own
+  grading rule, because it sat under the heading that claims a figure was
+  checked and was checked wrong.
+
+  **RE-GRADED AT v0.5.454, AND THREE OF THAT LIST'S FIVE ENTRIES ARE NOW
+  STALE -- WHICH IS THE FINDING: "re-verified" IS A TIMESTAMP, NOT A
+  PROPERTY.** Everything above is HISTORY, kept because the decay is the
+  lesson. Re-taken from the same two artefacts, no sweep:
+  * **CONFIRMED, unchanged.** wave_program **9 multispeed / 12 single-speed**
+    and `--regrid` **13 adoptions**, both counted from `presets.json` at
+    v0.5.454 -- the v0.5.453 re-counts still hold. And the drift split holds
+    exactly: **68 zero / 18 drifting of the 86 rows carrying a drift fit** (89
+    measured, 3 without one), identical to the v0.5.453 figure to the file.
+  * **STALE, and its own parentheticals decayed with it.** The corpus is 89
+    songs now, not 83; **49 pack above `-S1`**, not 44; **19 at `-S2`**, not
+    18. A correction written into a "stale" bucket goes stale on the same
+    schedule as what it corrected.
+  * **STALE -- "95 files / 83 converting", and the replacement needs TWO
+    numbers because the two artefacts answer DIFFERENT QUESTIONS.** 95 files
+    tested; **6 are not Hubbard-player tunes** (the same six in both
+    artefacts: Casio_Extended, Dont_Step_on_My_Wire, Era_of_Eidolon, Robs_Life,
+    Task_Force, Up_up_and_Away), leaving 89 in reach. Of those, **89 convert
+    under their PRESET options** (`presets.json`'s 89 songs are exactly
+    `build/fidelity.json`'s 89 `measured` rows) and **86 convert on DEFAULT
+    options** (`docs/SURVEY.md`, which runs `survey.py ... --legal-restart`
+    and nothing else). The three-file gap is **Delta, Dragons_Lair_Part_II and
+    W_A_R**, all failing defaults with "TOO MANY NEW PATTERN CREATED" and all
+    rescued by their own presets: `prune` and `dedup`, which default False and
+    are **not in the `always` block**, plus W_A_R's `max_rows 128`. So **"N
+    converting" is not a well-defined quantity unless you say under which
+    options** -- and anyone reconciling the two artefacts without that will
+    read a real 3-file difference as one of them being wrong.
+  * **STALE -- Skate or Die intro is 1020 attacks against the original's
+    1021**, `melody` 100%, at v0.5.454. The 829 is a PRE-`_pal_ntsc_indexed`
+    number: it is the 20% deficit this very file describes being found and
+    fixed at v0.5.410, quoted three hundred lines further down as
+    "re-verified live". A figure can be stale against a fix recorded in the
+    same document.
+  * **STALE -- Kings of the Beach ingame reads `wave` 84.8% / `gate` 85.2%**
+    at v0.5.454 (subtune 4, `-S3`), against the 57.3% / 11.0% recorded here.
+  And the sentence this paragraph used to end on -- "the last two matter
+  because two OPEN tasks key their verify on them" -- is itself HISTORY:
+  checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
+  either figure** (the one apparent hit is a line number, `goatwriter.py:3829`,
+  not an attack count). The rule it states is still the point; the count of
+  tasks depending on it was a fact about one plan.
+  **ONE PROVENANCE CAVEAT ON EVERY FIGURE RE-TAKEN HERE.**
+  `build/fidelity.json` is labelled **`64c795b-dirty`** -- generated one commit
+  back from a working tree carrying uncommitted converter work -- while its
+  rows stamp `version 0.5.454`. So these are v0.5.454 numbers from a DIRTY
+  tree, which is the state this file elsewhere forbids taking a fidelity number
+  from. They are the right numbers to grade against because they are what the
+  artefact says; they are not numbers from a clean HEAD, and the owed corpus
+  refresh will move some of them.
   **The cheap grader is the pair of generated artefacts**, not a corpus run --
   `presets.json` for populations and `build/fidelity.json` for per-file
   figures, both regenerated on the commit that changed them. (Every
@@ -1549,8 +1599,9 @@ test dependency).
   point on anything. See § 7.hhhhh.
 - **A rate read out of the player is per *frame*; every table Goattracker
   applies it with steps per *play call*.** They agree only at `gt2reloc -S1`,
-  and 44 of the 83 preset songs pack above `-S1` -- 18 at `-S2`, 26 at `-S2`
-  or `-S3`, the rest higher (v0.5.407, counted from `presets.json`). Anything new that carries a
+  and **49 of the 89 preset songs pack above `-S1` -- 19 at `-S2`, 30 at
+  `-S2` or `-S3`**, the rest higher (v0.5.454, re-counted from `presets.json`;
+  it was 44 of 83 with 18 and 26 at v0.5.407). Anything new that carries a
   rate — a slide step, a sweep, a table delay, a transient length — must be
   divided by `multiplier` at the point it is encoded, the way
   `build_speed_table`, `_drum_speed`, `_rise_speed_index`, `_wave_hold_byte`
@@ -1804,8 +1855,17 @@ tag each item with how it can be run.** The three tags, and what qualifies:
   workflow — one report, or many.
 * **`[main]`** — this session only. Anything that regenerates an artefact, runs
   `presets.py --fidelity` (it writes `presets.json`), or commits. Cost scales
-  with the toggle count: **8 minutes** at five toggles, 15 at six, and about a
-  minute a song at seven (127 combinations), which is 80 serially.
+  with the toggle count -- and the seven-toggle figure is TIMED now rather
+  than extrapolated. **8 minutes at five toggles** (v0.5.300, 83 songs), 15 at
+  six, and **25m21s at seven** (127 combinations): measured at v0.5.455 with a
+  stopwatch around the whole corpus run, **1521 s over 89 songs = 17.1 s a
+  song**, 89/95 convertible with zero failures. This line used to read "about
+  a minute a song ... which is 80 serially", **3.2x the truth**; and a
+  six-file sample extrapolated to 40 minutes, still 1.6x, because
+  `_redundant_combination` prunes more on a typical song than on those six.
+  **Extrapolating a per-song cost from a handful of files over-estimates it**
+  -- the sample is not the corpus, and this is the second time a cost figure
+  here has been wrong in the direction that refuses work.
   **`--shard I/N` splits it across processes** and `--merge` recombines them —
   each song's walk is independent of every other's, and `fidelity.py` has had
   a private scratch directory per run since v0.5.66 precisely so concurrent
@@ -1871,8 +1931,10 @@ holds one comparable instrument and zero noise frames against eight and 1669 at
 60 s — two of `fidelity_better`'s terms are noise terms and a third is `onset`,
 so the criterion was not disagreeing, it was blind, and five files lost a
 `two_stage` that a 60 s A/B scores at onset 40-83% -> 100% with melody unmoved.
-A corpus search at 60 s is **8 minutes** — timed twice at v0.5.300, 8m11s and
-~8m, both over 83 songs with zero failures. The figures this paragraph carried
+A corpus search at 60 s is **8 minutes AT FIVE TOGGLES** — timed twice at
+v0.5.300, 8m11s and ~8m, both over 83 songs with zero failures. **That is a
+FIVE-toggle figure and it has been quoted where seven were meant**; at seven it
+is **25m21s over 89 songs** (v0.5.455, stopwatch). The figures this paragraph carried
 for forty versions ("about four hours rather than forty minutes") were never
 timed and were wrong by a factor of about thirty; the 10 s cost has still not
 been measured, so no ratio is claimed here. **A cost written down but never

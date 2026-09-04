@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.455 — 2026-09-04
+
+- the digi slide runs for its whole event, regrid is denominated in plays, and four cost figures were wrong
+
 ## 0.5.454 — 2026-09-04
 
 - the interleaved engine's $82 is a portamento, and its instrument table is counted at the stride the dialect actually uses

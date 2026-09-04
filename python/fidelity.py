@@ -3804,6 +3804,17 @@ DIMENSIONS = (
     # length_compare: not-measured is reported as not-measured.
     Dimension("length_delta", "len", _PITCH_REGS, "ratio",
               "seconds ours runs past the original's ending"),
+    # **Beside `len` because it is the same measurement read the other way**:
+    # `len` asks whether we stop where the original stops, and this asks how
+    # much of the original the window saw at all. A row at 25% is describing
+    # the first quarter of a tune, and every column above it should be read as
+    # a statement about that quarter. A `-` means the length probe could not
+    # place the original's ending either way. Where the original outlasts the
+    # probe entirely the figure is an UPPER bound -- `window_coverage_bounded`
+    # marks those rows -- because all that is known is that the tune runs past
+    # `--length-probe` times the window.
+    Dimension("window_coverage", "cov", _PITCH_REGS, "fraction",
+              "share of the original's own length this window contained"),
     Dimension("drift_per_1000", "drift", _PITCH_REGS, "ratio",
               "frames of lead (negative) or lag we accumulate per 1000, from "
               "a Theil-Sen fit over matched onsets -- **the startup lag is "
@@ -4464,6 +4475,12 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # in the rows -- the distinction `compare_runs` had to learn
                 # for subtunes, one column over.
                 row["length_never_ends"] = True
+                # The probe's own window, so `cov` can state the UPPER bound
+                # it implies. Deliberately NOT `length_probe_seconds`: that
+                # key means "a length delta was measured over this window"
+                # and `compare_runs` selects probed rows by its presence, so
+                # setting it here would put rows with no delta into that set.
+                row["length_never_ends_seconds"] = long_seconds
             else:
                 row.update(length_compare(
                     a_long,
@@ -4477,6 +4494,34 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # which. Left in terms of the factor rather than a literal
                 # 180s, which is what it said until the factor moved to 10.
                 row["length_probe_seconds"] = long_seconds
+    # **What SHARE of the tune this window actually scored** -- so a reader can
+    # tell a scored whole tune from a scored prefix without re-running the
+    # census. Only 2 of 89 corpus files are fully contained at `-t 60`, and
+    # every other row is a prefix whose columns describe the opening of a tune
+    # rather than the tune; until this there was nothing in the table saying
+    # which was which.
+    #
+    # Derived entirely from what the length rule already measured, so it costs
+    # no extra trace:
+    #
+    #   the original ENDED inside the window        -> 1.0, the whole tune
+    #   it does not end even at `factor` x window   -> `seconds / long`, and
+    #                                                  that is an UPPER BOUND
+    #   otherwise the probe found its ending        -> seconds / orig_ends_at
+    #
+    # `row["seconds"]` rather than the local `seconds`, which the shortening
+    # branch above reassigns: the numerator is the window the RUN asked for,
+    # and a row the rule shortened has by definition covered its whole tune.
+    asked = row.get("seconds") or seconds
+    if row.get("original_ends") is not None:
+        row["window_coverage"] = 1.0
+    elif row.get("length_never_ends"):
+        probe = row.get("length_never_ends_seconds")
+        if probe:
+            row["window_coverage"] = asked / probe
+            row["window_coverage_bounded"] = True
+    elif row.get("orig_ends_at"):
+        row["window_coverage"] = min(1.0, asked / row["orig_ends_at"])
     # The original is a 50Hz VBI tune; ours ticks at `multiplier` x 50 because
     # that is the rate its tempo values were written for. Tracing each at its
     # own rate is what puts both on one time axis -- see run_siddump.
@@ -4744,6 +4789,22 @@ def blindness_section(rows: list[dict]) -> list[str]:
                 "on that too."]
     return out
 
+
+
+def _fmt_coverage(row: dict) -> str:
+    """The `cov` cell: what share of the original this row's window contained.
+
+    `<n%` where the figure is an UPPER bound -- the original outlasts the
+    length probe entirely, so all that is known is that the window saw less
+    than `1 / --length-probe` of it. Printing a bare percentage there would
+    state a measurement the run does not have, which is the distinction
+    `length_never_ends` exists to keep and the one `compare_runs` had to learn
+    for subtunes.
+    """
+    v = row.get("window_coverage")
+    if v is None:
+        return "-"
+    return ("<" if row.get("window_coverage_bounded") else "") + _fmt_pct(v)
 
 def _fmt_length(r: dict) -> str:
     """The `len` cell: how far past the original's ending ours runs.
@@ -5040,8 +5101,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -5079,7 +5140,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
-            f"{_fmt_length(r)} | "
+            f"{_fmt_length(r)} | {_fmt_coverage(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{status} |")
 

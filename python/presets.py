@@ -1038,6 +1038,25 @@ def fidelity_better(cand: tuple, ref: tuple,
                    and g_c > g_r + margin
                    and not _oscillation_lost(osc(cand), osc(ref)))
 
+    # **Opens its notes on the spread of duty cycles the original opens them
+    # on.** `pulse_phase` is ours over theirs and 1.0 is right, so the
+    # distance to it is `_closer`'s log-space one, exactly as for the
+    # oscillation ratio above. This is the first term in this function that
+    # reads $D402/$D403 at all: the note at `pulse_phase` in `FIXED` records
+    # that the criterion's whole input had no pulse term, measured at 64c795b,
+    # and that this is why the search takes that option on 0 of the 6 files it
+    # reaches. Guarded by `keeps_notes` like every other term, and acceptance
+    # only -- never a veto -- for the reason the oscillation and noise-pitch
+    # clauses give: a setting that changes WHICH notes sound changes the
+    # attack frames this is sampled at, so a term whose sample the setting
+    # resizes must not be the thing that rejects it.
+    def phases(state):
+        # An older saved state has nine elements and no phase; an absent
+        # dimension must not recommend anything, the same convention `osc`,
+        # `opens`, `holds` and `gates` use.
+        return state[9] if len(state) > 9 else None
+    moves_pulse_phase = _closer(phases(cand), phases(ref), 1.0, margin)
+
     def worse(c, r) -> bool:
         return c is not None and r is not None and c < r - margin
 
@@ -1049,7 +1068,8 @@ def fidelity_better(cand: tuple, ref: tuple,
                  or bool(ref[3][0] and not cand[3][0]))
     return keeps_notes and not gave_back and bool(
         plays_more or finds_noise or moves_oscillation
-        or moves_noise_pitch or opens_right or holds_right or gates_right)
+        or moves_noise_pitch or opens_right or holds_right or gates_right
+        or moves_pulse_phase)
 
 
 def _oscillation_lost(cand: float | None, ref: float | None,
@@ -1279,7 +1299,19 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
                 # The ORIGINAL's attack count, so `keeps_notes` can tell a
                 # deletion from a correction. It was always to hand here and
                 # never passed; see that guard for what its absence cost.
-                sum(len(v.attacks) for v in orig))
+                sum(len(v.attacks) for v in orig),
+                # **The tenth: a PULSE register, which nothing above reads.**
+                # Elements 0-8 are melody, sequence, our attacks, the noise
+                # 4-tuple, `reversal_ratio`, `onset_frame_agreement`,
+                # `sound_run_agreement`, `gate` and the original's attacks --
+                # and not one touches $D402/$D403, which is why every
+                # pulse-shaping option has had to be adopted by hand. `pphase`
+                # rather than `pspan`: `pspan` is the WIDTH of the band a
+                # sweep covers and two sweeps entered at different points
+                # score alike, while `pphase` is how many distinct duty cycles
+                # a note OPENS on, which is the deficit `_pulse_tri_program`
+                # documents and the one `pulse_phase` exists to fix.
+                F.pulse_compare(orig, dump, nf).get("pulse_phase"))
 
     # Fix `ours_sub` before any scoring, on the default conversion, by the same
     # rule `_measure` uses: the window is the traced subtune and one either
@@ -1441,9 +1473,12 @@ def build_parser() -> argparse.ArgumentParser:
              "corpus search can be split across processes. Each song's walk "
              "is independent of every other's, which is what makes this "
              "sound; the shards are disjoint by construction and --merge "
-             "refuses overlapping ones. A 127-combination search runs about a "
-             "minute a song serially, so this is the difference between 80 "
-             "minutes and 15")
+             "refuses overlapping ones. TIMED at v0.5.455 with a stopwatch "
+             "rather than extrapolated: the 7-toggle (127-combination) corpus "
+             "search is 1521 s -- 25m21s over 89 songs, 17.1 s a song -- so "
+             "six shards is the difference between about 25 minutes and about "
+             "5. The figure here used to read 'about a minute a song ... 80 "
+             "minutes', which is 3.2x the truth")
     parser.add_argument(
         "--merge", nargs="+", metavar="FILE",
         help="combine sharded runs into one presets file: reads each FILE, "
