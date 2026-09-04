@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.456 presets.py",
+  "generator": "h2g 0.5.458 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -323,7 +323,6 @@
       "rows": 31088,
       "multiplier": 4,
       "two_stage": true,
-      "pitch_seq": true,
       "max_hard_restart": true
     },
     "Food_Feud.sid": {
@@ -446,6 +445,7 @@
       "subtunes": 1,
       "rows": 15077,
       "multiplier": 1,
+      "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
       "regrid": true
@@ -516,7 +516,8 @@
       "subtunes": 3,
       "rows": 49789,
       "multiplier": 3,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true
     },
     "Lakers_vs_Celtics.sid": {
       "max_rows": 94,
@@ -570,7 +571,6 @@
       "rows": 19006,
       "multiplier": 2,
       "two_stage": true,
-      "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
     },
@@ -641,7 +641,7 @@
       "two_stage": true,
       "pitch_seq": true,
       "max_hard_restart": true,
-      "hard_restart_frames": 3
+      "hard_restart_frames": 5
     },
     "Nemesis_the_Warlock.sid": {
       "max_rows": 94,
@@ -692,7 +692,9 @@
       "subtunes": 1,
       "rows": 12339,
       "multiplier": 5,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true,
+      "hard_restart_frames": 3
     },
     "One_Man_and_his_Droid.sid": {
       "max_rows": 128,
@@ -740,6 +742,8 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
+      "max_hard_restart": true,
+      "hard_restart_frames": 3,
       "regrid": true
     },
     "Phantoms_of_the_Asteroid.sid": {
@@ -859,8 +863,7 @@
       "rows": 14827,
       "multiplier": 3,
       "two_stage": true,
-      "wave_program": true,
-      "pitch_seq": true
+      "wave_program": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -898,6 +901,7 @@
       "two_stage": true,
       "wave_program": true,
       "pitch_seq": true,
+      "max_hard_restart": true,
       "rest_envelope_silence": true
     },
     "Sigma_Seven.sid": {
@@ -933,7 +937,8 @@
       "bytes": 35322,
       "subtunes": 3,
       "rows": 27200,
-      "multiplier": 5
+      "multiplier": 5,
+      "max_hard_restart": true
     },
     "Star_Paws.sid": {
       "max_rows": 94,
@@ -1047,7 +1052,6 @@
       "rows": 45674,
       "multiplier": 4,
       "two_stage": true,
-      "pitch_seq": true,
       "max_hard_restart": true
     },
     "W_A_R_Preview.sid": {

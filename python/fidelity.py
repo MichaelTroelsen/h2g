@@ -1088,6 +1088,19 @@ def _aligned(ta: list[int], tb: list[int], lag: int) -> tuple[list, list]:
     return ta, tb
 
 
+def _median_or_zero(vals: list[int]) -> int:
+    """`presets._noise_pitch`'s reduction, spelled once.
+
+    Not `statistics.median`: that averages the two middle values on an even
+    count, and the value here is a REGISTER reading rather than a quantity to
+    interpolate. The upper-middle element is what the search has always used,
+    and `tests/test_fidelity.py` pins the two against each other -- a second
+    copy of a reduction is exactly the hand-maintained duplicate this repo
+    keeps being bitten by, so it is guarded rather than trusted.
+    """
+    return sorted(vals)[len(vals) // 2] if vals else 0
+
+
 def wave_compare(orig: list[Voice], ours: list[Voice],
                  nframes: int | None = None, lag: int = 0) -> dict:
     """Per-frame waveform-CLASS agreement, and noise-frame counts per side.
@@ -1119,6 +1132,11 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         last = max((f for v in orig + ours for f, _ in v.wf_events), default=-1)
         nframes = last + 1
     agree = total = o_noise = u_noise = 0
+    # Pooled across voices and reduced ONCE at the end, never a median of
+    # per-voice medians: `presets._noise_pitch` pools, and the whole point of
+    # this field is that the two agree.
+    o_pitch: list[int] = []
+    u_pitch: list[int] = []
     per_voice = []
     for a, b in zip(orig, ours):
         # Noise is counted off the *unaligned* timelines: it is a one-sided
@@ -1128,6 +1146,13 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         tb = register_timeline(b.wf_events, nframes)
         vo_n = sum(1 for x in ta if x & WF_NOISE)
         vu_n = sum(1 for y in tb if y & WF_NOISE)
+        # The noise PITCH, off the same UNALIGNED timelines and for the same
+        # reason. Taken before the alignment below, which would drop `lag`
+        # frames from one side only.
+        fa = register_timeline(a.freq_events, nframes)
+        fb = register_timeline(b.freq_events, nframes)
+        o_pitch += [fa[f] for f in range(nframes) if ta[f] & WF_NOISE]
+        u_pitch += [fb[f] for f in range(nframes) if tb[f] & WF_NOISE]
         ta, tb = _aligned(ta, tb, lag)
         va = vt = 0
         for x, y in zip(ta, tb):
@@ -1152,6 +1177,12 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         "wave_frames": round(total),
         "orig_noise_frames": o_noise,
         "our_noise_frames": u_noise,
+        # 0 rather than None where a side sounds no noise at all, which is the
+        # convention `presets._noise_pitch` already uses and which
+        # `fidelity_better` reads as "nothing to compare" via its own
+        # `cand[3][2] and cand[3][3]` guard.
+        "orig_noise_pitch": _median_or_zero(o_pitch),
+        "our_noise_pitch": _median_or_zero(u_pitch),
         "wave_voices": per_voice,
     }
 

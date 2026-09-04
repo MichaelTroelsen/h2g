@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.458 — 2026-09-04
+
+- the interleaved arpeggio, the noise pitch in the json, and a sharded search that no longer drops measured decisions
+
 ## 0.5.457 — 2026-09-04
 
 - the drift knee fields reach the row, and the copy list is derived rather than hand-maintained

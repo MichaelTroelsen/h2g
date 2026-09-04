@@ -2541,3 +2541,122 @@ def test_coverage_is_a_registered_dimension_and_reaches_the_table():
     assert " cov |" in header
     body = next(l for l in text.splitlines() if l.startswith("| A.sid |"))
     assert " 25% |" in body, "the computed share must reach the row"
+
+
+# --- the noise PITCH --------------------------------------------------------
+#
+# `fidelity_better`'s audible veto reads the median $D400/$D401 across the
+# frames a side spends on noise: the SID's noise is a shift register clocked by
+# the frequency, so that value is what decides whether a noise frame is a drum
+# or nothing at all. `presets._noise_pitch` computed it inside the search and
+# NOTHING in `--json` carried it, so the veto could not be tested against a
+# shipped measurement. CLAUDE.md's "no report column sees a noise frame's
+# pitch" was true of the json too; this is the json half, not the column.
+
+def _nv(wf, freq):
+    return fidelity.Voice(wf_events=list(wf), freq_events=list(freq))
+
+
+def _nv3(*pairs):
+    vs = [_nv(*p) for p in pairs]
+    return vs + [fidelity.Voice()] * (3 - len(vs))
+
+
+def test_the_noise_pitch_is_the_median_over_noise_frames_only():
+    """Frames the voice spends on a NON-noise waveform must not contribute --
+    they are the note, not the drum, and they outnumber it.
+    """
+    # noise on frames 0-2 at $2000, pulse from frame 3 at $9999
+    v = _nv3(([(0, 0x81), (3, 0x41)], [(0, 0x2000), (3, 0x9999)]))
+    got = fidelity.wave_compare(v, v, nframes=8)
+    assert got["orig_noise_pitch"] == 0x2000
+    assert got["our_noise_pitch"] == 0x2000
+
+
+def test_a_side_with_no_noise_reports_zero_rather_than_none():
+    """0 is the convention `presets._noise_pitch` uses and the one
+    `fidelity_better` reads as 'nothing to compare' through its own
+    `cand[3][2] and cand[3][3]` guard. None would be a different contract.
+    """
+    got = fidelity.wave_compare(_nv3(([(0, 0x41)], [(0, 0x1234)])),
+                                _nv3(([(0, 0x41)], [(0, 0x1234)])), nframes=4)
+    assert got["orig_noise_pitch"] == 0
+    assert got["our_noise_pitch"] == 0
+
+
+def test_the_two_sides_are_read_independently():
+    orig = _nv3(([(0, 0x81)], [(0, 0x1000)]))
+    ours = _nv3(([(0, 0x81)], [(0, 0x4000)]))
+    got = fidelity.wave_compare(orig, ours, nframes=4)
+    assert (got["orig_noise_pitch"], got["our_noise_pitch"]) == (0x1000, 0x4000)
+
+
+def test_the_pitch_pools_across_voices_rather_than_averaging_medians():
+    """A median of per-voice medians is a different statistic, and on an
+    uneven split it is the wrong one. Two voices, one noisy frame and three.
+    """
+    v = _nv3(([(0, 0x81), (1, 0x41)], [(0, 0x0100)]),
+             ([(0, 0x81)], [(0, 0x0200), (1, 0x0300), (2, 0x0400)]))
+    got = fidelity.wave_compare(v, v, nframes=3)
+    # pooled: [0x0100, 0x0200, 0x0300, 0x0400] -> upper-middle = 0x0300.
+    # median of medians would be mean(0x0100, 0x0300) or 0x0100.
+    assert got["our_noise_pitch"] == 0x0300
+
+
+def test_the_pitch_is_taken_UNALIGNED_like_the_noise_counts_beside_it():
+    """`lag` shifts one side only. The counts beside this are documented as
+    one-sided readings over each side's own window; the pitch must match them,
+    because `presets._noise_pitch` never sees a lag at all.
+    """
+    orig = _nv3(([(0, 0x81)], [(0, 0x1000)]))
+    ours = _nv3(([(0, 0x81)], [(0, 0x4000)]))
+    a = fidelity.wave_compare(orig, ours, nframes=6, lag=0)
+    b = fidelity.wave_compare(orig, ours, nframes=6, lag=3)
+    assert a["our_noise_pitch"] == b["our_noise_pitch"]
+    assert a["orig_noise_pitch"] == b["orig_noise_pitch"]
+
+
+def test_it_agrees_with_the_copy_presets_has_always_used():
+    """THE GUARD THAT MATTERS. There are now two implementations of one
+    reduction -- `presets._noise_pitch`, which the search's veto reads, and
+    this one, which the artefact reports. A hand-maintained duplicate drifting
+    apart is the failure this repo keeps recording, so the two are pinned
+    against each other rather than trusted to stay equal.
+
+    If this ever fails, the artefact and the veto have started describing
+    different quantities and the json figure is no longer evidence about the
+    veto -- which is the entire reason the field exists.
+    """
+    import sys
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    import presets
+
+    cases = [
+        _nv3(([(0, 0x81), (3, 0x41)], [(0, 0x2000), (3, 0x9999)])),
+        _nv3(([(0, 0x41)], [(0, 0x1234)])),
+        _nv3(([(0, 0x81), (1, 0x41)], [(0, 0x0100)]),
+             ([(0, 0x81)], [(0, 0x0200), (1, 0x0300), (2, 0x0400)])),
+        _nv3(([(0, 0x81)], [(0, 0x0001), (2, 0x0002), (4, 0x0003)])),
+    ]
+    for trace in cases:
+        for nframes in (3, 6, 8):
+            got = fidelity.wave_compare(trace, trace, nframes=nframes)
+            assert got["our_noise_pitch"] == presets._noise_pitch(trace, nframes), \
+                (nframes, got["our_noise_pitch"])
+
+
+def test_the_field_reaches_the_row_because_wave_compare_is_merged_whole():
+    """The drift-knee failure, guarded structurally rather than by memory.
+
+    Four fields were added to `drift()`'s return at v0.5.456 and reached NO
+    row, because `_measure` copies a hand-listed key set out of that dict. The
+    wave path does not: `_measure` calls `row.update(wave_compare(...))`, so
+    every key the function returns is in the row by construction. This asserts
+    that shape, so a future edit that narrows the merge to a key list fails
+    HERE instead of silently dropping the field from every artefact.
+    """
+    import inspect
+    src = inspect.getsource(fidelity._measure)
+    assert "row.update(wave_compare(" in src, \
+        "wave_compare is no longer merged whole -- a hand-listed copy would " \
+        "drop orig_noise_pitch/our_noise_pitch from every row"

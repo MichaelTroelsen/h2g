@@ -168,6 +168,7 @@ def convert(sid_path: str, log: Logger = print,
             cut_release: bool = False,
             tie: bool = False,
             pitch_seq: bool = False,
+            arpeggio: bool = False,
             filters: bool = False,
             pulse: bool = False,
             vibrato: bool = False,
@@ -368,6 +369,12 @@ def convert(sid_path: str, log: Logger = print,
             or det.pattern_dialect == "digi"
             or (det.pattern_dialect == "cmdtable" and det.cmd_slide >= 0)):
         slide_steps = []
+    # The interleaved engine's `$83` semitone arpeggio (patterns.ILV_ARP).
+    # A list rather than a flag because the decoder collects the distinct
+    # `(record, operand)` pairs into it and emits their INDEX; the wavetable
+    # row is not known until `build_sng` lays the table out. None on every
+    # other dialect, so nothing else can grow a command column.
+    ilv_arps: list | None = [] if (arpeggio and det.pattern_dialect == "ilv") else None
     instr_base = 1 if compact_instruments else 2
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
@@ -375,7 +382,7 @@ def convert(sid_path: str, log: Logger = print,
         slides=slides, status_bit6=status_bit6,
         phantoms=(phantom_patterns(sid, det, slides, status_bit6)
                   if reject_phantoms else None),
-        variants=variants, steps=slide_steps,
+        variants=variants, steps=slide_steps, arps=ilv_arps,
         rest_instrument=rest_instrument,
         rest_keyoff=rest_keyoff,
         # Only the testbit family parks a waveform; the envelope-zeroing
@@ -661,4 +668,5 @@ def convert(sid_path: str, log: Logger = print,
                      row_calls=short_row_calls,
                      compact_instruments=compact_instruments,
                      real_firstwave_instruments=real_firstwave_instruments,
+                     arps=ilv_arps,
                      pulse_plan=pulse_plan)

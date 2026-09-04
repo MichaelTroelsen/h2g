@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Set
 
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN,
                      SLIDE_HIGH_FIRST_MASK)
-from .goatwriter import CMD_SETTEMPO
+from .goatwriter import CMD_SETTEMPO, CMD_SETWAVEPTR
 from .sidfile import SidFile
 
 # Rows per pattern to slice at. The original VB6 tool used 94, the limit of the
@@ -75,7 +75,7 @@ CMD_SETSR = 6
 # gcommon.h:9, the other half of the pair. Emitted only on a bit-6 rest's
 # first hold row -- see decode_entry for why the delay is inaudible.
 CMD_SETAD = 5
-ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR})
+ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # Commands a subtune's `CMD_SETTEMPO` may overwrite on row 0 of an entry
 # pattern. **A whole subtune's clock outranks any of them**, and that is not
 # a preference: `apply_tempo`/`apply_tempos` skip a pattern whose command
@@ -87,7 +87,7 @@ ONE_SHOT_COMMANDS = frozenset({3, CMD_SETWAVE, CMD_SETSR})
 # **12 of 19 files** -- ACE_II `drift` 0.00 -> 1250, Ricochet -7.81 ->
 # 1976.54, mean melody -47pp. Anything new that can land on row 0 belongs
 # in this set, not merely in ONE_SHOT_COMMANDS.
-TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR})
+TEMPO_OVERWRITABLE = frozenset({0, CMD_SETWAVE, CMD_SETSR, CMD_SETWAVEPTR})
 # gcommon.h FIRSTNOTE/LASTNOTE: the whole note column, C-0 to G#7. Every other
 # value in that column ($BD-$BF, $FF) is a marker, not a pitch.
 GT_FIRSTNOTE = 0x60
@@ -1030,6 +1030,48 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # CMD_PORTADOWN on the event's own row AND on each of its `wait` hold rows,
 # and emit nothing on the next event's rows -- which reproduces the player's
 # reset for free rather than needing a stop command.
+# **`$83 nn` IS A SEMITONE ARPEGGIO, AND IT IS PER NOTE** -- read out of
+# Lion_Heart's player at v0.5.457, and the per-note half is the fact the whole
+# emission turns on. `$11F1` is the handler: `LDA ($FA),Y / STA $1A55,X`, then
+# `LDA #$00 / STA $1A58,X` clearing the step counter, then `LDA #$01 / STA
+# $1A61` arming it. `$1388` is the NOTE-START path, which clears `$1A58,X` at
+# `$1397` and then reads that flag -- `$139A LDA $1A61 / BNE $13A4` keeps the
+# arpeggio, else `$139F LDA #$00 / STA $1A55,X` clears it. So the counter
+# restarts at every note and the command arms the note that FOLLOWS it.
+#
+# CLAUDE.md's rule is that a mechanism driven by a GLOBAL counter cannot go in
+# a per-note wavetable (bit $10's arpeggio is the standing example). **That
+# prohibition does not apply here**, and saying so is half the point of this
+# comment: a Goattracker wavetable restarts at every note, which is exactly
+# what this player does.
+#
+# THE CYCLE, from $1400-$1446: offset 0 on step 0, the operand's HIGH nibble on
+# step 1, its LOW nibble on step 2, then wrap -- and at step 2 `$1431 LDA
+# $1A55,X / AND #$0F / BNE` resets immediately when the low nibble is zero, so a
+# `$x0` operand is a TWO-step trill. `$1448 LDA $1A46,X / CLC / ADC $1A4F,X /
+# CMP #$60` adds the offset to the NOTE BYTE before the note-table lookup, so
+# the unit is SEMITONES, not frequency -- which is also why `bend` cannot see
+# this: siddump NAMES a semitone step as a note rather than printing a bend.
+# The columns to watch are `vib` and `depth`.
+#
+# **WHY IT IS A COMMAND AND NOT AN INSTRUMENT'S WAVETABLE.** Censused over the
+# six ilv files at v0.5.457: 662 occurrences, and the operand is a property of
+# the NOTE rather than of the instrument -- Radio_ACE's instrument 8 alone
+# carries six different operands, Lakers' instrument 11 seven. Baking one into
+# the instrument would arpeggiate every note it plays, and every arpeggiated
+# instrument but one also plays notes the player leaves straight (Radio_ACE
+# instr 5: 8 armed against 263 straight). That is the shape of the Thundercats
+# regression CLAUDE.md records. So it needs a per-note route, and
+# `CMD_SETWAVEPTR` is the one Goattracker has.
+#
+# **THE COMMAND COLUMN IS FREE, MEASURED RATHER THAN ASSUMED.** A Goattracker
+# row carries ONE command and `$82` already ships as CMD_PORTAUP/PORTADOWN on
+# this engine. Over all 7742 events of the six files: 390 carry `$82`, 646 carry
+# `$83`, and **not one carries both**. The only overlap in the family is
+# `$83`+`$87` on 16 events, and `$87` is not emitted. Where a slide does claim
+# the column the arpeggio is declined rather than displacing it -- the slide is
+# measured and shipped, this is new.
+ILV_ARP = 0x83
 ILV_SLIDE = 0x82
 ILV_COMMAND_OPERANDS = {0x80: 1, ILV_SLIDE: 2, 0x83: 1, 0x84: 0,
                         0x86: 1, 0x87: 2, 0x88: 0, 0x89: 1}
@@ -1041,6 +1083,7 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
                            span: Optional[List[int]] = None,
                            slides: bool = False,
                            steps: Optional[List[int]] = None,
+                           arps: Optional[List[tuple]] = None,
                            ) -> Optional[List[int]]:
     """Flat event stream for one interleaved-engine pattern, or None.
 
@@ -1056,15 +1099,26 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
     facts cancel, so no stop command is needed. Off by default like every
     other decoder's slide reading, and `presets.json`'s `always` block turns
     it on.
+
+    With `arps` given (a list the caller owns), command `$83` becomes a
+    `CMD_SETWAVEPTR` on the row of the note it arms -- see ILV_ARP. Each
+    distinct `(record, operand)` pair is appended to `arps` and the emitted
+    operand is its **1-based index in that list, not a wavetable row**: the
+    row is not known until the table is laid out, so `goatwriter.build_sng`
+    remaps it there. That is the same shape as `steps` and the speed table,
+    one stage later. An index the layout could not place is cleared rather
+    than left pointing at whatever happens to sit at that row.
     """
     if addr <= 1 or addr >= len(data):
         return None
 
     events: List[int] = []
     instrument = 0
+    record: Optional[int] = None    # the raw record index, the key `arps` uses
     wait = 0
     i2 = 0
     pending: Optional[tuple] = None
+    armed: Optional[int] = None     # a `$83` operand waiting for its note
 
     while True:
         if addr + i2 <= 1 or addr + i2 >= len(data):
@@ -1089,7 +1143,12 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             if addr + i2 + n >= len(data):
                 return None
             if b == 0x80:
-                instrument = data[addr + i2 + 1] + instr_base
+                record = data[addr + i2 + 1]
+                instrument = record + instr_base
+            elif b == ILV_ARP and arps is not None:
+                # Armed for the note that FOLLOWS, and dropped if none does:
+                # the player's own flag is cleared at the next note start.
+                armed = data[addr + i2 + 1]
             elif b == ILV_SLIDE and slides:
                 # First operand high, second low, and the pair is signed: the
                 # player has one CLC/ADC and no direction test.
@@ -1106,9 +1165,23 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         else:
             note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
+        row = len(events) - 4
         cmd = _digi_command(pending, steps) if pending is not None else None
         if cmd is not None:
             events[-2], events[-1] = cmd
+        elif (armed and arps is not None and record is not None
+              and b != ILV_REST):
+            # One-shot: it points the wavetable at the arpeggio block, and the
+            # block loops for as long as the note is held, exactly as the
+            # player's counter does. So it belongs on the note's own row and
+            # NOT on its hold rows -- the opposite of the continuous `$82`
+            # immediately above, which has to be repeated on every one.
+            key = (record, armed)
+            if key not in arps:
+                arps.append(key)
+            events[row + 2] = CMD_SETWAVEPTR
+            events[row + 3] = arps.index(key) + 1
+        armed = None
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
             if cmd is not None:
@@ -1267,7 +1340,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  rest_keyoff: bool = False,
                  rest_wave: bool = False,
                  rest_envelope: bool = False,
-                 exits_tied: Optional[List[bool]] = None
+                 exits_tied: Optional[List[bool]] = None,
+                 arps: Optional[List[tuple]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -1292,7 +1366,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     if det.pattern_dialect == "ilv":
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
-                                      slides=slides, steps=steps)
+                                      slides=slides, steps=steps, arps=arps)
     if det.pattern_dialect == "cmdtable":
         return _build_raw_pattern_cmdtable(
             data, addr, det.duration_table, det.cmd_operands,
@@ -1673,6 +1747,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      phantoms: Optional[dict] = None,
                      variants: Optional[List[tuple]] = None,
                      steps: Optional[List[int]] = None,
+                     arps: Optional[List[tuple]] = None,
                      rest_instrument: bool = False,
                      instr_base: int = 2, tie: bool = False,
                      rest_keyoff: bool = False,
@@ -1747,7 +1822,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
-                              rest_envelope=rest_envelope, exits_tied=ex)
+                              rest_envelope=rest_envelope, exits_tied=ex,
+                              arps=arps)
         exits[i] = bool(ex and ex[0])
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -1760,8 +1836,12 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
         if base is None:
             ex = []
+            # A variant is a transposition of a pattern the loop above
+            # already decoded, so `arps` has already collected whatever it
+            # arms; passing the list again would append the same pairs a
+            # second time and index the second copies.
             base = decode_entry(sid, det, src, slides, status_bit6,
-                                steps, tie=tie, exits_tied=ex)
+                                steps, tie=tie, exits_tied=ex, arps=arps)
             exits[src] = bool(ex and ex[0])
         # A variant is the source's own event stream with its notes shifted, so
         # it ends on the source's status byte and leaves the gate exactly as

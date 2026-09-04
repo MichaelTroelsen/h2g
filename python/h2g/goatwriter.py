@@ -1209,6 +1209,7 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
 
 
 SFX_DRUM_FRAMES = 2          # frames of noise per hit, measured off the trace
+WAVE_JUMP = 0xFF             # left side: jump, the right side naming the row
 WAVE_NOTE_BASE = 0x00        # right side: **writes the pattern's own note**. This is a
 #                              `.sng` byte and `gt2reloc` inverts bit 7 of every
 #                              non-command right byte on the way in (greloc.c:1340-1341,
@@ -1220,6 +1221,92 @@ WAVE_NOTE_BASE = 0x00        # right side: **writes the pattern's own note**. Th
 #                              the `.sng` byte $80. See v0.5.336 and CLAUDE.md.
 WAVE_NOTE_KEEP = 0x80        # right side: leave the frequency alone
 WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
+
+
+ARP_MAX_STEPS = 3            # the player's cycle: 0, the high nibble, the low one
+
+
+def _arp_offsets(operand: int) -> Optional[List[int]]:
+    """The player's semitone cycle for a `$83 nn`, or None where there is none.
+
+    `patterns.ILV_ARP` carries the derivation. Step 0 leaves the note alone,
+    step 1 adds the operand's high nibble, step 2 its low nibble -- and the
+    player's own `AND #$0F / BNE` at $1431 wraps at step 1 when the low nibble
+    is zero, so a `$x0` operand is a two-step trill rather than a three-step one
+    with a repeat. An operand of $00 is no arpeggio at all and is declined
+    rather than emitted as identical entries, exactly as `_pitch_seq_entries`
+    declines an all-zero sequence.
+    """
+    hi, lo = operand >> 4, operand & 0x0F
+    if not hi and not lo:
+        return None
+    return [0, hi] if not lo else [0, hi, lo]
+
+
+def _arp_block(source: List[tuple], offsets: List[int],
+               multiplier: int, start: int) -> Optional[tuple]:
+    """One `CMD_SETWAVEPTR` target: `source`'s waveform program, arpeggiated.
+
+    `source` is the instrument's own laid-out block, and copying it is what
+    makes this faithful rather than an approximation: the arpeggio is a pitch
+    cycle the player adds to the NOTE and it changes nothing about the
+    waveform. So the left column is copied verbatim -- delay entries included
+    -- and only the right column is written, with the offset belonging to the
+    frame that entry is current on. Holding one waveform instead would have
+    silently dropped Go_Go_Dash's `02` and Lion_Heart's `01` attack delays,
+    which is two of the five arpeggiated files.
+
+    **The frame arithmetic is the packed player's, not the editor's.**
+    `gt2reloc`'s player does not execute the wavetable on a note's first call
+    (player.s:908-911), so wavetable call `c` is play call `c + 1` and hence
+    frame `(c + 1) // multiplier`. A delay entry (left `$00`-`$0F`) is current
+    for `left + 1` calls and applies its right side on the LAST of them
+    (gplay.c:697-704), so it is charged to that call's frame.
+
+    After the source program the cycle has to keep running for as long as the
+    note is held, which the source's own terminator would not do. The tail is
+    one entry per play call for a whole cycle -- `len(offsets) * multiplier`
+    entries -- and the jump goes back to the tail's first entry rather than the
+    block's: a whole cycle is a whole number of frames, so the phase across the
+    jump is exact, and re-running the attack program on every wrap would not be.
+
+    Returns None where there is nothing usable to copy.
+    """
+    body = []
+    for left, _ in source:
+        if left == WAVE_JUMP:
+            break
+        body.append(left)
+    if not body:
+        return None
+
+    def note(frame: int) -> int:
+        return (WAVE_NOTE_BASE + offsets[frame % len(offsets)]) & 0xFF
+
+    hold = max(1, multiplier)
+    left: List[int] = []
+    right: List[int] = []
+    call = 0
+    for w in body:
+        last = call + (w if w < 0x10 else 0)   # a delay covers `w + 1` calls
+        left.append(w)
+        right.append(note((last + 1) // hold))
+        call = last + 1
+
+    # The sustained waveform: the last real waveform the program reaches. A
+    # program of nothing but delays has none -- guarded rather than assumed,
+    # because `$00`-`$0F` on the left is a delay and would read as a waveform.
+    held = next((w for w in reversed(body) if w >= 0x10), None)
+    if held is None:
+        return None
+    tail = start + len(left)
+    for _ in range(len(offsets) * hold):
+        left.append(held)
+        right.append(note((call + 1) // hold))
+        call += 1
+    left.append(WAVE_JUMP)
+    right.append(tail & 0xFF)
+    return left, right
 
 
 def _sfx_note_byte(pitch_hi: int) -> int:
@@ -1944,6 +2031,7 @@ GT_DEFAULT_TEMPO_CALLS = 6        # Goattracker's startup default
 #
 # So the fastest steady row the format can express is tempo 2, i.e. three
 # calls, reached by a command value of 2 or 3.
+CMD_SETWAVEPTR = 8              # gcommon.h:12 -- point the wavetable at a row
 CMD_SETTEMPO = 15
 GT_MIN_TEMPO = 2                  # below this is funktempo, not a rate
 TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
@@ -4709,8 +4797,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       voice_two_stage: bool = False,
                       instr_voices: Optional[dict] = None,
                       gate_skip: Optional[int] = None,
-                      real_firstwave_instruments: tuple = ()) -> tuple:
-    """(entries, starts) for the whole wavetable, laid out sequentially.
+                      real_firstwave_instruments: tuple = (),
+                      arps: Optional[List[tuple]] = None) -> tuple:
+    """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
     `index * 5 + 1`, which is why the drum sweep could never be more than two
@@ -4728,6 +4817,14 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
     * **Nobody starves.** Each record's budget is what remains after reserving
       the five entries every *later* record is owed, so a deep sweep early in
       the table can never push a later instrument out of it.
+
+    `arps` (the interleaved engine's `$83`, see patterns.ILV_ARP) appends one
+    block per distinct `(record, operand)` pair AFTER every instrument's, so no
+    instrument's start moves and a file with no arpeggios lays out byte for
+    byte as before. `arp_starts` is parallel to `arps`; a pair the table has no
+    room for gets **no entry at all** rather than a truncated one, and
+    `build_sng` clears the command that pointed at it -- a wavetable row is
+    executed whatever happens to be in it, so a short block is worse than none.
     """
     entries: List[tuple] = []
     starts: List[int] = []
@@ -4766,7 +4863,21 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          gate_skip=gate_skip)
         starts.append(start)
         entries += list(zip(left, right))
-    return entries, starts
+
+    arp_starts: List[int] = []
+    for record, operand in (arps or []):
+        offsets = _arp_offsets(operand)
+        start = len(entries) + 1
+        block = None
+        if offsets is not None and 0 <= record < len(starts) - lead:
+            src = starts[record + lead] - 1
+            block = _arp_block(entries[src:], offsets, multiplier, start)
+        if block is None or start - 1 + len(block[0]) > GT_MAX_TABLELEN:
+            arp_starts.append(0)
+            continue
+        arp_starts.append(start)
+        entries += list(zip(*block))
+    return entries, starts, arp_starts
 
 
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
@@ -4779,8 +4890,8 @@ def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
                      entries: Optional[List[tuple]] = None) -> None:
     if entries is None:
         table = speed_table if speed_table is not None else []
-        entries, _ = _wavetable_layout(sid, det, instr_used, effects, fmt,
-                                       table, multiplier, min_notes, lead)
+        entries, _, _ = _wavetable_layout(sid, det, instr_used, effects, fmt,
+                                          table, multiplier, min_notes, lead)
     out.append(_table_length_byte(len(entries), "wave"))
     out += bytes(left for left, _ in entries)
     out += bytes(right for _, right in entries)
@@ -5413,6 +5524,47 @@ def _highest_instrument_referenced(patterns: List[List[int]]) -> int:
     return highest
 
 
+def _resolve_arp_pointers(patterns: List[List[int]], arp_starts: List[int],
+                          log=None) -> List[List[int]]:
+    """Turn each `CMD_SETWAVEPTR` operand from an `arps` index into a table row.
+
+    The interleaved decoder emits the 1-based index of the `(record, operand)`
+    pair, because the wavetable row is not known until the table has been laid
+    out and the table cannot be laid out until the patterns say which pairs
+    occur. That is the same two-stage shape `steps` and the speed table already
+    have, one stage later; it is resolved HERE rather than by a scan of the
+    finished bytes because nothing else in this writer emits command 8, so an
+    unresolved operand would be indistinguishable from a real row and would
+    point the player at whatever sits there.
+
+    A pair the layout declined (`arp_starts` entry 0) has its command CLEARED.
+    Leaving it is the `$E0`-`$EF` failure one table over: a byte the player
+    reads whatever it was meant to mean.
+    """
+    if not arp_starts:
+        return patterns
+    out, cleared, placed = [], 0, 0
+    for pattern in patterns:
+        rows = list(pattern)
+        for k in range(0, len(rows) - 3, 4):
+            if rows[k + 2] != CMD_SETWAVEPTR:
+                continue
+            idx = rows[k + 3] - 1
+            row = arp_starts[idx] if 0 <= idx < len(arp_starts) else 0
+            if row:
+                rows[k + 3] = row & 0xFF
+                placed += 1
+            else:
+                rows[k + 2] = rows[k + 3] = 0x00
+                cleared += 1
+        out.append(rows)
+    if log is not None and (placed or cleared):
+        log(f"Interleaved arpeggios...: {placed} row(s) on "
+            f"{sum(1 for r in arp_starts if r)} wavetable block(s)"
+            + (f", {cleared} declined for want of table room" if cleared else ""))
+    return out
+
+
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
@@ -5442,7 +5594,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               gate_skip: Optional[int] = None,
               wide_hard_restart: bool = False,
               max_hard_restart: bool = False,
-              real_firstwave_instruments: tuple = ()) -> bytes:
+              real_firstwave_instruments: tuple = (),
+              arps: Optional[List[tuple]] = None) -> bytes:
     if fmt not in FORMATS:
         raise ValueError(f"format must be one of {FORMATS}, got {fmt!r}")
     # _write_wavetable may append the note-relative entry the chromatic rise
@@ -5495,16 +5648,18 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
-    wave_entries, wave_starts = _wavetable_layout(sid, det, instr_used, effects,
-                                                  fmt, table, multiplier,
-                                                  min_notes, lead, two_stage,
-                                                  sfx_drum, wave_program,
-                                                  pitch_seq,
-                                                  note_rows, row_calls,
-                                                  no_test_restart,
-                                                  voice_two_stage,
-                                                  instr_voices, gate_skip,
-                                                  real_firstwave_instruments)
+    wave_entries, wave_starts, arp_starts = _wavetable_layout(
+        sid, det, instr_used, effects,
+        fmt, table, multiplier,
+        min_notes, lead, two_stage,
+        sfx_drum, wave_program,
+        pitch_seq,
+        note_rows, row_calls,
+        no_test_restart,
+        voice_two_stage,
+        instr_voices, gate_skip,
+        real_firstwave_instruments, arps)
+    patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

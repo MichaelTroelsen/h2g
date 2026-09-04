@@ -25,8 +25,8 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from h2g.patterns import (DIGI_END, GT_END_PATTERN, GT_KEYOFF, GT_NO_NOTE,
-                          _build_raw_pattern_digi)
+from h2g.patterns import (DIGI_DURATION, DIGI_END, DIGI_SLIDE, GT_END_PATTERN,
+                          GT_KEYOFF, GT_NO_NOTE, _build_raw_pattern_digi)
 
 PAD = [0x00, 0x00]          # _build_raw_pattern_digi rejects addr <= 1
 END_ROW = [GT_END_PATTERN, 0x00, 0x00, 0x00]
@@ -137,3 +137,85 @@ def test_the_engine_probe_requires_the_table_offset_relation():
     # fail this relation, and SIDId names every one of them RobTracker.
     assert DIGI_RUNTIME_TABLE_LEN == 8
     assert DIGI_TRACK_TO_PATTERN == 10
+
+
+# --- the $82 slide, folded in from test_digi.py at v0.5.457 ----------------
+#
+# The player adds the step on EVERY frame while its gate is set, and that gate
+# is cleared only at the next note start ($10F4-$10F6), so the slide runs for
+# the whole EVENT. A Goattracker command byte executes on the row it appears on
+# and nowhere else, and CMD_PORTAUP/CMD_PORTADOWN are continuous -- so one row
+# of command is one row of slide, and the emission repeats it down the hold
+# rows. The ILV decoder was given the identical repeat at v0.5.454.
+#
+# These read the COMMAND columns, so they need all four bytes of a row --
+# `_rows` above yields only (note, instrument) and would drop exactly the
+# assertions that matter.
+
+def _cmd_rows(events):
+    return [events[i:i + 4] for i in range(0, len(events), 4)]
+
+
+def _slide_stream(wait: int, step_hi: int, step_lo: int) -> bytes:
+    """One `$82` slide, then a note held for `wait` extra rows, then the end.
+
+    The duration prefix is sticky and read before the note (see the module
+    docstring's $1104 listing), so it precedes the command exactly as the
+    player's stream does. Two leading pad bytes because the builder refuses
+    `addr <= 1`.
+    """
+    return bytes(PAD + [DIGI_DURATION | wait, DIGI_SLIDE, step_hi, step_lo,
+                        0x30, DIGI_END])
+
+
+def test_the_slide_is_repeated_on_every_hold_row_of_its_event():
+    """Attached to the note row alone the slide stopped after one row -- the
+    defect this pins.
+    """
+    steps: list[int] = []
+    events = _build_raw_pattern_digi(_slide_stream(3, 0x01, 0x00), len(PAD),
+                                     slides=True, steps=steps)
+    rows = _cmd_rows(events)
+    # note row, three hold rows, then the end marker
+    assert rows[0][0] != GT_NO_NOTE, "the note itself"
+    assert [r[0] for r in rows[1:4]] == [GT_NO_NOTE] * 3, "its three hold rows"
+    cmd, data = rows[0][2], rows[0][3]
+    assert cmd == 1, "a positive step is CMD_PORTAUP"
+    for i, r in enumerate(rows[1:4], start=1):
+        assert (r[2], r[3]) == (cmd, data), (
+            f"hold row {i} carries the same command as the note row")
+
+
+def test_a_slide_with_no_hold_rows_is_unchanged():
+    """wait 0 is one row, so the repeat loop runs zero times. This is what
+    keeps every file whose slides all fall on single-row events byte-identical.
+    """
+    steps: list[int] = []
+    rows = _cmd_rows(_build_raw_pattern_digi(_slide_stream(0, 0x01, 0x00),
+                                             len(PAD), slides=True, steps=steps))
+    assert rows[0][2] == 1
+    assert len(rows) == 2, "the note and the end marker, nothing between"
+
+
+def test_the_step_is_signed_and_a_high_byte_above_80_slides_down():
+    """One `CLC / ADC` pair in the player and no direction test, so `$FF00` is
+    -256 rather than 65280 -- and it must reach the hold rows as PORTADOWN,
+    not merely as a different operand on row 0.
+    """
+    steps: list[int] = []
+    rows = _cmd_rows(_build_raw_pattern_digi(_slide_stream(2, 0xFF, 0x00),
+                                             len(PAD), slides=True, steps=steps))
+    assert rows[0][2] == 2, "a negative step is CMD_PORTADOWN"
+    assert [(r[2], r[3]) for r in rows[1:3]] == [(rows[0][2], rows[0][3])] * 2
+
+
+def test_no_command_is_written_where_the_option_is_off():
+    """`slides=False` is the default and must leave the stream exactly as it
+    was before any of this existed -- the repeat loop is guarded on there being
+    a command at all, so an event with hold rows still gets bare hold rows.
+    """
+    rows = _cmd_rows(_build_raw_pattern_digi(_slide_stream(3, 0x01, 0x00),
+                                             len(PAD), slides=False, steps=None))
+    assert all((r[2], r[3]) == (0x00, 0x00) for r in rows), \
+        "no command column is written anywhere"
+    assert [r[0] for r in rows[1:4]] == [GT_NO_NOTE] * 3

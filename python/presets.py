@@ -364,6 +364,34 @@ EXCLUDED_FROM_ALWAYS = {
     # with melody unchanged) -- deciding it needs a scorer that weighs
     # oscillation, which is the same gap the noise-pitch case has.
     "pitch_seq",
+    # The interleaved engine's OWN arpeggio ($83, patterns.ILV_ARP), and it is
+    # in this set for a different reason from `pitch_seq` immediately above --
+    # not because the mechanism cannot be reproduced, but because reproducing
+    # it exactly is a TRADE the report cannot adjudicate.
+    #
+    # Reproducing it is not in doubt. Unlike bit $10's, this counter is cleared
+    # at every note start ($1397, inside the note-start block at $1388) and the
+    # arm flag is cleared once per event ($1155), so a Goattracker wavetable
+    # says it exactly -- there is no phase to lose. The cycle, rate and scope
+    # are all read from the player's bytes.
+    #
+    # What the corpus A/B says (v0.5.457, -t 60, the five files it moves):
+    # `vib` comes off **0.00** on four of them -- Lion_Heart 0.00 -> 0.56,
+    # Radio_ACE 0.00 -> 0.17, Go_Go_Dash 0.00 -> 0.11, Lakers 0.00 -> 0.04 --
+    # which is the mechanism arriving where the conversion previously produced
+    # no pitch movement at all. It costs `melody` on three: Radio_ACE
+    # 97 -> 89%, `seq` 97 -> 83%, `pitch` 97 -> 92%, with Go_Go_Dash and
+    # Lakers each losing a point. Every other dimension is flat on every file.
+    #
+    # So it is the `pitch_seq` shape after all: a gain on an oscillation
+    # measure paid for in melody, and `fidelity_better` scores a melody gain
+    # and cannot select it. Adopting it per song wants an ear, not another
+    # column -- the six interleaved-classic files have never been listened to
+    # (`the-six-interleaved-classic-files-have-never-been-listened-to`).
+    #
+    # `--arpeggio` changes NO byte on any other file: 0 of 89 move with it off
+    # and exactly 5 with it on, corpus byte-hashed at v0.5.457.
+    "arpeggio",
 }
 
 
@@ -1468,6 +1496,14 @@ def build_parser() -> argparse.ArgumentParser:
              "silently would turn a measured decision into an absent one on "
              "the next routine regeneration")
     parser.add_argument(
+        "--carry-from", default=None, metavar="FILE",
+        help="carry the per-song decisions this run cannot re-derive from FILE "
+             "rather than from the output file. A SHARDED run needs this: its "
+             "output file does not exist yet, so there is nothing to carry "
+             "from, and six shards merged at v0.5.457 dropped 30 measured "
+             "settings -- every --regrid adoption among them -- while looking "
+             "complete. Pass the shipped presets.json"),
+    parser.add_argument(
         "--shard", default=None, metavar="I/N",
         help="search only every Nth song, starting at I (0-based), so a "
              "corpus search can be split across processes. Each song's walk "
@@ -1556,9 +1592,10 @@ def main(argv=None) -> int:
     # it, it is what a song whose search fails falls back to. Falling back to
     # the structural defaults instead is indistinguishable from a measured
     # decision to use them -- the same reasoning that put the carry here.
+    carry_source = args.carry_from or args.output
     if not args.no_carry:
         try:
-            prev = json.loads(Path(args.output).read_text(encoding="utf-8"))
+            prev = json.loads(Path(carry_source).read_text(encoding="utf-8"))
             carry_source_readable = True
             for name, e in (prev.get("songs") or {}).items():
                 # FIDELITY_TOGGLES is not the whole set of per-song
@@ -1574,6 +1611,22 @@ def main(argv=None) -> int:
                     carried[name] = keep
         except (OSError, ValueError):
             pass
+
+    # A SHARDED run whose carry source is unreadable would write a shard
+    # that looks complete and is not -- the failure this flag was added for.
+    # Refused rather than warned, because `--merge` cannot tell afterwards:
+    # a dropped setting and a setting that was never measured are the same
+    # absence in the merged file.
+    if args.shard and not args.no_carry and not carry_source_readable:
+        print(f"--shard with no readable carry source ({carry_source}): a "
+              "shard's output file does not exist yet, so every per-song "
+              "decision this run cannot re-derive would be DROPPED from the "
+              "merged file -- all --regrid adoptions, rest_envelope_silence, "
+              "pulse_phase, real_firstwave_instruments, force_park and "
+              "initial_instrument. Pass --carry-from <shipped presets.json>, "
+              "or --no-carry if you really mean to re-decide from nothing.",
+              file=sys.stderr)
+        return 2
 
     songs: dict[str, dict] = {}
     paths = sorted(sid_dir.rglob("*.sid"), key=lambda p: p.name.lower())

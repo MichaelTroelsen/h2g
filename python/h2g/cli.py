@@ -355,6 +355,17 @@ def main(argv=None) -> int:
              "trying per song by ear -- Trans-Atlantic goes 0.17x -> 0.61x with "
              "melody unchanged"),
     parser.add_argument(
+        "--arpeggio", action="store_true",
+        help="emit the interleaved engine's $83 semitone arpeggio (five of "
+             "the six ilv files, 662 occurrences). The player adds the "
+             "operand's high nibble on the note's second frame and its low "
+             "nibble on the third, then wraps -- a $x0 operand being a "
+             "two-step trill. Unlike --pitch-seq's bit-$10 arpeggio the "
+             "counter is cleared at every note start, so a Goattracker "
+             "wavetable can say it exactly; it is emitted as CMD_SETWAVEPTR "
+             "to a block per (record, operand) pair, because the operand is a "
+             "property of the note and not of the instrument"),
+    parser.add_argument(
         "--tie", action="store_true",
         help="honour the classic players' tie flag: status bit 5 tells the "
              "player not to close the gate at that note's end, so the note "
@@ -540,6 +551,7 @@ def main(argv=None) -> int:
                           ("--cut-release", "cut_release"),
                           ("--tie", "tie"),
                           ("--pitch-seq", "pitch_seq"),
+                          ("--arpeggio", "arpeggio"),
                           ("--filter", "filters"),
                           ("--pulse", "pulse")):
             if _given(flag):
@@ -626,6 +638,7 @@ def main(argv=None) -> int:
                       cut_release=args.cut_release,
                       tie=args.tie,
                       pitch_seq=args.pitch_seq,
+                      arpeggio=args.arpeggio,
                       filters=args.filters,
                       pulse=args.pulse)
     except (SidFormatError, UnsupportedSidError, ConversionAbort) as exc:

@@ -523,3 +523,66 @@ def test_a_nine_element_state_still_works():
     old_ref = _state()[:9]
     old_cand = _state(melody=1.0)[:9]
     assert presets.fidelity_better(old_cand, old_ref) is False
+
+
+def test_a_sharded_fidelity_run_refuses_rather_than_dropping_carried_settings(
+        tmp_path):
+    """`--shard` bypassed carry-forward, and the merged file looked complete.
+
+    MEASURED at v0.5.457: six shards each written to a fresh `-o`, then
+    `--merge`, LOST 30 per-song decisions -- all 13 `--regrid` adoptions, 4
+    `rest_envelope_silence`, 4 `pulse_phase`, 2 `real_firstwave_instruments`,
+    `force_park` and `initial_instrument` -- to gain the one setting the run
+    was launched for. The carry reads the OUTPUT file, and a shard's output
+    does not exist yet, so `carried` was empty and the branch that exists to
+    preserve non-searchable settings had nothing to preserve.
+
+    This is the FIFTH sighting of a regeneration deleting a measured decision,
+    and the comment above that branch already enumerates four and states the
+    rule -- "carry anything the run cannot RE-DERIVE, on every path". The shard
+    path is the one it missed.
+
+    Refused rather than warned: `--merge` cannot tell afterwards, because a
+    dropped setting and a setting that was never measured are the same absence.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    out = tmp_path / "shard.json"          # deliberately does not exist
+    r = subprocess.run(
+        [sys.executable, str(PYTHON_ROOT / "presets.py"), str(tmp_path),
+         "--fidelity", "--shard", "0/6", "-o", str(out)],
+        capture_output=True, text=True)
+    assert r.returncode == 2, r.stdout[-400:] + r.stderr[-400:]
+    assert "no readable carry source" in r.stderr
+    # It must name the way out, not merely complain.
+    assert "--carry-from" in r.stderr and "--no-carry" in r.stderr
+
+
+def test_no_carry_still_lets_a_sharded_run_through(tmp_path):
+    """The refusal is about a SILENT drop, not about sharding. Someone who
+    means to re-decide from nothing says so and is allowed to.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    out = tmp_path / "shard.json"
+    r = subprocess.run(
+        [sys.executable, str(PYTHON_ROOT / "presets.py"), str(tmp_path),
+         "--fidelity", "--shard", "0/6", "--no-carry", "-o", str(out)],
+        capture_output=True, text=True)
+    assert r.returncode != 2 or "no readable carry source" not in r.stderr
+
+
+def test_carry_from_is_read_instead_of_the_output_file(tmp_path):
+    """The fix, not just the guard: a shard writing a fresh file must be able
+    to carry from the shipped presets.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    src = tmp_path / "shipped.json"
+    src.write_text(json.dumps({
+        "always": {}, "songs": {"Commando.sid": {"regrid": True}}}),
+        encoding="utf-8")
+    out = tmp_path / "shard.json"
+    r = subprocess.run(
+        [sys.executable, str(PYTHON_ROOT / "presets.py"), str(tmp_path),
+         "--fidelity", "--shard", "0/6", "--carry-from", str(src),
+         "-o", str(out)],
+        capture_output=True, text=True)
+    assert "no readable carry source" not in r.stderr, r.stderr[-400:]
