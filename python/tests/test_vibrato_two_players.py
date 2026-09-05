@@ -22,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from h2g.detect import (VIBRATO_DEPTH_SHAPES, VIBRATO_SHAPE, VIBRATO_SHAPES,
                         _find_vibrato, _shape_matches, detect)
 from h2g.search import search_file
-from h2g.sidfile import HLEN, load_sid
+from h2g.sidfile import load_sid
 
 POWERPLAY = "Powerplay_Hockey_USA_vs_USSR.sid"
 
@@ -73,22 +73,26 @@ def test_powerplays_first_copy_names_the_other_copys_table():
     sid = load_sid(str(CORPUS / POWERPLAY))
     det = detect(sid, log=lambda m: None)
 
-    def addr(off):
-        return off + sid.load_addr - HLEN + 1
+    # `sid.to_address`, not a local re-derivation of it. This was the
+    # ELEVENTH hand-rolled copy of `to_offset`'s inverse; the other ten went
+    # at 35dc775 and 987543e. Powerplay is not a relocated file, so the two
+    # agree here for every offset -- asserted below rather than assumed,
+    # because that equality is exactly what made the copy survive so long.
+    assert sid.relocation is None, "Powerplay gained a relocation; re-read this test"
 
     hits = _shape_matches(sid.data, VIBRATO_SHAPE)
-    assert [addr(h) for h in hits] == [0x37FE, 0x45E5], [hex(addr(h)) for h in hits]
+    assert [sid.to_address(h) for h in hits] == [0x37FE, 0x45E5], [hex(sid.to_address(h)) for h in hits]
 
     def back_lda(at):
         for k in range(at - 3, max(0, at - 26), -1):
             if sid.data[k] in (0xB9, 0xBD):
-                return addr(k), sid.data[k + 1] | sid.data[k + 2] << 8
+                return sid.to_address(k), sid.data[k + 1] | sid.data[k + 2] << 8
         return None, None
 
     assert back_lda(hits[0]) == (0x37F6, 0x3BA5)
     assert back_lda(hits[1]) == (0x45DD, 0x4A05)
     # $4A00 is the table the chains settled on; $3BA5 belongs to the other copy
-    assert addr(det.instr_start) == 0x4A00, hex(addr(det.instr_start))
+    assert sid.to_address(det.instr_start) == 0x4A00, hex(sid.to_address(det.instr_start))
     assert sid.to_offset(0x3BA5) - det.instr_start == -3675
     assert sid.to_offset(0x4A05) - det.instr_start == 5
 
