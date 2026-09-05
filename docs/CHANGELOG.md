@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.464 — 2026-09-05
+
+- the fidelity artefact is re-taken at 180 s and test_output_sha goes green
+
 ## 0.5.463 — 2026-09-05
 
 - dis6502.to_address delegates to SidFile.to_address, resolving the relocation branch
