@@ -1,14 +1,16 @@
 {
  "generated_from": {
-  "head": "a4bf43d",
+  "head": "ffbe1db",
   "sources": [
    "whats-next.md",
    "todo.md",
    ".claude/tasks/runs.jsonl",
+   ".claude/tasks/decisions.jsonl",
    ".claude/tasks/whattask.json (previous)",
    "git log",
    "CLAUDE.md",
    "graphify-out",
+   "docs/QUEUE.md",
    "docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md"
   ],
   "focus": null
@@ -241,29 +243,6 @@
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
    "why_mode": "the diagnosis matters more than the measurement",
    "why_lane": "shares presets.json with another task, at least one writing"
-  },
-  {
-   "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
-   "title": "whattask should check a touches path exists before granting it",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/whattask-hygiene/",
-    "r:python/approvals.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'. || PARTIAL at 7bcd3fe and STRUCTURALLY BLOCKED: the generator is in the mit-setup plugin, outside this repo, so no `touches` can grant it. The census is durable (296 granted paths, 3 absent) and the specification is settled: intent CANNOT be inferred from verify prose, so a `creates:` third mode beside r:/rw: is the design. Re-taking this task inside the repo produces a second partial and no information.",
-   "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
-   "why_mode": "changes how every later task is generated",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "four-plan-tasks-grant-module-shaped-test-files-that-do-not-exist",
@@ -1471,29 +1450,6 @@
    "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
-   "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
-   "title": "regrid is not in FIDELITY_TOGGLES so the search never walks it",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "r:docs/FIDELITY.md",
-    "r:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": "A decision on whether --regrid should enter FIDELITY_TOGGLES. It cannot be selected by fidelity_better, so all 14 adoptions are hand-recorded.",
-   "decision": null,
-   "verify": "The human answers the question in blocked_on and /runhuman records it.",
-   "why_model": "the blocker is a human judgement, not a measurement",
-   "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one writing"
-  },
-  {
    "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
    "title": "Any Commando pitch fix requires recutting the byte-exact fixture",
    "source": "runs.jsonl",
@@ -1563,29 +1519,6 @@
    "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
-   "id": "locking-md-fix-is-uncommitted-in-the-plugin-repo",
-   "title": "The LOCKING.md fix is uncommitted in the plugin repo",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "r:docs/FIDELITY.md",
-    "r:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": "Someone with access must commit the LOCKING.md fix in the mit-setup plugin repo, which is outside this tree.",
-   "decision": null,
-   "verify": "The human answers the question in blocked_on and /runhuman records it.",
-   "why_model": "the blocker is a human judgement, not a measurement",
-   "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one writing"
-  },
-  {
    "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
    "title": "Twenty-four worktrees hold uncommitted work from past sessions",
    "source": "runs.jsonl",
@@ -1602,29 +1535,6 @@
    "needs_main_reason": null,
    "depends_on": [],
    "blocked_on": "A decision per worktree: land the work, discard it, or leave it. CLAUDE.md's stash warning means none of this should be recovered by guesswork. **THE TITLE'S FIGURE IS STALE, MEASURED AT c490b72: `git worktree list` returns 45 lines -- the main checkout plus 44 WORKTREES, not 24.** The count has nearly doubled, so this is growing rather than waiting. A per-worktree question over 44 is not one sitting's work: a triage pass should group them first (which hold a diff at all, which sit on branches already merged, which are empty) so the human is asked about the few that actually hold unique work. That triage is agent work and needs no decision.",
-   "decision": null,
-   "verify": "The human answers the question in blocked_on and /runhuman records it.",
-   "why_model": "the blocker is a human judgement, not a measurement",
-   "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one writing"
-  },
-  {
-   "id": "runtask-holder-records-carry-a-shell-pid-that-is-dead-before-the-task-is",
-   "title": "runtask holder records carry a shell pid that is dead before the task is",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "r:docs/FIDELITY.md",
-    "r:build/listen"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": "A fix in the mit-setup plugin so a holder record carries a pid that outlives the claim. Outside this tree.",
    "decision": null,
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
@@ -1693,17 +1603,26 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:python/sound_calibrate.py",
-    "r:docs/SOUND-CALIBRATION.md",
+    "rw:python/sound_calibrate.py",
+    "rw:docs/SOUND-CALIBRATION.md",
+    "rw:build/sound_calibration.json",
+    "rw:python/tests/test_sound_calibrate.py",
+    "r:build/fidelity.json",
+    "r:presets.json",
+    "r:python/sound.py",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:host:C:/t/known-bad-coverage/"
    ],
    "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
+   "needs_main": true,
+   "needs_main_reason": "regenerating SOUND-CALIBRATION.md re-renders the KNOWN_BAD pairs through sound.py, which is a multi-minute corpus-adjacent job and writes two hazard-adjacent artefacts",
    "depends_on": [],
    "blocked_on": null,
    "decision": "KEEP Las_Vegas and Samantha_Fox in KNOWN_BAD. Do NOT delete them. Change the calibration criterion so a structurally-incomparable pair is REPORTED as excluded rather than counted in `all(seen)` -- coverage stays at four pairs, the exclusion stays visible in the doc, and the doc can go green on what is actually comparable. The two are incomparable because their v0.5.401 fix is a MULTIPLIER change (loud_ratio 0.074x / 0.063x), which is a property of the pair, not a failure to be hidden.",
-   "verify": "SOUND-CALIBRATION.md reads PASS for the right reason, or the two pairs are retired with the coverage loss stated.",
+   "verify": "`python sound_calibrate.py` from `python/` writes docs/SOUND-CALIBRATION.md reading **PASS**, with Las_Vegas and Samantha_Fox still listed and still marked EXCLUDED with their reason. **THE CHANGE IS SPECIFIED AND MEASURED AT ffbe1db -- do not re-derive it.** Half is already shipped: `render_doc` already prints `EXCLUDED -- good build's loudness is 0.074x the original's ...` for both pairs, `comparable()` computes the reason and `row['seen']` already declines to score them. The only missing half is `passed`, at sound_calibrate.py:360:\n    now:  and all(b.get('seen') for b in bad))\n    want: and any(not b.get('incomparable') for b in bad)\n          and all(b.get('seen') for b in bad if not b.get('incomparable')))\n**The `any(...)` guard is NOT optional**: the filter alone is vacuously True over an all-excluded set, so retiring every pair would read PASS on nothing -- the empty-set-reads-as-a-pass trap. **And the comment at lines 353-359 must be rewritten in the same edit**, because it states the OPPOSITE policy ('An EXCLUDED pair is not a passing pair ... It reads FAIL until KNOWN_BAD names pairs that can be built comparably') and becomes a lie otherwise. python/tests/test_sound_calibrate.py ALREADY EXISTS (checked at ffbe1db) -- EXTEND it, do not create it. Pin both branches: a suite with one comparable seen pair plus excluded pairs PASSES, and a suite whose pairs are ALL excluded FAILS. || BLOCKED at ffbe1db purely on the GRANT, now fixed above -- the research is done and is in the verify; the edit itself is minutes.",
    "why_model": "a judgement about what the calibration stops checking, not a measurement",
    "why_mode": "no amount of work resolves it -- the criterion is all(seen) and these two cannot be seen",
    "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one writing"
@@ -2019,30 +1938,6 @@
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
-   "id": "the-generators-mechanical-test-file-rule-manufactures-a-second-error-from-a-wrong-source-grant",
-   "title": "The test-file rule amplifies a wrong source grant instead of catching it",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/test-file-rule-amplifies/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "whattask-should-check-a-touches-path-exists-before-granting-it"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The generator's `rw:<dir>/<name>.py implies rw:test_<name>.py` step no longer turns one wrong module grant into two wrong grants -- e.g. by checking the path exists before deriving from it. This is the rule interacting badly with whattask-should-check-a-touches-path-exists-before-granting-it, and the two should be settled together.",
-   "why_model": "a generator rule whose failure mode is silent and self-amplifying",
-   "why_mode": "it changes how every future plan is built",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
-  },
-  {
    "id": "a-grep-zero-on-a-quotation-is-evidence-about-line-breaks-before-content",
    "title": "Three finding-shaped non-findings came from counters that could not see their container",
    "source": "runs.jsonl",
@@ -2192,50 +2087,6 @@
    "why_lane": "shares CLAUDE.md with another task, at least one writing"
   },
   {
-   "id": "creates-should-be-a-third-touches-mode-beside-r-and-rw-because-intent-cannot-be-inferred",
-   "title": "An existence check cannot tell a typo from a file a task means to create",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/creates-mode/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`touches` can express 'this task creates this path', so a generator check can flag an absent grant without flagging a correct one. MEASURED at 7bcd3fe: 296 granted repo paths, 3 absent; a heuristic scanning each task's verify and title for the filename plus a creation verb classified **0 of 3** correctly, because plan authors do not name the file they intend to create. Intent cannot be detected, only declared. AND an existence check alone is not enough even when it fires -- the `test_drum.py` case had a nearest-name candidate (`test_drum_return.py`) that was the WRONG family; the right file was `test_effect_bit80.py`.",
-   "why_model": "a schema change affecting every future plan and both runner commands",
-   "why_mode": "it is a design decision about the plan format",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
-  },
-  {
-   "id": "the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
-   "title": "A whole class of task cannot be completed by any runner in this repo",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "requires-user",
-   "lane": "serial",
-   "touches": [
-    "r:.claude/tasks/whattask.json",
-    "rw:host:C:/t/generator-outside-repo/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": "Several open tasks fix the /whattask GENERATOR, which lives at `~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/commands/whattask.md` -- OUTSIDE this repo. No `touches` a plan for this repo can grant will ever reach it, so `/runtask` can only ever record `partial` on them, however many times they are attempted (one already has). This is the same shape as tasks whose fix is a `whattask.json` rewrite, one level further out. HOW DO YOU WANT THESE HANDLED? Options: (a) work the plugin repo directly in a separate session and keep these out of this plan; (b) let this plan grant absolute plugin paths, accepting that they are outside the repo the locks protect; (c) mark them explicitly unrunnable so a runner skips them rather than burning a cycle. At least three current tasks are affected: the touches-exists check, the `creates:` mode, and the test-file rule.",
-   "decision": null,
-   "verify": "Tasks whose fix lives in the plugin are either routed somewhere that can reach it, or marked so no runner takes them and records a partial.",
-   "why_model": "a decision about where a class of work is done, not a code change",
-   "why_mode": "no amount of work inside this repo resolves it",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
-  },
-  {
    "id": "seven-hygiene-tasks-share-one-scratch-directory-and-its-release-scripts-target-different-tasks",
    "title": "A shared scratch directory nearly released another task's lock",
    "source": "runs.jsonl",
@@ -2332,29 +2183,6 @@
    "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one writing"
   },
   {
-   "id": "bold-parity-exits-zero-on-an-odd-prose-count-so-it-cannot-gate-anything",
-   "title": "The parity tool cannot fail a build",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/tools/bold_parity.py",
-    "rw:host:C:/t/bold-parity-exit/",
-    "r:docs/H2G-CONVERSION-METHOD.md"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`python/tools/bold_parity.py` exits non-zero when the PROSE count is odd and zero otherwise, so a test or hook can gate on it. Confirm both ways: `docs/H2G-CONVERSION-METHOD.md` (prose 2654, EVEN) must exit 0, and a scratch file with an odd prose count must exit non-zero.",
-   "why_model": "a one-line change with both expected outcomes already measured",
-   "why_mode": "self-contained and the conclusion is a pair of exit codes",
-   "why_lane": "no declared path overlaps another task's"
-  },
-  {
    "id": "five-of-six-queue-tier-builders-have-never-produced-an-entry-against-real-data",
    "title": "Five of the fidelity queue's six tier builders have only ever seen fixtures",
    "source": ".claude/tasks/runs.jsonl#ab-8-fidelity-queue",
@@ -2363,11 +2191,12 @@
    "lane": "serial",
    "touches": [
     "r:python/fidelity_queue.py",
+    "r:python/fidelity.py",
     "r:build/queue.json",
     "r:build/fidelity.json",
     "r:build/approvals.json",
-    "rw:host:C:/t/queue-tier-coverage/",
-    "r:build/search_refusals.json"
+    "r:build/search_refusals.json",
+    "rw:host:C:/t/queue-tier-coverage/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2375,7 +2204,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "For each of the six tier builders, state whether it has produced an entry against real data and WHY not where it has not. Established at a4bf43d and not to be re-derived: tier 1 is empty because build/approvals.json holds zero `stale` tunes; tiers 2-4 because length_delta, onset_census, hold_census and aud_voices are absent from every row of the current artefact; tier 5 because build/search_refusals.json does not exist until ab-7 lands. The task is to say which of those five will be exercised by an artefact refresh alone and which need a flag or another task first.",
+   "verify": "Tier 5's bucket is named -- whether an existing `fidelity.py` flag populates `onset_census`/`hold_census` or whether it needs new code. **EVERYTHING ELSE IS DONE AT 6c31643 AND MUST NOT BE REDONE**: tier 1 needs a human, tier 2 refresh alone, tier 3 needs ab-7, tier 4 refresh alone flag-gated on `--sound-voices`. Counts re-derived and correct at 6c31643: `build/queue.json` is 116 entries, `Counter(tier)` = {6: 116}; over 95 rows `length_delta` is present in **14** (worst 4.16 s, Knucklebusters, none `length_bounded`), `onset_census` 0, `hold_census` 0, `aud_voices` 0, and no `hold_*` key exists anywhere while seven other `onset_*` keys do.",
    "why_model": "a read-only classification against two artefacts, with the measurement already taken",
    "why_mode": "self-contained and the conclusion is mechanical -- read the six builders and the artefact keys they index",
    "why_lane": "reads only, and no other task writes build/queue.json"
@@ -2530,6 +2359,86 @@
    "why_model": "a classification pass with the count already taken",
    "why_mode": "writes the plan file",
    "why_lane": "writes .claude/tasks/whattask.json"
+  },
+  {
+   "id": "bold-parity-conflates-a-missing-file-with-an-odd-prose-count-both-exit-1",
+   "title": "bold_parity exits 1 for a missing file and for a real finding alike",
+   "source": ".claude/tasks/runs.jsonl#bold-parity-exits-zero",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "rw:python/tools/bold_parity.py",
+    "r:docs/H2G-CONVERSION-METHOD.md",
+    "rw:host:C:/t/bold-parity-missing/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`python/tools/bold_parity.py` on a nonexistent path exits **2** (the code it already uses for a usage error), not 1, so a hook can tell 'this doc has an unclosed bold marker' from 'you typo'd the filename'. Measured at 6c31643: it currently raises an unhandled FileNotFoundError and exits 1. Confirm all three codes still hold afterwards -- 0 on docs/H2G-CONVERSION-METHOD.md (prose 2654), 1 on an odd-prose file, 2 on no arguments AND on a missing file.",
+   "why_model": "a single-file exit-code fix against a tool whose behaviour is already pinned",
+   "why_mode": "self-contained and the conclusion is a set of exit codes",
+   "why_lane": "reads the method doc, which other tasks write"
+  },
+  {
+   "id": "sound-calibration-md-is-five-versions-stale-dirty-stamped-and-still-at-60-second-renders",
+   "title": "SOUND-CALIBRATION.md is five versions stale, dirty-stamped and still at 60 s",
+   "source": ".claude/tasks/runs.jsonl#the-two-incomparable-known-bad-pairs",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:docs/SOUND-CALIBRATION.md",
+    "rw:build/sound_calibration.json",
+    "r:python/sound_calibrate.py",
+    "r:python/sound.py",
+    "r:build/fidelity.json",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/soundcal-refresh/",
+    "r:CLAUDE.md"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "re-renders the calibration pairs through sound.py and rewrites two artefacts; a render sweep no delegated agent should own",
+   "depends_on": [
+    "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "docs/SOUND-CALIBRATION.md is regenerated from a CLEAN tree and its stamp says so. Measured at ffbe1db it reads `h2g 0.5.469, ef8b962-dirty, 60 s renders` -- five versions behind, generated from a dirty tree (which CLAUDE.md forbids taking a fidelity number from), and at 60 s where every other artefact moved to 180. Decide the window DELIBERATELY rather than inheriting 60, and say in the doc which was used and why.",
+   "why_model": "a regeneration whose only judgement is the window, already framed",
+   "why_mode": "writes two artefacts and runs renders",
+   "why_lane": "writes the same two artefacts the known-bad task writes"
+  },
+  {
+   "id": "the-fidelity-queue-is-a-single-tier-artefact-and-tier-6-is-its-own-weakest-rank",
+   "title": "docs/QUEUE.md is all tier 6, which its own header ranks lowest",
+   "source": ".claude/tasks/runs.jsonl#five-of-six-queue-tier-builders",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:docs/QUEUE.md",
+    "rw:python/fidelity_queue.py",
+    "rw:python/tests/test_queue.py",
+    "r:build/queue.json",
+    "rw:host:C:/t/queue-single-tier/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "docs/QUEUE.md says on its face that it is currently a SINGLE-TIER artefact, so no reader mistakes it for a defect list. Measured at 6c31643: all **116 of 116** entries are tier 6, and the module's own header ranks tier 6 'lowest: a lead'. Every actionable item in it today is a lead, not a confirmed cause. The header should state which tiers produced nothing and why, from the queue data itself rather than a written-down count that will go stale.",
+   "why_model": "a generated-doc header change with the measurement already taken",
+   "why_mode": "writes a generated doc other tasks regenerate",
+   "why_lane": "writes docs/QUEUE.md and the module that generates it"
   }
  ],
  "closed": [
@@ -3660,6 +3569,72 @@
    "title": "Rewrite the three open AB tasks' grants from the design document's Files blocks",
    "closed_by": "a4bf43d",
    "reason": "Done in the fd286a5 regeneration and verified here by re-parsing the document: 0 of 3 now misgrant, against 3 of 3 when the id was opened."
+  },
+  {
+   "id": "bold-parity-exits-zero-on-an-odd-prose-count-so-it-cannot-gate-anything",
+   "title": "The parity tool cannot fail a build",
+   "closed_by": "6c31643",
+   "reason": null
+  },
+  {
+   "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
+   "title": "regrid is not in FIDELITY_TOGGLES so the search never walks it",
+   "closed_by": "decision:regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
+   "reason": "ALREADY SATISFIED, verified during the interview and re-confirmed here: python/presets.py:190-244 (the `regrid` entry in FIXED) records the decision in full at v0.5.411 -- regrid stays OUT of FIDELITY_TOGGLES, and the reason is not a measurement gap but that fidelity_better's `keeps_notes` gates every term on OUR attack count, refusing all four eligible files (Arcade_Classics 375->372 against an original 372, Sigma_Seven, Wiz, Rikky) as losses when each is a strict improvement. Nothing to decide and nothing to run."
+  },
+  {
+   "id": "the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "title": "A whole class of task cannot be completed by any runner in this repo",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "The decision IS this task's deliverable and it has been taken: work the plugin in a separate session, keep this class out of this plan. OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
+   "title": "whattask should check a touches path exists before granting it",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "creates-should-be-a-third-touches-mode-beside-r-and-rw-because-intent-cannot-be-inferred",
+   "title": "An existence check cannot tell a typo from a file a task means to create",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "the-generators-mechanical-test-file-rule-manufactures-a-second-error-from-a-wrong-source-grant",
+   "title": "The test-file rule amplifies a wrong source grant instead of catching it",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "runtask-holder-records-carry-a-shell-pid-that-is-dead-before-the-task-is",
+   "title": "runtask holder records carry a shell pid that is dead before the task is",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "locking-md-fix-is-uncommitted-in-the-plugin-repo",
+   "title": "The LOCKING.md fix is uncommitted in the plugin repo",
+   "closed_by": "decision:the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "reason": "OUT OF SCOPE FOR THIS REPO by the human's answer 'Separate session on plugin source'. The /whattask generator and the runtask holder-record fix live in the mit-setup plugin, and that directory is a plugin CACHE, not a git repository (`git status` there returns 'fatal: not a git repository') -- so an edit made from here is both outside the locks and overwritten by the next plugin update. No `touches` this plan can grant will ever reach it. Do the work in a separate session against the plugin SOURCE; do not re-list it here."
+  },
+  {
+   "id": "known-bad-coverage-is-granted-r-on-the-two-files-its-own-decision-must-write",
+   "title": "known bad coverage is granted r on the two files its own decision must write",
+   "closed_by": "ffbe1db",
+   "reason": "Fixed in this regeneration: the known-bad task now grants rw: on python/sound_calibrate.py, docs/SOUND-CALIBRATION.md and build/sound_calibration.json, the three paths its own decision and verify write."
+  },
+  {
+   "id": "queue-tier-coverage-cannot-classify-tier-5-without-r-python-fidelity-py-in-its-grant",
+   "title": "queue tier coverage cannot classify tier 5 without r python fidelity py in its grant",
+   "closed_by": "ffbe1db",
+   "reason": "Fixed in this regeneration: r:python/fidelity.py added to the queue-tier task's grant, which is the one determination its partial run could not make."
+  },
+  {
+   "id": "ab-8s-run-record-swaps-tiers-3-and-5-and-the-plan-verify-inherited-the-error",
+   "title": "ab 8s run record swaps tiers 3 and 5 and the plan verify inherited the error",
+   "closed_by": "ffbe1db",
+   "reason": "Fixed in this regeneration: the queue-tier task's verify is rewritten from the artefact rather than copied from ab-8's run record. length_delta is present in 14 of 95 rows (not absent), census_buckets is TIER 5, and search_refusals.json blocks TIER 3 -- the two reasons were swapped."
   }
  ]
 }
