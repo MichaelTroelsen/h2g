@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.465 — 2026-09-05
+
+- approvals.py: a build inherits a human approval by measurement, or is stale by a named criterion
+
 ## 0.5.464 — 2026-09-05
 
 - the fidelity artefact is re-taken at 180 s and test_output_sha goes green
