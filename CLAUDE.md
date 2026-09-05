@@ -329,9 +329,26 @@ test dependency).
   *does* where the extent says only what the table has *room for*. And the
   census's old headline — "essentially all of the loss is reading past the
   end" — is now three quarters true rather than all: 97 subtunes have a
-  positive, player-derived cause. **That sentence is still in
-  `python/survey.py`'s template and therefore in every regenerated
-  `SUBTUNES.md`**; fixing it is a code edit, not a doc edit.
+  positive, player-derived cause.
+  **THE "STILL IN survey.py's TEMPLATE" HALF IS HISTORY: THE CODE EDIT
+  LANDED, GRADED AT v0.5.469 BY READING THE TEMPLATE RATHER THAN THIS
+  BULLET.** This used to end "That sentence is still in `python/survey.py`'s
+  template and therefore in every regenerated `SUBTUNES.md`; fixing it is a
+  code edit, not a doc edit." Grep for the old headline over `survey.py`
+  returns **nothing**, and over `docs/SUBTUNES.md` **nothing**. The template
+  now says the opposite in its own words — *"But not all of the loss below is
+  that kind: the player's own init dispatch ... names {sfx_count} subtune(s)
+  across {sfx_files} file(s) as sound effects rather than music, which is a
+  positive, player-derived reason and not a garbage read past the table's end.
+  That is {sfx_pct}% of the {loss_total} lost below; the remaining {rest_pct}%
+  is still read-past-the-end, as the old headline said of all of it."* — with
+  the counts INTERPOLATED rather than written down, so they cannot go stale
+  the way this bullet did. `SUBTUNES.md` carries the by-cause table the
+  paragraph above promises, `97 | 8 | sfx` among its rows.
+  The lesson is this file's own grading rule pointing at itself: a bullet that
+  prescribes a fix decays exactly like a measured figure, and it decays
+  SILENTLY, because nothing re-reads the code it prescribes against. Prefer
+  "check X against Y" to "X is still wrong" when writing a to-do into prose.
 - **`onset` is the column that sees a mechanism emitted one frame out of
   phase**, and until v0.5.217 nothing could. `wave` averages per-frame
   agreement over the whole window, so a wrong opening frame on a 43-note

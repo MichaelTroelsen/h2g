@@ -90,9 +90,35 @@ RASTERLINES_48_S = 48 * 63 / 985248.0     # PAL cycles per line / cycles per sec
 FRAME_S = 0.02
 
 INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
+# **W_A_R IS THE ONLY PAIR HERE THE `aud` COLUMN CAN VALIDATE, ADDED v0.5.469.**
+# The three original pairs leave `aud` unexercised: two are EXCLUDED (their good
+# build's music ends inside the window, so `loud_ratio` is 0.06-0.07x -- a fact
+# about the PAIR, see `comparable`) and Human_Race is seen on `loud` only, with
+# `aud` blind to it. A calibration whose only live pair cannot exercise the
+# column it calibrates is thin.
+#
+# v0.5.400 is "the silent park stops pushing W_A_R one pattern past
+# Goattracker's limit" -- a PATTERN COUNT fix (209 -> 208), NOT a multiplier
+# change, which is why both sides pack at the same -S and render over the same
+# span where Las_Vegas and Samantha_Fox do not. Measured at v0.5.469, 60 s,
+# through `convert_at` and `sound.compare_sids`:
+#
+#     bad  (0.5.399)  aud 0.6370  loud 0.7915  loud_ratio 0.5261
+#     good (0.5.400)  aud 0.8053  loud 0.8790  loud_ratio 1.5539
+#     comparable() -> None;  worse_by aud +0.1683, loud +0.0876
+#
+# Both ratios sit inside LOUD_RATIO_BAND, though the bad build's 0.526 is close
+# to the 0.5 floor -- worth knowing if that band is ever narrowed.
+#
+# **W_A_R_Preview ON THE SAME COMMIT PAIR IS NOT USABLE and was tested first**:
+# it renders byte-identically on both sides (worse_by 0.0000 on aud AND loud),
+# so v0.5.400 did not reach it. That is the "a build compared against itself"
+# case this module's own header records for 0.5.401 -> 0.5.402; a pair has to
+# MOVE before it can validate anything.
 KNOWN_BAD = [("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
              ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401"),
-             ("Human_Race.sid", "0.5.329", "0.5.330")]
+             ("Human_Race.sid", "0.5.329", "0.5.330"),
+             ("W_A_R.sid", "0.5.399", "0.5.400")]
 
 
 # ---- pure reductions ------------------------------------------------------

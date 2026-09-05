@@ -459,6 +459,46 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
 
     Gated **per record**, on this record's own effect byte: `det.pitch_seq` says
     only that the player reads the bit.
+
+    **REACH, MEASURED v0.5.469 BY CORPUS BYTE-HASH: 28 of the 89 convertible
+    files.** Converted twice on each song's own preset options with `pitch_seq`
+    forced False then True, 89 compared, the same 6 errors both arms (the six
+    non-Hubbard files):
+
+        After_8, BMX_Kidz, Bangkok_Knights, Chain_Reaction,
+        Dragons_Lair_Part_II, Flash_Gordon, Food_Feud, IK_plus, I_Ball,
+        Kings_of_the_Beach_ingame, Knucklebusters, Lightforce,
+        Mega_Apocalypse, Mr_Meaner, Nineteen, Off_the_Cuff, Pandora,
+        Pygmies_Revenge, Rikky, Rock_Tells_the_Tale, Saboteur_II,
+        Shockway_Rider, Star_Paws, Thundercats,
+        Trans-Atlantic_Balloon_Challenge, W_A_R, W_A_R_Preview, Zoolook.
+
+    Reaching a file is not the same as being adopted on it: 17 of the 28 carry
+    `pitch_seq` in `presets.json` and 11 do not.
+
+    **THREE FILES ARE DELIBERATELY OUT OF REACH, AND ONLY ONE OF THEM IS THIS
+    FILE'S PROBLEM.** The v0.5.446 shape work widened detection to four
+    spellings and picked up Mega_Apocalypse and Food_Feud; the files it did NOT
+    pick up were each unmatched for a stated reason rather than a gap:
+
+    * **Kings_of_the_Beach_intro (475 reversals) -- THE ONE THAT IS OURS.** Its
+      sequence is a STATIC GLOBAL TABLE with no per-instrument index or pair
+      copy, so there is nothing for `det.pitch_seq`'s (index, pairs, base)
+      triple to point at and widening detection cannot reach it. Emitting it
+      needs a writer here, not a spelling there. `det.pitch_seq` is None on it
+      today, correctly.
+    * **International_Karate and Formula_1_Simulator** contain no `AND #$10` at
+      all; their `$55` byte is bit $04's arpeggio DEPTH nibble. Nothing for
+      this emitter to do -- the mis-attribution is in `fidelity.py`'s VIBRATO.md
+      census, where `out[0x10] = 'pitchseq'` is set unconditionally while every
+      other cause is gated on detection.
+
+    **AND A CORRECTION TO THE RECORD THAT OPENED THAT WORK**: it wrote
+    "International_Karate (x2)", treating the two IK files as one population.
+    They are not. `IK_plus` IS detected -- `PitchSeq(index=2667, pairs=2422,
+    base=2403, steps=3)` -- and pitch_seq reaches it; only
+    `International_Karate` is None. Anyone carrying "IK+F1" forward as a pair
+    needing the census fix should carry `International_Karate` + F1 instead.
     """
     seq = det.pitch_seq
     if seq is None:
