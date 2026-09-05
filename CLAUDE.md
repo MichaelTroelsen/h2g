@@ -103,6 +103,12 @@ test dependency).
   of whether a conversion *sounds* right, so regenerate it after a commit that
   changes what the converter emits — and never from a working tree with
   unrelated edits in `h2g/`, for the same reason as the artefacts above.
+  Regenerate `docs/QUEUE.md` in the same pass, from `python/`:
+  `python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json`
+  — it reads that same `build/fidelity.json` (plus `build/approvals.json` and
+  `build/search_refusals.json`) and turns the report's misses into a ranked
+  queue of causes, so it is only as fresh as the fidelity run it was taken
+  from and belongs right after it, never before.
   Since v0.5.66 each run gets its own scratch directory, so two of them (or a
   `fidelity.py` and a `listen.py`) can run at once. Before that they shared
   one directory with fixed filenames and silently measured each other's
@@ -2067,6 +2073,11 @@ and the same generated files. And it is never started without the user asking.
 The point of the tag is that the user can hand a `[subagent]` item to a fork
 and keep the session for the `[main]` ones. An untagged list makes everything
 look like it needs this session.
+
+`/whattask` lists `docs/QUEUE.md` as a source beside `todo.md` — its tiers are
+already tagged `[user]`/`[main]`/`[subagent]` per the same scheme, so reading
+it before drafting a task list is cheaper than re-deriving the same causes
+from `FIDELITY.md` by eye.
 
 A new `convert()` option is inert until it is in **three** places: the
 signature, `presets.py`'s `FIXED`, and `_preset_opts`. `_preset_opts` now

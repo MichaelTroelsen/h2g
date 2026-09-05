@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "df80762",
+  "head": "fd286a5",
   "sources": [
    "whats-next.md",
    "todo.md",
@@ -8,7 +8,8 @@
    ".claude/tasks/whattask.json (previous)",
    "git log",
    "CLAUDE.md",
-   "graphify-out"
+   "graphify-out",
+   "docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md"
   ],
   "focus": null
  },
@@ -24,7 +25,6 @@
   "graphify-out/"
  ],
  "external_locks": [
-  ".claude/tasks/serial.lock",
   ".claude/tasks/serial.lock.d"
  ],
  "tasks": [
@@ -97,11 +97,20 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:python/approvals.py",
-    "rw:host:C:/t/ab-7-presets-search-respects-approvals/",
     "rw:python/presets.py",
-    "r:presets.json",
-    "rw:python/tests/test_presets.py"
+    "rw:python/tests/test_presets.py",
+    "rw:python/tests/test_gate_criterion.py",
+    "rw:presets.json",
+    "rw:build/search_refusals.json",
+    "rw:CLAUDE.md",
+    "rw:README.md",
+    "rw:docs/H2G-CONVERSION-METHOD.md",
+    "rw:docs/FIDELITY.md",
+    "rw:build/fidelity.json",
+    "rw:build/approvals.json",
+    "r:python/approvals.py",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/ab-7-presets-search-respects-approvals/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -111,7 +120,7 @@
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
+   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. NOTE the design document writes `H2G-CONVERSION-METHOD.md` WITHOUT its `docs/` prefix and no such file exists at the repo root; the grant names the real path, `docs/H2G-CONVERSION-METHOD.md`, so a literal string comparison against the document will flag it forever.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
    "why_lane": "shares python/presets.py with another task, at least one writing"
@@ -124,10 +133,19 @@
    "mode": "subtask",
    "lane": "serial",
    "touches": [
+    "rw:python/fidelity_queue.py",
+    "rw:python/tests/test_queue.py",
+    "rw:docs/QUEUE.md",
+    "rw:build/queue.json",
+    "rw:CLAUDE.md",
+    "rw:README.md",
+    "r:python/fidelity.py",
     "r:python/approvals.py",
-    "rw:host:C:/t/ab-8-fidelity-queue/",
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py"
+    "r:build/fidelity.json",
+    "r:build/approvals.json",
+    "r:.claude/tasks/whattask.json",
+    "r:.claude/tasks/runs.jsonl",
+    "rw:host:C:/t/ab-8-fidelity-queue/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -137,10 +155,10 @@
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
+   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS.",
    "why_model": "follows a written design",
    "why_mode": "self-contained",
-   "why_lane": "shares python/fidelity.py with another task, at least one writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "ab-9-drift-as-acceptance-term",
@@ -150,13 +168,14 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:python/approvals.py",
-    "rw:host:C:/t/ab-9-drift-as-acceptance-term/",
-    "rw:python/fidelity.py",
     "rw:python/presets.py",
+    "rw:python/tests/test_presets.py",
+    "rw:CLAUDE.md",
+    "rw:README.md",
+    "r:python/fidelity.py",
     "r:build/fidelity.json",
-    "rw:python/tests/test_fidelity.py",
-    "rw:python/tests/test_presets.py"
+    "r:presets.json",
+    "rw:host:C:/t/ab-9-drift-as-acceptance-term/"
    ],
    "mcp": [],
    "needs_main": false,
@@ -166,7 +185,7 @@
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
+   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
    "why_lane": "shares python/presets.py with another task, at least one writing"
@@ -260,7 +279,7 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/whattask.json",
+    "rw:.claude/tasks/whattask.json",
     "rw:host:C:/t/whattask-hygiene/"
    ],
    "mcp": [],
@@ -269,10 +288,10 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "Each ab-* task's touches names the module its own design document says it writes. FIXED in this generation; the task remains only to confirm against the design doc, which this pass did not read.  || PRIOR ATTEMPT: PARTIAL and STRUCTURALLY UNRUNNABLE BY /runtask: the fix is a rewrite of whattask.json, which /runtask may not write. It is fixed HERE, in a regeneration, or not at all.",
+   "verify": "Each ab-* task's touches names the module its own design document says it writes. MEASURED FALSE at fd286a5 and FIXED IN THIS GENERATION for all three open AB tasks (7, 8, 9) -- re-confirm with the scratch script `ab_touches_confirm.py`, which parses the document's Files blocks and excludes plan-hygiene tasks whose slug merely begins `ab-N`.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
@@ -282,7 +301,7 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/whattask.json",
+    "rw:.claude/tasks/whattask.json",
     "rw:host:C:/t/whattask-hygiene/"
    ],
    "mcp": [],
@@ -294,7 +313,7 @@
    "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "four-plan-tasks-grant-module-shaped-test-files-that-do-not-exist",
@@ -304,7 +323,7 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/whattask.json",
+    "rw:.claude/tasks/whattask.json",
     "rw:host:C:/t/whattask-hygiene/"
    ],
    "mcp": [],
@@ -316,7 +335,7 @@
    "verify": "No task grants a test file absent from python/tests/. test_detect.py and test_goatwriter.py were both granted and neither exists; this generation drops them mechanically.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "a-blocked-run-record-describes-a-plan-and-must-not-survive-a-whattask-regeneration",
@@ -370,7 +389,7 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/whattask.json",
+    "rw:.claude/tasks/whattask.json",
     "rw:host:C:/t/whattask-hygiene/"
    ],
    "mcp": [],
@@ -382,7 +401,7 @@
    "verify": "The task is version-less and its verify reads 'after any commit that changes what the converter emits, test_output_sha reads 0 disagreeing' rather than naming a version and a hard-coded count of 8.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "whattask-regeneration-carries-stale-verify-text-forward",
@@ -392,7 +411,7 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/whattask.json",
+    "rw:.claude/tasks/whattask.json",
     "rw:host:C:/t/whattask-hygiene/"
    ],
    "mcp": [],
@@ -401,10 +420,10 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "No carried verify string quotes a count or a version that has since moved. The fidelity task's 'from 8 of 89 to 0' is the worked example: the count was 1 by the time it was read.",
+   "verify": "No carried verify string quotes a figure that has since moved. MEASURED at fd286a5 over 93 tasks: 3 quote an `N of M` count, 6 a version, 13 a 7-hex sha (all 2-9 commits behind HEAD), 3 assert a future act. Three were demonstrably wrong and are corrected in this generation. `stale_verify.py` in the scratch re-derives the whole classification and resolves each sha against git.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "the-opened-field-has-become-an-unbounded-firehose-and-needs-triage",
@@ -2086,28 +2105,6 @@
    "why_lane": "shares CLAUDE.md with another task, at least one writing"
   },
   {
-   "id": "the-bold-parity-heuristic-should-exclude-code-fences-rather-than-be-re-explained-each-time",
-   "title": "The bold-parity check has now been explained twice and fixed zero times",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "parallel",
-   "touches": [
-    "rw:python/tools/bold_parity.py",
-    "rw:host:C:/t/bold-parity-fenced/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The parity check splits by context and reports the PROSE count, so a `**` inside a code fence or an indented block cannot produce a finding-shaped non-finding. Verified against docs/H2G-CONVERSION-METHOD.md, whose crude count is 2657 (odd) and whose prose count is 2654 (EVEN) -- the difference is 1 fenced marker at line 4511 plus one balanced pair at 7993.",
-   "why_model": "a bounded scripting job with a known-correct expected output",
-   "why_mode": "self-contained, and the conclusion is mechanical: two numbers must agree",
-   "why_lane": "no declared path overlaps another task's"
-  },
-  {
    "id": "approvals-py-had-never-been-run-end-to-end-and-its-tests-mock-the-packing-path",
    "title": "approvals.py crashed on its first real tune, past 15 green tests",
    "source": "runs.jsonl",
@@ -2158,33 +2155,6 @@
    "why_model": "a three-deep dependency across three modules, found by running rather than reading",
    "why_mode": "the finding is the deliverable and it feeds a decision already with the user",
    "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one writing"
-  },
-  {
-   "id": "abpages-three-states-have-never-been-rendered-and-step-6-needs-build-listen",
-   "title": "AB task 6's step 6: render the pages and read the approval column",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:build/listen",
-    "r:python/abpage.py",
-    "r:python/approvals.py",
-    "r:build/approvals.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/abpage-render-check/"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "Renders 83 pages into build/listen, a declared hazard path shared with listen.py and approvals.py --recover.",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "`python abpage.py` from `python/`, then read the approval column in `build/listen/index.html` and confirm it agrees with `build/approvals.json` per tune. NOTE WHAT TO EXPECT, so a correct result is not read as a failure: with today's assessment NO tune can read `inherited` (see `the-inherited-approval-state-is-unreachable-...`), so the column should show `approved` for Action_Biker and 5_Title_Tunes and `stale` for ACE_II and Devils_Galop. RUNS the renderer, so build/listen is rw:.",
-   "why_model": "a look-at-it check against an expectation already derived",
-   "why_mode": "renders the whole corpus into a hazard directory; no delegated agent should hold that",
-   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist",
@@ -2317,6 +2287,123 @@
    "why_model": "a mechanical grant audit with the hazard already demonstrated",
    "why_mode": "the fix is in the plan file",
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "whattask-must-union-opened-across-all-lines-because-last-line-per-id-deletes-192-findings",
+   "title": "Reading opened from the last line per id deletes 192 findings",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "r:.claude/tasks/runs.jsonl",
+    "rw:host:C:/t/opened-union/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The generator unions `opened` over EVERY line for an id while keeping last-line-only for `outcome`. MEASURED at fd286a5: 479 records over 343 ids, **78 tasks have more than one record**; opened across all lines 689, from last-line-only 497 -- **192 vanish**, and re-running a task is what erases them. This generation already unions them; the rule belongs in the generator so it survives.",
+   "why_model": "a semantics change to how every plan is built from the log",
+   "why_mode": "the fix is in the generator, which is this command",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "the-193-genuine-backlog-needs-a-home-that-is-not-the-93-task-plan",
+   "title": "193 well-formed opened ids have nowhere to live",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "r:.claude/tasks/runs.jsonl",
+    "rw:host:C:/t/backlog-home/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Every opened id is promoted, closed, or recorded somewhere a reader can find it. MEASURED at fd286a5: 55 promoted, 161 closed (written into the plan this session), 114 prose that are not ids, **193 genuine backlog**. The schema has no home for the last two and adding a top-level key breaks consumers; `ab-8-fidelity-queue` is the same idea done properly.",
+   "why_model": "a schema decision affecting every consumer of the plan",
+   "why_mode": "it is a design choice about the plan format",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "six-plan-hygiene-tasks-are-granted-read-only-on-the-plan-their-fix-must-edit",
+   "title": "The mis-grant that caused four consecutive partials",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/hygiene-grants/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "No task whose fix is a plan edit is granted `r:` on the plan. MEASURED at fd286a5: 11 tasks held `rw:` and 6 held `r:`, and all six read-only ones were plan-hygiene tasks. **FIXED IN THIS GENERATION for five of them**; the sixth (`the-whattask-generator-lives-outside-the-repo-...`) is requires-user and correctly stays read-only. Re-confirm by counting.",
+   "why_model": "a mechanical grant audit with the count already measured",
+   "why_mode": "the fix is in the plan file",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "the-pulse-phase-pack-refusal-is-not-any-documented-bound-and-setpulseptr-operands-are-the-next-check",
+   "title": "Rasputin's pack refusal survives every documented bound",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_pulse_phase.py",
+    "rw:python/tests/test_table_validation.py",
+    "r:python/h2g/convert.py",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/pulse-phase-refusal/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The cause of gt2reloc's refusal is named. ESTABLISHED at fd286a5 and NOT to be redone: with the gate lifted in memory the lifted arm is 29009 bytes and refused, and five candidates are excluded -- patterns 126/208, `table_errors()` NONE, WTBL 130 / PTBL 145 / FTBL 2 / STBL 4 against 255, longest orderlist 229/255, size 29009 where W_A_R packs at 58481. Next cheapest check: dump the PACKED pulse table and compare every emitted `CMD_SETPULSEPTR` operand against its length. NOTE the gate itself lives in `python/h2g/convert.py`, which is granted `r:` here deliberately -- lifting it is a separate decision.",
+   "why_model": "a root-cause hunt where the generic answers are already exhausted",
+   "why_mode": "needs the surrounding pulse-phase context and a in-memory gate lift",
+   "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one writing"
+  },
+  {
+   "id": "bold-parity-exits-zero-on-an-odd-prose-count-so-it-cannot-gate-anything",
+   "title": "The parity tool cannot fail a build",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "rw:python/tools/bold_parity.py",
+    "rw:host:C:/t/bold-parity-exit/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`python/tools/bold_parity.py` exits non-zero when the PROSE count is odd and zero otherwise, so a test or hook can gate on it. Confirm both ways: `docs/H2G-CONVERSION-METHOD.md` (prose 2654, EVEN) must exit 0, and a scratch file with an odd prose count must exit non-zero.",
+   "why_model": "a one-line change with both expected outcomes already measured",
+   "why_mode": "self-contained and the conclusion is a pair of exit codes",
+   "why_lane": "no declared path overlaps another task's"
   }
  ],
  "closed": [
@@ -2444,6 +2531,984 @@
    "id": "ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng",
    "title": "AB-5 step 5 hashes the wrong artefact, and the design document says so",
    "closed_by": "7bcd3fe",
+   "reason": null
+  },
+  {
+   "id": "a-fourth-pitch-seq-file-was-expected-and-only-three-are-invisible-at-60-seconds",
+   "title": "a-fourth-pitch-seq-file-was-expected-and-only-three-are-invisible-at-60-seconds",
+   "reason": null,
+   "closed_by": "f584375"
+  },
+  {
+   "id": "a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta",
+   "title": "a-note-before-its-voices-first-instrument-must-not-sound-on-bangkok-but-must-on-delta",
+   "reason": null,
+   "closed_by": "ce27e41"
+  },
+  {
+   "id": "a-pulse-register-term-in-fidelity-better-is-what-would-make-pulse-phase-searchable",
+   "title": "a-pulse-register-term-in-fidelity-better-is-what-would-make-pulse-phase-searchable",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "abpage-charset-regression-test",
+   "title": "abpage-charset-regression-test",
+   "reason": null,
+   "closed_by": "9018dcf"
+  },
+  {
+   "id": "abpage-prune-stale-pages",
+   "title": "abpage-prune-stale-pages",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "action-biker-noise-runs-are-one-frame-short-and-the-leading-gate-bit-is-refuted-as-the-lever",
+   "title": "action-biker-noise-runs-are-one-frame-short-and-the-leading-gate-bit-is-refuted-as-the-lever",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "action-biker-voice-2-drum-runs-one-noise-frame-short-and-releases-two-frames-late",
+   "title": "action-biker-voice-2-drum-runs-one-noise-frame-short-and-releases-two-frames-late",
+   "reason": null,
+   "closed_by": "be759f0"
+  },
+  {
+   "id": "agent-scratchpads-are-not-isolated-from-the-orchestrators",
+   "title": "agent-scratchpads-are-not-isolated-from-the-orchestrators",
+   "reason": null,
+   "closed_by": "cd2db79"
+  },
+  {
+   "id": "align-maximises-envelope-correlation-and-can-still-pick-a-worse-residual-integer-hop",
+   "title": "align-maximises-envelope-correlation-and-can-still-pick-a-worse-residual-integer-hop",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "arp-mask-period",
+   "title": "arp-mask-period",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "awm-release-length",
+   "title": "awm-release-length",
+   "reason": null,
+   "closed_by": "3b091c0"
+  },
+  {
+   "id": "bangkok-c-sharp-6-tick-stops-at-frame-1131-and-the-pitch-is-now-refuted-as-the-cause",
+   "title": "bangkok-c-sharp-6-tick-stops-at-frame-1131-and-the-pitch-is-now-refuted-as-the-cause",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "bangkok-knights-voice-0-disagrees-on-half-its-pitches",
+   "title": "bangkok-knights-voice-0-disagrees-on-half-its-pitches",
+   "reason": null,
+   "closed_by": "baa6ced"
+  },
+  {
+   "id": "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern",
+   "title": "bangkok-voice-0-orderlist-opens-with-a-voice-2-pattern",
+   "reason": null,
+   "closed_by": "baa6ced"
+  },
+  {
+   "id": "bit08-alternate-with-no-wave-pair",
+   "title": "bit08-alternate-with-no-wave-pair",
+   "reason": null,
+   "closed_by": "9ec3133"
+  },
+  {
+   "id": "bound-instruments-cuts-ricochet-below-what-its-patterns-reference",
+   "title": "bound-instruments-cuts-ricochet-below-what-its-patterns-reference",
+   "reason": null,
+   "closed_by": "4b5d7f0"
+  },
+  {
+   "id": "boundary-tie-four-files-retrig-below-one",
+   "title": "boundary-tie-four-files-retrig-below-one",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "boundary-tie-loop-around-restart-position",
+   "title": "boundary-tie-loop-around-restart-position",
+   "reason": null,
+   "closed_by": "2843a38"
+  },
+  {
+   "id": "build-audio-holds-178-stale-t60-renders-that-nothing-reads",
+   "title": "build-audio-holds-178-stale-t60-renders-that-nothing-reads",
+   "reason": null,
+   "closed_by": "4b5d7f0"
+  },
+  {
+   "id": "build-fidelity-json-is-stale-again-for-the-four-instrument-count-files",
+   "title": "build-fidelity-json-is-stale-again-for-the-four-instrument-count-files",
+   "reason": null,
+   "closed_by": "150cb6b"
+  },
+  {
+   "id": "c64-music-examples-missing-s0",
+   "title": "c64-music-examples-missing-s0",
+   "reason": null,
+   "closed_by": "3b091c0"
+  },
+  {
+   "id": "c64-music-examples-phantom-subtunes-not-trimmed",
+   "title": "c64-music-examples-phantom-subtunes-not-trimmed",
+   "reason": null,
+   "closed_by": "5b2f3f3"
+  },
+  {
+   "id": "c64me-instrument-table-mismatch",
+   "title": "c64me-instrument-table-mismatch",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "chicken-song-command-arpeggio",
+   "title": "chicken-song-command-arpeggio",
+   "reason": null,
+   "closed_by": "e21995a"
+  },
+  {
+   "id": "chimera-confuzion-and-mega-apocalypse-dangle-instruments-for-a-reason-that-is-not-the-stride",
+   "title": "chimera-confuzion-and-mega-apocalypse-dangle-instruments-for-a-reason-that-is-not-the-stride",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "chimera-seventh-onset-instrument",
+   "title": "chimera-seventh-onset-instrument",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "chimera-voice0-gate-suppression-unlocated",
+   "title": "chimera-voice0-gate-suppression-unlocated",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "chimera-voice0-opening-pad",
+   "title": "chimera-voice0-opening-pad",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest",
+   "title": "classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest",
+   "reason": null,
+   "closed_by": "c6944d4"
+  },
+  {
+   "id": "claude-md-says-regrid-reaches-18-files-and-the-byte-hash-says-17",
+   "title": "claude-md-says-regrid-reaches-18-files-and-the-byte-hash-says-17",
+   "reason": null,
+   "closed_by": "fc931c1"
+  },
+  {
+   "id": "cmd-setwaveptr-is-goattracker-command-8-and-patterns-py-does-not-define-it",
+   "title": "cmd-setwaveptr-is-goattracker-command-8-and-patterns-py-does-not-define-it",
+   "reason": null,
+   "closed_by": "f584375"
+  },
+  {
+   "id": "confuzion-runs-295s-past-its-original-the-only-measured-length-failure",
+   "title": "confuzion-runs-295s-past-its-original-the-only-measured-length-failure",
+   "reason": null,
+   "closed_by": "8a9ba0d"
+  },
+  {
+   "id": "convert-through-preset-opts-and-the-harness-produce-different-bytes",
+   "title": "convert-through-preset-opts-and-the-harness-produce-different-bytes",
+   "reason": null,
+   "closed_by": "baa6ced"
+  },
+  {
+   "id": "converter-emits-sound-effects-as-subtunes",
+   "title": "converter-emits-sound-effects-as-subtunes",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "crazy-comets-last-missing-attack",
+   "title": "crazy-comets-last-missing-attack",
+   "reason": null,
+   "closed_by": "0e9f254"
+  },
+  {
+   "id": "cut-release-splits-the-adsr-key-so-instrument-matched-columns-lose-the-instrument",
+   "title": "cut-release-splits-the-adsr-key-so-instrument-matched-columns-lose-the-instrument",
+   "reason": null,
+   "closed_by": "89df05e"
+  },
+  {
+   "id": "detect-effect-arp-octave",
+   "title": "detect-effect-arp-octave",
+   "reason": null,
+   "closed_by": "d3c84b6"
+  },
+  {
+   "id": "doc-retract-slide-only-wave-programs-claim",
+   "title": "doc-retract-slide-only-wave-programs-claim",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "docs-survey-md-instrument-counts-are-stale-after-the-interleaved-recount",
+   "title": "docs-survey-md-instrument-counts-are-stale-after-the-interleaved-recount",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "drift-fits-one-rate-to-tunes-whose-offset-has-a-knee-and-cannot-say-so",
+   "title": "drift-fits-one-rate-to-tunes-whose-offset-has-a-knee-and-cannot-say-so",
+   "reason": null,
+   "closed_by": "8b7b218"
+  },
+  {
+   "id": "drum-return-to-base-detection",
+   "title": "drum-return-to-base-detection",
+   "reason": null,
+   "closed_by": "d3c84b6"
+  },
+  {
+   "id": "emit-bit08-note-alternate",
+   "title": "emit-bit08-note-alternate",
+   "reason": null,
+   "closed_by": "c014057"
+  },
+  {
+   "id": "envelope-cut-writes-0000-at-note-end-and-cut-release-only-zeroes-a-nibble",
+   "title": "envelope-cut-writes-0000-at-note-end-and-cut-release-only-zeroes-a-nibble",
+   "reason": null,
+   "closed_by": "6c99816"
+  },
+  {
+   "id": "fidelity-hardcoded-drift-count",
+   "title": "fidelity-hardcoded-drift-count",
+   "reason": null,
+   "closed_by": "c014057"
+  },
+  {
+   "id": "fidelity-hardcodes-s2-in-multispeed-summary",
+   "title": "fidelity-hardcodes-s2-in-multispeed-summary",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "fifteen-files-detect-pitch-seq-and-move-bytes-under-it-and-have-never-been-measured",
+   "title": "fifteen-files-detect-pitch-seq-and-move-bytes-under-it-and-have-never-been-measured",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "find-effect-bit80-docstring-calls-voice-3-frequency-high-the-filter-cutoff",
+   "title": "find-effect-bit80-docstring-calls-voice-3-frequency-high-the-filter-cutoff",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "find-gate-hold-docstring-names-wrong-branch-address",
+   "title": "find-gate-hold-docstring-names-wrong-branch-address",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "five-non-converting-files-share-one-stored-wave-key-and-detect-finds-no-hubbard-player",
+   "title": "five-non-converting-files-share-one-stored-wave-key-and-detect-finds-no-hubbard-player",
+   "reason": null,
+   "closed_by": "bdb20c1"
+  },
+  {
+   "id": "fix-7kkkkk-cue-stall-claim",
+   "title": "fix-7kkkkk-cue-stall-claim",
+   "reason": null,
+   "closed_by": "e21995a"
+  },
+  {
+   "id": "food-feud-and-mega-apocalypse-now-detect-pitch-seq-and-nobody-has-measured-enabling-it",
+   "title": "food-feud-and-mega-apocalypse-now-detect-pitch-seq-and-nobody-has-measured-enabling-it",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "force-park-has-no-voices-end-together-check-and-geoff-capes-violates-it",
+   "title": "force-park-has-no-voices-end-together-check-and-geoff-capes-violates-it",
+   "reason": null,
+   "closed_by": "2367f03"
+  },
+  {
+   "id": "four-files-have-a-wildly-spread-pace-ratio-150-to-573-percent",
+   "title": "four-files-have-a-wildly-spread-pace-ratio-150-to-573-percent",
+   "reason": null,
+   "closed_by": "c381acd"
+  },
+  {
+   "id": "four-files-sound-notes-before-their-voices-first-instrument",
+   "title": "four-files-sound-notes-before-their-voices-first-instrument",
+   "reason": null,
+   "closed_by": "8bb87e9"
+  },
+  {
+   "id": "four-pitch-seq-files-move-bytes-and-no-column-sees-them-at-either-window",
+   "title": "four-pitch-seq-files-move-bytes-and-no-column-sees-them-at-either-window",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "fourteen-files-cannot-be-timed-by-pace-at-all",
+   "title": "fourteen-files-cannot-be-timed-by-pace-at-all",
+   "reason": null,
+   "closed_by": "8bb87e9"
+  },
+  {
+   "id": "freq-table-length-off-by-one-at-the-grid-edge",
+   "title": "freq-table-length-off-by-one-at-the-grid-edge",
+   "reason": null,
+   "closed_by": "5b2f3f3"
+  },
+  {
+   "id": "gate-and-hold-report-opposite-signed-note-length-errors-on-action-biker",
+   "title": "gate-and-hold-report-opposite-signed-note-length-errors-on-action-biker",
+   "reason": null,
+   "closed_by": "3262907"
+  },
+  {
+   "id": "go-go-dash-carries-effect-bit-80-on-two-records-and-detection-reads-none",
+   "title": "go-go-dash-carries-effect-bit-80-on-two-records-and-detection-reads-none",
+   "reason": null,
+   "closed_by": "826dec8"
+  },
+  {
+   "id": "go-go-dash-drops-58-percent-of-its-attacks-and-its-duration-unit-is-3-75-frames",
+   "title": "go-go-dash-drops-58-percent-of-its-attacks-and-its-duration-unit-is-3-75-frames",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "go-go-dash-emits-216-interleaved-slides-and-the-trace-shows-none-of-them",
+   "title": "go-go-dash-emits-216-interleaved-slides-and-the-trace-shows-none-of-them",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "go-go-dash-emits-zero-noise-frames-against-the-originals-1972",
+   "title": "go-go-dash-emits-zero-noise-frames-against-the-originals-1972",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "hard-restart-floor-swallows-short-notes",
+   "title": "hard-restart-floor-swallows-short-notes",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "hold-zero-note-length-loss",
+   "title": "hold-zero-note-length-loss",
+   "reason": null,
+   "closed_by": "9b382b9"
+  },
+  {
+   "id": "human-race-skip-table-undetected",
+   "title": "human-race-skip-table-undetected",
+   "reason": null,
+   "closed_by": "3894a63"
+  },
+  {
+   "id": "i-ball-is-the-only-file-with-bit40-true-and-no-per-record-effect-byte-and-it-is-relocated",
+   "title": "i-ball-is-the-only-file-with-bit40-true-and-no-per-record-effect-byte-and-it-is-relocated",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "i-ball-should-adopt-sfx-drum-and-the-search-must-decide-it-not-a-hand-edit",
+   "title": "i-ball-should-adopt-sfx-drum-and-the-search-must-decide-it-not-a-hand-edit",
+   "reason": null,
+   "closed_by": "f584375"
+  },
+  {
+   "id": "ik-plus-voice-2-strikes-222-attacks-against-the-originals-481",
+   "title": "ik-plus-voice-2-strikes-222-attacks-against-the-originals-481",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "ilv-83-arpeggio-needs-instrument-clones-or-cmd-setwaveptr-and-the-two-routes-should-be-costed",
+   "title": "ilv-83-arpeggio-needs-instrument-clones-or-cmd-setwaveptr-and-the-two-routes-should-be-costed",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "initial-for-ignores-compact-instruments-and-is-off-by-one-on-every-song",
+   "title": "initial-for-ignores-compact-instruments-and-is-off-by-one-on-every-song",
+   "reason": null,
+   "closed_by": "80456df"
+  },
+  {
+   "id": "initial-instrument-is-worse-on-the-file-it-was-built-for",
+   "title": "initial-instrument-is-worse-on-the-file-it-was-built-for",
+   "reason": null,
+   "closed_by": "82e2d48"
+  },
+  {
+   "id": "initial-instrument-may-now-have-a-beneficiary-and-nobody-has-remeasured-the-three-files",
+   "title": "initial-instrument-may-now-have-a-beneficiary-and-nobody-has-remeasured-the-three-files",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "initial-instrument-voice-2-collapse-is-not-the-selected-instrument",
+   "title": "initial-instrument-voice-2-collapse-is-not-the-selected-instrument",
+   "reason": null,
+   "closed_by": "ce27e41"
+  },
+  {
+   "id": "instr-used-is-counted-before-the-interleaved-rescue-sets-instr-stride-so-six-files-count-a-sixteen-byte-table-at-eight",
+   "title": "instr-used-is-counted-before-the-interleaved-rescue-sets-instr-stride-so-six-files-count-a-sixteen-byte-table-at-eight",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
+   "title": "keeps-notes-attack-guard-should-be-two-sided-against-the-original",
+   "reason": null,
+   "closed_by": "ed7f7bc"
+  },
+  {
+   "id": "knucklebusters-subtunes-11-to-3",
+   "title": "knucklebusters-subtunes-11-to-3",
+   "reason": null,
+   "closed_by": "3b091c0"
+  },
+  {
+   "id": "listen-merge-notes-stale-header",
+   "title": "listen-merge-notes-stale-header",
+   "reason": null,
+   "closed_by": "c6944d4"
+  },
+  {
+   "id": "lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule",
+   "title": "lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule",
+   "reason": null,
+   "closed_by": "ef7caee"
+  },
+  {
+   "id": "measure-does-not-copy-the-new-drift-knee-fields-into-the-row-so-they-reach-no-artefact",
+   "title": "measure-does-not-copy-the-new-drift-knee-fields-into-the-row-so-they-reach-no-artefact",
+   "reason": null,
+   "closed_by": "150cb6b"
+  },
+  {
+   "id": "melody-can-punish-a-pitch-that-moved-closer-to-the-original",
+   "title": "melody-can-punish-a-pitch-that-moved-closer-to-the-original",
+   "reason": null,
+   "closed_by": "ce27e41"
+  },
+  {
+   "id": "melody-may-be-misreading-attacks-that-land-mid-glide",
+   "title": "melody-may-be-misreading-attacks-that-land-mid-glide",
+   "reason": null,
+   "closed_by": "f4283a6"
+  },
+  {
+   "id": "merge-gate-hold-zero-wait-branch",
+   "title": "merge-gate-hold-zero-wait-branch",
+   "reason": null,
+   "closed_by": "990582a"
+  },
+  {
+   "id": "monty-effect-byte-address-is-none-while-effect-bit40-is-true",
+   "title": "monty-effect-byte-address-is-none-while-effect-bit40-is-true",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "multi-engine-sid-one-player-assumption",
+   "title": "multi-engine-sid-one-player-assumption",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "naming-share-decomposition-should-be-a-fidelity-census-flag",
+   "title": "naming-share-decomposition-should-be-a-fidelity-census-flag",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "nemesis-warlock-wave-program-bend-regression",
+   "title": "nemesis-warlock-wave-program-bend-regression",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "nineteen-tie-spelling-melody-loss",
+   "title": "nineteen-tie-spelling-melody-loss",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "no-hard-restart-moves-bytes-and-no-column-can-see-it",
+   "title": "no-hard-restart-moves-bytes-and-no-column-can-see-it",
+   "reason": null,
+   "closed_by": "82e2d48"
+  },
+  {
+   "id": "not-measured-note-length-claim-is-stale-since-hold-column-partially-reaches-it",
+   "title": "not-measured-note-length-claim-is-stale-since-hold-column-partially-reaches-it",
+   "reason": null,
+   "closed_by": "ef7caee"
+  },
+  {
+   "id": "note-freq-extrapolates-past-the-16-bit-ceiling",
+   "title": "note-freq-extrapolates-past-the-16-bit-ceiling",
+   "reason": null,
+   "closed_by": "0e9f254"
+  },
+  {
+   "id": "one-on-one-two-voice-drift-fit-differs-tenfold-between-sixty-and-one-eighty-seconds",
+   "title": "one-on-one-two-voice-drift-fit-differs-tenfold-between-sixty-and-one-eighty-seconds",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved",
+   "title": "pace-iqr-bound-was-calibrated-on-a-corpus-that-has-since-moved",
+   "reason": null,
+   "closed_by": "c381acd"
+  },
+  {
+   "id": "pending-tie-across-pattern-boundaries",
+   "title": "pending-tie-across-pattern-boundaries",
+   "reason": null,
+   "closed_by": "9018dcf"
+  },
+  {
+   "id": "phantom-subtunes-nemesis-thundercats",
+   "title": "phantom-subtunes-nemesis-thundercats",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "pitch-seq-refusals-live-only-in-run-records-and-presets-py-is-the-durable-home",
+   "title": "pitch-seq-refusals-live-only-in-run-records-and-presets-py-is-the-durable-home",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "pitch-seq-shape-work-is-stranded-in-a-worktree-and-the-run-log-records-it-as-landed",
+   "title": "pitch-seq-shape-work-is-stranded-in-a-worktree-and-the-run-log-records-it-as-landed",
+   "reason": null,
+   "closed_by": "1558514"
+  },
+  {
+   "id": "powerplay-hockey-regrid-was-never-measured",
+   "title": "powerplay-hockey-regrid-was-never-measured",
+   "reason": null,
+   "closed_by": "ed7f7bc"
+  },
+  {
+   "id": "powerplay-vibrato-rate-still-two-thirds",
+   "title": "powerplay-vibrato-rate-still-two-thirds",
+   "reason": null,
+   "closed_by": "fc691a4"
+  },
+  {
+   "id": "powerplay-vibrato-refusals",
+   "title": "powerplay-vibrato-refusals",
+   "reason": null,
+   "closed_by": "d3c84b6"
+  },
+  {
+   "id": "pre-instrument-idiom-population-is-50-not-the-recorded-44",
+   "title": "pre-instrument-idiom-population-is-50-not-the-recorded-44",
+   "reason": null,
+   "closed_by": "bc01875"
+  },
+  {
+   "id": "presets-json-cannot-record-a-measured-refusal-for-any-option",
+   "title": "presets-json-cannot-record-a-measured-refusal-for-any-option",
+   "reason": null,
+   "closed_by": "ed7f7bc"
+  },
+  {
+   "id": "presets-json-committed-form-does-not-match-its-generator",
+   "title": "presets-json-committed-form-does-not-match-its-generator",
+   "reason": null,
+   "closed_by": "8bb87e9"
+  },
+  {
+   "id": "presets-search-written-to-an-empty-output-path-silently-drops-every-carried-setting",
+   "title": "presets-search-written-to-an-empty-output-path-silently-drops-every-carried-setting",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "pulse-phase-is-adopted-on-one-of-the-twenty-four-files-of-its-engine",
+   "title": "pulse-phase-is-adopted-on-one-of-the-twenty-four-files-of-its-engine",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "pulse-phase-is-inert-on-the-rest-of-its-engine-and-nobody-knows-which-gate-declines-it",
+   "title": "pulse-phase-is-inert-on-the-rest-of-its-engine-and-nobody-knows-which-gate-declines-it",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "pulse-phase-is-not-in-fidelity-toggles-so-its-adoptions-are-all-hand-recorded",
+   "title": "pulse-phase-is-not-in-fidelity-toggles-so-its-adoptions-are-all-hand-recorded",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "raising-the-fidelity-window-to-180-needs-a-task-that-declares-both-artefacts",
+   "title": "raising-the-fidelity-window-to-180-needs-a-task-that-declares-both-artefacts",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "regrid-and-no-test-restart-need-a-guard-or-a-documented-incompatibility",
+   "title": "regrid-and-no-test-restart-need-a-guard-or-a-documented-incompatibility",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace",
+   "title": "regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "regrid-damage-is-not-additive-in-the-compensation-count",
+   "title": "regrid-damage-is-not-additive-in-the-compensation-count",
+   "reason": null,
+   "closed_by": "9dac92b"
+  },
+  {
+   "id": "regrid-damage-on-two-files-is-attacks-reading-one-semitone-flat",
+   "title": "regrid-damage-on-two-files-is-attacks-reading-one-semitone-flat",
+   "reason": null,
+   "closed_by": "b223eed"
+  },
+  {
+   "id": "regrid-drift-improves-on-14-is-from-the-same-stale-measurement-as-the-18",
+   "title": "regrid-drift-improves-on-14-is-from-the-same-stale-measurement-as-the-18",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "regrid-makes-one-on-one-offsets-wander-so-drift-cannot-be-fitted",
+   "title": "regrid-makes-one-on-one-offsets-wander-so-drift-cannot-be-fitted",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "regrid-moves-bmx-kidz-bytes-without-moving-its-drift-at-all",
+   "title": "regrid-moves-bmx-kidz-bytes-without-moving-its-drift-at-all",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "regrid-occupied-column-guard-only-checks-voice-0",
+   "title": "regrid-occupied-column-guard-only-checks-voice-0",
+   "reason": null,
+   "closed_by": "8bb87e9"
+  },
+  {
+   "id": "regrid-over-supplies-a-subtune-whose-exclusive-patterns-replay",
+   "title": "regrid-over-supplies-a-subtune-whose-exclusive-patterns-replay",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "rest-wave-silence-is-adopted-on-zero-songs-and-the-shared-schedule-makes-it-worth-re-searching",
+   "title": "rest-wave-silence-is-adopted-on-zero-songs-and-the-shared-schedule-makes-it-worth-re-searching",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "reversal-ratio-may-be-nonlinear-in-oscillation-rate",
+   "title": "reversal-ratio-may-be-nonlinear-in-oscillation-rate",
+   "reason": null,
+   "closed_by": "9ec3133"
+  },
+  {
+   "id": "rikky-immunity-to-regrid-is-unexplained",
+   "title": "rikky-immunity-to-regrid-is-unexplained",
+   "reason": null,
+   "closed_by": "baa6ced"
+  },
+  {
+   "id": "robs-life-no-signature",
+   "title": "robs-life-no-signature",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "saboteur-ii-regates-on-wait0-rows",
+   "title": "saboteur-ii-regates-on-wait0-rows",
+   "reason": null,
+   "closed_by": "e21995a"
+  },
+  {
+   "id": "sanxion-regrid-collapse-has-a-second-per-call-pitch-source",
+   "title": "sanxion-regrid-collapse-has-a-second-per-call-pitch-source",
+   "reason": null,
+   "closed_by": "ef7caee"
+  },
+  {
+   "id": "seven-ilv-commands-are-parsed-for-length-and-dropped-and-nobody-knows-what-they-do",
+   "title": "seven-ilv-commands-are-parsed-for-length-and-dropped-and-nobody-knows-what-they-do",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "shared-refs-stash-races-across-worktrees",
+   "title": "shared-refs-stash-races-across-worktrees",
+   "reason": null,
+   "closed_by": "0e9f254"
+  },
+  {
+   "id": "sigma-seven-and-wiz-lose-half-their-hold-agreement-under-the-regrid-fix",
+   "title": "sigma-seven-and-wiz-lose-half-their-hold-agreement-under-the-regrid-fix",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "songspeeds-skip-reads-past-its-table",
+   "title": "songspeeds-skip-reads-past-its-table",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "sound-calibrates-render-doc-builds-a-pass-fail-verdict-and-no-test-calls-it",
+   "title": "sound-calibrates-render-doc-builds-a-pass-fail-verdict-and-no-test-calls-it",
+   "reason": null,
+   "closed_by": "826dec8"
+  },
+  {
+   "id": "staged-listening-audio-predates-the-converter-for-40-of-83-tunes",
+   "title": "staged-listening-audio-predates-the-converter-for-40-of-83-tunes",
+   "reason": null,
+   "closed_by": "01d80e6"
+  },
+  {
+   "id": "subtune-census-doc-refresh",
+   "title": "subtune-census-doc-refresh",
+   "reason": null,
+   "closed_by": "d73a33b"
+  },
+  {
+   "id": "sun-never-shines-and-lion-heart-voice-0-undershoot-by-fifty-and-forty-four-attacks",
+   "title": "sun-never-shines-and-lion-heart-voice-0-undershoot-by-fifty-and-forty-four-attacks",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "survey-template-carries-the-superseded-census-headline",
+   "title": "survey-template-carries-the-superseded-census-headline",
+   "reason": null,
+   "closed_by": "c6944d4"
+  },
+  {
+   "id": "ten-files-still-pack-for-a-non-starting-subtune",
+   "title": "ten-files-still-pack-for-a-non-starting-subtune",
+   "reason": null,
+   "closed_by": "9b382b9"
+  },
+  {
+   "id": "test-classic-vibrato-row-calls-compensation",
+   "title": "test-classic-vibrato-row-calls-compensation",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "the-classic-dialect-instrument-mask-should-be-derived-from-the-stride-not-fixed-at-7f",
+   "title": "the-classic-dialect-instrument-mask-should-be-derived-from-the-stride-not-fixed-at-7f",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "the-digi-decoders-slide-is-attached-to-one-row-and-not-to-its-hold-rows",
+   "title": "the-digi-decoders-slide-is-attached-to-one-row-and-not-to-its-hold-rows",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-drum-tick-leading-gate-count-is-per-file-and-nobody-knows-what-the-player-reads",
+   "title": "the-drum-tick-leading-gate-count-is-per-file-and-nobody-knows-what-the-player-reads",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "the-envelope-and-attack-lag-estimators-disagree-by-more-than-a-frame-on-53-of-89-files",
+   "title": "the-envelope-and-attack-lag-estimators-disagree-by-more-than-a-frame-on-53-of-89-files",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-interleaved-engines-vibrato-family-is-the-rest-of-its-missing-pitch-travel",
+   "title": "the-interleaved-engines-vibrato-family-is-the-rest-of-its-missing-pitch-travel",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "the-pulse-phase-multiplier-gate-declines-eleven-files-and-has-never-been-measured-above-s1",
+   "title": "the-pulse-phase-multiplier-gate-declines-eleven-files-and-has-never-been-measured-above-s1",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-re-verified-live-list-in-claude-md-contains-at-least-three-stale-figures",
+   "title": "the-re-verified-live-list-in-claude-md-contains-at-least-three-stale-figures",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-seven-toggle-search-cost-is-forty-minutes-not-eighty-and-two-docs-say-otherwise",
+   "title": "the-seven-toggle-search-cost-is-forty-minutes-not-eighty-and-two-docs-say-otherwise",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-shift-noise-floor-is-driven-by-devils-galop-and-whole-hop-alignment-and-may-halve-cheaply",
+   "title": "the-shift-noise-floor-is-driven-by-devils-galop-and-whole-hop-alignment-and-may-halve-cheaply",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "the-six-interleaved-classic-files-have-had-no-fidelity-search-only-structural-options",
+   "title": "the-six-interleaved-classic-files-have-had-no-fidelity-search-only-structural-options",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "the-six-interleaved-classic-files-have-no-presets-entry-and-no-fidelity-row",
+   "title": "the-six-interleaved-classic-files-have-no-presets-entry-and-no-fidelity-row",
+   "reason": null,
+   "closed_by": "2ebf1a4"
+  },
+  {
+   "id": "the-six-interleaved-presets-must-be-re-searched-after-the-instr-used-stride-fix",
+   "title": "the-six-interleaved-presets-must-be-re-searched-after-the-instr-used-stride-fix",
+   "reason": null,
+   "closed_by": "0aa0d5c"
+  },
+  {
+   "id": "the-sixty-second-window-is-shared-by-the-report-and-the-search-and-hid-a-whole-trade",
+   "title": "the-sixty-second-window-is-shared-by-the-report-and-the-search-and-hid-a-whole-trade",
+   "reason": null,
+   "closed_by": "64c795b"
+  },
+  {
+   "id": "the-three-moving-interleaved-files-now-overshoot-the-originals-attack-count",
+   "title": "the-three-moving-interleaved-files-now-overshoot-the-originals-attack-count",
+   "reason": null,
+   "closed_by": "8b7b218"
+  },
+  {
+   "id": "ties-not-pitch-travel-may-be-what-regrid-damages",
+   "title": "ties-not-pitch-travel-may-be-what-regrid-damages",
+   "reason": null,
+   "closed_by": "25ae324"
+  },
+  {
+   "id": "todo-138s-pulse-arithmetic-is-stale-pspan-moved-0-47x-to-1-05x",
+   "title": "todo-138s-pulse-arithmetic-is-stale-pspan-moved-0-47x-to-1-05x",
+   "reason": null,
+   "closed_by": "9906f62"
+  },
+  {
+   "id": "todo-md-monty-drum-figures-are-stale-and-name-the-wrong-voice",
+   "title": "todo-md-monty-drum-figures-are-stale-and-name-the-wrong-voice",
+   "reason": null,
+   "closed_by": "ce27e41"
+  },
+  {
+   "id": "todo-md-says-effect-bit40-is-false-on-monty-and-it-is-true",
+   "title": "todo-md-says-effect-bit40-is-false-on-monty-and-it-is-true",
+   "reason": null,
+   "closed_by": "e1c27b3"
+  },
+  {
+   "id": "trackindex-subclass-replace-with-explicit-convert-parameter",
+   "title": "trackindex-subclass-replace-with-explicit-convert-parameter",
+   "reason": null,
+   "closed_by": "c787ac9"
+  },
+  {
+   "id": "tune-engine-speed-table-stride",
+   "title": "tune-engine-speed-table-stride",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "two-stage-fixed-attack-pitch-is-dropped-after-one-call-and-its-test-pins-the-bug",
+   "title": "two-stage-fixed-attack-pitch-is-dropped-after-one-call-and-its-test-pins-the-bug",
+   "reason": null,
+   "closed_by": "7969d85"
+  },
+  {
+   "id": "vibrato-emitted-but-silent",
+   "title": "vibrato-emitted-but-silent",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "vibrato-plain-effect00-arpeggio-decode",
+   "title": "vibrato-plain-effect00-arpeggio-decode",
+   "reason": null,
+   "closed_by": "1e534e0"
+  },
+  {
+   "id": "vibrato-plain-zero-byte-decode",
+   "title": "vibrato-plain-zero-byte-decode",
+   "reason": null,
+   "closed_by": "3b091c0"
+  },
+  {
+   "id": "wave-alternate-emitter-predates-the-record-that-called-it-missing",
+   "title": "wave-alternate-emitter-predates-the-record-that-called-it-missing",
+   "reason": null,
+   "closed_by": "f0fd20c"
+  },
+  {
+   "id": "wave-program-all-slide-portamento",
+   "title": "wave-program-all-slide-portamento",
+   "reason": null,
+   "closed_by": "0e9f254"
+  },
+  {
+   "id": "wave-program-single-speed-absent-pitch",
+   "title": "wave-program-single-speed-absent-pitch",
+   "reason": null,
+   "closed_by": "d73a33b"
+  },
+  {
+   "id": "which-other-always-block-options-cannot-reach-the-ilv-decoder",
+   "title": "which-other-always-block-options-cannot-reach-the-ilv-decoder",
+   "reason": null,
+   "closed_by": "f584375"
+  },
+  {
+   "id": "the-bold-parity-heuristic-should-exclude-code-fences-rather-than-be-re-explained-each-time",
+   "title": "The bold-parity check has now been explained twice and fixed zero times",
+   "closed_by": "fd286a5",
+   "reason": null
+  },
+  {
+   "id": "abpages-three-states-have-never-been-rendered-and-step-6-needs-build-listen",
+   "title": "AB task 6's step 6: render the pages and read the approval column",
+   "closed_by": "a20da2e",
    "reason": null
   }
  ]

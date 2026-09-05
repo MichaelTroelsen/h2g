@@ -22,6 +22,39 @@ reason, measured at 0aa0d5c, is much more specific and much harder:
 So the gate is doing real work, but it is far broader than the harm it
 prevents. Lifting it wants a guard on the pack -- see the task opened for it --
 not a wider condition here.
+
+**WHY THE PACK REFUSES IS STILL UNKNOWN, AND FIVE CANDIDATES ARE NOW EXCLUDED
+BY MEASUREMENT (fd286a5).** A guard on the pack has to know what to guard, so
+the refusal was reproduced with the gate lifted IN MEMORY (the condition on
+disk untouched, sha1 verified) and every documented cause checked against the
+bytes. Shipped arm 16558 bytes, lifted arm 29009, and only the lifted one is
+refused:
+
+    pattern count        126   against MAX_PATTERNS 208        clear
+    exectable walk       NO ERRORS -- test_table_validation's
+                         own `table_errors()` on the lifted
+                         .sng, the replica of gtable.c:1008    clear
+    table rows           WTBL 130, PTBL 145, FTBL 2, STBL 4
+                         against 255 each                      clear
+    orderlist length     229 (longest of six) vs
+                         MAX_TRACK_LEN 255                     clear
+    total size           29009 bytes, where W_A_R packs at
+                         58481 and Gremlins at 52269           clear
+
+So it is neither a table error nor a pattern overflow -- confirmed against this
+repo's own validator rather than asserted -- and it is not a length or a size
+bound either. `gt2reloc` returns **exit 0, prints nothing, and writes no
+output file**, which is the silent-refusal path CLAUDE.md records ("test for
+the output file, never the exit code"), so the tool itself gives no clue.
+
+What is NOT yet excluded, in the order worth trying: a `CMD_SETPULSEPTR`
+operand that is legal in the `.sng` and out of range once `greloc.c` has
+renumbered the pulse table; the 59 pattern COPIES colliding with a limit on
+distinct pattern LENGTHS rather than pattern count; and Rasputin's own
+two-byte `$FE nn` orderlist tempo command, which no other corpus file carries
+(see tracks.py) and which the pulse-phase expansion interleaves new positions
+around. The first is cheapest: dump the packed pulse table and compare every
+emitted operand against its length.
 """
 import json
 import sys

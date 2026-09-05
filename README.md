@@ -3719,6 +3719,32 @@ against the byte-exact `Commando.sng` fixture. The parser is deliberately a
 *second* reader rather than a re-use of the writer's internals — one that
 shared code could not disagree with the writer, and disagreeing is the value.
 
+### The queue — `fidelity_queue.py`
+
+`python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md
+--json ../build/queue.json` turns the report's misses into a ranked queue of
+*causes* rather than a table of files: the same reduction the onset census
+made by hand ("18% disagree" into "`$01` x19, `$04` x11, `$80` x6"), applied
+across every source this repo already measures. It reads `build/fidelity.json`,
+`build/approvals.json` and `build/search_refusals.json` and sorts what it finds
+into six tiers, ranked for what each means rather than fitted to a score: **1**
+stale approvals (a human verdict the tool could not carry forward — `[user]`,
+nothing else closes these), **2** length rule failures (`len` outside ±5 s, or
+unbounded — `[main]`), **3** search refusals (a measured gain a criterion
+refused — `[main]`), **4** voice deficits (one voice's `aud` well below the
+file's others — `[main]`), **5** census buckets (onset/hold kinds grouped by
+cause across the whole corpus — `[subagent]` to confirm the bucket shares one
+mechanism, then `[main]` to fix it), and **6** column outliers (a file far
+below the corpus median on some column — the lowest tier, a lead rather than a
+finding). Within a tier, entries are ordered by how many files a shared cause
+reaches, never by a weighted scalar across tiers. Each entry is deduplicated by
+*annotation*, not by dropping it: one a plan task already names is marked
+`already_tracked`, one a done run record already refuted is marked
+`already_refuted`, so a regeneration cannot silently re-propose a cause that
+was already ruled out. `docs/QUEUE.md` is a `/whattask` source beside
+`todo.md`, and `build/queue.json` carries `first_seen`/`last_seen` per entry
+plus a `closed since last run` list once a prior run exists to compare against.
+
 ## Repository layout
 
 | Path | |
