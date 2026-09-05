@@ -1004,8 +1004,20 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         # record's own `+2` on frame 3. So the fixed pitch outlives the stage
         # it belongs to, and a form that ended it early would be the wrong
         # one.
+        # **The fixed note, not `$00`.** Until v0.5.459 this line read
+        # `right += [0x00] * extra`, and the paragraph above says exactly why
+        # that is wrong without noticing that the code did it: a `.sng` `$00`
+        # is packed `$80` and WRITES the played note, so every call after the
+        # first undid entry 0 and the fixed pitch lasted one call. The
+        # One_on_One trace quoted above -- `$4310` on frames 1, 2 and 3 -- is
+        # the measurement that says the pitch outlives the stage, and it was
+        # sitting in this comment while the line below contradicted it.
+        # Repeating the note rather than writing `WAVE_NOTE_KEEP` is the same
+        # choice the paragraph makes for spelling the calls out at all: it is
+        # robust to anything else writing $D400/$D401 during the attack, where
+        # "leave the frequency alone" inherits whatever did.
         left += [attack] * extra
-        right += [0x00] * extra
+        right += [attack_note] * extra
     elif extra == 1:
         left.append(attack)       # no delay encodes one call; rewrite instead
         right.append(0x00)
@@ -5457,6 +5469,84 @@ def _filter_step_per_call(step: int, multiplier: int) -> int:
     return scaled & 0xFF
 
 
+# All three voices, because the player's routing is a LIVE accumulator and
+# nothing static names the voice an instrument will play on. See
+# _ilv_filter_entries.
+ILV_FILTER_ROUTING = 0x07
+
+
+def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
+                        multiplier: int = 1):
+    """(entries, pointers) for the interleaved dialect's filter table.
+
+    The same four rows the classic path emits -- set params, set cutoff,
+    modulate, stop -- from a differently shaped source: a stride-8 record per
+    filter PROGRAM, indexed by a number held in the instrument's own byte +12,
+    where the classic engine indexes an array by the instrument itself.
+
+    Three things are worth stating, because they are where this could go wrong
+    quietly.
+
+    **The step is 16-bit here and Goattracker's is 8.** The player adds
+    `(hi, lo)` to a 16-bit accumulator whose HIGH byte is what reaches $D416,
+    so the cutoff byte moves `step / 256` per frame -- 13.8 for Sun Never
+    Shines' `$0DC8`, not 13. Rounding the whole 16-bit quantity rather than
+    taking `hi` is what keeps a slow sweep from becoming static: that file's
+    program 8 steps `$00AE`, whose high byte is zero.
+
+    **The sweep is a bidirectional ping-pong and a Goattracker filter program
+    is not.** `FILT_MODULATE` runs one direction until `FILT_STOP`, so what is
+    emitted is the FIRST leg, in the direction the record starts in. The
+    reversal at the limits is not expressible and is deliberately not
+    approximated.
+
+    **The routing nibble is the player's LIVE per-voice accumulator**, not the
+    per-instrument constant the classic engine keeps: it ORs a voice's bit in
+    at note start and masks it out again. Nothing static names the voice an
+    instrument will play on, so every routed program takes all three. That
+    over-routes whenever one voice filters and another does not, and it is the
+    one approximation here rather than a reading.
+    """
+    filt = det.ilv_filter
+    if filt is None:
+        return [], {}
+    data = sid.data
+    entries: List[tuple] = []
+    pointers: dict = {}
+    for i in range(max(instr_used - 1, 0)):
+        rec = det.instr_start + i * det.instr_stride
+        if rec + filt.program_off >= len(data):
+            break
+        # The player's own switch, the same `$20` the classic engine tests and
+        # at the same record offset -- only the table behind it differs.
+        if not data[rec + filt.enable_off] & FILTER_ENABLE_BIT:
+            continue
+        base = filt.table + data[rec + filt.program_off] * filt.stride
+        if base + 7 >= len(data):
+            continue
+        prog = data[base:base + 8]
+        passband = (prog[6] & 0x07) << 4
+        if not passband:
+            continue  # switched off at the mode register: nothing to say
+        resctl = (prog[7] & 0xF0) | ILV_FILTER_ROUTING
+        # `+6` bit 7 SET is up: the player stores 0 for up and $FF for down and
+        # branches `BNE` to its subtract path, so the sense inverts twice.
+        step = (prog[2] << 8 | prog[3]) + 128 >> 8
+        if not prog[6] & 0x80:
+            step = -step
+        block = [(FILT_SET_PARAMS | passband, resctl),
+                 (FILT_SET_CUTOFF, prog[0])]
+        per_call = _filter_step_per_call(step, multiplier)
+        if per_call:
+            block.append((FILT_MODULATE, per_call))
+        block.append((FILT_STOP, 0x00))
+        if len(entries) + len(block) > GT_MAX_FILT:
+            break
+        pointers[i] = len(entries) + 1  # table steps are 1-based
+        entries += block
+    return entries, pointers
+
+
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
                     lead: int = 1, multiplier: int = 1):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
@@ -5623,6 +5713,11 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     if filters:
         filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used,
                                                       lead, multiplier)
+        if not filter_entries:
+            # The interleaved dialect, consulted only where the classic
+            # reader found nothing. The two populations are disjoint.
+            filter_entries, filter_ptrs = _ilv_filter_entries(
+                sid, det, instr_used, multiplier)
     else:
         filter_entries, filter_ptrs = [], {}
     if pulse_plan is not None:

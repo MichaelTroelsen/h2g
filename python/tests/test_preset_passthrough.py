@@ -470,9 +470,17 @@ def test_the_search_window_is_the_window_the_report_is_published_at():
     instrument and **zero** noise frames against 8 and 1669 at 60 s, so the
     noise and onset criteria were blind there and it dropped `two_stage` --
     which an independent 60 s A/B scores at onset 62% -> 100%. Five files were
-    decided that way. Pinned so the window cannot drift back silently."""
+    decided that way. Pinned so the window cannot drift back silently.
+
+    **60 -> 180 at v0.5.458.** The invariant is unchanged and the literal is
+    not: the report is published at 180 s (`docs/FIDELITY.md`'s header and
+    every `build/fidelity.json` row), because 60 was measured to decide 17 of
+    89 songs differently from 180 and stayed only on cost. This assertion
+    reads `presets.py`'s default alone, so it pins the two windows together by
+    a hard-coded number rather than by comparison -- if the report's window
+    moves again, this literal is what has to move with it."""
     import presets as P
-    assert P.build_parser().get_default("seconds") == 60
+    assert P.build_parser().get_default("seconds") == 180
 
 
 def test_every_per_song_decision_in_the_artefact_survives_a_regeneration():

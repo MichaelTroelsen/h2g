@@ -289,6 +289,36 @@ EXCLUDED_FROM_ALWAYS = {
     # emission defect behind that A/B fixed at v0.5.286, and the wavetable
     # clobbering it at v0.5.311. The option exists so the measurement can be
     # re-run against an emitter that does what it says.
+    #
+    # **AND IT WAS RE-RUN, AT v0.5.459, THE ONLY WAY THAT SETTLES IT: BY MAKING
+    # THE SEARCH ITSELF WALK THE OPTION. It was selected on ZERO of 17.**
+    # The premise this was queued under -- "`fidelity_better` has no term that
+    # can see a rest-parked waveform" -- is FALSE, and measuring it was the
+    # first thing that had to happen. Forced on over its whole population (the
+    # 17 songs whose `det.rest_silence_kind` is `testbit`; it is inert
+    # everywhere else), 15 of 17 move bytes and the columns move plainly:
+    # `wave` on 12 files, `adsr` on 8, `gate` and `drift_per_1000` on 5,
+    # `our_noise_frames` on 4, and `melody`, `sequence` and `our_attacks` on 3
+    # each -- four of those being terms `fidelity_better` reads directly.
+    #
+    # The real reason it was adopted on zero songs is that it was never a
+    # candidate: it is not in FIDELITY_TOGGLES. So it was ADDED, and the search
+    # run over all 17 at `-t 180` with `--carry-from` the shipped file. **It
+    # chose the option on none of them**, while reproducing the shipped
+    # selection on 15 of the 17. Since those 17 are the entire population, that
+    # is zero out of everywhere it could ever be chosen: a refusal on the
+    # merits by a criterion that can see it, not a blind spot.
+    #
+    # It is therefore NOT in FIDELITY_TOGGLES, deliberately, and the cost is
+    # the second reason. Eight toggles is 255 combinations against 127, TIMED
+    # here at **19m34s for 17 songs = 69 s a song at 180 s**, against ~50 s a
+    # song for seven (CLAUDE.md's 75-minute serial corpus figure over 89
+    # songs). Read that 1.4x as the WORST case rather than the corpus's: these
+    # 17 are the files where the new toggle is live, so `_redundant_combination`
+    # prunes it on none of them and on the other 72 it should prune it away
+    # entirely. Nobody should pay even that for an option the criterion has now
+    # refused everywhere it applies -- and nobody should re-run the experiment,
+    # which is why the numbers are here rather than in a run record.
     "rest_wave_silence",
     # The bit-6 rest's zeroed ENVELOPE pair -- a different write in the same
     # branch, and a mechanism read off the 6502 rather than guessed: all 21
@@ -1485,9 +1515,13 @@ def build_parser() -> argparse.ArgumentParser:
              "setting per song, so it is off by default -- the structural "
              "search is what every commit re-runs")
     parser.add_argument(
-        "-t", "--seconds", type=int, default=60,
-        help="trace length for --fidelity (default 60, the window "
-             "FIDELITY.md is generated at)")
+        "-t", "--seconds", type=int, default=180,
+        help="trace length for --fidelity (default 180 since v0.5.459, the "
+             "window FIDELITY.md is generated at). It was 60 until the "
+             "decision was measured rather than argued: the same seven-toggle "
+             "search at 60 s and at 180 s DECIDES 17 of 89 songs differently, "
+             "so the short window was not merely reporting less, it was "
+             "choosing differently. See CLAUDE.md")
     parser.add_argument(
         "--no-carry", action="store_true",
         help="do not carry forward the --fidelity settings already recorded in "

@@ -1,5 +1,5 @@
 {
-  "generator": "h2g 0.5.458 presets.py",
+  "generator": "h2g 0.5.459 presets.py",
   "corpus": "C:\\Users\\mit\\claude\\c64server\\SIDM2\\SID\\Hubbard_Rob",
   "always": {
     "format": "gts5",
@@ -323,6 +323,7 @@
       "rows": 31088,
       "multiplier": 4,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     },
     "Food_Feud.sid": {
@@ -386,11 +387,13 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 17551,
+      "bytes": 17555,
       "subtunes": 1,
       "rows": 7800,
       "multiplier": 4,
+      "two_stage": true,
       "max_hard_restart": true,
+      "arpeggio": false,
       "hard_restart_frames": 4
     },
     "Gremlins.sid": {
@@ -447,7 +450,6 @@
       "multiplier": 1,
       "sfx_drum": true,
       "wave_program": true,
-      "pitch_seq": true,
       "regrid": true
     },
     "IK_plus.sid": {
@@ -470,7 +472,9 @@
       "bytes": 19871,
       "subtunes": 1,
       "rows": 30754,
-      "multiplier": 10
+      "multiplier": 10,
+      "max_hard_restart": true,
+      "hard_restart_frames": 3
     },
     "Kentilla.sid": {
       "max_rows": 94,
@@ -503,6 +507,7 @@
       "subtunes": 1,
       "rows": 8522,
       "multiplier": 5,
+      "two_stage": true,
       "wave_program": true,
       "max_hard_restart": true,
       "hard_restart_frames": 4
@@ -527,7 +532,9 @@
       "bytes": 14580,
       "subtunes": 1,
       "rows": 8775,
-      "multiplier": 1
+      "multiplier": 1,
+      "two_stage": true,
+      "arpeggio": false
     },
     "Las_Vegas_Video_Poker.sid": {
       "max_rows": 94,
@@ -571,6 +578,7 @@
       "rows": 19006,
       "multiplier": 2,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
     },
@@ -579,12 +587,13 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 20905,
+      "bytes": 20917,
       "subtunes": 1,
       "rows": 12348,
       "multiplier": 3,
-      "no_test_restart": true,
-      "wide_hard_restart": true
+      "two_stage": true,
+      "max_hard_restart": true,
+      "arpeggio": true
     },
     "Master_of_Magic.sid": {
       "max_rows": 94,
@@ -652,6 +661,7 @@
       "subtunes": 1,
       "rows": 15682,
       "multiplier": 1,
+      "two_stage": true,
       "wave_program": true,
       "regrid": true
     },
@@ -693,6 +703,7 @@
       "rows": 12339,
       "multiplier": 5,
       "two_stage": true,
+      "wave_program": true,
       "max_hard_restart": true,
       "hard_restart_frames": 3
     },
@@ -715,19 +726,22 @@
       "subtunes": 1,
       "rows": 5584,
       "multiplier": 1,
-      "no_test_restart": true,
-      "two_stage": true
+      "two_stage": true,
+      "max_hard_restart": true,
+      "hard_restart_frames": 3,
+      "regrid": true
     },
     "Pacific_Coast.sid": {
       "max_rows": 94,
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16495,
+      "bytes": 16499,
       "subtunes": 1,
       "rows": 10530,
       "multiplier": 1,
-      "no_test_restart": true
+      "no_test_restart": true,
+      "two_stage": true
     },
     "Pandora.sid": {
       "max_rows": 94,
@@ -742,8 +756,7 @@
       "sfx_drum": true,
       "wave_program": true,
       "pitch_seq": true,
-      "max_hard_restart": true,
-      "hard_restart_frames": 3,
+      "max_hard_restart": false,
       "regrid": true
     },
     "Phantoms_of_the_Asteroid.sid": {
@@ -800,10 +813,13 @@
       "pack": true,
       "prune": true,
       "dedup": true,
-      "bytes": 16834,
+      "bytes": 16838,
       "subtunes": 1,
       "rows": 14820,
-      "multiplier": 1
+      "multiplier": 1,
+      "no_test_restart": true,
+      "two_stage": true,
+      "arpeggio": false
     },
     "Rasputin.sid": {
       "max_rows": 128,
@@ -836,7 +852,6 @@
       "subtunes": 1,
       "rows": 14874,
       "multiplier": 1,
-      "no_test_restart": true,
       "two_stage": true,
       "regrid": true
     },
@@ -849,7 +864,7 @@
       "subtunes": 1,
       "rows": 9979,
       "multiplier": 6,
-      "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true,
       "hard_restart_frames": 5
     },
@@ -863,7 +878,8 @@
       "rows": 14827,
       "multiplier": 3,
       "two_stage": true,
-      "wave_program": true
+      "wave_program": true,
+      "pitch_seq": true
     },
     "Samantha_Fox_Strip_Poker.sid": {
       "max_rows": 94,
@@ -886,7 +902,6 @@
       "subtunes": 1,
       "rows": 17660,
       "multiplier": 1,
-      "no_test_restart": true,
       "two_stage": true
     },
     "Shockway_Rider.sid": {
@@ -958,11 +973,13 @@
       "pack": true,
       "prune": true,
       "dedup": false,
-      "bytes": 10238,
+      "bytes": 10256,
       "subtunes": 1,
       "rows": 4998,
       "multiplier": 1,
+      "two_stage": true,
       "max_hard_restart": true,
+      "arpeggio": false,
       "hard_restart_frames": 4
     },
     "Tarzan.sid": {
@@ -1008,7 +1025,9 @@
       "bytes": 16953,
       "subtunes": 1,
       "rows": 18397,
-      "multiplier": 3
+      "multiplier": 3,
+      "max_hard_restart": true,
+      "hard_restart_frames": 3
     },
     "Thundercats.sid": {
       "max_rows": 128,
@@ -1052,6 +1071,7 @@
       "rows": 45674,
       "multiplier": 4,
       "two_stage": true,
+      "pitch_seq": true,
       "max_hard_restart": true
     },
     "W_A_R_Preview.sid": {

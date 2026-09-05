@@ -2485,8 +2485,18 @@ succeed for all 78.
 
 #### `--fidelity`: the options no structural score can see
 
-**It searches at `-t 60`, the window `FIDELITY.md` is published at** (v0.5.235;
-it was 10 s before). v0.5.195 had already found 10 s too short for the report —
+**It searches at `-t 180`, the window `FIDELITY.md` is published at**
+(v0.5.459; it was 60 s from v0.5.235 and 10 s before that). The move to 180 was
+not a refinement of the numbers — it was measured on the DECISIONS. Run over
+the whole corpus at both windows with the same carry source, the seven-toggle
+search picks differently on **25 fields across 17 of the 89 songs**, so 60 s
+was not reporting less, it was choosing differently on a fifth of the corpus.
+Four of those seventeen were predicted before the run: `pitch_seq` on
+Flash_Gordon, Lightforce, Saboteur_II and W_A_R moves bytes and moves no
+numeric column at 60 s, and `fidelity_better` cannot prefer a candidate that
+moves no column — so a 60 s search *cannot* select them whatever their merit.
+All four come back at 180 s. Six parallel shards take **53 minutes** at 180 s
+against 9 at 60 s (timed, v0.5.459); use `--shard` with `--carry-from`. v0.5.195 had already found 10 s too short for the report —
 a fifth of the corpus contributed nothing to some columns — and the search kept
 its own default for forty versions. Sanxion's 10 s window holds one comparable
 instrument and zero noise frames against eight and 1669 at 60 s, so two of the
@@ -2744,7 +2754,7 @@ compares what the two players tell the SID chip to do:
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json -o ../docs/FIDELITY.md
 python fidelity.py --pair original.sid ours.sid        # two files you already have
 ```
 
@@ -2754,8 +2764,10 @@ takes a few seconds.
 
 ### The window is a prefix, and that limits what a single run can settle
 
-`-t 60` is the window every generated artefact uses, and it is **not long
-enough to contain the music**. Measured at v0.5.453 over the 89 files that
+`-t 180` is the window every generated artefact uses since v0.5.459, and it
+is **still not long enough to contain the music** -- the census below is the
+60 s one that made the case for widening, and widening did not remove the
+limit, it reduced it. Measured at v0.5.453 over the 89 files that
 score in both windows: exactly **2 of 89** originals end inside 60 seconds. A
 dozen more are known prefixes whose originals run to a median of 247 s and a
 maximum of 381 s, and the remaining 75 have no measurable ending at all. So on
@@ -3258,7 +3270,7 @@ is found at `--vice-exe` or `H2G_VSID`; a row whose trace fails is marked
 ### The onset census — `--census`
 
 ```sh
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json --census ../build/CENSUS.md
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --census ../build/CENSUS.md
 ```
 
 `onset` reports a rate, and a rate says how much is wrong without saying what
@@ -3292,7 +3304,7 @@ says how the corpus scores and this says which file to open next.
 ### The hold census — `--hold-census`
 
 ```sh
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json --hold-census ../build/HOLDCENSUS.md
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --hold-census ../build/HOLDCENSUS.md
 ```
 
 The same idea for the `hold` column: the same two traces and the same modal
@@ -3323,7 +3335,7 @@ write. See H2G-CONVERSION-METHOD.md § 7.xxxx.
 ### The gate census — `--gate-census`
 
 ```sh
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json --gate-census ../build/GATECENSUS.md
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --gate-census ../build/GATECENSUS.md
 ```
 
 The same idea for `gate`. One record per release the **original** makes, on
@@ -3418,7 +3430,7 @@ the end of the list. See [`SNG2SID-FIDELITY.md`](docs/SNG2SID-FIDELITY.md) §7.
 
 ```sh
 cd python
-python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md \
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json -o ../docs/FIDELITY.md \
     --json ../build/fidelity.json
 python listen.py <sid_dir> --from-json ../build/fidelity.json -t 30
 ```

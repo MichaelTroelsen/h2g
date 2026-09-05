@@ -225,6 +225,34 @@ def _step_index(steps: List[int], speed: int) -> int:
     return nearest + 1
 
 
+def _instrument_mask(stride: int) -> int:
+    """How many bits of a pattern's instrument byte the PLAYER actually keeps.
+
+    The players do not mask; they SHIFT. A stride-8 record is reached with
+    `LDA cell,X / ASL A / ASL A / ASL A / TAX` (Mega_Apocalypse $4BA2), and
+    three shifts of an eight-bit accumulator discard bits 5, 6 and 7 before
+    the multiply -- so the surviving index is `byte & 0x1F`, not `& 0x7F`.
+    Byte `$41` indexes record **1**, not 65. A 16-byte record shifts four
+    times and keeps `& 0x0F`.
+
+    **Derived from the stride, and that is equivalent to counting the ASLs --
+    measured, not assumed.** Over the corpus: 80 non-interleaved files read a
+    stride of 8 and 9 read 16, and exactly 9 carry the four-ASL shape
+    `0A 0A 0A 0A AA` while the rest carry the three-ASL `0A 0A 0A AA`. The
+    only six files where the shapes are absent are the six that are not
+    Hubbard players at all (Casio_Extended, Dont_Step_on_My_Wire,
+    Era_of_Eidolon, Robs_Life, Task_Force, Up_up_and_Away), and those convert
+    on no path. So stride and shift count agree on every file this is asked
+    about, and the stride is the cheaper of the two to read.
+
+    A stride that is not a power of two has no shift sequence behind it, so
+    the historical `0x7F` is kept for it rather than inventing a mask.
+    """
+    if stride > 0 and stride & (stride - 1) == 0:
+        return 0xFF >> (stride.bit_length() - 1)
+    return 0x7F
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
@@ -240,7 +268,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        rest_keyoff: bool = False,
                        rest_wave: bool = False,
                        rest_envelope: bool = False,
-                       exits_tied: Optional[List[bool]] = None
+                       exits_tied: Optional[List[bool]] = None,
+                       instr_mask: int = 0x7F
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -509,7 +538,7 @@ def _build_raw_pattern(data: bytes, addr: int,
                     else:
                         cmd2 = min(speed // 4, 0xFF)
             else:
-                g_instrument = (b2 & 0x7F) + instr_base
+                g_instrument = (b2 & instr_mask) + instr_base
                 g_old_instr2 = g_old_instr1
                 g_old_instr1 = g_instrument
 
@@ -1376,6 +1405,7 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
             steps=steps, instr_base=instr_base)
     return _build_raw_pattern(data, addr, slides and det.slide_operand,
                               det.note_flag, status_bit6 and det.status_bit6,
+                              instr_mask=_instrument_mask(det.instr_stride),
                               rest_instrument=rest_instrument,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
@@ -1584,6 +1614,8 @@ def phantom_patterns(sid: SidFile, det: Detection,
                                         det.note_flag,
                                         status_bit6 and det.status_bit6,
                                         span=span,
+                                        instr_mask=_instrument_mask(
+                                            det.instr_stride),
                                         slide_high_first=det.slide_high_first)
         if events is None:
             out[i] = "decode runs off the end of the file"

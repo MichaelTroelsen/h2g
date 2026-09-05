@@ -156,10 +156,13 @@ def test_the_sfx_block_is_a_fixed_pitch_drum_on_one_voice():
             found[path.stem] = (det.sfx_pitch, det.sfx_voice, det.sfx_period)
     # 7 until v0.5.236, when lifting the stride guard reached six more; 14
     # since v0.5.455, when `_effect_byte_address` learned to invert
-    # `to_offset`'s RELOCATION branch as well and reached I_Ball. Both
-    # increments are the same shape: a guard in that one function hiding this
-    # whole family from a subset of the corpus.
-    assert len(found) == 14, sorted(found)
+    # `to_offset`'s RELOCATION branch as well and reached I_Ball; **15 since
+    # v0.5.459**, when `_find_sfx_drum` learned the SHADOW spelling and reached
+    # IK+. All three increments are the same shape -- a probe that could only
+    # read one spelling of an address, hiding this whole family from a subset
+    # of the corpus -- and that is now three sightings of it in one function's
+    # neighbourhood.
+    assert len(found) == 15, sorted(found)
     # Every one of them is voice 3, and the pitch is a constant of the player
     # rather than the note -- which is the whole point: the SID's noise is an
     # LFSR clocked by the frequency, so noise at the note's own low pitch
@@ -171,15 +174,27 @@ def test_the_sfx_block_is_a_fixed_pitch_drum_on_one_voice():
 
 
 @needs_corpus
-def test_the_two_files_without_the_block_report_no_pitch():
-    """IK+ patches its own code instead of writing $D40F/$D412, and Ricochet's
-    arms are empty in the rip. Neither may be handed a made-up pitch."""
+def test_the_one_file_without_the_block_reports_no_pitch():
+    """Ricochet's arms are empty in the rip. It may not be handed a made-up
+    pitch.
+
+    **This was two files, and the reason given for the other one was wrong.**
+    The docstring read "IK+ patches its own code instead of writing
+    $D40F/$D412". It does not: IK+ writes those two registers to a RAM image of
+    the SID at `$E5E3` and flushes it once a frame, and its drum block is the
+    documented one byte for byte apart from the two store targets. Disassembled
+    at $E41C at v0.5.459 and rescued there -- so IK+ now reads voice 2, `$48`,
+    period 6, and only Ricochet is left.
+
+    Ricochet is a different case and stays: neither the direct nor the shadow
+    spelling matches it, and its SID image base IS $D400, so it is not a shadow
+    player with an unread base -- the block simply is not there to find.
+    """
     if not CORPUS.is_dir():
         return
-    for name in ("IK_plus", "Ricochet"):
-        _, det = _detect(name)
-        assert det.effect_bit80 == "sfx"
-        assert (det.sfx_pitch, det.sfx_voice, det.sfx_period) == (-1, -1, -1)
+    _, det = _detect("Ricochet")
+    assert det.effect_bit80 == "sfx"
+    assert (det.sfx_pitch, det.sfx_voice, det.sfx_period) == (-1, -1, -1)
 
 
 def test_the_hit_is_on_the_notes_second_frame():
@@ -361,19 +376,73 @@ def test_an_index_past_the_note_table_is_declined_rather_than_guessed():
     assert _fixed_attack_note(sid, det, 2) is None
 
 
-def test_the_pitch_is_not_wired_into_the_attack_yet():
-    """It belongs on the attack's third frame; frame 0 keeps the played note and
-    frame 1 is bit $80's drum. Applied to frame 0 -- the only place a two-stage
-    block could put it today -- melody falls 85% to 39%. The emitter accepts the
-    note so the shape is testable; nothing passes it."""
+def test_the_fixed_attack_pitch_is_held_for_the_whole_attack():
+    """It must survive every call of the attack, not just the first.
+
+    **This test replaces one that pinned the opposite** (v0.5.459). The old
+    `test_the_pitch_is_not_wired_into_the_attack_yet` asserted
+    `fixed[1][1] == 0x00` on the continuation call, and `$00` is not "leave the
+    pitch alone": `gt2reloc` inverts bit 7 of every non-command right byte
+    (greloc.c:1340-1341), so a `.sng` `$00` arrives as packed `$80` and writes
+    `adc mt_chnnote / and #$7f` -- the PLAYED note. The fixed pitch therefore
+    lasted exactly one call and every call after it undid entry 0. The old
+    test's own name and docstring ("nothing passes it") were stale too:
+    `goatwriter.py` passes `attack_note=_fixed_attack_note(sid, det, i)` on
+    every non-drum record.
+
+    What the player does is in `_two_stage_entries`' own comment, and it was
+    sitting there while the line below it did the opposite: One_on_One's GT 2,
+    372 onsets with no distribution on any offset, plays the note on frame 0
+    and then `$4310` on frames 1, 2 **and** 3 -- one frame past the attack
+    waveform. The pitch outlives the stage it belongs to.
+
+    Reaches 7 corpus files, byte-hashed at v0.5.459: ACE_II,
+    Auf_Wiedersehen_Monty, One_on_One_Jordan_vs_Bird, Ricochet, Saboteur_II,
+    Skate_or_Die_intro, Thundercats.
+    """
     from h2g.goatwriter import _two_stage_entries
     plain = _two_stage_entries(0x41, 0x81, 4, 1)
     assert plain[1][0] == 0x00, "frame 0 keeps the played note"
+
     fixed = _two_stage_entries(0x41, 0x81, 4, 1, attack_note=0xB4)
-    assert fixed[1][0] == 0xB4
-    # ...and the held frames spell themselves out rather than using a delay,
-    # which would keep the fixed pitch for the whole window
-    assert fixed[1][1] == 0x00 and fixed[0][1] == 0x81
+    left, right = fixed
+    assert right[0] == 0xB4, "the attack opens on the fixed pitch"
+    # Every call of the attack, not merely its first. `frames=4` at
+    # `multiplier=1` is four calls, and the attack waveform holds across all of
+    # them -- so the pitch must too.
+    # Expressed as the INVARIANT rather than as a slice: the block may open
+    # with the record's own `+2` waveform on the note's first frame
+    # (`_first_frame_lead`), and whether it does depends on frames and
+    # multiplier -- a first version of this test asserted `left[:4]` and broke
+    # on `frames=2` for exactly that reason. What must hold everywhere is that
+    # every call of the ATTACK carries the fixed pitch.
+    atk = [i for i, w in enumerate(left) if w == 0x81]
+    assert len(atk) == 4, f"four calls of the attack waveform, got {len(atk)}"
+    assert [right[i] for i in atk] == [0xB4] * 4, (
+        "the fixed pitch is HELD; $00 here would re-assert the played note "
+        "on every call after the first")
+    # ...and it ends with the stage it belongs to: the second-stage entry and
+    # the terminator hand the note back.
+    assert left[4] & 0xFE == 0x40 and right[4] == 0x00
+    assert left[5] == 0xFF and right[5] == 0x00
+
+    # The change is to the pitch, NOT to the block's length -- an emitter that
+    # grew the block would spend a budget `_wavetable_layout` reserves.
+    assert len(left) == len(_two_stage_entries(0x41, 0x81, 4, 1,
+                                               attack_note=0x00)[0])
+
+
+def test_the_held_pitch_scales_with_the_multiplier_like_the_attack_does():
+    """A rate read out of the player is per FRAME and the table steps per CALL.
+    The attack waveform is already scaled; the pitch beside it must cover the
+    same calls or it stops early on every multispeed file.
+    """
+    from h2g.goatwriter import _two_stage_entries
+    for mult in (1, 2, 3):
+        left, right = _two_stage_entries(0x41, 0x81, 2, mult, attack_note=0xB4)
+        atk = [i for i, w in enumerate(left) if w == 0x81]
+        assert len(atk) == 2 * mult, (mult, len(atk))
+        assert [right[i] for i in atk] == [0xB4] * (2 * mult), mult
 
 
 def test_the_drum_can_carry_the_fixed_pitch_on_its_second_frame():
@@ -455,3 +524,92 @@ def test_the_fixed_pitch_is_gated_on_the_record_not_the_file():
     det = Detection(instr_start=0, instr_stride=8, effect_bit40=True,
                     wave_program=0)
     assert _fixed_attack_note(_S(0x80), det, 0) is None, "$40 clear"
+
+
+# --- the shadow SID -------------------------------------------------------
+#
+# IK+ carries the bit-$80 drum and `SFX_DRUM_SHAPE` could not see it: the
+# player writes the two SID registers to a RAM image and flushes it once a
+# frame, so its stores read `8D F2 E5` / `8D F5 E5` where the signature demands
+# `8D ?? D4`. Every other byte of the block is the documented Trans-Atlantic
+# listing -- same opcodes, same branch offsets, same immediates in order.
+
+@needs_corpus
+def test_the_sid_image_base_is_derived_and_is_right_where_it_is_not_needed():
+    """$D400 for a player that writes the chip, the shadow's base for one that
+    does not.
+
+    **The check that this reads the player rather than matching a coincidence
+    is that it is correct on the files that do not need it.** Every corpus file
+    carrying the sfx drum directly must come back $D400; only IK+ differs.
+    """
+    from h2g.detect import detect, sid_image_base
+    from h2g.sidfile import load_sid
+
+    direct = ("Bangkok_Knights", "Nineteen", "Thundercats", "Star_Paws",
+              "Pandora", "Trans-Atlantic_Balloon_Challenge")
+    for stem in direct:
+        p = _CORPUS / f"{stem}.sid"
+        if not p.exists():
+            continue
+        assert sid_image_base(load_sid(str(p))) == 0xD400, stem
+
+    ik = _CORPUS / "IK_plus.sid"
+    if ik.exists():
+        assert sid_image_base(load_sid(str(ik))) == 0xE5E3
+
+
+@needs_corpus
+def test_ik_plus_reads_the_drum_through_its_shadow():
+    """voice 2, `$48`, period 6 -- the same shape all thirteen direct files
+    read, and the shape IK+'s own trace shows: 242 gate rising edges with the
+    noise on offset +1 of every one, run gaps of 6 on 244 of 257.
+    """
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+    p = _CORPUS / "IK_plus.sid"
+    if not p.exists():
+        return
+    det = detect(load_sid(str(p)), log=lambda *a, **k: None)
+    assert det.effect_bit80 == "sfx"
+    assert (det.sfx_voice, det.sfx_pitch, det.sfx_period) == (2, 0x48, 6)
+
+
+@needs_corpus
+def test_the_shadow_spelling_is_a_FALLBACK_and_the_direct_files_are_unmoved():
+    """The shadow shape wildcards the store target, so it also matches every
+    file the direct form already reads, AT THE SAME OFFSET. Ordered wrongly it
+    would replace thirteen working readings with the same answers by luck --
+    and the day one of them differed, nothing would say so.
+
+    This pins the ordering by pinning its consequence: the direct population
+    still reads voice 2 with a period the direct form derived.
+    """
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+    seen = 0
+    for stem, period in (("Bangkok_Knights", 6), ("Nineteen", 6),
+                         ("Thundercats", 6), ("Pandora", 8), ("Star_Paws", 8)):
+        p = _CORPUS / f"{stem}.sid"
+        if not p.exists():
+            continue
+        det = detect(load_sid(str(p)), log=lambda *a, **k: None)
+        assert (det.sfx_voice, det.sfx_period) == (2, period), stem
+        seen += 1
+    assert seen >= 3, "not enough of the direct population present to check"
+
+
+def test_the_shadow_pair_alone_cannot_name_the_voice():
+    """Why `sid_image_base` has to exist at all, asserted rather than argued.
+
+    The two shadow stores are `base + 1 + 7v` and `base + 4 + 7v`, which are 3
+    apart for EVERY voice. So `$E5F2`/`$E5F5` is voice 2 of a SID based at
+    `$E5E3` and voice 0 of one based at `$E5F1`, and the pair chooses neither.
+    A reading that guessed the base would be right by luck on this file and
+    silently wrong on the next one.
+    """
+    lo, hi = 0xE5F2, 0xE5F5
+    assert hi - lo == 3
+    for base, voice in ((0xE5E3, 2), (0xE5EA, 1), (0xE5F1, 0)):
+        assert (lo - base - 1) // 7 == voice
+        assert (hi - base - 4) // 7 == voice

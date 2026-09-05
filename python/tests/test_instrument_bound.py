@@ -191,11 +191,22 @@ def test_nineteen_at_bare_defaults_is_a_slide_operand_not_an_instrument():
     event -- clears the reference entirely. The byte was never an instrument;
     it is the far end of a bend, and the warning is a symptom of a different
     default. presets.json's `always` block sets `slides`.
+
+    **SUPERSEDED AT v0.5.459 AND KEPT FOR THE READING, NOT THE SYMPTOM.** The
+    `$31` never reached a real instrument in the PLAYER either: it masks a
+    pattern's instrument byte by SHIFTING (`ASL A` x3 for a stride-8 record),
+    which keeps five bits, so `$31` indexes record 17 and not 49. Once
+    `patterns._instrument_mask` derives that from the stride, the bare-default
+    reference is in range and the warning is gone -- so this no longer asserts
+    that a warning appears. What is still true and still worth pinning is the
+    second line: the byte is a bend operand, and `--slides` makes it vanish as
+    an event rather than merely land somewhere legal.
     """
     if not CORPUS.is_dir():
         return
     nineteen = CORPUS / "Nineteen.sid"
-    assert _dangling(nineteen, {}) is not None
+    # The symptom this test was written for is gone, by the mask fix:
+    assert _dangling(nineteen, {}) is None
     assert _dangling(nineteen, {"slides": True}) is None
 
 

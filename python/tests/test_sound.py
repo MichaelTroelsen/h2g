@@ -216,3 +216,37 @@ def test_a_whole_hop_shift_is_invisible_and_a_sub_hop_shift_is_not():
     assert got_half["aud"] < 1.0, (
         "a half-hop offset is not representable as an integer lag, so it must "
         "leave a residue -- if this passes, the metric has stopped reading time")
+
+
+def test_a_supplied_prior_is_used_not_searched_around():
+    """v0.5.459. `align(a, b, prior_s=X)` with no window returns X's hop.
+
+    It used to score every hop within one frame of the prior on `aud` and
+    return the best, which made the published `aud` a maximum over alignments
+    -- the fit CLAUDE.md forbids for `startup_lag`. Removed after its own A/B:
+    37 of 89 corpus rows sat AT the window bound, and `loud`, which is not the
+    objective, got worse at the chosen hop on 18.
+
+    The prior here is DELIBERATELY WRONG -- zero against a real 0.1 s delay --
+    so the assertion is not satisfiable by accident: a searching
+    implementation moves off it, and the check below proves a search would
+    have, on this exact construction.
+    """
+    rate = 44100
+    t = np.arange(int(rate * 1.0)) / rate
+    x = (0.4 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    delay = int(0.1 * rate)
+    y = np.concatenate([np.zeros(delay, dtype=np.float32), x])[:len(x)]
+    a, b = sound.features(x, rate), sound.features(y, rate)
+
+    assert sound.align(a, b, prior_s=0.0) == 0
+
+    # The fire check, in the test rather than beside it: some hop inside the
+    # old window scores better on `aud` than the prior does, so the removed
+    # search WOULD have returned a different answer here.
+    span = int(math.ceil(sound.PRIOR_WINDOW_S / a.hop_s))
+    at_prior = sound.compare_features(a, b, 0).get("aud")
+    better = [lag for lag in range(-span, span + 1)
+              if lag and (sound.compare_features(a, b, lag).get("aud") or -1)
+              > at_prior]
+    assert better, "vacuous: no hop beat the prior, so nothing was removed here"

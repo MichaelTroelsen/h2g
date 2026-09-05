@@ -97,7 +97,7 @@ test dependency).
   coherent and the tests pass, never while another change is half-applied: a
   run taken mid-edit records a state that never existed.
 - **`FIDELITY.md` is generated too, but on demand rather than every commit.**
-  `python fidelity.py <sid_dir> -t 60 --presets ../presets.json -o ../docs/FIDELITY.md`
+  `python fidelity.py <sid_dir> -t 180 --presets ../presets.json -o ../docs/FIDELITY.md`
   packs each conversion back to a `.sid` with gt2reloc and compares SID register
   traces against the original. It is the closest thing in the repo to a measure
   of whether a conversion *sounds* right, so regenerate it after a commit that
@@ -383,7 +383,22 @@ test dependency).
   rule and confirm it reproduces the old number first. See
   H2G-CONVERSION-METHOD.md section 7.nn.
 - **"No column moved" has two causes, and a third: the register is one every
-  column deliberately ignores.** `--rest-keyoff` moves 19 files' bytes and one
+  column deliberately ignores -- and a FOURTH, added at v0.5.459: the WINDOW
+  did not contain the material.** The fourth is the one with no fingerprint in
+  the report, because every column reads as flat exactly as it does for a
+  change that reaches nothing, and `output_sha` says only that the bytes moved.
+  It is not the subtune case two bullets down -- that is a change outside the
+  subtune `--baseline` traced, and `subtune_content_shas()` names it. This is a
+  change INSIDE the traced subtune whose music falls outside the traced
+  SECONDS. Measured: `pitch_seq` on Mega_Apocalypse moves bytes and leaves
+  **every numeric column identical at `-t 60`**, and is plain at `-t 180`; four
+  files (Flash_Gordon, Lightforce, Saboteur_II, W_A_R) move bytes and no column
+  at 60 s, which is why a 60 s search DROPPED an adoption it cannot see --
+  `fidelity_better` can never prefer a candidate that moves no column. Before
+  concluding a change is invisible to every dimension, widen the window and
+  re-run; the window is the cheapest of the four causes to exclude and the only
+  one that costs nothing but time.
+  `--rest-keyoff` moves 19 files' bytes and one
   file's report row, because a Goattracker KEYOFF clears the *gate* and
   nothing else -- and `wave` excludes the gate bit by construction, `hold`
   counts frames with a waveform selected, `adsr` reads registers it does not
@@ -954,6 +969,30 @@ test dependency).
     of 381 s; the other 75 have no measurable ending, i.e. are still playing.
     So the report scores a PREFIX on essentially the whole corpus — 60 s sees
     about a quarter of the median prefix file's music.
+    **RE-TAKEN AT THE WINDOW THIS FILE NOW USES, from `build/fidelity.json`
+    (`seconds: 180`, v0.5.458): 6 of 89 are fully contained at 180 s** --
+    Action_Biker, Geoff_Capes_Strongman_Challenge, Kings_of_the_Beach_ingame,
+    Las_Vegas_Video_Poker, Samantha_Fox_Strip_Poker and Sigma_Seven -- against
+    8 prefixes and the same 75 that never end. The 14-with-an-ending / 75-still-
+    playing split is unchanged by the window, as it must be; only the split
+    WITHIN the 14 moves, 2/12 at 60 s to 6/8 at 180 s.
+    **AND THE 60 s FIGURES ABOVE ARE CONFIRMED RATHER THAN MERELY OLD**, which
+    is worth more than the re-count: the 8 prefixes' implied lengths
+    (`180 / window_coverage`) are 195.4, 245.4, 249.2, 259.2, 305.1, 337.0,
+    375.0 and 380.8 s, so the max reproduces as **380.8 against the 381**
+    recorded, and the 12-prefix median reproduces as **247.3 against the 247**
+    -- but ONLY under the reading that 2 files were contained at 60 s. Under 3
+    the median would be 249.2. So the 2 and the 247 stand or fall together and
+    the artefact supports the pair; a later run record claiming **3** at 60 s
+    (Action_Biker, Geoff_Capes, Kings_of_the_Beach_ingame) is inconsistent with
+    the median beside it, and a 180 s artefact cannot settle it either way
+    because it stores no end time for a file that ends inside the window.
+    **ONE FIGURE FROM THAT CENSUS MUST NOT BE QUOTED AS A MEASUREMENT: the
+    median coverage of 0.100.** `window_coverage` for a tune with no ending is
+    the window over a FLOOR of 1800 s (`window_coverage_bounded` is true on
+    exactly the 75 of them), so all 75 read 180/1800 = 0.1 identically and the
+    corpus median is that constant rather than anything about the music. The
+    quantity with content is the 14 rows where the floor does not bite.
   * **THE WINDOW'S OWN CONTRIBUTION. 87 of 89 files have a scored column move
     between the two windows, 81 move by >= 5pp and 76 by >= 10pp.** Per-column
     medians: `pphase` 0.116, `nrun` 0.144, `tail` 0.110, `onset` 0.107, `bend`
@@ -976,16 +1015,56 @@ test dependency).
   (|log| 0.0155 -> 0.0359) and much better at 180 (0.2754 -> 0.0230), so a
   decision taken at 60 s is wrong rather than merely uninformed.
 
-  **60 STAYS FOR NOW, AND THE REASON IS COST ALONE.** Tripling the window
-  triples every artefact and every search: the report is 15m46s at 60 s with
-  `--sound`, and `presets.py --fidelity` is **25m21s at seven toggles**
-  (timed, v0.5.455; the "8 minutes" this line used to carry is the
-  FIVE-toggle figure) — call it 45 minutes and 75 minutes at 180. `--shard I/N` splits the search and is the mitigation.
-  Until that is paid, **the working rule is per-song rather than global: before
-  adopting or refusing an option on one file, re-measure it at `-t 180`.** That
-  rule is what caught all three flips above. Raising the default is a separate
-  task because it invalidates `docs/FIDELITY.md` and `build/fidelity.json`, and
-  whoever takes it must declare both.
+  **SETTLED AT v0.5.459: THE WINDOW IS 180, AND WHAT SETTLED IT WAS THE ONE
+  MEASUREMENT NOBODY HAD TAKEN.** Everything above establishes that the window
+  moves the reported NUMBERS. That was never the question worth deciding on: a
+  report that moves is a cost of the instrument, where a DECISION that moves is
+  a cost of being wrong. So the seven-toggle search was run over the whole
+  corpus at BOTH windows, same carry source, and the two sets of decisions
+  diffed. **They differ on 25 fields across 17 of the 89 songs.** The 60 s
+  search was not reporting less than the 180 s one; it was choosing
+  differently on a fifth of the corpus.
+  **AND FOUR OF THE SEVENTEEN WERE PREDICTED BEFORE THE RUN, WHICH IS WHAT
+  MAKES THE DIRECTION KNOWN RATHER THAN MERELY THE MAGNITUDE.** Flash_Gordon,
+  Lightforce, Saboteur_II and W_A_R had `pitch_seq` DROPPED by the 60 s search
+  earlier in the same session. Those are precisely the files whose `pitch_seq`
+  moves bytes and moves no numeric column at 60 s — measured, and recorded
+  under `four-pitch-seq-files-move-bytes-and-no-column-sees-them-at-either-
+  window`. `fidelity_better` cannot prefer a candidate that moves no column, so
+  a 60 s search CANNOT select those adoptions whatever their merit. All four
+  come back at 180 s. That is not a tie broken by preference: at 60 s the
+  search is blind, at 180 s it can see.
+  **THE COST IS MEASURED, NOT EXTRAPOLATED, AND IT IS WORSE THAN THE OLD
+  ESTIMATE.** Six PARALLEL shards of the seven-toggle corpus search take **9
+  minutes at 60 s and 53 minutes at 180 s** (both timed at v0.5.459) — a 5.9x
+  step for a 3x window, because longer traces contend harder for the machine.
+  Serial it is about 25m21s and 75 minutes. **The report with `--sound` is
+  4m21s at 60 s and 58 MINUTES at 180 s -- a 13x step for a 3x window, and
+  this line carried "about 13 [minutes]" for the 180 s figure, which was an
+  extrapolation of the 3x and is wrong by 4.5x.** The cause is not the trace:
+  `sound.py` keys its render cache on the window (`...t60.wav` / `...t180.wav`),
+  so raising the window makes every one of the 178 renders a cache MISS.
+  **AND EVERY `--sound` TIMING HERE IS COLD AGAINST WARM, WHICH NOTHING USED
+  TO SAY.** The three figures this file has carried are three different cache
+  states of the same command, each traced to the run that took it:
+  **15m46s** at 60 s (commit `64c795b`, the `ab-3-aud-and-loud-report-columns`
+  run) was the one that BUILT the cache -- cold, 188 WAVs written;
+  **5m08s** at 60 s (commit `8b7b218`, the v0.5.455 artefact regeneration) and
+  **4m21s** at 60 s (commit `7969d85`) are the same report against a WARM
+  cache; and the **58 minutes** at 180 s (`7969d85`, the same v0.5.459 timing
+  run that produced the 9-and-53 figures above) is cold by construction,
+  because the window is in the cache key. So the 15m46s and the 4m21s never
+  disagreed -- they are a cold and a warm reading nobody labelled, and quoting
+  either without the label mis-states the cost by 3.6x in whichever direction
+  the reader needs. `--shard I/N` is the mitigation and it is now safe to use:
+  a sharded run needs `--carry-from`, and without it `presets.py` REFUSES
+  rather than silently dropping every per-song decision it cannot re-derive
+  (v0.5.458 — before that fix, six shards merged had lost 30 of them).
+  **NUMBERS EITHER SIDE OF v0.5.459 ARE NOT COMPARABLE**, exactly as they are
+  not across v0.5.195's 10 -> 60 move. Every figure in this file measured at
+  `-t 60` is HISTORY and is left saying so; nothing above was rewritten to the
+  new window, because a figure re-labelled rather than re-measured is the
+  decay this file's own grading rule exists to prevent.
 - **Check the fixture's bytes, not its length.** `len(convert(...)) == 15193`
   passes for any edit that moves a byte between two wavetable entries, which is
   most of them: v0.5.197's first attempt cleared that check and broke 26
@@ -1034,6 +1113,33 @@ test dependency).
   never looked at. Regenerating the artefact is a second, independent reader
   of the same measurement; prefer it *before* adopting a candidate, not
   after.
+- **Three ways a probe returns a confident answer about nothing, each caught
+  in-run and each having cost more than one task.** They sit beside the two
+  rules above -- *assert your own success rate* and *assert every column you
+  name exists* -- and they are the same failure one level down again: the probe
+  ran, nothing raised, and the number was empty.
+  * **`songview.parse_sng`'s `patterns` entries are FLAT LISTS OF BYTES, four
+    per row -- not row objects.** Probes that iterated them element-wise
+    reported `max_ref = 0` for every file, which is a silently vacuous answer
+    that was nearly believed twice, and it also produced an empty instrument
+    census in the I_Ball task. Chunk in fours: `pat[4*k+1]` is the instrument
+    column. This is `songview`'s value working against you -- it is a SECOND
+    reader of the format, which is exactly why its output gets trusted.
+  * **A probe that re-imports a module cannot compare that module's dataclasses
+    with `==`.** `dataclass.__eq__` begins `other.__class__ is self.__class__`,
+    so a probe that deletes modules from `sys.modules` to hold two trees at once
+    compares equal-valued instances as UNEQUAL. A Detection diff reported **7**
+    fields moved -- including `pitch_seq`, `filter` and `freq_table`, which
+    printed IDENTICALLY on both sides; re-diffed BY REPR it is **4**. The
+    failure mode is the dangerous direction: it manufactures differences that
+    look like the change you are hunting.
+  * **A verify written from a SYMPTOM can name a fix that is worse than the
+    defect.** A task described Confuzion's end-of-file peek as "drops the last
+    valid record" and the repair its wording implies -- move the `n += 1` --
+    **crashes Action_Biker**, because a readable `+2` byte is not a whole
+    record. The real quantity is record COMPLETENESS, and the two corpus files
+    whose table abuts EOF want opposite answers. Read a verify's prescription
+    as a description of the symptom, and re-derive the fix.
 - **An explanation that fits the shape of a regression is not thereby its
   cause -- turn the proposed cause off and see if the effect survives.** A
   bit-6 rest parks `$08` in the stored waveform on 17 files and a Goattracker
@@ -1051,6 +1157,25 @@ test dependency).
   the A/B measured something other than the change as described. That is
   visible from the output in one query. See §§ 7.ooooo and 7.ppppp; the real
   cause is not yet known.
+  **AND THE -43pp IS HISTORY: RE-MEASURED AT `0aa0d5c` THE OPTION COSTS
+  ESSENTIALLY NOTHING.** Every figure above belongs to v0.5.284's emission and
+  must be quoted with that version or not at all. `--rest-wave-silence` was
+  re-run over its whole present population -- the 17 files whose
+  `det.rest_silence_kind` is `testbit`, of which **15 move bytes** (the two
+  that do not are One_on_One_Jordan_vs_Bird and Powerplay_Hockey) -- through
+  the harness's own option-A/B mode rather than a probe, two presets files
+  differing in this one key, `--baseline` on the second, 15 of 15 rows measured
+  in both arms. **`melody` moves on exactly ONE file and by -0.4pp**
+  (Bangkok_Knights 97.9% -> 97.5%); every other file is identical to three
+  decimals. So the collapse this bullet is built on no longer occurs, and the
+  bullet survives as a lesson about explanation rather than as a live cost.
+  **The likely cause of the original collapse is named two hundred lines up and
+  was fixed there**: `patterns.TEMPO_OVERWRITABLE` now carries `CMD_SETWAVE`,
+  the rest's own command, so a row-0 rest no longer displaces that subtune's
+  `CMD_SETTEMPO` -- which is the documented signature of exactly this symptom
+  (drift 0 -> ~1000 with melody -43pp). Named as the strong candidate, NOT
+  proven: nobody has A/B'd the guard itself, and this file's own rule is that
+  an explanation fitting the shape of a regression is not thereby its cause.
 - **A trace that shows what is wrong does not tell you what writes it.** IK+'s
   wave-program instruments end their notes on `$08` where ours latch `$40`,
   visible frame by frame -- and emitting that silence directly took Nemesis
@@ -1288,6 +1413,18 @@ test dependency).
     v0.5.454 -- the v0.5.453 re-counts still hold. And the drift split holds
     exactly: **68 zero / 18 drifting of the 86 rows carrying a drift fit** (89
     measured, 3 without one), identical to the v0.5.453 figure to the file.
+    **RE-GRADED AGAIN AT v0.5.459, AND BOTH HAVE MOVED -- the line above is
+    now HISTORY and is left saying what it said.** wave_program is
+    **10 multispeed / 12 single-speed** (Off_the_Cuff's multiplier moved) and
+    `--regrid` has **14 adoptions** (One_on_One_Jordan_vs_Bird adopted; its
+    recorded -37.0pp melody collapse does not reproduce -- melody IMPROVES
+    0.9903 -> 0.9952 at 180 s). **What caught both was a TEST, not a reading**:
+    `tests/test_claude_md_figures.py` re-derives these from `presets.json` and
+    fails when this file disagrees, which is the whole argument for committing
+    the grading pass rather than repeating it by hand. The drift split is not
+    re-graded here and must not be: it is a per-file measurement and the
+    artefact is now `-t 180` where that figure was taken at `-t 60`, so the
+    test SKIPS it rather than comparing two different quantities.
   * **STALE, and its own parentheticals decayed with it.** The corpus is 89
     songs now, not 83; **49 pack above `-S1`**, not 44; **19 at `-S2`**, not
     18. A correction written into a "stale" bucket goes stale on the same
@@ -1923,8 +2060,15 @@ that list back into existence.
   that goes dark on a schedule nobody chose is worse than no guard, because
   the suite still reports green.
 
-**`presets.py --fidelity` searches at `-t 60` since v0.5.235, and the ten
-seconds before it were choosing settings blind.** v0.5.195 moved the *report*
+**HISTORY, AND THE HEADING WAS LEFT IN THE PRESENT TENSE FOR FOUR VERSIONS
+AFTER IT STOPPED BEING TRUE. `presets.py --fidelity` searched at `-t 60` from
+v0.5.235; SINCE v0.5.459 IT SEARCHES AT `-t 180`**, the window every generated
+artefact now uses. The paragraph below is the record of the 10 -> 60 move and
+every figure in it is a 60-second figure; it is kept because the lesson it
+draws is the one that then had to be drawn a second time at 180. This heading
+is its own example: it asserted a live default, the default moved, and nothing
+re-derived it -- the decay the grading rule two sections up exists to catch.
+v0.5.195 moved the *report*
 to 60 s because a fifth of the corpus contributed nothing to some columns at
 10 s; the search kept its own default for forty versions. Sanxion's 10 s window
 holds one comparable instrument and zero noise frames against eight and 1669 at

@@ -78,7 +78,8 @@ def test_the_expired_branch_reads_the_record_s_own_waveform():
     """
     if not CORPUS.is_dir():
         return
-    from h2g.detect import TWO_STAGE_SHAPE, TWO_STAGE_SHAPE_ZP
+    from h2g.detect import (TWO_STAGE_SHAPE, TWO_STAGE_SHAPE_ILV,
+                            TWO_STAGE_SHAPE_ZP)
     from h2g.search import search_file
 
     checked = 0
@@ -98,8 +99,23 @@ def test_the_expired_branch_reads_the_record_s_own_waveform():
         if i <= -1:
             i = search_file(sid.data, TWO_STAGE_SHAPE_ZP.format(load=load))
             expired_at = 17
+        if i <= -1:
+            # v0.5.459. The interleaved spelling FALLS THROUGH to its
+            # store instead of jumping over the expired branch, so that
+            # branch is outside the matched bytes and no fixed offset can
+            # reach it. Follow the block's own `BEQ expired` -- the
+            # `F0 ??` after `LDA counter,X` -- rather than inventing a
+            # third constant: the branch is what names the address.
+            i = search_file(sid.data,
+                            TWO_STAGE_SHAPE_ILV.format(load=load))
+            expired_at = None
         assert i > -1, path.name
         p = i + len(load.split())
+        if expired_at is None:
+            assert sid.data[p + 7] == 0xF0, path.name
+            tgt = p + 9 + sid.data[p + 8]
+            assert sid.data[tgt] == 0xB9, path.name   # LDA instr+2,Y
+            expired_at = tgt + 1 - p
         expired = sid.data[p + expired_at] | sid.data[p + expired_at + 1] << 8
         instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
         assert expired == instr_cpu + 2, path.name
@@ -369,3 +385,74 @@ def test_the_stride_eight_dialect_still_takes_its_bound():
     _, det = _detect_tables(sid, lambda *a, **k: None)
     assert det.instr_stride == 8 and det.effect_two_stage
     assert det.instr_used == 15, "IK+ counts 30 records and has 15"
+
+
+def test_the_interleaved_spelling_is_six_files_and_reads_the_same_block():
+    """v0.5.459. The interleaved dialect writes the attack waveform into an
+    OPERAND -- `8D ?? ??`, a self-modify -- where the absolute form reaches its
+    store with `4C ?? ??` (JMP). One instruction; every byte before it is
+    identical, branch offsets included. Go_Go_Dash carried bit $04 on 8 of its
+    19 records with `effect_two_stage` False.
+
+    Pinned as a COUNT, for the same reason the zero-page test above is: a
+    second spelling is a claim about which files it reaches, and the check that
+    catches a pattern loosened too far is running it over the corpus and
+    requiring the difference to be exactly the files it was written for.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import TWO_STAGE_SHAPE, TWO_STAGE_SHAPE_ILV
+    from h2g.search import search_file
+
+    matched = []
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        sid, det = _detect_tables(sid, lambda *a, **k: None)
+        found = _effect_byte_address(sid, det)
+        if not found or det.instr_start < 0:
+            continue
+        addr, zp = found
+        load = (f"A5 {addr:02X}" if zp
+                else f"AD {addr & 0xFF:02X} {addr >> 8:02X}")
+        if search_file(sid.data, TWO_STAGE_SHAPE_ILV.format(load=load)) > -1:
+            matched.append(path.name)
+            # ...and none of them is a file the absolute shape already had.
+            assert search_file(
+                sid.data, TWO_STAGE_SHAPE.format(load=load)) <= -1, path.name
+    assert matched == ["Go_Go_Dash.sid", "Lakers_vs_Celtics.sid",
+                       "Lion_Heart.sid", "Pacific_Coast.sid",
+                       "Radio_ACE.sid", "Sun_Never_Shines.sid"], matched
+
+
+def test_the_interleaved_push_chain_is_interrupted_not_absent():
+    """The confirmation `duration == attack + 2` is TRUE in all six and
+    `TWO_STAGE_PUSH` cannot see it, because that shape is one contiguous run of
+    three loads and this engine separates its third by 34 bytes of conditional
+    self-modify and an X save/restore.
+
+    This is the distinction the fallback rests on, so it is asserted rather
+    than described: the contiguous chain matches NOWHERE in these files, while
+    a search anchored on the expected address finds the load-and-push. If the
+    chain ever starts matching here, the fallback is no longer what is being
+    exercised and this test should be re-read before it is edited.
+    """
+    if not CORPUS.is_dir():
+        return
+    from h2g.detect import TWO_STAGE_PUSH, TWO_STAGE_PUSH_ANCHORED
+    from h2g.search import search_file
+
+    for name in ("Go_Go_Dash", "Lakers_vs_Celtics", "Lion_Heart",
+                 "Pacific_Coast", "Radio_ACE", "Sun_Never_Shines"):
+        sid = load_sid(str(CORPUS / f"{name}.sid"))
+        sid, det = _detect_tables(sid, lambda *a, **k: None)
+        assert det.effect_two_stage is True, name
+        # The relation the push chain exists to establish holds here too.
+        assert det.two_stage_frames == det.two_stage_wave + 2, name
+        # The chain itself is absent...
+        assert search_file(sid.data, TWO_STAGE_PUSH) <= -1, name
+        # ...while the instruction that names the address is not. Rebuild the
+        # operand from the CPU address, not from the file offset det carries.
+        instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+        want = det.two_stage_frames - det.instr_start + instr_cpu
+        assert search_file(sid.data, TWO_STAGE_PUSH_ANCHORED.format(
+            lo=want & 0xFF, hi=want >> 8)) > -1, name

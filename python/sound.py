@@ -232,19 +232,32 @@ def align(a: Features, b: Features, prior_s: float | None = None,
     if n < 4:
         return prior
     if refine:
-        # **REFINING a known offset: score on `aud`, the residual this is used
-        # for.** Sound only inside the narrow window -- measured, the residual
-        # is multi-modal over a wide one and the search wanders: with the
-        # +-0.5 s window it recovered 240.9 ms for an injected 100 ms delay on
-        # a plain tone, the same shape of failure the retracted note below
-        # records for an earlier envelope form. So the objective and the
-        # window are one decision, not two.
-        best, best_lag = -np.inf, prior
-        for lag in range(prior - span, prior + span + 1):
-            c = compare_features(a, b, lag).get("aud")
-            if c is not None and c > best:
-                best, best_lag = c, lag
-        return best_lag
+        # **THE REFINEMENT IS GONE AT v0.5.459: a supplied prior is USED, not
+        # searched around.** It scored candidate hops on `aud` and returned the
+        # best, so the published `aud` was a MAXIMUM OVER ALIGNMENTS -- exactly
+        # what CLAUDE.md forbids for `startup_lag`: "estimated from that
+        # signal, never fitted, because a shift chosen to maximise agreement
+        # can only raise the score." Its own A/B over all 89 cached render
+        # pairs is what settled it, and two numbers did the work.
+        #
+        # **37 of 89 rows sat AT the window bound** (24 at +7 hops, 13 at -7).
+        # The window is one frame, and the stated job was to resolve the
+        # prior's own frame quantisation -- a sub-frame offset is by definition
+        # inside that. Landing on the edge on 42% of the corpus says `aud`
+        # wanted to keep going and was merely clipped, which is a search
+        # sliding rather than a quantisation being resolved. The docstring
+        # below already records the objective wandering when given room.
+        #
+        # **And `loud` -- an independent reduction of the same pair, not the
+        # objective -- got WORSE at the chosen hop on 18 of 89 rows.** A true
+        # alignment does not degrade an independent measure of the same two
+        # signals; a fit to one of them does.
+        #
+        # What it cost to remove, measured rather than assumed: `aud` mean
+        # -0.0038, median -0.0018, above the 0.006932 noise floor on 17 rows,
+        # worst -0.0240 (Samantha_Fox_Strip_Poker). `loud` mean -0.0019 and
+        # BETTER on 18. The column reads lower and means more.
+        return prior
     # **FINDING an unknown offset: the envelope correlation, unchanged.** It
     # is the right tool for a search that has to locate the offset at all, and
     # the paragraphs below are the record of what it took to get right.

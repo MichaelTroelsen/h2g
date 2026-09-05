@@ -124,8 +124,41 @@ def test_the_flag_changes_no_file_whose_player_has_no_filter():
             changed.append(p.stem)
     for stem in changed:
         sid, det = _det(stem)
-        assert det.filter is not None, (
+        # v0.5.459. "Has a filter" is TWO readings now, not one. The
+        # interleaved dialect keeps a stride-8 table indexed by a program
+        # number in the instrument record, which `FILTER_SHAPE` cannot reach,
+        # so `det.filter` is None on those six files while their players
+        # filter for thousands of frames. Keying the invariant on `filter`
+        # alone would report the new reader as a violation of "refusing a file
+        # leaves it byte-exact" -- the file was never refused, it was read by
+        # the other route.
+        assert det.filter is not None or det.ilv_filter is not None, (
             f"{stem} changed but no filter was detected")
+
+
+def test_the_two_filter_readers_are_disjoint():
+    """A second reader is a claim about which files it reaches.
+
+    The interleaved reader is consulted only where the classic one came back
+    None, so an overlap could never change behaviour -- but it would mean one
+    of the two is matching something that is not its own dialect, which is the
+    lead worth failing on. Zero overlap over the corpus, 6 files to the new
+    reader.
+    """
+    both, ilv = [], []
+    for p in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid, det = _det(p.stem)
+        except Exception:                                   # noqa: BLE001
+            continue
+        if det.ilv_filter is not None:
+            ilv.append(p.stem)
+            if det.filter is not None:
+                both.append(p.stem)
+    assert both == [], both
+    assert sorted(ilv) == ["Go_Go_Dash", "Lakers_vs_Celtics", "Lion_Heart",
+                           "Pacific_Coast", "Radio_ACE",
+                           "Sun_Never_Shines"], sorted(ilv)
 
 
 def test_the_array_is_two_bytes_per_record():

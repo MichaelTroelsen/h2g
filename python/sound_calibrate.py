@@ -121,6 +121,52 @@ def worse_by(bad: dict, good: dict) -> float:
     return (good.get("aud") or 0.0) - (bad.get("aud") or 0.0)
 
 
+def worse_by_loud(bad: dict, good: dict) -> float:
+    """The same margin on `loud`, because `aud` alone missed a real regression.
+
+    Human_Race 0.5.329 -> 0.5.330 reads `worse_by(aud)` **-0.0052** -- the
+    version known to be worse scoring better -- while the SAME comparison reads
+    `loud` **+0.0136**, twice the noise floor and the right sign. Both builds
+    are healthy there (`loud_ratio` 1.037 and 1.053), so this is not a broken
+    pair: it is one column blind and its neighbour not. A check that exists to
+    catch regressions should fail only when NEITHER column sees one.
+    """
+    return (good.get("loud") or 0.0) - (bad.get("loud") or 0.0)
+
+
+# A build whose loudness is nowhere near the original's is not a build this
+# check can compare -- see `comparable` below.
+LOUD_RATIO_BAND = (0.5, 2.0)
+
+
+def comparable(bad: dict, good: dict) -> str | None:
+    """None if the pair can be compared, else why it cannot.
+
+    **Measured, and it is why two of three pairs "failed".** Samantha_Fox and
+    Las_Vegas's *good* builds (v0.5.401, packed at that tree's -S4) render with
+    `loud_ratio` **0.063** and **0.074** -- and quartering the 60 s render shows
+    why: RMS `[0.201, 0.101, 0.0023, 0.0023]` against the original's steady
+    `[0.150, 0.163, 0.169, 0.169]`. The build's music ENDS around 30 s while
+    the original plays on, so half the window scores our silence against real
+    music. `aud` and `loud` both call that worse, correctly, and the check then
+    reported "the fix is worse than the bug".
+
+    That is a statement about the PAIR, not about the metric, and the two must
+    not be conflated: a blind spot is something to fix in `aud`, an
+    incomparable build is something to fix in `KNOWN_BAD` or in how the build
+    is made. Reporting the second as the first is what made this check read as
+    a failure of the sound columns for as long as it has.
+    """
+    for label, got in (("bad", bad), ("good", good)):
+        r = got.get("loud_ratio")
+        if r is None:
+            return f"{label} build has no loud_ratio"
+        if not LOUD_RATIO_BAND[0] <= r <= LOUD_RATIO_BAND[1]:
+            return (f"{label} build's loudness is {r:.3f}x the original's, "
+                    f"outside {LOUD_RATIO_BAND} -- not a comparable render")
+    return None
+
+
 def rank_in_corpus(rows: list[dict], names: list[str]) -> dict[str, tuple[int, int]]:
     scored = sorted(((r["aud"], r["file"][:-4]) for r in rows
                      if r.get("aud") is not None), reverse=True)
@@ -248,10 +294,22 @@ def main(argv=None) -> int:
             continue
         gb = sound.compare_sids(sid, pb, args.seconds, sub, sub)
         gg = sound.compare_sids(sid, pg, args.seconds, sub, sub)
-        bad.append({"file": name, "versions": [v_bad, v_good],
-                    "bad": gb.get("aud"), "good": gg.get("aud"),
-                    "worse_by": worse_by(gb, gg),
-                    "seen": worse_by(gb, gg) > checks["shift"]["noise_floor"]})
+        floor = checks["shift"]["noise_floor"]
+        why = comparable(gb, gg)
+        row = {"file": name, "versions": [v_bad, v_good],
+               "bad": gb.get("aud"), "good": gg.get("aud"),
+               "worse_by": worse_by(gb, gg),
+               "worse_by_loud": worse_by_loud(gb, gg),
+               "loud_ratio": [gb.get("loud_ratio"), gg.get("loud_ratio")],
+               "incomparable": why}
+        # Either column seeing it is enough; neither is the failure. And an
+        # incomparable pair is NEITHER seen nor unseen -- it is excluded, with
+        # its reason recorded, because scoring it would report a build problem
+        # as a metric blind spot.
+        row["seen"] = (why is None
+                       and (row["worse_by"] > floor
+                            or row["worse_by_loud"] > floor))
+        bad.append(row)
     checks["known_bad"] = bad
 
     # 5: where the approved tunes sit.
@@ -266,6 +324,13 @@ def main(argv=None) -> int:
     passed = (all(abs(1 - v["aud"]) < 1e-6 for v in idents.values())
               and checks["shift"]["noise_floor"] < 0.01
               and closeness is not None
+              # An EXCLUDED pair is not a passing pair. The whole point of
+              # this file is that nothing downstream inherits an approval on
+              # numbers that were not validated, and a pair whose builds
+              # cannot be compared has validated nothing. It reads FAIL until
+              # KNOWN_BAD names pairs that can be built comparably -- which is
+              # the same verdict as before this change and for a stated
+              # reason instead of an unexplained blind spot.
               and all(b.get("seen") for b in bad))
     out = {"version": __version__, "head": F.git_label(ROOT), "seconds": args.seconds,
            "noise_floor": checks["shift"]["noise_floor"],
@@ -310,9 +375,16 @@ def render_doc(out: dict) -> str:
         if "error" in b:
             lines.append(f"| {b['file']} | - | - | - | - | {b['error']} |")
         else:
+            if b.get("incomparable"):
+                verdict = f"EXCLUDED -- {b['incomparable']}"
+            elif b["seen"]:
+                verdict = ("yes" if b["worse_by"] > 0 else
+                           f"yes, on `loud` ({b['worse_by_loud']:+.4f}); `aud` "
+                           f"does not see it")
+            else:
+                verdict = "NO -- a blind spot; name it in the Dimension"
             lines.append(f"| {b['file']} | {' -> '.join(b['versions'])} | {b['bad']:.3f} | "
-                         f"{b['good']:.3f} | {b['worse_by']:+.3f} | "
-                         f"{'yes' if b['seen'] else 'NO -- a blind spot; name it in the Dimension'} |")
+                         f"{b['good']:.3f} | {b['worse_by']:+.3f} | {verdict} |")
     lines += ["", "## 5. Where the approved tunes sit", "",
               "| tune | rank | of | upper half? |", "|---|---:|---:|---|"]
     for n, v in c["approved_rank"].items():

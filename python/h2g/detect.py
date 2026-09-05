@@ -297,6 +297,12 @@ class Detection:
     # files whose player either has no filter routine or whose sweep origin
     # cannot be read statically -- see find_filter().
     filter: "FilterInfo | None" = None
+    # The INTERLEAVED dialect's filter, which the classic `FILTER_SHAPE`
+    # cannot reach -- a stride-8 table indexed by a program number held in
+    # the instrument record, rather than an array indexed by the instrument.
+    # Read only where `filter` came back None, and the two are disjoint over
+    # the corpus: 6 files here, 0 of them with a classic filter.
+    ilv_filter: "IlvFilterInfo | None" = None
     # (offset, length) of every signature the main detection chains matched.
     # Each is a run of bytes *known* to be the player's own code -- that is
     # what the signature fingerprints -- so anything else claiming those bytes
@@ -1591,6 +1597,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             "rest to the sound-effect routine")
 
     det.filter = find_filter(sid, det)
+    if det.filter is None:
+        det.ilv_filter = find_ilv_filter(sid, det)
     if det.filter is not None:
         f = det.filter
         log(f"Filter..................: ${f.addr:04X}, stride "
@@ -1699,6 +1707,93 @@ class FilterInfo:
     passband: int  # $D418 & $70
     cutoff: int    # the value every note's sweep starts from
     status: int    # offset of the per-instrument status array (bit $20 = on)
+
+
+# The interleaved dialect's filter, which `FILTER_SHAPE` cannot reach because
+# that shape encodes the classic engine's per-instrument ACCUMULATOR --
+# `LDA cutoff,X / CLC / ADC step,Y / STA cutoff,X / STA $D416`. This engine does
+# no arithmetic at the chip: its per-frame block is a FLUSH of an array some
+# other routine advances (`LDY sel / LDA cut_hi,Y / STA $D416`), and the sweep
+# is a 16-bit bidirectional ping-pong between per-voice limits elsewhere.
+#
+# Anchored on the flush, because that is the instruction naming the cell we
+# want. Anchoring on a store to the cell's own address would encode ONE BUILD's
+# number: five of the six files keep it at $1A74 and Lakers_vs_Celtics at
+# $1A9C, and a search for $1A74 finds nothing in that file.
+ILV_FILTER_FLUSH = "AC ?? ?? B9 ?? ?? 8D 16 D4"
+# `LDA record,Y / STA cut_hi,X` at note start -- names the record table.
+ILV_FILTER_LOADER = "B9 ?? ?? 9D {lo:02X} {hi:02X}"
+# `LDA instr+12,X / ASL A x3` -- the record byte holding the filter PROGRAM
+# number, times the table's stride of 8. One indirection deeper than the
+# classic engine, which indexes its filter array by the instrument itself.
+ILV_FILTER_PROGRAM = "BD {lo:02X} {hi:02X} 0A 0A 0A"
+# `LDA instr+7,X / AND #$20 / BEQ` -- the SAME enable bit the classic engine
+# uses, at the same record offset. Only the record layout and the indirection
+# differ between the two dialects.
+ILV_FILTER_ENABLE = "BD {lo:02X} {hi:02X} 29 20 F0 ??"
+ILV_FILTER_STRIDE = 8
+ILV_FILTER_PROGRAM_OFF = 12
+ILV_FILTER_ENABLE_OFF = 7
+
+
+@dataclass(frozen=True)
+class IlvFilterInfo:
+    """One stride-8 filter record per PROGRAM, not per instrument.
+
+    Field map, read out of the note-start loader (every entry confirmed by the
+    per-voice cell it is stored into):
+
+        +0 cutoff high start   +1 cutoff low start
+        +2 step high           +3 step low          (one 16-bit per-frame step)
+        +4 upper limit         +5 lower limit       (the ping-pong bounds)
+        +6 bits 0-2 << 4 = the $D418 passband; bit 7 = initial direction,
+           SET meaning up -- the player stores 0 for up and $FF for down and
+           its sweep branches on `BNE`, so the sense is inverted twice
+        +7 high nibble = resonance, ORed into $D417 with a routing mask
+
+    `table` is a file offset; `program_off` and `enable_off` are offsets into
+    the INSTRUMENT record.
+    """
+    table: int
+    program_off: int = ILV_FILTER_PROGRAM_OFF
+    enable_off: int = ILV_FILTER_ENABLE_OFF
+    stride: int = ILV_FILTER_STRIDE
+
+
+def find_ilv_filter(sid: SidFile, det: Detection) -> "IlvFilterInfo | None":
+    """The interleaved dialect's filter table, or None.
+
+    Under-reads by design, exactly as `find_filter` does: every gate can only
+    refuse a file. Both the program index and the enable test are searched at
+    the address they are EXPECTED to name -- computed from `instr_start` --
+    so they confirm the layout rather than discover it, and a player whose
+    twelfth record byte is something else does not match.
+    """
+    if det.instr_start < 0 or det.instr_stride <= ILV_FILTER_PROGRAM_OFF:
+        return None
+    data = sid.data
+    f = search_file(data, ILV_FILTER_FLUSH)
+    if f <= -1 or f + 6 >= len(data):
+        return None
+    cut_hi = data[f + 4] | data[f + 5] << 8
+    ld = search_file(data, ILV_FILTER_LOADER.format(lo=cut_hi & 0xFF,
+                                                    hi=cut_hi >> 8))
+    if ld <= -1:
+        return None
+    table = sid.to_offset(data[ld + 1] | data[ld + 2] << 8)
+    if not 0 <= table < len(data):
+        return None
+
+    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    prog = instr_cpu + ILV_FILTER_PROGRAM_OFF
+    enable = instr_cpu + ILV_FILTER_ENABLE_OFF
+    if search_file(data, ILV_FILTER_PROGRAM.format(lo=prog & 0xFF,
+                                                   hi=prog >> 8)) <= -1:
+        return None
+    if search_file(data, ILV_FILTER_ENABLE.format(lo=enable & 0xFF,
+                                                  hi=enable >> 8)) <= -1:
+        return None
+    return IlvFilterInfo(table=table)
 
 
 def find_filter(sid: SidFile, det: Detection) -> "FilterInfo | None":
@@ -3708,6 +3803,49 @@ def decode_wave_program(data: bytes, at: int, limit: int = 64) -> list:
 # the SID's noise is an LFSR clocked by the frequency, so pitch is not a
 # refinement here, it is the difference between a drum and silence.
 SFX_DRUM_SHAPE = "A9 ?? 8D ?? D4 A9 81 8D ?? D4"
+# The same block on a player that writes a SHADOW SID instead of the chip. IK+
+# `$E41C` is the documented shape byte for byte -- same opcodes, same branch
+# offsets (`10 2D`, `F0 10`, `C9 01`, `C9 06`), same immediates in the same
+# order -- except that its two stores are `8D F2 E5` / `8D F5 E5`. The store
+# TARGET is therefore wildcarded, which makes the shape a superset of
+# `SFX_DRUM_SHAPE`: it matches all 13 files that form already reads, at the
+# same offset. It is consulted ONLY where the direct form found nothing.
+# The `A9 ?? 8D 16 D4` tail is the anchor that keeps it specific -- two
+# `LDA #imm / STA abs` pairs alone occur all over the corpus, and the $D416
+# write immediately after them is what makes this the drum's block.
+SFX_DRUM_SHADOW_SHAPE = "A9 ?? 8D ?? ?? A9 81 8D ?? ?? A9 ?? 8D 16 D4"
+# The per-frame flush, and the only thing in the file that says where a shadow
+# SID begins. `_rest_silence_kind`'s docstring already records it: IK+ writes
+# `$E5E7,Y`/`$E5E4,Y`/`$E5E3,Y` where ACE_II writes `$D404,Y`/`$D401,Y`/
+# `$D400,Y` -- control, frequency high, frequency low, three indexed stores
+# separated by `LDA abs,X`.
+SFX_SHADOW_FLUSH_SHAPE = "99 ?? ?? BD ?? ?? 99 ?? ?? BD ?? ?? 99 ?? ??"
+
+
+def sid_image_base(sid: SidFile) -> int:
+    """Where this player's SID image starts -- $D400, or a RAM shadow. -1 if
+    the flush is not found or its three targets are not `b+4`, `b+1`, `b+0`.
+
+    **Verified by arithmetic rather than trusted from a match**, which is what
+    separates this from a pattern that happens to fit: the three stores must
+    name the control, frequency-high and frequency-low registers of one voice,
+    in that order. Measured over the 16 corpus files carrying the bit-$80 sfx
+    drum it returns **$D400 on the 15 that write the chip and $E5E3 on IK+** --
+    so it gives the right answer on every file that does not need it, which is
+    the check that it reads the player rather than matching a coincidence.
+    """
+    off = search_file(sid.data, SFX_SHADOW_FLUSH_SHAPE)
+    if off < 0:
+        return -1
+    d = sid.data
+    if off + 15 > len(d):
+        return -1
+    ctrl = d[off + 1] | d[off + 2] << 8
+    freq_hi = d[off + 7] | d[off + 8] << 8
+    freq_lo = d[off + 13] | d[off + 14] << 8
+    if freq_hi != freq_lo + 1 or ctrl != freq_lo + 4:
+        return -1
+    return freq_lo
 
 
 def _find_sfx_drum(sid: SidFile, det: Detection) -> tuple[int, int, int]:
@@ -3717,11 +3855,31 @@ def _find_sfx_drum(sid: SidFile, det: Detection) -> tuple[int, int, int]:
     frequency-high and control registers of one and the same voice -- the check
     that makes this a reading rather than a pattern that happens to match.
     """
-    off = search_file(sid.data, SFX_DRUM_SHAPE)
-    if off < 0:
-        return -1, -1, -1
     d = sid.data
-    freq_reg, ctrl_reg = d[off + 3], d[off + 8]
+    off = search_file(d, SFX_DRUM_SHAPE)
+    if off >= 0:
+        # The direct form: the stores' LOW bytes are the register offsets,
+        # because the base is $D400 and $D4xx wraps inside one page.
+        freq_reg, ctrl_reg = d[off + 3], d[off + 8]
+    else:
+        # **The shadow form, consulted only here.** A player that writes a RAM
+        # image of the SID spells the same two stores with a different base,
+        # and the base cannot be read off the pair -- `base + 1 + 7v` and
+        # `base + 4 + 7v` are 3 apart for EVERY voice, so `$E5F2`/`$E5F5` is
+        # voice 2 of a SID at `$E5E3` and voice 0 of one at `$E5F1`. It comes
+        # from the per-frame flush instead (`sid_image_base`), and the offsets
+        # are then computed against it so the same-voice check below runs
+        # unchanged.
+        off = search_file(d, SFX_DRUM_SHADOW_SHAPE)
+        if off < 0:
+            return -1, -1, -1
+        base = sid_image_base(sid)
+        if base < 0:
+            return -1, -1, -1
+        freq_reg = (d[off + 3] | d[off + 4] << 8) - base
+        ctrl_reg = (d[off + 8] | d[off + 9] << 8) - base
+        if not (0 <= freq_reg <= 0x18 and 0 <= ctrl_reg <= 0x18):
+            return -1, -1, -1
     # $D401 + 7v is the frequency high byte, $D404 + 7v the control register.
     if (freq_reg - 0x01) % 7 or (ctrl_reg - 0x04) % 7:
         return -1, -1, -1
@@ -3904,8 +4062,36 @@ TWO_STAGE_SHAPE = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
 # instead of +13, hence `attack_at` below.
 TWO_STAGE_SHAPE_ZP = ("{load} 29 04 F0 ?? B5 ?? F0 ?? D6 ?? "
                       "B9 ?? ?? 4C ?? ?? B9 ?? ?? 95 ??")
+# Go_Go_Dash $170E. The interleaved dialect's spelling, and it diverges from
+# the absolute form by ONE INSTRUCTION: where that one reaches the store with
+# `4C ?? ??` (JMP), this one writes the attack waveform into an operand --
+# `8D ?? ??`, a self-modify -- and falls through. Every byte before it is
+# identical, branch offsets included. The block is the same block; only its
+# exit differs, so `attack_at` is the absolute form's 13.
+#
+# Consulted ONLY where the two shapes above matched nothing, and the corpus
+# says that is not a formality: over 95 files this spelling matches **6 and
+# none of the 44** the absolute form already reads. Disjoint populations are
+# what make it a second spelling rather than a looser pattern -- the same
+# standard TWO_STAGE_SHAPE_ZP is held to.
+TWO_STAGE_SHAPE_ILV = ("{load} 29 04 F0 ?? BD ?? ?? F0 ?? DE ?? ?? "
+                       "B9 ?? ?? 8D ?? ??")
 # LDA instr+0,X / STA .. / PHA / LDA instr+1,X / STA .. / PHA / LDA dur,X / PHA
 TWO_STAGE_PUSH = "BD ?? ?? 99 ?? ?? 48 BD ?? ?? 99 ?? ?? 48 BD ?? ?? 48"
+# The same confirmation for a player whose push chain is INTERRUPTED.
+# `TWO_STAGE_PUSH` is one contiguous run of three loads; the interleaved engine
+# separates its third by 34 bytes of conditional self-modify and an X
+# save/restore (Go_Go_Dash pushes at $0765/$076C then, after that block, at
+# $0788). The chain therefore matches nowhere in all six of those files while
+# the fact it exists to establish -- the duration is pushed, from attack+2 --
+# is TRUE in every one.
+#
+# So anchor on the instruction that NAMES the address instead of on the
+# arithmetic in front of it. This is formatted with the *expected* operand, so
+# it cannot discover a duration, only confirm one: a file whose push names some
+# other cell does not match, exactly as a chain whose third load disagreed
+# would have failed the `cand == attack + 2` test.
+TWO_STAGE_PUSH_ANCHORED = "BD {lo:02X} {hi:02X} 48"
 
 
 WAVE_ALT_SHAPE = ("{load} 29 02 F0 ?? AC ?? ?? BD ?? ?? 29 01 F0 ?? "
@@ -4244,6 +4430,11 @@ def _find_two_stage(sid: SidFile, det: Detection):
         i = search_file(sid.data, TWO_STAGE_SHAPE_ZP.format(load=load))
         attack_at = 11
     if i <= -1:
+        # The interleaved dialect's self-modifying exit. Last, so a file the
+        # absolute or zero-page form already reads never reaches it.
+        i = search_file(sid.data, TWO_STAGE_SHAPE_ILV.format(load=load))
+        attack_at = 13
+    if i <= -1:
         return False, -1, -1
     data = sid.data
     p = i + len(load.split())
@@ -4270,6 +4461,17 @@ def _find_two_stage(sid: SidFile, det: Detection):
         if cand == attack + 2:
             duration = cand
             break
+    if duration < 0:
+        # The push chain can be INTERRUPTED rather than absent (see
+        # TWO_STAGE_PUSH_ANCHORED). Ask the narrower question directly: is
+        # attack+2 the operand of a load that is then pushed? Formatted with
+        # the expected address, so this confirms and cannot invent -- and it
+        # is reached only where the chain found nothing, so no file the chain
+        # already answers for can be re-decided here.
+        want = attack + 2
+        if search_file(data, TWO_STAGE_PUSH_ANCHORED.format(
+                lo=want & 0xFF, hi=want >> 8)) > -1:
+            duration = want
     if duration < 0:
         return False, -1, -1
 
