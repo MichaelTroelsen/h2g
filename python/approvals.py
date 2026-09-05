@@ -194,6 +194,12 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
 
     def packed_of(blob: bytes, tag: str):
         b, _ = F.legalise_restarts(blob)
+        # `pack_sid` writes `workdir / "a.sng"` and does NOT create the
+        # directory (fidelity.py:752), so the caller must. Without this the
+        # first real assessment dies with FileNotFoundError on `<tag>/a.sng`
+        # -- which no test caught, because they inject a fake `convert_at`
+        # and never reach this path.
+        (workdir / tag).mkdir(parents=True, exist_ok=True)
         return F.pack_sid(b, workdir / tag, gt2reloc, mult)
     p_cur = packed_of(cur, "cur")
     p_app = packed_of(approved_sng.read_bytes(), "app")

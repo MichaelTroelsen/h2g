@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.472 — 2026-09-05
+
+- approvals.py creates the workdir pack_sid writes into
+
 ## 0.5.471 — 2026-09-05
 
 - an approval is exact, inherited or stale, and a stale one says what to listen for

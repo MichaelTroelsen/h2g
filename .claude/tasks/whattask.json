@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "7bcd3fe",
+  "head": "df80762",
   "sources": [
    "whats-next.md",
    "todo.md",
@@ -59,7 +59,7 @@
    "verify": "pulse_phase is in FIDELITY_TOGGLES and the eight-toggle search runs over 89 songs at -t 180, with the result DIFFED against the shipped presets before adoption. TIME the run rather than extrapolating: seven toggles is 25m21s at -t 60 and about 75 minutes serial at -t 180.",
    "why_model": "an eighth toggle doubles every future search; the trade is architectural",
    "why_mode": "rewrites three generated artefacts and runs for hours",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "known-bad-may-be-defeated-by-the-alignment-change-re-run-at-v0-5-459",
@@ -87,57 +87,7 @@
    "verify": "cd python && python sound_calibrate.py <sid_dir> -t 60 -o ../docs/SOUND-CALIBRATION.md, and the doc says PASS for the right reason. TWO of the three known_bad pairs were found INCOMPARABLE (loudness ratio outside the band) rather than mis-scored, so the calibration validates on one pair and wants two more that build comparably.  || PRIOR ATTEMPT: PARTIAL, and its durable half must not be redone: every calibration number reproduced identically across eight versions (so the alignment change is exonerated), and W_A_R 0.5.399->0.5.400 was measured comparable and ADOPTED into KNOWN_BAD at 7bcd3fe -- the first pair that exercises `aud` at all. What remains is one more comparable pair, then a deliberate decision on the two excluded ones: while Las_Vegas and Samantha_Fox stay, `all(seen)` cannot hold however many good pairs are added. Shortlist with the measured rule -- a pair is comparable when the fix is STRUCTURAL, not a multiplier change.",
    "why_model": "a bounded re-run against an existing harness",
    "why_mode": "renders audio over the corpus; long and exclusive",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
-  },
-  {
-   "id": "ab-5-approvals-inheritance",
-   "title": "AB task 5: approvals inheritance",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/approvals.py",
-    "rw:python/tests/test_approvals.py",
-    "r:python/abpage.py",
-    "rw:host:C:/t/ab-5/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "python/approvals.py exists carrying the inheritance rule and tests/test_approvals.py -- which this task CREATES -- pins it. The previous plan granted rw:python/abpage.py, the wrong module; task 5 creates approvals.py, which does not yet exist in the tree.  || PRIOR ATTEMPT: PARTIAL. approvals.py and test_approvals.py shipped at 0b2493d. What remains is step 5, whose prescription is itself wrong -- see ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng, which must be settled first.",
-   "why_model": "a bounded new module against a written design",
-   "why_mode": "self-contained and mechanically verifiable",
-   "why_lane": "shares python/approvals.py with another task, at least one of them writing"
-  },
-  {
-   "id": "ab-6-abpage-three-approval-states",
-   "title": "AB task 6: abpage's three approval states",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/approvals.py",
-    "rw:host:C:/t/ab-6-abpage-three-approval-states/",
-    "rw:python/abpage.py",
-    "rw:python/tests/test_abpage.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "ab-5-approvals-inheritance"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
-   "why_model": "follows a written design",
-   "why_mode": "self-contained",
-   "why_lane": "shares python/approvals.py with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "ab-7-presets-search-respects-approvals",
@@ -164,7 +114,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "shares python/presets.py with another task, at least one of them writing"
+   "why_lane": "shares python/presets.py with another task, at least one writing"
   },
   {
    "id": "ab-8-fidelity-queue",
@@ -190,7 +140,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "follows a written design",
    "why_mode": "self-contained",
-   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+   "why_lane": "shares python/fidelity.py with another task, at least one writing"
   },
   {
    "id": "ab-9-drift-as-acceptance-term",
@@ -219,7 +169,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "shares python/presets.py with another task, at least one of them writing"
+   "why_lane": "shares python/presets.py with another task, at least one writing"
   },
   {
    "id": "retake-wave-alternate-noise-trade",
@@ -246,7 +196,7 @@
    "verify": "The Chicken_Song / Hollywood_or_Bust wave_alternate trade is re-measured at -t 180. NOTE the two files are no longer one population: Chicken_Song reads 2556 of 4188 noise frames where the old text says none.",
    "why_model": "a bounded re-measurement against an existing harness",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-fidelity-report-should-print-how-much-of-each-tune-its-window-contained",
@@ -273,7 +223,7 @@
    "verify": "The report carries a coverage column and tests/test_fidelity.py fails if the registry and the printed header disagree. A `cov` column now exists; confirm whether this is already satisfied before writing anything.",
    "why_model": "a bounded re-measurement against an existing harness",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-ilv-decoder-has-no-tie-parameter-and-drops-99-percent-of-the-originals-ties",
@@ -300,7 +250,7 @@
    "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "whattask-templated-the-five-ab-tasks-touches-and-four-of-five-name-the-wrong-module",
@@ -322,7 +272,7 @@
    "verify": "Each ab-* task's touches names the module its own design document says it writes. FIXED in this generation; the task remains only to confirm against the design doc, which this pass did not read.  || PRIOR ATTEMPT: PARTIAL and STRUCTURALLY UNRUNNABLE BY /runtask: the fix is a rewrite of whattask.json, which /runtask may not write. It is fixed HERE, in a regeneration, or not at all.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
@@ -344,7 +294,7 @@
    "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "four-plan-tasks-grant-module-shaped-test-files-that-do-not-exist",
@@ -366,7 +316,7 @@
    "verify": "No task grants a test file absent from python/tests/. test_detect.py and test_goatwriter.py were both granted and neither exists; this generation drops them mechanically.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "a-blocked-run-record-describes-a-plan-and-must-not-survive-a-whattask-regeneration",
@@ -388,7 +338,7 @@
    "verify": "Selection re-checks a blocked record's stated grant against the CURRENT plan rather than trusting the record. Three records this session named blockers a regeneration or a commit had already cleared.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "a-done-run-record-describes-one-commit-and-a-later-commit-can-expire-it",
@@ -410,7 +360,7 @@
    "verify": "A recurring obligation is not readable as permanently done. regenerate-fidelity-artefacts read done from v0.5.459 through two emission commits while its artefact was stale.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "regenerate-fidelity-artefacts-is-a-recurring-obligation-modelled-as-a-one-shot-task",
@@ -432,7 +382,7 @@
    "verify": "The task is version-less and its verify reads 'after any commit that changes what the converter emits, test_output_sha reads 0 disagreeing' rather than naming a version and a hard-coded count of 8.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "whattask-regeneration-carries-stale-verify-text-forward",
@@ -454,7 +404,7 @@
    "verify": "No carried verify string quotes a count or a version that has since moved. The fidelity task's 'from 8 of 89 to 0' is the worked example: the count was 1 by the time it was read.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one writing"
   },
   {
    "id": "the-opened-field-has-become-an-unbounded-firehose-and-needs-triage",
@@ -477,7 +427,7 @@
    "verify": "The opened backlog is classified: each id is either promoted to a task, merged into one, or recorded as closed/not-a-task. MEASURED at 91e8e25 -- 657 distinct opened refs, 479 well-formed slugs, 178 prose sentences that are not ids at all, 465 absent from the plan and 307 never run. A plan cannot carry them all and this generation does not.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "rasputin-does-not-pack-under-pulse-phase-and-it-is-neither-a-table-error-nor-a-pattern-overflow",
@@ -504,7 +454,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one of them writing"
+   "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one writing"
   },
   {
    "id": "interleaved-record-plus-7-bit-20-is-an-unread-effect-bit-on-all-six-files",
@@ -531,7 +481,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -557,7 +507,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "real-firstwave-instruments-reaches-78-files-and-has-been-measured-on-two",
@@ -584,7 +534,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "re-basing-hold-on-its-census-is-a-criterion-change-and-needs-the-search-re-run",
@@ -613,7 +563,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/presets.py with another task, at least one of them writing"
+   "why_lane": "shares python/presets.py with another task, at least one writing"
   },
   {
    "id": "gate-and-hold-trade-the-same-gate-off-frame-and-fidelity-py-should-say-so",
@@ -639,7 +589,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "find-two-stage-names-ricochets-wave-program-pointer-high-byte-as-its-attack-waveform",
@@ -665,7 +615,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "hold-at-s1-is-bounded-by-the-target-player-and-the-open-question-is-whether-it-can-move-at-all",
@@ -692,7 +642,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "test-hard-restart-should-pin-that-the-emitted-gatetimer-is-never-zero",
@@ -718,7 +668,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-interleaved-tie-flag-needs-a-command-column-decision-between-tone-porta-and-the-82-slide",
@@ -745,7 +695,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -772,7 +722,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-interleaved-dialect-has-no-test-file-of-its-own-for-the-grammar-constants",
@@ -798,7 +748,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -824,7 +774,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "go-go-dash-should-adopt-arpeggio-and-neither-route-to-recording-it-is-granted",
@@ -851,7 +801,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/presets.py with another task, at least one of them writing"
+   "why_lane": "shares python/presets.py with another task, at least one writing"
   },
   {
    "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -878,7 +828,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "census-which-corpus-files-clamp-a-note-byte-past-their-own-frequency-table",
@@ -904,7 +854,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that",
@@ -930,7 +880,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "superseded-ours-renders-accumulate-and-a-safe-cleanup-must-resolve-approved-sng-shas-to-content-keys",
@@ -957,7 +907,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "why-is-the-v0-5-401-las-vegas-build-a-thirteenth-as-loud-while-scoring-aud-0-87",
@@ -984,7 +934,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "known-bad-wants-two-more-version-pairs-and-sound-calibrate-py-is-read-only-in-its-own-task",
@@ -1011,7 +961,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "a-window-skipping-guard-is-invisible-and-staleness-can-sit-in-the-skip",
@@ -1036,7 +986,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-dangling-warning-cannot-say-whether-the-pattern-is-one-any-orderlist-reaches",
@@ -1062,7 +1012,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "three-files-abort-under-preset-opts-that-claude-md-records-as-converting",
@@ -1088,7 +1038,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "claude-md-records-four-json-omissions-that-are-all-present-under-aliased-keys",
@@ -1111,7 +1061,7 @@
    "verify": "Each named key is checked against build/fidelity.json and the bullet states the real key name or is removed.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "claude-md-still-describes-action-biker-looping-forever-after-silent-park-fixed-it",
@@ -1135,7 +1085,7 @@
    "verify": "The v0.5.375 reading (856 attacks, 61.44 s loop) is graded as HISTORY with the v0.5.461 measurement beside it: +0.14 s, our_attacks identical.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "two-180-second-readings-of-chicken-songs-baseline-disagree-on-wave-and-onset",
@@ -1159,7 +1109,7 @@
    "verify": "The disagreement (artefact onset 0.6923 / wave null against a run's 0.8077 / 0.8826) is resolved to one reading, or recorded as unresolved with the cause named. Do not average them.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "sound-calibrates-module-docstring-says-the-render-checks-are-exercised-by-hand-and-render-doc-now-is-not",
@@ -1182,7 +1132,7 @@
    "verify": "The docstring matches what the tests actually exercise.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one writing"
   },
   {
    "id": "survey-ptrs-is-a-nested-function-so-a-per-function-coverage-census-over-counts-it",
@@ -1205,7 +1155,7 @@
    "verify": "The coverage census counts nested functions once, or states that it does not.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares host:C:/t/doc-drift/ with another task, at least one of them writing"
+   "why_lane": "shares host:C:/t/doc-drift/ with another task, at least one writing"
   },
   {
    "id": "the-hold-column-and-the-sound-render-family-share-the-sound-run-prefix-and-are-unrelated",
@@ -1230,7 +1180,7 @@
    "verify": "The shared prefix is renamed or documented so the two families cannot be confused by grep.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+   "why_lane": "shares python/fidelity.py with another task, at least one writing"
   },
   {
    "id": "a-verify-that-points-at-another-document-still-has-a-file-list-and-the-generator-must-follow-it",
@@ -1252,7 +1202,7 @@
    "verify": "The generator opens a referenced design document and derives touches from it rather than templating.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "ab-9-carries-a-gate-in-its-plan-document-that-the-generated-depends-on-dropped",
@@ -1274,7 +1224,7 @@
    "verify": "ab-9's depends_on reflects every gate its design document names.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "pulse-phase-tasks-touches-grant-test-pulse-py-where-the-gate-is-pinned-by-test-pulse-phase-py",
@@ -1296,7 +1246,7 @@
    "verify": "The task grants the test file that actually pins the behaviour. FIXED in this generation; confirm no sibling carries the same error.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "every-task-granted-r-siddump-exe-needs-r-fidelity-py-and-r-h2g",
@@ -1318,7 +1268,7 @@
    "verify": "No task names the siddump binary without also naming the two modules that drive it.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "narrowing-the-ilv-routing-nibble-is-correct-and-invisible-to-every-column",
@@ -1341,7 +1291,7 @@
    "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "the-six-interleaved-classic-files-have-never-been-listened-to",
@@ -1364,7 +1314,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
@@ -1387,7 +1337,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "monty-firstwave-trade-needs-a-listen",
@@ -1410,7 +1360,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "action-biker-subtune-pairing-needs-an-ear",
@@ -1433,7 +1383,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "action-biker-noise-runs-want-a-listen-because-the-columns-disagree",
@@ -1456,7 +1406,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "pacific-coast-no-test-restart-adoption-trades-melody-for-rendered-audio",
@@ -1479,7 +1429,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "mega-apocalypse-pitch-seq-is-a-near-exact-vib-fix-costing-twelve-points-of-pitch",
@@ -1502,7 +1452,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "pandora-regresses-under-the-two-sided-attack-guard",
@@ -1525,7 +1475,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "powerplay-regrid-refusal-rests-on-a-naming-artefact-and-should-be-re-decided",
@@ -1548,7 +1498,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
@@ -1571,7 +1521,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
@@ -1594,7 +1544,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision",
@@ -1617,7 +1567,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "orphaned-processes-survive-their-sessions",
@@ -1640,7 +1590,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "locking-md-fix-is-uncommitted-in-the-plugin-repo",
@@ -1663,7 +1613,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
@@ -1686,7 +1636,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "runtask-holder-records-carry-a-shell-pid-that-is-dead-before-the-task-is",
@@ -1709,7 +1659,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "naming-split-docstring-should-carry-the-powerplay-frame-axis-result-beside-one-on-ones",
@@ -1732,7 +1682,7 @@
    "verify": "The docstring carries BOTH measured outcomes of the same alternative alignment: One_on_One, where the frame axis reads 39% against difflib's one rename (more renaming than difflib found), and Powerplay, where it reads 36 renames, share -39%, deltas -12..+13 and a repair that leaves melody BELOW the unrepaired arm. Measured at 7bcd3fe; the sequence axis reproduced the shipped 0.9930/0.9643/0.9914/7/0.9427 to 4dp in the same run. pytest tests/test_fidelity.py -q passes.",
    "why_model": "a docstring edit against a measurement already taken and recorded",
    "why_mode": "fidelity.py is the harness every other measurement runs through",
-   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+   "why_lane": "shares python/fidelity.py with another task, at least one writing"
   },
   {
    "id": "our-drum-tick-pins-one-absolute-pitch-where-the-player-tracks-the-note-bangkok-and-monty-share-it",
@@ -1761,7 +1711,7 @@
    "verify": "A corpus byte-hash names the exact set the change reaches, and an A/B on Bangkok_Knights and Auf_Wiedersehen_Monty shows the tick tracking the note rather than one pinned pitch. NOTE FIRST: no report column reads a noise frame's PITCH (CLAUDE.md records this twice), so a flat table is the expected result and is not evidence either way -- the byte-hash plus the per-frame trace is the evidence.",
    "why_model": "an emitter change in the most-shared file whose own metric cannot see it",
    "why_mode": "diagnosis matters more than the measurement, and no column adjudicates it",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision",
@@ -1784,7 +1734,7 @@
    "verify": "SOUND-CALIBRATION.md reads PASS for the right reason, or the two pairs are retired with the coverage loss stated.",
    "why_model": "a judgement about what the calibration stops checking, not a measurement",
    "why_mode": "no amount of work resolves it -- the criterion is all(seen) and these two cannot be seen",
-   "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one of them writing"
+   "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one writing"
   },
   {
    "id": "a-known-bad-pair-is-comparable-when-the-fix-is-structural-and-not-when-it-is-a-multiplier-change",
@@ -1807,7 +1757,7 @@
    "verify": "sound_calibrate.py states the rule with both sides of the evidence: W_A_R 0.5.399->0.5.400 is a PATTERN-COUNT fix (209->208) and comparable (aud 0.6370->0.8053, loud 0.7915->0.8790); Las_Vegas and Samantha_Fox's v0.5.401 is a MULTIPLIER change and incomparable (loud_ratio 0.074x, 0.063x); W_A_R_Preview on the same commit pair renders byte-identically and is a third outcome. pytest tests/test_sound_calibrate.py -q passes.",
    "why_model": "writing down a rule already measured and quoted in a run record",
    "why_mode": "one file plus its test, no corpus run",
-   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one writing"
   },
   {
    "id": "kings-of-the-beach-intro-needs-a-writer-for-a-static-global-pitch-sequence-table",
@@ -1835,7 +1785,7 @@
    "verify": "Kings_of_the_Beach_intro's 475 reversals are emitted, with a measured A/B and a corpus byte-hash showing the change reaches that file and no other. ESTABLISHED at ef8b962 and not to be re-derived: det.pitch_seq is None here CORRECTLY -- the sequence is a static global table with no per-instrument index or pair copy, so the (index, pairs, base) triple has nothing to point at and NO detection widening can reach it. This is a writer, not a detector.",
    "why_model": "a new emitter in the most-shared file, with no existing shape to copy",
    "why_mode": "wants its own measured A/B and a listening check may follow",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "the-vibrato-census-sets-pitchseq-unconditionally-where-every-other-cause-is-gated-on-detection",
@@ -1859,7 +1809,7 @@
    "verify": "out[0x10] = 'pitchseq' is gated on detection the way every other cause already is, and International_Karate and Formula_1_Simulator stop being attributed to it. MEASURED at ef8b962: both files contain no `AND #$10` at all -- their $55 is bit $04's arpeggio DEPTH nibble, a different mechanism. NOTE the correction that came with it: IK_plus IS detected (PitchSeq(index=2667, pairs=2422, base=2403, steps=3)), so the pair is International_Karate + F1, never 'IK x2'.",
    "why_model": "a one-line gate matching a pattern the same file already uses everywhere else",
    "why_mode": "fidelity.py is shared, but the change is bounded and already diagnosed",
-   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+   "why_lane": "shares python/fidelity.py with another task, at least one writing"
   },
   {
    "id": "tracks-py-length-figures-are-re-confirmed-on-a-clean-artefact-and-want-a-grading-note",
@@ -1883,7 +1833,7 @@
    "verify": "tracks.py:1390-1402 carries a grading note saying its figures were measured at v0.5.461 from a DIRTY artefact and re-confirmed identical to the digit at v0.5.469 against the clean regeneration (ef8b962, no -dirty suffix, 180 s, 89 rows): six shortened-window rows Geoff_Capes +0.16, Action_Biker +0.14, Las_Vegas +0.10, Samantha_Fox +0.10, Kings_of_the_Beach_ingame +0.08, Sigma_Seven +0.04, and corpus-worst Knucklebusters -4.16 / Sanxion -2.98. pytest tests/test_tracks.py -q passes.",
    "why_model": "a grading note beside figures already re-measured and found unchanged",
    "why_mode": "one file plus its test; the measurement is done",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "the-fidelity-row-cannot-say-which-of-depths-two-refusals-produced-its-dash",
@@ -1907,7 +1857,7 @@
    "verify": "The report distinguishes depth's two refusals -- no record carries the mechanism, versus a population exists but no instrument key is shared -- the way CLAUDE.md's rule that `a - in the report is a finding, not a gap` requires. pytest tests/test_fidelity.py -q passes and the regenerated header and registry still agree.",
    "why_model": "a reporting distinction inside one function, with the cause already known",
    "why_mode": "fidelity.py is shared and the column registry has a test that pins it",
-   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "three-files-have-a-vibrato-population-but-depth-finds-no-shared-instrument-key",
@@ -1933,7 +1883,7 @@
    "verify": "The three files are named and the cause is attributed per file: a genuinely absent shared ADSR key (the Powerplay 'two copies of the player' shape) or a population filter that is too narrow. Read-only -- this is a diagnosis, and any fix is a separate task.",
    "why_model": "an attribution hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "the diagnosis is the deliverable, not a patch",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "four-vbi-carriers-need-70-to-130-pulse-phase-table-rows-for-one-instrument-and-overflow",
@@ -1958,7 +1908,7 @@
    "verify": "Either the table fits within Goattracker's bound for the four files, or the overflow is recorded as the reason they are declined, with the measured row counts beside it: 130 rows for instrument 7 on BOTH Last_V8 files, 112 for instrument 14 on Master_of_Magic, 70 for instrument 17 on Phantoms. ESTABLISHED at 846c4c4: the decline is build_pulse_phase_table's overflow and collect_pulse_phases' shared accumulator -- NOT group_tempos or empty sims, which was the standing and refuted explanation.",
    "why_model": "a table-bound design question with a refuted prior explanation behind it",
    "why_mode": "it decides whether promote-pulse-phase is reachable at all",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
@@ -1986,7 +1936,7 @@
    "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close.",
    "why_model": "an ILV-dialect emitter question in the shared writer",
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "go-go-dash-gives-up-a-measured-filter-gain-to-the-one-voice-gate",
@@ -2014,7 +1964,7 @@
    "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file.",
    "why_model": "a gate whose correct population is contested between two files",
    "why_mode": "the trade is per song and wants the surrounding ILV context",
-   "why_lane": "shares presets.json with another task, at least one of them writing"
+   "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
    "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings",
@@ -2040,31 +1990,7 @@
    "verify": "presets.json carries the refreshed hard-restart decisions, or the candidate is discarded with the reason recorded.",
    "why_model": "a corpus-wide preset adoption is a decision about the shipped product",
    "why_mode": "adopting it rewrites the artefact every other measurement is taken against",
-   "why_lane": "shares python/presets.py with another task, at least one of them writing"
-  },
-  {
-   "id": "ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng",
-   "title": "AB-5 step 5 hashes the wrong artefact, and the design document says so",
-   "source": "runs.jsonl,docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
-    "r:python/sound_calibrate.py",
-    "r:python/approvals.py",
-    "rw:host:C:/t/ab5-step5-hash/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The plan document names the .sng as what step 5 hashes, not convert_at's return value. MEASURED at 0b2493d: convert_at returns the PACKED SID, and recover_approved_sng already works around this by calling it for its SIDE EFFECT and reading workdir/<stem>.<sha>.sng off disk. A prescription that contradicts the code is the 'read a verify's prescription as a description of the symptom' rule.",
-   "why_model": "a document correction against behaviour already read out of the code",
-   "why_mode": "it must be settled before ab-5's remaining step can be run",
-   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+   "why_lane": "shares python/presets.py with another task, at least one writing"
   },
   {
    "id": "sound-calibrate-convert-at-should-return-the-sng-it-writes-not-only-the-packed-sid",
@@ -2089,7 +2015,7 @@
    "verify": "convert_at returns the .sng path beside the packed .sid, approvals.py's recover_approved_sng stops reconstructing it from the workdir, and pytest tests/test_sound_calibrate.py tests/test_approvals.py -q passes.",
    "why_model": "a signature change with both call sites already identified",
    "why_mode": "two files and their tests, no corpus run",
-   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one writing"
   },
   {
    "id": "a-task-whose-fix-is-a-touches-rewrite-cannot-be-completed-by-runtask-which-may-not-write-the-plan",
@@ -2111,7 +2037,7 @@
    "verify": "Every task whose fix is a whattask.json edit is either fixed in a regeneration or marked so a runner does not take it and record a partial. MEASURED: at least eight of the plan's tasks have this shape, and /runtask's own contract forbids the write ('never write back into whattask.json'), so each one can only ever collect partials.",
    "why_model": "a design flaw in the task pipeline itself, spanning the plan and both commands",
    "why_mode": "the fix lives in the generator, which is this command",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "the-generators-mechanical-test-file-rule-manufactures-a-second-error-from-a-wrong-source-grant",
@@ -2135,7 +2061,7 @@
    "verify": "The generator's `rw:<dir>/<name>.py implies rw:test_<name>.py` step no longer turns one wrong module grant into two wrong grants -- e.g. by checking the path exists before deriving from it. This is the rule interacting badly with whattask-should-check-a-touches-path-exists-before-granting-it, and the two should be settled together.",
    "why_model": "a generator rule whose failure mode is silent and self-amplifying",
    "why_mode": "it changes how every future plan is built",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
    "id": "a-grep-zero-on-a-quotation-is-evidence-about-line-breaks-before-content",
@@ -2157,7 +2083,7 @@
    "verify": "CLAUDE.md carries the rule with its three measured instances: a line-based grep returning 0 for a quotation that WRAPS across a newline (fidelity.py:2765 and survey.py:669-670, both real text), and a `**` parity count calling an odd total a defect when it is Python exponentiation inside a code fence (H2G-CONVERSION-METHOD.md:4511). Before treating a count as a defect, subtract what the counter cannot see. pytest tests/test_claude_md_figures.py -q passes.",
    "why_model": "a documentation rule with its instances already measured and located",
    "why_mode": "CLAUDE.md is contended by many tasks but the edit is bounded",
-   "why_lane": "shares CLAUDE.md with another task, at least one of them writing"
+   "why_lane": "shares CLAUDE.md with another task, at least one writing"
   },
   {
    "id": "the-bold-parity-heuristic-should-exclude-code-fences-rather-than-be-re-explained-each-time",
@@ -2180,6 +2106,217 @@
    "why_model": "a bounded scripting job with a known-correct expected output",
    "why_mode": "self-contained, and the conclusion is mechanical: two numbers must agree",
    "why_lane": "no declared path overlaps another task's"
+  },
+  {
+   "id": "approvals-py-had-never-been-run-end-to-end-and-its-tests-mock-the-packing-path",
+   "title": "approvals.py crashed on its first real tune, past 15 green tests",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/approvals.py",
+    "rw:python/tests/test_approvals.py",
+    "r:python/fidelity.py",
+    "rw:host:C:/t/approvals-never-run/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A test exercises the REAL packing path so this class of defect cannot ship green again. MEASURED at df80762: `assess`'s local `packed_of` passes `workdir / tag` to `fidelity.pack_sid`, which writes `workdir / 'a.sng'` and does NOT create the directory (fidelity.py:752) -- so the first real assessment died with `FileNotFoundError: ...\\cur\\a.sng`. The one-line `mkdir(parents=True, exist_ok=True)` fix is ALREADY APPLIED and uncommitted; what is missing is the coverage. All 15 existing tests pass either side, because they inject a fake `convert_at` and never reach `packed_of`. `pytest tests/test_approvals.py -q` plus one test that would have caught it.",
+   "why_model": "a bounded fix with the defect already located and the repair applied",
+   "why_mode": "the fix is trivial; the judgement is what to pin and that wants the surrounding context",
+   "why_lane": "shares python/approvals.py with another task, at least one writing"
+  },
+  {
+   "id": "the-inherited-approval-state-is-unreachable-until-the-sound-calibration-passes",
+   "title": "The third approval state cannot occur on this corpus, and the chain is three deep",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/approvals.py",
+    "r:python/sound_calibrate.py",
+    "r:build/approvals.json",
+    "r:build/sound_calibration.json",
+    "r:docs/SOUND-CALIBRATION.md",
+    "rw:host:C:/t/inherited-unreachable/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Either a tune reads `inherited` on a real render, or the chain is recorded where the next reader meets it. MEASURED at df80762 by running `approvals.py --recover` over the four human approvals: Action_Biker and 5_Title_Tunes are **exact** (current sha == approved sha, byte-identical since 0.5.389/0.5.390); ACE_II and Devils_Galop have MOVED (7bc6dfad62->276720acf3, 035f34458f->fa4874b06a) and both read **uncalibrated**, not inherited or stale. Cause: `approvals.load_calibration` returns None unless `build/sound_calibration.json` has `pass: true` (approvals.py:70), and it is false. So: inherited needs a calibration; the calibration fails `all(seen)`; it fails because two KNOWN_BAD pairs are structurally incomparable. The third state is correctly implemented and currently unreachable.",
+   "why_model": "a three-deep dependency across three modules, found by running rather than reading",
+   "why_mode": "the finding is the deliverable and it feeds a decision already with the user",
+   "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one writing"
+  },
+  {
+   "id": "abpages-three-states-have-never-been-rendered-and-step-6-needs-build-listen",
+   "title": "AB task 6's step 6: render the pages and read the approval column",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:build/listen",
+    "r:python/abpage.py",
+    "r:python/approvals.py",
+    "r:build/approvals.json",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/abpage-render-check/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "Renders 83 pages into build/listen, a declared hazard path shared with listen.py and approvals.py --recover.",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`python abpage.py` from `python/`, then read the approval column in `build/listen/index.html` and confirm it agrees with `build/approvals.json` per tune. NOTE WHAT TO EXPECT, so a correct result is not read as a failure: with today's assessment NO tune can read `inherited` (see `the-inherited-approval-state-is-unreachable-...`), so the column should show `approved` for Action_Biker and 5_Title_Tunes and `stale` for ACE_II and Devils_Galop. RUNS the renderer, so build/listen is rw:.",
+   "why_model": "a look-at-it check against an expectation already derived",
+   "why_mode": "renders the whole corpus into a hazard directory; no delegated agent should hold that",
+   "why_lane": "shares presets.json with another task, at least one writing"
+  },
+  {
+   "id": "ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist",
+   "title": "A verify phrased as a future instruction reads as vacuous or as never-met",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/verify-tense/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "No task's `verify` is phrased as an instruction to create something that already exists. ab-5's read *'tests/test_approvals.py -- which this task CREATES -- pins it'* while the file had shipped at 0b2493d, so the check was satisfiable by two files existing and said nothing about the behaviour. Same family as `whattask-regeneration-carries-stale-verify-text-forward`; settle them together.",
+   "why_model": "a wording rule over the plan, with the instance already identified",
+   "why_mode": "the fix is in the generator's output, i.e. this file",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge",
+   "title": "A real prerequisite recorded only in prose, where the selector cannot see it",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/prose-dependency/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A prerequisite a runner must honour is a `depends_on` edge, not a sentence inside `verify`. MEASURED: /runtask's selection rule picks the task with the most inbound edges, which was ab-5; its blocker (step 5's wrong prescription) existed only as prose, so a runner obeying the rule literally would have started it and thrown the work away. It was avoided by reading, not by the gate. Audit the plan for other prose-only prerequisites.",
+   "why_model": "a structural flaw in how the plan encodes ordering",
+   "why_mode": "changes how every future plan is generated",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "a-check-that-the-bad-wording-is-gone-will-always-hit-the-retraction-that-must-quote-it",
+   "title": "Four finding-shaped non-findings from counters that cannot see their container",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:CLAUDE.md",
+    "rw:host:C:/t/counter-container/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "CLAUDE.md carries the rule with all four measured instances and the STRUCTURAL point: a `**` inside a code fence counted as emphasis (H2G-CONVERSION-METHOD.md:4511); a line-based grep returned 0 for a quotation wrapping a newline, twice (fidelity.py:2765, survey.py:669-670); and a grep for a RETRACTED sentence counted the retraction itself (2026-09-01-ab-fidelity-automation.md:1549). The last is not accidental -- this repo REQUIRES a wrong mechanism to be retracted where a grep for its own words lands, so any 'the bad wording is gone' check must collide with the retraction. Such a check has to be anchored (line number, or outside blockquotes), never a bare count. `pytest tests/test_claude_md_figures.py -q`.",
+   "why_model": "a documentation rule with every instance already measured and located",
+   "why_mode": "CLAUDE.md is contended but the edit is bounded",
+   "why_lane": "shares CLAUDE.md with another task, at least one writing"
+  },
+  {
+   "id": "creates-should-be-a-third-touches-mode-beside-r-and-rw-because-intent-cannot-be-inferred",
+   "title": "An existence check cannot tell a typo from a file a task means to create",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/creates-mode/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "`touches` can express 'this task creates this path', so a generator check can flag an absent grant without flagging a correct one. MEASURED at 7bcd3fe: 296 granted repo paths, 3 absent; a heuristic scanning each task's verify and title for the filename plus a creation verb classified **0 of 3** correctly, because plan authors do not name the file they intend to create. Intent cannot be detected, only declared. AND an existence check alone is not enough even when it fires -- the `test_drum.py` case had a nearest-name candidate (`test_drum_return.py`) that was the WRONG family; the right file was `test_effect_bit80.py`.",
+   "why_model": "a schema change affecting every future plan and both runner commands",
+   "why_mode": "it is a design decision about the plan format",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "title": "A whole class of task cannot be completed by any runner in this repo",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:.claude/tasks/whattask.json",
+    "rw:host:C:/t/generator-outside-repo/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": "Several open tasks fix the /whattask GENERATOR, which lives at `~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/commands/whattask.md` -- OUTSIDE this repo. No `touches` a plan for this repo can grant will ever reach it, so `/runtask` can only ever record `partial` on them, however many times they are attempted (one already has). This is the same shape as tasks whose fix is a `whattask.json` rewrite, one level further out. HOW DO YOU WANT THESE HANDLED? Options: (a) work the plugin repo directly in a separate session and keep these out of this plan; (b) let this plan grant absolute plugin paths, accepting that they are outside the repo the locks protect; (c) mark them explicitly unrunnable so a runner skips them rather than burning a cycle. At least three current tasks are affected: the touches-exists check, the `creates:` mode, and the test-file rule.",
+   "decision": null,
+   "verify": "Tasks whose fix lives in the plugin are either routed somewhere that can reach it, or marked so no runner takes them and records a partial.",
+   "why_model": "a decision about where a class of work is done, not a code change",
+   "why_mode": "no amount of work inside this repo resolves it",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
+  },
+  {
+   "id": "seven-hygiene-tasks-share-one-scratch-directory-and-its-release-scripts-target-different-tasks",
+   "title": "A shared scratch directory nearly released another task's lock",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/shared-scratch/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "No two tasks are granted the same scratch directory. MEASURED: seven plan-hygiene tasks all grant `rw:host:C:/t/whattask-hygiene/`, and it already held a `release.py` belonging to a DIFFERENT task -- running it would have dropped the wrong holder record from `serial.lock` and left the running task's own record held forever. Caught by reading the script before running it. This is CLAUDE.md's give-every-probe-a-name-no-sibling-would-choose rule, applying to task grants rather than to probe filenames.",
+   "why_model": "a mechanical grant audit with the hazard already demonstrated",
+   "why_mode": "the fix is in the plan file",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   }
  ],
  "closed": [
@@ -2289,6 +2426,24 @@
    "id": "a-stray-bold-marker-predates-this-run-in-h2g-conversion-method",
    "title": "A stray bold marker predates this session in H2G-CONVERSION-METHOD.md",
    "closed_by": "ef8b962",
+   "reason": null
+  },
+  {
+   "id": "ab-5-approvals-inheritance",
+   "title": "AB task 5: approvals inheritance",
+   "closed_by": "7bcd3fe",
+   "reason": null
+  },
+  {
+   "id": "ab-6-abpage-three-approval-states",
+   "title": "AB task 6: abpage's three approval states",
+   "closed_by": "7bcd3fe",
+   "reason": null
+  },
+  {
+   "id": "ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng",
+   "title": "AB-5 step 5 hashes the wrong artefact, and the design document says so",
+   "closed_by": "7bcd3fe",
    "reason": null
   }
  ]
