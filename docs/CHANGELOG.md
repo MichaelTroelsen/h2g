@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.471 — 2026-09-05
+
+- an approval is exact, inherited or stale, and a stale one says what to listen for
+
 ## 0.5.470 — 2026-09-05
 
 - the frame axis over-substitutes, the survey-template prescription is graded, and W_A_R joins the sound calibration

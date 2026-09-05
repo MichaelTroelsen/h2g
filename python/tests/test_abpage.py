@@ -1018,3 +1018,42 @@ def test_the_index_carries_an_abbreviated_sidid_with_the_full_text_on_hover():
     bare = A.index(["Tune"], rows, "v", survey={})
     assert "not surveyed" in bare
     assert _balanced(got) == []
+
+
+APPR = {"Tune": {"approved": True, "sng_sha256": "aaa", "version": "0.5.400", "at": "2026-08-20"}}
+
+
+def test_badge_is_inherited_when_the_build_inherits():
+    rec = {"Tune": {"status": "inherited", "approved_sha": "aaa", "current_sha": "bbb",
+                    "since": "0.5.447", "builds_inherited": 2, "failed": [],
+                    "listener_should_check": "aud_vs_approved", "evidence": {}}}
+    html = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "bbb"}, inherited=rec)
+    assert 'class="approval inherited"' in html
+    assert "since 0.5.447" in html and "2 build" in html
+
+
+def test_badge_is_stale_and_names_what_to_listen_for():
+    rec = {"Tune": {"status": "stale", "approved_sha": "aaa", "current_sha": "bbb",
+                    "since": "0.5.447", "builds_inherited": 0,
+                    "failed": ["aud_vs_approved"], "listener_should_check": "aud_vs_approved",
+                    "evidence": {}}}
+    html = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "bbb"}, inherited=rec)
+    assert 'class="approval stale"' in html
+    assert "aud_vs_approved" in html
+
+
+def test_badge_falls_back_to_the_sha_rule_without_an_assessment():
+    """No build/approvals.json, or a tune it does not cover: the old two
+    states, unchanged."""
+    html = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "bbb"}, inherited={})
+    assert 'class="approval stale"' in html
+    html = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "aaa"}, inherited={})
+    assert 'class="approval yes"' in html
+
+
+def test_index_shows_three_states():
+    rec = {"Tune": {"status": "inherited", "approved_sha": "aaa", "current_sha": "bbb",
+                    "since": "0.5.447", "builds_inherited": 1, "failed": [],
+                    "listener_should_check": None, "evidence": {}}}
+    html = A.index(["Tune"], {}, "0.5.448", APPR, {"Tune": "bbb"}, inherited=rec)
+    assert 'class="i">inherited' in html

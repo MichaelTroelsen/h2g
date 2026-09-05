@@ -1,13 +1,14 @@
 {
  "generated_from": {
-  "head": "91e8e25",
+  "head": "7bcd3fe",
   "sources": [
    "whats-next.md",
    "todo.md",
    ".claude/tasks/runs.jsonl",
    ".claude/tasks/whattask.json (previous)",
    "git log",
-   "CLAUDE.md"
+   "CLAUDE.md",
+   "graphify-out"
   ],
   "focus": null
  },
@@ -27,83 +28,6 @@
   ".claude/tasks/serial.lock.d"
  ],
  "tasks": [
-  {
-   "id": "sidfile-has-no-to-address-so-every-caller-hand-inverts-to-offset",
-   "title": "The eleventh hand-inversion of to_offset, in test_vibrato_two_players",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "parallel",
-   "touches": [
-    "rw:python/tests/test_vibrato_two_players.py",
-    "r:python/h2g/sidfile.py",
-    "r:python/dis6502.py",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/sidfile-has-no-to-address-so/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "grep for the inversion over python/**.py returns no live call site, and pytest tests/test_vibrato_two_players.py passes. Nine sites shipped at 35dc775, the tenth (test_two_stage.py) with it, the eleventh at 987543e in dis6502.py. ONLY test_vibrato_two_players.py:77 remains.",
-   "why_model": "one line against a helper that already exists",
-   "why_mode": "tiny, but the missing grant is the entire remaining blocker",
-   "why_lane": "no path it names is written by any other task"
-  },
-  {
-   "id": "the-fetch-deficit-eats-the-last-frame-of-every-note-at-s1",
-   "title": "The gatetimer fetch deficit at -S1: close it or reframe the refuted premise",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_gate_hold.py",
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/fetch-deficit/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Either an emission change whose corpus byte-hash moves only -S1 files and improves hold, or a refutation recorded in goatwriter.py saying why the deficit is not removable. The hold census (fetch kind, 109 of 138 instruments at -S1) is the population it must be measured on.",
-   "why_model": "the previous attempt refuted its own premise; reframing is a judgement",
-   "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "the-ilv-filter-over-produces-on-pacific-coast-and-routes-all-three-voices",
-   "title": "Interleaved filter over-production: decide between the format limit and a per-file adoption",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_filter.py",
-    "rw:python/tests/test_interleaved_classic.py",
-    "r:presets.json",
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/ilv-filter-overproduce/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "EITHER close by recording the format limit already written into ILV_FILTER_ROUTING and drop the Pacific_Coast clause, OR ship arm 3 gated on 'exactly one filtering voice' as a per-file adoption. Four attempts priced every arm and reverted three; what is left is a decision, not an investigation.",
-   "why_model": "four attempts and three reverted emission arms; the rest is judgement",
-   "why_mode": "needs the whole attempt history in context",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
   {
    "id": "promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled",
    "title": "Promote pulse_phase into FIDELITY_TOGGLES and re-run the search",
@@ -135,7 +59,7 @@
    "verify": "pulse_phase is in FIDELITY_TOGGLES and the eight-toggle search runs over 89 songs at -t 180, with the result DIFFED against the shipped presets before adoption. TIME the run rather than extrapolating: seven toggles is 25m21s at -t 60 and about 75 minutes serial at -t 180.",
    "why_model": "an eighth toggle doubles every future search; the trade is architectural",
    "why_mode": "rewrites three generated artefacts and runs for hours",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "known-bad-may-be-defeated-by-the-alignment-change-re-run-at-v0-5-459",
@@ -160,10 +84,10 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "cd python && python sound_calibrate.py <sid_dir> -t 60 -o ../docs/SOUND-CALIBRATION.md, and the doc says PASS for the right reason. TWO of the three known_bad pairs were found INCOMPARABLE (loudness ratio outside the band) rather than mis-scored, so the calibration validates on one pair and wants two more that build comparably.",
+   "verify": "cd python && python sound_calibrate.py <sid_dir> -t 60 -o ../docs/SOUND-CALIBRATION.md, and the doc says PASS for the right reason. TWO of the three known_bad pairs were found INCOMPARABLE (loudness ratio outside the band) rather than mis-scored, so the calibration validates on one pair and wants two more that build comparably.  || PRIOR ATTEMPT: PARTIAL, and its durable half must not be redone: every calibration number reproduced identically across eight versions (so the alignment change is exonerated), and W_A_R 0.5.399->0.5.400 was measured comparable and ADOPTED into KNOWN_BAD at 7bcd3fe -- the first pair that exercises `aud` at all. What remains is one more comparable pair, then a deliberate decision on the two excluded ones: while Las_Vegas and Samantha_Fox stay, `all(seen)` cannot hold however many good pairs are added. Shortlist with the measured rule -- a pair is comparable when the fix is STRUCTURAL, not a multiplier change.",
    "why_model": "a bounded re-run against an existing harness",
    "why_mode": "renders audio over the corpus; long and exclusive",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "ab-5-approvals-inheritance",
@@ -184,10 +108,10 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "python/approvals.py exists carrying the inheritance rule and tests/test_approvals.py -- which this task CREATES -- pins it. The previous plan granted rw:python/abpage.py, the wrong module; task 5 creates approvals.py, which does not yet exist in the tree.",
+   "verify": "python/approvals.py exists carrying the inheritance rule and tests/test_approvals.py -- which this task CREATES -- pins it. The previous plan granted rw:python/abpage.py, the wrong module; task 5 creates approvals.py, which does not yet exist in the tree.  || PRIOR ATTEMPT: PARTIAL. approvals.py and test_approvals.py shipped at 0b2493d. What remains is step 5, whose prescription is itself wrong -- see ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng, which must be settled first.",
    "why_model": "a bounded new module against a written design",
    "why_mode": "self-contained and mechanically verifiable",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/approvals.py with another task, at least one of them writing"
   },
   {
    "id": "ab-6-abpage-three-approval-states",
@@ -213,7 +137,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "follows a written design",
    "why_mode": "self-contained",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/approvals.py with another task, at least one of them writing"
   },
   {
    "id": "ab-7-presets-search-respects-approvals",
@@ -240,7 +164,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/presets.py with another task, at least one of them writing"
   },
   {
    "id": "ab-8-fidelity-queue",
@@ -266,7 +190,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "follows a written design",
    "why_mode": "self-contained",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
   },
   {
    "id": "ab-9-drift-as-acceptance-term",
@@ -295,115 +219,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.",
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "bangkok-under-strikes-by-18-attacks-once-the-spurious-twenty-are-gone",
-   "title": "Bangkok under-strikes by 18 attacks once the spurious twenty are gone",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/bangkok-under-strikes-by-18-/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Bangkok_Knights' attack count reaches its original's, or the residual is attributed to a named mechanism. Build on the prior partial rather than restarting: the spurious twenty are already explained.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
-   "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "orderlist-silent-park-for-fe",
-   "title": "The orderlist silent park for Hubbard's $FE marker",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/orderlist-silent-park-for-fe/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Every tune whose window original_ended shortens ends within +-5 s of its original. Largely landed at v0.5.462 (tracks.py re-grade); confirm what remains rather than redoing it.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
-   "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "pitchseq-detect-shape-gap",
-   "title": "pitch_seq's detection shape gap",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/pitchseq-detect-shape-gap/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The files pitch_seq should reach are reached, measured by corpus byte-hash naming the exact set.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
-   "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "powerplay-naming-share-must-be-re-measured-on-the-frame-axis-before-the-user-decides",
-   "title": "Powerplay's naming share re-measured on the frame axis",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/powerplay-naming-share-must-/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The naming share is re-measured per FRAME rather than per note, and the figure is put to the user with both axes stated.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
-   "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/presets.py with another task, at least one of them writing"
   },
   {
    "id": "retake-wave-alternate-noise-trade",
@@ -430,7 +246,7 @@
    "verify": "The Chicken_Song / Hollywood_or_Bust wave_alternate trade is re-measured at -t 180. NOTE the two files are no longer one population: Chicken_Song reads 2556 of 4188 noise frames where the old text says none.",
    "why_model": "a bounded re-measurement against an existing harness",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "the-fidelity-report-should-print-how-much-of-each-tune-its-window-contained",
@@ -457,7 +273,7 @@
    "verify": "The report carries a coverage column and tests/test_fidelity.py fails if the registry and the printed header disagree. A `cov` column now exists; confirm whether this is already satisfied before writing anything.",
    "why_model": "a bounded re-measurement against an existing harness",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "the-ilv-decoder-has-no-tie-parameter-and-drops-99-percent-of-the-originals-ties",
@@ -484,7 +300,7 @@
    "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "whattask-templated-the-five-ab-tasks-touches-and-four-of-five-name-the-wrong-module",
@@ -503,10 +319,10 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "Each ab-* task's touches names the module its own design document says it writes. FIXED in this generation; the task remains only to confirm against the design doc, which this pass did not read.",
+   "verify": "Each ab-* task's touches names the module its own design document says it writes. FIXED in this generation; the task remains only to confirm against the design doc, which this pass did not read.  || PRIOR ATTEMPT: PARTIAL and STRUCTURALLY UNRUNNABLE BY /runtask: the fix is a rewrite of whattask.json, which /runtask may not write. It is fixed HERE, in a regeneration, or not at all.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
@@ -528,7 +344,7 @@
    "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "four-plan-tasks-grant-module-shaped-test-files-that-do-not-exist",
@@ -550,7 +366,7 @@
    "verify": "No task grants a test file absent from python/tests/. test_detect.py and test_goatwriter.py were both granted and neither exists; this generation drops them mechanically.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "a-blocked-run-record-describes-a-plan-and-must-not-survive-a-whattask-regeneration",
@@ -572,7 +388,7 @@
    "verify": "Selection re-checks a blocked record's stated grant against the CURRENT plan rather than trusting the record. Three records this session named blockers a regeneration or a commit had already cleared.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "a-done-run-record-describes-one-commit-and-a-later-commit-can-expire-it",
@@ -594,7 +410,7 @@
    "verify": "A recurring obligation is not readable as permanently done. regenerate-fidelity-artefacts read done from v0.5.459 through two emission commits while its artefact was stale.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "regenerate-fidelity-artefacts-is-a-recurring-obligation-modelled-as-a-one-shot-task",
@@ -616,7 +432,7 @@
    "verify": "The task is version-less and its verify reads 'after any commit that changes what the converter emits, test_output_sha reads 0 disagreeing' rather than naming a version and a hard-coded count of 8.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "whattask-regeneration-carries-stale-verify-text-forward",
@@ -638,7 +454,7 @@
    "verify": "No carried verify string quotes a count or a version that has since moved. The fidelity task's 'from 8 of 89 to 0' is the worked example: the count was 1 by the time it was read.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/whattask-hygiene/ with another task, at least one of them writing"
   },
   {
    "id": "the-opened-field-has-become-an-unbounded-firehose-and-needs-triage",
@@ -661,34 +477,7 @@
    "verify": "The opened backlog is classified: each id is either promoted to a task, merged into one, or recorded as closed/not-a-task. MEASURED at 91e8e25 -- 657 distinct opened refs, 479 well-formed slugs, 178 prose sentences that are not ids at all, 465 absent from the plan and 307 never run. A plan cannot carry them all and this generation does not.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "seven-vbi-pulse-tri-carriers-are-declined-by-group-tempos-or-empty-sims-not-by-the-gate",
-   "title": "Seven VBI pulse-phase carriers are declined for an unread second cause",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/h2g/detect.py",
-    "rw:python/h2g/convert.py",
-    "rw:python/tests/test_pulse_phase.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/seven-vbi-pulse-tri-carriers/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
-   "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
   },
   {
    "id": "rasputin-does-not-pack-under-pulse-phase-and-it-is-neither-a-table-error-nor-a-pattern-overflow",
@@ -715,7 +504,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one of them writing"
   },
   {
    "id": "interleaved-record-plus-7-bit-20-is-an-unread-effect-bit-on-all-six-files",
@@ -742,7 +531,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "go-go-dash-still-owes-71-percent-of-its-noise-and-bit-80-is-refuted-as-the-cause",
@@ -768,7 +557,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "real-firstwave-instruments-reaches-78-files-and-has-been-measured-on-two",
@@ -795,60 +584,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "a-tuple-valued-option-cannot-be-walked-by-a-boolean-toggle-search",
-   "title": "A tuple-valued option cannot be walked by a boolean toggle search",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/presets.py",
-    "rw:python/tests/test_presets.py",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/a-tuple-valued-option-cannot/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
-   "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "depth-ratio-is-null-on-ten-of-eighty-nine-rows-and-the-six-ilv-files-are-among-them",
-   "title": "depth_ratio is null on ten of 89 rows, the six ILV files among them",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity.py",
-    "r:build/fidelity.json",
-    "r:build/fidelity.json",
-    "r:presets.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/depth-ratio-is-null-on-ten-o/",
-    "rw:python/tests/test_fidelity.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
-   "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
-   "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "re-basing-hold-on-its-census-is-a-criterion-change-and-needs-the-search-re-run",
@@ -877,7 +613,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/presets.py with another task, at least one of them writing"
   },
   {
    "id": "gate-and-hold-trade-the-same-gate-off-frame-and-fidelity-py-should-say-so",
@@ -903,7 +639,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "find-two-stage-names-ricochets-wave-program-pointer-high-byte-as-its-attack-waveform",
@@ -929,7 +665,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "hold-at-s1-is-bounded-by-the-target-player-and-the-open-question-is-whether-it-can-move-at-all",
@@ -956,7 +692,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "test-hard-restart-should-pin-that-the-emitted-gatetimer-is-never-zero",
@@ -982,7 +718,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "the-interleaved-tie-flag-needs-a-command-column-decision-between-tone-porta-and-the-82-slide",
@@ -1009,7 +745,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "lion-heart-misses-97-attacks-on-voice-0-where-every-other-ilv-file-has-a-surplus",
@@ -1036,7 +772,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "the-interleaved-dialect-has-no-test-file-of-its-own-for-the-grammar-constants",
@@ -1062,7 +798,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "radio-ace-loses-ten-points-of-melody-to-the-arpeggio-for-a-reason-that-is-not-the-phase",
@@ -1088,7 +824,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "go-go-dash-should-adopt-arpeggio-and-neither-route-to-recording-it-is-granted",
@@ -1115,7 +851,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/presets.py with another task, at least one of them writing"
   },
   {
    "id": "pacific-coasts-ilv-filter-is-armed-and-never-routed-and-the-gate-is-1a8c",
@@ -1142,7 +878,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "census-which-corpus-files-clamp-a-note-byte-past-their-own-frequency-table",
@@ -1168,7 +904,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that",
@@ -1194,7 +930,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "superseded-ours-renders-accumulate-and-a-safe-cleanup-must-resolve-approved-sng-shas-to-content-keys",
@@ -1221,7 +957,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "why-is-the-v0-5-401-las-vegas-build-a-thirteenth-as-loud-while-scoring-aud-0-87",
@@ -1248,7 +984,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "known-bad-wants-two-more-version-pairs-and-sound-calibrate-py-is-read-only-in-its-own-task",
@@ -1275,7 +1011,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "a-window-skipping-guard-is-invisible-and-staleness-can-sit-in-the-skip",
@@ -1300,7 +1036,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "the-dangling-warning-cannot-say-whether-the-pattern-is-one-any-orderlist-reaches",
@@ -1326,7 +1062,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "three-files-abort-under-preset-opts-that-claude-md-records-as-converting",
@@ -1352,30 +1088,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "bounded work against an existing harness",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "claude-md-still-prescribes-a-survey-template-fix-that-has-already-landed",
-   "title": "CLAUDE.md prescribes a survey template fix that already landed",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:CLAUDE.md",
-    "r:python/survey.py",
-    "rw:host:C:/t/doc-drift/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The bullet naming survey.py's template sentence is graded or removed, checked against the code rather than against the bullet.",
-   "why_model": "doc reconciliation against code that already exists",
-   "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "claude-md-records-four-json-omissions-that-are-all-present-under-aliased-keys",
@@ -1398,7 +1111,7 @@
    "verify": "Each named key is checked against build/fidelity.json and the bullet states the real key name or is removed.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
   },
   {
    "id": "claude-md-still-describes-action-biker-looping-forever-after-silent-park-fixed-it",
@@ -1422,29 +1135,7 @@
    "verify": "The v0.5.375 reading (856 attacks, 61.44 s loop) is graded as HISTORY with the v0.5.461 measurement beside it: +0.14 s, our_attacks identical.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
-  },
-  {
-   "id": "a-stray-bold-marker-predates-this-run-in-h2g-conversion-method",
-   "title": "A stray bold marker predates this session in H2G-CONVERSION-METHOD.md",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:docs/H2G-CONVERSION-METHOD.md",
-    "rw:host:C:/t/doc-drift/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The bold-marker parity reads EVEN, or the odd count is explained as a code-fence artefact. Crude heuristic: a ** inside a fence counts.",
-   "why_model": "doc reconciliation against code that already exists",
-   "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
   },
   {
    "id": "two-180-second-readings-of-chicken-songs-baseline-disagree-on-wave-and-onset",
@@ -1468,7 +1159,7 @@
    "verify": "The disagreement (artefact onset 0.6923 / wave null against a run's 0.8077 / 0.8826) is resolved to one reading, or recorded as unresolved with the cause named. Do not average them.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
   },
   {
    "id": "sound-calibrates-module-docstring-says-the-render-checks-are-exercised-by-hand-and-render-doc-now-is-not",
@@ -1491,7 +1182,7 @@
    "verify": "The docstring matches what the tests actually exercise.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
   },
   {
    "id": "survey-ptrs-is-a-nested-function-so-a-per-function-coverage-census-over-counts-it",
@@ -1514,7 +1205,7 @@
    "verify": "The coverage census counts nested functions once, or states that it does not.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares host:C:/t/doc-drift/ with another task, at least one of them writing"
   },
   {
    "id": "the-hold-column-and-the-sound-render-family-share-the-sound-run-prefix-and-are-unrelated",
@@ -1539,7 +1230,7 @@
    "verify": "The shared prefix is renamed or documented so the two families cannot be confused by grep.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
   },
   {
    "id": "a-verify-that-points-at-another-document-still-has-a-file-list-and-the-generator-must-follow-it",
@@ -1561,7 +1252,7 @@
    "verify": "The generator opens a referenced design document and derives touches from it rather than templating.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
   },
   {
    "id": "ab-9-carries-a-gate-in-its-plan-document-that-the-generated-depends-on-dropped",
@@ -1583,7 +1274,7 @@
    "verify": "ab-9's depends_on reflects every gate its design document names.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
   },
   {
    "id": "pulse-phase-tasks-touches-grant-test-pulse-py-where-the-gate-is-pinned-by-test-pulse-phase-py",
@@ -1605,7 +1296,7 @@
    "verify": "The task grants the test file that actually pins the behaviour. FIXED in this generation; confirm no sibling carries the same error.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
   },
   {
    "id": "every-task-granted-r-siddump-exe-needs-r-fidelity-py-and-r-h2g",
@@ -1627,7 +1318,7 @@
    "verify": "No task names the siddump binary without also naming the two modules that drive it.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
   },
   {
    "id": "narrowing-the-ilv-routing-nibble-is-correct-and-invisible-to-every-column",
@@ -1650,7 +1341,7 @@
    "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined.",
    "why_model": "doc reconciliation against code that already exists",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
   },
   {
    "id": "the-six-interleaved-classic-files-have-never-been-listened-to",
@@ -1673,7 +1364,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "ace-ii-has-two-withheld-gains-awaiting-one-listen",
@@ -1696,7 +1387,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "monty-firstwave-trade-needs-a-listen",
@@ -1719,7 +1410,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "action-biker-subtune-pairing-needs-an-ear",
@@ -1742,7 +1433,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "action-biker-noise-runs-want-a-listen-because-the-columns-disagree",
@@ -1765,7 +1456,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "pacific-coast-no-test-restart-adoption-trades-melody-for-rendered-audio",
@@ -1788,7 +1479,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "mega-apocalypse-pitch-seq-is-a-near-exact-vib-fix-costing-twelve-points-of-pitch",
@@ -1811,7 +1502,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "pandora-regresses-under-the-two-sided-attack-guard",
@@ -1834,7 +1525,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "powerplay-regrid-refusal-rests-on-a-naming-artefact-and-should-be-re-decided",
@@ -1852,12 +1543,12 @@
    "needs_main": false,
    "needs_main_reason": null,
    "depends_on": [],
-   "blocked_on": "A re-decision on Powerplay's --regrid refusal, which rests on a naming artefact rather than on a measurement.",
+   "blocked_on": "BOTH AXES ARE NOW MEASURED, at 7bcd3fe, and the question is a clean yes/no. Powerplay refuses --regrid in presets.json. The refusal rests on melody falling 0.9930 -> 0.9643 under regrid (2.88pp). SEQUENCE AXIS (difflib, what fidelity.naming_split ships): repairing NAMES alone recovers 2.71pp of that 2.88pp -- a naming share of 94% on just 7 renames, and all 7 are -1 semitone (A#4/A-4 x3, D-5/C#5 x2, G-5/F#5 x2). So on this reading almost the whole 'loss' is siddump naming the same note differently, not different music. THE OBVIOUS OBJECTION WAS TESTED AND FAILS: difflib chooses the pairing, so the count is alignment-dependent (its own docstring says so). Re-measured on the FRAME axis -- substituting only where both arms strike on the SAME frame -- it makes 36 renames spanning -12..+13 semitones and leaves melody at 0.9531, BELOW the unrepaired 0.9643, for a share of -39%. That is a worse alignment, not a truer one: it pairs notes that merely coincide in time, which after a regrid are different notes. So the 94% stands on measurement rather than on the absence of an alternative. WHAT REGRID BUYS, and it is the other half of the trade: --regrid exists to remove integrated drift, which NO FIDELITY.MD COLUMN CAN SEE -- a tune playing the right music 0.78% fast forever scores perfectly. Adopting it means accepting a melody number that is 2.88pp lower on paper for a timing gain the report cannot show you. THE QUESTION: adopt --regrid for Powerplay on the strength of the 94% naming share, or keep the refusal? A listen would settle it independently and none has been taken.",
    "decision": null,
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
@@ -1880,7 +1571,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
@@ -1903,7 +1594,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision",
@@ -1926,7 +1617,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "orphaned-processes-survive-their-sessions",
@@ -1949,7 +1640,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "locking-md-fix-is-uncommitted-in-the-plugin-repo",
@@ -1972,7 +1663,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
@@ -1995,7 +1686,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
   },
   {
    "id": "runtask-holder-records-carry-a-shell-pid-that-is-dead-before-the-task-is",
@@ -2018,7 +1709,477 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares a written path with another task, or needs an exclusive build directory"
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "naming-split-docstring-should-carry-the-powerplay-frame-axis-result-beside-one-on-ones",
+   "title": "naming_split's docstring records only the frame axis that flattered it",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "rw:host:C:/t/naming-split-docstring/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The docstring carries BOTH measured outcomes of the same alternative alignment: One_on_One, where the frame axis reads 39% against difflib's one rename (more renaming than difflib found), and Powerplay, where it reads 36 renames, share -39%, deltas -12..+13 and a repair that leaves melody BELOW the unrepaired arm. Measured at 7bcd3fe; the sequence axis reproduced the shipped 0.9930/0.9643/0.9914/7/0.9427 to 4dp in the same run. pytest tests/test_fidelity.py -q passes.",
+   "why_model": "a docstring edit against a measurement already taken and recorded",
+   "why_mode": "fidelity.py is the harness every other measurement runs through",
+   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+  },
+  {
+   "id": "our-drum-tick-pins-one-absolute-pitch-where-the-player-tracks-the-note-bangkok-and-monty-share-it",
+   "title": "The drum tick pins an absolute pitch where the player tracks the note",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_effect_bit80.py",
+    "rw:python/tests/test_noise_tick.py",
+    "r:presets.json",
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/fidelity.py",
+    "rw:host:C:/t/drum-tick-pinned-pitch/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "A corpus byte-hash names the exact set the change reaches, and an A/B on Bangkok_Knights and Auf_Wiedersehen_Monty shows the tick tracking the note rather than one pinned pitch. NOTE FIRST: no report column reads a noise frame's PITCH (CLAUDE.md records this twice), so a flat table is the expected result and is not evidence either way -- the byte-hash plus the per-frame trace is the evidence.",
+   "why_model": "an emitter change in the most-shared file whose own metric cannot see it",
+   "why_mode": "diagnosis matters more than the measurement, and no column adjudicates it",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision",
+   "title": "Las_Vegas and Samantha_Fox can never be `seen`, and removing them is a coverage call",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:python/sound_calibrate.py",
+    "r:docs/SOUND-CALIBRATION.md",
+    "rw:host:C:/t/known-bad-coverage/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": "Las_Vegas and Samantha_Fox are EXCLUDED from the sound calibration because their v0.5.401 fix is a MULTIPLIER change: the good build repacks at a different -S, its music ends inside the window, and loud_ratio lands at 0.074x and 0.063x. While they remain, `all(seen)` cannot hold however many good pairs are added, so the doc reads FAIL forever. Deleting them makes it green today and was deliberately NOT done at 7bcd3fe, because that is gaming an all() rather than measuring anything. The question is yours: RETIRE the two (dropping coverage from four pairs to two, both of which are now measured -- Human_Race on `loud`, W_A_R on both), or KEEP them and change the criterion so an excluded pair is reported rather than counted? A third option is to keep hunting comparable pairs, which the structural-vs-multiplier rule now makes cheap to shortlist.",
+   "decision": null,
+   "verify": "SOUND-CALIBRATION.md reads PASS for the right reason, or the two pairs are retired with the coverage loss stated.",
+   "why_model": "a judgement about what the calibration stops checking, not a measurement",
+   "why_mode": "no amount of work resolves it -- the criterion is all(seen) and these two cannot be seen",
+   "why_lane": "shares docs/SOUND-CALIBRATION.md with another task, at least one of them writing"
+  },
+  {
+   "id": "a-known-bad-pair-is-comparable-when-the-fix-is-structural-and-not-when-it-is-a-multiplier-change",
+   "title": "Record the comparability rule beside KNOWN_BAD, where the next candidate is chosen",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/sound_calibrate.py",
+    "rw:python/tests/test_sound_calibrate.py",
+    "rw:host:C:/t/known-bad-rule/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "sound_calibrate.py states the rule with both sides of the evidence: W_A_R 0.5.399->0.5.400 is a PATTERN-COUNT fix (209->208) and comparable (aud 0.6370->0.8053, loud 0.7915->0.8790); Las_Vegas and Samantha_Fox's v0.5.401 is a MULTIPLIER change and incomparable (loud_ratio 0.074x, 0.063x); W_A_R_Preview on the same commit pair renders byte-identically and is a third outcome. pytest tests/test_sound_calibrate.py -q passes.",
+   "why_model": "writing down a rule already measured and quoted in a run record",
+   "why_mode": "one file plus its test, no corpus run",
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+  },
+  {
+   "id": "kings-of-the-beach-intro-needs-a-writer-for-a-static-global-pitch-sequence-table",
+   "title": "475 reversals need an emitter for a static global sequence table",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_pitch_seq_shapes.py",
+    "r:python/h2g/detect.py",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/fidelity.py",
+    "rw:host:C:/t/kotb-intro-static-table/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Kings_of_the_Beach_intro's 475 reversals are emitted, with a measured A/B and a corpus byte-hash showing the change reaches that file and no other. ESTABLISHED at ef8b962 and not to be re-derived: det.pitch_seq is None here CORRECTLY -- the sequence is a static global table with no per-instrument index or pair copy, so the (index, pairs, base) triple has nothing to point at and NO detection widening can reach it. This is a writer, not a detector.",
+   "why_model": "a new emitter in the most-shared file, with no existing shape to copy",
+   "why_mode": "wants its own measured A/B and a listening check may follow",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "the-vibrato-census-sets-pitchseq-unconditionally-where-every-other-cause-is-gated-on-detection",
+   "title": "The VIBRATO.md census attributes pitchseq to two files that do not have it",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "r:python/h2g/detect.py",
+    "rw:host:C:/t/vibrato-census-gate/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "out[0x10] = 'pitchseq' is gated on detection the way every other cause already is, and International_Karate and Formula_1_Simulator stop being attributed to it. MEASURED at ef8b962: both files contain no `AND #$10` at all -- their $55 is bit $04's arpeggio DEPTH nibble, a different mechanism. NOTE the correction that came with it: IK_plus IS detected (PitchSeq(index=2667, pairs=2422, base=2403, steps=3)), so the pair is International_Karate + F1, never 'IK x2'.",
+   "why_model": "a one-line gate matching a pattern the same file already uses everywhere else",
+   "why_mode": "fidelity.py is shared, but the change is bounded and already diagnosed",
+   "why_lane": "shares python/fidelity.py with another task, at least one of them writing"
+  },
+  {
+   "id": "tracks-py-length-figures-are-re-confirmed-on-a-clean-artefact-and-want-a-grading-note",
+   "title": "tracks.py's thirteen length figures reproduced exactly on clean provenance",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/tracks.py",
+    "rw:python/tests/test_tracks.py",
+    "r:build/fidelity.json",
+    "rw:host:C:/t/tracks-length-grading/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "tracks.py:1390-1402 carries a grading note saying its figures were measured at v0.5.461 from a DIRTY artefact and re-confirmed identical to the digit at v0.5.469 against the clean regeneration (ef8b962, no -dirty suffix, 180 s, 89 rows): six shortened-window rows Geoff_Capes +0.16, Action_Biker +0.14, Las_Vegas +0.10, Samantha_Fox +0.10, Kings_of_the_Beach_ingame +0.08, Sigma_Seven +0.04, and corpus-worst Knucklebusters -4.16 / Sanxion -2.98. pytest tests/test_tracks.py -q passes.",
+   "why_model": "a grading note beside figures already re-measured and found unchanged",
+   "why_mode": "one file plus its test; the measurement is done",
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+  },
+  {
+   "id": "the-fidelity-row-cannot-say-which-of-depths-two-refusals-produced-its-dash",
+   "title": "A `-` in the depth column conflates two different refusals",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "r:build/fidelity.json",
+    "rw:host:C:/t/depth-dash-cause/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The report distinguishes depth's two refusals -- no record carries the mechanism, versus a population exists but no instrument key is shared -- the way CLAUDE.md's rule that `a - in the report is a finding, not a gap` requires. pytest tests/test_fidelity.py -q passes and the regenerated header and registry still agree.",
+   "why_model": "a reporting distinction inside one function, with the cause already known",
+   "why_mode": "fidelity.py is shared and the column registry has a test that pins it",
+   "why_lane": "shares build/fidelity.json with another task, at least one of them writing"
+  },
+  {
+   "id": "three-files-have-a-vibrato-population-but-depth-finds-no-shared-instrument-key",
+   "title": "Three files carry the vibrato mechanism and still score no depth",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/fidelity.py",
+    "r:build/fidelity.json",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/depth-no-shared-key/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The three files are named and the cause is attributed per file: a genuinely absent shared ADSR key (the Powerplay 'two copies of the player' shape) or a population filter that is too narrow. Read-only -- this is a diagnosis, and any fix is a separate task.",
+   "why_model": "an attribution hunt where a plausible wrong answer is cheap to produce",
+   "why_mode": "the diagnosis is the deliverable, not a patch",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "four-vbi-carriers-need-70-to-130-pulse-phase-table-rows-for-one-instrument-and-overflow",
+   "title": "The pulse-phase table overflows on four VBI carriers, and the row counts are known",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/goatwriter.py",
+    "r:python/h2g/convert.py",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/pulse-phase-overflow/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Either the table fits within Goattracker's bound for the four files, or the overflow is recorded as the reason they are declined, with the measured row counts beside it: 130 rows for instrument 7 on BOTH Last_V8 files, 112 for instrument 14 on Master_of_Magic, 70 for instrument 17 on Phantoms. ESTABLISHED at 846c4c4: the decline is build_pulse_phase_table's overflow and collect_pulse_phases' shared accumulator -- NOT group_tempos or empty sims, which was the standing and refuted explanation.",
+   "why_model": "a table-bound design question with a refuted prior explanation behind it",
+   "why_mode": "it decides whether promote-pulse-phase is reachable at all",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "radio-ace-still-routes-1-7x-its-originals-filtered-frames-after-the-gated-clear",
+   "title": "Radio_Ace over-routes the ILV filter by 1.7x even after the one-voice gate",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_interleaved_classic.py",
+    "r:presets.json",
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/fidelity.py",
+    "rw:host:C:/t/radio-ace-filter-route/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close.",
+   "why_model": "an ILV-dialect emitter question in the shared writer",
+   "why_mode": "needs the surrounding ILV context and a per-file trace",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "go-go-dash-gives-up-a-measured-filter-gain-to-the-one-voice-gate",
+   "title": "The one-filtering-voice gate costs Go_Go_Dash a gain that was measured",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_interleaved_classic.py",
+    "r:presets.json",
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/fidelity.py",
+    "rw:host:C:/t/go-go-dash-filter-gate/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file.",
+   "why_model": "a gate whose correct population is contested between two files",
+   "why_mode": "the trade is per song and wants the surrounding ILV context",
+   "why_lane": "shares presets.json with another task, at least one of them writing"
+  },
+  {
+   "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings",
+   "title": "A searched but unadopted preset refresh moves six songs on the hard-restart axis",
+   "source": "whats-next.md#1",
+   "model": "opus",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "rw:presets.json",
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/presets.py",
+    "rw:host:C:/t/corpus-fidelity-refresh/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "Adopting it rewrites presets.json, and re-running the search is a 25m21s seven-toggle corpus job (timed at v0.5.455) that no delegated agent should outlive.",
+   "depends_on": [],
+   "blocked_on": "A full --fidelity search was run and diffed but NOT adopted; the candidate is at C:/t/hr1_candidate.json. Against the shipped presets with the carry applied it moves SIX previously-searched songs on the hard-restart axis (Knucklebusters, Mr_Meaner, Off_the_Cuff, Pandora, Shockway_Rider, Spellbound) and gives the six interleaved files their first-ever toggles. TWO THINGS HAVE CHANGED UNDER IT since it was measured and they may invalidate it: the search window moved 60 s -> 180 s at 1e66af3 (which changed 25 fields across 17 of 89 songs in the one experiment that compared them), and the corpus is 89 songs now. Do you want it re-run at 180 s before any adoption, adopted as measured, or dropped?",
+   "decision": null,
+   "verify": "presets.json carries the refreshed hard-restart decisions, or the candidate is discarded with the reason recorded.",
+   "why_model": "a corpus-wide preset adoption is a decision about the shipped product",
+   "why_mode": "adopting it rewrites the artefact every other measurement is taken against",
+   "why_lane": "shares python/presets.py with another task, at least one of them writing"
+  },
+  {
+   "id": "ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng",
+   "title": "AB-5 step 5 hashes the wrong artefact, and the design document says so",
+   "source": "runs.jsonl,docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:docs/superpowers/plans/2026-09-01-ab-fidelity-automation.md",
+    "r:python/sound_calibrate.py",
+    "r:python/approvals.py",
+    "rw:host:C:/t/ab5-step5-hash/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The plan document names the .sng as what step 5 hashes, not convert_at's return value. MEASURED at 0b2493d: convert_at returns the PACKED SID, and recover_approved_sng already works around this by calling it for its SIDE EFFECT and reading workdir/<stem>.<sha>.sng off disk. A prescription that contradicts the code is the 'read a verify's prescription as a description of the symptom' rule.",
+   "why_model": "a document correction against behaviour already read out of the code",
+   "why_mode": "it must be settled before ab-5's remaining step can be run",
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+  },
+  {
+   "id": "sound-calibrate-convert-at-should-return-the-sng-it-writes-not-only-the-packed-sid",
+   "title": "convert_at hides the .sng it writes, forcing callers through a side effect",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/sound_calibrate.py",
+    "rw:python/tests/test_sound_calibrate.py",
+    "r:python/approvals.py",
+    "r:python/tests/test_approvals.py",
+    "rw:host:C:/t/convert-at-returns-sng/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "convert_at returns the .sng path beside the packed .sid, approvals.py's recover_approved_sng stops reconstructing it from the workdir, and pytest tests/test_sound_calibrate.py tests/test_approvals.py -q passes.",
+   "why_model": "a signature change with both call sites already identified",
+   "why_mode": "two files and their tests, no corpus run",
+   "why_lane": "shares python/sound_calibrate.py with another task, at least one of them writing"
+  },
+  {
+   "id": "a-task-whose-fix-is-a-touches-rewrite-cannot-be-completed-by-runtask-which-may-not-write-the-plan",
+   "title": "Eight plan-hygiene tasks are structurally unrunnable by the runner that would take them",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/plan-hygiene-unrunnable/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Every task whose fix is a whattask.json edit is either fixed in a regeneration or marked so a runner does not take it and record a partial. MEASURED: at least eight of the plan's tasks have this shape, and /runtask's own contract forbids the write ('never write back into whattask.json'), so each one can only ever collect partials.",
+   "why_model": "a design flaw in the task pipeline itself, spanning the plan and both commands",
+   "why_mode": "the fix lives in the generator, which is this command",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+  },
+  {
+   "id": "the-generators-mechanical-test-file-rule-manufactures-a-second-error-from-a-wrong-source-grant",
+   "title": "The test-file rule amplifies a wrong source grant instead of catching it",
+   "source": "runs.jsonl",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/test-file-rule-amplifies/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "whattask-should-check-a-touches-path-exists-before-granting-it"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The generator's `rw:<dir>/<name>.py implies rw:test_<name>.py` step no longer turns one wrong module grant into two wrong grants -- e.g. by checking the path exists before deriving from it. This is the rule interacting badly with whattask-should-check-a-touches-path-exists-before-granting-it, and the two should be settled together.",
+   "why_model": "a generator rule whose failure mode is silent and self-amplifying",
+   "why_mode": "it changes how every future plan is built",
+   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one of them writing"
+  },
+  {
+   "id": "a-grep-zero-on-a-quotation-is-evidence-about-line-breaks-before-content",
+   "title": "Three finding-shaped non-findings came from counters that could not see their container",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:CLAUDE.md",
+    "rw:host:C:/t/grep-zero-lesson/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "CLAUDE.md carries the rule with its three measured instances: a line-based grep returning 0 for a quotation that WRAPS across a newline (fidelity.py:2765 and survey.py:669-670, both real text), and a `**` parity count calling an odd total a defect when it is Python exponentiation inside a code fence (H2G-CONVERSION-METHOD.md:4511). Before treating a count as a defect, subtract what the counter cannot see. pytest tests/test_claude_md_figures.py -q passes.",
+   "why_model": "a documentation rule with its instances already measured and located",
+   "why_mode": "CLAUDE.md is contended by many tasks but the edit is bounded",
+   "why_lane": "shares CLAUDE.md with another task, at least one of them writing"
+  },
+  {
+   "id": "the-bold-parity-heuristic-should-exclude-code-fences-rather-than-be-re-explained-each-time",
+   "title": "The bold-parity check has now been explained twice and fixed zero times",
+   "source": "runs.jsonl",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "rw:python/tools/bold_parity.py",
+    "rw:host:C:/t/bold-parity-fenced/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The parity check splits by context and reports the PROSE count, so a `**` inside a code fence or an indented block cannot produce a finding-shaped non-finding. Verified against docs/H2G-CONVERSION-METHOD.md, whose crude count is 2657 (odd) and whose prose count is 2654 (EVEN) -- the difference is 1 fenced marker at line 4511 plus one balanced pair at 7993.",
+   "why_model": "a bounded scripting job with a known-correct expected output",
+   "why_mode": "self-contained, and the conclusion is mechanical: two numbers must agree",
+   "why_lane": "no declared path overlaps another task's"
   }
  ],
  "closed": [
@@ -2056,6 +2217,78 @@
    "id": "build-fidelity-json-must-be-regenerated-lion-hearts-output-sha-moved",
    "title": "build/fidelity.json must be regenerated",
    "closed_by": "91e8e25",
+   "reason": null
+  },
+  {
+   "id": "sidfile-has-no-to-address-so-every-caller-hand-inverts-to-offset",
+   "title": "The eleventh hand-inversion of to_offset, in test_vibrato_two_players",
+   "closed_by": "0b2493d",
+   "reason": null
+  },
+  {
+   "id": "the-fetch-deficit-eats-the-last-frame-of-every-note-at-s1",
+   "title": "The gatetimer fetch deficit at -S1: close it or reframe the refuted premise",
+   "closed_by": "0120d32",
+   "reason": null
+  },
+  {
+   "id": "the-ilv-filter-over-produces-on-pacific-coast-and-routes-all-three-voices",
+   "title": "Interleaved filter over-production: decide between the format limit and a per-file adoption",
+   "closed_by": "846c4c4",
+   "reason": null
+  },
+  {
+   "id": "bangkok-under-strikes-by-18-attacks-once-the-spurious-twenty-are-gone",
+   "title": "Bangkok under-strikes by 18 attacks once the spurious twenty are gone",
+   "closed_by": "5b2eeb0",
+   "reason": null
+  },
+  {
+   "id": "orderlist-silent-park-for-fe",
+   "title": "The orderlist silent park for Hubbard's $FE marker",
+   "closed_by": "ef8b962",
+   "reason": null
+  },
+  {
+   "id": "pitchseq-detect-shape-gap",
+   "title": "pitch_seq's detection shape gap",
+   "closed_by": "ef8b962",
+   "reason": null
+  },
+  {
+   "id": "powerplay-naming-share-must-be-re-measured-on-the-frame-axis-before-the-user-decides",
+   "title": "Powerplay's naming share re-measured on the frame axis",
+   "closed_by": "ef8b962",
+   "reason": null
+  },
+  {
+   "id": "seven-vbi-pulse-tri-carriers-are-declined-by-group-tempos-or-empty-sims-not-by-the-gate",
+   "title": "Seven VBI pulse-phase carriers are declined for an unread second cause",
+   "closed_by": "846c4c4",
+   "reason": null
+  },
+  {
+   "id": "a-tuple-valued-option-cannot-be-walked-by-a-boolean-toggle-search",
+   "title": "A tuple-valued option cannot be walked by a boolean toggle search",
+   "closed_by": "846c4c4",
+   "reason": null
+  },
+  {
+   "id": "depth-ratio-is-null-on-ten-of-eighty-nine-rows-and-the-six-ilv-files-are-among-them",
+   "title": "depth_ratio is null on ten of 89 rows, the six ILV files among them",
+   "closed_by": "846c4c4",
+   "reason": null
+  },
+  {
+   "id": "claude-md-still-prescribes-a-survey-template-fix-that-has-already-landed",
+   "title": "CLAUDE.md prescribes a survey template fix that already landed",
+   "closed_by": "ef8b962",
+   "reason": null
+  },
+  {
+   "id": "a-stray-bold-marker-predates-this-run-in-h2g-conversion-method",
+   "title": "A stray bold marker predates this session in H2G-CONVERSION-METHOD.md",
+   "closed_by": "ef8b962",
    "reason": null
   }
  ]

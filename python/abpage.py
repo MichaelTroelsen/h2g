@@ -236,7 +236,8 @@ def conversion_shas() -> dict[str, str]:
 
 
 def approval_badge(name: str, appr: dict, version: str,
-                   shas: dict | None = None) -> str:
+                   shas: dict | None = None,
+                   inherited: dict | None = None) -> str:
     """The verdict as it appears at the top of a tune's page.
 
     Three states, and the third is the whole point: approved and STILL VALID,
@@ -260,12 +261,31 @@ def approval_badge(name: str, appr: dict, version: str,
     at, was = a.get("at", ""), str(a.get("version", ""))
     note = md(a.get("note", "")) if a.get("note") else ""
     want, now = a.get("sng_sha256"), (shas or {}).get(name)
+    rec = (inherited or {}).get(name)
     if want and now and want != now:
+        # The conversion has changed. build/approvals.json, when it covers
+        # this tune, says whether the change is one the measure can vouch for.
+        if rec and rec.get("status") == "inherited":
+            return ('<div class="approval inherited"><b>Human approved &mdash; '
+                    'inherited by measurement</b><span>Signed off %s at %s; the '
+                    '<code>.sng</code> has changed since %s (%d build%s) and every '
+                    'build stayed no farther from the original than the approved '
+                    'render, and within the calibrated closeness of it. Nearest '
+                    'criterion: <code>%s</code>.%s</span></div>'
+                    % (at, was, rec.get("since", "?"), rec.get("builds_inherited", 0),
+                       "" if rec.get("builds_inherited", 0) == 1 else "s",
+                       rec.get("listener_should_check") or "-",
+                       (" " + note) if note else ""))
+        why = ""
+        if rec and rec.get("failed"):
+            why = (" What to listen for: <code>%s</code> (failed: %s)."
+                   % (rec.get("listener_should_check") or rec["failed"][0],
+                      ", ".join(rec["failed"])))
         return ('<div class="approval stale"><b>Approved &mdash; but the '
                 'conversion has changed since</b><span>Signed off %s at %s, '
                 'and the <code>.sng</code> no longer matches the one that was '
-                'heard. The verdict does not cover what this page plays.%s'
-                '</span></div>' % (at, was, (" " + note) if note else ""))
+                'heard. The verdict does not cover what this page plays.%s%s'
+                '</span></div>' % (at, was, why, (" " + note) if note else ""))
     return ('<div class="approval yes"><b>Human approved</b>'
             '<span>Signed off %s at %s.%s</span></div>'
             % (at, was or version.lstrip("v"), (" " + note) if note else ""))
@@ -801,6 +821,10 @@ td a { color:var(--ink); font-weight:600; }
 .approval.yes { border-color:color-mix(in srgb, var(--b) 55%, var(--line));
   background:color-mix(in srgb, var(--b) 9%, transparent); }
 .approval.yes b { color:var(--b); }
+.approval.inherited { border-color:color-mix(in srgb, var(--b) 55%, var(--line));
+  border-style:dashed;
+  background:color-mix(in srgb, var(--b) 9%, transparent); }
+.approval.inherited b { color:var(--b); }
 .approval.stale { border-color:color-mix(in srgb, var(--a) 55%, var(--line));
   background:color-mix(in srgb, var(--a) 9%, transparent); }
 .approval.stale b { color:var(--a); }
@@ -820,6 +844,7 @@ td.aud .old { color:var(--a); font-weight:600; }
 td.aud .cur { color:var(--muted); }
 td.appr { white-space:nowrap; }
 td.appr .y { color:var(--b); font-weight:600; }
+td.appr .i { color:var(--b); font-weight:600; font-style:italic; }
 td.appr .s { color:var(--a); font-weight:600; }
 td.appr .n { color:var(--muted); }
 .trk { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
@@ -2459,7 +2484,8 @@ def page(name: str, row: dict, notes: list[str], version: str,
          instrmap: dict | None = None, instrmap_seconds: int = 0,
          approval: dict | None = None,
          now_shas: dict | None = None,
-         allow_stale: bool = False) -> str:
+         allow_stale: bool = False,
+         inherited: dict | None = None) -> str:
     """One tune's page.
 
     `now_shas` is `conversion_shas()` -- the sha256 each staged tune converts
@@ -2655,7 +2681,8 @@ window.__abSpectrogram = %(spectrogram_json)s;</script>
            notes_strip=notes_strip_card(name, fidjson),
            voicewave=voicewave_card(voice_map),
            instrmap=instrmap_card(name, instrmap, instrmap_seconds),
-           approval=approval_badge(name, approval or {}, version, now_shas),
+           approval=approval_badge(name, approval or {}, version, now_shas,
+                                   inherited=inherited),
            staleaudio=audio_banner(name, now_shas, withheld),
            spectrogram=spectrogram_card(spec),
            spectrogram_json=json.dumps(spec) if spec else "null",
@@ -2711,7 +2738,8 @@ def abbrev_sidid(text: str) -> str:
 
 def index(names: list[str], rows: dict, version: str,
           appr: dict | None = None, shas: dict | None = None,
-          survey: dict | None = None) -> str:
+          survey: dict | None = None,
+          inherited: dict | None = None) -> str:
     appr = appr or {}
     shas = shas or {}
     survey = survey or {}
@@ -2731,6 +2759,9 @@ def index(names: list[str], rows: dict, version: str,
             return '<span class="n">&mdash;</span>'
         want, now_sha = a.get("sng_sha256"), shas.get(n)
         if want and now_sha and want != now_sha:
+            rec = (inherited or {}).get(n)
+            if rec and rec.get("status") == "inherited":
+                return '<span class="i">inherited</span>'
             return '<span class="s">stale</span>'
         return '<span class="y">approved</span>'
 
@@ -3190,6 +3221,8 @@ def main() -> int:
     fidjson = fidelity_json_rows()
     imrows, imseconds = instrmap_rows()
     appr = approvals()
+    import approvals as AP
+    inherited = AP.load_approvals_json()
     # Unconditional now. It was `if appr else {}` while the only reader was the
     # approval badge; the audio banner asks it of every page, so gating it on
     # approvals existing would have left an unapproved tune silent about its
@@ -3228,7 +3261,8 @@ def main() -> int:
                     instrmap=imrows.get(args.embed, {}),
                     instrmap_seconds=imseconds, approval=appr,
                     now_shas=now_shas,
-                    allow_stale=args.allow_stale_audio)
+                    allow_stale=args.allow_stale_audio,
+                    inherited=inherited)
         out = Path(args.output) if args.output else LISTEN / ("%s.embed.html" % args.embed)
         out.write_text(html, encoding="utf-8")
         print("%s  %.2f MB" % (out, len(html) / 1e6))
@@ -3253,10 +3287,12 @@ def main() -> int:
                     fidjson=fidjson.get(n, {}),
                     instrmap=imrows.get(n, {}), instrmap_seconds=imseconds,
                     approval=appr, now_shas=now_shas,
-                    allow_stale=args.allow_stale_audio)
+                    allow_stale=args.allow_stale_audio,
+                    inherited=inherited)
         rendered[n] = _stamp(build_id, html)
     index_html = _stamp(build_id, index(names, rows, version, appr, now_shas,
-                                        survey=survey))
+                                        survey=survey,
+                                        inherited=inherited))
 
     for n in names:
         _atomic_write(LISTEN / ("%s.html" % n), rendered[n])

@@ -1544,7 +1544,15 @@ python -c "import approvals as AP, hashlib; from pathlib import Path
 for s,a in AP.approved_tunes().items():
     p=AP.ROOT/'build'/'listen'/f'{s}.h2g.sng'; print(s, p.exists() and hashlib.sha256(p.read_bytes()).hexdigest()==a['sng_sha256'])"
 ```
-For any `False`: the approved `.sng` must be rebuilt from history — `sound_calibrate.convert_at(a["version"], sid, workdir, ...)` reproduces it, and its sha must equal `sng_sha256` (if it does not, the approval's `version` field is provenance only and the build cannot be recovered; record that tune as `stale` with `failed: ["approved .sng not recoverable"]`). Add a `--recover` flag to `approvals.py main()` that tries `convert_at` for each missing one and copies the result to `build/listen/<stem>.h2g.sng` when the sha matches.
+For any `False`: the approved `.sng` must be rebuilt from history via `sound_calibrate.convert_at(a["version"], sid, workdir, ...)`.
+
+> **CORRECTED — DO NOT HASH `convert_at`'S RETURN VALUE.** This step used to read "`convert_at(...)` reproduces it, and its sha must equal `sng_sha256`". That is wrong and it is a SILENT no-op rather than a loud failure: `convert_at` returns `F.pack_sid(...)`, **a packed `.sid`**, whose sha256 can never equal an `sng_sha256` — so a literal implementation recovers nothing, always, and reports every approval unrecoverable while looking like it ran. The document contradicted itself: § "the module" above already specifies correctly that `convert_at` "returns the packed `.sid`", and that line is the one to trust.
+>
+> Read the artefact off disk instead. `convert_at` writes the intermediate `.sng` to **`workdir / f"{sid.stem}.{sha}.sng"`** on its way to packing, and THAT is the file the listener heard and the one `sng_sha256` names. So call `convert_at` for its SIDE EFFECT and hash the `.sng` it leaves behind. `approvals.recover_approved_sng` already does exactly this and its docstring records why.
+>
+> A `None` return means one of THREE things and they must not be collapsed: the version does not resolve to a commit, the historical tree refused the file, or the bytes came back with a different sha. Only the third is the `stale` case this step describes.
+
+If the recovered `.sng`'s sha does not equal `sng_sha256`, the approval's `version` field is provenance only and the build cannot be recovered; record that tune as `stale` with `failed: ["approved .sng not recoverable"]`. Add a `--recover` flag to `approvals.py main()` that tries `convert_at` for each missing one and copies the recovered `.sng` to `build/listen/<stem>.h2g.sng` when the sha matches.
 
 - [ ] **Step 6: Run it for real**
 
