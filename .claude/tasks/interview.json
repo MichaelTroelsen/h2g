@@ -1,0 +1,142 @@
+{
+ "generated_from": {
+  "head": "c490b72",
+  "plan_head": "a4bf43d"
+ },
+ "blockers": [
+  {
+   "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
+   "kind": "decision",
+   "title_at_research": "regrid is not in FIDELITY_TOGGLES so the search never walks it",
+   "blocked_on_at_research": "A decision on whether --regrid should enter FIDELITY_TOGGLES. It cannot be selected by fidelity_better, so all 14 adoptions are hand-recorded.",
+   "current_behaviour": "ALREADY DECIDED IN CODE. presets.py's `regrid` entry in FIXED carries a full recorded decision at v0.5.411: regrid stays OUT of FIDELITY_TOGGLES. The reason is NOT a measurement gap -- `fidelity.drift` takes the same two traces play() already holds and drift_per_1000 IS a registered Dimension. It is that fidelity_better's `keeps_notes` requires cand[2] >= ref[2] on OUR attack count and gates every acceptance term, so all four eligible files are refused before any term is consulted: Arcade_Classics 375->372 (original 372, exact), Sigma_Seven 417->414 (exact), Wiz 446->437 (exact), Rikky 201->196 (original 197). Each is a strict improvement the guard reads as a loss. The recorded decision: 'the exclusion list should NOT keep growing, and the term to add is not drift but the original's attack count in keeps_notes'.",
+   "sources": [
+    "python/presets.py:190-244",
+    "CLAUDE.md:1386"
+   ],
+   "options": [],
+   "recommendation": null,
+   "why": "The question this task asks is answered in the file it concerns, at v0.5.411, with the alternative named. Nothing to decide and nothing to run.",
+   "question": null,
+   "unblocked_by_research": true
+  },
+  {
+   "id": "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision",
+   "kind": "decision",
+   "title_at_research": "Las_Vegas and Samantha_Fox can never be `seen`, and removing them is a coverage call",
+   "blocked_on_at_research": "Las_Vegas and Samantha_Fox are EXCLUDED from the sound calibration because their v0.5.401 fix is a MULTIPLIER change: the good build repacks at a different -S, its music ends inside the window, and loud_ratio lands at 0.074x and 0.063x. While they remain, `all(seen)` cannot hold however many good pairs are added, so the doc reads FAIL forever. Deleting them makes it green today and was deliberately NOT done at 7bcd3fe, because that is gaming an all() rather than measuring anything. The question is yours: RETIRE the two (dropping coverage from four pairs to two, both of which are now measured -- Human_Race on `loud`, W_A_R on both), or KEEP them and change the criterion so an excluded pair is reported rather than counted? A third option is to keep hunting comparable pairs, which the structural-vs-multiplier rule now makes cheap to shortlist.",
+   "current_behaviour": "Las_Vegas and Samantha_Fox are excluded from the sound calibration because their v0.5.401 fix is a MULTIPLIER change; loud_ratio lands at 0.074x and 0.063x. While they remain, all(seen) can never hold, so the doc reads FAIL forever. Two good pairs are measured (Human_Race on loud, W_A_R on both). This gates three tasks.",
+   "sources": [
+    "build/approvals.json",
+    "CLAUDE.md v0.5.401 section"
+   ],
+   "options": [
+    {
+     "label": "Keep + report",
+     "consequence": "criterion changes so an excluded pair is REPORTED not counted; coverage stays at four, nothing is hidden"
+    },
+    {
+     "label": "Retire the two",
+     "consequence": "green today, coverage drops four pairs -> two; deliberately refused at 7bcd3fe as gaming an all()"
+    },
+    {
+     "label": "Hunt more pairs",
+     "consequence": "the structural-vs-multiplier rule makes shortlisting cheap, but the doc stays FAIL until one lands"
+    }
+   ],
+   "recommendation": "Keep + report",
+   "why": "Deleting the two is gaming an all(); the exclusion is a real measured property, and reporting it keeps the information while letting the doc go green on what is actually comparable.",
+   "question": "Las_Vegas and Samantha_Fox can never be `seen` -- their fix is a multiplier change, so the good build is structurally incomparable. How should the calibration handle them?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings",
+   "kind": "decision",
+   "title_at_research": "A searched but unadopted preset refresh moves six songs on the hard-restart axis",
+   "blocked_on_at_research": "A full --fidelity search was run and diffed but NOT adopted; the candidate is at C:/t/hr1_candidate.json. Against the shipped presets with the carry applied it moves SIX previously-searched songs on the hard-restart axis (Knucklebusters, Mr_Meaner, Off_the_Cuff, Pandora, Shockway_Rider, Spellbound) and gives the six interleaved files their first-ever toggles. TWO THINGS HAVE CHANGED UNDER IT since it was measured and they may invalidate it: the search window moved 60 s -> 180 s at 1e66af3 (which changed 25 fields across 17 of 89 songs in the one experiment that compared them), and the corpus is 89 songs now. Do you want it re-run at 180 s before any adoption, adopted as measured, or dropped?",
+   "current_behaviour": "A full --fidelity search was run at 60 s and diffed but NOT adopted; candidate still on disk at C:/t/hr1_candidate.json (24388 bytes, Sep 2). It moves six songs on the hard-restart axis and gives the six interleaved files their first toggles. The window moved 60 -> 180 s at 1e66af3, and the one experiment comparing them found the two searches CHOOSE DIFFERENTLY on 25 fields across 17 of 89 songs.",
+   "sources": [
+    "C:/t/hr1_candidate.json",
+    "CLAUDE.md v0.5.459 window section",
+    "presets.json"
+   ],
+   "options": [
+    {
+     "label": "Re-run at 180 s",
+     "consequence": "~53 min sharded / 75 min serial (timed v0.5.459); the only arm whose decisions match the window every artefact now uses"
+    },
+    {
+     "label": "Adopt as measured",
+     "consequence": "free, but imports 60 s decisions known to differ on a fifth of the corpus"
+    },
+    {
+     "label": "Drop it",
+     "consequence": "six songs keep hand-set hard-restart values and the interleaved six get no toggles at all"
+    }
+   ],
+   "recommendation": "Re-run at 180 s",
+   "why": "The repo's own measurement says a 60 s search chooses differently on 17 of 89 songs, so adopting the candidate would import decisions the current window would not make.",
+   "question": "The unadopted preset candidate was searched at 60 s; the window is 180 s now and the two searches are measured to disagree on 17 of 89 songs. What should happen to it?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
+   "kind": "decision",
+   "title_at_research": "A whole class of task cannot be completed by any runner in this repo",
+   "blocked_on_at_research": "Several open tasks fix the /whattask GENERATOR, which lives at `~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/commands/whattask.md` -- OUTSIDE this repo. No `touches` a plan for this repo can grant will ever reach it, so `/runtask` can only ever record `partial` on them, however many times they are attempted (one already has). This is the same shape as tasks whose fix is a `whattask.json` rewrite, one level further out. HOW DO YOU WANT THESE HANDLED? Options: (a) work the plugin repo directly in a separate session and keep these out of this plan; (b) let this plan grant absolute plugin paths, accepting that they are outside the repo the locks protect; (c) mark them explicitly unrunnable so a runner skips them rather than burning a cycle. At least three current tasks are affected: the touches-exists check, the `creates:` mode, and the test-file rule.",
+   "current_behaviour": "At least three open tasks fix the /whattask GENERATOR, which lives in the plugin at ~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/. NEW FACT FOUND HERE: that directory is a CACHE and is NOT a git repository (`git status` there returns 'fatal: not a git repository'), so an edit made in place is both outside the locks AND liable to be overwritten by a plugin update. /runtask can only ever record `partial` on these; one already has, twice.",
+   "sources": [
+    "~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/ (not a git repo)",
+    ".claude/tasks/runs.jsonl#whattask-should-check-a-touches-path-exists"
+   ],
+   "options": [
+    {
+     "label": "Separate session on the plugin source",
+     "consequence": "keeps these out of this plan; the only option that edits a real repo rather than a cache"
+    },
+    {
+     "label": "Grant absolute plugin paths here",
+     "consequence": "writes outside the locks that make concurrent runs safe, into a cache a plugin update overwrites"
+    },
+    {
+     "label": "Mark them unrunnable",
+     "consequence": "a runner skips them instead of burning a cycle, but nothing ever gets fixed"
+    }
+   ],
+   "recommendation": "Separate session on the plugin source",
+   "why": "The cache is not a git repo, so option (b) would edit a directory a plugin update replaces -- the work would silently vanish, which is worse than not doing it.",
+   "question": "Three open tasks fix the /whattask generator, which lives in a plugin CACHE outside this repo -- and that cache is not a git repo, so edits there are unversioned and overwritable. How should this class be handled?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "powerplay-regrid-refusal-rests-on-a-naming-artefact-and-should-be-re-decided",
+   "kind": "decision",
+   "title_at_research": "Powerplay's regrid refusal rests on a naming artefact",
+   "blocked_on_at_research": "BOTH AXES ARE NOW MEASURED, at 7bcd3fe, and the question is a clean yes/no. Powerplay refuses --regrid in presets.json. The refusal rests on melody falling 0.9930 -> 0.9643 under regrid (2.88pp). SEQUENCE AXIS (difflib, what fidelity.naming_split ships): repairing NAMES alone recovers 2.71pp of that 2.88pp -- a naming share of 94% on just 7 renames, and all 7 are -1 semitone (A#4/A-4 x3, D-5/C#5 x2, G-5/F#5 x2). So on this reading almost the whole 'loss' is siddump naming the same note differently, not different music. THE OBVIOUS OBJECTION WAS TESTED AND FAILS: difflib chooses the pairing, so the count is alignment-dependent (its own docstring says so). Re-measured on the FRAME axis -- substituting only where both arms strike on the SAME frame -- it makes 36 renames spanning -12..+13 semitones and leaves melody at 0.9531, BELOW the unrepaired 0.9643, for a share of -39%. That is a worse alignment, not a truer one: it pairs notes that merely coincide in time, which after a regrid are different notes. So the 94% stands on measurement rather than on the absence of an alternative. WHAT REGRID BUYS, and it is the other half of the trade: --regrid exists to remove integrated drift, which NO FIDELITY.MD COLUMN CAN SEE -- a tune playing the right music 0.78% fast forever scores perfectly. Adopting it means accepting a melody number that is 2.88pp lower on paper for a timing gain the report cannot show you. THE QUESTION: adopt --regrid for Powerplay on the strength of the 94% naming share, or keep the refusal? A listen would settle it independently and none has been taken.",
+   "current_behaviour": "presets.json currently has Powerplay_Hockey_USA_vs_USSR regrid: False (14 songs adopt it). The refusal rests on melody 0.9930 -> 0.9643 (2.88pp) measured at 7bcd3fe. Repairing NAMES alone recovers 2.71pp -- a 94% naming share on 7 renames, all -1 semitone; the frame-axis alternative was tested and is WORSE (0.9531), so the 94% stands on measurement. THE DIRECTLY ANALOGOUS CASE REVERSED: One_on_One was refused for the same reason with a recorded -37.0pp collapse, and at 180 s its melody IMPROVES 0.9903 -> 0.9952; it was adopted at v0.5.459.",
+   "sources": [
+    "presets.json",
+    "CLAUDE.md v0.5.459 regrid re-grade",
+    "fidelity.naming_split"
+   ],
+   "options": [
+    {
+     "label": "Re-measure at 180 s first",
+     "consequence": "one file, one A/B; the analogous refusal reversed sign on exactly this move"
+    },
+    {
+     "label": "Adopt now on the 94% share",
+     "consequence": "accepts a 2.88pp lower melody on paper for a drift gain no column can show"
+    },
+    {
+     "label": "Keep the refusal",
+     "consequence": "Powerplay keeps its cumulative drift, which no FIDELITY.md column can see"
+    }
+   ],
+   "recommendation": "Re-measure at 180 s first",
+   "why": "One_on_One was refused on the same evidence shape and REVERSED when the window moved to 180 s, so Powerplay's 2.88pp may not survive the move either -- and it is one file's A/B to find out.",
+   "question": "Powerplay refuses --regrid on a 2.88pp melody drop that is 94% a naming artefact. The analogous case (One_on_One) reversed when the window moved 60 -> 180 s. What now?",
+   "unblocked_by_research": false
+  }
+ ]
+}
