@@ -586,3 +586,57 @@ def test_carry_from_is_read_instead_of_the_output_file(tmp_path):
          "-o", str(out)],
         capture_output=True, text=True)
     assert "no readable carry source" not in r.stderr, r.stderr[-400:]
+
+
+def test_every_fidelity_toggle_is_boolean_because_the_search_enumerates_booleans():
+    """`tune_by_fidelity` walks `itertools.product((False, True), repeat=...)`
+    over `FIDELITY_TOGGLES` (presets.py:1394). That enumeration can express
+    exactly two values per option, so a member whose `convert()` parameter is
+    not a bool would be handed `True` where it expects something else -- and
+    the walk would score a conversion nobody asked for, silently.
+
+    Derived from `inspect.signature(convert)` rather than a hand-kept list,
+    so adding a non-boolean option to the tuple fails HERE instead of in a
+    search result nobody re-reads.
+    """
+    import inspect
+
+    import presets
+    from h2g.convert import convert
+
+    sig = inspect.signature(convert)
+    for key in presets.FIDELITY_TOGGLES:
+        assert key in sig.parameters, f"{key} is not a convert() option at all"
+        default = sig.parameters[key].default
+        assert isinstance(default, bool), (
+            f"{key} defaults to {default!r} ({type(default).__name__}); the "
+            f"fidelity search can only enumerate booleans")
+
+
+def test_a_non_boolean_option_is_excluded_and_must_be_hand_recorded():
+    """The converse, and the reason `--real-firstwave-instruments` is never
+    chosen by the search.
+
+    Its value is a TUPLE OF INSTRUMENT NUMBERS, so no boolean enumeration can
+    produce it; its adoptions are hand-recorded, exactly as `--regrid`'s are.
+    That is a structural property of the search, NOT a criterion declining a
+    population -- a distinction worth pinning, because "the search never picks
+    it" reads like a scoring bug and is not one.
+
+    `engine` (int) and `hard_restart_frames` (None) have the same shape.
+    """
+    import inspect
+
+    import presets
+    from h2g.convert import convert
+
+    sig = inspect.signature(convert)
+    non_boolean = {k for k, p in sig.parameters.items()
+                   if k in presets.EXCLUDED_FROM_ALWAYS
+                   and not isinstance(p.default, bool)}
+    assert "real_firstwave_instruments" in non_boolean
+    assert isinstance(
+        sig.parameters["real_firstwave_instruments"].default, tuple)
+    # None of them may be in the walk.
+    assert not (non_boolean & set(presets.FIDELITY_TOGGLES)), sorted(
+        non_boolean & set(presets.FIDELITY_TOGGLES))

@@ -23,6 +23,7 @@ import subprocess
 import pytest
 
 import fidelity
+from corpus import CORPUS, needs_corpus
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 
@@ -2741,3 +2742,54 @@ def test_no_dimension_is_unreachable_from_the_generated_artefact():
     dead = [d.column for d in fidelity.DIMENSIONS
             if not any(d.value(r) is not None for r in rows)]
     assert dead == [], f"null on every one of {len(rows)} rows: {dead}"
+
+
+@needs_corpus
+def test_depths_ten_null_rows_are_two_different_findings():
+    """`depth_compare` returns {} for two unrelated reasons and both print `-`.
+
+    Seven of the ten null rows have NO vibrato population at all -- the filter
+    working, and `-` is right. Three have one and fail to pair, which is the
+    shape that was a real defect for Powerplay's `onset`. Pinned so the
+    two cannot be conflated, and so a future interleaved vibrato decode fails
+    HERE rather than silently changing what the dash means.
+    """
+    no_population = ["Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics",
+                     "Pacific_Coast", "Go_Go_Dash", "Sun_Never_Shines",
+                     "Kings_of_the_Beach_ingame"]
+    has_population = ["5_Title_Tunes", "Commodore_64_Music_Examples", "BMX_Kidz"]
+    for stem in no_population:
+        path = CORPUS / f"{stem}.sid"
+        if not path.exists():
+            continue
+        assert not fidelity.vibrato_records(path), (
+            f"{stem} gained a vibrato population; `depth` can measure it now "
+            f"and its null row is no longer 'no population'")
+    for stem in has_population:
+        path = CORPUS / f"{stem}.sid"
+        if not path.exists():
+            continue
+        assert fidelity.vibrato_records(path), (
+            f"{stem} lost its vibrato population; its null row is now the "
+            f"other cause")
+
+
+@needs_corpus
+def test_the_interleaved_dialect_has_no_vibrato_engine_any_detector_reads():
+    """The six ILV files share one cause, and it is about the DIALECT.
+
+    None of the three engines `vibrato_records` covers -- the $78/$07 pair,
+    the LFO table, the bare right-shift -- matches the interleaved player. If
+    it oscillates, this project cannot see it, which is why `depth`, and only
+    `depth`, is blank on all six.
+    """
+    ilv = ["Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics", "Pacific_Coast",
+           "Go_Go_Dash", "Sun_Never_Shines"]
+    seen = 0
+    for stem in ilv:
+        path = CORPUS / f"{stem}.sid"
+        if not path.exists():
+            continue
+        seen += 1
+        assert not fidelity.vibrato_records(path), stem
+    assert seen >= 5, f"only {seen} of the six ILV files are in the corpus"

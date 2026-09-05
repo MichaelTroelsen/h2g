@@ -1894,9 +1894,36 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
 
     Read it in log space, as every `x`-suffixed column here is read: 0.42 and
     2.4 are the same size of wrong.
+
+    **THIS FUNCTION HAS TWO REFUSALS AND THE REPORT CANNOT TELL THEM APART.**
+    Both return `{}`, so both print `-`; they are completely different
+    findings. Measured over `build/fidelity.json` at v0.5.467 -- **10 of 89
+    measured rows are null**, and they split **7 / 3**:
+
+    * **NO POPULATION (7): `vibrato_records` returns nothing**, so no record in
+      the ORIGINAL carries a vibrato byte and there is nothing to measure. `-`
+      is the correct and honest answer. All six interleaved-classic files are
+      here -- Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast,
+      Go_Go_Dash, Sun_Never_Shines -- plus Kings_of_the_Beach_ingame. For the
+      ILV six this is a statement about the DIALECT: none of the three vibrato
+      engines (`vibrato_offset`, `table_vibrato`, `triangle_vibrato`) matches
+      it, so if the interleaved player oscillates at all, nothing here reads
+      it.
+    * **NO PAIRS (3): the population EXISTS and the comparison fails** --
+      5_Title_Tunes (6 keys), Commodore_64_Music_Examples (9) and BMX_Kidz
+      (2). Records carry the byte, but no instrument key survives
+      `paired_keys` with a positive original depth. That is the same shape as
+      Powerplay Hockey's `-` in `onset`/`nrun`/`hold`/`tail` (§ 7.iiiii): a
+      dash meaning "no shared key", which was a real defect there.
+
+    So only the second group is a candidate for work, and it is three files
+    rather than ten. `tests/test_fidelity.py` pins the split so it cannot
+    drift silently; a future ILV vibrato decode should move six rows out of
+    the first group and will fail that test deliberately.
     """
     if not keys:
-        # No population, no measurement. See vibrato_records.
+        # No population, no measurement. See vibrato_records. NOTE this is
+        # NOT the same as the `not pairs` refusal below -- see the docstring.
         return {}
     a = oscillation_depths(orig, nframes, keys)
     b = oscillation_depths(ours, nframes, keys)

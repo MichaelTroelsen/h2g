@@ -641,10 +641,35 @@ def convert(sid_path: str, log: Logger = print,
     #
     # **AND THE GATE IS NOT THE ONLY THING DECLINING THESE FILES**, which was
     # not previously known: with the condition lifted, only 3 of the 10 VBI
-    # carriers are reached at all. The other 7 -- Devils_Galop, both Last_V8s,
+    # carriers are reached at all. The other 7 are Devils_Galop, both Last_V8s,
     # Master_of_Magic, Monty_on_the_Run, Phantoms_of_the_Asteroid and
-    # Thing_on_a_Spring -- are declined by `group_tempos` or by
-    # `pulse_phase_sims` returning nothing, and that second cause is unread.
+    # Thing_on_a_Spring.
+    #
+    # **THIS COMMENT USED TO SAY THEY WERE DECLINED BY `group_tempos` OR BY
+    # `pulse_phase_sims` RETURNING NOTHING. THAT IS WRONG ON BOTH HALVES, FOR
+    # ALL SEVEN (measured v0.5.467).** Every one of them arrives here with a
+    # non-empty `group_tempos` (1 to 4) AND a non-empty `sims` (2 to 8) -- and
+    # several carry MORE sims than the three that succeed, which have 1, 2 and
+    # 2. Neither of the first four conditions is what refuses them. They die
+    # at the two AFTER, and the converter already logs which:
+    #
+    # * **`collect_pulse_phases` returns no plan (3 files)** -- Devils_Galop,
+    #   Monty_on_the_Run, Thing_on_a_Spring. Cause, in its own words: *"a
+    #   record sounds on two voices of subtune N; the accumulator is shared
+    #   and the plan declines the subtune"* (Monty on subtunes 0 and 2,
+    #   Thing_on_a_Spring on 0, Devils_Galop on 1). That is the player's one
+    #   pulse accumulator per record, not a table limit -- a real refusal,
+    #   and correct.
+    # * **`build_pulse_phase_table` returns no table (4 files)** -- both
+    #   Last_V8s, Master_of_Magic, Phantoms_of_the_Asteroid. Cause: the pulse
+    #   table OVERFLOWS. *"PULSE PHASE NEEDS 130 TABLE ROWS FOR INSTRUMENT 7"*
+    #   (both Last_V8s), 112 rows for instrument 14 (Master_of_Magic), 70 for
+    #   instrument 17 (Phantoms) -- against `GT_MAX_TABLELEN`. This one is a
+    #   CAPACITY limit rather than a musical refusal, so it is the half that
+    #   could conceivably move.
+    #
+    # So the two causes are unequal and only one is a candidate for work: a
+    # shared accumulator is the player, a full table is our encoding.
     #
     # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------

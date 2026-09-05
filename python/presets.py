@@ -669,6 +669,22 @@ def best_options(sid_path: Path) -> dict | None:
 # rename is a fact and not a convention.
 _ALWAYS_NAME = {"fmt": "format"}
 
+# **EVERY MEMBER MUST BE BOOLEAN-VALUED, and that is a property of the WALK
+# rather than a style rule.** `tune_by_fidelity` enumerates
+# `itertools.product((False, True), repeat=len(FIDELITY_TOGGLES))`, so this
+# tuple can express exactly two values per option. An option whose `convert()`
+# parameter is not a bool would be handed `True` where it expects something
+# else, and the search would score a conversion nobody asked for -- silently,
+# because a candidate that converts is a candidate that gets scored.
+#
+# That is why `--real-firstwave-instruments` is never chosen: its value is a
+# TUPLE OF INSTRUMENT NUMBERS, so no boolean enumeration can produce it, and
+# its adoptions are hand-recorded exactly as `--regrid`'s are. `engine` (int)
+# and `hard_restart_frames` (None) have the same shape. This is a structural
+# limit of the search, NOT a criterion declining a population -- a distinction
+# worth keeping, because "the search never picks it" reads like a scoring bug.
+# `tests/test_presets.py` derives the check from `inspect.signature(convert)`,
+# so adding a non-boolean here fails there rather than in a search result.
 FIDELITY_TOGGLES = ("no_test_restart", "two_stage", "sfx_drum",
                     "wave_program", "pitch_seq", "wide_hard_restart",
                     "max_hard_restart")

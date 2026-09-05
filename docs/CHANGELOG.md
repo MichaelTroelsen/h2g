@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.468 — 2026-09-05
+
+- the interleaved routing clear ships gated on one filtering voice
+
 ## 0.5.467 — 2026-09-05
 
 - the -S1 fetch refutation is swept over 3840 parameter combinations

@@ -5737,14 +5737,29 @@ def _filter_step_per_call(step: int, multiplier: int) -> int:
 # else. Radio_ACE, Lion_Heart and Pacific_Coast have the first property;
 # Sun_Never_Shines and Go_Go_Dash do not; and Radio_ACE and Pacific_Coast fail
 # the second. Emitting the routing faithfully needs a per-voice filter, which
-# the format does not have. Arms 1, 2 and 3 are in
-# `C:/t/ilv-filter-overproduce/edit2.py`, `edit3.py` and `edit7.py` -- all
-# three measured, none shipped.
+# the format does not have.
+#
+# **AND THAT IS WHY ARM 3 SHIPS GATED RATHER THAN NOT AT ALL (v0.5.467).**
+# The limit above is a statement about which FILES a clear can be expressed
+# on, so it is a gate, not a refusal. `_ilv_clearing_instruments` now emits
+# the clear only where exactly ONE voice ever filters -- Radio_ACE, Lion_Heart
+# and Pacific_Coast (voices 2, 2 and 1); never on Go_Go_Dash or
+# Sun_Never_Shines, which filter on two. Corpus byte-hash: **89 compared,
+# MOVED 1, and it is Radio_ACE**, whose filtered frames go 6682 -> 4602
+# against its original's 2688 with `melody` 0.9406 and `sequence` 0.9446
+# IDENTICAL to four decimals in both arms. Sun_Never_Shines keeps 8992
+# against 8997 -- ungated, arm 3 cost it 4622 of those frames, which is the
+# whole reason for the gate.
+#
+# Arms 1 and 2 remain measured and unshipped, in
+# `C:/t/ilv-filter-overproduce/edit2.py` and `edit3.py`; arm 3 is `edit7.py`
+# plus the gate, re-appliable as `apply_gated.py`.
 ILV_FILTER_ROUTING = 0x07
 
 
 def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
-                        multiplier: int = 1):
+                        multiplier: int = 1,
+                        clearing_instruments: set | None = None):
     """(entries, pointers) for the interleaved dialect's filter table.
 
     The same four rows the classic path emits -- set params, set cutoff,
@@ -5812,7 +5827,121 @@ def _ilv_filter_entries(sid: SidFile, det: Detection, instr_used: int,
             break
         pointers[i] = len(entries) + 1  # table steps are 1-based
         entries += block
+
+    # **THE PLAYER TAKES A VOICE OUT OF THE FILTER WHEN IT PLAYS AN UNFILTERED
+    # RECORD, AND GOATTRACKER CANNOT SAY THAT PER VOICE** -- there is one
+    # $D417 and `FILT_STOP` ends the table rather than the routing, so without
+    # a clear one filtered note holds the circuit for the rest of the song.
+    # See ILV_FILTER_ROUTING for the disassembly and for the two arms that
+    # were measured and rejected before this one.
+    if entries and clearing_instruments and len(entries) + 2 <= GT_MAX_FILT:
+        clear = len(entries) + 1
+        entries += [(FILT_SET_PARAMS | _ilv_filter_passband(sid, det), 0x00),
+                    (FILT_STOP, 0x00)]
+        for i in sorted(clearing_instruments):
+            if i not in pointers:
+                pointers[i] = clear
     return entries, pointers
+
+
+def _ilv_filter_passband(sid: SidFile, det: Detection) -> int:
+    """The passband the clear entry keeps.
+
+    The player's own clear touches $D417 alone, so the passband it leaves
+    standing is whatever the last filtered record set. The first filtered
+    program's is the closest a single shared entry can come, and five of the
+    six files have only one.
+    """
+    filt = det.ilv_filter
+    data = sid.data
+    if filt is None:
+        return 0
+    for i in range(max(det.instr_used - 1, 0)):
+        rec = det.instr_start + i * det.instr_stride
+        if rec + max(filt.program_off, filt.enable_off) >= len(data):
+            break
+        if not data[rec + filt.enable_off] & FILTER_ENABLE_BIT:
+            continue
+        base = filt.table + data[rec + filt.program_off] * filt.stride
+        if base + 7 < len(data):
+            return (data[base + 6] & 0x07) << 4
+    return 0
+
+
+def _ilv_clearing_instruments(sid: SidFile, det: Detection,
+                              tracks: List[List[int]],
+                              patterns: List[List[int]],
+                              instr_base: int) -> set:
+    """Unfiltered records that may write the routing clear.
+
+    **ONLY THOSE PLAYED EXCLUSIVELY ON VOICES THAT ALSO PLAY A FILTERED
+    RECORD**, which is the narrowest rule that reproduces the player and the
+    third of three that was measured. A Goattracker filter pointer belongs to
+    the INSTRUMENT, so it fires on every voice that plays it; the player's
+    mask belongs to the VOICE. An instrument shared between a filtering voice
+    and a non-filtering one therefore cannot carry the clear without stamping
+    out a filter the player would have left standing.
+
+    Measured at v0.5.461 -- per-frame record occupancy of the ORIGINALS, keyed
+    by the ADSR pair the `onset`/`hold` columns already key on, over frames
+    with a waveform selected:
+
+        Radio_ACE          voice 2  2688 frames on filtered records, and the
+                                    original routes 2688 -- exact
+        Lion_Heart         voice 2  8391 of 8998 (93.3%), 43 unfiltered
+        Sun_Never_Shines   voice 0  7532, voice 2 6204
+        Pacific_Coast      voice 1  6 frames, and no passband, so 0 routed
+
+    Lion_Heart's 8954-of-9000 needed no special mechanism: its filtered pair
+    simply occupies almost all of voice 2. The earlier census that made it
+    look like a puzzle counted instruments NAMED, not frames occupied.
+    """
+    filt = det.ilv_filter
+    if filt is None or not tracks:
+        return set()
+    data = sid.data
+    filtered = {i for i in range(max(det.instr_used - 1, 0))
+                if det.instr_start + i * det.instr_stride + filt.enable_off
+                < len(data)
+                and data[det.instr_start + i * det.instr_stride
+                         + filt.enable_off] & FILTER_ENABLE_BIT}
+    if not filtered:
+        return set()
+    # Instruments each voice NAMES, walking its orderlists in play order.
+    # `instr 00` is inheritance, so naming is the quantity (CLAUDE.md).
+    per_voice: list = [set() for _ in range(3)]
+    for ti, track in enumerate(tracks):
+        voice = ti % 3
+        for b in track:
+            if b >= len(patterns):      # a repeat/transpose byte, or a gap
+                continue
+            pat = patterns[b]
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:      # ENDPATT, patterns.GT_END_PATTERN
+                    break
+                if pat[r + 1]:
+                    per_voice[voice].add(pat[r + 1] - instr_base)
+    filtering = {v for v in range(3) if per_voice[v] & filtered}
+    if not filtering:
+        return set()
+    # **EXACTLY ONE FILTERING VOICE, WHICH IS THE HALF ARM 3 LACKED.**
+    # Goattracker has one $D417 and one filter pointer per INSTRUMENT, so a
+    # clear written by voice A stamps out a circuit voice B may still be
+    # holding. Where two voices filter, the player never does that and we
+    # would. Measured at v0.5.467 over the six interleaved files -- Radio_ACE,
+    # Lion_Heart and Pacific_Coast filter on ONE voice (2, 2 and 1);
+    # Go_Go_Dash and Sun_Never_Shines on TWO (0 and 2 each); Lakers enables
+    # no record at all. Without this gate arm 3 took Sun_Never_Shines from
+    # 8992 filtered frames against its original's 8997 -- essentially exact --
+    # down to 4370, which is the one file the clear must not touch.
+    if len(filtering) != 1:
+        return set()
+    out = set()
+    for i in set().union(*per_voice) - filtered:
+        played_on = {v for v in range(3) if i in per_voice[v]}
+        if played_on and played_on <= filtering:
+            out.add(i)
+    return out
 
 
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
@@ -5985,7 +6114,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             # The interleaved dialect, consulted only where the classic
             # reader found nothing. The two populations are disjoint.
             filter_entries, filter_ptrs = _ilv_filter_entries(
-                sid, det, instr_used, multiplier)
+                sid, det, instr_used, multiplier,
+                _ilv_clearing_instruments(
+                    sid, det, tracks, patterns,
+                    1 if compact_instruments else 2))
     else:
         filter_entries, filter_ptrs = [], {}
     if pulse_plan is not None:
