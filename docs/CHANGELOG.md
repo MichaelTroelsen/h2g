@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.469 — 2026-09-05
+
+- Bangkok's 18-attack deficit is attributed to the drum tick's pinned pitch
+
 ## 0.5.468 — 2026-09-05
 
 - the interleaved routing clear ships gated on one filtering voice

@@ -1461,6 +1461,43 @@ def _sfx_drum_entries(wave: int, pitch_hi: int, period: int,
     held. It is the drum of seven corpus files and was left unwritten while it
     was believed to be the game's own sound effect (§7).
 
+    **`pitch_hi` IS ONE ABSOLUTE PITCH, AND ON ONE VOICE OF ONE FILE THE
+    PLAYER'S IS NOT. THAT IS BANGKOK'S 18-ATTACK RESIDUAL, ATTRIBUTED
+    (v0.5.468).** Measured on both sides at `-t 180` through the harness's own
+    subtune and multiplier, counting frames whose waveform byte is `$81` and
+    censusing the frequency held on each:
+
+        voice 1   original  2 frequencies: $486E x558, $30AF x207
+                  ours      2 frequencies: $49C5 x558, $313C x207
+        voice 2   original  15 frequencies: $482C x311, $4837 x254,
+                            $48E8 x137, $4857 x134, $4827 x122, $48C1 x97,
+                            $4816 x96, $484E x68, ... over 1423 frames
+                  ours       1 frequency:  $49C5 x1324
+
+    **Voice 1 is the control and it passes**: two frequencies on each side in
+    the IDENTICAL 558/207 proportions, so the shape is right and only the
+    absolute values differ. Voice 2 is where all 18 missing attacks live, and
+    there the original's tick FOLLOWS THE MUSIC across fifteen frequencies
+    while ours is pinned to a single $49C5 -- the same $49C5 it writes on
+    voice 1.
+
+    **So the deficit is not 18 notes we fail to write; it is 18 repetitions
+    siddump does not NAME.** It names a note from the frequency on the frame
+    the gate rises, so a tick that moves gets named again and a tick that does
+    not is one note held. We emit 1324 of the original's 1423 tick frames --
+    93% of the sound -- and 18 fewer attacks. `retrig 0.9719` on this file is
+    a statement about the naming, which is this repo's rule that a low score
+    is a claim about the harness until it is a claim about the converter.
+
+    **NOT FIXED, and the reason is a cross-file one.** Pinning a different
+    constant would be wrong by construction; what the player does is track the
+    note. That is the SAME SHAPE as the open Monty task, whose entry already
+    records "the original's voice 1 FOLLOWS THE MUSIC ... an attempt to fix it
+    by pinning a constant attack pitch would be wrong by construction". Two
+    files, two voices, one mechanism -- worth taking together rather than
+    separately, and worth a listening check before either, since 93% of the
+    tick frames are already there.
+
     The shape is a loop, because the player's is: two frames of noise at the
     drum's pitch, the instrument's own waveform and note back again, a delay
     covering the rest of the period, and a jump to the top. That is five
