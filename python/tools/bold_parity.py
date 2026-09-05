@@ -92,12 +92,13 @@ def find_odd_paragraph(lines: list[str], tags: list[str]) -> tuple[int, int] | N
     return first_nonempty_odd_fallback
 
 
-def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print(f"usage: {argv[0]} <markdown-file>", file=sys.stderr)
-        return 2
+def check_file(path: str) -> int:
+    """Print the per-file report for ``path`` and return its prose ** count.
 
-    path = argv[1]
+    Returning the raw count (not a bool) lets the caller decide the exit
+    code -- odd is the failure condition, and the caller is what knows
+    whether this is one file among several.
+    """
     with open(path, "r", encoding="utf-8", newline="") as f:
         raw = f.read()
 
@@ -142,7 +143,26 @@ def main(argv: list[str]) -> int:
     else:
         print("Prose ** count is EVEN -- no unclosed bold marker in prose.")
 
-    return 0
+    return prose_count
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        print(f"usage: {argv[0]} <markdown-file> [markdown-file ...]", file=sys.stderr)
+        return 2
+
+    paths = argv[1:]
+    any_odd = False
+    for n, path in enumerate(paths):
+        if n:
+            print()
+        if check_file(path) % 2 == 1:
+            any_odd = True
+
+    # Exit non-zero when ANY file's prose ** count is odd, so a test or a
+    # pre-commit hook can gate on this rather than only reading stdout --
+    # a gate that always exits 0 cannot fail a build no matter what it prints.
+    return 1 if any_odd else 0
 
 
 if __name__ == "__main__":

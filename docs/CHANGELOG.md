@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.474 — 2026-09-05
+
+- bold_parity exits non-zero on an odd prose count
+
 ## 0.5.473 — 2026-09-05
 
 - the derived fidelity queue, a context-aware bold-parity tool, and Rasputin's pack refusal narrowed to three candidates
