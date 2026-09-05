@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.462 — 2026-09-05
+
+- the interleaved arpeggio's two-frame head, SidFile.to_address, and the silent park's loop
+
 ## 0.5.461 — 2026-09-05
 
 - eight measurement and coverage tasks; four task premises refuted by measurement and no converter behaviour changed

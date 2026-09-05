@@ -551,6 +551,46 @@ def _build_raw_pattern(data: bytes, addr: int,
                 # tie, so the flag itself is dropped and the note is kept --
                 # the player still re-gates, so the attack is real.
                 g_note &= 0x7F
+            # **THE CLAMP IS RIGHT FOR EVERY BYTE BUT ONE, AND THE ONE IS
+            # NOTE 104 ON COMMANDO -- PRICED AT v0.5.461 AND BLOCKED ONLY BY
+            # THE BYTE-EXACT FIXTURE.**
+            #
+            # Goattracker's note column tops out at index 92, so a byte above
+            # it has nowhere to go. For $5D and $5F -- A-7 and B-7, real
+            # entries in Commando's 96-entry table -- clamping is the only
+            # available answer. For **$68 = 104 it is a 21-semitone error**,
+            # and the mechanism was read out of the player rather than
+            # guessed (runs.jsonl, `commando-voice-1-plays-g-sharp-7...`):
+            # the note fetch is `$50EE LDA ($5F),Y / $50F3 ASL A / $50F4 TAY`
+            # -- Y = 2 * note, no transpose -- so 104 reads sixteen bytes past
+            # the table at $5428 and lands on `$54F8`/`$54F9`, which are the
+            # per-voice STORED WAVEFORM cells (`$515A STA $54F8,X`, from the
+            # instrument record's +2). Commando's voice-1 waveform is `$41`,
+            # so the sounded frequency is about `$4100`, nearest table entry
+            # **71 = B-5** -- and that is what the original plays, 95 times.
+            # The one occurrence of entry 59 is `$21` in the same cell, an
+            # octave down by arithmetic rather than by transposition.
+            #
+            # **THE FAITHFUL EMISSION AND ITS PRICE, BOTH MEASURED.** Mapping
+            # the byte 104 to index 71 here (and nothing else) gives, on the
+            # corpus rip at `-t 180`:
+            #
+            #     melody    0.9722 -> 0.9934      sequence  0.9503 -> 0.9948
+            #     pitch_jaccard, our_attacks (2410), bend_ratio: UNCHANGED
+            #
+            # and on the byte-exact fixture: **25 bytes differ, every one
+            # `$BC -> $A7`**, the file length unchanged -- GT_LASTNOTE giving
+            # way to B-5 on 25 note-column slots. The whole suite goes from 1
+            # failure (an unrelated artefact staleness) to **33**, and the 32
+            # new ones are byte-exactness tests across 18 files.
+            #
+            # **SO IT IS NOT SHIPPED, AND THAT IS A HUMAN DECISION RATHER THAN
+            # A TECHNICAL ONE**: `Commando.sng` is the project's only fidelity
+            # anchor and re-cutting it is deliberate work
+            # (`any-commando-pitch-fix-requires-recutting-the-byte-exact-
+            # fixture`). What is emitted here is not defensible as *correct* --
+            # it is 21 semitones out on 110 of voice 1's notes in the corpus
+            # rip -- only as *unchanged*.
             if g_note >= 0x5C:
                 g_note = 0x5C
             # A shifted table can push the lowest byte below its own entry 0;
@@ -1100,8 +1140,70 @@ ILV_MAX_NOTE = 0x5C          # the same GT ceiling the classic decoder clamps to
 # `$83`+`$87` on 16 events, and `$87` is not emitted. Where a slide does claim
 # the column the arpeggio is declined rather than displacing it -- the slide is
 # measured and shipped, this is new.
+# **AND THE `$C0`-`$FF` DURATION BYTE'S BIT `$20` IS A TIE FLAG -- READ OUT OF
+# THE PLAYER AT v0.5.461, AND IT IS WHAT THE ATTACK SURPLUS IS MADE OF.**
+# `wait = b & 0x1F` below keeps five bits of that byte and drops this one. The
+# player keeps both, in Radio_ACE's own bytes (Lakers spells the same code at
+# $1180 with its tables $28 higher; the other four are byte-identical here):
+#
+#     1174  29 40     AND #$40         ; $C0-$FF -> duration
+#     1176  F0 15     BEQ $118D
+#     1178  68        PLA
+#     1179  9D 3D 1A  STA $1A3D,X      ; the WHOLE byte, per voice
+#     117C  29 20     AND #$20
+#     117E  9D 94 01  STA $0194,X      ; a DECOY -- nothing reads $0190-$0198
+#     1181  BD 3D 1A  LDA $1A3D,X
+#     1184  29 1F     AND #$1F         ; the wait, which is all we read
+#     1186  9D 3A 1A  STA $1A3A,X
+#
+# and then, on the way to the note:
+#
+#     13D0  BD 3D 1A  LDA $1A3D,X      ; the saved byte...
+#     13D3  9D 40 1A  STA $1A40,X      ; ...into the current-event cell
+#     12A9  BD 40 1A  LDA $1A40,X      ; the NOTE path reads it
+#     12AC  29 20     AND #$20
+#     12C4  F0 03     BEQ $12C9        ; clear -> the note starts normally
+#     12C6  4C B5 13  JMP $13B5        ; SET  -> the note-start block is SKIPPED
+#
+# $12C9-$13B4 is the block that writes the pulse pair, the ADSR and the gate
+# and resets the tables. Skipping it is exactly Goattracker's
+# `CMD_TONEPORTA` with a parameter of 0 -- "this row changes the pitch and
+# does not attack", the tie block `_build_raw_pattern` already has for the
+# classic engine and this grammar does not.
+#
+# **MEASURED, PER VOICE, FROM THE FRAMES RATHER THAN FROM A TIE COUNT** (the
+# tie *metric* is pitch movement under a held note and does not conserve:
+# attacks+ties was the wrong lead). Each of our attacks was matched against
+# the original's at `-t 180` through the harness's own subtune, multiplier and
+# startup-lag resolution, and classified by what the original does there:
+#
+#     file               voice  orig  ours   in a TIE row   on a slide   we miss
+#     Radio_ACE            1     300   501       173             4          0
+#     Go_Go_Dash           2     386   663       246            25          0
+#     Lakers_vs_Celtics    2     235   300        62             3         10
+#     Pacific_Coast        2     746   801        48             7          0
+#     Lion_Heart           0     904   900        87             6         97
+#
+# The surplus is ONE VOICE per file and it is almost entirely tie rows; every
+# other voice matches within a handful (Pacific_Coast voice 0 is 1480 against
+# 1479, Go_Go_Dash voice 1 is 1188 against 1188 with ZERO tie rows). We miss
+# none of the original's attacks on four of the five, so the surplus is
+# additive rather than a re-phrasing.
+#
+# The flag's own census, over every pattern each table names: **Radio_ACE 324
+# of 1611 notes (20.1%), Go_Go_Dash 262 of 1598, Lion_Heart 126 of 903,
+# Pacific_Coast 56 of 1202, Lakers_vs_Celtics 43 of 619** -- and in all five
+# the flagged-duration count equals the flagged-note count exactly, so a
+# flagged byte governs one note rather than a run.
+#
+# NOT EMITTED YET, and the obstacle is named rather than guessed: a
+# Goattracker row carries ONE command, `$82` already claims it as
+# CMD_PORTAUP/PORTADOWN on this engine, and `CMD_TONEPORTA` is a third
+# claimant on the same column. That is a decision about precedence, not a
+# decode, so it is left to a task that can measure it.
 ILV_ARP = 0x83
 ILV_SLIDE = 0x82
+ILV_TIE = 0x20                  # of a $C0-$FF duration byte; see above
 ILV_COMMAND_OPERANDS = {0x80: 1, ILV_SLIDE: 2, 0x83: 1, 0x84: 0,
                         0x86: 1, 0x87: 2, 0x88: 0, 0x89: 1}
 
@@ -1161,6 +1263,10 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
             return events
 
         if b >= 0xC0:                       # duration; emits no row
+            # `& 0x1F` is the wait. Bit `ILV_TIE` of this same byte is the
+            # player's no-attack flag and is DROPPED here -- see the block
+            # above for the routine that reads it and for what the drop costs
+            # (one voice per file, +201 attacks on Radio_ACE voice 1).
             wait = b & 0x1F
             i2 += 1
             continue

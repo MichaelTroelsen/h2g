@@ -77,13 +77,28 @@ def test_the_source_programs_waveforms_are_copied_verbatim():
     assert left[:3] == [0x41, 0x02, 0x41]
 
 
-def test_entry_zero_covers_frame_one_at_multiplier_one():
-    """The packed player runs no wavetable entry on a note's first call, so
-    frame 0 keeps the pattern's own pitch and entry 0 is already the second
-    step of the cycle.
+def test_entry_zero_is_step_zero_because_the_cycle_has_a_two_frame_head():
+    """**This test used to assert `WAVE_NOTE_BASE + 5`, and the head is why it
+    does not any more.**
+
+    The packed player runs no wavetable entry on a note's first call, so entry
+    0 lands on frame 1 -- which is why the old reading made it the cycle's
+    SECOND step. Measured at v0.5.461 against the originals' own
+    per-offset-from-attack profile, the players hold step 0 for frames 0 AND 1
+    and raise on frame 2, so `ARP_HEAD_FRAMES` subtracts that head and clamps
+    at 0. Radio_ACE voice 2 reads `+0 +0 +7 +0 +7 +0` where ours read
+    `+0 -7 +0 -7 +0 +0`, one for one over 232 notes.
+
+    Emitting the second step here put the offset ON the attack frame, and
+    siddump names an attack from the frequency the gate rises on -- so the old
+    arithmetic renamed every arpeggiated attack while leaving the COUNT alone.
+    See `ARP_HEAD_FRAMES` for the three-arm A/B.
     """
     _, right = G._arp_block(SOURCE, [0, 5], 1, 10)
-    assert right[0] == G.WAVE_NOTE_BASE + 5
+    assert right[0] == G.WAVE_NOTE_BASE + 0
+    # and the head is a HEAD, not an off-by-one: with it removed the same
+    # call would be step 1 again.
+    assert G.ARP_HEAD_FRAMES == 2
 
 
 def test_entry_zero_covers_frame_zero_above_multiplier_one():
@@ -96,10 +111,15 @@ def test_a_delay_entry_is_charged_to_the_frame_of_its_LAST_call():
     the last of them (gplay.c:697-704). Charging it to its first call would
     put the step a frame early on exactly the two files that have delays.
     """
-    _, right = G._arp_block([(0x41, 0), (0x02, 0), (0xFF, 0)], [0, 5], 1, 10)
-    # call 0 -> frame 1 -> 5;  the delay spans calls 1..3, last at frame 4 -> 0
-    assert right[0] == G.WAVE_NOTE_BASE + 5
-    assert right[1] == G.WAVE_NOTE_BASE + 0
+    # A THREE-step cycle, deliberately: with the two-frame head a two-step one
+    # puts both entries on step 0 and the test stops discriminating.
+    _, right = G._arp_block([(0x41, 0), (0x02, 0), (0xFF, 0)], [0, 5, 7], 1, 10)
+    # call 0 -> frame 1, less the head -> step 0
+    assert right[0] == G.WAVE_NOTE_BASE + 0
+    # the delay spans calls 1..3; its LAST is frame 4, less the head -> step 2.
+    # Charged to its FIRST call it would be frame 2 -> step 0, so this asserts
+    # the difference rather than the value.
+    assert right[1] == G.WAVE_NOTE_BASE + 7
 
 
 def test_the_step_is_a_rate_and_is_scaled_by_the_multiplier():

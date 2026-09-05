@@ -117,7 +117,11 @@ def test_the_expired_branch_reads_the_record_s_own_waveform():
             assert sid.data[tgt] == 0xB9, path.name   # LDA instr+2,Y
             expired_at = tgt + 1 - p
         expired = sid.data[p + expired_at] | sid.data[p + expired_at + 1] << 8
-        instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+        # `to_address`, not the plain inversion: I_Ball moves part of
+        # itself at init, so the player reads its instrument table at
+        # $E70D where the plain formula gives $971D. This line was the
+        # tenth hand-rolled copy of that formula (v0.5.461).
+        instr_cpu = sid.to_address(det.instr_start)
         assert expired == instr_cpu + 2, path.name
         checked += 1
     assert checked >= 30, checked
@@ -452,7 +456,11 @@ def test_the_interleaved_push_chain_is_interrupted_not_absent():
         assert search_file(sid.data, TWO_STAGE_PUSH) <= -1, name
         # ...while the instruction that names the address is not. Rebuild the
         # operand from the CPU address, not from the file offset det carries.
-        instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+        # `to_address`, not the plain inversion: I_Ball moves part of
+        # itself at init, so the player reads its instrument table at
+        # $E70D where the plain formula gives $971D. This line was the
+        # tenth hand-rolled copy of that formula (v0.5.461).
+        instr_cpu = sid.to_address(det.instr_start)
         want = det.two_stage_frames - det.instr_start + instr_cpu
         assert search_file(sid.data, TWO_STAGE_PUSH_ANCHORED.format(
             lo=want & 0xFF, hi=want >> 8)) > -1, name

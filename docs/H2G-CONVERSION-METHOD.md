@@ -7425,6 +7425,58 @@ the derived dialect actually emitted, and `det.wave_alternate_noise` is still
 produced this correction; opened as a follow-up, which should also chase what
 moved Chicken_Song's baseline wave.
 
+#### GRADED AT v0.5.461: every figure above is a SIXTY-SECOND figure, and the premise they support is false at 180
+
+The block says so itself -- its provenance line is `fidelity.py
+Chicken_Song.sid -t 60 --presets ../presets.json --json` -- and since v0.5.459
+every generated artefact is taken at **`-t 180`**. That is not a re-labelling
+job here, because the window changes the CONCLUSION and not merely the
+numbers.
+
+**The premise is "a conversion with NO noise".** `our_noise_frames = 0` above,
+against the original's 654, is what makes the section's not-shipped reasoning
+read as a clear-cut gap. From `build/fidelity.json` (`seconds: 180`,
+v0.5.459, subtune 0, `-S1`):
+
+    Chicken_Song       our_noise_frames  2556   of the original's  4188
+    Hollywood_or_Bust  our_noise_frames     0   of the original's  4500
+
+So at the published window **Chicken Song's baseline already sounds three
+fifths of the original's noise**. The 654 is a 60-second count of the same
+quantity, and the 0 is an artefact of the shorter window. Hollywood or Bust's
+0 survives the change, which is why the two files must now be quoted
+separately rather than as one population.
+
+**The emitted arm was measured at 180 s too, and it is in the run log rather
+than here** (`chicken-song-alone-qualifies-for-the-derived-wave-alternate-and-
+there-is-no-option`, done at `7969d85`, by patching the derivation into
+`goatwriter.py` and reverting it):
+
+    Chicken_Song       noise 2556 -> 3780 of 4188   wave 0.8826 -> 0.8349
+                       onset 0.8077 -> 0.7692       melody/seq/pitch unmoved
+    Hollywood_or_Bust  noise    0 -> 2998 of 4500   wave 0.8334 -> 0.7222
+                       melody 0.5193 -> 0.4041      sequence 0.5172 -> 0.4019
+
+and the conclusion is UNCHANGED -- neither file would be selected -- but for a
+different reason from the one this section gives. `fidelity_better` vetoes
+both on `onset` (Chicken Song falls 0.0385 against a 0.02 margin, Hollywood
+0.0556), and the `finds_noise` term the old text hoped for **cannot fire for
+Chicken Song at all**, because that term requires `not audible(ref)` and 2556
+frames at a reported pitch make the reference audible. The 60-second premise
+is what made that term look reachable.
+
+**TWO 180-SECOND READINGS OF THE SAME FILE DISAGREE, AND NEITHER IS ADOPTED
+HERE.** The artefact gives Chicken Song `onset_agreement 0.6923` and
+`wave_agreement` **null**; the run above gives 0.8077 and 0.8826 for what it
+calls the same baseline. One of them is measuring something the other is not
+-- a different subtune resolution, or a different option set -- and this
+paragraph exists so the next reader does not average them. The figures that
+decide the question (`our_noise_frames` 2556 against 4188) agree in both.
+
+**The 60-second numbers above are left exactly as they were.** They are the
+measurement that was taken, and a figure re-labelled rather than re-measured
+is the decay this file's own grading rule exists to prevent.
+
 #### `_wave_alternate_entries` exists, and that is not a contradiction
 
 Settled at f0fd20c, because it reads like one. The record above says the

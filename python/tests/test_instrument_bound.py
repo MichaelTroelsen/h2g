@@ -27,6 +27,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
+import songview
 from h2g.convert import _detect_tables, convert
 from h2g.detect import WAVEFORMS, detect
 from h2g.sidfile import load_sid
@@ -97,19 +98,69 @@ def test_the_bound_is_a_whole_number_of_records_or_is_not_applied():
     assert checked >= 30, checked
 
 
-def _dangling(path, opts):
-    """(highest instrument referenced, or None if nothing dangles).
+def _rows(pat):
+    """(note, instrument) per row, stopping at the end-of-pattern marker."""
+    for r in range(0, len(pat), 4):
+        if pat[r] == songview.GT_END_PATTERN:
+            return
+        yield pat[r], pat[r + 1]
 
-    Read out of goatwriter's own warning rather than re-derived here: it is
-    the check the converter already performs, over the patterns as built.
+
+def _played(blob):
+    """(highest instrument the ORDERLISTS reach, written, reached set, patterns).
+
+    Read back from the emitted `.sng` with songview's parser rather than from
+    the converter's internals -- the reason `tests/test_songview.py` exists: a
+    reader that shares code with the writer cannot disagree with it.
+    """
+    song = songview.parse_sng(blob)
+    reached = set()
+    for sub in range(song.subtunes):
+        for voice in range(3):
+            for kind, what, _ in songview.decode_orderlist(
+                    song.tracks[sub * 3 + voice]):
+                if kind == "pattern":
+                    reached.add(int(what[1:], 16))
+    hi = 0
+    for i in reached:
+        if i < len(song.patterns):
+            hi = max([hi] + [ins for _, ins in _rows(song.patterns[i])])
+    return hi, len(song.instruments), reached, len(song.patterns)
+
+
+def _both(path, opts):
+    """(reported, played) -- the two readings, from ONE conversion.
+
+    `reported` is goatwriter's own DANGLING warning, over the patterns as
+    built: ALL of them, reachable or not. That is right for the converter,
+    which must not emit a reference it cannot satisfy, and wrong for the
+    question `test_the_bound_adds_no_dangling_reference` asks, which is about
+    the music. `played` is the same question restricted to the patterns some
+    orderlist actually reaches, and is None when nothing the tune plays names
+    an instrument beyond the ones written.
+
+    Both come from the same bytes deliberately: two conversions would leave a
+    difference between the readings unattributable.
     """
     msgs = []
     try:
-        convert(str(path), log=msgs.append, **opts)
+        blob = convert(str(path), log=msgs.append, **opts)
     except Exception:
-        return None
+        return None, None
     m = next((x for x in msgs if "DANGLING" in x), None)
-    return int(m.split("$")[1].split()[0], 16) if m else None
+    reported = int(m.split("$")[1].split()[0], 16) if m else None
+    hi, written, _, _ = _played(blob)
+    return reported, (hi if hi > written else None)
+
+
+def _dangling(path, opts):
+    """goatwriter's warning alone -- what the converter reports, all patterns."""
+    return _both(path, opts)[0]
+
+
+def _dangling_played(path, opts):
+    """The same question asked only of the patterns the orderlists reach."""
+    return _both(path, opts)[1]
 
 
 def test_the_bound_adds_no_dangling_reference(monkeypatch):
@@ -123,27 +174,89 @@ def test_the_bound_adds_no_dangling_reference(monkeypatch):
     clean, and where something already dangled the *highest* reference is
     unchanged -- the bound moves how many are unmet, never which byte is at
     the top, because it does not touch the patterns at all.
+
+    **THE REDUCTION IS OVER PLAYED PATTERNS SINCE v0.5.461, AND RICOCHET IS
+    WHY.** It used to read goatwriter's DANGLING warning, which scans every
+    pattern emitted -- and Ricochet emits 150 of which its one subtune plays
+    40. v0.5.459's derived instrument mask made the UNBOUNDED conversion of
+    that file clean (32 written covers the highest byte any pattern carries,
+    $20), so the difference construction started charging the bound for a
+    reference in pattern 7 -- 94 rows whose notes read G#7, D-2 and D#0
+    against the $01-$07 every played pattern names. Bytes that were never note
+    data, which is the case the paragraph above already knew about and which
+    the old reduction could only survive while the unbounded count happened
+    not to cover them. Same correction as CLAUDE.md's "walk the orderlist in
+    play order" rule, written for the identical mistake one axis over
+    (`instr 00` is inheritance, so "names no instrument" is never the quantity
+    you want).
+
+    The bound is right on that file, and the PLAYER says so rather than the
+    arithmetic: the block at file $0ADE that the walk keeps counting is read
+    at `LDA $9A1C,Y / STA $44 / LDA $9A1D,Y / STA $45 / LDA ($44),Y` -- a
+    pointer per instrument, dereferenced -- and at `LDA $9A1F,X` beside the
+    records' own `LDA $999C,X` and `LDA $999F,X`. It is a parallel
+    per-instrument table, not more records: 16 rows for 16 records, which is
+    why the unbounded walk lands on exactly twice the truth here as it does on
+    IK+ 30/15, Wiz 40/20 and Delta 44/22.
+
+    Both readings are still taken, because the old one is what stops this
+    quietly becoming a weaker test: over the 50 corpus files carrying the
+    array, the warning moves between the two arms on RICOCHET ALONE, and the
+    played reading is clean on every file in both arms (Arcade Classics and
+    BMX Kidz warn at $32 in both arms and neither plays it).
     """
     if not CORPUS.is_dir():
         return
     import h2g.detect as d
     opts = dict(FIXED, legal_restart=True)
-    checked = 0
+    checked, clean, moved = 0, 0, []
     for path in sorted(CORPUS.glob("*.sid")):
         sid = load_sid(str(path))
         sid, det = _detect_tables(sid, lambda *a, **k: None)
         if not det.effect_two_stage:
             continue
         checked += 1
-        bounded = _dangling(path, opts)
+        b_reported, bounded = _both(path, opts)
         monkeypatch.setattr(d, "_bound_instruments", lambda *a, **k: None)
-        unbounded = _dangling(path, opts)
+        u_reported, unbounded = _both(path, opts)
         monkeypatch.undo()
         if unbounded is None:
             assert bounded is None, (path.name, bounded)
         else:
             assert bounded == unbounded, (path.name, bounded, unbounded)
+        clean += bounded is None and unbounded is None
+        if b_reported != u_reported:
+            moved.append((path.name, b_reported, u_reported))
     assert checked >= 30, checked
+    # Measured at v0.5.461 over the 50 files carrying the array: nothing any
+    # tune PLAYS dangles at either count, and the whole-file warning moves on
+    # one file only.
+    assert clean == checked, (clean, checked)
+    assert [m[0] for m in moved] == ["Ricochet.sid"], moved
+
+
+def test_ricochets_warning_is_a_pattern_no_orderlist_reaches():
+    """The single file above, pinned so the reduction cannot be simplified back.
+
+    A reader who deletes the played/reported distinction gets a green suite
+    until this file is converted again, so the difference is asserted rather
+    than merely described: the warning says $20, the music says $07 against 16
+    instruments written, and every pattern naming $20 is one nothing plays.
+    """
+    if not CORPUS.is_dir():
+        return
+    opts = dict(FIXED, legal_restart=True)
+    path = CORPUS / "Ricochet.sid"
+    blob = convert(str(path), log=lambda m: None, **opts)
+    song = songview.parse_sng(blob)
+    hi, written, reached, total = _played(blob)
+    assert (hi, written) == (7, 16), (hi, written)
+    assert 0 < len(reached) < total, (len(reached), total)   # 40 of 150
+    assert _dangling(path, opts) == 0x20
+    assert _dangling_played(path, opts) is None
+    naming = {i for i, pat in enumerate(song.patterns)
+              if any(ins == 0x20 for _, ins in _rows(pat))}
+    assert naming and not (naming & reached), sorted(naming & reached)
 
 
 def test_the_bound_lands_on_the_last_instrument_played_in_several_files():

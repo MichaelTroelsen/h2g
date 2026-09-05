@@ -283,6 +283,41 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
     and dropping to 1 would rewrite every `-S1` conversion in the corpus to
     fix a defect the multispeed files have.
 
+    **THAT LAST CLAUSE IS WRONG AND THE PRICE OF BOTH ALTERNATIVES IS NOW
+    MEASURED (v0.5.461).** Dropping the floor fixes NOTHING, and zero -- the
+    only value that does fix it -- costs the schedule. The deficit in question
+    is `hold`'s `fetch` kind: Goattracker fetches the next note
+    `gatetimer & $3f` calls early, so the note before it loses that many
+    calls. **At `-S1` one call IS one frame**, so the deficit is one frame for
+    every non-zero gatetimer this function can return, and no choice between 1
+    and 2 can close it.
+
+    * **FLOOR REMOVED (gatetimer 1 where the row allows).** Byte-hash over the
+      corpus through `fidelity._preset_opts`: **30 of 86 files move** -- not
+      "no single-speed file", because the bound bites wherever `row_calls <= 3`
+      at any multiplier. `--hold-census` is UNCHANGED: Action_Biker stays
+      `fetch` 4 of 4 and Commando `fetch` 9 of 9. Every report column is
+      identical to the shipped arm on all four files traced at `-t 180` except
+      **`gate`, which falls**: Action_Biker 72 -> 57%, Commando 41 -> 28%,
+      Crazy_Comets 57 -> 49%, Sigma_Seven 24 -> 25%. It buys nothing and sells
+      the release.
+    * **ZERO IS NOT AVAILABLE, AND THIS IS WHAT IT COSTS.** Forcing the
+      gatetimer to 0 does close the kind -- Action_Biker `fetch` 4 of 4 -> 0 --
+      but it reclassifies to `slot` 4 of 4 and **`hold` itself does not move,
+      0% either way**: the miss is relabelled, not removed. What moves is
+      everything else, on all four files: melody 100 -> 95, 97 -> 85, 100 -> 86
+      and 99 -> 91%; `retrig` 1.00 -> 0.89, 0.80, 0.78 and 0.89; `drift`
+      +0.0 -> +187.5, +261.1 and +248.6; `gate` 72 -> 13, 41 -> 24, 57 -> 35
+      and 24 -> 9%; and Action_Biker's attack count 291 -> 260 with `len`
+      +0.1 -> **+11.3 s**. A zero gatetimer does not merely stop the early
+      fetch, it stops the note fetch being early enough to keep the schedule.
+
+    So `fidelity.py`'s standing sentence -- "there is no row length or
+    gatetimer that returns it" -- is CONFIRMED rather than merely asserted,
+    and the deficit stays a priced property of the target player. The lever
+    that does remove it is `--no-test-restart`, per song, which is what the
+    search already walks.
+
     Falls back to that constant where the row is unknown, which is what a
     caller building instruments without a tempo pass has.
     """
@@ -1238,6 +1273,69 @@ WAVE_NOTE_ABS = 0x80         # ...and $80 + index is an absolute note
 ARP_MAX_STEPS = 3            # the player's cycle: 0, the high nibble, the low one
 
 
+# How many frames the player spends on the arpeggio's step 0 before the cycle
+# starts advancing. **MEASURED, not derived** (v0.5.461), from the originals'
+# own per-offset-from-attack profile at `-t 180` -- the check CLAUDE.md
+# requires before emitting a newly decoded effect, and the one that had not
+# been run for this one.
+#
+# Radio_ACE voice 2, semitone offset relative to the frequency ON the attack
+# frame, frames 0-5, the four commonest shapes and their counts:
+#
+#     ORIGINAL   +0 +0 +7 +0 +7 +0  x232      OURS  +0 -7 +0 -7 +0 +0  x232
+#                +0 +0 +5 +0 +5 +0  x206            +0 -5 +0 -5 +0 +0  x206
+#                +0 +0 +4 +0 +4 +0  x24             +0 -4 +0 -4 +0 +0  x24
+#                +0 +0 +6 +0 +6 +0  x20             +0 -6 +0 -6 +0 +0  x20
+#
+# The counts match one for one, so these are the same notes. The original
+# holds step 0 for frames 0 AND 1 and puts its first raised step on frame 2;
+# ours put it on frame 0 -- so the offset landed ON the attack, and siddump
+# names an attack from the frequency on the frame the gate rises. That is why
+# this option cost `melody` and `sequence` while leaving the attack COUNT
+# untouched, which is the signature of a renamed attack rather than a wrong
+# one.
+#
+# **THAT PAIR WAS TAKEN WITHOUT THE SONGS' PRESETS and is kept because the
+# shape is what it shows; the numbers below are the ones to quote.** Under the
+# shipped preset the same check on Lakers_vs_Celtics voice 2 reads `+0 -5 +0
+# -5 +0 -5` x16 at head 0 and **`+0 +0 +5 +0 +5 +0` x16 at head 2 -- the
+# original's own shape, sign included**.
+#
+# **THE A/B, AT `-t 180`, EVERY OTHER OPTION AT THE SONG'S SHIPPED PRESET.**
+# Three arms: `arpeggio` OFF, ON at head 0 (what shipped), ON at head 2.
+#
+#     file               melody OFF   ON head 0   ON head 2
+#     Lakers_vs_Celtics    0.8176      0.7758      0.8176
+#     Go_Go_Dash           0.9483      0.9386      0.9483
+#     Lion_Heart           0.9043      0.9030      0.9043
+#     Radio_ACE            0.9406      0.8373      0.8373
+#
+# `sequence` moves with it (Lakers 0.8122 / 0.7742 / 0.8122, Go_Go_Dash
+# 0.9499 / 0.9411 / 0.9499); `our_attacks`, `orig_attacks`, `pitch_jaccard`
+# and `onset_agreement` are identical across all three arms on all four files.
+#
+# **So on three of the four the head makes the arpeggio FREE**: melody and
+# sequence return EXACTLY to the arpeggio-off baseline while `reversal_ratio`
+# goes 0.0057 -> 0.556 (Lion_Heart), 0.0181 -> 0.1265 (Go_Go_Dash) and
+# 0.0 -> 0.2243 (Lakers). That is the whole oscillation measure bought for
+# nothing the report can see.
+#
+# **RADIO_ACE IS THE EXCEPTION AND THE HEAD IS NOT ITS PROBLEM**: 0.8373 at
+# heads 0, 1 AND 2 alike, against 0.9406 with the arpeggio off. Its profile
+# says why the head cannot help it -- `no_test_restart` is in its preset and
+# owns frame 0, so its arpeggio already lands on the original's frames (`+0
+# +0 -7 +0 -7 +0` at head 0, the right FRAMES with the wrong SIGN) and adding
+# a head only moves it off them again (`+0 -7 -7 +0 -7 +0`). Whatever costs
+# that file 10 points of melody is a second defect, not this one.
+#
+# **WHAT IS MEASURED IS THE PROFILE, NOT THE ROUTINE.** Two frames is what the
+# originals do; whether it is the note-start path at $1388 clearing the step
+# counter *after* the frame routine has run, or the packed player's own
+# one-call wavetable offset on top of a one-frame player head, is not settled
+# here. Read $1400-$1446 against $1388 before changing this number.
+ARP_HEAD_FRAMES = 2
+
+
 def _arp_offsets(operand: int) -> Optional[List[int]]:
     """The player's semitone cycle for a `$83 nn`, or None where there is none.
 
@@ -1302,7 +1400,10 @@ def _arp_block(source: List[tuple], offsets: List[int],
     for w in body:
         last = call + (w if w < 0x10 else 0)   # a delay covers `w + 1` calls
         left.append(w)
-        right.append(note((last + 1) // hold))
+        # `ARP_HEAD_FRAMES` of step 0 before the cycle advances -- the
+        # head the originals have, measured. Clamping at 0 repeats
+        # step 0 rather than wrapping backwards into the cycle.
+        right.append(note(max(0, (last + 1) // hold - ARP_HEAD_FRAMES)))
         call = last + 1
 
     # The sustained waveform: the last real waveform the program reaches. A
@@ -2295,11 +2396,10 @@ def _gate_hits(sid: SidFile):
         hits.append((m.start(), rel[0] | rel[1] << 8))
     if hits:
         return hits
-    base = sid.load_addr - sid.to_offset(sid.load_addr)
     for m in SPEED_GATE_IMM.finditer(data):
         if m.group(1) != m.group(3):
             continue
-        hits.append((m.start(), m.start() + 6 + base))
+        hits.append((m.start(), sid.to_address(m.start() + 6)))
     if hits:
         return hits
     # Last, and only for a file neither spelling above could read: the
@@ -2494,7 +2594,7 @@ def _find_outer_gate(sid: SidFile, subtunes: int):
     if ctr != (m.group(3)[0] | (m.group(3)[1] << 8)):
         return (), None                     # decrements one cell, reloads another
     imm_off = m.start() + 6
-    imm_addr = sid.load_addr + imm_off - sid.to_offset(sid.load_addr)
+    imm_addr = sid.to_address(imm_off)
     store = bytes([0x8D, imm_addr & 0xFF, imm_addr >> 8])
     i = sid.data.find(store)
     while i >= 0:
@@ -5472,6 +5572,166 @@ def _filter_step_per_call(step: int, multiplier: int) -> int:
 # All three voices, because the player's routing is a LIVE accumulator and
 # nothing static names the voice an instrument will play on. See
 # _ilv_filter_entries.
+#
+# **THAT SECOND CLAUSE IS FALSE, MEASURED AT v0.5.461: A STATIC READING
+# PREDICTS ALL SIX ORIGINALS.** The voices each original actually routes,
+# taken from its own trace ($D417's low nibble with a passband selected,
+# `-t 180`):
+#
+#     file               routes            frames   ctrl low nibble
+#     Radio_ACE          voice 2            2688    $4
+#     Lion_Heart         voice 2            8954    $4
+#     Go_Go_Dash         voices 2 and 0+2   1172    $4 x868, $5 x304
+#     Sun_Never_Shines   voices 0 and 2     8997    $5 x7657, $1 x1340
+#     Lakers_vs_Celtics  none                  0    $0
+#     Pacific_Coast      none                  0    $2 x6, no passband
+#
+# And the static predictor -- **the voices whose orderlists play a record
+# carrying `FILTER_ENABLE_BIT`** -- gives exactly that set on every one:
+# Radio_ACE voice 2 alone plays GT 9; Lion_Heart voice 2 alone plays GT 5 and
+# 15; Go_Go_Dash voices 0 and 2 play GT 9; Sun_Never_Shines voices 0 and 2
+# play GT 3/9 and 6; Lakers plays none; Pacific_Coast voice 1 plays GT 7. Six
+# for six, including both files that route nothing.
+#
+# It is computable HERE: `build_sng` already receives `tracks` and `patterns`,
+# so the map from instrument to the voices that name it needs no new plumbing
+# through `convert()`. (`instr 00` is inheritance, so the quantity is the
+# instruments a voice NAMES, not the rows it fills -- CLAUDE.md's rule.)
+#
+# **NOT NARROWED YET, AND THE REASON IS THAT IT WOULD MOVE NO COLUMN.**
+# `fidelity._filter_side` counts a frame as filtered when ANY routing bit is
+# set and a passband is selected, so routing one voice instead of three leaves
+# `filt` identical -- and `filt` is where the real defect shows: ours reads
+# 6682 against 2688 on Radio_ACE, 6526 against 1172 on Go_Go_Dash, and **1366
+# against 0 on Pacific_Coast**. That is a DURATION difference, not a width
+# one, and the two want fixing together rather than in two byte-changing
+# passes over one emitter.
+#
+# Two readings that would have explained Pacific_Coast were tried and REFUTED
+# on the bytes, so the next attempt need not repeat them. `prog[7] & 0x0F` is
+# **zero in every program of all six files**, so the classic path's guard
+# (`if not resctl & 0x0F: continue`) transfers to nothing here. And `+5` is
+# the ping-pong LOWER BOUND, not a duration -- `IlvFilterInfo`'s own field map
+# says so, and Go_Go_Dash filters 1172 frames with `+5 = 00`.
+#
+# Where to start instead: the routing store is gated on a GLOBAL cell.
+#
+#     1807  AD 8C 1A  LDA $1A8C
+#     180A  F0 17     BEQ $1823      ; zero -> $181B LDA #$00 / STA $D417
+#     180C  AD 65 1A  LDA $1A65      ; resonance
+#     180F  19 87 1A  ORA $1A87,Y    ; the live per-voice routing bits
+#     1812  8D 17 D4  STA $D417
+#
+# and that code is BYTE-IDENTICAL in Pacific_Coast and Radio_ACE, so whatever
+# silences the one and not the other is in the data reaching `$1A8C` or
+# `$1A87,Y`, not in the player.
+#
+# **THE DISARM IS READ NOW (v0.5.461), AND SO IS THE PRICE OF EMITTING IT.**
+# `$1A65` is the live per-voice routing ACCUMULATOR, and the note path both
+# arms and disarms it:
+#
+#     15B1  29 20     AND #$20        the record's filter-enable bit
+#     15B3  D0 1E     BNE $15D3       set -> ARM
+#     15B5  BD 90 1A  LDA $1A90,X     clear: was this voice armed?
+#     15BD  A9 00     STA $1A90,X       yes -> forget it,
+#     15C7  BD 8D 1A  LDA $1A8D,X       and MASK THE VOICE'S BIT OUT:
+#     15CA  2D 65 1A  AND $1A65
+#     15CD  8D 65 1A  STA $1A65
+#     15D3  A9 01     STA $1A90,X     the arm, and
+#     15D8  AD 65 1A  LDA $1A65 / ORA $1A67,X / STA $1A65
+#     15E4  BD 77 1A  LDA $1A77,X / ORA $1A7A,X / BNE   a ZERO step exits
+#
+# with a second, self-modified clear at `$1725 BIT $173F / BEQ` -> `$1732 LDA
+# $1A65 / AND $1A8D,X`. **Goattracker cannot express any of it**: there is one
+# global $D417, and `FILT_STOP` ends the TABLE rather than the routing, so
+# whatever a `FILT_SET_PARAMS` last wrote stands for the rest of the song.
+# That is the whole over-production.
+#
+# **A CLEAR BLOCK WAS BUILT AND MEASURED IN TWO FORMS, AND BOTH BREAK THE ONE
+# CONSTRAINT THAT MATTERS -- so neither shipped.** Filtered frames ours
+# against the original's, `-t 180`, with `melody` and `sequence` IDENTICAL to
+# the shipped arm on all six files in every arm:
+#
+#     file               shipped   blanket clear   clear on filtering voices   orig
+#     Radio_ACE          6682      2688 EXACT      2688 EXACT                  2688
+#     Pacific_Coast      1366         0 EXACT         6                           0
+#     Go_Go_Dash         6526       604             668                        1172
+#     Lion_Heart         8994      3845            5057                        8954
+#     Sun_Never_Shines   8992      4370            4370                        8997
+#
+# So the clear fixes exactly the files the task names and **loses the two that
+# were already within 0.5%**, which is what its verify forbids. Restricting
+# the clear to instruments played by a voice that ALSO plays a filtered one --
+# the static map that predicts every original's routing -- recovers a third of
+# Lion_Heart and none of Sun_Never_Shines, so the per-voice map is not the
+# missing piece either.
+#
+# **WHAT THAT LEAVES, precisely.** Lion_Heart's voice 2 plays four
+# instruments of which two are filtered, and its ORIGINAL holds the circuit in
+# for 8954 of 9000 frames -- so on that file an unfiltered record on the
+# filtering voice does NOT take it out.
+#
+# **THE TWO READINGS THAT COULD HAVE EXPLAINED IT ARE BOTH REFUTED (v0.5.461),
+# so the disarm is exactly as described above and the cause is elsewhere.**
+#
+# * *'the `AND #$20` at $15B1 is reached on a path narrower than every note
+#   start'* -- NO. It sits at the end of the pulse-write block, but `$154D`
+#   branches straight to **`$15AB`**, one instruction above it, so a record
+#   with no pulse work still reaches the test. Both entries converge on it.
+# * *'`$1A90,X` is not the per-voice latch this reading takes it for'* -- it
+#   is, and the byte it guards is not stale either. `$1AC1` -- the cell
+#   `$15AE` loads and `$15B1` masks -- has TWO writers: the note-start path
+#   (`$1256 LDA $1B52,X / $1259 STA $1AC1`) and a PER-FRAME refresh at
+#   `$13F2 LDA $1B52,Y / $13F5 STA $1AC1`, beside `$13F8 LDA $1B51,Y`. So the
+#   tested byte is the current voice's current record, reloaded every frame,
+#   and the mask at `$15C7` fires once per arm->disarm transition because
+#   `$1A90,X` is cleared at `$15BD` on the way through.
+#
+# **OCCUPANCY, MEASURED (v0.5.461), AND IT DISSOLVES THE PUZZLE.** Per FRAME,
+# which record each voice of each ORIGINAL is playing -- keyed by the ADSR
+# pair `onset`/`hold` already key on, over frames with a waveform selected:
+#
+#     file               voice  frames on a filtered record   original routes
+#     Radio_ACE            2     2688 of 8998 (29.9%)            2688  EXACT
+#     Lion_Heart           2     8391 of 8998 (93.3%), 43 not    8954
+#     Sun_Never_Shines     0     7532 of 8998 (83.7%)            8997
+#                          2     6204 of 8998 (68.9%)
+#     Go_Go_Dash           0      272, voice 2 1020              1172
+#     Pacific_Coast        1        6, and no passband              0
+#
+# **Radio_ACE is exact to the frame**, which confirms the whole model: the
+# player routes for as long as a filtered record is sounding. And Lion_Heart's
+# 8954-of-9000 needed no mechanism at all -- its filtered pair simply occupies
+# 93% of voice 2. The census that made it look like a contradiction counted
+# instruments NAMED, not frames OCCUPIED.
+#
+# **SO THE OVER-PRODUCTION IS STRUCTURAL, AND A THIRD ARM PROVED WHERE THE
+# LIMIT SITS.** A Goattracker filter pointer belongs to an INSTRUMENT and
+# fires on every voice that plays it; the player's mask belongs to a VOICE.
+# Arm 3 -- clear only from instruments played EXCLUSIVELY on voices that also
+# play a filtered record, the narrowest rule that can reproduce the player --
+# reads:
+#
+#     Radio_ACE 6682 -> 4602 (orig 2688)   Lion_Heart 8994 PRESERVED (8954)
+#     Go_Go_Dash 6526 ->  836 (orig 1172)  Lakers 0 PRESERVED (0)
+#     Pacific_Coast 1366 UNCHANGED (0)     Sun_Never_Shines 8992 -> 4370 (8997)
+#
+# Lion_Heart survives where arms 1 and 2 destroyed it, so the rule is right as
+# far as it goes -- and it still fails the task's constraint, because
+# **Sun_Never_Shines has TWO filtering voices**. With one $D417, voice 0's
+# unfiltered record clears a circuit voice 2 is still holding, which the
+# player never does. Pacific_Coast is unchanged for the mirror reason: its
+# voice 1's unfiltered records are shared with voices 0 and 2, so none of them
+# qualifies and no clear is emitted at all.
+#
+# **THE HONEST STATEMENT OF THE LIMIT**: a clear is expressible only where
+# exactly ONE voice ever filters AND its unfiltered records are played nowhere
+# else. Radio_ACE, Lion_Heart and Pacific_Coast have the first property;
+# Sun_Never_Shines and Go_Go_Dash do not; and Radio_ACE and Pacific_Coast fail
+# the second. Emitting the routing faithfully needs a per-voice filter, which
+# the format does not have. Arms 1, 2 and 3 are in
+# `C:/t/ilv-filter-overproduce/edit2.py`, `edit3.py` and `edit7.py` -- all
+# three measured, none shipped.
 ILV_FILTER_ROUTING = 0x07
 
 

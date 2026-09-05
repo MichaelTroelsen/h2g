@@ -287,3 +287,47 @@ def test_one_silent_pattern_serves_every_parked_track_at_the_boundary():
     assert len(patterns) == MAX_PATTERNS, "still exactly one silent pattern"
     parked = [t for t in tracks[:2] if t and t[-1] != 0]
     assert len(parked) == 2, "both tracks park on the one silent pattern"
+
+
+def test_a_parked_track_loops_on_silence_rather_than_restarting_at_zero():
+    """The property the +-5 s length rule actually rests on.
+
+    The two tests above pin the MAX_PATTERNS boundary -- whether a pattern is
+    appended at all. Neither asks the question the rule cares about: that the
+    thing parked ON makes no sound, and that the restart operand points AT it
+    rather than at position 0. Both were true before this test and neither was
+    checked, so a change that parked on the wrong position, or on a pattern
+    carrying a note, would have kept both existing tests green while every
+    tune played forever again.
+
+    Measured at v0.5.461, `-t 180`, this one flag: Action_Biker ends at 59.68 s
+    against its original's 59.54 with the park, and NEVER STOPS without it
+    (`length_delta >= +120.46`, `length_bounded`), with an identical 291
+    attacks in both arms.
+    """
+    from h2g.tracks import (GT_END_PATTERN, GT_KEYOFF, GT_ORDER_RESTART,
+                            SILENT_PATTERN, legalise_restarts)
+
+    patterns = [[0x60, 1, 0, 0, GT_END_PATTERN, 0, 0, 0]]
+    # position 0 plays pattern 0, then LOOPSONG with an out-of-range operand
+    tracks = [[0, GT_ORDER_RESTART, 0xFF], [], []]
+    assert legalise_restarts(tracks, None, patterns) == 1
+
+    track = tracks[0]
+    songlen = track.index(GT_ORDER_RESTART)
+    assert songlen == 2, ("the silent pattern is an appended POSITION, so the "
+                          f"orderlist grows from 1 to 2 entries, got {track}")
+    parked_at = songlen - 1                      # the entry the park inserted
+    assert track[parked_at] == len(patterns) - 1, (
+        "the parked position must name the pattern that was just appended")
+    assert track[songlen + 1] == parked_at, (
+        f"the restart must point at the parked entry, not at {track[songlen + 1]}")
+    assert track[songlen + 1] != 0, (
+        "restart 0 is the workaround this branch exists to replace")
+
+    # And the pattern parked on has to be silent -- a KEYOFF and nothing else.
+    parked = patterns[-1]
+    assert parked == list(SILENT_PATTERN), parked
+    assert parked[0] == GT_KEYOFF and parked[1] == 0, (
+        "a parked pattern that names a note or an instrument sounds")
+    assert parked[4] == GT_END_PATTERN, "and it has to end after that one row"

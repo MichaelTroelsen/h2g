@@ -1784,7 +1784,7 @@ def find_ilv_filter(sid: SidFile, det: Detection) -> "IlvFilterInfo | None":
     if not 0 <= table < len(data):
         return None
 
-    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    instr_cpu = sid.to_address(det.instr_start)
     prog = instr_cpu + ILV_FILTER_PROGRAM_OFF
     enable = instr_cpu + ILV_FILTER_ENABLE_OFF
     if search_file(data, ILV_FILTER_PROGRAM.format(lo=prog & 0xFF,
@@ -2222,7 +2222,7 @@ def _find_table_vibrato(sid: SidFile, det: Detection) -> Optional[TableVibrato]:
     if (data[at + 32] | data[at + 33] << 8) != (data[at + 26]
                                                 | data[at + 27] << 8) + 1:
         return None
-    start = det.instr_start + sid.load_addr - HLEN + 1
+    start = sid.to_address(det.instr_start)
     offset = (data[at + 1] | data[at + 2] << 8) - start
     if not 0 <= offset < det.instr_stride:
         return None
@@ -2621,7 +2621,7 @@ def find_stored_wave_store(sid: SidFile, cell: int) -> Optional[int]:
         if data[i] in _STORE_OPCODES:
             addr = data[i + 1] | (data[i + 2] << 8)
             if cell <= addr <= cell + 2:
-                return sid.load_addr + i - HLEN + 1
+                return sid.to_address(i)
     return None
 
 
@@ -3253,7 +3253,7 @@ def _effect_byte_address(sid: SidFile, det: Detection):
     # `find_relocation` and `find_init_writes` are ordered: the plain form is
     # tried FIRST and the relocation is consulted only where it found nothing,
     # so a file that already reads correctly can never be disturbed by this.
-    base = det.instr_start - (HLEN - 1) + sid.load_addr + 7
+    base = sid.to_address(det.instr_start) + 7
     if not 0 <= base <= 0xFFFF:
         return None
     i = search_file(sid.data, "B9 %02X %02X" % (base & 0xFF, base >> 8))
@@ -4148,7 +4148,7 @@ def _find_wave_alternate(sid: SidFile, det: Detection) -> int:
         return -1
     own = data[p + 15] | data[p + 16] << 8
     alt = data[p + 21] | data[p + 22] << 8
-    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    instr_cpu = sid.to_address(det.instr_start)
     if own != instr_cpu + 2:            # not this instrument table's +2
         return -1
     off = alt - instr_cpu + det.instr_start
@@ -4370,7 +4370,7 @@ def _find_note_alternate(sid: SidFile, det: Detection) -> int:
     table = find_freq_table(sid)
     if table is None or table.addr != freq_lo:
         return -1                       # the index is not a note in that table
-    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    instr_cpu = sid.to_address(det.instr_start)
     off = alt - instr_cpu + det.instr_start
     span = max(det.instr_used, 0) * det.instr_stride
     if not (0 <= off and off + span <= len(data)):
@@ -4476,7 +4476,7 @@ def _find_two_stage(sid: SidFile, det: Detection):
         return False, -1, -1
 
     # Same inverse of SidFile.to_offset _effect_byte_address uses.
-    instr_cpu = det.instr_start - (HLEN - 1) + sid.load_addr
+    instr_cpu = sid.to_address(det.instr_start)
     off = attack - instr_cpu + det.instr_start
     span = max(det.instr_used, 0) * det.instr_stride
     # Parenthesised: `not 0 <= off and ...` binds as `(not (0 <= off)) and

@@ -1385,6 +1385,30 @@ def legalise_restarts(tracks: List[List[int]], log=None,
             # what makes the file packable, and it is also why every such tune
             # plays forever -- the `len` column reads Kings of the Beach at
             # >+53.6s and Geoff Capes at >+44.6s past their originals' endings.
+            #
+            # **THOSE TWO FIGURES ARE THE STATE THIS BRANCH REMOVED, AND THE
+            # RULE IS MET CORPUS-WIDE NOW. RE-MEASURED AT v0.5.461**, from
+            # `build/fidelity.json` at `-t 180` with `silent_park` in
+            # `presets.json`'s `always` block. Every tune whose window
+            # `fidelity.original_ended` shortens -- the six the rule can bite
+            # on -- ends within a sixth of a second of its original, and NONE
+            # of them is `length_bounded`, so each figure is a measurement
+            # rather than a floor:
+            #
+            #     Geoff_Capes  +0.16   Action_Biker  +0.14   Las_Vegas  +0.10
+            #     Samantha_Fox +0.10   Kings_Beach   +0.08   Sigma_Seven +0.04
+            #
+            # The whole corpus's worst |delta| is **Knucklebusters -4.16 s**
+            # and Sanxion -2.98 s, both inside the +-5 s tolerance and both
+            # ending EARLY. A/B on this one flag, `-t 180`: Action_Biker goes
+            # `ours_ends_at 59.68` against the original's 59.54 to **never
+            # stopping** (`length_delta >= +120.46`, `length_bounded True`),
+            # and Geoff_Capes 15.52 against 15.36 to **>= +164.64** -- with
+            # `our_attacks` IDENTICAL in both arms (291 and 159) and melody
+            # 1.00 either way. The park does not remove music; it stops the
+            # loop. CLAUDE.md still carries the v0.5.375 reading of Action
+            # Biker ("856 attacks, looping with period 61.44 s"), which is
+            # this branch's before-picture and is not granted here to fix.
             # An orderlist still cannot say "stop", but it can loop a pattern
             # that makes no sound, which ends the tune in every way a listener
             # can hear. Safe HERE and nowhere earlier: this pass runs after

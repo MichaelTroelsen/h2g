@@ -572,6 +572,31 @@ class SidFile:
             return addr - r.dst + r.src - self.load_addr + HLEN - 1
         return off
 
+    def to_address(self, off: int) -> int:
+        """Byte offset into `data` -> the C64 address the PLAYER reads it at.
+
+        `to_offset`'s inverse, and it needs both of that function's branches.
+        A file that moves part of itself at init holds those bytes at `src` in
+        its own image and the player reads them at `dst`, so an offset inside
+        the moved region names an address `dst - src` higher than the plain
+        formula gives. I_Ball is the corpus's only such file and the difference
+        is not subtle: its effect byte sits at offset 1493, which the plain
+        inversion calls **$9557** and the player reads at **$E557**.
+
+        **Written because the inversion was hand-rolled at nine call sites in
+        FIVE spellings** -- `off - (HLEN - 1) + load_addr`,
+        `off + load_addr - HLEN + 1`, `load_addr + off - HLEN + 1`, and twice
+        as a `base = load_addr - to_offset(load_addr)` delta added later --
+        and only one of them (`detect._effect_byte_address`) knew about the
+        relocation. A formula repeated five ways is a formula nobody can grep
+        for; `tests/test_sidfile.py` pins the round trip over the whole corpus.
+        """
+        addr = off - HLEN + 1 + self.load_addr
+        r = self.relocation
+        if r is not None and r.src <= addr < r.src + r.length:
+            return addr - r.src + r.dst
+        return addr
+
     def with_init_writes(self) -> Optional["SidFile"]:
         """This file with the init routine's writes applied, or None.
 
