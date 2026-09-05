@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "fd286a5",
+  "head": "a4bf43d",
   "sources": [
    "whats-next.md",
    "todo.md",
@@ -48,7 +48,8 @@
     "r:python/tools/siddump-rt/siddump.exe",
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "rw:host:C:/t/promote-pulse-phase-into-fid/",
-    "rw:python/tests/test_presets.py"
+    "rw:python/tests/test_presets.py",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": true,
@@ -110,7 +111,8 @@
     "rw:build/approvals.json",
     "r:python/approvals.py",
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/ab-7-presets-search-respects-approvals/"
+    "rw:host:C:/t/ab-7-presets-search-respects-approvals/",
+    "r:python/fidelity.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -124,41 +126,6 @@
    "why_model": "changes a shared acceptance rule other measurements depend on",
    "why_mode": "changes behaviour other tasks are measured against",
    "why_lane": "shares python/presets.py with another task, at least one writing"
-  },
-  {
-   "id": "ab-8-fidelity-queue",
-   "title": "AB task 8: the fidelity queue",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:python/fidelity_queue.py",
-    "rw:python/tests/test_queue.py",
-    "rw:docs/QUEUE.md",
-    "rw:build/queue.json",
-    "rw:CLAUDE.md",
-    "rw:README.md",
-    "r:python/fidelity.py",
-    "r:python/approvals.py",
-    "r:build/fidelity.json",
-    "r:build/approvals.json",
-    "r:.claude/tasks/whattask.json",
-    "r:.claude/tasks/runs.jsonl",
-    "rw:host:C:/t/ab-8-fidelity-queue/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [
-    "ab-5-approvals-inheritance"
-   ],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS.",
-   "why_model": "follows a written design",
-   "why_mode": "self-contained",
-   "why_lane": "shares build/fidelity.json with another task, at least one writing"
   },
   {
    "id": "ab-9-drift-as-acceptance-term",
@@ -198,13 +165,16 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
+    "r:python/h2g/goatwriter.py",
+    "r:python/h2g/patterns.py",
+    "r:python/tests/test_interleaved_classic.py",
     "r:build/fidelity.json",
     "r:presets.json",
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/retake-wave-alternate-noise-/"
+    "rw:host:C:/t/retake-wave-alternate-noise-/",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -225,13 +195,14 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_interleaved_classic.py",
     "r:build/fidelity.json",
     "r:presets.json",
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "rw:host:C:/t/the-fidelity-report-should-p/"
+    "rw:host:C:/t/the-fidelity-report-should-p/",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -272,28 +243,6 @@
    "why_lane": "shares presets.json with another task, at least one writing"
   },
   {
-   "id": "whattask-templated-the-five-ab-tasks-touches-and-four-of-five-name-the-wrong-module",
-   "title": "Four of the five AB tasks named the wrong module in touches",
-   "source": "runs.jsonl",
-   "model": "opus",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/whattask-hygiene/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Each ab-* task's touches names the module its own design document says it writes. MEASURED FALSE at fd286a5 and FIXED IN THIS GENERATION for all three open AB tasks (7, 8, 9) -- re-confirm with the scratch script `ab_touches_confirm.py`, which parses the document's Files blocks and excludes plan-hygiene tasks whose slug merely begins `ab-N`.",
-   "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
-   "why_mode": "changes how every later task is generated",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
-  },
-  {
    "id": "whattask-should-check-a-touches-path-exists-before-granting-it",
    "title": "whattask should check a touches path exists before granting it",
    "source": "runs.jsonl",
@@ -302,7 +251,8 @@
    "lane": "serial",
    "touches": [
     "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/whattask-hygiene/"
+    "rw:host:C:/t/whattask-hygiene/",
+    "r:python/approvals.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -310,7 +260,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'.",
+   "verify": "The generator warns when a granted path is absent from the tree. This pass does it for test files mechanically; python/approvals.py is granted deliberately because ab-5 creates it, so the check must distinguish 'creates' from 'typo'. || PARTIAL at 7bcd3fe and STRUCTURALLY BLOCKED: the generator is in the mit-setup plugin, outside this repo, so no `touches` can grant it. The census is durable (296 granted paths, 3 absent) and the specification is settled: intent CANNOT be inferred from verify prose, so a `creates:` third mode beside r:/rw: is the design. Re-taking this task inside the repo produces a second partial and no information.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
@@ -324,7 +274,8 @@
    "lane": "serial",
    "touches": [
     "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/whattask-hygiene/"
+    "rw:host:C:/t/whattask-hygiene/",
+    "r:python/tests"
    ],
    "mcp": [],
    "needs_main": false,
@@ -420,7 +371,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "No carried verify string quotes a figure that has since moved. MEASURED at fd286a5 over 93 tasks: 3 quote an `N of M` count, 6 a version, 13 a 7-hex sha (all 2-9 commits behind HEAD), 3 assert a future act. Three were demonstrably wrong and are corrected in this generation. `stale_verify.py` in the scratch re-derives the whole classification and resolves each sha against git.",
+   "verify": "No carried verify string quotes a figure that has since moved. MEASURED at fd286a5 over 93 tasks: 3 quote an `N of M` count, 6 a version, 13 a 7-hex sha (all 2-9 commits behind HEAD), 3 assert a future act. Three were demonstrably wrong and are corrected in this generation. `stale_verify.py` in the scratch re-derives the whole classification and resolves each sha against git. || PARTIAL at fd286a5: the class is measured (3 counts, 6 versions, 13 shas, 3 future-tense) and stale_verify.py is durable. Two of the three demonstrably-wrong verifies are now fixed -- the ab-touches one is CLOSED at a4bf43d. Re-run the script before assuming any figure here still holds.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
@@ -443,7 +394,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "The opened backlog is classified: each id is either promoted to a task, merged into one, or recorded as closed/not-a-task. MEASURED at 91e8e25 -- 657 distinct opened refs, 479 well-formed slugs, 178 prose sentences that are not ids at all, 465 absent from the plan and 307 never run. A plan cannot carry them all and this generation does not.",
+   "verify": "The opened backlog is classified: each id is either promoted to a task, merged into one, or recorded as closed/not-a-task. MEASURED at 91e8e25 -- 657 distinct opened refs, 479 well-formed slugs, 178 prose sentences that are not ids at all, 465 absent from the plan and 307 never run. A plan cannot carry them all and this generation does not. || PARTIAL at fd286a5: the classification is DONE and 161 settled ids were moved into `closed` (0 done-unlisted remain, re-confirmed at a4bf43d). What is left is a HOME for the other two classes -- the prose entries and the genuine backlog, now 302 ids by this pass's count. Do not re-classify.",
    "why_model": "judgement about the planning pipeline, where a wrong rule is costly",
    "why_mode": "changes how every later task is generated",
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
@@ -470,7 +421,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
+   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. || PARTIAL at fd286a5, do NOT redo: the refusal reproduces only with the multiplier gate lifted IN MEMORY (forcing the option is inert -- both arms 16558 bytes and both pack). Lifted arm 29009 bytes and refused. Five causes excluded: patterns 126/208, table_errors() NONE, WTBL 130 / PTBL 145 / FTBL 2 / STBL 4 against 255, longest orderlist 229/255, size 29009 where W_A_R packs at 58481. Three candidates remain, cheapest first: a CMD_SETPULSEPTR operand out of range after greloc renumbers; the 59 pattern COPIES against a limit on distinct pattern LENGTHS; and the two-byte $FE nn orderlist tempo.",
    "why_model": "a root-cause hunt where a plausible wrong answer is cheap to produce",
    "why_mode": "needs the surrounding context and a corpus measurement",
    "why_lane": "shares python/tests/test_pulse_phase.py with another task, at least one writing"
@@ -1719,7 +1670,9 @@
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:python/fidelity.py",
-    "rw:host:C:/t/drum-tick-pinned-pitch/"
+    "rw:host:C:/t/drum-tick-pinned-pitch/",
+    "r:CLAUDE.md",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1793,7 +1746,8 @@
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:python/fidelity.py",
-    "rw:host:C:/t/kotb-intro-static-table/"
+    "rw:host:C:/t/kotb-intro-static-table/",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1865,7 +1819,8 @@
     "rw:python/fidelity.py",
     "rw:python/tests/test_fidelity.py",
     "r:build/fidelity.json",
-    "rw:host:C:/t/depth-dash-cause/"
+    "rw:host:C:/t/depth-dash-cause/",
+    "r:CLAUDE.md"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1891,7 +1846,8 @@
     "r:presets.json",
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/depth-no-shared-key/"
+    "rw:host:C:/t/depth-no-shared-key/",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1944,7 +1900,8 @@
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:python/fidelity.py",
-    "rw:host:C:/t/radio-ace-filter-route/"
+    "rw:host:C:/t/radio-ace-filter-route/",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1972,7 +1929,8 @@
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:python/fidelity.py",
-    "rw:host:C:/t/go-go-dash-filter-gate/"
+    "rw:host:C:/t/go-go-dash-filter-gate/",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": false,
@@ -1998,7 +1956,9 @@
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:python/tools/siddump-rt/siddump.exe",
     "r:python/presets.py",
-    "rw:host:C:/t/corpus-fidelity-refresh/"
+    "rw:host:C:/t/corpus-fidelity-refresh/",
+    "r:python/fidelity.py",
+    "r:python/h2g"
    ],
    "mcp": [],
    "needs_main": true,
@@ -2091,7 +2051,11 @@
    "lane": "serial",
    "touches": [
     "rw:CLAUDE.md",
-    "rw:host:C:/t/grep-zero-lesson/"
+    "rw:host:C:/t/grep-zero-lesson/",
+    "r:python/fidelity.py",
+    "r:python/survey.py",
+    "r:docs/H2G-CONVERSION-METHOD.md",
+    "rw:python/tests/test_claude_md_figures.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2165,7 +2129,8 @@
    "lane": "serial",
    "touches": [
     "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/verify-tense/"
+    "rw:host:C:/t/verify-tense/",
+    "r:python/tests/test_approvals.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2209,7 +2174,11 @@
    "lane": "serial",
    "touches": [
     "rw:CLAUDE.md",
-    "rw:host:C:/t/counter-container/"
+    "rw:host:C:/t/counter-container/",
+    "r:python/fidelity.py",
+    "r:python/survey.py",
+    "r:docs/H2G-CONVERSION-METHOD.md",
+    "rw:python/tests/test_claude_md_figures.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2275,7 +2244,8 @@
    "lane": "serial",
    "touches": [
     "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/shared-scratch/"
+    "rw:host:C:/t/shared-scratch/",
+    "rw:CLAUDE.md"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2335,28 +2305,6 @@
    "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
   },
   {
-   "id": "six-plan-hygiene-tasks-are-granted-read-only-on-the-plan-their-fix-must-edit",
-   "title": "The mis-grant that caused four consecutive partials",
-   "source": "runs.jsonl",
-   "model": "sonnet",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/hygiene-grants/"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "No task whose fix is a plan edit is granted `r:` on the plan. MEASURED at fd286a5: 11 tasks held `rw:` and 6 held `r:`, and all six read-only ones were plan-hygiene tasks. **FIXED IN THIS GENERATION for five of them**; the sixth (`the-whattask-generator-lives-outside-the-repo-...`) is requires-user and correctly stays read-only. Re-confirm by counting.",
-   "why_model": "a mechanical grant audit with the count already measured",
-   "why_mode": "the fix is in the plan file",
-   "why_lane": "shares .claude/tasks/whattask.json with another task, at least one writing"
-  },
-  {
    "id": "the-pulse-phase-pack-refusal-is-not-any-documented-bound-and-setpulseptr-operands-are-the-next-check",
    "title": "Rasputin's pack refusal survives every documented bound",
    "source": "runs.jsonl",
@@ -2389,10 +2337,11 @@
    "source": "runs.jsonl",
    "model": "sonnet",
    "mode": "subtask",
-   "lane": "parallel",
+   "lane": "serial",
    "touches": [
     "rw:python/tools/bold_parity.py",
-    "rw:host:C:/t/bold-parity-exit/"
+    "rw:host:C:/t/bold-parity-exit/",
+    "r:docs/H2G-CONVERSION-METHOD.md"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2404,6 +2353,183 @@
    "why_model": "a one-line change with both expected outcomes already measured",
    "why_mode": "self-contained and the conclusion is a pair of exit codes",
    "why_lane": "no declared path overlaps another task's"
+  },
+  {
+   "id": "five-of-six-queue-tier-builders-have-never-produced-an-entry-against-real-data",
+   "title": "Five of the fidelity queue's six tier builders have only ever seen fixtures",
+   "source": ".claude/tasks/runs.jsonl#ab-8-fidelity-queue",
+   "model": "sonnet",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:python/fidelity_queue.py",
+    "r:build/queue.json",
+    "r:build/fidelity.json",
+    "r:build/approvals.json",
+    "rw:host:C:/t/queue-tier-coverage/",
+    "r:build/search_refusals.json"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "For each of the six tier builders, state whether it has produced an entry against real data and WHY not where it has not. Established at a4bf43d and not to be re-derived: tier 1 is empty because build/approvals.json holds zero `stale` tunes; tiers 2-4 because length_delta, onset_census, hold_census and aud_voices are absent from every row of the current artefact; tier 5 because build/search_refusals.json does not exist until ab-7 lands. The task is to say which of those five will be exercised by an artefact refresh alone and which need a flag or another task first.",
+   "why_model": "a read-only classification against two artefacts, with the measurement already taken",
+   "why_mode": "self-contained and the conclusion is mechanical -- read the six builders and the artefact keys they index",
+   "why_lane": "reads only, and no other task writes build/queue.json"
+  },
+  {
+   "id": "rasputins-two-byte-fe-orderlist-tempo-is-the-corpus-only-exception-and-the-likeliest-pack-refusal-cause",
+   "title": "Rasputin's two-byte $FE orderlist tempo is the corpus-only feature and the next pack-refusal candidate",
+   "source": ".claude/tasks/runs.jsonl#rasputin-does-not-pack-under-pulse-phase",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/h2g/tracks.py",
+    "r:python/h2g/convert.py",
+    "r:python/h2g/goatwriter.py",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "rw:host:C:/t/rasputin-fe-tempo/",
+    "r:CLAUDE.md"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Either the $FE nn orderlist tempo is shown to survive the pulse-phase expansion intact (and so excluded as the refusal cause), or it is named as the cause with the packed bytes that say so. CLAUDE.md records that no other corpus file carries the two-byte $FE; tracks.py is where that reading lives. Five other candidates are already excluded at a4bf43d -- do not re-measure them.",
+   "why_model": "a root-cause hunt in a player dialect where a plausible wrong answer is cheap to produce",
+   "why_mode": "the diagnosis matters more than the measurement, and it reads against a gate lifted in memory",
+   "why_lane": "shares the corpus and presets.json with the writing tasks"
+  },
+  {
+   "id": "aud-voices-is-owed-by-fidelity-py-and-tier-4-of-the-queue-is-empty-until-it-lands",
+   "title": "aud_voices is owed by fidelity.py, and the queue's voice-deficit tier is empty without it",
+   "source": ".claude/tasks/runs.jsonl#ab-8-fidelity-queue",
+   "model": "opus",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py",
+    "r:python/fidelity_queue.py",
+    "r:build/fidelity.json",
+    "r:presets.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "r:python/h2g",
+    "rw:host:C:/t/aud-voices/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "adding a Dimension key means regenerating build/fidelity.json over the corpus, which is a multi-hour run no delegated agent outlives",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "build/fidelity.json rows carry aud_voices, and fidelity_queue.voice_deficits produces at least one entry from a real artefact rather than only from its fixture. tests/test_fidelity.py must fail if the registry and the printed header disagree, which is the existing rule for adding a column.",
+   "why_model": "a Dimension addition is shared-code work whose blindness has to be stated in the column itself",
+   "why_mode": "regenerates a corpus artefact and so cannot be delegated",
+   "why_lane": "writes python/fidelity.py, which six other tasks contend on"
+  },
+  {
+   "id": "the-render-check-should-be-re-run-once-the-calibration-passes-because-inherited-has-never-been-observed",
+   "title": "Re-run the abpage render check once the calibration passes -- `inherited` has never been observed",
+   "source": ".claude/tasks/runs.jsonl#abpages-three-states-have-never-been-rendered",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/abpage.py",
+    "r:python/approvals.py",
+    "r:build/approvals.json",
+    "rw:build/listen",
+    "rw:host:C:/t/abpage-render-check/"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "writes build/listen, a documented hazard path shared with the listening staging",
+   "depends_on": [
+    "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision"
+   ],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "build/listen/index.html shows at least one `inherited` span and it agrees with build/approvals.json per tune. C:/t/abpage-render-check/check_column.py already does the comparison and refuses a pass over an empty span set -- run it rather than eyeballing the HTML. At a4bf43d it read 4 spans, 4 tunes, 0 disagreements and ZERO `inherited`, which is correct while the two calibration tunes are uncalibrated.",
+   "why_model": "a bounded re-run of an existing check against a changed input",
+   "why_mode": "writes a hazard path and needs the calibration state in view",
+   "why_lane": "writes build/listen, which the listening tasks also stage into"
+  },
+  {
+   "id": "a-task-id-prefix-is-not-a-task-family-and-a-check-keyed-on-the-slug-swept-in-three-meta-tasks",
+   "title": "A check keyed on an id prefix swept in three meta-tasks -- record the rule",
+   "source": ".claude/tasks/runs.jsonl#whattask-templated-the-five-ab-tasks-touches",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:CLAUDE.md",
+    "r:.claude/tasks/whattask.json",
+    "rw:host:C:/t/prefix-not-family/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "CLAUDE.md carries the rule with its measured instance: `^ab-(\\d+)` reported 6 of 6 AB grants failing where the honest answer is 3 of 3, because three plan-hygiene meta-tasks have slugs that merely BEGIN `ab-N` and carry no Files block at all. The discriminator that works is title.startswith('AB task'). Same family as the code-fence parity count and the `original_ended`/`original_ends` key -- a check that cannot separate its subject from its container.",
+   "why_model": "a doc edit with the measurement already taken",
+   "why_mode": "CLAUDE.md is contended by seven writers, so it is main work",
+   "why_lane": "writes CLAUDE.md"
+  },
+  {
+   "id": "a-verify-quoting-a-sha-should-be-graded-with-it-thirteen-do-and-none-say-so",
+   "title": "Thirteen verify strings quote a sha and none is graded with it",
+   "source": ".claude/tasks/runs.jsonl#whattask-regeneration-carries-stale-verify-text-forward",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/verify-grading/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Every verify quoting a 7-hex sha, a version or an `N of M` count either names the commit it was measured at or is rewritten as 'check X against Y'. C:/t/whattask-hygiene/stale_verify.py classifies all four staleness shapes and resolves each quoted sha against git -- run it rather than re-deriving. At fd286a5 it found 3 counts, 6 versions and 13 shas across 6 distinct commits, every one 2 to 9 commits behind HEAD.",
+   "why_model": "mechanical text work against a script that already exists",
+   "why_mode": "writes the plan file, which no delegated runner may touch",
+   "why_lane": "writes .claude/tasks/whattask.json"
+  },
+  {
+   "id": "the-114-prose-opened-entries-should-be-deleted-at-source-no-consumer-can-act-on-a-sentence",
+   "title": "The prose `opened` entries are unactionable and should be fixed at source",
+   "source": ".claude/tasks/runs.jsonl#the-opened-field-has-become-an-unbounded-firehose",
+   "model": "sonnet",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:.claude/tasks/runs.jsonl",
+    "rw:.claude/tasks/whattask.json",
+    "rw:host:C:/t/prose-opened/"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The prose entries in `opened` are either recorded as not-a-task or the convention that produces them is written down where the next run record is authored. Measured at a4bf43d over the whole log: 698 opened ids across all lines, of which 139 are whole sentences used as a slug. runs.jsonl is append-only and must stay `r:` -- the fix is a convention, never a rewrite of the history.",
+   "why_model": "a classification pass with the count already taken",
+   "why_mode": "writes the plan file",
+   "why_lane": "writes .claude/tasks/whattask.json"
   }
  ],
  "closed": [
@@ -3510,6 +3636,30 @@
    "title": "AB task 6's step 6: render the pages and read the approval column",
    "closed_by": "a20da2e",
    "reason": null
+  },
+  {
+   "id": "ab-8-fidelity-queue",
+   "title": "AB task 8: the fidelity queue",
+   "closed_by": "a4bf43d",
+   "reason": "Shipped: python/fidelity_queue.py + python/tests/test_queue.py (10 passed), docs/QUEUE.md + build/queue.json written with 116 entries. Run log records outcome=done at fd286a5; the code landed in a4bf43d."
+  },
+  {
+   "id": "whattask-templated-the-five-ab-tasks-touches-and-four-of-five-name-the-wrong-module",
+   "title": "Four of the five AB tasks named the wrong module in touches",
+   "closed_by": "a4bf43d",
+   "reason": "Re-confirmed here against the design document's own **Files:** blocks: ab-7, ab-8 and ab-9 now grant rw: on exactly the paths their task section names, MISSING rw: empty for all three. The one apparent gap is a path-form artefact -- the document writes bare 'H2G-CONVERSION-METHOD.md' where the file is docs/H2G-CONVERSION-METHOD.md, which is what the grant correctly carries."
+  },
+  {
+   "id": "six-plan-hygiene-tasks-are-granted-read-only-on-the-plan-their-fix-must-edit",
+   "title": "The mis-grant that caused four consecutive partials",
+   "closed_by": "a4bf43d",
+   "reason": "Re-checked: all six now hold rw:.claude/tasks/whattask.json. The single remaining r: grant is the-whattask-generator-lives-outside-the-repo, which is correct -- its fix is in the plugin, outside this repo, so no plan write would help it."
+  },
+  {
+   "id": "the-three-open-ab-tasks-grants-should-be-rewritten-from-the-design-documents-files-blocks",
+   "title": "Rewrite the three open AB tasks' grants from the design document's Files blocks",
+   "closed_by": "a4bf43d",
+   "reason": "Done in the fd286a5 regeneration and verified here by re-parsing the document: 0 of 3 now misgrant, against 3 of 3 when the id was opened."
   }
  ]
 }
