@@ -313,10 +313,18 @@ def _hard_restart_ticks(multiplier: int, row_calls: int,
       fetch, it stops the note fetch being early enough to keep the schedule.
 
     So `fidelity.py`'s standing sentence -- "there is no row length or
-    gatetimer that returns it" -- is CONFIRMED rather than merely asserted,
-    and the deficit stays a priced property of the target player. The lever
-    that does remove it is `--no-test-restart`, per song, which is what the
-    search already walks.
+    gatetimer that returns it" (`fidelity.py:2765`) -- is CONFIRMED rather than
+    merely asserted, and the deficit stays a priced property of the target
+    player. The lever that does remove it is `--no-test-restart`, per song,
+    which is what the search already walks.
+
+    **AND "ZERO IS UNREACHABLE" IS SWEPT NOW, NOT ARGUED (v0.5.466).** The
+    block above derives it from this function's floor and bound, which is a
+    claim about code read by eye. Enumerated instead over every combination of
+    `multiplier` 1-5, `row_calls` 1-32 and all three flags -- **3840 calls, and
+    the minimum returned is 1**. So the one value that would close the `fetch`
+    kind is outside the range of this function for every input it can be given,
+    and the refutation does not depend on having read the branches correctly.
 
     Falls back to that constant where the row is unknown, which is what a
     caller building instruments without a tempo pass has.
