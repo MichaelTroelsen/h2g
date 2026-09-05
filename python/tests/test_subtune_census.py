@@ -264,3 +264,115 @@ def test_a_file_without_the_dispatch_is_left_alone():
         _, det, rows, _ = _census(name)
         assert det.music_subtunes is None, name
         assert not [r for r in rows if r["fate"] == "sfx"], name
+
+
+# --------------------------------------------------------------------------
+# `survey.build_subtune_census` -- the function that WRITES docs/SUBTUNES.md.
+#
+# Everything above pins the census's REASONING, and it does so without ever
+# calling this function: it re-derives the data from `convert_tracks`, which is
+# the right shape for the reasoning and leaves the DOCUMENT builder untested. A
+# corpus census of every artefact builder in the repo found exactly two
+# committed artefacts with no test behind them, and this was one -- despite a
+# test file already carrying its name. **A test file named for a function is
+# not a test of that function**, and this block is the correction.
+#
+# What is pinned is the arithmetic of the five placeholders that go into
+# `SUBTUNE_CENSUS_DOC`, two of which are PERCENTAGES a reader will quote.
+# Fixture rows, not a corpus run: the function is pure (`rows -> str`), so a
+# fixture reaches the degenerate cases -- no loss at all, all loss -- that a
+# healthy corpus never produces and that a division is most likely to break on.
+# --------------------------------------------------------------------------
+
+import survey  # noqa: E402
+
+
+def _census_rows(emitted=1, sfx=1, beyond=1, files=("A.sid", "B.sid")):
+    """Minimal rows. `voices_ok` false everywhere keeps the per-file section
+    empty, so the fixture needs no pointer keys and the totals stay readable."""
+    rows = []
+    for _ in range(emitted):
+        rows.append({"file": files[0], "fate": "emitted", "why": "-",
+                     "voices_ok": False})
+    for _ in range(sfx):
+        rows.append({"file": files[0], "fate": "sfx", "why": "init dispatch",
+                     "voices_ok": False})
+    for _ in range(beyond):
+        rows.append({"file": files[-1], "fate": "beyond_table",
+                     "why": "past the end", "voices_ok": False})
+    return rows
+
+
+def test_the_two_percentages_in_the_document_sum_to_a_hundred():
+    """`rest_pct = 100 - sfx_pct`, so the doc cannot contradict itself.
+
+    Both numbers are printed in the same sentence and a reader quotes one of
+    them; if they ever stopped summing, the document would be asserting two
+    incompatible shares of the same loss.
+    """
+    doc = survey.build_subtune_census(_census_rows(emitted=1, sfx=1, beyond=1),
+                                      "X", "0.5.460")
+    assert "50% of the 2 lost" in doc
+    assert "remaining 50%" in doc
+
+
+def test_an_sfx_subtune_counts_as_LOSS_rather_than_as_emitted():
+    """The subtle one: `loss_total` is everything NOT emitted, `sfx` included.
+
+    `sfx_pct` is `sfx_count / loss_total`, so if `sfx` were ever moved into the
+    emitted set the share would exceed 100% rather than fall to zero. Pinned
+    because the fates are a vocabulary someone will extend.
+    """
+    rows = _census_rows(emitted=2, sfx=3, beyond=0)
+    doc = survey.build_subtune_census(rows, "X", "0.5.460")
+    assert "- declared by the PSID headers: **5**" in doc
+    assert "- emitted: **2**" in doc
+    assert "100% of the 3 lost" in doc          # 3 sfx of 3 lost
+    assert "remaining 0%" in doc
+
+
+def test_a_corpus_that_loses_nothing_does_not_divide_by_zero():
+    """`loss_total == 0` is guarded, and both shares read 0 rather than crash."""
+    doc = survey.build_subtune_census(_census_rows(emitted=3, sfx=0, beyond=0),
+                                      "X", "0.5.460")
+    assert "- declared by the PSID headers: **3**" in doc
+    assert "- emitted: **3**" in doc
+    assert "0% of the 0 lost" in doc
+
+
+def test_the_totals_are_the_row_counts():
+    rows = _census_rows(emitted=4, sfx=2, beyond=3)
+    rows.append({"file": "C.sid", "fate": "trimmed", "why": "past the end",
+                 "voices_ok": False})
+    doc = survey.build_subtune_census(rows, "X", "0.5.460")
+    assert "- declared by the PSID headers: **10**" in doc
+    assert "- emitted: **4**" in doc
+    assert "- beyond the track table: **3** in 1 file(s)" in doc
+    assert "- lost with pointers that resolve: **1** in 1 file(s)" in doc
+
+
+def test_the_by_cause_table_excludes_emitted_and_keeps_everything_else():
+    """The table is the QUEUE, so an emitted subtune must not appear in it."""
+    doc = survey.build_subtune_census(_census_rows(emitted=5, sfx=1, beyond=1),
+                                      "X", "0.5.460")
+    body = doc.split("## By cause", 1)[1].split("##", 1)[0]
+    assert "`sfx`" in body and "`beyond_table`" in body
+    assert "`emitted`" not in body
+
+
+def test_the_document_names_its_generator_and_version():
+    """Provenance: a generated artefact that does not say what made it, and at
+    which version, is a number nobody can grade later."""
+    doc = survey.build_subtune_census(_census_rows(), "SOME/DIR", "0.5.460")
+    assert doc.startswith("# Subtune census")
+    assert "python/survey.py --subtune-census" in doc
+    assert "0.5.460" in doc and "SOME/DIR" in doc
+
+
+def test_the_template_still_carries_exactly_its_five_placeholders():
+    """If a placeholder is added or removed, `.format` raises at RUN time --
+    on a corpus regeneration, not here. This fails first and says which."""
+    import re
+    found = set(re.findall(r"{(\w+)}", survey.SUBTUNE_CENSUS_DOC))
+    assert found == {"sfx_count", "sfx_files", "sfx_pct", "loss_total",
+                     "rest_pct"}, sorted(found)

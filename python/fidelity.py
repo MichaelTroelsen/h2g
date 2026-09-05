@@ -3747,10 +3747,38 @@ DIMENSIONS = (
     # selected within its own slot -- see `sound_runs`, and read
     # `sound_run_delta` beside it while the agreement is zero.
     # `--hold-census` says what the disagreements are made of, and the answer
-    # is mostly not note length: 211 of 432 are the next-note fetch, 117 are
-    # the note's *slot* differing rather than the note (a timing question, and
-    # for 94 of them the file's slot ratio is 1/`retrigger_ratio`), and the
-    # residue is nine. See `classify_hold` and section 7.xxxx.
+    # is mostly not note length. **RE-CENSUSED AT `-t 180` AT v0.5.460 -- the
+    # 432-instrument figures this comment used to carry (211 fetch, 117 slot,
+    # residue nine) were taken at `-t 60` and are HISTORY.** Over **818
+    # instruments in 88 files**:
+    #
+    #     match 280 (34.2%)   fetch 399 (48.8%)   slot 131 (16.0%)
+    #     thin 2   sparse 1   gap 0   short 1   long 4
+    #
+    # So the residue that is ACTUALLY about note length is **five of 818**, and
+    # `fetch` -- a real defect, and one this repo has an open task for -- is
+    # nearly half.
+    #
+    # **WHAT THE COLUMN'S NUMBER DOES NOT MEAN, because the census invites the
+    # misreading it exists to prevent.** `hold` reads 34.2% here, and that is
+    # NOT "65.8% of instruments have a note-length defect". The column asks a
+    # factual question -- do the notes sound for as many frames? -- and counts
+    # exact matches; the census answers WHY NOT, and says of `slot`, `sparse`,
+    # `thin` and `gap` that they are not length differences at all. Those four
+    # are 134 of the 818, so a reader who takes every miss for a defect
+    # over-counts by 16 points: the same number, re-based on matches plus
+    # documented non-defects, is **50.6%**.
+    #
+    # **THE COLUMN IS NOT CHANGED TO EXCLUDE THEM, and that is deliberate.**
+    # `sound_run_agreement` is element 6 of the state tuple `presets.play()`
+    # builds, so it is one of `fidelity_better`'s acceptance terms: re-basing
+    # it re-opens every per-song decision the search has made, and would need
+    # the eight-toggle walk re-run and diffed before anything could be trusted.
+    # `tests/test_hold_census.py` pins the pair on purpose --
+    # `test_the_population_is_the_columns_denominator` and
+    # `test_the_match_count_is_the_columns_numerator` -- so the census and the
+    # column cannot drift apart. Attribution belongs in the census; the column
+    # measures agreement. See `classify_hold` and section 7.xxxx.
     Dimension("sound_run_agreement", "hold", ("$D404",), "fraction",
               "instruments whose notes sound for as many frames as the "
               "original's -- **blind to the deficit it measures above `-S3`**, "

@@ -606,11 +606,47 @@ def convert(sid_path: str, log: Logger = print,
     # The walk and the clone discipline live in patterns.py, the simulator
     # and the table in goatwriter.py; the table is built HERE, before the
     # patterns are patched, because the commands name its entry indices.
-    # Multispeed files are declined for now: the within-note table speed
-    # divides by the multiplier (as `_pulse_tri_program` does) but whether
-    # this engine's own sweep steps per call or per frame on a multispeed
-    # player has not been measured, and a wrong reading there would be
-    # silent. 5_Title_Tunes, the measured case, is -S1.
+    # Multispeed files are declined. **THE REASON IS NO LONGER "UNMEASURED":
+    # THE SWEEP STEPS PER FRAME, MEASURED AT v0.5.460, three ways that agree.**
+    # This comment used to say the per-call/per-frame question "has not been
+    # measured, and a wrong reading there would be silent". It is measured:
+    #
+    # * `PULSE_TRI_SHAPE` opens `AND #$1F / DEC counter,X / BPL skip` -- a
+    #   per-voice countdown reloaded from the rate byte's low five bits,
+    #   sitting in the play routine's body, so its unit is one ENTRY to that
+    #   routine.
+    # * Of the 11 corpus files carrying this engine above `-S1`, **10 declare
+    #   VBI** and only Battle_of_Britain declares CIA -- so the routine is
+    #   entered once per displayed frame, and the `-S` factor is a property of
+    #   what `gt2reloc` packed on OUR side. Same rule as `_measure` tracing
+    #   every original at `-m1`.
+    # * Pulse-width change gaps in the ORIGINALS at `-m1` come from the same
+    #   alphabet on the `-S2` files as on the `-S1` controls; were those
+    #   originals entered twice a frame their gaps would be halved.
+    #
+    # So `_pulse_tri_program`'s division by `multiplier` is the correct
+    # treatment rather than a guess, and this gate is NOT protecting against a
+    # wrong rate unit.
+    #
+    # **IT IS KEPT ANYWAY, FOR A DIFFERENT AND MEASURED REASON, and that reason
+    # is written down in `tests/test_pulse_phase.py`:** lifting the condition
+    # to admit VBI multispeed files reaches three of them, and **Rasputin's
+    # conversion then does not PACK** -- gt2reloc refuses it, with no table
+    # error and 126 patterns against a limit of 208, so the cause is neither of
+    # the two overruns this repo already guards. Of the other two, Game_Killer
+    # gains `pulse_phase` 0.79 -> 0.93 with every other column identical, and
+    # One_Man_and_his_Droid moves bytes and no number. That test pins this
+    # condition AS SOURCE and says the repair is a guard on the pack, not a
+    # wider condition here. Do not widen it without that guard.
+    #
+    # **AND THE GATE IS NOT THE ONLY THING DECLINING THESE FILES**, which was
+    # not previously known: with the condition lifted, only 3 of the 10 VBI
+    # carriers are reached at all. The other 7 -- Devils_Galop, both Last_V8s,
+    # Master_of_Magic, Monty_on_the_Run, Phantoms_of_the_Asteroid and
+    # Thing_on_a_Spring -- are declined by `group_tempos` or by
+    # `pulse_phase_sims` returning nothing, and that second cause is unread.
+    #
+    # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------
     pulse_plan = None
     if (pulse_phase and pulse and det.pulse_tri_hi >= 0

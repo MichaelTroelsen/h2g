@@ -2660,3 +2660,84 @@ def test_the_field_reaches_the_row_because_wave_compare_is_merged_whole():
     assert "row.update(wave_compare(" in src, \
         "wave_compare is no longer merged whole -- a hand-listed copy would " \
         "drop orig_noise_pitch/our_noise_pitch from every row"
+
+
+# --------------------------------------------------------------------------
+# The registry against the JSON, which is the half the header test cannot see.
+#
+# `test_every_printed_column_has_a_dimension_declaring_its_registers` checks
+# DIMENSIONS against the printed HEADER, and
+# `test_every_row_has_exactly_as_many_cells_as_the_header` checks the header
+# against the ROW's cells. Neither asks whether the VALUE a dimension names is
+# in the row dict at all -- and that dict IS the `--json` artefact, written by
+# `json.dumps(rows)` with no separate serialiser in between. So a dimension can
+# be declared, printed, and read `-` on every file forever, because the key it
+# names was never put in the row.
+#
+# That is one level past the `pphase` defect the test above records: there, the
+# header and the row cells disagreed; here they can agree and both be empty.
+# --------------------------------------------------------------------------
+
+
+def test_every_dimension_value_key_reaches_the_row():
+    """`d.value(row)` must resolve, for every dimension, on a full row.
+
+    A dimension whose key never reaches the row prints `-` for the whole
+    corpus, which is indistinguishable from a corpus where the thing genuinely
+    could not be measured -- and `--json` consumers see nothing at all.
+    """
+    full = _row("A.sid", "measured", 0.5)
+    for d in fidelity.DIMENSIONS:
+        key = d.source or d.key
+        assert key in full, f"{d.column} names {key}, which no row carries"
+        assert d.value(full) is not None, f"{d.column} resolves to None"
+
+
+def test_a_count_column_reads_its_SOURCE_key_not_the_one_it_is_named_for():
+    """`source` exists because the count columns report OUR side only.
+
+    Four dimensions declare a `key` that is not where their value lives, and
+    reading `d.key` instead of `d.source or d.key` makes them look absent from
+    `--json` when they are present under another name. That misreading has
+    already reached this repo's notes once, as "fidelity.json omits ..." for
+    columns the artefact carries; `Dimension.value` is the accessor, and this
+    pins that the two are genuinely different for these four.
+    """
+    aliased = {d.column: (d.key, d.source)
+               for d in fidelity.DIMENSIONS if d.source}
+    assert aliased == {
+        "slides": ("slides", "our_slides"),
+        "noise": ("noise", "our_noise_frames"),
+        "pul": ("pulse", "our_pulse_changes"),
+        "filt": ("filtered", "our_filtered_frames"),
+    }, aliased
+    full = _row("A.sid", "measured", 0.5)
+    for column, (key, source) in aliased.items():
+        assert key not in full, f"{column}: {key} is the NAME, not the key"
+        assert source in full
+
+
+def test_no_dimension_is_unreachable_from_the_generated_artefact():
+    """The same check against `build/fidelity.json`, when one exists.
+
+    Skips rather than fails when the artefact is absent -- it is gitignored, so
+    a clean checkout legitimately has none, and asserting against a missing
+    artefact would fail for the one reason this test is not about.
+
+    Asserts REACHABILITY, not density: `cut` and `len` are legitimately null on
+    most rows (a file with no filter sweep, a file whose original never ends).
+    What must never happen is a dimension that is null on ALL of them, which is
+    a column nobody can tell from a broken one.
+    """
+    import json
+    import pathlib
+    art = pathlib.Path(__file__).resolve().parents[2] / "build" / "fidelity.json"
+    if not art.exists():
+        pytest.skip("build/fidelity.json absent -- it is gitignored")
+    rows = [r for r in json.loads(art.read_text(encoding="utf-8"))
+            if r.get("status") == "measured"]
+    if not rows:
+        pytest.skip("no measured rows in the artefact")
+    dead = [d.column for d in fidelity.DIMENSIONS
+            if not any(d.value(r) is not None for r in rows)]
+    assert dead == [], f"null on every one of {len(rows)} rows: {dead}"

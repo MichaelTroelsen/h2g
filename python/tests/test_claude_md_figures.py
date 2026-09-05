@@ -59,7 +59,12 @@ def _rows():
 # and its check SKIPS elsewhere, exactly as the file already skips a missing
 # artefact. A POPULATION figure from `presets.json` has no window and is
 # always checked.
-FIGURE_WINDOW = 60
+# Moved 60 -> 180 at v0.5.460, when the three figures the guard was
+# skipping were RE-MEASURED at 180 rather than re-labelled. Moving
+# this constant without re-measuring is the one thing it must never
+# be used for: it would turn every 60 s figure in the file into a
+# claim about a window nobody measured it in.
+FIGURE_WINDOW = 180
 
 
 def _window(rows):

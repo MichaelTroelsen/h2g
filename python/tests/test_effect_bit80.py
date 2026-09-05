@@ -613,3 +613,78 @@ def test_the_shadow_pair_alone_cannot_name_the_voice():
     for base, voice in ((0xE5E3, 2), (0xE5EA, 1), (0xE5F1, 0)):
         assert (lo - base - 1) // 7 == voice
         assert (hi - base - 4) // 7 == voice
+
+
+# --------------------------------------------------------------------------
+# The INTERLEAVED dialect and bit $80: it does not have one.
+#
+# A task carried the claim that "Go_Go_Dash carries effect bit $80 on two
+# records and detection reads none", with the reasoning that its two-stage path
+# reaches only ~29% of the original's noise so a second mechanism must be
+# present. The second half is live -- `two_stage` took Go_Go_Dash from 0 to
+# 1538 noise frames of the original's 5334 at `-t 180` -- but bit $80 is not
+# the mechanism, and the check below is what says so rather than a reading.
+#
+# Anchored the way `detect.py` anchors everything: on loads whose operand is
+# `instr_start + k`, so a match is a read of record byte +k rather than of
+# music data. An UNanchored scan is worthless here -- `AND #$80` occurs 74
+# times in Go_Go_Dash's file, nearly all of it sample and pattern bytes.
+# --------------------------------------------------------------------------
+
+_ILV = ("Go_Go_Dash", "Lion_Heart", "Radio_ACE", "Sun_Never_Shines",
+        "Lakers_vs_Celtics", "Pacific_Coast")
+_LOADS = {0xAD, 0xBD, 0xB9, 0xAE, 0xBE, 0xAC, 0xBC, 0x2C}
+
+
+def _record_byte_ops(sid, det):
+    """(offset, following opcode, its operand) for every load of a record byte."""
+    d, st = sid.data, det.instr_stride
+    out = []
+    for k in range(len(d) - 5):
+        if d[k] not in _LOADS:
+            continue
+        off = sid.to_offset(d[k + 1] | (d[k + 2] << 8)) - det.instr_start
+        if 0 <= off < st:
+            out.append((off, d[k], d[k + 3], d[k + 4]))
+    return out
+
+
+@needs_corpus
+def test_the_interleaved_player_tests_no_record_byte_for_bit_7():
+    """No `AND #$80`, no `BIT`+branch, no load+`BPL`/`BMI` on a record byte.
+
+    All three idioms, because a bit tested with `BIT`/`BVC` or `BPL`/`BMI` is
+    invisible to an `AND` scan -- the reason bit $40 went unread for the life
+    of the project.
+    """
+    for name in _ILV:
+        sid, det = _detect(name)
+        assert det.instr_stride == 16, name
+        for off, op, nxt, arg in _record_byte_ops(sid, det):
+            assert not (nxt == 0x29 and arg == 0x80), (
+                f"{name}: record +{off} is masked with AND #$80")
+            assert not (op == 0x2C and nxt in (0x10, 0x30, 0x50, 0x70)), (
+                f"{name}: record +{off} is BIT-tested and branched on")
+            assert not (op != 0x2C and nxt in (0x10, 0x30)), (
+                f"{name}: record +{off} is loaded and branched on bit 7")
+
+
+@needs_corpus
+def test_the_interleaved_effect_byte_is_plus_seven_and_its_only_bit_is_20():
+    """The dialect DOES have an effect byte; detection just does not read it.
+
+    Exactly two record bytes are masked at all, identically on all six files:
+    `+7 AND #$20` and `+13 AND #$0F`. The `$20` site reads
+
+        LDA record+7,X / AND #$20 / BEQ skip / LDA <global> / BNE skip
+
+    so the bit is gated on a global cell as well. `det.effect_byte_offset` is
+    None for every one of these files, which is what "detection reads none"
+    correctly describes -- of bit $20, not of bit $80.
+    """
+    for name in _ILV:
+        sid, det = _detect(name)
+        masks = {(off, arg) for off, op, nxt, arg in _record_byte_ops(sid, det)
+                 if nxt == 0x29}
+        assert masks == {(7, 0x20), (13, 0x0F)}, (name, sorted(masks))
+        assert getattr(det, "effect_byte_offset", None) is None, name

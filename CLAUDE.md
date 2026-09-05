@@ -1452,6 +1452,30 @@ test dependency).
     same document.
   * **STALE -- Kings of the Beach ingame reads `wave` 84.8% / `gate` 85.2%**
     at v0.5.454 (subtune 4, `-S3`), against the 57.3% / 11.0% recorded here.
+
+  **RE-TAKEN AT `-t 180` AT v0.5.460, BECAUSE THE ARTEFACT IS 180 NOW AND
+  THESE THREE WERE THE ONLY LIVE FIGURES THE COMMITTED CHECK COULD NOT READ.**
+  Every figure above is a 60-SECOND figure and is left saying so; these are the
+  same quantities measured in the window every generated document now uses, from
+  `build/fidelity.json` (`seconds: 180`, v0.5.459, 89 measured rows). The three
+  were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
+  what a 60 s figure against a 180 s artefact should do -- and re-measuring is
+  what turns the skip back into a check rather than papering over it.
+  * **The drift split at 180 s is **67 zero / 19 drifting of 86 rows** (89
+    measured, 3 without a fit), against 68 / 18 / 86 at 60 s.** One file
+    crossed. `drift_per_1000` is an INTEGRATED offset and so the most
+    window-sensitive number the report carries, which is exactly why the two
+    windows disagree here and not on `melody`.
+  * **Skate or Die intro at 180 s is 3151 attacks against the original's
+    3152**, `melody` 100%. This is NOT a correction of the 1020 / 1021 pair
+    above: attack counts scale with the window, so the two are the same file
+    measured over different spans and both are right. Anyone quoting one must
+    say which.
+  * **Kings of the Beach ingame reads `wave` 84.8% / `gate` 85.2% at BOTH
+    windows** -- identical to four significant figures. It is the only one of
+    the three that is window-robust, and that is worth stating: the window
+    moves most register columns, and a reader who has learned that would
+    otherwise assume this pair had moved too.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes
