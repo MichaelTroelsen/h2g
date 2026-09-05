@@ -19,10 +19,14 @@ separate `data.find(b'\\x29\\x04')` and a hand-computed address before.
 
 **Addresses, not offsets, are what the player's own operands name**, so every
 line is printed at its C64 address and `--find` reports both. The mapping is
-`sidfile.to_offset`'s, inverted: `addr = offset - HLEN + 1 + load_addr`. It does
-*not* invert the relocation branch of `to_offset` -- a file that copies part of
-itself elsewhere at init (I, Ball) names addresses this cannot resolve, and the
-`--offset` form is the way in for those.
+`SidFile.to_address`, called rather than re-derived -- **including its
+relocation branch**, which this module used to declare unresolvable. A file
+that copies part of itself elsewhere at init (I, Ball) holds those bytes at
+`src` and the player reads them at `dst`, so an offset inside the moved region
+names an address `dst - src` above the plain inversion: I_Ball's effect byte is
+$E557, not the $9557 this printed before. A disassembler that labels a line
+with an address the player never reads is worse than one that declines, which
+is why the formula is now in exactly one place for every caller.
 """
 from __future__ import annotations
 
@@ -194,12 +198,24 @@ def find_all(data: bytes, pattern: str, limit: int = 0) -> list:
 
 
 def to_address(sid: SidFile, offset: int) -> int:
-    """File offset -> C64 address. `SidFile.to_offset`'s inverse.
+    """File offset -> C64 address, delegating to `SidFile.to_address`.
 
-    Not the relocation branch of it: an address a file only has after copying
-    part of itself at init cannot be recovered from an offset alone.
+    **This used to be the tenth hand-rolled copy of that formula**, and its
+    docstring used to claim the relocation branch "cannot be recovered from an
+    offset alone". That is false, and `SidFile.to_address` is the counterexample
+    -- an offset inside the moved region names an address `dst - src` above the
+    plain inversion, which is why I_Ball's effect byte reads $E557 where the
+    plain formula says $9557. A disassembler that names the wrong address is
+    worse than one that declines, so this had to be the same function as
+    everyone else's rather than a near copy of it.
+
+    The call is UNBOUND on purpose. `tests/test_dis6502.py` exercises this with
+    a duck-typed stub that carries `load_addr` and `relocation` but defines no
+    `to_address` of its own, and `sid.to_address(offset)` would narrow the
+    contract to real `SidFile`s for no gain -- the method reads exactly those
+    two attributes.
     """
-    return offset - HLEN + 1 + sid.load_addr
+    return SidFile.to_address(sid, offset)
 
 
 def to_file_offset(sid: SidFile, address: int) -> int:
