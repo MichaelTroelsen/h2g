@@ -86,29 +86,44 @@ def main() -> int:
     if re.search(r"--help|\s-h\b", cmd):
         return 0
 
+    # ONLY look at segments that actually INVOKE a generator. Matching the
+    # bare filename anywhere in the command line is not good enough: it fired
+    # on `grep -c "x" python/fidelity.py ... && grep -o "y" CLAUDE.md`, where
+    # `fidelity.py` is an argument to grep and the `-o` belongs to a different
+    # command entirely. A guard that cannot tell an INVOCATION from a MENTION
+    # is the same "cannot separate its subject from its container" defect this
+    # repo keeps hitting -- and this one hit it in its first hour.
+    segments = [s for s in re.split(r"&&|\|\||[;|]|\n", cmd)
+                if re.search(r"(?:^|[\s/\\])(?:python[0-9.]*\s+|\./)"
+                             r"[^\s]*\b(survey|presets|fidelity|"
+                             r"sound_calibrate|fidelity_queue|listen)\.py\b", s)]
+    if not segments:
+        return 0
+    seg = " ".join(segments)
+
     problems = []
 
-    if re.search(r"\bsurvey\.py\b", cmd):
-        if "--gt2reloc" not in cmd:
+    if re.search(r"\bsurvey\.py\b", seg):
+        if "--gt2reloc" not in seg:
             problems.append(
                 "survey.py without `--gt2reloc`: the pack-back column comes "
                 "out EMPTY and says nothing about it.")
-        if "--legal-restart" not in cmd:
+        if "--legal-restart" not in seg:
             problems.append(
                 "survey.py without `--legal-restart`: greloc.c:244 refuses "
                 "every tune ending on Hubbard's $FE, so the column measures "
                 "the option's absence, not the converter.")
 
-    if re.search(r"\bsound_calibrate\.py\b", cmd):
-        if not positional_after(cmd, "sound_calibrate.py"):
+    if re.search(r"\bsound_calibrate\.py\b", seg):
+        if not positional_after(seg, "sound_calibrate.py"):
             problems.append(
                 "sound_calibrate.py with no sid_dir: it exits on a required-"
                 "argument error and writes NOTHING, leaving the previous "
                 "docs/SOUND-CALIBRATION.md on disk to be misread as this "
                 "run's result.")
 
-    if re.search(r"\bfidelity\.py\b", cmd) and re.search(r"(-o|--json)\b", cmd):
-        if "--sound" not in cmd and artefact_has("aud"):
+    if re.search(r"\bfidelity\.py\b", seg) and re.search(r"(-o|--json)\b", seg):
+        if "--sound" not in seg and artefact_has("aud"):
             problems.append(
                 "fidelity.py regenerating without `--sound`, but the current "
                 "build/fidelity.json HAS `aud`/`loud`. The re-run would drop "
