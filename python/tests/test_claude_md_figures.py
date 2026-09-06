@@ -1,6 +1,9 @@
 """CLAUDE.md's live population figures, re-derived from the generated artefacts.
 
-CLAUDE.md is largely numbers and nothing re-derives them. Its own rule is that a
+Reads `docs/LESSONS.md`, which since v0.5.475 holds CLAUDE.md's own text and all
+of its numbers -- see the comment on CLAUDE_MD below.
+
+That text is largely numbers and nothing re-derives them. CLAUDE.md's rule is that a
 figure is either HISTORICAL, carrying the version it was measured at, or LIVE
 and re-checked -- and the ungraded middle is what gets cited as current. The
 v0.5.455 pass did this by hand in a script and found three of five "re-verified
@@ -26,7 +29,13 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-CLAUDE_MD = ROOT / "CLAUDE.md"
+# WHERE THE FIGURES LIVE NOW. CLAUDE.md was compacted at v0.5.475 into an index
+# of rules, and its 2300 lines of evidence moved VERBATIM to `docs/LESSONS.md`.
+# Every figure this guard reads went with them, so it reads that file. The
+# test's name is kept because the rule it enforces is CLAUDE.md's own grading
+# rule and the archive is CLAUDE.md's own text; a figure that comes BACK into
+# CLAUDE.md needs its own check here against `ROOT / "CLAUDE.md"`.
+CLAUDE_MD = ROOT / "docs" / "LESSONS.md"
 PRESETS = ROOT / "presets.json"
 FIDELITY = ROOT / "build" / "fidelity.json"
 SURVEY = ROOT / "docs" / "SURVEY.md"
@@ -34,7 +43,7 @@ SURVEY = ROOT / "docs" / "SURVEY.md"
 
 def _text():
     if not CLAUDE_MD.exists():
-        pytest.skip("CLAUDE.md absent")
+        pytest.skip(f"{CLAUDE_MD.name} absent")
     return CLAUDE_MD.read_text(encoding="utf-8")
 
 
@@ -87,12 +96,12 @@ def _needs_window(rows, taken_at=FIGURE_WINDOW):
 
 
 def _says(text, *fragments):
-    """Assert CLAUDE.md contains each fragment, quoting what to fix if not."""
+    """Assert docs/LESSONS.md contains each fragment, quoting what to fix if not."""
     for f in fragments:
         assert f in text, (
-            f"CLAUDE.md no longer says {f!r} -- either the figure moved and the "
-            f"file needs correcting, or the wording changed and this test needs "
-            f"the new wording")
+            f"docs/LESSONS.md no longer says {f!r} -- either the figure moved "
+            f"and the file needs correcting, or the wording changed and this "
+            f"test needs the new wording")
 
 
 # ------------------------------------------------------------ presets.json

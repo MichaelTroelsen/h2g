@@ -27,7 +27,12 @@ import re
 import subprocess
 import sys
 
-ROOT = r"C:/Users/mit/claude/h2g"
+# Derived, never hardcoded -- see the note in artefact_guard.py. It matters
+# most here: this guard is ABOUT worktrees, and a hardcoded root would have it
+# inspect the main checkout's `refs/stash` rather than the worktree whose
+# `git stash` it was invoked to refuse.
+ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # `git stash` bare, or with any mutating subcommand. `list` and `show` read.
 #

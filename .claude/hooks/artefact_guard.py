@@ -30,7 +30,14 @@ import re
 import subprocess
 import sys
 
-ROOT = r"C:/Users/mit/claude/h2g"
+# Derived, never hardcoded. A literal path is wrong in exactly the case this
+# repo's own rules create: a concurrent agent works in a git WORKTREE, and a
+# hardcoded root would make this guard read the main checkout's tree instead of
+# the one the tool call is actually touching -- guarding the wrong files while
+# reporting success. `CLAUDE_PROJECT_DIR` is what the harness sets; the
+# `__file__` fallback covers a bare `python .claude/hooks/...` invocation.
+ROOT = os.environ.get("CLAUDE_PROJECT_DIR") or os.path.dirname(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # The generators whose output is a measurement of conversion behaviour.
 GENERATORS = re.compile(

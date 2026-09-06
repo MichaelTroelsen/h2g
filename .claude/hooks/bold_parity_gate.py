@@ -16,11 +16,14 @@ than in the file, and flagging it on every regeneration would train everyone to
 ignore the hook.
 """
 import json
+import os
 import pathlib
 import subprocess
 import sys
 
-ROOT = pathlib.Path(r"C:/Users/mit/claude/h2g")
+# Derived, never hardcoded -- see the note in artefact_guard.py.
+ROOT = pathlib.Path(os.environ.get("CLAUDE_PROJECT_DIR")
+                    or pathlib.Path(__file__).resolve().parents[2])
 TOOL = ROOT / "python/tools/bold_parity.py"
 # Written by survey.py / fidelity.py / fidelity_queue.py / sound_calibrate.py.
 GENERATED = {"SURVEY.md", "FIDELITY.md", "QUEUE.md", "SUBTUNES.md",

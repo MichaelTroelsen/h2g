@@ -32,7 +32,9 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(r"C:/Users/mit/claude/h2g")
+# Derived, never hardcoded -- see the note in artefact_guard.py.
+ROOT = pathlib.Path(os.environ.get("CLAUDE_PROJECT_DIR")
+                    or pathlib.Path(__file__).resolve().parents[2])
 
 
 def artefact_has(col: str) -> bool:
