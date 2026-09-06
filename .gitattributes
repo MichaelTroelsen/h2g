@@ -1,0 +1,45 @@
+# Line endings, made a property of the REPO rather than of each clone's
+# `core.autocrlf`.
+#
+# WHY THIS IS SAFE TO ADD, measured rather than assumed: every one of the 217
+# tracked text blobs is ALREADY pure LF, and `git add --renormalize .` against
+# this file stages ZERO files. It changes no content. What it changes is who
+# decides: without it, correctness depends on each machine's `core.autocrlf`,
+# so a clone with `autocrlf=false` would commit CRLF blobs and break a
+# uniformity nothing currently enforces.
+#
+# It does NOT dictate working-copy endings, and that is deliberate. `text=auto`
+# stores LF and checks out whatever the platform wants, which is why this repo
+# has CRLF and LF files side by side in the working tree while every blob is
+# LF. CLAUDE.md's per-file endings ("abpage.py is CRLF, fidelity.py is LF") are
+# observations of WORKING-COPY state -- an artefact of which files a tool has
+# rewritten since checkout -- not of what is stored.
+
+* text=auto
+
+# ---------------------------------------------------------------------------
+# BINARY. Every one of these is pinned by extension rather than left to
+# auto-detection, because the cost of getting it wrong is not symmetric: a
+# text file wrongly marked binary is a cosmetic diff problem, and a binary
+# file wrongly normalised is CORRUPTION.
+#
+# `Commando.sng` is the sharpest case in the repo. It is the byte-exact
+# reference output the whole port is verified against -- `test_commando.py`
+# requires `got == ref` -- so a single translated `\n` inside it would break
+# the project's only fidelity anchor, and would do it silently, because the
+# failure would look like a converter regression rather than a checkout.
+*.sng   binary
+*.sid   binary
+*.exe   binary
+*.zip   binary
+*.frx   binary
+*.wav   binary
+*.png   binary
+
+# VB6 SOURCE IS DELIBERATELY LEFT ON `text=auto`, AND THAT WAS MEASURED.
+# Marking `*.frm` / `*.vbp` / `*.vbw` as `-text` (store verbatim) looks right --
+# the IDE writes CRLF -- but it stages 1349 insertions and 1349 deletions
+# across three files, because their blobs are LF today and `-text` would
+# replace them with CRLF. That buys nothing: `text=auto` already stores LF and
+# checks out CRLF on Windows, which is what VB6 wants. The rule earned its
+# place by being tried and reverted, not by being reasoned about.
