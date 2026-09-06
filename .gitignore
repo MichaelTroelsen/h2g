@@ -55,3 +55,9 @@ graphify-out/
 arkiv/*.sng
 arkiv/Hubbard_Rob/
 arkiv/Zoids.sid
+
+# Bytecode. Nothing here is ever deliberate: a hook script run as __main__
+# writes none, but py_compile or an import does, and one slipped into a
+# staged path list once.
+__pycache__/
+*.pyc
