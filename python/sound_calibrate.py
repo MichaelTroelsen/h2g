@@ -256,6 +256,37 @@ def convert_at(version: str, sid: Path, workdir: Path, gt2reloc: str,
 
 
 # ---- driver ---------------------------------------------------------------
+def known_bad_passed(bad: list[dict]) -> bool:
+    """Does the KNOWN_BAD suite validate the metric?
+
+    An EXCLUDED pair is REPORTED, NOT COUNTED -- decided by the user and
+    recorded in `.claude/tasks/decisions.jsonl`. The pair stays in KNOWN_BAD,
+    stays rendered, and keeps its reason in the table; what it no longer does is
+    hold the whole suite at FAIL.
+
+    This used to be `all(b["seen"] for b in bad)`, with a comment arguing the
+    opposite: "An EXCLUDED pair is not a passing pair ... It reads FAIL until
+    KNOWN_BAD names pairs that can be built comparably". That made the criterion
+    UNSATISFIABLE for as long as Las_Vegas and Samantha_Fox remain, because
+    their v0.5.401 fix is a MULTIPLIER change -- the good build repacks at a
+    different -S and its loudness lands at 0.074x and 0.063x of the original,
+    which `comparable()` refuses as a RENDER rather than as a result. That is a
+    property of the pair, not a metric blind spot, so scoring it reported a
+    build problem as a coverage failure. Deleting the two pairs would make this
+    green by shrinking the suite, which is gaming an all() rather than measuring
+    anything -- so they stay, excluded and visible.
+
+    THE `any(...)` GUARD IS NOT OPTIONAL, and it is the whole subtlety.
+    `all()` over an empty sequence is True, so the filter ALONE would report
+    PASS the moment every pair is excluded -- validating nothing while reading
+    identically to a real pass. At least one COMPARABLE pair must exist and be
+    seen. Same shape as a census reporting "0 disagreements" over rows it never
+    read.
+    """
+    comparable_rows = [b for b in bad if not b.get("incomparable")]
+    return bool(comparable_rows) and all(b.get("seen") for b in comparable_rows)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="sound_calibrate")
     p.add_argument("sid_dir")
@@ -350,14 +381,7 @@ def main(argv=None) -> int:
     passed = (all(abs(1 - v["aud"]) < 1e-6 for v in idents.values())
               and checks["shift"]["noise_floor"] < 0.01
               and closeness is not None
-              # An EXCLUDED pair is not a passing pair. The whole point of
-              # this file is that nothing downstream inherits an approval on
-              # numbers that were not validated, and a pair whose builds
-              # cannot be compared has validated nothing. It reads FAIL until
-              # KNOWN_BAD names pairs that can be built comparably -- which is
-              # the same verdict as before this change and for a stated
-              # reason instead of an unexplained blind spot.
-              and all(b.get("seen") for b in bad))
+              and known_bad_passed(bad))
     out = {"version": __version__, "head": F.git_label(ROOT), "seconds": args.seconds,
            "noise_floor": checks["shift"]["noise_floor"],
            "closeness_floor": closeness, "checks": checks, "pass": passed}

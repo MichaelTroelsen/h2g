@@ -153,15 +153,34 @@ def main(argv: list[str]) -> int:
 
     paths = argv[1:]
     any_odd = False
+    any_error = False
     for n, path in enumerate(paths):
         if n:
             print()
-        if check_file(path) % 2 == 1:
+        try:
+            odd = check_file(path) % 2 == 1
+        except OSError as exc:
+            # A missing file, a directory passed by mistake, or a permission
+            # error are all "the gate couldn't even run" -- a usage-shaped
+            # failure, not a finding -- so report it clearly on stderr and
+            # keep checking the rest of the batch rather than aborting: one
+            # bad path shouldn't hide a real odd-prose finding in another.
+            reason = exc.strerror or str(exc)
+            print(f"error: cannot read {path!r}: {reason}", file=sys.stderr)
+            any_error = True
+            continue
+        if odd:
             any_odd = True
 
     # Exit non-zero when ANY file's prose ** count is odd, so a test or a
     # pre-commit hook can gate on this rather than only reading stdout --
     # a gate that always exits 0 cannot fail a build no matter what it prints.
+    # An unreadable path (exit 2) outranks an odd-prose finding (exit 1):
+    # it means the gate itself couldn't run on that input, which is a
+    # stronger signal than a real finding on the files it could read --
+    # so if both occur in one batch, 2 wins.
+    if any_error:
+        return 2
     return 1 if any_odd else 0
 
 

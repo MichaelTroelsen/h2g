@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.475 — 2026-09-06
+
+- the calibration reports incomparable pairs, and bold_parity separates an error from a finding
+
 ## 0.5.474 — 2026-09-05
 
 - bold_parity exits non-zero on an odd prose count

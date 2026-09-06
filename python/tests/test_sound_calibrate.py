@@ -86,16 +86,56 @@ def test_a_build_far_off_the_originals_loudness_is_excluded_not_scored():
 
 
 def test_an_excluded_pair_does_not_count_as_a_pass():
-    """The gate says nothing downstream may inherit an approval on these
-    numbers. A pair that could not be compared has validated nothing, so it
-    must not be what makes the file read PASS."""
+    """An excluded pair is not what makes the file read PASS -- it is not
+    counted at all.
+
+    THE SECOND HALF OF THIS COMMENT USED TO SAY "so it holds the file at FAIL",
+    which was true of the old criterion and is FALSE of the current one. The
+    user decided (see `.claude/tasks/decisions.jsonl`) that an incomparable
+    pair is REPORTED, not counted, so it neither passes nor fails the suite --
+    `known_bad_passed` filters it out entirely. The assertion below is
+    unchanged and still right: an excluded row is not `seen`.
+    """
     assert C.comparable(_LV_BAD, _LV_GOOD) is not None
-    # the `passed` expression in main() is `all(b["seen"] for b in bad)`; an
-    # excluded row carries seen=False, so it holds the file at FAIL.
     row_seen = (C.comparable(_LV_BAD, _LV_GOOD) is None
                 and (C.worse_by(_LV_BAD, _LV_GOOD) > _FLOOR
                      or C.worse_by_loud(_LV_BAD, _LV_GOOD) > _FLOOR))
     assert row_seen is False
+    # ...and being unseen no longer sinks a suite that has a comparable pair.
+    assert C.known_bad_passed([{"incomparable": "not a comparable render",
+                                "seen": False},
+                               {"incomparable": None, "seen": True}]) is True
+
+
+def test_a_suite_of_only_excluded_pairs_FAILS_rather_than_passing_vacuously():
+    """The guard the whole change turns on.
+
+    `all()` over an empty sequence is True, so filtering excluded pairs OUT
+    without also requiring one to remain would report PASS the moment every
+    pair is excluded -- validating nothing, and reading identically to a real
+    pass. That is the same shape as a census reporting "0 disagreements" over
+    rows it never examined, which this repo has shipped more than once.
+
+    Both endpoints are pinned, because only the pair distinguishes the guard
+    from its absence.
+    """
+    assert C.known_bad_passed([]) is False
+    assert C.known_bad_passed([{"incomparable": "multiplier change",
+                                "seen": False}]) is False
+    assert C.known_bad_passed([{"incomparable": "a", "seen": False},
+                               {"incomparable": "b", "seen": False}]) is False
+    # one comparable, seen -> the suite has validated something
+    assert C.known_bad_passed([{"incomparable": None, "seen": True}]) is True
+
+
+def test_a_comparable_pair_that_is_not_seen_still_FAILS():
+    """Excluding the incomparable must not weaken the real criterion: a pair
+    that CAN be compared and whose regression the metric MISSED is exactly the
+    blind spot this file exists to catch, and it still holds the suite at
+    FAIL."""
+    assert C.known_bad_passed([{"incomparable": None, "seen": False}]) is False
+    assert C.known_bad_passed([{"incomparable": None, "seen": True},
+                               {"incomparable": None, "seen": False}]) is False
 
 
 # --------------------------------------------------------------------------
