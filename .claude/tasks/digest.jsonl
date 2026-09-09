@@ -17,6 +17,7 @@
 {"id":"ab-4-sound-calibrate-thresholds","summary":null}
 {"id":"ab-5-approvals-inheritance","summary":null}
 {"id":"ab-5-step-5-prescribes-hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng","summary":null}
+{"id":"ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge","summary":"The plan had exactly one prose-only prerequisite -- ab-9's GATE on the regrid id, which now has a real depends_on edge -- against 22 false positives from one pasted priority sentence, and the gate turned out to be satisfied already."}
 {"id":"ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist","summary":"No open verify promises to create something that already exists -- the one narrow hit is this task quoting the defect and the two wide hits are 'which this task only READS' matched across an unrelated clause, so the family is settled with nothing written."}
 {"id":"ab-6-abpage-three-approval-states","summary":null}
 {"id":"ab-8-fidelity-queue","summary":null}
@@ -42,6 +43,7 @@
 {"id":"adsr-counts-inaudible-gate-off-attack-decay","summary":null}
 {"id":"agent-scratchpads-are-not-isolated-from-the-orchestrators","summary":null}
 {"id":"align-maximises-envelope-correlation-and-can-still-pick-a-worse-residual-integer-hop","summary":null}
+{"id":"approvals-py-had-never-been-run-end-to-end-and-its-tests-mock-the-packing-path","summary":"The closure that broke is now a module-level pack_into and three tests cover it -- one calling the REAL pack_sid -- and sabotaging its mkdir reproduces the original FileNotFoundError exactly."}
 {"id":"arp-mask-period","summary":null}
 {"id":"artefact-stamp-realign","summary":null}
 {"id":"audit-other-report-lines-that-assert-a-benign-cause","summary":null}
@@ -92,9 +94,11 @@
 {"id":"commando-note-104-is-not-a-note-and-the-faithful-emission-is-a-fixed-high-pitch","summary":null}
 {"id":"commando-voice-1-plays-g-sharp-7-where-the-original-plays-b-5","summary":null}
 {"id":"confuzion-runs-295s-past-its-original-the-only-measured-length-failure","summary":null}
+{"id":"confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that","summary":"The title's claim is refuted by the code -- voices_end_together has existed since v0.5.433 and is tested -- and the real defect was legalise_restarts' docstring asserting its own absence four lines above the call, now retracted with the Confuzion rows-versus-writes distinction recorded beside it."}
 {"id":"convert-through-preset-opts-and-the-harness-produce-different-bytes","summary":null}
 {"id":"converter-emits-sound-effects-as-subtunes","summary":null}
 {"id":"crazy-comets-last-missing-attack","summary":null}
+{"id":"cut-release-costs-adsr-on-release-heavy-tunes","summary":"Whole-corpus ablation (89 files x 2 arms, -t 180), arm A validated against build/fidelity.json on 89/89 output_shas and adsr values. cut_release reaches only 31 of 89 files (58 byte-identical); it is gated on det.envelope_cut plus a per-record EFFECT_PER_FRAME check. On those 31 it costs adsr on 30 and helps it on ZERO, while helping rel (release_tail_agreement) on 29 and hurting it on zero -- release_tail_ours_longer goes to 0 on all 31. So the verify's expected split is not two disjoint file populations but one population and two opposed columns: the option zeroes the release nibble in the instrument record, which adsr charges for every sounding frame of the note in order to buy the release tail that rel scores. The second sub-mechanism (original at $0000, we hold the record) is bit-identical on both arms of all 31 files and is the entire remaining ceiling on Geoff Capes. Three of the lowest-adsr files are inert under the ablation, so their deficit has a different cause. Nothing was adopted, removed or committed; seven follow-ups proposed."}
 {"id":"cut-release-splits-the-adsr-key-so-instrument-matched-columns-lose-the-instrument","summary":null}
 {"id":"depth-ratio-is-null-on-ten-of-eighty-nine-rows-and-the-six-ilv-files-are-among-them","summary":null}
 {"id":"detect-effect-arp-octave","summary":null}
@@ -183,6 +187,7 @@
 {"id":"listen-per-voice-ab","summary":null}
 {"id":"lock-records-with-a-null-pid-cannot-be-reaped-by-the-pid-rule","summary":null}
 {"id":"measure-action-biker","summary":"Action Biker measured and fully attributed: gate is above the corpus median so it owes nothing, the 62 drum runs are each exactly one frame short (682/744 = 11/12), and adsr 69% decomposes without remainder into a zeroed release nibble and an unreproduced note-end envelope kill."}
+{"id":"measure-confuzion","summary":"Confuzion measured at HEAD c2cb76a (h2g 0.5.478), conversion sha 7cbac3906726 validated against the harness and the corpus row before anything was concluded. Coverage needs -t 310 (cov 1.000; -t 180 gives 0.590). All 26 columns reported with both attack counts (1022/1022, retrig 1.00 -- nothing rose by removing events). Against the 89 measured seconds=180 corpus rows, eight columns are below median and the literal and robust log-space readings agree on every one: adsr 0.2097 (med 0.8044), vib 0.7308 (0.9830), depth 1.3549 (0.8166), hold 0.0000 (0.1056), pul 1.7962x (0.9481), pphase 0.5385x (0.8750), aud 0.8513 (0.9000), loud 0.8965 (0.9503). Pace is exact -- median 1.000, IQR 1.000-1.000 over 1019 gaps, drift 0.0 frames across 8988, and the least-squares fit agrees at 1.000, so there is no fit/median divergence. --diagnose is clean, so no harness defect stands in the way. Six columns are attributed with figures: adsr to the release nibble zeroed by cut_release (A/D/S identical in all six dominant mismatch pairs); hold to 8-of-8 `fetch` at delta -1, tied to gate's 1022 surplus frames = exactly our attack count; pul to voice 0's step halving 64->32 at identical span (pspan 1.0039); pphase to voice 0 opening on 3 widths of 9 while visiting 52 against 28; vib to the per-note Goattracker vibrato command, by ablation -- removing it recovers 148 reversals (0.7308 -> 0.9624) while removing the instrument-record vibrato makes it far worse (0.042), which is the direction that proves which mechanism is the defect. depth and aud/loud are declared UNATTRIBUTED. Two refutations worth carrying forward: the vib x depth = 0.9902 compensating pair is a coincidence, not a mechanism -- depth is flat at 1.3487 while vib moves to 0.9624, so the product goes to 1.2981; and gate here is ABOVE median at 0.7656 with 1020 of 1020 releases matched, so the Zoolook mechanism is absent and the set is now seven above, one below. The `slides` option is byte-inert on this file too -- the fourth in a row. No bound declared, no option adopted, no file outside the scratch dir written."}
 {"id":"measure-does-not-copy-the-new-drift-knee-fields-into-the-row-so-they-reach-no-artefact","summary":null}
 {"id":"measure-food-feud","summary":"Food_Feud at -t 180 is below the corpus median on melody/seq/pitch (attributed: one contiguous voice-0 passage, 72 of 748 attacks, played exactly -12 semitones because the version-0 track reader emits no orderlist transpose), on slides/depth (one vibrato mechanism, 1.84x the frames at 0.56x the depth), and on filt/cut (filter overshoot, both zeroed by ablating `filters`), with pphase and wave below and unattributed, gate ABOVE the median for the fifth song running, and --pace showing a median 1.000 and zero drift so timing is not a defect."}
 {"id":"measure-geoff-capes-strongman-challenge","summary":"At -t 180 with the shipped presets Geoff Capes covers its whole original (cov 100%, no widening needed) and is below the 89-row corpus medians on adsr (0.1211 vs 0.8044), nrun (0.50 vs 1.00), hold (0.00 vs 0.1056), vib and depth in log space, and marginally on noise, retrig and len -- adsr is attributed by ablation to `--cut-release` (0.1211 -> 0.8147), hold/nrun/noise to one `fetch` -1, vib/depth to one vibrato-rate mechanism (0.7425 x 1.3524 = 1.0042), retrig and len left unattributed, with the pace median 1.000 (IQR 1.000-1.000, fit 0.949 diverging) and zero drift ruling out the clock."}
@@ -331,6 +336,7 @@
 {"id":"test-hard-restart-should-pin-that-the-emitted-gatetimer-is-never-zero","summary":"The gatetimer floor is now pinned by a test sweeping the whole parameter space, and three named mutations each kill it -- one of them revealing the row_calls guard protects against a negative value, not just zero."}
 {"id":"test-presets-py-carries-463-crlf-and-179-lf-in-the-working-copy","summary":null}
 {"id":"the-114-prose-opened-entries-should-be-deleted-at-source-no-consumer-can-act-on-a-sentence","summary":"Nothing deleted and nothing owed here: the 13 prose entries are really 8, since five carry an id behind a dot, a capital, a parenthesis or a dash that the first-colon rule cannot see -- and the tail is stable while the log grows, so it needs no guard."}
+{"id":"the-artefact-staleness-test-should-be-a-committed-script-not-a-remembered-git-incantation","summary":"python/artefact_freshness.py works and its 13 tests and three sabotages stand, but its first real use produced a false positive -- STALE for a docstring-only emitter edit the Commando fixture proves moved no byte -- so its answer is a conservative upper bound and should say so."}
 {"id":"the-bold-parity-heuristic-should-exclude-code-fences-rather-than-be-re-explained-each-time","summary":null}
 {"id":"the-classic-dialect-instrument-mask-should-be-derived-from-the-stride-not-fixed-at-7f","summary":null}
 {"id":"the-conversion-must-be-the-same-length-as-the-original","summary":null}
@@ -384,6 +390,7 @@
 {"id":"vibrato-plain-effect00-arpeggio-decode","summary":null}
 {"id":"vibrato-plain-zero-byte-decode","summary":null}
 {"id":"vibrato-program","summary":null}
+{"id":"vibrato-rate-and-depth-are-one-mechanism-not-two","summary":"The vib/depth coupling is REFUTED on three later files -- products 1.0042, 0.689 and 0.9902-to-1.2981 under ablation, where depth moves 0.0062 against vib's 0.2316 -- so the 1.0 products are coincidences of two independently-wrong columns, closed on the run log without dispatching an agent."}
 {"id":"war-subtune-0-loses-92-percent-of-voice-3","summary":null}
 {"id":"war-subtune-0-runs-at-the-default-tempo","summary":null}
 {"id":"wave-alternate-emitter-predates-the-record-that-called-it-missing","summary":null}

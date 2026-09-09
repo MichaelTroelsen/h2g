@@ -167,6 +167,28 @@ def _structure_of(orig_trace, trace, seconds: int) -> dict:
             "length_delta": F.length_compare(orig_trace, trace, seconds).get("length_delta")}
 
 
+def pack_into(blob: bytes, workdir: Path, tag: str, gt2reloc: str,
+              multiplier: int) -> Path | None:
+    """Legalise and pack `blob` into `workdir / tag`, CREATING that directory.
+
+    **THE mkdir IS THE WHOLE FUNCTION AND IT IS NOT DEFENSIVE.** `pack_sid`
+    writes `workdir / "a.sng"` and does not create the directory it writes into
+    -- grep `src, dst = workdir / "a.sng"` in fidelity.py rather than trusting a
+    line number, because the citation that used to live here had already drifted
+    by the time anyone read it. So the CALLER must create it, and the first real
+    assessment died with `FileNotFoundError: ...\\cur\\a.sng` because it did not.
+
+    It lives at module level, out of `assess`'s body, PURELY SO IT CAN BE
+    TESTED. As a closure it was unreachable except by running the whole
+    assessment, and 15 tests passed either side of the defect because they
+    inject a fake `convert_at` and never reach this path. A guarantee that only
+    exists inside a function nothing can call is a comment.
+    """
+    b, _ = F.legalise_restarts(blob)
+    (workdir / tag).mkdir(parents=True, exist_ok=True)
+    return F.pack_sid(b, workdir / tag, gt2reloc, multiplier)
+
+
 def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
            cal: dict | None, gt2reloc: str, siddump: str, workdir: Path,
            current_sng: bytes | None = None,
@@ -192,17 +214,8 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
     sub = F.resolve_subtune(sid, "auto")
     orig_trace = F.run_siddump(sid, seconds, sub, siddump)
 
-    def packed_of(blob: bytes, tag: str):
-        b, _ = F.legalise_restarts(blob)
-        # `pack_sid` writes `workdir / "a.sng"` and does NOT create the
-        # directory (fidelity.py:752), so the caller must. Without this the
-        # first real assessment dies with FileNotFoundError on `<tag>/a.sng`
-        # -- which no test caught, because they inject a fake `convert_at`
-        # and never reach this path.
-        (workdir / tag).mkdir(parents=True, exist_ok=True)
-        return F.pack_sid(b, workdir / tag, gt2reloc, mult)
-    p_cur = packed_of(cur, "cur")
-    p_app = packed_of(approved_sng.read_bytes(), "app")
+    p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult)
+    p_app = pack_into(approved_sng.read_bytes(), workdir, "app", gt2reloc, mult)
     if p_cur is None or p_app is None:
         v = inherit({}, {}, {}, {}, None)
         v["failed"] = ["gt2reloc refused a side"]

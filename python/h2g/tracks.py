@@ -1316,9 +1316,39 @@ def legalise_restarts(tracks: List[List[int]], log=None,
     entries.
 
     Per song, never a default: a tune whose voices do NOT end together would
-    be truncated at its shortest, and nothing here checks that. The option is
-    adjudicated the way `--regrid` is -- by the `len` column, which is the
-    only instrument that reads it.
+    be truncated at its shortest. **THAT IS NOW CHECKED, and the sentence that
+    used to stand here -- "and nothing here checks that" -- IS RETRACTED**; the
+    wording is kept so a grep for it lands on its own correction. `safe` above
+    calls `voices_end_together` per SUBTUNE before anything is parked, and it
+    is pinned by `tests/test_legal_restart.py` (grep `voices_end_together`
+    there rather than trusting a line number). The guard postdates this
+    paragraph by one version, and the paragraph went on asserting its own
+    absence four lines below the call that disproves it. The option is
+    adjudicated the way `--regrid` is -- by the `len` column, which is the only
+    instrument that reads it.
+
+    **WHAT "END TOGETHER" MEANS HERE IS ROWS, AND THE REGISTER WRITES DO NOT
+    OBEY IT.** `voices_end_together` compares `voice_rows`, which is the right
+    unit for the truncation this guard exists to prevent -- a voice short by
+    rows is a voice silenced early. It is NOT a claim that the three voices
+    stop WRITING together, and on Confuzion they measurably do not. Measured at
+    c2cb76a over a 320 s trace of both sides (see the `measure-confuzion` run
+    record; do not re-derive it):
+
+      - by ATTACKS the voices end together and match the original: last attack
+        305.08 / 304.84 / 305.08 s against ours at 305.20 / 304.96 / 305.20,
+        a uniform +0.12 s that is exactly the 6-frame startup lag, with the
+        same 0.24 s inter-voice spread on both sides;
+      - by register WRITES they do not: the original's three voices stop within
+        0.04 s of each other (312.98 / 312.94 / 312.98) while ours read
+        319.98 / 305.38 / 319.98 -- two voices still writing $D400/$D401 at the
+        trace edge, 486 frequency writes past the last attack.
+
+    Those writes are on GATED-OFF voices, so it is a silent free-running sweep
+    on the parked voices rather than audible music, and `len` cannot see any of
+    it because `len` is measured on attacks. Whether it matters is a listening
+    question, not one any column here can settle. It is recorded so the next
+    reader does not take "end together" for more than it is.
 
     Returns the number of tracks changed.
     """

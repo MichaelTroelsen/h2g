@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.479 — 2026-09-09
+
+- voices_end_together retraction beside the code; convert_at pair; artefact_freshness and its first false positive
+
 ## 0.5.478 — 2026-09-09
 
 - convert_at returns Converted(sng, sid); approvals stops rebuilding the .sng path

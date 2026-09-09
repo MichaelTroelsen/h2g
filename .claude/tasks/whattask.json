@@ -760,10 +760,12 @@
    "mcp": [],
    "needs_main": false,
    "needs_main_reason": null,
-   "depends_on": [],
+   "depends_on": [
+    "regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace"
+   ],
    "blocked_on": null,
    "decision": null,
-   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
+   "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. EDGE ADDED: the GATE above was recorded ONLY as prose, where /runtask's selector cannot see it -- it now also exists as a `depends_on` edge on `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace`. That gate is currently SATISFIED (that id reads done in runs.jsonl), so nothing was blocked by its absence; what was wrong is that a runner obeying the selection rule literally had no way to know it existed.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
    "why_lane": "shares python/tests with 28 other task(s), at least one writing (65 conflicting tasks in all)",

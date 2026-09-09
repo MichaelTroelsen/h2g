@@ -211,3 +211,66 @@ def test_builds_inherited_counts_up_only_while_the_sha_keeps_moving():
                       previous=same, version="3")
     assert (first["builds_inherited"], same["builds_inherited"], moved["builds_inherited"]) == (1, 1, 2)
     assert moved["since"] == "1"
+
+
+# --------------------------------------------------- the real packing path
+#
+# These exist because 15 green tests did not notice that the first real
+# assessment died on `FileNotFoundError: <workdir>/cur/a.sng`. Every one of
+# them injected a fake `convert_at` and none reached the packer at all, so the
+# suite was green on both sides of a defect that made the tool unusable.
+#
+# The half that matters is the FIRST test: it calls the REAL
+# `fidelity.pack_sid`, not a stand-in. It needs no gt2reloc, because pack_sid
+# writes its `.sng` BEFORE it shells out -- so a missing directory fails at the
+# write, which is exactly the defect's own failure mode.
+
+def test_pack_sid_really_does_not_create_its_own_directory(tmp_path):
+    """The contract `pack_into` exists to satisfy, pinned on the REAL function.
+
+    If pack_sid ever starts creating its own directory this fails, and that is
+    the point: `pack_into`'s mkdir would then be dead code, and a later reader
+    should be told rather than left guessing why it is there.
+    """
+    import fidelity as F
+    missing = tmp_path / "does-not-exist"
+    with pytest.raises(FileNotFoundError):
+        F.pack_sid(b"\x00" * 32, missing, "gt2reloc-not-invoked", 1)
+
+
+def test_pack_into_creates_the_directory_the_packer_writes_into(tmp_path):
+    """The regression itself: `pack_into` on a missing directory must NOT raise
+    FileNotFoundError. gt2reloc may refuse these bytes and return None -- that
+    is fine and is not what is under test; the assertion is that we got far
+    enough to ask it."""
+    import approvals as AP
+    called = {}
+
+    def fake_pack_sid(sng, workdir, exe, multiplier=1, pulse_skip=False):
+        # Asserts the caller's guarantee at the moment pack_sid would rely on
+        # it, rather than after the fact.
+        called["dir_existed"] = workdir.is_dir()
+        (workdir / "a.sng").write_bytes(sng)      # what the real one does first
+        return workdir / "b.sid"
+
+    # A REAL .sng, because pack_into legalises before packing and the legaliser
+    # parses the format -- 32 zero bytes is not a fixture, it is a different
+    # test failing for a different reason (IndexError inside legalise_restarts).
+    sng = (AP.ROOT / "Commando.sng").read_bytes()
+    real = AP.F.pack_sid
+    AP.F.pack_sid = fake_pack_sid
+    try:
+        got = AP.pack_into(sng, tmp_path, "cur", "gt2reloc", 1)
+    finally:
+        AP.F.pack_sid = real
+    assert called["dir_existed"], "pack_into must create <workdir>/<tag> BEFORE packing"
+    assert got == tmp_path / "cur" / "b.sid"
+    assert (tmp_path / "cur" / "a.sng").exists()
+
+
+def test_pack_into_is_reachable_without_running_an_assessment(tmp_path):
+    """It is module-level ON PURPOSE. As a closure inside `assess` the only way
+    to exercise it was to run a whole assessment, which is why the defect
+    shipped past a green suite."""
+    import approvals as AP
+    assert callable(getattr(AP, "pack_into", None))
