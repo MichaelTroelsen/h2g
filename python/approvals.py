@@ -234,8 +234,18 @@ def recover_approved_sng(stem: str, sid: Path, version: str, approved_sha: str,
     `workdir / f"{stem}.{sha}.sng"` on its way, and THAT is the artefact the
     listener heard.
 
-    So this calls `convert_at` for its side effect, then reads the `.sng` it
-    left. A None return means one of three things and they are not the same:
+    RESOLVED: `convert_at` now RETURNS both artefacts as a `Converted(sng, sid)`
+    pair, so this reads `got.sng` instead of rebuilding the path. The previous
+    sentence here said *"So this calls `convert_at` for its side effect, then
+    reads the `.sng` it left"*, and that wording is kept in this retraction so a
+    grep for it lands. What was wrong with it was not the sha reasoning above --
+    that still holds, and is why the pair exists -- but that the convention lived
+    in the CALLER: this function rebuilt `workdir / f"{stem}.{sha}.sng"` from
+    parts it did not own, which would have started returning None the moment
+    `convert_at` changed where it writes, with no test failing, because the tests
+    inject a fake reproducing the same undocumented convention.
+
+    A None return means one of three things and they are not the same:
     the version does not resolve to a commit, the historical tree refused the
     file, or the bytes came back with a different sha -- in which case
     `approved.json`'s `version` field is PROVENANCE ONLY and the build cannot
@@ -250,9 +260,10 @@ def recover_approved_sng(stem: str, sid: Path, version: str, approved_sha: str,
     sha = resolve(version)
     if not sha:
         return None
-    if convert_at(version, sid, workdir, gt2reloc, multiplier) is None:
+    got = convert_at(version, sid, workdir, gt2reloc, multiplier)
+    if got is None:
         return None
-    sng = workdir / f"{sid.stem}.{sha}.sng"
+    sng = Path(got.sng)
     if not sng.exists():
         return None
     blob = sng.read_bytes()

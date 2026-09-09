@@ -75,6 +75,7 @@ import subprocess
 import sys
 import tarfile
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
@@ -249,8 +250,28 @@ def resolve_version_sha(version: str) -> str:
     return r.stdout.strip()
 
 
+class Converted(NamedTuple):
+    """BOTH artefacts `convert_at` produced, not just the packed one.
+
+    It used to return the packed `.sid` alone while writing the `.sng` beside
+    it as a side effect, so a caller wanting the `.sng` -- which is the artefact
+    a LISTENER actually heard -- had to rebuild `workdir / f"{stem}.{sha}.sng"`
+    out of parts it did not own. `approvals.recover_approved_sng` did exactly
+    that, and its docstring had to explain the reconstruction at length because
+    nothing in the signature admitted the file existed. That reconstruction is
+    a guarantee written in the CALLER: it silently returns None the moment this
+    function changes where it writes, and no test would fail, because the tests
+    inject a fake that reproduces the same undocumented convention.
+
+    Returning both makes the contract the signature's, so the two cannot drift.
+    `sid` is the packed `.sid` the render path wants; `sng` is what was packed.
+    """
+    sng: Path
+    sid: Path
+
+
 def convert_at(version: str, sid: Path, workdir: Path, gt2reloc: str,
-               multiplier: int) -> Path | None:
+               multiplier: int) -> Converted | None:
     """Convert `sid` with the tree AS IT WAS at `version`, pack with today's
     gt2reloc. The archive is the export the byte-hash recipe uses.
 
@@ -294,7 +315,8 @@ def convert_at(version: str, sid: Path, workdir: Path, gt2reloc: str,
         hist_mult = F._preset_multiplier(hist_doc, sid.name)
     except (OSError, json.JSONDecodeError):
         hist_mult = multiplier
-    return F.pack_sid(blob, workdir / sha, gt2reloc, hist_mult)
+    packed = F.pack_sid(blob, workdir / sha, gt2reloc, hist_mult)
+    return None if packed is None else Converted(sng=out, sid=packed)
 
 
 # ---- driver ---------------------------------------------------------------
@@ -374,7 +396,7 @@ def main(argv=None) -> int:
         b = convert_at(v_new, sid, workdir, args.gt2reloc, mult)
         if a and b:
             sub = F.resolve_subtune(sid, "auto")
-            got = sound.compare_sids(a, b, args.seconds, sub, sub)
+            got = sound.compare_sids(a.sid, b.sid, args.seconds, sub, sub)
             got.update(file=name, versions=[v_old, v_new])
             pairs.append(got)
     checks["inaudible"] = pairs
@@ -391,8 +413,8 @@ def main(argv=None) -> int:
         if not (pb and pg):
             bad.append({"file": name, "error": "could not build both versions"})
             continue
-        gb = sound.compare_sids(sid, pb, args.seconds, sub, sub)
-        gg = sound.compare_sids(sid, pg, args.seconds, sub, sub)
+        gb = sound.compare_sids(sid, pb.sid, args.seconds, sub, sub)
+        gg = sound.compare_sids(sid, pg.sid, args.seconds, sub, sub)
         floor = checks["shift"]["noise_floor"]
         why = comparable(gb, gg)
         row = {"file": name, "versions": [v_bad, v_good],

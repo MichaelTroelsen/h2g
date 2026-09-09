@@ -1724,10 +1724,10 @@
    "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:python/approvals.py",
-    "r:python/tests/test_approvals.py",
     "rw:host:C:/t/convert-at-returns-sng",
+    "rw:python/approvals.py",
     "rw:python/sound_calibrate.py",
+    "rw:python/tests/test_approvals.py",
     "rw:python/tests/test_sound_calibrate.py"
    ],
    "mcp": [],
@@ -1736,7 +1736,7 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "convert_at returns the .sng path beside the packed .sid, approvals.py's recover_approved_sng stops reconstructing it from the workdir, and pytest tests/test_sound_calibrate.py tests/test_approvals.py -q passes.",
+   "verify": "convert_at returns the .sng path beside the packed .sid, approvals.py's recover_approved_sng stops reconstructing it from the workdir, and pytest tests/test_sound_calibrate.py tests/test_approvals.py -q passes. GRANT WIDENED MID-CYCLE: this verify names TWO files -- convert_at in sound_calibrate.py AND recover_approved_sng in approvals.py -- while the task held approvals.py as r: only, so half of it was unreachable. python/approvals.py and its test are now rw:, which is one edit across two files rather than two tasks.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "two files and their tests, no corpus run",
    "why_lane": "shares python/tests with 28 other task(s), at least one writing (34 conflicting tasks in all)",

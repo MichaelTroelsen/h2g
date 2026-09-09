@@ -105,15 +105,56 @@ def test_the_record_shape_is_stable():
 
 def _fake_convert_at(tmp_path, sha, stem, sng_bytes, packed_name="packed.sid"):
     """Stand in for `sound_calibrate.convert_at`, reproducing what it really
-    does: write the intermediate `.sng` beside the workdir and RETURN THE
-    PACKED `.sid`. The return value is deliberately not the .sng -- that is
-    the whole point of the tests below."""
+    does: write the intermediate `.sng`, pack a `.sid`, and RETURN BOTH as a
+    `Converted` pair.
+
+    IT RETURNS THE REAL `sound_calibrate.Converted`, NOT A LOOK-ALIKE. A fake
+    shaped by hand would pin the fake's convention rather than the module's, and
+    that is precisely the defect this pair replaced: the previous fake wrote the
+    `.sng` to a path it invented and returned only the packed `.sid`, so both
+    it and `recover_approved_sng` agreed on a convention that appeared in no
+    signature. Importing the real type means a change to that type breaks these
+    tests, which is the whole point of having them.
+    """
+    import sound_calibrate as SC
+
     def convert_at(version, sid, workdir, gt2reloc, multiplier):
-        (tmp_path / f"{stem}.{sha}.sng").write_bytes(sng_bytes)
+        out = tmp_path / f"{stem}.{sha}.sng"
+        out.write_bytes(sng_bytes)
         packed = tmp_path / packed_name
         packed.write_bytes(b"this is a packed .sid, not a .sng")
-        return packed
+        return SC.Converted(sng=out, sid=packed)
     return convert_at
+
+
+def test_convert_at_returns_the_sng_it_writes_beside_the_packed_sid():
+    """The contract this pair exists for: BOTH artefacts come back named, so no
+    caller has to rebuild `workdir / f"{stem}.{sha}.sng"` out of parts."""
+    import sound_calibrate as SC
+    assert SC.Converted._fields == ("sng", "sid")
+
+
+def test_recover_reads_the_returned_sng_and_not_a_rebuilt_path(tmp_path):
+    """SABOTAGE-SHAPED: the fake writes its `.sng` to a name the old
+    reconstruction would NOT have produced. Under the old code -- which built
+    `workdir / f"{stem}.{sha}.sng"` itself -- this recovers nothing; under the
+    returned pair it recovers the bytes."""
+    import hashlib
+    import sound_calibrate as SC
+    sng = b"the approved bytes"
+    odd = tmp_path / "not-the-conventional-name.sng"
+
+    def convert_at(version, sid, workdir, gt2reloc, multiplier):
+        odd.write_bytes(sng)
+        packed = tmp_path / "packed.sid"
+        packed.write_bytes(b"packed")
+        return SC.Converted(sng=odd, sid=packed)
+
+    got = AP.recover_approved_sng(
+        "Tune", tmp_path / "Tune.sid", "0.5.1",
+        hashlib.sha256(sng).hexdigest(), tmp_path, "gt2reloc", 1,
+        convert_at=convert_at)
+    assert got == sng, "recover must read the path convert_at RETURNED"
 
 
 def test_recovery_reads_the_sng_convert_at_leaves_not_the_sid_it_returns(tmp_path, monkeypatch):

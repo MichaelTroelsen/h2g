@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.478 — 2026-09-09
+
+- convert_at returns Converted(sng, sid); approvals stops rebuilding the .sng path
+
 ## 0.5.477 — 2026-09-09
 
 - The listening set becomes one window; LISTENING.md merges; a test column; plan-audit check G; _preset_opts warns on an unknown key
