@@ -786,6 +786,10 @@ def build_subtune_census(rows: list[dict], sid_dir, version: str) -> str:
     interesting = {f: rs for f, rs in by_file.items()
                    if any(r["voices_ok"] for r in rs)}
 
+    # Nested inside build_subtune_census on purpose (a helper local to this
+    # table). A per-function coverage census must count this occurrence once,
+    # not once as "build_subtune_census" and again as a distinct top-level
+    # "_ptrs" -- there is no separate top-level function of that name.
     def _ptrs(r):
         return " ".join(
             "----" if p is None else f"${p:04X}{'' if ok else '!'}"

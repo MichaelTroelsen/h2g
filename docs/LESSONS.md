@@ -1138,10 +1138,13 @@ test dependency).
   your own success rate" rule -- it went through `fidelity._preset_opts` with
   the right keys and every conversion succeeded. What it did not do is check
   that the *columns* it compared exist. It asked each row for `pitch`, `seq`,
-  `hold`, `retrig`, `noise`, `onset`, `tail` and `nrun`; the real keys are
-  `pitch_jaccard` and `sequence`, and the rest are absent from `--json`
-  entirely (see `fidelity-json-omits-retrig-hold-tail`). `dict.get` returned
-  `None` for all eight and the loop skipped them in silence, so a 14-column
+  `hold`, `retrig`, `noise`, `onset`, `tail` and `nrun`, none of which are
+  keys in `build/fidelity.json`'s per-file records; checked against a live
+  record (95 entries as of this writing), all eight are present under
+  different names: `pitch` is `pitch_jaccard`, `seq` is `sequence`, `retrig`
+  is `retrigger_ratio`, `hold` is `sound_run_agreement`, `onset` is
+  `onset_agreement`, `tail` is `release_tail_agreement`, `nrun` is
+  `noise_run_agreement`, and `noise` is `our_noise_frames`. `dict.get` returned
   comparison reported on six and announced "5 better, 1 worse" -- on which an
   adoption was made and then retracted. Silently comparing fewer columns is
   indistinguishable from comparing all of them and finding no movement, which
@@ -1262,19 +1265,24 @@ test dependency).
   original *ends*, ours must end too. This is not about tempo — `drift`,
   `retrig` and `--pace` all measure the rate of a row and are all satisfied by
   a conversion that plays the right music at the right speed **forever**.
-  Measured on Action_Biker at v0.5.375, traced 180 s both sides: the original
-  makes 291 attacks, its last at frame 2977 = **59.54 s**, and then 120 s of
-  silence — it STOPS. Ours makes 856 and never stops, looping with period
-  **61.44 s**. Per loop it carries exactly 52/52/187 attacks per voice against
-  the original's 52/52/187 *in total*, so the music is right and only the
-  ending is wrong. A listener hears this as "the H2G song is longer", which is
-  the only instrument that reports it.
+  **HISTORY (v0.5.375):** measured on Action_Biker, traced 180 s both sides: the
+  original makes 291 attacks, its last at frame 2977 = **59.54 s**, and then
+  120 s of silence — it STOPS. Ours made 856 and never stopped, looping with
+  period **61.44 s**. Per loop it carried exactly 52/52/187 attacks per voice
+  against the original's 52/52/187 *in total*, so the music was right and only
+  the ending was wrong. A listener hears this as "the H2G song is longer",
+  which is the only instrument that reports it.
   The cause is documented and is a property of the target format: Hubbard's
   `$FE` track byte means *tune ended*, a Goattracker orderlist cannot say that,
   and `--legal-restart` turns it into a restart at position 0 — which is what
   makes the file packable at all. The repair is not a new mechanism but a
   choice of restart target: an orderlist can loop a SILENT pattern instead of
   position 0, which ends the tune in every way a listener can hear.
+  **Since fixed, re-verified at v0.5.476 against `build/fidelity.json`'s
+  Action_Biker.sid record:** `length_delta` +0.14 s, `our_attacks` 291 against
+  `orig_attacks` 291 — identical to the original, no more forever-loop. The
+  park onto a silent restart target closed this gap; the figures above stay as
+  the historical baseline it was measured against.
   **And note where this rule bites the harness, because it is the same failure
   this project has now hit twice.** `fidelity.original_ended` already detects
   the condition and uses it to SHORTEN the comparison window so our surplus is
@@ -1318,10 +1326,34 @@ test dependency).
   `RTS` rather than `JMP past-the-gate`, which `OUTER_GATE` did not match, in
   **9 files** — is read since v0.5.248: Formula 1 Simulator's melody went
   88 → 100% and Thrust's 75 → 94%, both with `retrig` landing on 1.00 and
-  0.92 from 1.28 and 1.26. See §§ 7.rrrr and 7.tttt. **Read `--pace`'s
+  0.92 from 1.28 and 1.26. See §§ 7.rrrr and 7.tttt. ~~**Read `--pace`'s
   least-squares fit, not its median**: the original's gaps are whole frames,
   so a row of 2.286 quantises to a mix whose median reads 2.25, and that
-  gap looked like a refutation of the factor twice. **And neither can see a
+  gap looked like a refutation of the factor twice.~~ **THAT PRESCRIPTION IS
+  RETRACTED AT v0.5.476 — READ THE MEDIAN.** The quantisation it describes is
+  real, but it argues for care in reading the DERIVED row length, not for
+  preferring a statistic that is not a row-length estimator at all. `pace()`
+  computes `slope = sum(a*b)/sum(a*a)` over gap pairs, so each gap is weighted
+  by the SQUARE of the original's — one long rest outweighs a hundred ordinary
+  gaps — and the corpus shows what that costs. Sampled at `-t 180` on eight
+  files, with `median` (ratio), `IQR`, `fit` and `drift` per 1000 side by side:
+  Action_Biker 1.000 / 1.000-1.000 / 1.000 / +0.00; ACE_II 1.000 /
+  0.909-1.100 / 0.999 / +0.00; Ricochet at `-m2` 1.000 / 1.000-1.000 / 0.992 /
+  -7.81; Commando 1.000 / 1.000-1.000 / **0.964** / +0.00; Rikky 1.000 /
+  0.996-1.000 / **0.964** / -1.43; Wiz 1.000 / 1.000-1.000 / **0.838** / -0.29;
+  Sigma_Seven 1.000 / 1.000-1.000 / **0.676** / -0.81; and **Tarzan 1.000 /
+  1.000-1.000 / 0.360 / +0.00**. Tarzan is the settling case and it needs no
+  argument: both quartiles are exactly 1.000 over 2728 gaps and the drift is
+  exactly zero across 8982 frames, while the fit says 0.360 — a row that short
+  would run 2.8x fast and drift about 1780 frames per 1000. Three reductions of
+  the SAME two traces, and the fit is the one that cannot be reconciled with
+  the other two. **The docstring in `fidelity.pace` had it right all along**,
+  and its own example has since decayed: it cites ACE_II as fit 0.727 against
+  median 1.509, which at v0.5.476 reads 0.999 against 1.000. The code was never
+  in doubt either — `ours/theirs`, `**their row is N frames**` and `N% out` are
+  every one of them derived from the median, and `slope` is only ever printed
+  beside them, exactly as the docstring says: a signal that the material
+  diverges, not a row length. **And neither can see a
   row wrong by a *fraction* of a frame** — a Goattracker row is whole play
   calls, so such an error is zero on most gaps and one whole frame on the
   occasional one, and the median of those ratios is exactly 1.000. That is
@@ -2273,6 +2305,126 @@ player revisions, and README/UI text says so ("some RH tunes are not convertable
 Goattracker at all"). When modifying detection logic, preserve the existing
 `If i <= -1 Then i = SSearchfile(...)` fallback chains — each entry is a distinct game
 fingerprint and removing/reordering one can silently break detection for that game.
+
+## A grep returning 0 is evidence about the counter, not about the file
+
+Three finding-shaped non-findings this session, all from a counter that could
+not see its own container:
+
+- **`python/survey.py:669-670`**: the phrase "a positive, player-derived
+  reason" is real prose in `SUBTUNE_CENSUS_DOC`, but it wraps across the line
+  break between 669 (`... which is a positive,`) and 670 (`player-derived
+  reason ...`). A single-line grep for the whole phrase returns 0 hits even
+  though the sentence is right there.
+- **`python/fidelity.py:2780-2781`**: same shape — the phrase `not visible`
+  (inside a bolded sentence) wraps between the word "not" ending line 2780 and
+  "visible" opening line 2781, so a single-line search for the phrase misses
+  it despite the sentence being intact prose.
+- **`docs/H2G-CONVERSION-METHOD.md:4511`**: a `rshift` formula line inside a
+  fenced code block uses Python's exponentiation operator (two consecutive
+  asterisks) on `unit_shift`. A naive scan counting asterisk-pairs to check
+  Markdown bold-marker parity calls that lone operator a defect — it is an
+  odd-total false positive from a counter that does not know it is inside a
+  code fence.
+- **`docs/H2G-CONVERSION-METHOD.md`'s "NAMING ARTEFACTS" correction** (~line
+  7471): a reader called `dict.get("wave_agreement")` and `dict.get("onset")`
+  against `build/fidelity.json` rows. The real columns are `wave` and
+  `onset_agreement`/`onset_frame_agreement` — the misnamed keys returned
+  `None` for every row, and the reader recorded that `None` as a measured
+  disagreement between two runs, not as its own typo.
+
+The rule: before treating a count (or a `None`) as a defect, subtract what the
+counter cannot see — a line-oriented tool cannot see across a line break, and
+a `.get()` on a wrong key cannot see the value that is actually there.
+
+**A fifth instance is structural, not a counting accident:
+a grep for a retracted sentence hits the retraction itself.** This repo's own rule (see
+"Grading measured figures" above) requires a wrong mechanism to be RETRACTED
+where a grep for its own words lands — the retraction has to quote the wrong
+wording, on pain of being unfindable by the person searching for it. Two live
+examples: `docs/H2G-CONVERSION-METHOD.md:7470` retracts a naming-artefact
+misreading in a paragraph that begins *"THE TWO 180-SECOND READINGS OF THIS
+FILE DO NOT DISAGREE..."* and goes on to quote the very sentence it retracts;
+`docs/LESSONS.md:1329-1333` strikes through the "read the least-squares fit,
+not its median" prescription and immediately follows it with **"THAT
+PRESCRIPTION IS RETRACTED AT v0.5.476"**, again quoting the retracted words in
+full. A bare `grep -c` for either wrong phrase, or a check that merely asserts
+"the bad wording is gone", returns a *hit* on both — the retraction that fixes
+the record is indistinguishable, to a plain count, from the mistake it fixes.
+This is not accidental and not fixable by wording the retraction more
+carefully: the retraction is REQUIRED to quote what it retracts, so any check
+for "is the bad wording gone" will always collide with it. **The check must be
+anchored** — a specific line number or line range known to hold the *original*
+claim, or a check confined to text outside blockquotes/strikethrough markup —
+never a bare "count is zero" or "count is nonzero" over the whole file.
+
+## An id prefix is a naming convention, not a type
+
+Measured against `.claude/tasks/whattask.json` on 2026-09-07: a check keyed on
+the regex `^ab-\d+` over every task id in the plan's `closed` list matches 6
+tasks and, finding no `Files` block on any of them, reports 6 of 6 AB grants
+failing. The honest count, read from the same 6 tasks, is 3 of 3 — because
+three of the six ids merely *begin* `ab-N` and belong to a different family
+entirely: plan-hygiene meta-tasks about those grants (`ab-5-step-5-prescribes-
+hashing-convert-ats-return-value-which-is-a-packed-sid-not-the-sng`, `ab-8s-
+run-record-swaps-tiers-3-and-5-and-the-plan-verify-inherited-the-error`,
+`ab-9-carries-a-gate-in-its-plan-document-that-the-generated-depends-on-
+dropped`), never intended to carry a `Files` block, filed under a slug that
+happens to start the same way as the grant it is about. The other three
+(`ab-5-approvals-inheritance`, `ab-6-abpage-three-approval-states`,
+`ab-8-fidelity-queue`) are the actual AB grants, and all three are genuinely
+missing their `Files` block — 3 of 3, not 0 of 3 and not 6 of 6.
+
+The discriminator that works is `title.startswith("AB task")`: every real
+grant's title is machine-generated as "AB task N: …", while every meta-task's
+title is hand-written prose describing the defect it found. The id prefix
+cannot make this distinction because it was never designed to — it is a slug
+namespace, assigned to keep related work adjacent for a human skimming the
+plan, not a field that partitions tasks by kind. The active (non-closed)
+`tasks` list carries two more ids in the same `ab-N`-prefixed slug family
+(`ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist`,
+`ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge`),
+both meta-tasks, confirming the prefix keeps being reused for commentary-on-N
+rather than only for N itself.
+
+**Grade this as historical, not live**: the plan has been regenerated several
+times since; a re-run of the same query against a later `whattask.json` may
+find a different population (more, fewer, or zero `ab-N`-prefixed ids), and
+whoever cites this figure next should re-run the count above rather than
+restate it. See CLAUDE.md's "identifier prefix is a naming convention, not a
+type" bullet for the rule, and the "grep returning 0" section above for the
+sibling failures in the same family (a container-blind counter that still
+returns a number).
+
+## Documenting a naming collision creates one
+
+**HISTORICAL, measured at 665939c (working tree, uncommitted), 2026-09-08:** a
+task documented that `fidelity.py`'s `sound_note_runs` / `sound_runs` /
+`sound_run_agreement` / `sound_run_delta` / `sound_run_instruments` /
+`sound_run_matched` family (a register-based note-length reduction feeding the
+`hold` column) is unrelated to `sound.py`'s rendered-audio family
+(`sound_frames`, `sound_lag_ms`, `sound_cache`, `sound_failed`, `aud`, `loud`),
+by writing a NAMING NOTE into *both* files naming both families
+(`python/fidelity.py`, above `sound_note_runs`; `python/sound.py:8-14`).
+`git show 665939c:python/sound.py | grep -c sound_run` reads **0**; the same
+grep against the working tree reads **5** — all five inside the note the task
+itself added, none inside a naming collision it did not know about. The
+agent's own measurement ("zero occurrences of `sound_run` in `sound.py`")
+became false as it finished writing the note that stated it.
+
+The count is not even stable across counting methods, which is worth
+recording beside the rule rather than only in it: a plain substring grep
+(`sound_run`) reads 5 in the working-tree file (`sound_runs` counts once,
+each of `sound_run_agreement` / `sound_run_delta` / `sound_run_instruments` /
+`sound_run_matched` counts once more); a word-boundary regex (`\bsound_run\b`)
+reads **0**, because every real occurrence is either followed by a
+letter (`sound_run` + `s`) or by an underscore before more letters
+(`sound_run` + `_agreement` etc.) — word boundaries in most regex engines
+treat `_` as a word character, so none of the six real identifiers is the
+bare token `sound_run`. A check written to confirm "the note didn't create a
+collision" and keyed on either count would report a different verdict
+depending only on which regex it used, on the same file, unchanged. See
+CLAUDE.md's "Documenting a naming collision creates one" bullet for the rule.
 
 ## graphify
 

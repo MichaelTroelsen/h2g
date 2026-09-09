@@ -12,6 +12,7 @@ import base64
 import html.parser
 import math
 import os
+import re
 import struct
 import sys
 import time
@@ -98,6 +99,90 @@ def test_a_tune_with_no_row_says_so_rather_than_showing_an_empty_rail():
 def test_a_tune_with_no_notes_says_the_useful_thing():
     got = A.page("X", ROW, [], "v1", embed=False, index_link=False)
     assert "no check in the repo can see" in got
+
+
+TEST_COL_NOTES = {
+    "Flagged": ["Packed at `-S5`: the CIA stub runs the tune at 250 Hz.",
+                "**No legato.** 10427 note changes without a re-trigger in the "
+                "original, 2335 in ours.",
+                "**No pitch movement.** The original slides 745 times, we slide 0."],
+    "Clean": ["The measurement finds nothing to flag. Anything heard here is "
+              "something no check in the repo can see."],
+    "OnlyPacked": ["Packed at `-S2`: the CIA stub runs the tune at 100 Hz."],
+    "Unnamed": ["**A mechanism no case was written for.** with figures."],
+    # "Absent" is deliberately not a key -- that is the third state.
+}
+TEST_COL_NAMES = ["Flagged", "Clean", "OnlyPacked", "Unnamed", "Absent"]
+
+
+def _test_cells(names=None, notes=None):
+    """The `test` column's cells, in row order.
+
+    `re.S` is not optional: a cell's tooltip carries every bullet joined by
+    blank lines, so a line-based match silently returns the WRONG cells rather
+    than none -- it drops the multi-bullet row and shifts the rest up by one.
+    That is this repo's own line-based-grep lesson, and it bit the scratch
+    version of this check before it became a test.
+    """
+    got = A.index(names or TEST_COL_NAMES,
+                  {n: ROW for n in (names or TEST_COL_NAMES)}, "v1",
+                  notes=TEST_COL_NOTES if notes is None else notes)
+    return re.findall(r'<td class="test">(.*?)</td>', got, re.S), got
+
+
+def test_the_test_column_names_what_to_listen_for():
+    cells, _ = _test_cells()
+    assert "No legato" in cells[0]
+    # The other bullets are not lost, only folded into the tooltip.
+    assert "+1" in cells[0]
+    assert "No pitch movement" in cells[0]
+    assert "250 Hz" in cells[0], "the packed-at line belongs in the tooltip"
+
+
+def test_an_absent_note_never_reads_as_nothing_to_flag():
+    """THE POINT OF THE COLUMN. `LISTENING.md` is rewritten by every listen.py
+    run and holds only the tunes that run staged, so a missing entry is the
+    common case. Showing it like a cleared tune would report the tool's own
+    ignorance as a measurement -- the recurring defect this repo keeps finding.
+    """
+    cells, _ = _test_cells()
+    absent, clean = cells[4], cells[1]
+    assert "not in last run" in absent
+    assert "nothing flagged" not in absent
+    assert "nothing flagged" in clean
+    assert "not in last run" not in clean
+
+
+def test_a_packed_at_line_alone_is_not_a_thing_to_listen_for():
+    """`Packed at -SN` is provenance and is already its own line on the page.
+    A tune carrying only that has nothing flagged, and must not read as if a
+    mechanism had been found."""
+    cells, _ = _test_cells()
+    assert "nothing flagged" in cells[2]
+
+
+def test_the_test_tag_degrades_to_the_notes_own_words():
+    """Abbreviated by RULE, like abbrev_sidid: a bullet naming a mechanism
+    nobody has written a case for still shows that mechanism, never a blank."""
+    cells, _ = _test_cells()
+    assert "A mechanism no case was written for" in cells[3]
+
+
+def test_the_index_header_and_every_row_agree_on_the_column_count():
+    """A column added to the body and not the header shifts every heading
+    silently -- the table still renders and every value sits under the wrong
+    name."""
+    cells, got = _test_cells()
+    head = re.search(r"<thead>.*?</thead>", got, re.S).group(0)
+    widths = {len(re.findall(r"<td", r))
+              for r in re.findall(r"<tr>(?:(?!</tr>).)*</tr>", got, re.S)[1:]}
+    assert len(re.findall(r"<th>", head)) == 9
+    assert widths == {9}
+
+
+def test_the_index_is_well_formed_with_the_test_column():
+    _, got = _test_cells()
+    assert _balanced(got) == []
 
 
 def test_markdown_becomes_markup_and_escapes_first():

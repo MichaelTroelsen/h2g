@@ -5,6 +5,14 @@ Every other column of FIDELITY.md reads SID registers through siddump. This
 reads the WAV `sidplayfp` renders from each side, so it sees what those
 cannot: timbre, filter movement, envelope shape and the volume nibble.
 
+NAMING NOTE: this module's names (`sound_frames`, `sound_lag_ms`,
+`sound_cache`, `sound_failed`, `aud`, `loud`) share only the plain `sound_`
+prefix with fidelity.py's `sound_note_runs` / `sound_runs` /
+`sound_run_agreement` / `sound_run_delta` / `sound_run_instruments` /
+`sound_run_matched` -- that family is a register-based note-length reduction
+feeding the `hold` column and is unrelated to the rendered audio here. See
+the note above `sound_note_runs` in fidelity.py.
+
 Two numbers, deliberately separated:
 
 * `aud`  -- timbre. Log-mel spectrogram per side (64 bands, 20 Hz-8 kHz,

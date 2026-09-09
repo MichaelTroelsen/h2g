@@ -847,6 +847,13 @@ td.appr .y { color:var(--b); font-weight:600; }
 td.appr .i { color:var(--b); font-weight:600; font-style:italic; }
 td.appr .s { color:var(--a); font-weight:600; }
 td.appr .n { color:var(--muted); }
+td.test { max-width:20em; }
+td.test .flag { color:var(--a); font-weight:600; }
+td.test .clean { color:var(--muted); }
+/* Absence of a note and a note saying "nothing found" are DIFFERENT cells and
+   must not look alike -- see the `test` column's comment in index(). */
+td.test .none { color:var(--muted); font-style:italic; opacity:.75; }
+td.test .more { color:var(--muted); font-size:11px; }
 .trk { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
 .trkcol { border:1px solid var(--line); border-radius:6px; overflow:hidden;
   background:var(--sunk); }
@@ -2739,10 +2746,12 @@ def abbrev_sidid(text: str) -> str:
 def index(names: list[str], rows: dict, version: str,
           appr: dict | None = None, shas: dict | None = None,
           survey: dict | None = None,
-          inherited: dict | None = None) -> str:
+          inherited: dict | None = None,
+          notes: dict | None = None) -> str:
     appr = appr or {}
     shas = shas or {}
     survey = survey or {}
+    notes = notes if notes is not None else listening_notes()
 
     def verdict(n):
         """The human column. Three states, and `stale` is the one that matters:
@@ -2781,6 +2790,45 @@ def index(names: list[str], rows: dict, version: str,
             return '<span class="cur">current</span>'
         return '<span class="cur">&mdash;</span>'
 
+    def test(n):
+        """What this tune should be listened FOR: the same bullets the tune's
+        own "What to listen for" card shows, reduced to a tag for the index.
+
+        THREE STATES, AND THE THIRD IS WHY THIS IS NOT JUST A TRUNCATION.
+        A tune with a flag, a tune the measurement cleared, and a tune with NO
+        NOTE AT ALL are different cells. `LISTENING.md` is rewritten by every
+        `listen.py` run and holds only the tunes THAT run staged -- 55 of the
+        89 staged at v0.5.476 -- so an empty cell is the common case and it
+        means "not covered by the last run", never "nothing to flag". Showing
+        the two alike would be this repo's own recurring bug: a check that
+        cannot tell its subject from its container, reporting its own
+        ignorance as data.
+
+        Abbreviated by RULE, like `abbrev_sidid` above: the tag is the bullet's
+        own leading `**bold**` phrase, so a note naming a mechanism nobody has
+        written a case for still degrades to its own words rather than to a
+        blank. The full text of every bullet is in `title`, so nothing is lost.
+        """
+        got = notes.get(n)
+        if got is None:
+            return ('<span class="none" title="This tune was not part of the '
+                    'last listen.py run, so LISTENING.md carries no note for '
+                    'it. That is not a finding -- re-run listen.py for it to '
+                    'get one.">not in last run</span>')
+        # "Packed at -SN" is provenance rather than a thing to listen for, and
+        # it is already its own line on the page; keep it in the tooltip only.
+        flags = [b for b in got if not b.startswith("Packed at")]
+        full = _attr("\n\n".join(got)) if got else ""
+        if not flags or any("finds nothing to flag" in b for b in flags):
+            return ('<span class="clean" title="%s">nothing flagged</span>'
+                    % (full or "The measurement finds nothing to flag."))
+        lead = re.match(r"\*\*(.+?)\*\*", flags[0])
+        tag = lead.group(1).rstrip(".") if lead else flags[0][:40]
+        extra = ('<span class="more"> +%d</span>' % (len(flags) - 1)
+                 if len(flags) > 1 else "")
+        return ('<span class="flag" title="%s">%s</span>%s'
+                % (full, md(tag), extra))
+
     body = ""
     for n in names:
         r = rows.get(n, {})
@@ -2789,6 +2837,7 @@ def index(names: list[str], rows: dict, version: str,
                  "<td class=\"sidid\" title=\"%s\">%s</td>"
                  "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
+                 "<td class=\"test\">%s</td>"
                  "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
                  % (n, n.replace("_", " "),
                     # Escaped the way this file already escapes (see md()),
@@ -2796,7 +2845,7 @@ def index(names: list[str], rows: dict, version: str,
                     # `html` as a local name in two other functions.
                     _attr(full) if full else "not surveyed",
                     abbrev_sidid(full),
-                    verdict(n), audio(n),
+                    verdict(n), audio(n), test(n),
                     r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
@@ -2811,7 +2860,7 @@ def index(names: list[str], rows: dict, version: str,
 <div class="card">
   <h2>Staged tunes</h2>
   <div class="scroll"><table>
-    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
+    <thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th><th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
@@ -2819,6 +2868,15 @@ def index(names: list[str], rows: dict, version: str,
   <div>Columns are from <code>FIDELITY.md</code> at %(version)s. They compare what is played, never how it sounds &mdash; which is what these pages are for.</div>
   <div><b>human</b> is the only column here that is not a measurement: it is read from <code>approved.json</code>, which a person writes by hand and no tool may rewrite. <code>stale</code> means someone approved an earlier version and the conversion has changed since &mdash; the verdict does not cover what the page now plays.</div>
   <div><b>audio</b> compares the sha256 of the <code>.sng</code> each staged <code>.h2g.wav</code> was rendered from against what the tune converts to now. <code>behind</code> means the page plays an older conversion, whatever its other columns say &mdash; re-run <code>listen.py</code> for it. It is keyed on the conversion, never on the version: a version-keyed check would report every tune behind after any commit, including the ones that only touch this file.</div>
+  <div><b>test</b> is what to listen FOR on this tune &mdash; the same bullets
+  as its own <i>What to listen for</i> card, reduced to the bullet's leading
+  phrase, with every bullet in full on hover. <code>nothing flagged</code>
+  means the measurement found nothing, so anything you hear is something no
+  check in this repo can see &mdash; which is the reason the pass exists.
+  <code>not in last run</code> is NOT that: <code>LISTENING.md</code> is
+  rewritten by each <code>listen.py</code> run and holds only the tunes that
+  run staged, so those tunes have no note either way. Re-run
+  <code>listen.py</code> for them to get one.</div>
   <div><b>SIDId</b> is the PLAYER, identified independently of this tool's own
   detection chains by the SIDId signature database &mdash; abbreviated here
   (<code>RH</code> is Rob_Hubbard, <code>+digi</code> its sample engine), with
@@ -3292,7 +3350,8 @@ def main() -> int:
         rendered[n] = _stamp(build_id, html)
     index_html = _stamp(build_id, index(names, rows, version, appr, now_shas,
                                         survey=survey,
-                                        inherited=inherited))
+                                        inherited=inherited,
+                                        notes=notes))
 
     for n in names:
         _atomic_write(LISTEN / ("%s.html" % n), rendered[n])

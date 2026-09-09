@@ -85,6 +85,7 @@ import subprocess
 import sys
 import tempfile
 import typing
+import warnings
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -902,10 +903,27 @@ def naming_split(orig: list[Voice], arm_a: list[Voice],
     aligned -- the same file has been read as 3, 7 and 8 renames by three
     alignments, and on the FRAME axis rather than the sequence axis
     One_on_One reads 39% of its attacks renamed where difflib reads one
-    (v0.5.436). `renames` below is therefore reported as the positional
-    difflib count and must be quoted with that qualifier; `naming_share` is
-    the number to reason with, because it is anchored on a re-score rather
-    than on a tally.
+    (HISTORICAL, measured at 7bcd3fe/v0.5.470). `renames` below is therefore
+    reported as the positional difflib count and must be quoted with that
+    qualifier; `naming_share` is the number to reason with, because it is
+    anchored on a re-score rather than on a tally.
+
+    **The frame axis is not a clean refutation on its own -- it was measured
+    on TWO files with opposite-looking results (both HISTORICAL, 7bcd3fe/
+    v0.5.470, not re-derived since; HEAD is 16 commits ahead at v0.5.476, so
+    treat both figures as needing a fresh run, not as current):** on
+    One_on_One it OVER-renames relative to difflib (39% vs. difflib's one
+    rename, above). On Powerplay it reads 36 renames, a `naming_share` of
+    -39%, `rename_semitones` spanning -12..+13, and a repair that leaves
+    `melody_repaired` BELOW the unrepaired arm's score -- a negative share,
+    not merely a small one, meaning the frame-axis repair actively made the
+    melody worse than doing nothing. Read as a pair rather than either alone:
+    an alternative that renames MORE than difflib on one file and produces a
+    repair that HURTS on another is not a competing method to adopt, but it
+    is also not disposed of by One_on_One alone. A future reader wanting
+    current numbers must re-run the frame-axis alignment experiment (not
+    present in this module as shipped code -- it was an ad hoc alignment
+    tried at v0.5.436/v0.5.470) against both files at HEAD.
 
     **AND THE THREE COUNTS ARE THREE COVERAGES OF ONE POPULATION, NOT THREE
     CRITERIA -- measured, not argued.** Powerplay's renames were censused
@@ -998,10 +1016,12 @@ def naming_census_report(recs: list[dict]) -> str:
            "",
            "`renames` is a POSITIONAL DIFFLIB count and is method-dependent -- "
            "the same file has been read as 3, 7 and 8 renames by three "
-           "alignments, and on the frame axis One_on_One reads 39% of its "
-           "attacks renamed where difflib reads one. Reason with "
-           "`naming share`, which is anchored on a re-score rather than a "
-           "tally.",
+           "alignments, and on the frame axis One_on_One read 39% of its "
+           "attacks renamed where difflib read one (HISTORICAL, measured at "
+           "7bcd3fe/v0.5.470 and not re-derived since; see naming_split's "
+           "docstring for the Powerplay counterpart and what to re-run). "
+           "Reason with `naming share`, which is anchored on a re-score "
+           "rather than a tally.",
            "",
            "A substitution ONE SEMITONE wide is the artefact the `melody` "
            "Dimension documents -- a sub-semitone pitch shift crossing a "
@@ -2697,6 +2717,19 @@ def census_report(rows: list[dict]) -> str:
 def sound_note_runs(voices: list[Voice], nframes: int) -> dict:
     """`{adsr: [(held, slot), ...]}` -- per note, what `sound_runs` reduces.
 
+    NAMING NOTE: `sound_note_runs` / `sound_runs` / `sound_run_agreement` /
+    `sound_run_delta` / `sound_run_instruments` / `sound_run_matched` are this
+    module's NOTE-LENGTH family -- a register reduction feeding the `hold`
+    column. They are unrelated to `sound.py`'s RENDERED-AUDIO family
+    (`sound_frames`, `sound_lag_ms`, `sound_cache`, `sound_failed`, `aud`,
+    `loud`), which is a waveform comparison over sidplayfp renders. Both
+    families share only the plain `sound_` prefix -- a grep for `sound_run`
+    alone does NOT hit sound.py, only the trailing underscore in `sound_run_*`
+    separates the two on a bare `sound_` grep. `sound_run_agreement` is a
+    dict key written into `build/fidelity.json` (read by `presets.py`,
+    `approvals.py`, `songview.py` and task verifies that quote it), so it is
+    documented here rather than renamed to keep that key stable.
+
     Split out of `sound_runs` in v0.5.254 so the census below can read the
     note's **slot** as well as the frames it sounds for. The two are different
     questions and the histogram of § 7.uuuu conflated them: a note can be short
@@ -4267,7 +4300,30 @@ def length_rule_failures(rows: list[dict]) -> list[dict]:
 
 
 def _preset_opts(doc: dict, name: str) -> dict:
-    entry = (doc.get("songs") or {}).get(name, {})
+    songs = doc.get("songs") or {}
+    if songs and name not in songs:
+        # MISS vs LEGITIMATELY-EMPTY: a song with a real per-song entry that
+        # happens to be `{}` is normal. A name that is not a key at all while
+        # `songs` is populated is not -- both used to fall through to the
+        # same `.get(name, {})` and return the always-block silently. Since
+        # presets.json keys songs WITH the .sid extension, the common way to
+        # land here is a bare stem, and since every rescue option is per-song,
+        # the effect is that the HARDEST files silently get the EASIEST
+        # (always-block-only) options and the run still produces a number --
+        # this already reached a run record as a wrong "86 of 95 converting"
+        # figure. Warn rather than raise: listen.py's --diff path deliberately
+        # calls this on a name it already knows is absent from `songs` (it
+        # prints its own "not in presets.json" notice first) to fall back to
+        # default options for a not-yet-measured corpus file, and that is a
+        # legitimate use of this exact path.
+        warnings.warn(
+            f"_preset_opts({name!r}): not a key in presets.json's `songs` "
+            f"block ({len(songs)} other entries present) -- returning only "
+            "the always-block options, as if this song had no per-song "
+            "overrides. presets.json keys songs WITH the .sid extension; "
+            "check the name isn't a bare stem.",
+            stacklevel=2)
+    entry = songs.get(name, {})
     always = doc.get("always", {})
     opts: dict = {
         "max_rows": entry.get("max_rows", 94),

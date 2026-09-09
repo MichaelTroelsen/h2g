@@ -19,6 +19,7 @@ import os
 import pathlib
 import shutil
 import subprocess
+import warnings
 
 import pytest
 
@@ -2154,6 +2155,54 @@ def test_hard_restart_frames_still_arrives_as_a_real_int():
     opts = fidelity._preset_opts(doc, "a.sid")
     assert opts["hard_restart_frames"] == 4
     assert opts["hard_restart_frames"] is not True
+
+
+# --- _preset_opts: an unknown name while `songs` is populated must not be
+#     silent -------------------------------------------------------------
+#
+# presets.json keys `songs` WITH the .sid extension, and every rescue option
+# is per-song. A miss used to be indistinguishable from a song that
+# legitimately has no per-song entry -- both fell through to the same
+# `.get(name, {})` and returned the always-block alone with no signal. The
+# effect: the HARDEST files (the ones a per-song option exists to rescue)
+# silently get the EASIEST (always-block-only) options, and a run over them
+# still produces a number that looks like a measurement -- this already
+# produced a wrong "86 of 95 converting" figure that reached a run record and
+# then a plan task. The bare stem (no `.sid`) is the common way to land here
+# by accident, since it can never be a key.
+
+def test_a_bare_stem_warns_when_songs_is_populated():
+    doc = {"always": {}, "songs": {"Commando.sid": {"pack": True}}}
+    with pytest.warns(UserWarning, match="Commando"):
+        opts = fidelity._preset_opts(doc, "Commando")
+    # It must still return the always-block-only shape -- the warning is a
+    # signal added on top of the existing behaviour, not a behaviour change.
+    assert opts["pack"] is False
+
+
+def test_a_name_missing_from_a_populated_songs_block_warns():
+    doc = {"always": {}, "songs": {"a.sid": {"pack": True}}}
+    with pytest.warns(UserWarning, match="b.sid"):
+        fidelity._preset_opts(doc, "b.sid")
+
+
+def test_a_legitimately_empty_songs_block_does_not_warn():
+    # MISS vs LEGITIMATELY-EMPTY: an empty `songs` block (no measurements
+    # exist yet at all) is a normal case for a caller building options from
+    # scratch -- not the defect this guard targets.
+    doc = {"always": {}, "songs": {}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fidelity._preset_opts(doc, "anything.sid")  # must not raise/warn
+
+
+def test_a_name_present_in_songs_does_not_warn():
+    # A song that IS a key, even with an empty per-song entry, is the normal
+    # "no per-song overrides" case, not a miss.
+    doc = {"always": {}, "songs": {"a.sid": {}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fidelity._preset_opts(doc, "a.sid")  # must not raise/warn
 
 
 # --- gate census, split by voice --------------------------------------------

@@ -282,3 +282,42 @@ def test_a_single_tempo_file_is_unchanged_by_the_per_instrument_bound():
     root = pathlib.Path(__file__).resolve().parents[2]
     ref = (root / "Commando.sng").read_bytes()
     assert convert(str(root / "Commando.sid")) == ref
+
+
+def test_the_emitted_gatetimer_is_never_zero():
+    """Zero is the one gatetimer that would close `hold`'s `fetch` kind, and
+    this function can never return it.
+
+    **Why the guard exists rather than the fix.** Goattracker fetches the next
+    note `gatetimer & $3f` calls early, so the note before it loses that many
+    calls; at `-S1` one call IS one frame, so every non-zero value costs
+    exactly the frame `fetch` is defined by. Zero would close the kind, and
+    v0.5.461 priced it: it does not remove the miss, it relabels it `slot`
+    while `hold` itself stays 0%, and it wrecks everything else -- Action
+    Biker's attacks 291 -> 260 and its length +0.1 -> +11.3 s. So the floor is
+    deliberate, and what this test pins is that it holds across the whole
+    parameter space rather than on the handful of points the neighbouring
+    cases happen to sample.
+
+    Swept at v0.5.466 over `multiplier` 1-5, `row_calls` 1-32 and the flags:
+    the minimum returned was 1. This re-runs that sweep as an assertion, and
+    adds `row_calls` 0, which the function handles explicitly (`not
+    row_calls`) and which no other case in this file reaches.
+    """
+    seen = set()
+    for multiplier in range(1, 6):
+        for row_calls in range(0, 33):
+            for wide in (False, True):
+                for full in (False, True):
+                    for frames in (None, False, 1, 2, 3, 8):
+                        got = _hard_restart_ticks(multiplier, row_calls,
+                                                  wide=wide, full=full,
+                                                  frames=frames)
+                        assert got >= 1, (
+                            f"gatetimer 0 emitted at multiplier={multiplier} "
+                            f"row_calls={row_calls} wide={wide} full={full} "
+                            f"frames={frames}")
+                        seen.add(got)
+    # The floor is REACHED, not merely respected -- a function that never
+    # returned 1 would pass the assertion above while pinning nothing.
+    assert min(seen) == 1

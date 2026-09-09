@@ -115,6 +115,48 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # so v0.5.400 did not reach it. That is the "a build compared against itself"
 # case this module's own header records for 0.5.401 -> 0.5.402; a pair has to
 # MOVE before it can validate anything.
+#
+# ===========================================================================
+# CHOOSING THE NEXT PAIR: A FIX IS COMPARABLE WHEN IT IS STRUCTURAL, AND NOT
+# WHEN IT CHANGES THE MULTIPLIER.
+#
+# The rule is stated HERE, beside the table, because this is where the next
+# candidate gets picked -- the evidence for it is real but it was scattered
+# across three places that a person adding a row does not necessarily read:
+# this module's header (grep `multiplier: 1, bytes: 12444`), the W_A_R note
+# just above, and `comparable`'s own docstring (grep `quartering the 60 s
+# render`). All three figures below are HISTORICAL at the versions named --
+# build/sound_calibration.json is currently stamped v0.5.474 at 60 s renders,
+# so re-measure before quoting any of them as live.
+#
+# THREE OUTCOMES, and a candidate has to be checked against all three:
+#
+#   COMPARABLE -- the fix changes STRUCTURE and both sides still pack at the
+#   same -S, so the two renders cover the same span. W_A_R 0.5.399 -> 0.5.400
+#   is a pattern-count fix (209 -> 208) and validates the metric:
+#   aud 0.6370 -> 0.8053, loud 0.7915 -> 0.8790 (v0.5.469, 60 s).
+#
+#   INCOMPARABLE -- the fix changes the MULTIPLIER, so the good build repacks
+#   at a different -S and the two sides no longer span the same music.
+#   Las_Vegas and Samantha_Fox 0.5.400 -> 0.5.401 move multiplier 1->4 and
+#   2->5; their good builds render loud_ratio 0.074 and 0.063 because the
+#   music ends around 30 s of a 60 s window while the original plays on. The
+#   metric is right and the PAIR is unusable. They stay in the table and are
+#   reported rather than deleted -- the user's decision, recorded in
+#   .claude/tasks/decisions.jsonl under
+#   `the-two-incomparable-known-bad-pairs-need-retiring-or-replacing`.
+#
+#   INERT -- the commit does not reach the file at all, so both sides render
+#   byte-identically (W_A_R_Preview on 0.5.399 -> 0.5.400, worse_by 0.0000 on
+#   both columns). A pair that cannot move cannot validate anything, and this
+#   is the cheapest of the three to test first.
+#
+# So the check to run on a candidate, in order: does the commit reach the file
+# (INERT?), does the multiplier move across it (INCOMPARABLE?), and only then
+# is the pair worth rendering. `git show <sha>:presets.json` answers the
+# second without rendering anything, which is why it is the second question
+# and not the last.
+# ===========================================================================
 KNOWN_BAD = [("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
              ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401"),
              ("Human_Race.sid", "0.5.329", "0.5.330"),

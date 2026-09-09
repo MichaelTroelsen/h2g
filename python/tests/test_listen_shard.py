@@ -120,3 +120,85 @@ def test_split_notes_separates_head_tunes_and_tail():
     assert head.startswith("# Listening pass")
     assert list(secs) == ["Delta"]
     assert tail.startswith("## What to write down")
+
+
+# --- the non-sharded path merges too ----------------------------------------
+#
+# `merge_notes` above covers the SHARDED path. A plain run writes the whole
+# document in one go, and that overwrite used to silently drop every
+# tune it did not stage -- which `abpage.py` then renders as "no note", making
+# a discarded section indistinguishable from a tune nobody ever staged.
+
+NEWHEAD = "# Listening pass\n\nh2g 0.5.477, 180 s of subtune 0.\n\n"
+
+
+def _doc(head, tunes, note="new"):
+    return head + "".join(
+        "## %s — *named*\n\n- **%s** note for %s\n\n" % (t, note, t)
+        for t in tunes) + TAIL
+
+
+def test_a_plain_run_keeps_the_notes_it_did_not_restage(tmp_path):
+    """THE DEFECT THIS EXISTS FOR. At 665939c the file held 55 sections against
+    89 staged pairs; the 34 missing were the ones absent from the last partial
+    run, not tunes that had never been staged."""
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Commando", "Delta"], note="old"), encoding="utf-8")
+    got, carried = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    assert "## Commando" in got, "an unstaged tune's note must survive"
+    assert carried == ["Commando"]
+
+
+def test_a_restaged_tune_replaces_its_old_note(tmp_path):
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Delta"], note="old"), encoding="utf-8")
+    got, carried = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    assert "**new** note" in got and "**old** note" not in got
+    assert carried == [], "a restaged tune is not carried over"
+    assert got.count("## Delta") == 1
+
+
+def test_the_header_is_this_runs_and_never_the_old_files(tmp_path):
+    """Same rule as merge_notes: the preamble states the version, window,
+    subtune and renderer, so a header carried over describes a run that no
+    longer exists."""
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Commando"], note="old"), encoding="utf-8")
+    got, _ = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    assert "0.5.477" in got and "180 s" in got
+    assert "Staged by listen.py." not in got
+
+
+def test_carried_sections_are_named_in_the_preamble(tmp_path):
+    """A merged file asserts one provenance over mixed material unless it says
+    which sections the header does NOT cover. Named as the SET, not counted."""
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Commando", "Zoids"], note="old"), encoding="utf-8")
+    got, carried = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    head = L.split_notes(got)[0]
+    assert "`Commando`" in head and "`Zoids`" in head
+    assert "`Delta`" not in head, "a tune this run staged is not carried"
+    assert carried == ["Commando", "Zoids"]
+
+
+def test_no_carried_note_when_this_run_staged_everything(tmp_path):
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Delta"], note="old"), encoding="utf-8")
+    got, carried = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    assert carried == []
+    assert "EARLIER run" not in got
+
+
+def test_a_first_run_writes_its_document_unchanged(tmp_path):
+    """No file yet: the merge must be the identity, not an empty document."""
+    text = _doc(NEWHEAD, ["Delta"])
+    got, carried = L.merge_into_existing(tmp_path / "LISTENING.md", text)
+    assert got == text and carried == []
+
+
+def test_the_merge_keeps_one_tail_and_stays_sorted(tmp_path):
+    p = tmp_path / "LISTENING.md"
+    p.write_text(_doc(HEAD, ["Zoids", "acid"], note="old"), encoding="utf-8")
+    got, _ = L.merge_into_existing(p, _doc(NEWHEAD, ["Delta"]))
+    assert got.count("## What to write down") == 1
+    assert got.index("## acid") < got.index("## Delta") < got.index("## Zoids")

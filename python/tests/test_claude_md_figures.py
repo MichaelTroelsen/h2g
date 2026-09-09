@@ -175,6 +175,23 @@ def test_the_corpus_counts_name_both_option_sets():
           f"leaving {in_reach} in reach")
 
 
+# --------------------------------------------------- grep-zero-on-a-quotation
+
+def test_the_grep_zero_rule_cites_its_measured_instances():
+    """CLAUDE.md's rule about a counter that cannot see its own container
+    must carry its evidence in docs/LESSONS.md, not just an assertion."""
+    claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    assert "evidence about the counter, not about the file" in claude_md
+    assert "grep for a retracted sentence" in claude_md
+    text = _text()
+    _says(text,
+          "survey.py:669-670",
+          "fidelity.py:2780-2781",
+          "H2G-CONVERSION-METHOD.md:4511",
+          "NAMING ARTEFACTS",
+          "a grep for a retracted sentence hits the retraction itself")
+
+
 def test_this_file_checks_only_what_an_artefact_can_derive():
     """A guard on the guard: it must not silently shrink to nothing.
 

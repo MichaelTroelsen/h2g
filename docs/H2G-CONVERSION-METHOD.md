@@ -7454,6 +7454,8 @@ there-is-no-option`, done at `7969d85`, by patching the derivation into
 
     Chicken_Song       noise 2556 -> 3780 of 4188   wave 0.8826 -> 0.8349
                        onset 0.8077 -> 0.7692       melody/seq/pitch unmoved
+                       (that `onset` is `onset_frame_agreement`, the graded
+                        column, not `onset_agreement` -- see below)
     Hollywood_or_Bust  noise    0 -> 2998 of 4500   wave 0.8334 -> 0.7222
                        melody 0.5193 -> 0.4041      sequence 0.5172 -> 0.4019
 
@@ -7465,13 +7467,33 @@ Chicken Song at all**, because that term requires `not audible(ref)` and 2556
 frames at a reported pitch make the reference audible. The 60-second premise
 is what made that term look reachable.
 
-**TWO 180-SECOND READINGS OF THE SAME FILE DISAGREE, AND NEITHER IS ADOPTED
-HERE.** The artefact gives Chicken Song `onset_agreement 0.6923` and
-`wave_agreement` **null**; the run above gives 0.8077 and 0.8826 for what it
-calls the same baseline. One of them is measuring something the other is not
--- a different subtune resolution, or a different option set -- and this
-paragraph exists so the next reader does not average them. The figures that
-decide the question (`our_noise_frames` 2556 against 4188) agree in both.
+**THE TWO 180-SECOND READINGS OF THIS FILE DO NOT DISAGREE, AND THE APPARENT
+DISAGREEMENT WAS TWO NAMING ARTEFACTS.** This paragraph used to read *"two
+180-second readings of the same file disagree, and neither is adopted here --
+the artefact gives Chicken Song `onset_agreement 0.6923` and `wave_agreement`
+null; the run above gives 0.8077 and 0.8826 ... one of them is measuring
+something the other is not, a different subtune resolution, or a different
+option set"*. That guess is RETRACTED, and the wording is kept above so a grep
+for it lands here. Settled at v0.5.476 by reading both figures out of the SAME
+record of the SAME run:
+
+- **`onset` 0.6923 and 0.8077 are two different COLUMNS, not two readings.**
+  `onset_agreement` is `matched / len(shared)` and demands the whole
+  four-frame opening shape, all-or-nothing per instrument: 9 of 13.
+  `onset_frame_agreement` is the graded form, per-frame partial credit over
+  **the same 13 shared instruments**: 10.5 of 13. Both are returned by one
+  call to `onset_agreement()`, and the run block above labels its figure just
+  `onset` while quoting the graded one.
+- **`wave_agreement` is not a key.** The record's column is `wave`, so
+  `dict.get("wave_agreement")` returns `None` for every row ever measured --
+  that null is the reader's, not the artefact's. The artefact's `wave` reads
+  0.8826, which is the run's figure exactly.
+
+So every real column agrees, and the figures that decide the question
+(`our_noise_frames` 2556 against 4188) agreed all along. This is the same
+family as `original_ended` against `original_ends` and `ptrs` against `_ptrs`:
+a name that is nearly the right one returns `None` in silence, and a probe
+that does not assert its columns exist reports the absence as a measurement.
 
 **The 60-second numbers above are left exactly as they were.** They are the
 measurement that was taken, and a figure re-labelled rather than re-measured

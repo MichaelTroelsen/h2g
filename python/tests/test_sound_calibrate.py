@@ -1,6 +1,14 @@
-"""The calibration's reductions. The checks that render are exercised by hand
-(Step 6); what is pinned here is that each number in
-build/sound_calibration.json is the reduction the doc says it is."""
+"""The calibration's pure reductions, and `render_doc`, the document builder.
+
+Nothing here calls `sound.render_cached`, `convert_at`, or `main` -- the five
+checks' own audio rendering is exercised only by running
+`sound_calibrate.py` for real, still by hand. What this file pins is: each
+reduction function (`shift_movement`, `noise_floor`, `closeness_floor`,
+`worse_by`, `worse_by_loud`, `comparable`, `known_bad_passed`,
+`rank_in_corpus`, `resolve_version_sha`) against fixed numbers, AND
+`render_doc` -- the function that turns a calibration result into
+`docs/SOUND-CALIBRATION.md` -- against every verdict branch, on a
+hand-built fixture rather than a real run."""
 import numpy as np
 import pytest
 

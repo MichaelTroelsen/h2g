@@ -417,6 +417,60 @@ def merge_notes(outdir: Path) -> int:
     return len(merged)
 
 
+def carried_note(carried: list[str]) -> str:
+    """The preamble's warning that some sections below predate it.
+
+    Written as the SET rather than as a count, which is this repo's rule for a
+    figure that decays: the number changes whenever an unrelated tune is
+    re-staged, and the names are what the claim is actually about.
+    """
+    return (
+        "> **The tunes named here were staged by an EARLIER run, and the "
+        "paragraph above does not describe them.** Their window, subtune and "
+        "renderer are whatever that run used, so their notes are not "
+        "comparable with the rest of this document until they are re-staged: "
+        + ", ".join("`%s`" % n for n in carried) + ".")
+
+
+def merge_into_existing(path: Path, text: str) -> tuple[str, list[str]]:
+    """Fold this run's sections over the ones already in `path`.
+
+    `listen.py` writes the whole document, so until this function existed
+    staging a few tunes DISCARDED the notes for every tune it did not stage. The loss was
+    silent and it did not look like a loss: `abpage.py` reads this file for
+    each tune's "what to listen for", so a dropped section is indistinguishable
+    from a tune that was never staged at all. Measured at 665939c: the file
+    held 55 sections against 89 staged pairs, and the missing 34 were simply
+    the ones absent from the most recent partial run.
+
+    THE HEADER IS THIS RUN'S AND THE SECTIONS MAY NOT BE, which is the whole
+    difficulty and is why this does not just `dict.update` and return. The
+    preamble states the version, the window, the subtune and the renderer --
+    `document_header` exists precisely so those cannot drift from the run that
+    produced them -- and a merge makes that true of the header while the body
+    holds material from runs that used other values. Rather than weaken the
+    header, the sections it does NOT cover are named in it: they are the ones
+    to re-stage, and until then a reader knows not to compare them.
+
+    Same section-precedence and same head/tail rule as `merge_notes`, so the
+    two paths cannot disagree: a re-staged tune's notes replace the stale ones,
+    and the two whole-document fields come from THIS run, never from the file
+    already on disk.
+    """
+    if not path.exists():
+        return text, []
+    old_head, old_secs, old_tail = split_notes(path.read_text(encoding="utf-8"))
+    head, secs, tail = split_notes(text)
+    carried = sorted((k for k in old_secs if k not in secs), key=str.lower)
+    merged = dict(old_secs)
+    merged.update(secs)
+    head = head or old_head
+    if carried:
+        head = head.rstrip("\n") + "\n\n" + carried_note(carried) + "\n\n"
+    body = "".join(merged[k] for k in sorted(merged, key=str.lower))
+    return head + body + (tail or old_tail), carried
+
+
 def _basename_of(name: str) -> str:
     """The bare filename every `--files` entry is keyed and staged by.
 
@@ -945,8 +999,16 @@ def main(argv=None) -> int:
         "",
     ]
     notes = (outdir / f"LISTENING.part{shard[0]}.md") if shard else (outdir / "LISTENING.md")
-    notes.write_text("\n".join(lines), encoding="utf-8")
+    text, carried = "\n".join(lines), []
+    if not shard:
+        # A shard writes a PART, which --merge-notes folds in later; merging
+        # here as well would fold every shard's siblings into every part.
+        text, carried = merge_into_existing(notes, text)
+    notes.write_text(text, encoding="utf-8")
     print(f"staged {staged} tune(s) -> {outdir}", file=sys.stderr)
+    if carried:
+        print(f"kept notes for {len(carried)} tune(s) this run did not stage "
+              f"(named in the preamble): {', '.join(carried)}", file=sys.stderr)
     if paired_by_identity:
         print(f"note: {len(paired_by_identity)} tune(s) paired by identity "
               "(sub_orig == sub_ours assumed, no measured correspondence "

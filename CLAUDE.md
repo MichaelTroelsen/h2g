@@ -223,6 +223,40 @@ for a human listening check into gitignored `build/listen/`.
   Each dropped subtune is attributed to the bound that dropped it.
 - **A standing disagreement between two independent readings is a lead, not a
   tie to break by preference.**
+- **A grep returning 0 is evidence about the counter, not about the file** —
+  before treating a count as a defect, subtract what the counter cannot see. A
+  line-based search finds nothing for a quotation that wraps across a
+  newline, and a naive `**` parity count calls Python's `**` exponentiation
+  operator, sitting in a code fence, a stray bold marker. See `docs/LESSONS.md`
+  for the measured instances. **A grep for a retracted sentence is the
+  structural case, not a counting accident**: this repo requires a wrong
+  mechanism to be retracted where a grep for its own words lands, so the
+  retraction is *required* to quote the wording it retracts — a check for
+  "is the bad wording gone" will always collide with the retraction that
+  fixed it. Anchor such a check (a line number, or text outside
+  blockquotes/strikethrough), never a bare count.
+- **An identifier prefix is a naming convention, not a type.** A check keyed
+  on a task id's prefix (`^ab-\d+`) silently includes everything else that
+  happens to be named that way — a plan-hygiene meta-task filed under the same
+  slug family but carrying no `Files` block at all. The check still returns a
+  number, so the inclusion is invisible; only a field that actually
+  distinguishes the family (here, `title.startswith('AB task')`) separates the
+  subject from its container. Same family as the grep-returning-0 bullet
+  above, the code-fence bold-marker parity count, and the `original_ended` /
+  `original_ends` key mismatch — a check that cannot tell its subject from
+  what merely shares its container. See `docs/LESSONS.md` for the measured
+  instance.
+- **Documenting a naming collision creates one.** A note explaining that one
+  file's `X_*` family is unrelated to another file's same-prefixed `X_*`
+  family has to *name* both families to make the point, so writing the note
+  is what puts the other family's name into this file for the first time. A
+  bare substring grep for the other family's name now matches the file the
+  note was written to clear it from. Same family as the grep-returning-0
+  bullet above and the identifier-prefix bullet: a check that counts
+  occurrences cannot tell the disambiguating note from the collision it
+  disambiguates — and the count itself is not even stable across counting
+  methods, which is the same lesson again one level up. See
+  `docs/LESSONS.md` for the measured instance.
 
 ## Measurement discipline
 
@@ -234,9 +268,17 @@ the window that produced them.
 - **A score is not a clock.** Every column compares *what* is played, never
   *when*. Use `fidelity.py <file> --pace` before saying anything about speed,
   tempo or `-S` — and read its **spread** before its number: a tight ratio is a
-  wrong constant, a loose one is a mechanism. Read its least-squares fit, not
-  its median, and use its integrated `drift` line for an error smaller than a
-  frame, which the median is structurally blind to.
+  wrong constant, a loose one is a mechanism. **Read its MEDIAN, not its
+  least-squares fit** — the fit is a divergence signal, never a row length —
+  and use its integrated `drift` line for an error smaller than a frame, which
+  the median is structurally blind to. This bullet said the opposite until
+  v0.5.476 and the reversal is measured: on 5 of 8 files sampled the fit
+  disagrees with the median while `drift` agrees with the median, and on Tarzan
+  the fit reads 0.360 where both quartiles are 1.000 over 2728 gaps and the
+  drift is zero across 8982 frames. `pace()` weights each gap by the square of
+  the original's, so one long rest outweighs a hundred ordinary gaps. The tool
+  already agrees: `ours/theirs`, `**their row is N frames**` and `N% out` are
+  all derived from the median, and the fit is only ever printed beside it.
 - **A low score is a claim about the harness until it is a claim about the
   converter.** Run `fidelity.py <file> --diagnose` before calling any row a
   conversion bug: subtune correspondence first, then a per-voice cause. Six
