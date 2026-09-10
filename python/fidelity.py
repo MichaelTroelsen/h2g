@@ -1944,12 +1944,18 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
     if not keys:
         # No population, no measurement. See vibrato_records. NOTE this is
         # NOT the same as the `not pairs` refusal below -- see the docstring.
-        return {}
+        # Both refusals leave `depth_ratio` absent and so both print `-`;
+        # `depth_refusal` is what tells them apart, because the dash cannot.
+        return {"depth_refusal": "no-population"}
     a = oscillation_depths(orig, nframes, keys)
     b = oscillation_depths(ours, nframes, keys)
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
-        return {}
+        # The population EXISTS and the comparison failed -- the candidate-for-
+        # work half of the docstring's split, and the same shape as Powerplay
+        # Hockey's `-`, which was a real defect. `depth_keys` records how big
+        # the population was, so a reader can tell 2 keys from 9.
+        return {"depth_refusal": "no-shared-key", "depth_keys": len(keys)}
     return {
         "depth_ratio": _median([b[u] / a[o] for o, u in pairs]),
         "orig_depth": _median([a[o] for o, _ in pairs]),
@@ -2463,10 +2469,29 @@ def pitch_effect_bits(sid_path, det=None) -> dict:
         out[0x02] = "rise"
     if det.effect_arp:
         out[0x04] = "arp"
-    # Bit $10 has no detection flag: `goatwriter.EFFECT_PITCH_SEQ_MASK` is
-    # applied to the record unconditionally, so the project already treats its
-    # meaning as stable across the family.
-    out[0x10] = "pitchseq"
+    # **THE SENTENCE THAT USED TO STAND HERE WAS WRONG ABOUT THE EMITTER, and
+    # it was the whole reason this line was ungated.** It read: "Bit $10 has no
+    # detection flag: `goatwriter.EFFECT_PITCH_SEQ_MASK` is applied to the
+    # record unconditionally, so the project already treats its meaning as
+    # stable across the family." The wording is kept so a grep for it lands on
+    # its own correction. `goatwriter._pitch_seq_notes` opens with
+    # `seq = det.pitch_seq; if seq is None: return None` and only THEN tests
+    # `data[rec + 7] & EFFECT_PITCH_SEQ_MASK` per record -- so the emitter
+    # makes BOTH checks and the mask is not applied unconditionally at all.
+    # This census made neither, which is CLAUDE.md's "a detection flag about a
+    # player is not a fact about a record" in the direction that invents a
+    # cause rather than missing one.
+    #
+    # MEASURED at 5a2fa2d over the 95-file corpus: `_find_pitch_seq` detects
+    # on 36 files, and 54 files contain no `AND #$10` (opcode pair 29 10)
+    # anywhere in their bytes. International_Karate and Formula_1_Simulator
+    # are both in that group -- 0 occurrences each, pitch_seq undetected --
+    # and their $55 is bit $04's arpeggio DEPTH nibble, a different mechanism.
+    # Gating here stops attributing `pitchseq` on every file where detection
+    # found none, which is 59 of 95 and not the two the report happened to
+    # name.
+    if det.pitch_seq is not None:
+        out[0x10] = "pitchseq"
     if det.effect_bit40:
         out[0x40] = "atkpitch"
     if det.effect_bit80:
@@ -3074,6 +3099,41 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     than counted as a disagreement -- that is what the one-sided `noise` count
     is for. This answers the narrower question the count cannot: given that we
     sound it, do we sound it for as long?
+
+    **Blind to a loss the MODAL comparison cannot move.** This asks only
+    whether the single most common run length agrees, the same reduction
+    `noise_runs` returns -- so an instrument that fires many separate SHORT
+    runs can lose a large share of them, as long as enough of the survivors
+    still land on the same length, and the column never moves. Measured
+    live: Zoolook.sid, `-t 180`, three noise-run instruments, all
+    orig_modal == our_modal == 1 (`nrun` reads **100%**) while the run
+    COUNTS drop 740->704, 1658->1562 and 920->853 -- 199 noise frames lost
+    in total, exactly what the one-sided `noise` column reads on the same
+    run (3318 -> 3119). Read `nrun` beside `noise`, never alone: `noise` is
+    blind to *where* the frames are (a loss spread over one huge run reads
+    the same as one spread over a thousand short ones), and `nrun` is blind
+    to *how many* runs there were, only to their typical length.
+
+    **The one deficit it DOES reliably catch: `hold`'s known -1.**
+    `sound_run_agreement` reads -1 on almost every file (the `$09`
+    next-note-fetch frame, see its own docstring) and that -1 reaches THIS
+    column, as an exact `nrun` delta of -1, if and only if the instrument's
+    noise fills its whole held note -- `noise_runs`' modal run length equals
+    `sound_runs`' modal held length on the ORIGINAL side. RE-MEASURED at
+    v0.5.480+ over the corpus files `noise_run_agreement` currently reads
+    below 100% on (32 files, `-t 180`, 138 instruments pairing an `nrun` key
+    to a `hold` key, 104 of them carrying `hold`'s -1): the split is EXACT,
+    not merely common -- 28 of 28 instruments whose original noise run equals
+    its original held length also read `nrun` delta -1, and 0 of the other
+    76 do. Of those 76, 66 are the reason CLAUDE.md gives for a floor
+    (63 of them at a one- or two-frame original modal run -- a run cannot
+    lose a frame it does not have to spare); the remaining 10 mismatch `nrun`
+    anyway, by deltas from -105 to +299, which is the SAME modal-blind-to-
+    count mechanism above landing on an instrument that also happens to
+    carry a coincidental `hold` -1, not the -1 propagating. `tests/
+    test_fidelity.py` pins both the file-level blindness and this exact
+    split so a future change to `noise_runs`' keying re-runs the check
+    rather than silently drifting the figures above.
     """
     a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
     shared = paired_keys(a, b)
@@ -3701,6 +3761,35 @@ DIMENSIONS = (
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
     # number on one file. Scored over the gate-*off* frames only -- both sides
     # hold it on most of the time -- so it is the overlap of the silences.
+    #
+    # **`gate` AND `hold` ARE THE SAME FRAME, TRADED -- MOVING ONE MOVES THE
+    # OTHER THE OTHER WAY, AND NO SETTING SATISFIES BOTH.** Each entry below
+    # already says the two report opposite signs and why. What neither said,
+    # and what a reader deciding whether to "fix" one of them needs, is that
+    # the sign is not a coincidence of two measurements: it is one quantity
+    # counted twice. The gate-off calls in front of a note are simultaneously
+    # what `fetch` charges as a note-length deficit and what `gate` scores as
+    # a release we would otherwise never make.
+    #
+    # MEASURED at 4b5d7f0 over Action_Biker, Commando, Crazy_Comets and
+    # Sigma_Seven in three arms, and every arm moves the pair in OPPOSITE
+    # directions -- historical, re-measure before quoting a figure:
+    #
+    #   2 calls   buys `gate` 72%          and pays `fetch` 4 of 4
+    #   1 call    pays `gate` 15 points    and buys nothing
+    #   0 calls   buys `fetch` 0 of 4, relabels it `slot`, and pays `gate`,
+    #             `melody`, `retrig`, `drift` and the length
+    #
+    # So a proposal to raise either column is a CHOICE about which frame to
+    # spend, never an improvement, and it must be argued as one. CLAUDE.md's
+    # v0.5.444 pair ("gate and hold each say why the other reads the opposite
+    # sign") is this same observation from the other end.
+    #
+    # The two entries' advice is therefore narrower than it looks and is NOT
+    # in conflict: do not read the SIGN as a scoreboard (`gate` says so), and
+    # do read the PAIR as one frame (`hold` says so). `tests/test_fidelity.py`
+    # pins this block, because it is the kind of statement that decays into
+    # absence the moment either entry is reworded.
     Dimension("gate", "gate", ("$D404",), "fraction",
               "overlap of the frames each side has the voice released -- "
               "**rises when notes are removed**, so read it next to `retrig` "
@@ -3797,9 +3886,27 @@ DIMENSIONS = (
     Dimension("depth_ratio", "depth", ("$D400/$D401",), "ratio",
               "how far our vibrato swings, over the original's -- median over "
               "the instruments that carry a vibrato byte, **blind to whether "
-              "an oscillation exists at all**, which is `vib`'s question"),
+              "an oscillation exists at all**, which is `vib`'s question. "
+              "Its two refusals are printed apart: **`-` means no record in "
+              "the original carries a vibrato byte** (nothing to compare, "
+              "nothing to fix), while **`-!` means the population exists and "
+              "no instrument key was shared** -- the comparison did not "
+              "happen, which is a candidate for work and not an honest gap"),
+    # See noise_run_agreement's own docstring for the measured population
+    # behind the two claims in `of` below (Zoolook's 100%-while-losing-199-
+    # frames case, and the 28-of-28 / 0-of-76 hold-minus-1 split).
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
-              "instruments whose noise runs as long as the original's"),
+              "instruments whose noise runs as long as the original's -- "
+              "**blind to a loss its own MODAL comparison cannot move**: "
+              "Zoolook reads nrun 100% while the same three instruments lose "
+              "199 noise frames the one-sided `noise` column does see, "
+              "because enough short runs survive to keep the most-common "
+              "length unchanged. It DOES catch `hold`'s -1 fetch-frame "
+              "deficit, but only when an instrument's noise fills its whole "
+              "held note (its original modal noise run equals its original "
+              "modal held length) -- measured exact over 138 corpus "
+              "instruments carrying both: 28 of 28 such instruments read "
+              "nrun delta -1 and 0 of the other 76 do"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
     # this project's life. `nrun` compares noise runs and is silent about a
     # pitched note; `tail` reads the envelope after the gate closes, not how
@@ -5004,6 +5111,33 @@ def _fmt_drift(row: dict) -> str:
     return "-" if v is None else f"{v:+.1f}"
 
 
+def _fmt_depth(row: dict) -> str:
+    """`depth` as the table prints it, with its two refusals kept apart.
+
+    CLAUDE.md: "A `-` in the report is a finding, not a gap." That rule is
+    only usable if the reader can tell WHICH finding, and `depth` refuses
+    for two unrelated reasons that used to render as the same character:
+
+      `-`   NO POPULATION. No record in the ORIGINAL carries a vibrato
+            byte, so there is nothing to compare and nothing to fix. This
+            is the honest dash.
+      `-!`  NO SHARED KEY. Records DO carry the byte and the pairing
+            failed anyway -- the population exists and the comparison did
+            not happen. Measured at v0.5.467 this was 3 of the 10 nulls
+            (5_Title_Tunes 6 keys, Commodore_64_Music_Examples 9, BMX_Kidz
+            2), and it is the same shape as Powerplay Hockey's `-` in
+            onset/nrun/hold/tail, which turned out to be a real defect.
+
+    Only the second is a candidate for work. Rows written before
+    `depth_refusal` existed carry neither key and fall back to `-`, which
+    is the safe direction: it under-claims rather than inventing a finding.
+    """
+    v = row.get("depth_ratio")
+    if v is not None:
+        return f"{v:.2f}x"
+    return "-!" if row.get("depth_refusal") == "no-shared-key" else "-"
+
+
 def _one_sided(row: dict, key: str) -> str:
     """`ours/original`, with `!` for something the original never does.
 
@@ -5284,7 +5418,7 @@ def report(rows: list[dict], args) -> str:
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
-            f"{'-' if r.get('depth_ratio') is None else f'{r["depth_ratio"]:.2f}x'} | "
+            f"{_fmt_depth(r)} | "
             f"{_fmt_drift(r)} | "
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "

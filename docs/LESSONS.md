@@ -2426,6 +2426,58 @@ collision" and keyed on either count would report a different verdict
 depending only on which regex it used, on the same file, unchanged. See
 CLAUDE.md's "Documenting a naming collision creates one" bullet for the rule.
 
+## A misspelled preset key downgrades the hardest files and still returns a count
+
+**REFUTED, and the refutation is recorded here because the claim was a task.**
+The task `three-files-abort-under-preset-opts-that-claude-md-records-as-converting`
+rested on a probe at `4b5d7f0` which, converting the corpus through
+`fidelity._preset_opts`, reported **86 of 95 converted** with **Delta,
+Dragons_Lair_Part_II and W_A_R raising `ConversionAbort` in BOTH arms** — the
+same three files this document elsewhere records as converting under their
+presets and failing only on defaults.
+
+**Re-measured live at `5a2fa2d` (v0.5.479), all three convert**, and each
+reproduces `build/fidelity.json`'s own recorded `output_sha` exactly, which is
+what establishes that the call was the harness's rather than a probe's
+re-derivation:
+
+| file | `max_rows` | preset rescue | bytes | `output_sha` (SHA-1[:12]) |
+|---|---|---|---|---|
+| `Delta.sid` | 94 | `prune`, `dedup` | 47391 | `be38f7421f3b` |
+| `Dragons_Lair_Part_II.sid` | 94 | `prune`, `dedup` | 23169 | `17bff1cbc684` |
+| `W_A_R.sid` | 128 | `prune`, `dedup`, `pitch_seq` | 58481 | `b0b85d8b98c3` |
+
+**THE CAUSE IS THE KEY, NOT THE CONVERTER.** `presets.json` keys `songs` with
+the `.sid` extension, and `_preset_opts` on any other spelling returns the
+`always` block alone. Measured on `W_A_R` at the same HEAD:
+
+| key passed | `max_rows` | `prune` | `dedup` | `pitch_seq` |
+|---|---|---|---|---|
+| `'W_A_R.sid'` | 128 | True | True | True |
+| the absolute path to the same file | 94 | False | False | False |
+| `'W_A_R'` (bare stem) | 94 | False | False | False |
+
+Rows two and three are precisely the default options, and precisely the option
+set on which these three files fail with `TOO MANY NEW PATTERN CREATED`. So the
+probe measured **its own key** and reported a fact about the converter: every
+per-song option is a rescue, so a lookup miss hands the *hardest* files the
+*easiest* options, and the run still produces a plausible number rather than an
+error. The same family as this file's grep-returning-0 and id-prefix sections —
+a check that cannot tell its subject from its container.
+
+**THE MECHANISM WAS ALREADY FIXED BEFORE THIS TASK RAN, and by accident.**
+`_preset_opts` has warned on an absent-key-with-populated-`songs` since
+`e2fd3f8`, and that warning's own comment cites this figure by name. What was
+outstanding was never the code — it was that a wrong number had been written
+down and not withdrawn. It warns rather than raises deliberately: `listen.py`'s
+`--diff` path calls it on a name it already knows is absent, to fall back to
+default options for a not-yet-measured corpus file.
+
+**What does NOT change:** the 89-under-presets / 86-on-defaults split recorded
+earlier in this file is correct and is a different quantity. That gap is between
+two OPTION SETS on the same three files; this one was between a real option set
+and a lookup that missed.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

@@ -700,6 +700,138 @@ def test_a_held_cutoff_travels_nowhere():
     assert got["cutoff_sweep"] is None
 
 
+# --- nrun: blind to a loss its own modal reduction cannot move -------------
+#
+# `noise_run_agreement` compares only the single MOST COMMON noise-run length
+# per instrument (the same reduction `noise_runs` returns), so it can read a
+# perfect 1.0 while a real, audible loss happens underneath it -- as long as
+# enough runs survive at the old length to keep the mode unchanged. Measured
+# live on Zoolook.sid at `-t 180`: three noise-run instruments read
+# orig_modal == our_modal == 1 on all three (`nrun` 100%) while their run
+# COUNTS drop 740->704, 1658->1562 and 920->853 -- 199 noise frames lost in
+# total, exactly what the one-sided `noise` column reads on the same run
+# (3318 -> 3119, orig/ours). `nrun` and `noise` answer different questions and
+# neither substitutes for the other: read them side by side, as the module
+# docstring for noise_run_agreement now says.
+#
+# It DOES reliably catch `hold`'s well-known -1 (the $09 next-note-fetch
+# frame, sound_run_agreement's own docstring) -- but only for an instrument
+# whose noise fills its whole held note, i.e. `noise_runs`' modal run length
+# equals `sound_runs`' modal held length on the ORIGINAL side. RE-MEASURED
+# widening fetch-minus-one's 12-instrument/4-file sample to the 32 corpus
+# files build/fidelity.json currently reads noise_run_agreement < 1.0 on
+# (138 instruments pairing an nrun key to a hold key, 104 carrying hold's
+# -1): the split is EXACT -- 28 of 28 instruments whose original noise run
+# equals its original held length also read an nrun delta of exactly -1, and
+# 0 of the other 76 do. The two cases below pin that mechanism directly
+# rather than re-deriving it from a corpus trace on every suite run.
+
+
+def _run_voice(wf_events, adsr_events, attacks=()):
+    return fidelity.Voice(wf_events=list(wf_events), adsr_events=list(adsr_events),
+                          attack_frames=list(attacks))
+
+
+def _run_side(wf_events, adsr_events, attacks=()):
+    return [_run_voice(wf_events, adsr_events, attacks),
+            fidelity.Voice(), fidelity.Voice()]
+
+
+def test_nrun_reads_full_agreement_while_a_run_count_loss_the_noise_column_sees_hides():
+    """Ten one-frame noise ticks against eight, same ADSR key, same modal
+    length -- the loss is real (`noise_runs` still carries it) and
+    `noise_run_agreement` cannot see it because it only compares the mode."""
+    adsr = [(0, 0x0A0A)]           # $0A0A = 2570, a real corpus key
+    orig_ticks = [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]
+    our_ticks = [2, 5, 8, 11, 14, 17, 20, 23]              # two runs missing
+
+    def side(ticks):
+        events = []
+        for f in ticks:
+            events.append((f, 0x81))    # noise on for exactly one frame
+            events.append((f + 1, 0x41))  # ...then a plain, non-noise waveform
+        return _run_side(events, adsr)
+
+    orig, ours = side(orig_ticks), side(our_ticks)
+    got = fidelity.noise_run_agreement(orig, ours, nframes=40)
+    assert got["noise_run_instruments"] == 1
+    assert got["noise_run_matched"] == 1
+    assert got["noise_run_agreement"] == 1.0        # reads PERFECT --
+
+    # -- while the runs it just agreed on differ in how many there were.
+    a, b = fidelity.noise_runs(orig, 40), fidelity.noise_runs(ours, 40)
+    assert a[2570].most_common(1)[0][0] == b[2570].most_common(1)[0][0] == 1
+    assert sum(a[2570].values()) == 10
+    assert sum(b[2570].values()) == 8                # a real, unseen loss
+
+
+def test_nrun_sees_holds_minus_one_only_when_the_noise_fills_the_whole_note():
+    """Two instruments, both carrying `hold`'s -1 (the note ends one frame
+    short). The one whose noise run spans the ENTIRE held note propagates
+    that -1 into `nrun`; the one whose noise is a one-frame tick at the head
+    of a longer, mostly-tonal note does not -- the missing frame is in the
+    tail, nowhere near the run, so the run's own length -- and its modal
+    value -- is untouched."""
+    # Positive: $0F0F, noise for the whole 8-frame note (5..12), 12 as the
+    # next attack. Ours ends one frame short: noise/held only run 5..11.
+    pos_orig = _run_voice([(5, 0x81), (13, 0x41)], [(0, 0x0F0F)], attacks=[5, 13])
+    pos_ours = _run_voice([(5, 0x81), (12, 0x09), (13, 0x41)], [(0, 0x0F0F)],
+                          attacks=[5, 13])
+
+    # Negative: $0B0B, a one-frame noise tick at the attack (5) followed by
+    # eleven frames of a plain tonal waveform (6..16), 17 as the next attack.
+    # Ours drops the LAST tonal frame (hold's -1) -- the run at frame 5 is
+    # identical on both sides.
+    neg_orig = _run_voice([(5, 0x81), (6, 0x41), (17, 0x41)], [(0, 0x0B0B)],
+                          attacks=[5, 17])
+    neg_ours = _run_voice([(5, 0x81), (6, 0x41), (16, 0x09), (17, 0x41)],
+                          [(0, 0x0B0B)], attacks=[5, 17])
+
+    orig = [pos_orig, neg_orig, fidelity.Voice()]
+    ours = [pos_ours, neg_ours, fidelity.Voice()]
+    nframes = 30
+
+    noise_a = fidelity.noise_runs(orig, nframes)
+    noise_b = fidelity.noise_runs(ours, nframes)
+    hold_a = fidelity.sound_runs(orig, nframes)
+    hold_b = fidelity.sound_runs(ours, nframes)
+
+    # The positive instrument: noise run == held length on the original,
+    # 8 frames both.
+    assert noise_a[0x0F0F].most_common(1)[0][0] == hold_a[0x0F0F].most_common(1)[0][0] == 8
+    # ... and hold's -1 propagates into nrun as an exact -1.
+    assert hold_b[0x0F0F].most_common(1)[0][0] == 7
+    assert noise_b[0x0F0F].most_common(1)[0][0] == 7
+
+    # The negative instrument: noise run (1) != held length (12) on the
+    # original.
+    assert noise_a[0x0B0B].most_common(1)[0][0] == 1
+    assert hold_a[0x0B0B].most_common(1)[0][0] == 12
+    # ... hold still shows the -1 ...
+    assert hold_b[0x0B0B].most_common(1)[0][0] == 11
+    # ... but the run itself is untouched: nrun is structurally blind to it.
+    assert noise_b[0x0B0B].most_common(1)[0][0] == 1
+
+    got_nrun = fidelity.noise_run_agreement(orig, ours, nframes)
+    got_hold = fidelity.sound_run_agreement(orig, ours, nframes)
+    assert got_hold["sound_run_delta"] == -1
+    # One of the two shared instruments matches, one does not -- exactly the
+    # positive/negative split, not a blanket miss or a blanket pass.
+    assert got_nrun["noise_run_instruments"] == 2
+    assert got_nrun["noise_run_matched"] == 1
+    assert got_nrun["noise_run_agreement"] == 0.5
+
+
+def test_nrun_dimension_states_its_own_blindness_and_the_measured_split():
+    """The registry entry is the one place a report reader sees this without
+    opening the source -- pin its prose so the two claims above cannot be
+    quietly dropped from what the report prints."""
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "blind" in d.of
+    assert "199 noise frames" in d.of
+    assert "28 of 28" in d.of and "0 of the other 76" in d.of
+
+
 # --- how the three reach the report ----------------------------------------
 
 
@@ -1978,10 +2110,18 @@ def test_depth_declines_rather_than_measuring_the_wrong_population():
     measurement, not a fallback to the unrestricted reading."""
     seg = _osc(10, 400)
     v = [_fq_voice([0], seg, 0x0A0A), fidelity.Voice(), fidelity.Voice()]
-    assert fidelity.depth_compare(v, v, len(seg), None) == {}
-    assert fidelity.depth_compare(v, v, len(seg), set()) == {}
-    # ...and an instrument outside the population is not measured either.
-    assert fidelity.depth_compare(v, v, len(seg), {0x0B0B}) == {}
+    # The assertion was `== {}` until `depth_refusal` was added. The shape
+    # changed and the CLAIM did not: a refusal still measures NOTHING, it
+    # now also says which of the two refusals it made. Assert the absence of
+    # every measurement key rather than an empty dict, which is stricter
+    # about the thing this test exists to protect and indifferent to a
+    # cause field being carried alongside.
+    MEASURED = ("depth_ratio", "orig_depth", "our_depth", "depth_instruments")
+    for keys in (None, set(), {0x0B0B}):
+        got = fidelity.depth_compare(v, v, len(seg), keys)
+        assert not any(k in got for k in MEASURED), (
+            f"depth_compare(keys={keys!r}) measured something: {got}")
+        assert got.get("depth_refusal") in ("no-population", "no-shared-key")
 
 
 def test_a_release_rewritten_by_cut_release_still_joins():
@@ -2842,3 +2982,251 @@ def test_the_interleaved_dialect_has_no_vibrato_engine_any_detector_reads():
         seen += 1
         assert not fidelity.vibrato_records(path), stem
     assert seen >= 5, f"only {seen} of the six ILV files are in the corpus"
+
+
+# ---- depth's two refusals are different findings ---------------------------
+#
+# CLAUDE.md: "A `-` in the report is a finding, not a gap." Both of
+# `depth_agreement`'s refusals used to return {} and so printed the same
+# character, which made the rule unusable: a reader could not tell "no record
+# carries the mechanism" from "the population exists and the pairing failed".
+# Measured at v0.5.467 the split was 7 / 3 over 10 null rows.
+
+
+def test_no_population_and_no_shared_key_are_different_refusals():
+    from fidelity import _fmt_depth
+
+    assert _fmt_depth({"depth_refusal": "no-population"}) == "-"
+    assert _fmt_depth({"depth_refusal": "no-shared-key", "depth_keys": 6}) == "-!"
+    # Not vacuous: the two must actually differ, or the column has gained a
+    # field and kept the defect.
+    assert (_fmt_depth({"depth_refusal": "no-population"})
+            != _fmt_depth({"depth_refusal": "no-shared-key"}))
+
+
+def test_a_measured_depth_still_prints_its_ratio():
+    from fidelity import _fmt_depth
+
+    assert _fmt_depth({"depth_ratio": 0.5646}) == "0.56x"
+    # A ratio wins over any leftover refusal key -- a row that measured
+    # something must never render as a refusal.
+    assert _fmt_depth({"depth_ratio": 1.0, "depth_refusal": "no-shared-key"}) == "1.00x"
+
+
+def test_an_older_row_without_the_refusal_key_underclaims():
+    """Rows written before `depth_refusal` existed must not become findings.
+
+    The fallback direction matters: an unknown refusal renders `-`, the
+    honest dash, rather than `-!`, which would manufacture a candidate for
+    work out of a row nobody classified.
+    """
+    from fidelity import _fmt_depth
+
+    assert _fmt_depth({}) == "-"
+    assert _fmt_depth({"depth_ratio": None}) == "-"
+
+
+def test_depth_agreement_reports_which_refusal_it_made():
+    """The two exits carry their own cause, keyed structurally.
+
+    `keys` empty is the no-population exit; a non-empty `keys` whose
+    oscillation depths share no pair is the no-shared-key exit. Both leave
+    `depth_ratio` absent, which is what keeps the column's `-` semantics.
+    """
+    import fidelity as F
+
+    v = [F.Voice(), F.Voice(), F.Voice()]
+    empty = F.depth_compare(v, v, 100, keys=set())
+    assert empty.get("depth_refusal") == "no-population"
+    assert "depth_ratio" not in empty
+
+    # A population that cannot pair: keys present, but no voice data at all,
+    # so `oscillation_depths` finds no instrument with a positive depth.
+    unpaired = F.depth_compare(v, v, 100, keys={0x0A09, 0x0603})
+    assert unpaired.get("depth_refusal") == "no-shared-key"
+    assert unpaired.get("depth_keys") == 2
+    assert "depth_ratio" not in unpaired
+
+
+def test_the_depth_dimension_declares_both_dashes():
+    """The registry text is what a report reader gets; it must name both.
+
+    tests elsewhere in this file pin that the registry and the printed
+    header agree, so this only has to assert the content is there.
+    """
+    import fidelity as F
+
+    d = next(x for x in F.DIMENSIONS if x.key == "depth_ratio")
+    assert "-!" in d.of, "the depth Dimension does not mention its second dash"
+    assert "no instrument key was shared" in d.of
+
+
+# ---- gate and hold are one frame counted twice ----------------------------
+#
+# Refuted-in-writing rather than fixed: there is nothing to fix, because the
+# two columns spend the same frame in opposite directions and no setting
+# satisfies both (measured at 4b5d7f0 over four files in three arms). The
+# statement lives in fidelity.py beside both Dimension entries; these pin it
+# there, because a prose block with no test decays into absence the first
+# time either entry is reworded.
+
+
+def _dim(key):
+    import fidelity as F
+    return next(d for d in F.DIMENSIONS if d.key == key)
+
+
+def _trade_block():
+    """The gate/hold trade block ONLY, sliced out of the module source.
+
+    Every assertion below runs against this slice and not against the whole
+    file, and that is the point. The first version of these tests asserted
+    `"1 call" in src` and `"gate" in hold.of` -- and a sabotage run showed
+    BOTH pass after the thing they guard is deleted, because "1 call" also
+    occurs in an unrelated report string ("1 call per frame as ...") and the
+    word "gate" survives in "gate bit" once the cross-reference is gone.
+    A check that cannot tell its subject from its container returns a number
+    either way; slicing the container away is what fixes it, not a longer
+    phrase list.
+    """
+    import inspect
+    import fidelity as F
+
+    src = inspect.getsource(F)
+    start = src.index("**`gate` AND `hold` ARE THE SAME FRAME, TRADED")
+    end = src.index('Dimension("gate", "gate"', start)
+    return src[start:end]
+
+
+def test_gate_and_hold_each_explain_the_other_s_sign():
+    """Both entries must keep naming the other, in BOTH directions.
+
+    Anchored on the phrase that IS the cross-reference, never on the bare
+    word `gate`, which survives in "gate bit" and would pass over its own
+    deletion.
+    """
+    assert "`hold`" in _dim("gate").of
+    hold = _dim("sound_run_agreement").of
+    assert "`gate` counts that same frame" in hold, (
+        "hold's entry no longer explains that gate charges the same frame "
+        "-- the pair is down to one half explaining the other")
+    assert "opposite signs" in hold
+
+
+def test_the_trade_is_stated_where_both_columns_live():
+    """The claim and its evidence, inside the block and nowhere else."""
+    block = _trade_block()
+    assert "MOVING ONE MOVES THE" in block
+    assert "NO SETTING SATISFIES BOTH" in block.upper()
+    # The three measured arms are what make it a trade rather than an
+    # observation about signs. Anchored on each arm's own wording, so a
+    # deleted arm cannot be matched by an unrelated line elsewhere.
+    for arm in ("2 calls   buys `gate` 72%",
+                "1 call    pays `gate` 15 points",
+                "0 calls   buys `fetch` 0 of 4"):
+        assert arm in block, f"the arm {arm!r} is no longer recorded"
+    assert "never an improvement" in block
+
+
+def test_the_trade_block_sits_between_the_two_entries_it_describes():
+    """Position is load-bearing: it must be findable from either column.
+
+    A reader arrives here from `gate` or from `hold`, never from the middle.
+    If the block drifts away from them it is prose nobody reaches.
+    """
+    import inspect
+    import fidelity as F
+
+    src = inspect.getsource(F)
+    trade = src.index("THE SAME FRAME, TRADED")
+    gate = src.index('Dimension("gate", "gate"')
+    hold = src.index('Dimension("sound_run_agreement", "hold"')
+    assert trade < gate < hold, (
+        f"the trade block is no longer immediately before the gate entry "
+        f"(trade at {trade}, gate at {gate}, hold at {hold})")
+    assert gate - trade < 2000, (
+        f"the trade block has drifted {gate - trade} chars from the `gate` "
+        f"entry it introduces")
+
+
+# ---- bit $10 is a detection question, not a constant ----------------------
+#
+# The census used to set `pitchseq` on every file, justified by a comment
+# claiming goatwriter applies EFFECT_PITCH_SEQ_MASK unconditionally. It does
+# not: `_pitch_seq_notes` returns None when `det.pitch_seq is None` BEFORE it
+# ever reads the record's mask, so the emitter makes two checks and the
+# census made none. Measured at 5a2fa2d, detection finds pitch_seq on 36 of
+# the 95 corpus files.
+
+
+class _Det:
+    """The smallest Detection-shaped object `_effect_names` reads."""
+
+    def __init__(self, pitch_seq):
+        self.pitch_seq = pitch_seq
+        self.effect_rise = False
+        self.effect_arp = False
+        self.effect_drum = False
+        self.effect_bit40 = False
+        self.effect_bit80 = False
+        self.wave_program = -1
+        self.wave_program_gate = 0
+
+
+def _names(pitch_seq):
+    """`pitch_effect_bits` with a hand-built Detection.
+
+    It takes `(sid_path, det=None)` and only touches the path when `det` is
+    None, so passing a det means no file is read -- which is what lets this
+    exercise the gate without a corpus.
+    """
+    import fidelity as F
+    return F.pitch_effect_bits(None, _Det(pitch_seq))
+
+
+def test_pitchseq_is_not_attributed_when_detection_found_none():
+    assert 0x10 not in _names(None), (
+        "the census still attributes `pitchseq` on a file whose detection "
+        "found no pitch-sequence engine")
+
+
+def test_pitchseq_is_attributed_when_detection_found_one():
+    """Non-vacuous: the gate must not have removed the cause entirely."""
+    got = _names(object())
+    assert got.get(0x10) == "pitchseq", (
+        f"gating removed the cause outright rather than conditioning it: {got}")
+
+
+def test_the_two_cases_actually_differ():
+    """The whole point. A gate that returns the same thing either way is the
+    ungated code with an `if` in front of it."""
+    assert _names(None).get(0x10) != _names(object()).get(0x10)
+
+
+def test_the_retracted_claim_is_retracted_where_a_grep_for_it_lands():
+    """This repo requires a wrong mechanism to be retracted where a grep for
+    its own words finds it, so the old sentence must still be present AND
+    must be marked wrong. Sliced to the comment block, not searched over the
+    whole module -- see `_trade_block` for why that distinction is load-
+    bearing rather than stylistic.
+    """
+    import inspect
+    import fidelity as F
+
+    src = inspect.getsource(F)
+    start = src.index("THE SENTENCE THAT USED TO STAND HERE WAS WRONG")
+    end = src.index("out[0x10] = \"pitchseq\"", start)
+    # NORMALISE before searching. The first version of this assertion looked
+    # for "applied to the record" and FAILED against a correct retraction,
+    # because the comment wraps it as "is applied to the" / "# record
+    # unconditionally" -- CLAUDE.md's own "a line-based search finds nothing
+    # for a quotation that wraps across a newline", hit by the guard written
+    # to enforce the retraction rule. Stripping the `#` prefixes and
+    # collapsing whitespace makes this survive ANY re-wrapping, which matters
+    # because re-wrapping is exactly what editing nearby text causes.
+    block = " ".join(src[start:end].replace("#", " ").split())
+    assert "applied to the record" in block, (
+        "the retracted wording is gone, so a grep for it will report the "
+        "claim as absent rather than as corrected")
+    assert "WRONG ABOUT THE EMITTER" in block
+    assert "det.pitch_seq" in block

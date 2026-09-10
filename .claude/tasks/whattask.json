@@ -1,6 +1,6 @@
 {
  "generated_from": {
-  "head": "665939c",
+  "head": "5a2fa2d",
   "sources": [
    ".claude/tasks/decisions.jsonl",
    ".claude/tasks/runs.jsonl",
@@ -45,36 +45,6 @@
  ],
  "tasks": [
   {
-   "id": "measure-food-feud",
-   "title": "Measure Food Feud to full coverage and attribute every low column",
-   "source": "split of finish-food-feud; build/fidelity.json",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/measure-food-feud"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DERIVE THE LOW COLUMNS, DO NOT TAKE THEM FROM THIS BRIEF. Compute the corpus medians over the `status == \"measured\"` rows of build/fidelity.json (all at seconds=180, the same quantity as your run) and report which of THIS file's columns are genuinely below them. Ratio columns (slides, bend, vib, depth, noise, pul, pspan) compare in LOG space, |ln(ratio)| against |ln(median)|, because 2.0x and 0.5x are the same size of wrong. WHY THIS BRIEF NO LONGER NAMES THE DEFECT: it used to, and it was wrong on three songs out of three. Action Biker's brief named gate, which measured 0.7246 against a median of 0.6270 -- above it, owing nothing. Samantha Fox's named gate again, 0.6696 against the same median, above it again. Sigma Seven's called it a single-mechanism target and it was below median on four columns. Each agent had to spend its first move disproving its own task. A brief that names the answer makes the measurement a formality and the refutation the real work; this one names none. PRIOR READING, AS CONTEXT AND NOT A VERDICT -- re-measure it, never re-quote it, and expect it to be wrong about which column matters: coverage first (0.73 today); no other column is below the corpus median. DONE means a NUMBER and an ATTRIBUTION, never a verdict. Four things, each recorded: (1) a per-file fidelity run with --sound and the shipped presets reports window_coverage 1.0 for this file -- widen -t until it does, and say which -t was needed; (2) EVERY column the run prints is listed, not only the low ones, with both attack counts beside them, because a column rises when events are removed; (3) --pace is run and reported as its MEDIAN and its integrated drift line, with the IQR beside the median and the least-squares fit quoted only as a divergence signal. CORRECTED AT v0.5.476 and the reversal is measured: the fit weights each gap by the square of the original's, so on Tarzan it reads 0.360 where both quartiles are 1.000 over 2728 gaps and the drift is zero across 8982 frames. Where the fit and the median part company, say so and read the median; (4) each column below the corpus median is ATTRIBUTED to a named mechanism with the figures that show it, and any column you cannot attribute is said to be unattributed. EXPLICITLY OUT OF SCOPE, and reporting one is a FAILURE of this task rather than a bonus: do not declare any column a BOUND, do not adopt a preset option, and do not change a converter file. A bound is a claim about the player that needs the packed bytes behind it, and it is decided in the main session. Open a follow-up id for each mechanism you attribute instead. Every figure quoted below is HISTORICAL at v0.5.475 over a 180 s window -- re-measure it, never re-quote it.",
-   "why_model": "deciding what a low column is ATTRIBUTABLE to is where a plausible wrong answer is cheap",
-   "why_effort": "the reductions disagree with each other in sign on at least one file already, so the reading has to be derived rather than assumed",
-   "why_mode": "one file, an existing harness, and the deliverable is a number plus an attribution rather than a verdict",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
-  },
-  {
    "id": "sign-off-food-feud",
    "title": "Sign off Food Feud: listen, then record the approval",
    "source": "split of finish-food-feud",
@@ -102,37 +72,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
-  },
-  {
-   "id": "measure-saboteur-ii",
-   "title": "Measure Saboteur II to full coverage and attribute every low column",
-   "source": "split of finish-saboteur-ii; build/fidelity.json",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/measure-saboteur-ii"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DERIVE THE LOW COLUMNS, DO NOT TAKE THEM FROM THIS BRIEF. Compute the corpus medians over the `status == \"measured\"` rows of build/fidelity.json (all at seconds=180, the same quantity as your run) and report which of THIS file's columns are genuinely below them. Ratio columns (slides, bend, vib, depth, noise, pul, pspan) compare in LOG space, |ln(ratio)| against |ln(median)|, because 2.0x and 0.5x are the same size of wrong. WHY THIS BRIEF NO LONGER NAMES THE DEFECT: it used to, and it was wrong on three songs out of three. Action Biker's brief named gate, which measured 0.7246 against a median of 0.6270 -- above it, owing nothing. Samantha Fox's named gate again, 0.6696 against the same median, above it again. Sigma Seven's called it a single-mechanism target and it was below median on four columns. Each agent had to spend its first move disproving its own task. A brief that names the answer makes the measurement a formality and the refutation the real work; this one names none. PRIOR READING, AS CONTEXT AND NOT A VERDICT -- re-measure it, never re-quote it, and expect it to be wrong about which column matters: coverage first (0.72 today), then gate 0.63. DONE means a NUMBER and an ATTRIBUTION, never a verdict. Four things, each recorded: (1) a per-file fidelity run with --sound and the shipped presets reports window_coverage 1.0 for this file -- widen -t until it does, and say which -t was needed; (2) EVERY column the run prints is listed, not only the low ones, with both attack counts beside them, because a column rises when events are removed; (3) --pace is run and reported as its MEDIAN and its integrated drift line, with the IQR beside the median and the least-squares fit quoted only as a divergence signal. CORRECTED AT v0.5.476 and the reversal is measured: the fit weights each gap by the square of the original's, so on Tarzan it reads 0.360 where both quartiles are 1.000 over 2728 gaps and the drift is zero across 8982 frames. Where the fit and the median part company, say so and read the median; (4) each column below the corpus median is ATTRIBUTED to a named mechanism with the figures that show it, and any column you cannot attribute is said to be unattributed. EXPLICITLY OUT OF SCOPE, and reporting one is a FAILURE of this task rather than a bonus: do not declare any column a BOUND, do not adopt a preset option, and do not change a converter file. A bound is a claim about the player that needs the packed bytes behind it, and it is decided in the main session. Open a follow-up id for each mechanism you attribute instead. Every figure quoted below is HISTORICAL at v0.5.475 over a 180 s window -- re-measure it, never re-quote it.",
-   "why_model": "deciding what a low column is ATTRIBUTABLE to is where a plausible wrong answer is cheap",
-   "why_effort": "the reductions disagree with each other in sign on at least one file already, so the reading has to be derived rather than assumed",
-   "why_mode": "one file, an existing harness, and the deliverable is a number plus an attribution rather than a verdict",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-saboteur-ii",
@@ -162,37 +102,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
-  },
-  {
-   "id": "measure-zoolook",
-   "title": "Measure Zoolook to full coverage and attribute every low column",
-   "source": "split of finish-zoolook; build/fidelity.json",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/measure-zoolook"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DERIVE THE LOW COLUMNS, DO NOT TAKE THEM FROM THIS BRIEF. Compute the corpus medians over the `status == \"measured\"` rows of build/fidelity.json (all at seconds=180, the same quantity as your run) and report which of THIS file's columns are genuinely below them. Ratio columns (slides, bend, vib, depth, noise, pul, pspan) compare in LOG space, |ln(ratio)| against |ln(median)|, because 2.0x and 0.5x are the same size of wrong. WHY THIS BRIEF NO LONGER NAMES THE DEFECT: it used to, and it was wrong on three songs out of three. Action Biker's brief named gate, which measured 0.7246 against a median of 0.6270 -- above it, owing nothing. Samantha Fox's named gate again, 0.6696 against the same median, above it again. Sigma Seven's called it a single-mechanism target and it was below median on four columns. Each agent had to spend its first move disproving its own task. A brief that names the answer makes the measurement a formality and the refutation the real work; this one names none. PRIOR READING, AS CONTEXT AND NOT A VERDICT -- re-measure it, never re-quote it, and expect it to be wrong about which column matters: coverage first (0.69 today), then gate 0.38. DONE means a NUMBER and an ATTRIBUTION, never a verdict. Four things, each recorded: (1) a per-file fidelity run with --sound and the shipped presets reports window_coverage 1.0 for this file -- widen -t until it does, and say which -t was needed; (2) EVERY column the run prints is listed, not only the low ones, with both attack counts beside them, because a column rises when events are removed; (3) --pace is run and reported as its MEDIAN and its integrated drift line, with the IQR beside the median and the least-squares fit quoted only as a divergence signal. CORRECTED AT v0.5.476 and the reversal is measured: the fit weights each gap by the square of the original's, so on Tarzan it reads 0.360 where both quartiles are 1.000 over 2728 gaps and the drift is zero across 8982 frames. Where the fit and the median part company, say so and read the median; (4) each column below the corpus median is ATTRIBUTED to a named mechanism with the figures that show it, and any column you cannot attribute is said to be unattributed. EXPLICITLY OUT OF SCOPE, and reporting one is a FAILURE of this task rather than a bonus: do not declare any column a BOUND, do not adopt a preset option, and do not change a converter file. A bound is a claim about the player that needs the packed bytes behind it, and it is decided in the main session. Open a follow-up id for each mechanism you attribute instead. Every figure quoted below is HISTORICAL at v0.5.475 over a 180 s window -- re-measure it, never re-quote it.",
-   "why_model": "deciding what a low column is ATTRIBUTABLE to is where a plausible wrong answer is cheap",
-   "why_effort": "the reductions disagree with each other in sign on at least one file already, so the reading has to be derived rather than assumed",
-   "why_mode": "one file, an existing harness, and the deliverable is a number plus an attribution rather than a verdict",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-zoolook",
@@ -222,37 +132,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
-  },
-  {
-   "id": "measure-confuzion",
-   "title": "Measure Confuzion to full coverage and attribute every low column",
-   "source": "split of finish-confuzion; build/fidelity.json",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/measure-confuzion"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "DERIVE THE LOW COLUMNS, DO NOT TAKE THEM FROM THIS BRIEF. Compute the corpus medians over the `status == \"measured\"` rows of build/fidelity.json (all at seconds=180, the same quantity as your run) and report which of THIS file's columns are genuinely below them. Ratio columns (slides, bend, vib, depth, noise, pul, pspan) compare in LOG space, |ln(ratio)| against |ln(median)|, because 2.0x and 0.5x are the same size of wrong. WHY THIS BRIEF NO LONGER NAMES THE DEFECT: it used to, and it was wrong on three songs out of three. Action Biker's brief named gate, which measured 0.7246 against a median of 0.6270 -- above it, owing nothing. Samantha Fox's named gate again, 0.6696 against the same median, above it again. Sigma Seven's called it a single-mechanism target and it was below median on four columns. Each agent had to spend its first move disproving its own task. A brief that names the answer makes the measurement a formality and the refutation the real work; this one names none. PRIOR READING, AS CONTEXT AND NOT A VERDICT -- re-measure it, never re-quote it, and expect it to be wrong about which column matters: coverage first (0.59 today), then adsr 0.21. DONE means a NUMBER and an ATTRIBUTION, never a verdict. Four things, each recorded: (1) a per-file fidelity run with --sound and the shipped presets reports window_coverage 1.0 for this file -- widen -t until it does, and say which -t was needed; (2) EVERY column the run prints is listed, not only the low ones, with both attack counts beside them, because a column rises when events are removed; (3) --pace is run and reported as its MEDIAN and its integrated drift line, with the IQR beside the median and the least-squares fit quoted only as a divergence signal. CORRECTED AT v0.5.476 and the reversal is measured: the fit weights each gap by the square of the original's, so on Tarzan it reads 0.360 where both quartiles are 1.000 over 2728 gaps and the drift is zero across 8982 frames. Where the fit and the median part company, say so and read the median; (4) each column below the corpus median is ATTRIBUTED to a named mechanism with the figures that show it, and any column you cannot attribute is said to be unattributed. EXPLICITLY OUT OF SCOPE, and reporting one is a FAILURE of this task rather than a bonus: do not declare any column a BOUND, do not adopt a preset option, and do not change a converter file. A bound is a claim about the player that needs the packed bytes behind it, and it is decided in the main session. Open a follow-up id for each mechanism you attribute instead. Every figure quoted below is HISTORICAL at v0.5.475 over a 180 s window -- re-measure it, never re-quote it.",
-   "why_model": "deciding what a low column is ATTRIBUTABLE to is where a plausible wrong answer is cheap",
-   "why_effort": "the reductions disagree with each other in sign on at least one file already, so the reading has to be derived rather than assumed",
-   "why_mode": "one file, an existing harness, and the deliverable is a number plus an attribution rather than a verdict",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-confuzion",
@@ -283,7 +163,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-las-vegas-video-poker",
@@ -314,7 +194,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-geoff-capes-strongman-challenge",
@@ -344,7 +224,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-action-biker",
@@ -376,7 +256,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-kings-of-the-beach-ingame",
@@ -406,7 +286,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-sigma-seven",
@@ -436,7 +316,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-samantha-fox-strip-poker",
@@ -466,7 +346,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-knucklebusters",
@@ -496,7 +376,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "sign-off-sanxion",
@@ -526,7 +406,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (91 conflicting tasks in all)"
   },
   {
    "id": "action-biker-subtune-pairing-needs-an-ear",
@@ -549,7 +429,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -574,7 +454,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -603,38 +483,9 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (62 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (64 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
-  },
-  {
-   "id": "confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that",
-   "title": "Confuzion's force_park rests on its voices ending together and nothing checks it",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "rw:host:C:/t/confuzions-force-park-rests-",
-    "rw:python/h2g/tracks.py",
-    "rw:python/tests",
-    "rw:python/tests/test_tracks.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (82 conflicting tasks in all)",
-   "effort": "medium",
-   "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
   {
    "id": "promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled",
@@ -697,7 +548,7 @@
    "verify": "cd python && python sound_calibrate.py <sid_dir> -t 60 -o ../docs/SOUND-CALIBRATION.md, and the doc says PASS for the right reason. TWO of the three known_bad pairs were found INCOMPARABLE (loudness ratio outside the band) rather than mis-scored, so the calibration validates on one pair and wants two more that build comparably.  || PRIOR ATTEMPT: PARTIAL, and its durable half must not be redone: every calibration number reproduced identically across eight versions (so the alignment change is exonerated), and W_A_R 0.5.399->0.5.400 was measured comparable and ADOPTED into KNOWN_BAD at 7bcd3fe -- the first pair that exercises `aud` at all. What remains is one more comparable pair, then a deliberate decision on the two excluded ones: while Las_Vegas and Samantha_Fox stay, `all(seen)` cannot hold however many good pairs are added. Shortlist with the measured rule -- a pair is comparable when the fix is STRUCTURAL, not a multiplier change. || GRADED at d3775b4: 7bcd3fe is 15 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "renders audio over the corpus; long and exclusive",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (64 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (65 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -768,7 +619,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. EDGE ADDED: the GATE above was recorded ONLY as prose, where /runtask's selector cannot see it -- it now also exists as a `depends_on` edge on `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace`. That gate is currently SATISFIED (that id reads done in runs.jsonl), so nothing was blocked by its absence; what was wrong is that a runner obeying the selection rule literally had no way to know it existed.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (65 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (64 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -800,7 +651,7 @@
    "verify": "The Chicken_Song / Hollywood_or_Bust wave_alternate trade is re-measured at -t 180. NOTE the two files are no longer one population: Chicken_Song reads 2556 of 4188 noise frames where the old text says none.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (57 conflicting tasks in all)",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (57 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -830,7 +681,7 @@
    "verify": "The report carries a coverage column and tests/test_fidelity.py fails if the registry and the printed header disagree. A `cov` column now exists; confirm whether this is already satisfied before writing anything.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (70 conflicting tasks in all)",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (69 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -908,7 +759,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. || PARTIAL at fd286a5, do NOT redo: the refusal reproduces only with the multiplier gate lifted IN MEMORY (forcing the option is inert -- both arms 16558 bytes and both pack). Lifted arm 29009 bytes and refused. Five causes excluded: patterns 126/208, table_errors() NONE, WTBL 130 / PTBL 145 / FTBL 2 / STBL 4 against 255, longest orderlist 229/255, size 29009 where W_A_R packs at 58481. Three candidates remain, cheapest first: a CMD_SETPULSEPTR operand out of range after greloc renumbers; the 59 pattern COPIES against a limit on distinct pattern LENGTHS; and the two-byte $FE nn orderlist tempo. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -937,7 +788,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -967,7 +818,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (88 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (87 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -995,7 +846,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (70 conflicting tasks in all)",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (69 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1024,7 +875,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (81 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (78 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1053,7 +904,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1082,7 +933,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (81 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (78 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1111,7 +962,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (62 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (64 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1140,7 +991,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (54 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (54 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1167,7 +1018,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (49 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (49 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1196,7 +1047,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1225,7 +1076,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. RECORDING HOME, granted rw:CLAUDE.md: the claim being refuted is CLAUDE.md's own converting figure, so the refutation belongs there with its evidence in docs/LESSONS.md. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (41 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (41 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1250,7 +1101,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1275,7 +1126,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1300,7 +1151,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1325,7 +1176,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1381,7 +1232,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1406,7 +1257,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -1487,34 +1338,9 @@
    "verify": "A corpus byte-hash names the exact set the change reaches, and an A/B on Bangkok_Knights and Auf_Wiedersehen_Monty shows the tick tracking the note rather than one pinned pitch. NOTE FIRST: no report column reads a noise frame's PITCH (CLAUDE.md records this twice), so a flat table is the expected result and is not evidence either way -- the byte-hash plus the per-frame trace is the evidence.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "diagnosis matters more than the measurement, and no column adjudicates it",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (86 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (83 conflicting tasks in all)",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed"
-  },
-  {
-   "id": "a-known-bad-pair-is-comparable-when-the-fix-is-structural-and-not-when-it-is-a-multiplier-change",
-   "title": "Record the comparability rule beside KNOWN_BAD, where the next candidate is chosen",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/known-bad-rule",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_sound_calibrate.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "sound_calibrate.py states the rule with both sides of the evidence: W_A_R 0.5.399->0.5.400 is a PATTERN-COUNT fix (209->208) and comparable (aud 0.6370->0.8053, loud 0.7915->0.8790); Las_Vegas and Samantha_Fox's v0.5.401 is a MULTIPLIER change and incomparable (loud_ratio 0.074x, 0.063x); W_A_R_Preview on the same commit pair renders byte-identically and is a third outcome. pytest tests/test_sound_calibrate.py -q passes.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "one file plus its test, no corpus run",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (33 conflicting tasks in all)",
-   "effort": "low",
-   "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
   {
    "id": "kings-of-the-beach-intro-needs-a-writer-for-a-static-global-pitch-sequence-table",
@@ -1544,7 +1370,7 @@
    "verify": "Kings_of_the_Beach_intro's 475 reversals are emitted, with a measured A/B and a corpus byte-hash showing the change reaches that file and no other. ESTABLISHED at ef8b962 and not to be re-derived: det.pitch_seq is None here CORRECTLY -- the sequence is a static global table with no per-instrument index or pair copy, so the (index, pairs, base) triple has nothing to point at and NO detection widening can reach it. This is a writer, not a detector. || GRADED at d3775b4: ef8b962 is 16 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "wants its own measured A/B and a listening check may follow",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (83 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (80 conflicting tasks in all)",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed"
   },
@@ -1570,7 +1396,7 @@
    "verify": "out[0x10] = 'pitchseq' is gated on detection the way every other cause already is, and International_Karate and Formula_1_Simulator stop being attributed to it. MEASURED at ef8b962: both files contain no `AND #$10` at all -- their $55 is bit $04's arpeggio DEPTH nibble, a different mechanism. NOTE the correction that came with it: IK_plus IS detected (PitchSeq(index=2667, pairs=2422, base=2403, steps=3)), so the pair is International_Karate + F1, never 'IK x2'. || GRADED at d3775b4: ef8b962 is 16 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "fidelity.py is shared, but the change is bounded and already diagnosed",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (55 conflicting tasks in all)",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (53 conflicting tasks in all)",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
@@ -1599,7 +1425,7 @@
    "verify": "tracks.py:1390-1402 carries a grading note saying its figures were measured at v0.5.461 from a DIRTY artefact and re-confirmed identical to the digit at v0.5.469 against the clean regeneration (ef8b962, no -dirty suffix, 180 s, 89 rows): six shortened-window rows Geoff_Capes +0.16, Action_Biker +0.14, Las_Vegas +0.10, Samantha_Fox +0.10, Kings_of_the_Beach_ingame +0.08, Sigma_Seven +0.04, and corpus-worst Knucklebusters -4.16 / Sanxion -2.98. pytest tests/test_tracks.py -q passes. || GRADED at d3775b4: ef8b962 is 16 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. ANCHORS ABOVE ARE CITATIONS, NOT DONE-CONDITIONS: grep for the quoted text rather than trusting any of these line numbers -- the CLAUDE.md/docs/LESSONS.md split at 665939c moved every anchored figure in this repo once already, and concurrent tasks insert lines above them.",
    "why_model": "a grading note beside figures already re-measured and found unchanged",
    "why_mode": "a grading note beside figures already re-measured and found unchanged",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (86 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (83 conflicting tasks in all)",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
@@ -1627,7 +1453,7 @@
    "verify": "The report distinguishes depth's two refusals -- no record carries the mechanism, versus a population exists but no instrument key is shared -- the way CLAUDE.md's rule that `a - in the report is a finding, not a gap` requires. pytest tests/test_fidelity.py -q passes and the regenerated header and registry still agree.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "fidelity.py is shared and the column registry has a test that pins it",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (73 conflicting tasks in all)",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (71 conflicting tasks in all)",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
@@ -1656,7 +1482,7 @@
    "verify": "The three files are named and the cause is attributed per file: a genuinely absent shared ADSR key (the Powerplay 'two copies of the player' shape) or a population filter that is too narrow. Read-only -- this is a diagnosis, and any fix is a separate task.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis is the deliverable, not a patch",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (57 conflicting tasks in all)",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (57 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1719,61 +1545,6 @@
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
   {
-   "id": "sound-calibrate-convert-at-should-return-the-sng-it-writes-not-only-the-packed-sid",
-   "title": "convert_at hides the .sng it writes, forcing callers through a side effect",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/convert-at-returns-sng",
-    "rw:python/approvals.py",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_approvals.py",
-    "rw:python/tests/test_sound_calibrate.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "convert_at returns the .sng path beside the packed .sid, approvals.py's recover_approved_sng stops reconstructing it from the workdir, and pytest tests/test_sound_calibrate.py tests/test_approvals.py -q passes. GRANT WIDENED MID-CYCLE: this verify names TWO files -- convert_at in sound_calibrate.py AND recover_approved_sng in approvals.py -- while the task held approvals.py as r: only, so half of it was unreachable. python/approvals.py and its test are now rw:, which is one edit across two files rather than two tasks.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "two files and their tests, no corpus run",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (34 conflicting tasks in all)",
-   "effort": "low",
-   "why_effort": "mechanical and cheap to redo if it comes out wrong"
-  },
-  {
-   "id": "approvals-py-had-never-been-run-end-to-end-and-its-tests-mock-the-packing-path",
-   "title": "approvals.py crashed on its first real tune, past 15 green tests",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:CLAUDE.md",
-    "r:docs/LESSONS.md",
-    "r:python/fidelity.py",
-    "rw:host:C:/t/approvals-never-run",
-    "rw:python/approvals.py",
-    "rw:python/tests/test_approvals.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "A test exercises the REAL packing path so this class of defect cannot ship green again. MEASURED at df80762: `assess`'s local `packed_of` passes `workdir / tag` to `fidelity.pack_sid`, which writes `workdir / 'a.sng'` and does NOT create the directory (fidelity.py:752) -- so the first real assessment died with `FileNotFoundError: ...\\cur\\a.sng`. The one-line `mkdir(parents=True, exist_ok=True)` fix is ALREADY APPLIED and uncommitted; what is missing is the coverage. All 15 existing tests pass either side, because they inject a fake `convert_at` and never reach `packed_of`. `pytest tests/test_approvals.py -q` plus one test that would have caught it. || GRADED at d3775b4: df80762 is 14 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. ANCHORS ABOVE ARE CITATIONS, NOT DONE-CONDITIONS: grep for the quoted text rather than trusting any of these line numbers -- the CLAUDE.md/docs/LESSONS.md split at 665939c moved every anchored figure in this repo once already, and concurrent tasks insert lines above them.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "the fix is trivial; the judgement is what to pin and that wants the surrounding context",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (60 conflicting tasks in all)",
-   "effort": "medium",
-   "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
-  },
-  {
    "id": "the-inherited-approval-state-is-unreachable-until-the-sound-calibration-passes",
    "title": "The third approval state cannot occur on this corpus, and the chain is three deep",
    "source": "runs.jsonl",
@@ -1800,58 +1571,9 @@
    "verify": "Either a tune reads `inherited` on a real render, or the chain is recorded where the next reader meets it. MEASURED at df80762 by running `approvals.py --recover` over the four human approvals: Action_Biker and 5_Title_Tunes are **exact** (current sha == approved sha, byte-identical since 0.5.389/0.5.390); ACE_II and Devils_Galop have MOVED (7bc6dfad62->276720acf3, 035f34458f->fa4874b06a) and both read **uncalibrated**, not inherited or stale. Cause: `approvals.load_calibration` returns None unless `build/sound_calibration.json` has `pass: true` (approvals.py:70), and it is false. So: inherited needs a calibration; the calibration fails `all(seen)`; it fails because two KNOWN_BAD pairs are structurally incomparable. The third state is correctly implemented and currently unreachable. || GRADED at d3775b4: df80762 is 14 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. ANCHORS ABOVE ARE CITATIONS, NOT DONE-CONDITIONS: grep for the quoted text rather than trusting any of these line numbers -- the CLAUDE.md/docs/LESSONS.md split at 665939c moved every anchored figure in this repo once already, and concurrent tasks insert lines above them. RECORDING HOME, granted rw:python/approvals.py: 'where the next reader meets it' is approvals.py itself -- the reader who hits the unreachable state is reading that module, not a doc. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the finding is the deliverable and it feeds a decision already with the user",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (55 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (52 conflicting tasks in all)",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed"
-  },
-  {
-   "id": "ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist",
-   "title": "A verify phrased as a future instruction reads as vacuous or as never-met",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:python/tests/test_approvals.py",
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/verify-tense"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "No task's `verify` is phrased as an instruction to create something that already exists. ab-5's read *'tests/test_approvals.py -- which this task CREATES -- pins it'* while the file had shipped at 0b2493d, so the check was satisfiable by two files existing and said nothing about the behaviour. Same family as `whattask-regeneration-carries-stale-verify-text-forward`; settle them together. || GRADED at d3775b4: 0b2493d is 20 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "the fix is in the generator's output, i.e. this file",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (34 conflicting tasks in all)",
-   "effort": "low",
-   "why_effort": "mechanical and cheap to redo if it comes out wrong"
-  },
-  {
-   "id": "ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge",
-   "title": "A real prerequisite recorded only in prose, where the selector cannot see it",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/prose-dependency"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "A prerequisite a runner must honour is a `depends_on` edge, not a sentence inside `verify`. MEASURED: /runtask's selection rule picks the task with the most inbound edges, which was ab-5; its blocker (step 5's wrong prescription) existed only as prose, so a runner obeying the rule literally would have started it and thrown the work away. It was avoided by reading, not by the gate. Audit the plan for other prose-only prerequisites.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "changes how every future plan is generated",
-   "why_lane": "shares .claude/tasks/whattask.json with 4 other task(s), at least one writing (4 conflicting tasks in all)",
-   "effort": "xhigh",
-   "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
   {
    "id": "the-pulse-phase-pack-refusal-is-not-any-documented-bound-and-setpulseptr-operands-are-the-next-check",
@@ -1879,7 +1601,7 @@
    "verify": "The cause of gt2reloc's refusal is named. ESTABLISHED at fd286a5 and NOT to be redone: with the gate lifted in memory the lifted arm is 29009 bytes and refused, and five candidates are excluded -- patterns 126/208, `table_errors()` NONE, WTBL 130 / PTBL 145 / FTBL 2 / STBL 4 against 255, longest orderlist 229/255, size 29009 where W_A_R packs at 58481. Next cheapest check: dump the PACKED pulse table and compare every emitted `CMD_SETPULSEPTR` operand against its length. NOTE the gate itself lives in `python/h2g/convert.py`, which is granted `r:` here deliberately -- lifting it is a separate decision. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding pulse-phase context and a in-memory gate lift",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (83 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (80 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1909,7 +1631,7 @@
    "verify": "Either the $FE nn orderlist tempo is shown to survive the pulse-phase expansion intact (and so excluded as the refusal cause), or it is named as the cause with the packed bytes that say so. CLAUDE.md records that no other corpus file carries the two-byte $FE; tracks.py is where that reading lives. Five other candidates are already excluded at a4bf43d -- do not re-measure them. || GRADED at d3775b4: a4bf43d is 11 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. RECORDING HOME, granted rw:docs/LESSONS.md: naming a cause with the packed bytes behind it is evidence, and this repo keeps evidence with filenames in it in docs/LESSONS.md. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement, and it reads against a gate lifted in memory",
-   "why_lane": "shares python/h2g/goatwriter.py with 24 other task(s), at least one writing (53 conflicting tasks in all)",
+   "why_lane": "shares python/h2g/goatwriter.py with 24 other task(s), at least one writing (52 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -1940,7 +1662,7 @@
    "verify": "build/fidelity.json rows carry aud_voices, and fidelity_queue.voice_deficits produces at least one entry from a real artefact rather than only from its fixture. tests/test_fidelity.py must fail if the registry and the printed header disagree, which is the existing rule for adding a column.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "regenerates a corpus artefact and so cannot be delegated",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (70 conflicting tasks in all)",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (69 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -1973,31 +1695,6 @@
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
   {
-   "id": "the-114-prose-opened-entries-should-be-deleted-at-source-no-consumer-can-act-on-a-sentence",
-   "title": "The prose `opened` entries mostly carry an id -- the delete-at-source prescription is retracted",
-   "source": ".claude/tasks/runs.jsonl#the-opened-field-has-become-an-unbounded-firehose",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:.claude/tasks/runs.jsonl",
-    "rw:.claude/tasks/whattask.json",
-    "rw:host:C:/t/prose-opened"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "PREMISE REFUTED AT v0.5.476 -- DO NOT DELETE THESE. Re-measured over the whole run log at 665939c: of the 136 `opened` entries that are not bare slugs, 123 carry a WELL-FORMED SLUG before the first colon and only 13 are genuinely a sentence with no id. The title's figure of 114, and the claim that no consumer can act on them, are both wrong: an entry of the form `some-task-id: why it matters and what was measured` is an id WITH its rationale attached, which is more useful than a bare slug, and a consumer acts on it by splitting at the first colon. WHAT IS ACTUALLY OWED, and it is much smaller: teach whatever reads `opened` to split at the first colon and keep both halves, and separately decide what to do with the 13 true sentences -- which are mostly listening checks and regeneration reminders that should have been tasks. Deleting at source would have destroyed 123 recoverable ids to remove 13, so this task's original prescription is retracted here rather than carried. Read the re-measurement in the run record for the-opened-field-has-become-an-unbounded-firehose-and-needs-triage; do not re-derive it.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "writes the plan file",
-   "why_lane": "shares .claude/tasks/whattask.json with 4 other task(s), at least one writing (4 conflicting tasks in all)",
-   "effort": "low",
-   "why_effort": "mechanical and cheap to redo if it comes out wrong"
-  },
-  {
    "id": "sound-calibration-md-is-five-versions-stale-dirty-stamped-and-still-at-60-second-renders",
    "title": "SOUND-CALIBRATION.md is five versions stale, dirty-stamped and still at 60 s",
    "source": ".claude/tasks/runs.jsonl#the-two-incomparable-known-bad-pairs",
@@ -2028,7 +1725,7 @@
    "verify": "docs/SOUND-CALIBRATION.md is regenerated from a CLEAN tree and its stamp says so. Measured at ffbe1db it reads `h2g 0.5.469, ef8b962-dirty, 60 s renders` -- five versions behind, generated from a dirty tree (which CLAUDE.md forbids taking a fidelity number from), and at 60 s where every other artefact moved to 180. Decide the window DELIBERATELY rather than inheriting 60, and say in the doc which was used and why. || GRADED at d3775b4: ef8b962 is 16 commit(s) behind d3775b4; ffbe1db is 7 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "writes two artefacts and runs renders",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (70 conflicting tasks in all)",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
@@ -2053,7 +1750,7 @@
    "verify": "Each stash-shaped unreachable commit standing at the time the decision is taken is either recovered into a branch, or recorded as accepted loss with the reason -- and the count is re-measured at that moment rather than taken from this plan, because it has grown twice already. RECORDING HOME, granted rw:docs/LESSONS.md: the recording arm is reachable even though the decision is the user's, so the task can discharge its second arm without a second grant. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "an unrecoverable-either-way call about work the user may still want",
-   "why_lane": "shares docs/LESSONS.md with 13 other task(s), at least one writing (13 conflicting tasks in all)",
+   "why_lane": "shares docs/LESSONS.md with 12 other task(s), at least one writing (12 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -2092,7 +1789,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a choice between two shipped-product routes, the cheaper of which silently re-converts 17 songs",
    "why_mode": "re-runs the preset search and rewrites two generated artefacts",
-   "why_lane": "shares presets.json with 83 other task(s), at least one writing (94 conflicting tasks in all)"
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (92 conflicting tasks in all)"
   },
   {
    "id": "the-fetch-deficit-eats-the-last-frame-of-every-note-at-s1-and-nothing-has-tried-to-close-it",
@@ -2122,7 +1819,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the previous pass produced a confidently wrong frame pairing that its own successor had to retract",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)"
   },
   {
    "id": "five-title-tunes-gate-cannot-reach-100",
@@ -2151,7 +1848,7 @@
    "why_model": "writing down a limit already derived and quoted in a run record",
    "why_effort": "the derivation exists; the work is placing it in the archive with a grade",
    "why_mode": "a single doc edit with no measurement of its own",
-   "why_lane": "shares python/h2g/goatwriter.py with 24 other task(s), at least one writing (51 conflicting tasks in all)"
+   "why_lane": "shares python/h2g/goatwriter.py with 24 other task(s), at least one writing (50 conflicting tasks in all)"
   },
   {
    "id": "kings-of-the-beach-ingame-emits-3-pulse-changes-against-the-originals-1026-though-detection-reads-the-sweep",
@@ -2185,7 +1882,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "an emitter gap on a mechanism detection already reads is exactly where a plausible fix ships the wrong bytes",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (82 conflicting tasks in all)"
   },
   {
    "id": "regenerate-the-fidelity-artefacts-whenever-the-converter-emission-changes",
@@ -2217,7 +1914,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the judgement is only whether the tree is clean and the window right; the work itself is a long run",
    "why_mode": "rewrites two generated artefacts over the whole corpus",
-   "why_lane": "shares build/fidelity.json with 72 other task(s), at least one writing (87 conflicting tasks in all)"
+   "why_lane": "shares build/fidelity.json with 71 other task(s), at least one writing (87 conflicting tasks in all)"
   },
   {
    "id": "restage-the-listening-set-at-a-uniform-window",
@@ -2246,7 +1943,7 @@
    "verify": "Every tune in build/listen is the conversion build/fidelity.json measured -- for each, sha1 of <song>.h2g.sng truncated to 12 hex equals that file's output_sha -- AND every rendered pair is the same window, so a listener comparing two songs is comparing like with like. CHECK THE WAV HEADER, NOT THE FILE SIZE: these renders are MONO 16-bit 44.1 kHz, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and it chose the wrong window -- the set was read as 60/90 s when it was really 120/180 s, and 55 files were restaged at 90 s, shorter than everything else rather than matching it. Verify by sha and by wave.open(), never by exit code and never by st_size.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the judgement is only which window; the work is a long render",
-   "why_lane": "shares build/fidelity.json with 72 other task(s), at least one writing (86 conflicting tasks in all)",
+   "why_lane": "shares build/fidelity.json with 71 other task(s), at least one writing (86 conflicting tasks in all)",
    "why_mode": "renders both sides of dozens of tunes into build/listen, a documented hazard, and outlives a delegated agent"
   },
   {
@@ -2279,7 +1976,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the same frame is read by three columns, so a change that satisfies one and breaks another is the easy wrong answer",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (82 conflicting tasks in all)"
   },
   {
    "id": "emit-pulse-sweep-for-set-only-pulse-records",
@@ -2314,7 +2011,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "two files share a symptom and not a population, so the obvious generalisation is the wrong fix",
    "why_mode": "an emitter change judged by re-rendering the corpus",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (82 conflicting tasks in all)"
   },
   {
    "id": "emit-the-note-end-envelope-kill",
@@ -2348,7 +2045,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a hard-restart interaction where a confident wrong emission moves every file's adsr",
    "why_mode": "an emitter change judged over the corpus",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (86 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (84 conflicting tasks in all)"
   },
   {
    "id": "note-frequency-lands-one-frame-after-gate-on",
@@ -2380,33 +2077,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "two readings fit the same evidence and have opposite repairs, which is the definition of a max-effort question",
    "why_mode": "the diagnosis matters far more than the measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)"
-  },
-  {
-   "id": "preset-opts-answers-an-unknown-song-name-with-the-always-block-and-no-signal",
-   "title": "_preset_opts returns the always block for an unknown song key and says nothing",
-   "source": "runs.jsonl#three-files-abort-under-preset-opts-that-claude-md-records-as-converting",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "rw:host:C:/t/preset-opts-unknown-key",
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "_preset_opts refuses, or at minimum warns, when the name is absent from `songs` while `songs` is non-empty -- there is no legitimate caller wanting the always-block-only path for a corpus file. SABOTAGE-VERIFY: the suite is green AND a call with a bare stem (no .sid) raises or warns where it previously returned silently, shown by printing the changed region from disk to prove the change landed. WHY THIS MATTERS MORE THAN IT LOOKS: presets.json keys songs WITH the extension, and every option that rescues a hard file is per-song, so the failure mode is that the HARDEST files silently get the EASIEST options and the result looks like a measurement. It already produced a wrong corpus figure (86 of 95 converting) that reached a run record and then a plan task.",
-   "why_model": "one predicate in one function, with the wanted behaviour already written down",
-   "why_effort": "the change is small but it must not break the legitimate absent-key callers, if any exist",
-   "why_mode": "bounded, single-file, and the conclusion is mechanical",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (68 conflicting tasks in all)"
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (82 conflicting tasks in all)"
   },
   {
    "id": "fidelity-add-a-depth-census",
@@ -2437,37 +2108,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a new Dimension is shared-code work whose blindness has to be stated in the column itself",
    "why_mode": "changes the harness every other measurement runs through",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (73 conflicting tasks in all)"
-  },
-  {
-   "id": "restage-the-23-remaining-tunes-so-the-listening-set-shares-one-window",
-   "title": "Restage the 23 tunes still at the shorter window",
-   "source": "runs.jsonl#restage-the-listening-set-at-a-uniform-window",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/h2g",
-    "r:python/listen.py",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/listen",
-    "rw:host:C:/t/restage-remaining-23"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "Renders both sides of 23 tunes into build/listen -- long and exclusive, and build/listen is a documented hazard.",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Every tune in build/listen renders at the same window, checked with wave.open() and NOT with st_size -- these are MONO 16-bit 44.1 kHz files, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and chose the wrong window. The 23 still short are 5_Title_Tunes, BMX_Kidz, Chicken_Song, Commodore_64_Music_Examples, Crazy_Comets, Formula_1_Simulator, Game_Killer, Geoff_Capes_Strongman_Challenge, Gremlins, Hollywood_or_Bust, Hunter_Patrol, Kentilla, Last_V8, Last_V8_C128_version, Master_of_Magic, Monty_on_the_Run, Mozart, One_Man_and_his_Droid, Powerplay_Hockey_USA_vs_USSR, Proteus, Tarzan, Thing_on_a_Spring and W_A_R_Preview -- they were never stale, only short. Re-confirm the sha match for all of them afterwards as well, since a restage rewrites the .sng too.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "the window is already decided; the work is a render and a three-way check",
-   "why_mode": "renders into a documented hazard directory",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (60 conflicting tasks in all)"
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (73 conflicting tasks in all)"
   },
   {
    "id": "wave-column-charges-a-latched-waveform-after-the-tune-ends",
@@ -2498,97 +2139,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a scored column's definition, where a change that flatters one file corpus-wide is the expensive error",
    "why_mode": "changes the harness every measurement runs through",
-   "why_lane": "shares python/fidelity.py with 38 other task(s), at least one writing (73 conflicting tasks in all)"
-  },
-  {
-   "id": "cut-release-costs-adsr-on-release-heavy-tunes",
-   "title": "cut_release is in the always block and costs adsr on release-heavy tunes -- census its population",
-   "source": "runs.jsonl:measure-geoff-capes-strongman-challenge#opened",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/cut-release-population"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The population `cut_release` helps and the population it costs are each NAMED as a set of files, not counted, with the measured adsr on both arms per file. IT IS AN ABLATION AND NOT A CORRELATION: convert each file with the shipped preset opts and then with ONLY cut_release flipped, pack and trace both identically, and report the adsr pair -- an explanation that fits the shape of the deficit is not thereby its cause. MEASURED ORIGIN, historical at 665939c: Geoff Capes reads adsr 0.1211 shipped against 0.8147 with the option off, and 1752 of its 2220 disagreeing frames are exactly the original's release nibble $F against our $0. The corpus median adsr is 0.8044 over the 89 measured rows, so Geoff Capes is NOT the typical case and the question is which files resemble it. Do NOT adopt or remove the option: `cut_release` sits in presets.json's `always` block, so a change there reaches the whole corpus, and this repo's rule is that a register zeroed at a rest is not a register zeroed at a note end -- two mechanisms, two disjoint populations, and the option fixing one destroys the other. Report the split and open a follow-up for the decision.",
-   "why_model": "a population split whose failure mode is a plausible correlation mistaken for a mechanism",
-   "why_effort": "high",
-   "why_mode": "one file at a time against an existing harness, deliverable is a table",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
-  },
-  {
-   "id": "fetch-minus-one-shows-up-in-three-columns",
-   "title": "hold, nrun and noise are three readings of one next-note fetch -1",
-   "source": "runs.jsonl:measure-geoff-capes-strongman-challenge#opened",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/fetch-minus-one"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Whether hold, nrun and noise move together is settled by MEASUREMENT on at least three files rather than by the single-file coincidence that opened this. For each file report the hold census outcome per instrument with its delta and slot_delta, the modal noise-run length on both sides per instrument key, and the noise frame counts -- and state whether one -1 accounts for all three columns or whether they part company on any file. HISTORICAL at 665939c on Geoff Capes: 4 of 4 instruments read `fetch` with delta -1 and slot_delta 0; ADSR $0A09's modal run goes 12 to 11 while $050A matches the original exactly; 24 noise frames are lost across about 21 runs. VERIFY A SECOND FILE THAT USES THE MECHANISM DIFFERENTLY, preferring one whose options are already enabled -- a shape derived on one file can encode that file's structure rather than the mechanism's. Report only: do not change an emitter, and do not call the -1 a bound, which is a claim about the packed player and is decided in the main session.",
-   "why_model": "deciding whether three columns share one cause is exactly where a confident wrong answer is cheap",
-   "why_effort": "high",
-   "why_mode": "read-only measurement against an existing harness",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
-  },
-  {
-   "id": "vibrato-rate-and-depth-are-one-mechanism-not-two",
-   "title": "vib and depth are coupled because Goattracker integrates the vibrato speed",
-   "source": "runs.jsonl:measure-geoff-capes-strongman-challenge#opened",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:host:C:/t/vib-depth-coupling"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The coupling is confirmed or refuted on a SECOND file whose vibrato options are already enabled, with orig_reversals, our_reversals, orig_depth, our_depth and depth_instruments reported for each file and the ratio product stated. HISTORICAL at 665939c on Geoff Capes: vib 0.7425x with depth 1.3524x, product 1.0042, and the vib census names zero `absent` and zero `slow` instruments. READ THE CAVEAT THE ORIGINAL RECORD RAISED RATHER THAN DROPPING IT: depth_instruments is 1 there, so 1.3524 is a one-sample median and the product is a consistency check, not an identity -- a second file is what turns it into evidence. A correlation over instruments is not a mechanism; if the coupling holds, that is the moment to read the routine, not to generalise. Compare the ratios in LOG space, since 2.0x and 0.5x are the same size of wrong. Do not tune either column.",
-   "why_model": "a coupling claim that a single file cannot establish and that is easy to over-read",
-   "why_effort": "high",
-   "why_mode": "measurement on named files against the existing censuses",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (73 conflicting tasks in all)"
   },
   {
    "id": "pulse-table-exhaustion-eleven-instruments-set-no-width",
@@ -2620,23 +2171,27 @@
    "why_model": "attribution over a mixed population where the wrong reader silently returns a plausible zero",
    "why_effort": "high",
    "why_mode": "read-only walk of converted output",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (67 conflicting tasks in all)"
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
   },
   {
-   "id": "plan-audit-needs-a-check-g-for-a-done-condition-only-a-human-can-discharge",
-   "title": "plan-audit has checks A-F and none for a verify only a person can satisfy",
-   "source": "runs.jsonl:runhuman-flips-mode-but-leaves-the-requires-user-verify-boilerplate-in-place#opened",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
+   "id": "the-conversion-emits-no-rest-for-the-players-release",
+   "title": "Every gate-off stretch we emit is the hard restart, a constant, where the player rests 8 to 1069 frames",
+   "source": "runs.jsonl#opened",
+   "model": "session",
+   "effort": "xhigh",
+   "mode": "main",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/decisions.jsonl",
-    "r:.claude/tasks/whattask.json",
-    "r:build/listen",
-    "rw:.claude/skills/plan-audit/plan_audit.py",
-    "rw:.claude/skills/plan-audit/test_plan_audit.py",
-    "rw:host:C:/t/plan-audit-check-g"
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/goatwriter.py",
+    "r:python/h2g/patterns.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/gate-rest-encoding"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2644,16 +2199,236 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "plan_audit.py gains a check for a task that is NOT mode requires-user whose verify's done-condition needs a person, and it CLASSIFIES rather than counts. The classification is the whole check: a plain vocabulary match over the plan at 665939c returns 16 hits against 0 real defects -- 12 are one ILV scope sentence pasted into 12 tasks (`The user has set these to LOW PRIORITY`), 3 are the PATH build/listen where `listen` is a directory name and not a verb, and 1 is the meta-task quoting the boilerplate it exists to remove. A check reporting those as findings is worse than no check. SABOTAGE-VERIFY, because this adds a guard: the suite gains exactly the cases below and 0 fail, and each of these named mutations must make it fail, with the mutated region printed from disk to prove the mutation landed -- (1) drop the ILV scope-sentence exemption, which must resurface those 12 as findings; (2) drop the path-versus-verb exemption, which must resurface the 3 build/listen tasks; (3) feed a task carrying a genuine unsatisfiable done-condition and remove the detector's trigger, which must stop it being reported. Name the test file you add. GRANT ADDED MID-CYCLE: the first attempt returned partial because its touches named plan_audit.py and no test file, so the sabotage-verified suite had nowhere in the repo to live. .claude/skills/plan-audit/test_plan_audit.py is now granted -- beside the module, matching this script's own check-B convention that a source file's test sits with it.",
-   "why_model": "a bounded single-file guard against a plan whose shape is already measured",
-   "why_effort": "medium",
-   "why_mode": "one file plus its test, no corpus access needed",
-   "why_lane": "shares build/listen with 15 other task(s), at least one writing (19 conflicting tasks in all)"
+   "verify": "Either the player's rest is expressed as something other than gatetimer length -- a keyoff or rest row -- with a corpus byte-hash naming the exact file set it moves, or the reason it cannot be is recorded in python/h2g/goatwriter.py beside the emitter, with the measured figures. MEASURED on Zoolook (historical at c2cb76a, re-measure rather than re-quote): 9816 of 10566 ringing frames sit in the census's `short` bucket over 998 runs; our released stretch takes exactly two values, 2 and 3 frames, mean 2.3317, while the original rests 8 frames on 727 of those runs and up to 1069. All 29 instruments carry gatetimer 7, and goatwriter._hard_restart_ticks(3, 8, full=True, frames=3) returns 7 calls = 2.3333 frames. THE ABLATION DIRECTION IS THE EVIDENCE AND MUST BE PRESERVED IN ANY WRITE-UP: turning max_hard_restart OFF makes gate WORSE (0.3995 to 0.2410), so the gatetimer is not the defect -- it is the only rest the conversion has. Do NOT call the -1 or the gatetimer a bound. This is the only file of eight whose gate is below the corpus median, so check whether the mechanism reaches others before designing for it.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
+   "why_mode": "a design decision about what the orderlist can express, not a measurement",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
   },
   {
-   "id": "the-artefact-staleness-test-should-be-a-committed-script-not-a-remembered-git-incantation",
-   "title": "Whether build/fidelity.json is stale is one command, and it should be committed",
-   "source": "runs.jsonl:a-done-run-record-describes-one-commit-and-a-later-commit-can-expire-it#opened",
+   "id": "the-vibrato-emitters-step-size-is-wrong-on-three-files-and-two-terms-are-named",
+   "title": "Vibrato swings too far or too short on three files; two arithmetic terms explain two thirds of one",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/goatwriter.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/vibrato-step-size"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The vibrato step encoding is located in the emitter and the per-file depth ratios are predicted from it rather than described. HISTORICAL FIGURES, re-measure them: Zoolook depth 0.5607 with two named terms in _classic_vibrato_entry predicting 0.656 (a _rate_shift rounding log2(3) to 2 where 1.585 is wanted, times a tick-0 compensation of 7/8) against 0.561 measured, leaving a 0.73-0.90 residual; Saboteur II swings 0.52x and travels 0.71x at the RIGHT rate (vib 1.06x, census 0 absent and 0 slow); Food Feud runs 1.23x the rate at 0.56x the depth. DO NOT ASSUME A MULTIPLIER RELATIONSHIP -- Saboteur II packs at -S3 and 0.52 fits 1/2 rather than 1/3, and that coincidence has already been declined once. AND DO NOT REINTRODUCE THE COMPENSATING-PAIR READING: vib x depth is 1.0042, 0.689 and 0.9902-becoming-1.2981-under-ablation on three files, so the product landing near 1.0 is a coincidence of two independently-wrong columns and is settled. Report only; do not tune either column.",
+   "why_model": "a mechanism spanning an emitter and three files where a plausible arithmetic story is cheap to invent",
+   "why_effort": "the failure mode is a fitted constant that explains one file and no others",
+   "why_mode": "bounded to one emitter function and named files, and the conclusion is a located encoding",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
+  },
+  {
+   "id": "the-filter-emitter-holds-the-circuit-in-where-the-player-toggles-it",
+   "title": "Our filter stays in circuit roughly twice as long as the player routes it, on two files",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/goatwriter.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/filter-routing-duty"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The routing-duty difference is attributed to a named point in the emitter with the frame counts on both sides, or declared unattributed with what was ruled out. HISTORICAL, re-measure: Saboteur II holds the filter in circuit 11520 of 12550 frames where the player routes voice 3 in on 6400 and toggles it out between filtered notes, sweeping a band 1.66x too wide (cutoff range 64512 against 38912, travel 48.1M against 32.0M over 8632 writes against 6000); ablating `filters` zeroes filt and cut together and moves ~64% of its loud deficit (loud_ratio 0.7917 to 0.9249). Food Feud shows the same shape front-loaded: filt 1.36x and cut 1.83x at -t 180 falling to 1.24x and 1.60x at -t 250. Read `greloc.c` beside `player.s` before concluding anything about WHEN a filter table entry lands. Report only; do not change the emitter.",
+   "why_model": "two files, one emitter, and a column that is easy to explain wrongly from the aggregate",
+   "why_effort": "a real diagnosis against a documented overshoot shape",
+   "why_mode": "read-only measurement plus a code read, conclusion mechanical",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
+  },
+  {
+   "id": "no-column-scores-a-tie-and-two-files-disagree-about-how-many-there-are",
+   "title": "Ties are unscored, and the staged note and the measure task disagree at two windows",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:build/listen/LISTENING.md",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/tie-deficit"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The tie counts for Saboteur II and Food Feud are measured at ONE window on BOTH sides and the disagreement is settled. MEASURED AND UNRESOLVED: Saboteur II's staged note reads orig 8046 / ours 1631 at -t 180 while the measure task read 10667 / 9682 at -t 260 -- the original side is explained by the window (1.326 against a 1.394 window ratio) and OUR side is not (5.937). The multiplier is the first lead, since it belongs to our side only and that file packs at -S3. Food Feud reads orig 6312 / ours 2233 at -t 180 with voice 2 at 0.026x. THEN state whether a tie dimension belongs in the Dimension registry: `slides` currently reads 1.84x on a file whose real defect is that 65% of the original's non-retriggered pitch changes are ties where only 26% of ours are, so the column reports a redistribution as an excess. Do not add the Dimension in this task; decide and record.",
+   "why_model": "a standing disagreement between two readings, which this repo treats as a lead rather than a tie to break by preference",
+   "why_effort": "settling two windows against each other is where a confident wrong answer is cheapest",
+   "why_mode": "measurement against the existing harness, with a recorded decision as the deliverable",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (69 conflicting tasks in all)"
+  },
+  {
+   "id": "our-notes-open-on-a-fraction-of-the-duty-widths-the-player-opens-on",
+   "title": "pphase is low on three files and the pulse sweep is ruled out on two of them",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/goatwriter.py",
+    "r:python/songview.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/pulse-onset-width"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "What sets the duty width a note OPENS on is located, or declared unattributed with the pulse sweep ruled out by ablation on each file. HISTORICAL, re-measure: Confuzion opens on 7 distinct widths against the original's 13, entirely voice 0 (9 to 3) while voices 1 and 2 are exact, and VISITS 52 widths against the original's 28; Saboteur II's voice 0 opens on 4 against 8 with voices 1 and 2 exact at 2/2; Food Feud opens on 11 against 17. On both Confuzion and Saboteur II ablating `pulse` leaves pphase unchanged while pul collapses, so it is the per-instrument initial duty and not the sweep table. The `pphase` Dimension names the mechanism already -- the player's accumulator free-runs and is never reseeded at a note while Goattracker reloads the pointer from the instrument -- so the open question is whether the emitter can carry a phase at all, not what the difference is. songview.parse_sng's `tables` keys by table NAME; iterate tables['PTBL'].",
+   "why_model": "three files and an emitter question where the aggregate has already been explained wrongly once",
+   "why_effort": "a located encoding is the deliverable and a plausible guess is cheap",
+   "why_mode": "read-only against converted output and the existing censuses",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
+  },
+  {
+   "id": "the-version-0-track-dialect-emits-no-orderlist-transpose-and-a-region-plays-an-octave-low",
+   "title": "Food Feud loses one contiguous voice-0 region to a missing transpose",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/detect.py",
+    "r:python/h2g/tracks.py",
+    "r:python/songview.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/version0-transpose"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "WHICH PLAYER BYTE carries the octave over Food Feud's voice-0 region is identified, or the search is recorded with what was excluded. MEASURED at c2cb76a and located, not guessed: positionally pairing the two 748-attack sequences gives semitone deltas of exactly {-12: 72, 0: 676} -- 72 attacks one octave low over attack indices 175..244 (frames 3075..4334) and nothing else wrong on the voice. It is region-wide rather than a top-note clamp (the clamp is at 0x5C and never fires; the emitted orderlist carries transpose 0 at all 74 positions while voice 1 does reach octave 6), and detect() reports read_track_version=0 with track_fd_transpose and transpose_operand both False, while tracks.py emits a Goattracker orderlist transpose ONLY for the version-2 and $FD dialects. ALSO CHECK whether the same shape reaches the other read_track_version=0 corpus files, since a fix scoped to one file is scoped wrongly. Do not change the emitter in this task.",
+   "why_model": "a player-encoding hunt in an unfamiliar dialect where the effect is located and the cause is not",
+   "why_effort": "reading a player's bytes is exactly where a plausible-but-wrong answer is cheap to produce",
+   "why_mode": "bounded to one file's dialect with the effect already localised",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
+  },
+  {
+   "id": "nrun-is-blind-to-a-one-frame-loss-whenever-the-run-is-one-frame-long",
+   "title": "nrun reads 100% on a file losing 199 noise frames, and the discriminator is exact",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/h2g",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/nrun-blindness",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The `nrun` Dimension entry declares what it cannot see, and the discriminator is stated with its population. MEASURED over 12 nrun instruments on four files: `hold`'s -1 reaches nrun on exactly 2, and nrun sees it ONLY when the original's modal noise run equals its modal held note length -- 2 of 2 positives miss by exactly -1, and of 10 negatives 8 are structurally blind (runs of 1-2 frames cannot lose one) and 2 miss by -5 and +14. Zoolook reads nrun 1.0000 while the same instruments lose 199 noise frames the `noise` column does see. RE-MEASURE the discriminator over the corpus files that carry an nrun miss before stating it as a rule: it currently rests on 2 positive cases, and build/fidelity.json does not carry per-instrument noise runs, so this needs the probe rather than the artefact. SABOTAGE-VERIFY, because this changes a Dimension the tests pin: the suite gains exactly the cases below and 0 fail, and each named mutation makes it fail with the mutated region printed from disk.",
+   "why_model": "a bounded documentation-and-test change against a measurement already taken",
+   "why_effort": "the discriminator rests on two positives and stating it too strongly is the failure mode",
+   "why_mode": "one Dimension entry, its test, and a re-measurement over a named population",
+   "why_lane": "shares python/fidelity.py with 37 other task(s), at least one writing (73 conflicting tasks in all)"
+  },
+  {
+   "id": "our-noise-run-is-the-note-where-the-players-overruns-it",
+   "title": "Wherever we sound noise for more than a tick, our run equals our note length exactly",
+   "source": "runs.jsonl#opened",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/h2g/goatwriter.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:build/audio",
+    "rw:host:C:/t/noise-run-is-the-note"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Whether we gate noise to the note where the player lets it overrun is settled by measurement on the files that carry a noise population, with the per-instrument modal run and modal held length on BOTH sides. MEASURED on five instruments across three files: ours match exactly (Geoff Capes $0A09 11==11, Confuzion 11 and 23 == 11 and 23, Rasputin $0A09 7==7, $0603 4==4, $0A0A 15==15) while the original's vary widely (Rasputin $0A0A spans 1 to 174 frames, $0603 sits at 9/11 against a 5-frame note). Confuzion is the extreme case: the original sounds ONE continuous 8998-frame noise run on voice 2 that we chop into 485 note-length runs, costing 491 frames of noise, and nrun declines the file for want of a population so the whole disagreement is invisible except as a one-sided count. Locate what gates it; do not change the emitter.",
+   "why_model": "a mechanism nobody has traced, spanning the emitter and the player",
+   "why_effort": "the effect is measured on five instruments and the cause is entirely unlocated",
+   "why_mode": "read-only measurement plus an emitter read",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (68 conflicting tasks in all)"
+  },
+  {
+   "id": "artefact-freshness-reports-stale-for-an-emitter-change-that-moves-no-bytes",
+   "title": "The freshness tool errs conservative and does not say so",
+   "source": "runs.jsonl#opened",
    "model": "sonnet",
    "effort": "medium",
    "mode": "subtask",
@@ -2661,7 +2436,8 @@
    "touches": [
     "r:build/fidelity.json",
     "r:python/h2g",
-    "rw:host:C:/t/artefact-freshness",
+    "r:python/h2g/tracks.py",
+    "rw:host:C:/t/freshness-upper-bound",
     "rw:python/artefact_freshness.py",
     "rw:python/tests/test_artefact_freshness.py"
    ],
@@ -2671,23 +2447,26 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "A committed script answers 'is build/fidelity.json stale' and says WHY, and the predicate is EMISSION-CHANGING commits rather than commits. That distinction is the point and is measured: at 665939c six commits separate the artefact's label from HEAD and it is NOT stale, because the only python/h2g/ change in that range is the version string in __init__.py. A rule keyed on 'a later commit exists' would report stale and cost a 25-minute regeneration for nothing. The check is: diff the names changed under python/h2g/ between the artefact's commit and HEAD, discount __init__.py, and also report uncommitted edits under that path, since a dirty emitter invalidates the artefact just as a commit does. SABOTAGE-VERIFY, because this adds a guard: the suite gains exactly the cases below and 0 fail, and each named mutation must make it fail with the mutated region printed from disk -- (1) stop discounting __init__.py, so a pure version bump must be misreported as stale; (2) drop the working-tree check, so a dirty emitter must be misreported as fresh; (3) key it on any changed path rather than python/h2g/, so a docs-only commit must be misreported as stale.",
-   "why_model": "a small committed tool whose rule is already derived and measured",
-   "why_effort": "medium",
-   "why_mode": "one new module plus its test",
-   "why_lane": "shares python/h2g with 28 other task(s), at least one writing (45 conflicting tasks in all)"
+   "verify": "artefact_freshness.py states its answer as a CONSERVATIVE UPPER BOUND and offers a way to confirm or override. MEASURED at c2cb76a: a docstring-only edit to python/h2g/tracks.py made it exit 1 STALE while tests/test_commando.py -- the byte-exact fixture -- passed, so no emitted byte moved; 36 changed lines, 0 of them code. It keys on PATHS, which cannot answer whether emitted bytes changed; only the corpus byte-hash can, and that is the expensive check it exists to let you skip. So `NOT STALE` is trustworthy and `STALE` means 'an emitter file moved -- confirm with the byte-hash or the fixture', and the output must SAY that rather than printing a bare verdict. SABOTAGE-VERIFY, because this changes a guard: the suite gains exactly the cases below and 0 fail, and each named mutation makes it fail with the mutated region printed from disk.",
+   "why_model": "a bounded change to a small tool whose rule is already measured",
+   "why_effort": "the wording is the deliverable and getting it wrong makes the tool ignored",
+   "why_mode": "one module and its test",
+   "why_lane": "shares python/h2g with 27 other task(s), at least one writing (44 conflicting tasks in all)"
   },
   {
-   "id": "the-either-show-or-record-verify-template-grants-no-path-for-the-recording-half",
-   "title": "Seven verifies say 'either show it or record it' while granting nothing writable to record into",
-   "source": "runs.jsonl:a-blocked-run-record-describes-a-plan-and-must-not-survive-a-whattask-regeneration#opened",
-   "model": "session",
+   "id": "convert-at-has-no-test-that-lets-it-actually-run",
+   "title": "Reverting convert_at's return is invisible to the suite because every test injects a fake",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
    "effort": "high",
-   "mode": "main",
+   "mode": "subtask",
    "lane": "serial",
    "touches": [
-    "r:.claude/tasks/runs.jsonl",
-    "rw:.claude/tasks/whattask.json"
+    "r:python/approvals.py",
+    "r:python/sound_calibrate.py",
+    "rw:host:C:/t/convert-at-integration",
+    "rw:python/tests/test_approvals.py",
+    "rw:python/tests/test_sound_calibrate.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -2695,11 +2474,145 @@
    "depends_on": [],
    "blocked_on": null,
    "decision": null,
-   "verify": "Every open main-mode task whose verify offers 'either X is shown, or it is RECORDED beside the code it concerns' either holds a writable repo path to record into, or has its verify rewritten so both arms are reachable with the grant it has. Derive the list from the plan rather than trusting this description: at 665939c, 8 of 106 open tasks grant no writable repo path once requires-user tasks and the read-only corpus censuses are excluded, and one of those 8 says 'Read-only' in its own verify and is correct as it stands. THE COUNT IS NOT THE POINT AND MUST NOT BE ASSERTED -- it moves whenever an unrelated task is added; name the SET. This is a template defect rather than seven independent ones, so fix the template and say which tasks it reached.",
+   "verify": "Replacing sound_calibrate.convert_at's `return Converted(...)` with the old bare packed path makes at least one test FAIL. MEASURED at c2cb76a: it does not -- the suite stays at 0 failed, because every test of recover_approved_sng injects a fake convert_at and the real function is never called, so the behaviour is pinned and the function's CONTRACT is not. The sibling case shows the trick that works: pack_into was made testable by finding where the real function fails WITHOUT its external dependency (pack_sid writes its .sng before it shells out). Find the equivalent point for convert_at, or state that there is none and that an integration case letting it git-archive a historical tree is the only cover. SABOTAGE-VERIFY: the suite gains exactly the case below and 0 fail, and that named mutation makes it fail with the mutated region printed from disk.",
+   "why_model": "a bounded test-coverage change with the gap already measured",
+   "why_effort": "the failure mode is another test that pins the fake rather than the function",
+   "why_mode": "test files only, conclusion mechanical",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (30 conflicting tasks in all)"
+  },
+  {
+   "id": "plan-audit-wants-two-more-checks-and-both-must-classify-rather-than-count",
+   "title": "check H for a spent creation promise, and check I for a prose-only prerequisite",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:.claude/tasks/whattask.json",
+    "rw:.claude/skills/plan-audit/plan_audit.py",
+    "rw:.claude/skills/plan-audit/test_plan_audit.py",
+    "rw:host:C:/t/plan-audit-hi"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "plan_audit.py gains a check for a verify PROMISING to create an artefact that already exists, and one for a PREREQUISITE stated only in prose, and BOTH classify rather than count. The classification is the whole point and both figures are measured: the creation scan returns 3 wide matches against 0 real ones, two of them the fragment `which this task` matched across `...only READS`; the prerequisite scan returns 23 hits against 1 real one, 22 of them a single priority sentence pasted into 22 tasks that names no id and therefore cannot become an edge. Key the second on whether the span NAMES AN EXISTING PLAN ID, which is what separated signal from noise, and follow check_g's structural exemptions rather than tightening phrase lists. SABOTAGE-VERIFY: the suite gains exactly the cases below and 0 fail, and each named mutation makes it fail with the mutated region printed from disk.",
+   "why_model": "two bounded guards against a plan whose shape is already measured",
+   "why_effort": "both checks are worthless if they report their false positives, which is the whole design",
+   "why_mode": "one skill file and its test",
+   "why_lane": "no path it declares overlaps another task's with either side writing"
+  },
+  {
+   "id": "the-backlog-generator-discards-five-recoverable-ids-behind-three-other-separators",
+   "title": "Splitting at the first colon misses a dot, a trailing capital, a parenthesis and a dash",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "effort": "low",
+   "mode": "subtask",
+   "lane": "parallel",
+   "touches": [
+    "r:.claude/tasks/runs.jsonl",
+    "rw:docs/BACKLOG.md",
+    "rw:host:C:/t/backlog-separators"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "docs/BACKLOG.md's embedded generator recovers an id behind any of the four separators actually observed, and the file is REGENERATED rather than hand-edited -- it says so at the top and that instruction is the point. MEASURED at 665939c over 771 `opened` entries: the first-colon rule leaves 13 entries classed as prose, of which 5 carry a well-formed id hidden by a DOT (hard-restart-frames-2-vs-players-3.3), a trailing CAPITAL (...at-high-S:), a PARENTHESIS (first-frame-lead-written-multispeed (RE-SCOPED...)) or a ` -- ` (twice). Report the counts before and after as a SET of recovered ids, not a total, since the log grows under the file.",
+   "why_model": "a single-file generator change against an already-measured rule",
+   "why_effort": "mechanical and cheap to redo, with the failing inputs already enumerated",
+   "why_mode": "one derived file whose generator lives in its own header",
+   "why_lane": "no path it declares overlaps another task's with either side writing"
+  },
+  {
+   "id": "the-render-check-cannot-tell-agreement-from-inheritance-never-having-happened",
+   "title": "check_column.py exits PASS with zero inherited spans, which is the state it exists to detect",
+   "source": "runs.jsonl#opened",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/approvals.json",
+    "r:build/listen/index.html",
+    "r:python/abpage.py",
+    "rw:host:C:/t/render-check-guard",
+    "rw:python/tests/test_abpage.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "The render check distinguishes 'the column agrees AND inheritance has been observed' from 'the column agrees AND inheritance has never happened', and it lives in the repo rather than in a scratch directory if a verify is going to cite it. MEASURED at 5a2fa2d: C:/t/abpage-render-check/check_column.py refuses a pass over an EMPTY span set but exits 0 with PASS when 4 spans render and 0 of them are `inherited` -- its guard covers a different emptiness from the one that matters. Note before starting that an `inherited` span may be UNREACHABLE for reasons outside this check: build/approvals.json carries 2 `exact` tunes that can never inherit and 2 `uncalibrated` ones, so a green here may require regenerating that artefact first and may still not produce one. SABOTAGE-VERIFY: the suite gains exactly the cases below and 0 fail, and each named mutation makes it fail with the mutated region printed from disk.",
+   "why_model": "a bounded guard plus relocating a script, against a measured gap",
+   "why_effort": "the distinction it must draw is subtle and the current check reads as a pass",
+   "why_mode": "a test file and a script move",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (43 conflicting tasks in all)"
+  },
+  {
+   "id": "approvals-json-is-eight-versions-stale-and-still-records-calibrated-false",
+   "title": "The assessment artefact predates the calibration passing",
+   "source": "runs.jsonl#opened",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/approvals.py",
+    "r:python/sound_calibrate.py",
+    "rw:build/approvals.json",
+    "rw:build/audio",
+    "rw:host:C:/t/approvals-regen"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerating build/approvals.json is a corpus run over renders, gt2reloc and siddump",
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "build/approvals.json is regenerated from the current tree and its `calibrated` field reflects the calibration as it now stands. MEASURED at 5a2fa2d: it reads generator `h2g 0.5.471 approvals.py`, head `df80762-dirty`, seconds 60 and `calibrated: false`, while the calibration was made to pass at v0.5.474 by the recorded `Keep + report them` decision and HEAD is v0.5.479. STATE WHAT THE REGENERATION ACTUALLY PRODUCES per tune rather than assuming it produces an `inherited`: two of the four tunes are `exact` and can never inherit, so the two `uncalibrated` ones may come back inherited OR stale and nobody has measured which. Regenerating is the deliverable; an `inherited` span is not promised.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "high",
-   "why_mode": "writes the plan file, which a delegated runner may not",
-   "why_lane": "shares .claude/tasks/whattask.json with 4 other task(s), at least one writing (4 conflicting tasks in all)"
+   "why_effort": "a regeneration whose output has to be read per tune rather than accepted",
+   "why_mode": "a corpus run that writes a shared artefact",
+   "why_lane": "shares build/audio with 22 other task(s), at least one writing (44 conflicting tasks in all)"
+  },
+  {
+   "id": "four-preset-flags-are-byte-inert-on-the-files-that-carry-them",
+   "title": "slides is inert on four files running, and prune_inert exists for exactly this",
+   "source": "runs.jsonl#opened",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:python/h2g",
+    "r:python/presets.py",
+    "rw:host:C:/t/inert-flags",
+    "rw:presets.json"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Every preset flag that changes no byte on the file it is set for is removed by presets.prune_inert, and the SET of removed (file, flag) pairs is named. MEASURED: `slides` is byte-inert on Food Feud, Saboteur II, Zoolook and Confuzion -- four files running, each ablation reproducing that file's own output_sha -- and `vibrato_command`, `cut_release` and `rest_keyoff` are each inert on at least one of them. A preset entry records a MEASURED DECISION and a flag changing nothing was not one. Regenerate presets.json and report the pairs removed; a byte-hash over the corpus must show the conversions unchanged, since removing an inert flag is inert by definition and any file that MOVES is a defect in the pruning rather than a win.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "bounded, but it rewrites a generated artefact every measurement compares against",
+   "why_mode": "regenerates presets.json, which no delegated agent may write",
+   "why_lane": "shares presets.json with 83 other task(s), at least one writing (85 conflicting tasks in all)"
   },
   {
    "id": "the-ilv-decoder-has-no-tie-parameter-and-drops-99-percent-of-the-originals-ties",
@@ -2727,7 +2640,7 @@
    "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2757,7 +2670,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2786,7 +2699,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2816,7 +2729,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2846,7 +2759,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2874,7 +2787,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 28 other task(s), at least one writing (49 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 27 other task(s), at least one writing (49 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists"
   },
@@ -2903,7 +2816,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2961,7 +2874,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards"
   },
@@ -2987,7 +2900,7 @@
    "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong"
   },
@@ -3008,12 +2921,12 @@
    "needs_main": false,
    "needs_main_reason": null,
    "depends_on": [],
-   "blocked_on": "A listening verdict, and the material now EXISTS -- which reverses this task's own recorded premise. The decision record at c490b72 says '0 of the six appear in build/listen'; at 665939c all six (Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast, Go_Go_Dash, Sun_Never_Shines) are staged there and were re-staged at -t 180 on 2026-09-08, so the 'stage first, then ask' sharpening is spent. The user has set these LOW PRIORITY behind the 83 Rob_Hubbard files, so this waits on the RH sign-offs rather than on staging.",
+   "blocked_on": "STILL BLOCKED on a listening verdict, but MIS-SCOPED as it stands. Confirmed by listing build/listen: 0 of the six files (Radio_ACE, Lion_Heart, Lakers_vs_Celtics, Pacific_Coast, Go_Go_Dash, Sun_Never_Shines) appear there. Staging them is `listen.py`, which is [main] AGENT work, not the human's -- so asking for a verdict now would be asking for something that cannot be given. The human step begins only once the material exists. Sharpened: stage first, then ask.",
    "decision": "Ready to ask: /runhuman recorded that asking before the material existed was asking for something that could not be given. It exists now -- serve build/listen and put the six pages in front of the user.",
    "verify": "The user has listened to the six interleaved files and a verdict for each is recorded by approvals.py against that file's CURRENT output sha. BEFORE asking, check the material: sha1 of build/listen/<song>.h2g.sng truncated to 12 hex must equal that file's output_sha in build/fidelity.json, and restage with listen.py --files <song>.sid -t 180 if it does not. These six are SIDId Jason_Page/RobTracker, not Rob_Hubbard, and the user has put them behind the RH files -- do not raise this ahead of an RH sign-off.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares build/fidelity.json with 72 other task(s), at least one writing (74 conflicting tasks in all)",
+   "why_lane": "shares build/fidelity.json with 71 other task(s), at least one writing (74 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -3038,7 +2951,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "shares presets.json with 19 other task(s), at least one writing (23 conflicting tasks in all)",
+   "why_lane": "shares presets.json with 20 other task(s), at least one writing (23 conflicting tasks in all)",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption"
   },
@@ -3070,7 +2983,7 @@
    "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed"
   },
@@ -3102,7 +3015,7 @@
    "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the trade is per song and wants the surrounding ILV context",
-   "why_lane": "shares python/tests with 54 other task(s), at least one writing (84 conflicting tasks in all)",
+   "why_lane": "shares python/tests with 51 other task(s), at least one writing (81 conflicting tasks in all)",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed"
   }
@@ -4709,6 +4622,120 @@
    "title": "301 well-formed opened ids have nowhere to live",
    "closed_by": "uncommitted:2026-09-08",
    "reason": "docs/BACKLOG.md is that home, written by `the-opened-field-has-become-an-unbounded-firehose-and-needs-triage`: 429 derived entries over 196 opening tasks, 95 carrying an inline rationale, with its generator reproduced in its own header so the file and the rule cannot drift. The counts in this id's TITLE are both stale and are not comparable with each other -- 193 and 93 counted bare slugs under an older rule. UNCOMMITTED: the file is untracked, so a reclone does not have it; it regenerates from runs.jsonl in one command."
+  },
+  {
+   "id": "measure-food-feud",
+   "title": "Measure Food Feud to full coverage and attribute every low column",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "measure-saboteur-ii",
+   "title": "Measure Saboteur II to full coverage and attribute every low column",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "measure-zoolook",
+   "title": "Measure Zoolook to full coverage and attribute every low column",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "measure-confuzion",
+   "title": "Measure Confuzion to full coverage and attribute every low column",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that",
+   "title": "Confuzion's force_park rests on its voices ending together and nothing checks it",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "a-known-bad-pair-is-comparable-when-the-fix-is-structural-and-not-when-it-is-a-multiplier-change",
+   "title": "Record the comparability rule beside KNOWN_BAD, where the next candidate is chosen",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "sound-calibrate-convert-at-should-return-the-sng-it-writes-not-only-the-packed-sid",
+   "title": "convert_at hides the .sng it writes, forcing callers through a side effect",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "approvals-py-had-never-been-run-end-to-end-and-its-tests-mock-the-packing-path",
+   "title": "approvals.py crashed on its first real tune, past 15 green tests",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist",
+   "title": "A verify phrased as a future instruction reads as vacuous or as never-met",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge",
+   "title": "A real prerequisite recorded only in prose, where the selector cannot see it",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "the-114-prose-opened-entries-should-be-deleted-at-source-no-consumer-can-act-on-a-sentence",
+   "title": "The prose `opened` entries mostly carry an id -- the delete-at-source prescription is retracted",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "preset-opts-answers-an-unknown-song-name-with-the-always-block-and-no-signal",
+   "title": "_preset_opts returns the always block for an unknown song key and says nothing",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "restage-the-23-remaining-tunes-so-the-listening-set-shares-one-window",
+   "title": "Restage the 23 tunes still at the shorter window",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "cut-release-costs-adsr-on-release-heavy-tunes",
+   "title": "cut_release is in the always block and costs adsr on release-heavy tunes -- census its population",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "fetch-minus-one-shows-up-in-three-columns",
+   "title": "hold, nrun and noise are three readings of one next-note fetch -1",
+   "closed_by": "uncommitted:2026-09-09",
+   "reason": "run record reports done; the record is in runs.jsonl and NOT yet committed, so a reclone does not have it. Measured hold, nrun and noise per instrument on four files at -t 180 and HEAD 5a2fa2d, validating the calling convention by independently reproducing all four output_sha. The three columns do NOT move together: across 12 nrun instruments, hold's -1 reaches nrun on exactly 2, and the noise frame count is never a per-run -1 on any file. The discriminator is exact on 12/12 -- nrun sees hold's -1 only"
+  },
+  {
+   "id": "vibrato-rate-and-depth-are-one-mechanism-not-two",
+   "title": "vib and depth are coupled because Goattracker integrates the vibrato speed",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "plan-audit-needs-a-check-g-for-a-done-condition-only-a-human-can-discharge",
+   "title": "plan-audit has checks A-F and none for a verify only a person can satisfy",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "the-artefact-staleness-test-should-be-a-committed-script-not-a-remembered-git-incantation",
+   "title": "Whether build/fidelity.json is stale is one command, and it should be committed",
+   "closed_by": "5a2fa2d",
+   "reason": null
+  },
+  {
+   "id": "the-either-show-or-record-verify-template-grants-no-path-for-the-recording-half",
+   "title": "Seven verifies say 'either show it or record it' while granting nothing writable to record into",
+   "closed_by": "5a2fa2d",
+   "reason": null
   }
  ]
 }

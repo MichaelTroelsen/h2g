@@ -22,6 +22,19 @@ plan and cost at least one task cycle:
      reasons that have nothing to do with a done-condition, so each source
      is stripped structurally before a leftover match is trusted -- see
      check_g's docstring.
+  H  a verify PROMISING to create an artefact that is already sitting in
+     the repo -- a spent creation promise the done-condition can never
+     freshly satisfy. CLASSIFIES rather than counts: a bare verb+path
+     proximity match fires on administrative "GRANTS CORRECTED/WIDENED at
+     <sha>:" bookkeeping clauses that are talking ABOUT a path, not
+     promising to create it -- see check_h's docstring.
+  I  a prerequisite stated ONLY in prose ("this must wait on task X") with
+     no matching `depends_on` edge, invisible to a runner that selects by
+     the edge. CLASSIFIES rather than counts: prerequisite-shaped words
+     (before/must/requires/...) are common in this plan's prose for
+     reasons having nothing to do with naming another task, so a match is
+     trusted only when it additionally NAMES AN EXISTING PLAN ID -- see
+     check_i's docstring.
 """
 import collections
 import json
@@ -114,6 +127,124 @@ def check_g(tasks):
         hit = G_CAND_RE.search(g_strip_exempt(v))
         if hit:
             out.append((t["id"], hit.group(0)))
+    return out
+
+
+# ---- H ---------------------------------------------------------------
+# A verify PROMISING to create an artefact that already exists is a spent
+# creation promise: the done-condition reads as "this task creates X", but
+# X is already sitting in the tree, so the condition is either trivially
+# true before the task ever runs or the wording is stale. A bare
+# verb+nearby-path match is NOT that check -- run unfiltered over the live
+# plan at 5a2fa2d (101 open tasks) it fires 3 times and every one is noise:
+#   ab-7 and ab-9 share "...the previous grant named python/fidelity.py,
+#   which this task only READS" -- an explicit NEGATION of writing, sitting
+#   inside a "GRANTS CORRECTED at <sha>:" bookkeeping clause, not a promise.
+#   ab-7 also has "the design document writes `H2G-CONVERSION-METHOD.md`"
+#   a few dozen characters further into that SAME clause -- prose ABOUT a
+#   path (and about the path's own missing docs/ prefix), not the task's
+#   own deliverable.
+# All three sit inside one clause shape this plan already uses for
+# bookkeeping ("GRANTS CORRECTED/WIDENED at <sha>: ..."), so that clause is
+# stripped -- structurally, like check_g's exemptions -- before a leftover
+# verb+existing-path match is trusted. Doing so drops all 3 to 0.
+H_VERB_RE = re.compile(
+    r"\b(?:creates?|creating|writes?|writing|generates?|generating)\b",
+    re.I)
+H_PATH_RE = re.compile(r"\b((?:python|docs|build|tests|\.claude)/"
+                       r"[A-Za-z0-9_./-]+)\b")
+H_INLINE_PATH_RE = re.compile(r"`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
+H_WINDOW = 200
+H_GRANTS_RE = re.compile(
+    r"GRANTS (?:CORRECTED|WIDENED) at [0-9a-f]{7}\b.*?(?:\s\|\|\s|\Z)",
+    re.S)
+
+
+def h_strip_exempt(v):
+    """Remove GRANTS-CORRECTED/WIDENED bookkeeping clauses -- narration
+    about this task's OWN touches history, never its done-condition."""
+    return H_GRANTS_RE.sub(" ", v)
+
+
+def h_find_path(tail):
+    m = H_PATH_RE.search(tail)
+    if m:
+        return m.group(1)
+    m = H_INLINE_PATH_RE.search(tail)
+    if m:
+        return m.group(1)
+    return None
+
+
+def h_path_exists(cand):
+    norm = cand if cand.startswith(("python/", "docs/", "build/",
+                                    ".claude/")) else "python/" + cand
+    return (ROOT / norm).exists() or (ROOT / cand).exists()
+
+
+def check_h(tasks):
+    """Return [(task_id, verb, path), ...] for every verify whose text
+    promises to create/write/generate an artefact that already exists in
+    the repo, once GRANTS-clause bookkeeping and plan-audit self-reference
+    are stripped."""
+    out = []
+    for t in tasks:
+        if g_is_selfref(t):
+            continue
+        v = h_strip_exempt(t.get("verify") or "")
+        for vm in H_VERB_RE.finditer(v):
+            tail = v[vm.end():vm.end() + H_WINDOW]
+            cand = h_find_path(tail)
+            if cand and h_path_exists(cand):
+                out.append((t["id"], vm.group(0), cand))
+    return out
+
+
+# ---- I ---------------------------------------------------------------
+# A prerequisite stated ONLY in prose -- "this must wait on task X" with no
+# matching `depends_on` edge -- is invisible to a runner that selects tasks
+# by the edge: exactly what happened to ab-9's GATE clause naming
+# `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-
+# trace` before that edge was added. A bare cue-word scan for prerequisite
+# language (before/ahead of/must/requires/GATE/depends on/blocked by/
+# prerequisite/needs) is NOT that check -- these are common words in this
+# plan's prose for reasons having nothing to do with naming another task:
+# over the live plan at 5a2fa2d (101 open tasks) 68 `||`-delimited clauses
+# contain one, and the overwhelming majority are the ILV/interleaved-
+# classic tasks' pasted "...do not start this ahead of an RH task..."
+# sentence, which names no task id at all -- prose that can never become an
+# edge because there is no edge target to add. Key the classification on
+# whether the matched clause additionally NAMES AN EXISTING PLAN ID (open
+# or closed) that is not already in the task's own `depends_on` -- that is
+# what separates the one real historical case (ab-9, before its edge was
+# added) from the noise, and it is structural, like check_g's exemptions,
+# never a tightened phrase list.
+I_CUE_RE = re.compile(
+    r"\b(?:before|ahead of|must|requires|GATE|depends on|blocked by|"
+    r"prerequisite|needs)\b", re.I)
+I_ID_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b")
+
+
+def check_i(tasks, closed=()):
+    """Return [(task_id, named_id), ...] for every clause that reads as a
+    prerequisite, names a real plan id (open or in `closed`), and has no
+    corresponding `depends_on` edge on that task."""
+    all_ids = {t["id"] for t in tasks} | {c["id"] for c in closed}
+    out = []
+    seen = set()
+    for t in tasks:
+        dep = set(t.get("depends_on") or ())
+        v = t.get("verify") or ""
+        for clause in v.split(" || "):
+            if not I_CUE_RE.search(clause):
+                continue
+            for tok in I_ID_TOKEN_RE.findall(clause):
+                if tok == t["id"] or tok not in all_ids or tok in dep:
+                    continue
+                key = (t["id"], tok)
+                if key not in seen:
+                    seen.add(key)
+                    out.append(key)
     return out
 
 
@@ -272,6 +403,26 @@ def main() -> int:
         for i, word in needs_person:
             print("   %-52s survives on %r" % (i[:52], word))
         findings += len(needs_person)
+        print()
+
+    # ---- H ---------------------------------------------------------------
+    spent_creation = check_h(tasks)
+    if spent_creation:
+        print("H. verify promises to create an artefact that already "
+              "exists (reword the done-condition, or drop the promise):")
+        for i, verb, path in spent_creation:
+            print("   %-52s %-10s %s" % (i[:52], verb, path))
+        findings += len(spent_creation)
+        print()
+
+    # ---- I ---------------------------------------------------------------
+    prose_prereq = check_i(tasks, plan.get("closed") or [])
+    if prose_prereq:
+        print("I. verify states a prerequisite naming a real task id with "
+              "no depends_on edge (add the edge, so a selector can see it):")
+        for i, tok in prose_prereq:
+            print("   %-52s -> %s" % (i[:52], tok))
+        findings += len(prose_prereq)
         print()
 
     if not findings:

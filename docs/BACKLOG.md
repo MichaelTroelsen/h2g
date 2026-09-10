@@ -8,8 +8,8 @@ residue the plan deliberately does not carry: a plan that held all of it would s
 one by running the work and letting its run record exist. Either way the next regeneration drops
 it from here on its own.
 
-Generated at `665939c` on 2026-09-08. **429 entries**, of which **95 carry a rationale** the run record
-supplied inline.
+Generated at `5a2fa2d` on 2026-09-09. **471 entries**, of which **132 carry a rationale** the run
+record supplied inline.
 
 ## How it is derived
 
@@ -17,10 +17,16 @@ The generator is reproduced here rather than kept in a separate script, so the f
 that makes it cannot drift apart:
 
 ```python
-SLUG = re.compile(r'^[a-z0-9]+(-[a-z0-9]+){2,}$')
+SLUG = re.compile(r'^[A-Za-z0-9]+(-[A-Za-z0-9]+){2,}$')
 # For every record in runs.jsonl, for every entry of its `opened` array:
-#   split at the FIRST colon; the head is the id and the tail, if any, is the rationale.
-#   An entry whose head is not a well-formed slug is skipped and counted separately.
+#   scan left to right for the first occurrence of any of ':', '.', ' (', ' -- ';
+#   at the first one whose head matches SLUG, that head is the id and the tail,
+#   if any (trimmed), is the rationale. Note SLUG is case-insensitive on letters
+#   now -- an id ending in a stray capital (e.g. "...-high-S") still qualifies.
+#   An entry with no occurrence whose head matches is prose and is counted
+#   separately. Where the same id is opened twice within one record (a bare
+#   mention and a later annotated one), the richer, rationale-carrying
+#   occurrence wins.
 # Keep the ids absent from the plan, absent from `closed`, and with no record of their own.
 ```
 
@@ -33,22 +39,73 @@ retracted in the plan.
 
 **TWO COUNTS APPEAR IN THE HISTORY AND THEY ARE DIFFERENT QUANTITIES, not growth.** A pass at
 `91e8e25` counted 302 and one at `665939c` counted 325, and BOTH counted bare slugs only -- an
-`opened` entry of the form `id: rationale` was excluded from those figures as prose. This file
-counts 429 because it splits at the first colon and recovers those ids too, which is the whole
-point of the rule above. Compare 302 with 325; do NOT compare either with 429.
+`opened` entry of the form `id: rationale` was excluded from those figures as prose. The file at
+`665939c` counted 429 because it splits at the first colon and recovers those ids too, which is the
+whole point of the rule above. Compare 302 with 325; do NOT compare either with 429, and do NOT
+compare 429 with the current 471 below -- three different rules over three different log sizes.
 Growth over a fixed rule is real but far smaller than that jump suggests: 737 distinct `opened`
 refs at `665939c` against 657 at `91e8e25`.
+
+**Re-measured at `5a2fa2d` on 2026-09-09: splitting at the first colon was still leaving a well-formed
+id behind a dot, a trailing capital, a parenthesis, or a ` -- ` uncaught.** The prior pass (recorded
+above at `665939c`, 771 `opened` entries by then) read those 13 non-bare-but-uncolonizable entries
+in full and found 5 of them carried a real id anyway: `hard-restart-frames-2-vs-players-3.3` (a
+DOT), `bend-flatters-a-depth-defect-by-aliasing-at-high-S:` (a trailing CAPITAL after the colon
+split), `first-frame-lead-written-multispeed (RE-SCOPED, ...)` (a PARENTHESIS before the first
+colon), and two entries using ` -- ` instead of a colon. The rule above widens to catch all four
+shapes: it now scans for the first of `:`, `.`, `' ('`, or `' -- '` (in that left-to-right order of
+occurrence, not rule priority) and accepts a case-insensitive slug head.
+
+Re-run over the CURRENT log (548 run records, 809 `opened` entries, 806 distinct -- the log has
+grown since the `665939c`/`771` measurement above, so these are not the same population): the
+OLD colon-only rule keeps **461** backlog entries (121 with rationale) and calls **19** entries
+prose; the WIDENED rule keeps **471** (132 with rationale) and calls **8** prose. Read the recovery
+as a SET, not a count, since the log grows under this file on every drain cycle:
+
+- `bend-flatters-a-depth-defect-by-aliasing-at-high-S` (the named CAPITAL case -- not actually a
+  new separator, the SLUG regex needed to accept letters case-insensitively)
+- `confuzion-depth-1` (a DOT case the widened rule newly exposes, not named in the dispatch --
+  see the caveat below)
+- `drift-gate-skip-counts-files-that-carry-the-mechanism-not-files-that-fit-it` (one of the two
+  named ` -- ` cases)
+- `filter-routing-duty-saboteur-ii` (a further ` -- ` case, not named in the dispatch)
+- `hard-restart-frames-2-vs-players-3` (the named DOT case, recovered as `...-players-3`,
+  dropping a trailing `.3`)
+- `inert-preset-flags-saboteur-ii` (a further ` -- ` case)
+- `pulse-onset-width-voice0-saboteur-ii` (a further ` -- ` case)
+- `skate-or-die-intro-speed-table-is-indexed-by-the-pal-ntsc-flag-not-the-subtune` (the other
+  named ` -- ` case)
+- `vibrato-step-size-saboteur-ii` (a further ` -- ` case)
+- `wave-one-frame-late-saboteur-ii` (a further ` -- ` case)
+
+All five ids named in the dispatch are in that set. The extra five (all from `measure-saboteur-ii`
+and one from `measure-confuzion`) are the same ` -- `/DOT shapes appearing in records opened since
+the `665939c` reading -- not a third separator, the widened rule simply keeps finding the two named
+shapes as the log grows. **The DOT separator is the one to watch**: a decimal number embedded in a
+title splits exactly like a real id boundary does. `hard-restart-frames-2-vs-players-3.3` (the
+sanctioned example) and `confuzion-depth-1.35-survives-both-vibrato-ablations-unattributed` (found
+by the same rule) are the identical shape -- both produce a head that reads as a slightly-truncated
+id and a tail that starts mid-number (`3` and `35-survives-...`). Neither is prose and neither is
+the polished id a human would have written; kept for consistency with the sanctioned example rather
+than special-cased, since a rule that recovers one and rejects the other on no stated ground would
+be worse than either choice made once, everywhere. The PARENTHESIS case
+(`first-frame-lead-written-multispeed`) was already present in the backlog bare, from a separate
+`opened` entry in the same run record -- the widened rule attaches its rationale to that existing
+bullet instead of adding a duplicate.
+
+The remaining **8** prose entries were read in full, not counted: all eight are complete sentences
+or `[subagent]`/`[main]`/`[user]`-tagged proposal paragraphs with no hyphenated slug at all before
+their first `:`, `.`, `' ('` or `' -- '` -- e.g. one opens "`[subagent] The wrap tie is expressible
+on voices 1 and 2...`" and another "`FIDELITY.md and presets.json are stale against this change...`".
+None of the eight is a mis-split id. This is the same population shape the `665939c` pass
+found (13 non-bare, 5 recoverable, 8 genuine), re-derived independently against a larger log and
+landing on the same 8.
 
 ## Entries
 
 ### opened by `a-blocked-run-record-describes-a-plan-and-must-not-survive-a-whattask-regeneration`
 
 - **`a-classifier-keyed-on-a-word-cannot-tell-a-report-of-a-grant-from-a-complaint-about-one`** — counting blocked/partial records by the bare word 'grant' reads 36 where the condition-keyed rule reads 3, an over-match of 33 at 665939c -- the same shape as the id-prefix and retraction-collision rules already in CLAUDE.md, and it belongs beside them if a second instance turns up.
-- **`the-either-show-or-record-verify-template-grants-no-path-for-the-recording-half`** — seven open main-mode tasks say 'either X is shown, or it is recorded beside the code it concerns' while holding no writable repo path, so only the first arm is reachable; measured at 665939c over 106 open tasks, 8 of which grant no writable repo path once requires-user and the read-only censuses are excluded.
-
-### opened by `a-done-run-record-describes-one-commit-and-a-later-commit-can-expire-it`
-
-- **`the-artefact-staleness-test-should-be-a-committed-script-not-a-remembered-git-incantation`** — whether build/fidelity.json is stale is answerable in one line -- git diff --name-only <label>..HEAD -- python/h2g/ discounting __init__.py, plus git status on the same path -- and it currently answers NOT STALE at 665939c over six intervening commits; it belongs in the repo where the next reader meets it rather than being re-derived, and needs a writable python/ or .claude/skills/ path.
 
 ### opened by `a-fourth-pitch-seq-file-was-expected-and-only-three-are-invisible-at-60-seconds`
 
@@ -94,9 +151,18 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`ab-5-step-5-adds-a-recover-flag-the-step-3-code-block-does-not-contain`**
 - **`ab-5-step-6-writes-build-approvals-json-which-the-tasks-touches-does-not-grant`**
 
+### opened by `ab-5s-dependency-on-the-step-5-correction-is-prose-not-a-depends-on-edge`
+
+- **`plan-audit-wants-a-check-for-a-prerequisite-stated-only-in-prose`** — a verify containing GATE / 'must read outcome done' / 'must land first' and naming a real plan id that is absent from that task's depends_on is a prerequisite the selector cannot see; measured at c2cb76a it finds 1 real case against 22 false positives from one pasted priority sentence, so like check_g it must key on whether the span NAMES AN EXISTING ID rather than on the phrasing. Needs rw:.claude/skills/plan-audit/plan_audit.py and its test.
+
+### opened by `ab-5s-verify-is-written-as-an-instruction-to-create-files-that-now-exist`
+
+- **`plan-audit-wants-a-check-h-for-a-verify-that-promises-to-create-something-that-exists`** — check_g landed today for a done-condition only a human can discharge; the same shape applies to a verify promising to CREATE an artefact that is already on disk, and it must classify rather than count -- measured at 665939c, a wide scan returns 3 hits against 0 real ones, two of them the fragment 'which this task' matched across '...only READS'. Needs rw:.claude/skills/plan-audit/plan_audit.py and its test.
+
 ### opened by `ace2-bend-half-attribution`
 
 - **`ace2-instrument4-attack-pitch-spike-missing-on-66-percent-of-notes`** — instrument 4 ($0506, 289 notes) opens each note with a 2-frame attack pitch spike; the original emits it on 288/289, we emit it on 97/288 and emit ZERO on 191. 976,152 units of missing pitch travel, 6.7x the whole bend denominator, and NO column scores it -- bend excludes it (siddump names a >semitone move as a note change) and melody/onset read the attack frame. Bigger than the vibrato depth deficit on this file. [subagent] read-only diagnosis first.
+- **`bend-flatters-a-depth-defect-by-aliasing-at-high-S`** — bend = depth x reversal count, and above -S1 our per-frame reversal count is inflated by siddump sampling once per frame while the wavetable steps once per call. ACE_II: depth 0.32x reads as bend 0.48x. Any file at -S2+ has the same bias. Worth a caveat in the bend Dimension's docstring beside the existing drum-sweep one. [subagent], touches python/fidelity.py.
 
 ### opened by `ace2-hold-43-percent`
 
@@ -121,6 +187,7 @@ refs at `665939c` against 657 at `91e8e25`.
 ### opened by `action-biker-hold-zero-is-fetch-not-length`
 
 - **`action-biker-adsr-69-and-gate-72`** — with hold refuted and the sequence exact, Action Biker's remaining measurable deficit outside nrun is adsr 69% / gate 72% / wave 97%. Neither has been attributed to a cause. Census them the way onset was censused before touching an emitter. [subagent], read-only.
+- **`hold-column-counts-slot-and-fetch-as-failures`** — SECOND SIGHTING, strengthening the task opened during the ACE_II run. ACE_II read hold 43% on 3 slot + 1 fetch of 7; Action Biker reads hold 0% on 4 fetch of 4. In BOTH files the column reports a percentage a reader will take for a note-length defect while the short/long population -- the only part any wavetable edit could move -- is EMPTY. Two files is no longer an anecdote. Report `hold` over the short/long population only, or print the census split beside the percentage. [main], touches python/fidelity.py.
 
 ### opened by `action-biker-listening-verdict`
 
@@ -215,10 +282,6 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`c64me-phantom-subtunes-are-pattern-pointers`**
 - **`survey-reports-15-subtunes-where-1-is-real`**
 
-### opened by `census-set-only-pulse-programs-across-corpus`
-
-- **`pulse-table-exhaustion-eleven-instruments-set-no-width`**
-
 ### opened by `chicken-song-alone-qualifies-for-the-derived-wave-alternate-and-there-is-no-option`
 
 - **`a-zero-register-baseline-at-60-seconds-is-the-likeliest-to-be-non-zero-at-180`**
@@ -248,6 +311,10 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`duration-zero-is-a-tie`**
 - **`duration-zero-tie-corpus-ab`**
 - **`gate-edge-census-column`**
+
+### opened by `chimera-voice0-opening-pad`
+
+- **`startup-lag-reduction-robustness`**
 
 ### opened by `classic-vibrato-row-calls-wants-the-mean-row-not-the-shortest`
 
@@ -292,6 +359,10 @@ refs at `665939c` against 657 at `91e8e25`.
 
 - **`whattask-regeneration-carries-stale-verify-text-forward-instead-of-re-deriving-it`**
 
+### opened by `confuzions-force-park-rests-on-its-voices-ending-together-and-nothing-checks-that`
+
+- **`parked-voices-free-run-their-frequency-past-the-tune-s-end`** — on Confuzion two of three parked voices are still writing $D400/$D401 at 320 s -- 486 frequency writes past the last attack -- where the original's three stop within 0.04 s of each other at ~312.96 s; the voices are gated off so it is silent, `len` is measured on attacks and cannot see it, and no column can. Decide whether a parked voice should stop writing at all, and whether that is worth a listening check.
+
 ### opened by `convert-through-preset-opts-and-the-harness-produce-different-bytes`
 
 - **`v0-5-425-action-biker-sha-retraction-is-itself-withdrawn`**
@@ -304,6 +375,16 @@ refs at `665939c` against 657 at `91e8e25`.
 
 - **`crazy-comets-voice0-g-sharp-7-pitch-defect`**
 - **`fidelity-window-loses-startup-lag-frames-of-the-original`**
+
+### opened by `cut-release-costs-adsr-on-release-heavy-tunes`
+
+- **`adsr-charges-the-whole-note-for-a-release-nibble-only-the-tail-can-hear`** — adsr scores the full 16-bit pair every frame, so zeroing the release nibble in the instrument record costs one disagreement per sounding frame while buying agreement only in the release tail -- decide whether the column should declare this blindness in its Dimension entry, mask the release nibble while the gate is on, or stay as it is and be read beside rel.
+- **`cut-release-is-one-population-two-columns-not-two-populations`** — The verify and CLAUDE.md's "a register zeroed at a rest is not a register zeroed at a note end -- two mechanisms, two disjoint populations" predicts a file split; the ablation shows one 31-file population on which adsr and rel move in opposite directions on the same file, so the rule's wording should be re-derived from this measurement before it is cited again.
+- **`hunter-patrol-and-mozart-detect-envelope-cut-but-the-option-is-inert`** — both have det.envelope_cut True yet byte-identical arms because every instrument record already carries release nibble 0 -- worth confirming that is the real reason rather than a detection that found the wrong record base.
+- **`las-vegas-orig-zero-count-disagrees-with-the-brief`** — I measure 4472 note-end-kill frames where the dispatch brief records 4322; both claim residue zero, so one of the two decompositions is counting a slightly different event and it should be settled by looking at the frames.
+- **`note-end-kill-orig-zero-is-a-separate-untouched-defect`** — on 31 of 31 files the frames where the original holds $0000 and we hold the record are bit-identical across both arms, and they are the entire ceiling on Geoff Capes (468/2526) and most of Las Vegas (4472) -- this is the second mechanism and it has no option at all yet.
+- **`release-nibble-as-a-wavetable-or-per-record-decision-instead-of-a-flat-record-edit`** — cut_release currently trades a whole-note register disagreement for a tail fix on all 31 files at once; ask whether the release can be held in the record and cut at the note end (so both columns are satisfied) rather than cut for the note's entire duration.
+- **`three-low-adsr-files-whose-deficit-is-not-cut-release`** — Commodore_64_Music_Examples (0.0000), Dragons_Lair_Part_II (0.0451) and One_on_One_Jordan_vs_Bird (0.3870) are byte-identical under the ablation and their disagreements are whole-pair `other` frames (26898 / 24737 / 16218) -- a different defect that has been hiding behind cut_release in the adsr ranking.
 
 ### opened by `drift-fits-one-rate-to-tunes-whose-offset-has-a-knee-and-cannot-say-so`
 
@@ -322,7 +403,7 @@ refs at `665939c` against 657 at `91e8e25`.
 
 ### opened by `emit-bit08-note-alternate`
 
-- **`first-frame-lead-written-multispeed`**
+- **`first-frame-lead-written-multispeed`** — (RE-SCOPED, not new: confirmed uncovered by v0.5.218/v0.5.220 at goatwriter.py:667, but its settling file changed from Delta to Dragons_Lair_Part_II m2, which has onset_instruments=1 and a known subtune-correspondence artefact -- needs --diagnose or a different subject before any A/B)
 
 ### opened by `emitter-and-read-only-tasks-in-this-plan-had-touches-too-narrow-to-record-their-own-findings`
 
@@ -332,6 +413,14 @@ refs at `665939c` against 657 at `91e8e25`.
 ### opened by `envelope-cut-writes-0000-at-note-end-and-cut-release-only-zeroes-a-nibble`
 
 - **`v0-5-426-five-title-tunes-adsr-attribution-is-wrong-and-the-gate-coincidence-was-real`**
+
+### opened by `fetch-minus-one-shows-up-in-three-columns`
+
+- **`confuzion-noise-regating`** — Confuzion's original sounds one continuous 8998-frame noise run on voice 2 that we chop into 485 note-length runs, costing 491 frames of noise that no column attributes -- nrun declines the file for want of a population, so the whole disagreement is invisible except as a one-sided count.
+- **`multiplier-does-not-explain-slot`** — the corpus-wide slot_delta rate is not monotone in the multiplier (m2 2.6% sits below m1 12.5% while m3 is 41.7%), so whatever relabels a fetch row as slot is not the call rate and is currently unexplained.
+- **`nrun-blind-to-tick-length-noise`** — 8 of 12 nrun instruments across four files have modal noise runs of 1-2 frames on both sides, which cannot register a one-frame shortening at all -- the column reads 100% on Zoolook while the same instruments lose 199 noise frames, so `nrun` should declare in its own Dimension entry that a run of length 1 is structurally immune to the defect it exists to catch.
+- **`our-noise-run-is-the-note`** — wherever we sound noise for more than a tick our modal noise run equals our modal held length exactly (five instruments across three files), while the original's varies widely (Rasputin $0A0A spans 1 to 174 frames, $0603 sits at 9/11 against a 5-frame note) -- we appear to gate noise to the note where the player lets it overrun, which is a mechanism nobody has traced and which no column names.
+- **`zoolook-census-log-discrepancy`** — the run log's Zoolook hold census (3 match / 2 fetch / 4 slot at c2cb76a) disagrees with two independent readings that both give 1 match / 3 fetch / 5 slot, and since the stored v0.5.475 artefact and the fresh v0.5.479 run agree byte-for-byte on that file, the log line rather than the converter is what moved.
 
 ### opened by `fidelity-better-has-no-term-that-can-see-a-rest-parked-waveform`
 
@@ -413,6 +502,10 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`the-interleaved-two-stage-reaches-29-percent-of-go-go-dashs-noise-and-the-ungated-870-is-a-second-mechanism`**
 - **`two-stage-was-hand-adopted-on-six-files-and-the-next-fidelity-search-should-arbitrate-it`**
 
+### opened by `hard-restart-floor-swallows-short-notes`
+
+- **`hard-restart-frames-2-vs-players-3`** — 3
+
 ### opened by `hard-restart-frames-is-not-searchable`
 
 - **`a-verify-can-be-internally-inconsistent-not-merely-stale`**
@@ -428,6 +521,7 @@ refs at `665939c` against 657 at `91e8e25`.
 
 ### opened by `hold-zero-note-length-loss`
 
+- **`startup-lag-reduction-robustness`**
 - **`wait0-tie-scoped-to-envelope-cut`**
 
 ### opened by `i-ball-is-the-only-file-with-bit40-true-and-no-per-record-effect-byte-and-it-is-relocated`
@@ -482,15 +576,27 @@ refs at `665939c` against 657 at `91e8e25`.
 
 - **`orphaned-tail-processes-survive-their-sessions`**
 
+### opened by `measure-confuzion`
+
+- **`confuzion-adsr-21pc-is-the-release-nibble-zeroed-by-cut-release`**
+- **`confuzion-aud-and-loud-below-corpus-median-unattributed`**
+- **`confuzion-depth-1`** — 35-survives-both-vibrato-ablations-unattributed
+- **`confuzion-hold-0pc-is-8-of-8-fetch-and-the-firstwave-frame`**
+- **`confuzion-pphase-voice-0-opens-on-3-widths-where-the-player-opens-on-9`**
+- **`confuzion-pulse-step-halved-on-voice-0-64-to-32`**
+- **`confuzion-vib-shortfall-is-the-per-note-vibrato-command-148-reversals`**
+
 ### opened by `measure-does-not-copy-the-new-drift-knee-fields-into-the-row-so-they-reach-no-artefact`
 
 - **`other-hand-listed-key-sets-in-measure-may-have-fallen-behind-the-same-way`**
 
-### opened by `measure-geoff-capes-strongman-challenge`
+### opened by `measure-food-feud`
 
-- **`cut-release-costs-adsr-on-release-heavy-tunes`** — `cut_release` sits in presets.json's `always` block and costs Geoff Capes 0.8147 -> 0.1211 adsr in a measured ablation (1752 of 2220 disagreeing frames are orig R=$F against our R=$0); census which corpus files are dominated by long-release records in their window before anyone decides whether the option's population is the right one.
-- **`fetch-minus-one-shows-up-in-three-columns`** — the next-note `fetch` -1 is the single cause of Geoff Capes' hold 0% (4/4 instruments, delta -1, slot_delta 0), nrun 50% ($0A09's modal noise run 12 -> 11 while $050A matches exactly) and noise 284/308; worth measuring as one mechanism with three readings rather than as three rows of the defect queue.
-- **`vibrato-rate-and-depth-are-one-mechanism-not-two`** — Geoff Capes reads vib 0.7425x with depth 1.3524x and the vib census names zero absent and zero slow instruments, so our vibrato is slower and correspondingly wider (product 1.0042); verify the coupling on a second file whose vibrato options are already enabled before either column is tuned, since Goattracker integrates its vibrato speed and a change to the rate moves both.
+- **`food-feud-filter-overshoot`** — the filter emitter routes 1.36x the frames and sweeps 1.83x the cutoff travel at -t 180 (1.24x / 1.60x at -t 250, so the overshoot is front-loaded); ablating `filters` zeroes both, so measure where Goattracker's fixed-tick filter table outruns the player's own bounded counter.
+- **`food-feud-pphase-unattributed`** — our notes open on 11 distinct duty cycles against the original's 17 (18 at -t 250) across 14 instruments, and neither ablating `pulse` nor forcing `pulse_phase` moves the column by a decimal -- find what actually sets the opening duty before anyone proposes a fix.
+- **`food-feud-tie-deficit`** — ties read orig 6312 / ours 2233 (0.354x, voice 2 at 0.026x) and NO column in FIDELITY.md scores them -- decide whether a tie dimension belongs in the registry, since `slides` currently reads 1.84x on a file whose real defect is that 65% of the original's non-retriggered pitch changes are ties where only 26% of ours are.
+- **`food-feud-vibrato-rate-depth`** — the vibrato emitter runs 1.23x the original's reversal rate at 0.56x its depth (product 0.689, so not a compensating pair as on Geoff Capes) over 1.84x the frames -- measure the player's own vibrato byte against what goatwriter encodes, remembering that a rate read out of a player is per frame and this file packs at -S3.
+- **`food-feud-voice0-octave-region`** — attribute the encoding of the octave shift over voice 0's attacks 175-244 (frames 3075-4334) in Food_Feud's version-0 track dialect, where tracks.py currently emits no orderlist transpose at all, and check whether the same shape reaches other read_track_version=0 corpus files.
 
 ### opened by `measure-kings-of-the-beach-ingame`
 
@@ -515,6 +621,15 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`lvvp-pulse-set-only-program-25-of-25`**
 - **`lvvp-vib-excess-pitch-write-rate`**
 - **`lvvp-voice2-slides-bend-shortfall`**
+
+### opened by `measure-saboteur-ii`
+
+- **`filter-routing-duty-saboteur-ii`** — our filter stays in circuit 11520 of 12550 frames where the player routes voice 3 in on 6400 and toggles it out between filtered notes; cutoff range 64512 vs 38912 and travel 48.1M vs 32.0M. Drives filt 1.80x, cut 1.50x and ~64% of the loud deficit (loud_ratio 0.7917 -> 0.9249 with filters off). [subagent]
+- **`inert-preset-flags-saboteur-ii`** — `slides` and `vibrato_command` are both byte-inert on this file (each ablation reproduces output_sha b19823a341ba). presets.prune_inert exists for exactly this; a preset entry records a measured decision and a flag changing nothing was not one. Regenerating presets.json is a [main] task, not a subagent one. [main]
+- **`pulse-onset-width-voice0-saboteur-ii`** — voice 0 opens notes on 4 distinct duty widths against the original's 8 (voices 1 and 2 exact at 2/2); survives pulse=False unchanged while pul falls to 0.036, so it is the per-instrument initial duty, not the sweep table. Small-N, 8 vs 12. [subagent]
+- **`settle-the-saboteur-ii-tie-count-at-one-window`** — the staged note reads orig 8046 / ours 1631 at -t 180 while the measure task read 10667 / 9682 at -t 260; the original side is explained by the window (1.326 against a 1.394 window ratio) and OUR side is not (5.937), so measure ties at ONE window on both sides before anything is retracted -- the multiplier is the first lead, since it belongs to our side only and this file packs at -S3. SUPERSEDES the retract-saboteur-ii-legato-note framing. [main]
+- **`vibrato-step-size-saboteur-ii`** — the vibrato emitter oscillates at the right rate (vib 1.06x, --vib-census finds 0 absent and 0 slow) and on slightly more notes than the original (0.838 vs 0.796), but swings 0.52x as far and travels 0.71x as far; ablation shows slides/bend/depth are ~99% this one emitter. Locate the step encoding; do NOT assume a multiplier relationship, 0.52 does not fit 1/3. [subagent]
+- **`wave-one-frame-late-saboteur-ii`** — voices 1 and 2's waveform class peaks one frame past the harness's estimated startup_lag of 5 (v1 0.774 -> 0.862, v2 0.879 -> 0.922, v0 flat), with the right amount of noise in the wrong frames (noise 0.996, nrun 100%, 533/533 symmetric noise-pulse swaps on voice 2). Find what writes the frame, not what would raise the score. [subagent]
 
 ### opened by `measure-samantha-fox-strip-poker`
 
@@ -541,6 +656,15 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`pulse-phase-absent-from-sigma-seven-preset`**
 - **`sigma-seven-filter-routine-unread-by-detect`**
 - **`startup-lag-is-the-files-rarest-attack-offset`**
+
+### opened by `measure-zoolook`
+
+- **`zoolook-gate-rest-encoding`** — the conversion emits no rest for Hubbard's release - every gate-off stretch it has is the hard-restart gatetimer (7 calls / 2.3317 frames measured, 2.3333 predicted), constant against original rests of 8 to 1069 frames. 998 runs, 9816 of 10566 ringing frames. Ablation-confirmed and orthogonal to every other column. Investigate whether the player's rest can be expressed as a keyoff/rest row rather than as gatetimer length.
+- **`zoolook-loud-ratio`** — loud 0.9345/0.9261 vs 0.9503, loud_ratio 1.272/1.313 - our overall level is 27-31% above the original's. Co-varies weakly with the gate mechanism (0.9261->0.9200 under the hard-restart ablation) but is mostly unattributed.
+- **`zoolook-slides-frame-surplus`** — our_slides 7242 vs orig 5693 at -t 260 (1.4703x at -t 180), 100% of ours from the vibrato emitter (vibrato=False takes it to 0) while the rate is right (vib 1.0066). The --slides option is byte-inert on this file. Why the same rate covers 27% more frames is the open question.
+- **`zoolook-vib-depth-rateshift`** — depth 0.5607 (corpus median 0.8166). Two named terms in _classic_vibrato_entry predict 0.656 - _rate_shift(3)=round(log2 3)=2 where 1.585 is wanted (x0.750), and the tick-0 cmp compensation (row_calls-1)/row_calls = 7/8 (x0.875). Per-instrument predictions 0.626/0.667/0.626 against measured 0.457/0.578/0.561.
+- **`zoolook-vib-depth-residual`** — the 0.73-0.90 residual factor between that 0.656 prediction and the 0.561 measurement, ~30% of the log deficit, currently UNATTRIBUTED. Candidates named by the emitter's own docstring (position-vs-integrated-step triangle; interval above vs below the note, ~6%) are unmeasured.
+- **`zoolook-wave-voice2`** — wave 0.8749/0.8792 vs a corpus median of 0.8974, carried by voice 2 (0.7846, ~1937 of 8994 frames). Unmoved by both ablations; not noise (nrun 100%) and not note duration (hold census 0 short, 0 long). Unattributed.
 
 ### opened by `mega-apocalypse-instrument-66-may-be-an-unmasked-effect-bit-rather-than-a-record`
 
@@ -661,6 +785,10 @@ refs at `665939c` against 657 at `91e8e25`.
 ### opened by `powerplay-vibrato-refusals`
 
 - **`powerplay-vibrato-md-regen-at-merge`**
+
+### opened by `preset-opts-answers-an-unknown-song-name-with-the-always-block-and-no-signal`
+
+- **`preset-opts-warning-cannot-be-promoted-to-an-error-until-listen-py-diff-has-its-own-opt-out`** — _preset_opts now warns on a miss, and the only thing standing between that and a hard refusal is listen.py's --diff path, which knowingly calls it on an absent name after printing its own notice; give that caller an explicit way to say so and the warning can become an error.
 
 ### opened by `promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-is-settled`
 
@@ -803,10 +931,6 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`sidtracker64-scope-decision`** — 5 corpus files (Casio_Extended, Dont_Step_on_My_Wire, Era_of_Eidolon, Robs_Life, Task_Force) are SidTracker64 and permanently unreachable by a signature-based Hubbard ripper. Whether they're ever in scope needs either a second ripper or an emulate-and-capture approach -- a project-scope decision only the user can make. [user]
 - **`survey-py-should-cite-opcode-evidence`** — survey.py's out-of-scope prose names only the SIDId signature as the exclusion reason, which is why Robs_Life has been re-opened as a detection gap twice. Adding the opcode-identity evidence (929 instructions, 0 differences vs Casio_Extended.sid) would make SURVEY.md self-defending. Regenerating SURVEY.md is [main] work by the repo's own rule.
 
-### opened by `runhuman-flips-mode-but-leaves-the-requires-user-verify-boilerplate-in-place`
-
-- **`plan-audit-needs-a-check-g-for-a-done-condition-only-a-human-can-discharge`** — .claude/skills/plan-audit/plan_audit.py has checks A-F and none for a non-requires-user task whose verify asks for a person; it must CLASSIFY by cause, since a vocabulary grep reports 16 findings against 0 real ones on the plan at 665939c (12 ILV scope notes, 3 build/listen paths, 1 self-quotation). Needs rw:.claude/skills/plan-audit/plan_audit.py and r:.claude/tasks/whattask.json.
-
 ### opened by `search-subtunes-default-now-the-shim-is-empty`
 
 - **`shifted-subtune-cause-is-not-yet-mechanically-separable`** — the rewritten line says the two causes cannot be told apart, which is honest but is a description of a gap. They ARE separable in principle -- a gt2reloc drop means our surviving subtune count is less than what we emitted, where a wrong-order defect leaves the count intact. The row already carries `subtune_shas` (our emitted count) but not the packed count, so the discriminator needs one more field. Adding it would turn a warning into a verdict. [subagent], touches python/fidelity.py and python/tests/test_fidelity.py.
@@ -832,6 +956,11 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`claude-md-still-lists-one-on-one-as-a-regrid-refusal-and-says-13-adoptions`**
 - **`every-task-granted-r-siddump-exe-needs-r-fidelity-py-and-r-h2g-to-use-it`**
 - **`one-on-one-regrid-refusal-rests-on-a-melody-collapse-that-no-longer-happens`**
+
+### opened by `skate-or-die-intro-drift-plus-200-is-not-the-gate-skip`
+
+- **`drift-gate-skip-counts-files-that-carry-the-mechanism-not-files-that-fit-it`** — fidelity.py:4363 prints 'On N file(s) this is exactly -1/(skip+1), the outer gate's skipped call', and N comes from _drift_gate_skip_declined (fidelity.py:3649), which asks only whether the file has an outer-gate skip counter that effective_frames declined to correct. It never compares the observed drift to the prediction, though its docstring calls that 'the exact condition drift's docstring names as producing -1/(skip+1)'. Measured over the current build/fidelity.json: of the 20 files the sentence counts, 19 fit within 1% and Skate_or_Die_intro.sid is off by a factor of -25.60 (observed +200.00, predicted -7.81) -- and it is the biggest-magnitude member of the group by 15x, so the sentence lends a benign, known-limitation reading to the one row in the set that is a live converter defect. The fix is cheap and read-only in effect: compute pred = -1000/(skip+1) per row, count a file only when the observed value is within some stated tolerance of it, and have the report NAME the files that carry the mechanism but do not fit -- an unexplained outlier belongs in the prose with its ratio, not silently inside a count. Requires threading the skip value (already re-derived by _drift_gate_skip_declined) onto the row so the report can do the arithmetic. Whoever does this should also re-read the drift() docstring's worked examples, which list only fitting files and so read as though the relation were universal. [subagent] for the code, [main] to regenerate the report.
+- **`skate-or-die-intro-speed-table-is-indexed-by-the-pal-ntsc-flag-not-the-subtune`** — Skate_or_Die_intro.sid's init at $3FE0 is LDX $02A6 / LDA $3FDA,X / STA $45DD / STA $4B14 / LDA $3FDC,X / STA $4801 / LDA $3FDE,X / STA $4B13: the outer-gate skip and the inner-gate reload are chosen by the VIDEO STANDARD, not by the subtune. _speeds_for_reload reads vals = data[off:off+n] with n = subtunes, and _find_outer_gate does the same, so both take entry 0 -- the NTSC pair ($7F skip, $02 reload -> 384/127 = 3.0236 frames) -- while the tune plays PAL, entry 1 ($04 skip, $01 reload -> exactly 5/2 = 2.5000 frames, a row that alternates 2 and 3 calls). The converter therefore emits a 3.00-frame row over a 2.50-frame one, which is the file's +200.0 per 1000 drift and its whole 20%-out --pace verdict. The PAL pair needs no new machinery: SongSpeeds(frames=(2,), skip=(4,)) already yields exact_row 5/2, effective_frames 5/2 and recommended_multiplier 2, i.e. tempo 5 at -S2, and a forced tempo-5/-S2 pack reproduces the original's attack-gap histogram exactly on all three voices (v0 196 {5:48,10:147}, v1 599 {5:598}, v2 225 {5:19,10:111,15:19,20:75}). The blast radius is one file: scanning all 95 corpus .sid files for an LDA table,X naming the detected speed or skip table with an LDX/LDA $02A6 within the preceding 24 bytes gives exactly one hit. A fix should prefer the PAL entry when that indexing shape is present, gate itself on the shape so no other file moves, verify with a corpus byte-hash that exactly one file's output changes, and then A/B FIDELITY.md -- drift should go 200.00 -> 0.00 and retrig 0.81 -> ~1.00. Do not ship a forced-tempo hack: forcing --tempo 5 without routing the multiplier through the conversion leaves every rate table encoded for -S1 and the pitches come out wrong (voice 1 reads F#7 throughout). [main], because it regenerates presets.json and FIDELITY.md.
 
 ### opened by `skate-or-die-row-is-5-halves-not-3`
 
@@ -879,6 +1008,10 @@ refs at `665939c` against 657 at `91e8e25`.
 - **`extend-row-calls-compensation-to-lfo-triangle-engines`** — goatwriter.py's own docstring notes the packed player's tick-0 skip applies to every vibrato it runs, but only the classic ($78/$07) engine's cmp gets the row_calls compensation -- the LFO-table and global-triangle engines in _table_vibrato_entry are still uncorrected. Needs main-session work (changes converter output, needs corpus-wide fidelity re-measurement, touches SURVEY.md/presets.json/FIDELITY.md). [main]
 - **`row-calls-should-be-mean-not-shortest-row`** — row_calls is taken from the file's shortest row (short_row_calls), exact on 44 of 55 classic-vibrato files but over-correcting the 11 that vary row length (worst: Warhawk, 8 vs 40 calls). Reaching the mean row over the calls vibrato actually runs for needs a new convert() argument and a corpus-wide re-measurement. [main]
 
+### opened by `the-114-prose-opened-entries-should-be-deleted-at-source-no-consumer-can-act-on-a-sentence`
+
+- **`backlog-generator-should-split-on-four-separators-not-only-the-colon`** — docs/BACKLOG.md's generator recovers an id by splitting at the first colon, which discards five entries that carry a real id behind a dot, a trailing capital, a parenthesis or a ` -- `; measured at 665939c over 771 opened entries, widening the rule recovers 5 of the 13 it currently calls prose. Needs rw:docs/BACKLOG.md.
+
 ### opened by `the-classic-dialect-instrument-mask-should-be-derived-from-the-stride-not-fixed-at-7f`
 
 - **`an-out-of-range-instrument-number-was-doing-duty-as-a-mis-decode-alarm`**
@@ -896,10 +1029,6 @@ refs at `665939c` against 657 at `91e8e25`.
 ### opened by `the-fidelity-report-should-print-how-much-of-each-tune-its-window-contained`
 
 - **`regenerate-fidelity-md-so-the-new-cov-column-actually-appears`**
-
-### opened by `the-hold-column-and-the-sound-render-family-share-the-sound-run-prefix-and-are-unrelated`
-
-- **`documenting-a-naming-collision-creates-one-and-a-counting-check-cannot-tell-them-apart`**
 
 ### opened by `the-ilv-arpeggio-steps-land-at-offsets-the-originals-do-not`
 
@@ -949,6 +1078,11 @@ refs at `665939c` against 657 at `91e8e25`.
 
 - **`claude-mds-graded-figures-are-mechanically-re-derivable-and-should-be-a-committed-check`**
 - **`survey-md-reports-86-converted-without-saying-on-default-options-while-presets-convert-89`**
+
+### opened by `the-render-check-should-be-re-run-once-the-calibration-passes-because-inherited-has-never-been-observed`
+
+- **`approvals-json-is-eight-versions-stale-and-still-says-calibrated-false`** — build/approvals.json reads generator h2g 0.5.471, head df80762-dirty, seconds 60, calibrated false, while the calibration has since been made to pass and HEAD is v0.5.479; regenerating it is a corpus run needing rw:build/approvals.json, and it may or may not produce the `inherited` span the render check wants since two of its four tunes are `exact` and can never inherit.
+- **`check-column-passes-with-zero-inherited-spans-which-is-the-state-it-exists-to-detect`** — C:/t/abpage-render-check/check_column.py refuses a pass over an EMPTY span set but exits 0 with PASS when 4 spans render and 0 of them are `inherited`; measured at 5a2fa2d. It should distinguish 'agrees, inheritance observed' from 'agrees, inheritance never happened', and it should live in the repo rather than in a scratch dir if it is going to be cited by a verify.
 
 ### opened by `the-seven-toggle-search-cost-is-forty-minutes-not-eighty-and-two-docs-say-otherwise`
 
@@ -1057,4 +1191,3 @@ refs at `665939c` against 657 at `91e8e25`.
 
 - **`pitch-seq-emits-nothing-on-lion-heart-and-the-cause-is-not-the-pattern-decoder`**
 - **`rest-instrument-is-in-the-always-block-and-moves-no-byte-on-any-song`**
-

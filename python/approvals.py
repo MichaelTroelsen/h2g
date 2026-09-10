@@ -32,6 +32,40 @@ Two rules that are the point rather than details:
 
 Without build/sound_calibration.json the status is `uncalibrated` and nothing
 inherits: the thresholds are measured, never typed.
+
+BUT `uncalibrated` HAS THREE DISJOINT CAUSES AND ONLY ONE OF THEM IS THE
+CALIBRATION. The sentence above is true and was, on its own, misleading for
+as long as it stood alone -- it names the cause a reader then assumes is the
+only one. All three of `assess`'s early exits reach the same status because
+all three pass `cal=None`, so the status is a claim about the calibration in
+one case and an artefact of the sentinel in the other two. Read `cause`, not
+`status`, when asking WHY a tune did not inherit:
+
+    "no-calibration"        build/sound_calibration.json is absent, or its
+                            `pass` is false, or it has no `closeness_floor`.
+                            This is the one the sentence above describes.
+    "approved-build-absent" the calibration is fine; the .sng that was
+                            APPROVED is not on disk, so there is nothing to
+                            compare the current build against. Note the
+                            current build usually IS on disk under the same
+                            name -- build/listen/<stem>.h2g.sng holds
+                            `current_sha`, not `approved_sha` -- so a check
+                            on the FILENAME cannot see this and will report
+                            the file present. `--recover` exists for it.
+    "pack-refused"          gt2reloc refused one of the two sides, so no
+                            audio comparison could be made either way.
+
+MEASURED at 5a2fa2d, `-t 180`: the calibration PASSES (`pass: true`,
+closeness_floor 0.9726, noise_floor 0.0069) and `load_calibration()` returns
+a dict, so "no-calibration" reaches nothing on this corpus. ACE_II and
+Devils_Galop read `uncalibrated` with cause "approved-build-absent", and
+they are the repo's only two inheritance candidates: their `approved_sha`
+and `current_sha` DIFFER, where Action_Biker and 5_Title_Tunes are byte
+identical and so can never inherit whatever else is fixed.
+
+`status` is deliberately NOT split -- build/listen/index.html renders from
+it and lives outside this module's reach -- so `cause` is additive and
+nothing downstream has to change to keep working.
 """
 from __future__ import annotations
 
@@ -85,7 +119,8 @@ def load_approvals_json() -> dict:
 # ---- the decision ---------------------------------------------------------
 def inherit(approved_vs_orig: dict, current_vs_orig: dict,
             current_vs_approved: dict, structure: dict, cal: dict | None,
-            margin: float = FIDELITY_MARGIN, same_sha: bool = False) -> dict:
+            margin: float = FIDELITY_MARGIN, same_sha: bool = False,
+            cause: str | None = None) -> dict:
     evidence = {"aud_vs_orig": [approved_vs_orig.get("aud"), current_vs_orig.get("aud")],
                 "loud_vs_orig": [approved_vs_orig.get("loud"), current_vs_orig.get("loud")],
                 "aud_vs_approved": current_vs_approved.get("aud"),
@@ -99,8 +134,12 @@ def inherit(approved_vs_orig: dict, current_vs_orig: dict,
         return {"status": "exact", "failed": [], "listener_should_check": None,
                 "evidence": evidence}
     if cal is None:
+        # THREE callers reach this exit and only ONE of them is about the
+        # calibration -- see the module docstring. They are told apart by
+        # `cause`, never by `status`, because all three pass cal=None and so
+        # all three land on the same status string.
         return {"status": "uncalibrated", "failed": [], "listener_should_check": None,
-                "evidence": evidence}
+                "cause": cause or "no-calibration", "evidence": evidence}
     floor, close = float(cal["noise_floor"]), float(cal["closeness_floor"])
     failed, margins = [], {}
 
@@ -208,7 +247,7 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
     if same:
         return inherit({}, {}, {}, {}, cal, same_sha=True), cur_sha
     if approved_sng is None:
-        v = inherit({}, {}, {}, {}, None)
+        v = inherit({}, {}, {}, {}, None, cause="approved-build-absent")
         v["failed"] = ["approved .sng not on disk -- re-stage it with listen.py"]
         return v, cur_sha
     sub = F.resolve_subtune(sid, "auto")
@@ -217,7 +256,7 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
     p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult)
     p_app = pack_into(approved_sng.read_bytes(), workdir, "app", gt2reloc, mult)
     if p_cur is None or p_app is None:
-        v = inherit({}, {}, {}, {}, None)
+        v = inherit({}, {}, {}, {}, None, cause="pack-refused")
         v["failed"] = ["gt2reloc refused a side"]
         return v, cur_sha
     t_cur = F.run_siddump(p_cur, seconds, sub, siddump, calls=mult)

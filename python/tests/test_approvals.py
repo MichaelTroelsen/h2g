@@ -274,3 +274,132 @@ def test_pack_into_is_reachable_without_running_an_assessment(tmp_path):
     shipped past a green suite."""
     import approvals as AP
     assert callable(getattr(AP, "pack_into", None))
+
+
+# ---- `uncalibrated` has three causes and only one is the calibration -------
+#
+# MEASURED at 5a2fa2d: the calibration PASSES (build/sound_calibration.json
+# `pass: true`, closeness_floor 0.9726) and `load_calibration()` returns a
+# dict -- yet ACE_II and Devils_Galop still read `uncalibrated`, because the
+# APPROVED build is not on disk. All three of assess's early exits pass
+# cal=None, so all three land on the same status, and `status` therefore
+# cannot say WHICH of them happened. `cause` can. These pin that apart.
+
+
+def test_no_calibration_is_the_cause_when_there_is_no_calibration():
+    got = AP.inherit(_vs(), _vs(), {"aud": 1.0, "loud": 1.0}, _structure(), None)
+    assert got["status"] == "uncalibrated"
+    assert got["cause"] == "no-calibration"
+
+
+def test_an_absent_approved_build_is_not_a_calibration_failure():
+    """The status still reads `uncalibrated`; only `cause` distinguishes it.
+
+    This is the live case: the calibration is fine and the tune cannot be
+    assessed anyway. Keying a reader on `status` here concludes the
+    calibration is the blocker, which it is not.
+    """
+    got = AP.inherit({}, {}, {}, {}, None, cause="approved-build-absent")
+    assert got["status"] == "uncalibrated"
+    assert got["cause"] == "approved-build-absent"
+
+
+def test_a_refused_pack_is_not_a_calibration_failure_either():
+    got = AP.inherit({}, {}, {}, {}, None, cause="pack-refused")
+    assert got["status"] == "uncalibrated"
+    assert got["cause"] == "pack-refused"
+
+
+def test_the_three_causes_are_distinguishable_from_each_other():
+    """The point of the field: same status, three different answers to WHY.
+
+    Without this the suite would pass on a `cause` that was constant, which
+    is the failure the field exists to prevent one level up.
+    """
+    causes = {
+        AP.inherit({}, {}, {}, {}, None)["cause"],
+        AP.inherit({}, {}, {}, {}, None, cause="approved-build-absent")["cause"],
+        AP.inherit({}, {}, {}, {}, None, cause="pack-refused")["cause"],
+    }
+    assert len(causes) == 3, f"causes collapsed to {causes}"
+
+
+def test_a_decided_verdict_carries_no_cause_to_be_misread():
+    """`cause` answers "why NOT", so a verdict that decided must not carry one.
+
+    An `exact` or `inherited` record with a leftover cause would invite a
+    reader to explain a decision that was made.
+    """
+    ok = AP.inherit(_vs(), _vs(), {"aud": 1.0, "loud": 1.0}, _structure(), CAL,
+                    same_sha=True)
+    assert ok["status"] == "exact"
+    assert ok.get("cause") is None
+
+    inh = AP.inherit(_vs(), _vs(0.95, 0.95), {"aud": 0.99, "loud": 0.99},
+                     _structure(), CAL)
+    assert inh["status"] in ("inherited", "stale")
+    assert inh.get("cause") is None
+
+
+def test_the_module_docstring_states_all_three_causes():
+    """The docstring's own sentence names only the calibration.
+
+    It is true and, alone, misleading -- a reader stops at the cause it
+    names. The retraction quotes it, so a grep for the original wording
+    lands on its own correction rather than on a bare deletion.
+    """
+    doc = AP.__doc__ or ""
+    for cause in ("no-calibration", "approved-build-absent", "pack-refused"):
+        assert cause in doc, f"docstring does not name the cause {cause!r}"
+    assert "THREE DISJOINT CAUSES" in doc
+
+
+def test_every_cal_none_exit_declares_its_own_cause():
+    """Pins the CALL SITES, not just `inherit`'s signature.
+
+    Found by sabotage rather than by design: the tests above all call
+    `inherit` directly with an explicit `cause=`, so deleting `cause=` from
+    the real exit inside `assess` left the whole suite green. That is the
+    same defect `convert_at` had -- the behaviour was pinned and the
+    contract was not -- reproduced in the tests written to fix a different
+    instance of it, in the same session.
+
+    Structural via `ast`, deliberately NOT a substring grep: a grep for
+    `cause=` would match this docstring, and a check that cannot tell its
+    subject from its container is the failure this whole file is about.
+    """
+    import ast
+    import pathlib
+
+    src = pathlib.Path(AP.__file__).read_text(encoding="utf-8")
+    bare = []
+    for node in ast.walk(ast.parse(src)):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        if not (isinstance(fn, ast.Name) and fn.id == "inherit"):
+            continue
+        # `cal` is the 5th positional parameter. An exit that hands it a
+        # literal None is one of the three that cannot decide, and each of
+        # those must say WHICH it is.
+        passes_none = (len(node.args) >= 5
+                       and isinstance(node.args[4], ast.Constant)
+                       and node.args[4].value is None)
+        if passes_none and not any(k.arg == "cause" for k in node.keywords):
+            bare.append(node.lineno)
+
+    assert not bare, (
+        f"approvals.py line(s) {bare} call inherit(..., cal=None) without a "
+        f"`cause`, so they silently report the default 'no-calibration' and "
+        f"blame a calibration that may be passing")
+
+    # ...and non-vacuous: if no such call site exists at all, the assertion
+    # above is satisfied by having nothing to check.
+    sites = [n.lineno for n in ast.walk(ast.parse(src))
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)
+             and n.func.id == "inherit"
+             and any(k.arg == "cause" for k in n.keywords)]
+    assert len(sites) >= 2, (
+        f"expected at least two cause-declaring inherit() exits in "
+        f"approvals.py, found {sites} -- either they were removed or this "
+        f"check is now looking at the wrong function")

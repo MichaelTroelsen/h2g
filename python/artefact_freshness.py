@@ -39,6 +39,55 @@ H2G_PREFIX = "python/h2g/"
 INIT_FILE = "python/h2g/__init__.py"
 DIRTY_SUFFIX = "-dirty"
 
+# THE ASYMMETRY (measured at c2cb76a): a docstring-only edit to
+# python/h2g/tracks.py -- 36 changed lines, 0 of them code -- makes this tool
+# report STALE, while tests/test_commando.py (the byte-exact fixture) still
+# passes: no emitted byte moved. This tool keys on PATHS, which can only ever
+# answer "did a file under python/h2g/ change", never "did an emitted byte
+# change" -- only the corpus byte-hash (or the fixture) can answer that, and
+# that is the expensive check this tool exists to let you skip.
+#
+# So the two verdicts are NOT equally certain:
+#   NOT STALE -- exact.    No file under python/h2g/ moved, so no emitted
+#                           byte can have moved either. Trust it outright.
+#   STALE     -- an upper bound only. A file under python/h2g/ moved, which
+#                           MAY or may not have changed a byte. Confirm with
+#                           the corpus byte-hash check, or with
+#                           tests/test_commando.py, before believing bytes
+#                           actually moved -- or regenerating on the strength
+#                           of this verdict alone.
+UPPER_BOUND_NOTE = (
+    "STALE is a CONSERVATIVE UPPER BOUND, not a certainty: a file under "
+    "python/h2g/ changed, but that does not prove any emitted byte moved "
+    "(a comment or docstring edit changes no output -- measured at "
+    "c2cb76a). Confirm with the corpus byte-hash check, or with "
+    "tests/test_commando.py (the byte-exact fixture), before trusting this "
+    "verdict as more than 'go check' -- or call check_freshness(..., "
+    "confirmed_unchanged=True) once you already have."
+)
+EXACT_GUARANTEE_NOTE = (
+    "NOT STALE is exact, not a guess: no file under python/h2g/ changed, "
+    "so no emitted byte can have changed. This verdict needs no further "
+    "confirmation."
+)
+# Why this override exists, and why it is opt-in rather than a heuristic:
+# check_freshness cannot itself tell a docstring edit from a code edit --
+# doing so from the diff would trade a sound bound for a guess (CLAUDE.md:
+# "do not add a heuristic that tries to tell a docstring edit from a code
+# edit and downgrade the verdict on its own"). The only trustworthy source
+# for "no byte actually moved despite a path changing" is a check this
+# module does NOT run itself (the corpus byte-hash, or
+# tests/test_commando.py) -- so the downgrade is only ever offered to a
+# caller who states, explicitly, that they already ran one of those and it
+# came back clean. The override never fires on its own.
+OVERRIDE_NOTE = (
+    "override: confirmed_unchanged=True -- caller states the corpus "
+    "byte-hash check (or tests/test_commando.py) already showed no emitted "
+    "byte moved, so this STALE upper bound is downgraded to NOT STALE. "
+    "This is a caller-asserted fact that check_freshness cannot verify "
+    "itself -- it does not re-run either check."
+)
+
 
 @dataclass
 class FreshnessResult:
@@ -47,9 +96,10 @@ class FreshnessResult:
     emission_changed: list = field(default_factory=list)
     version_only_changed: list = field(default_factory=list)
     dirty_emitter_files: list = field(default_factory=list)
+    overridden: bool = False
 
 
-def check_freshness(changed_files, dirty_files):
+def check_freshness(changed_files, dirty_files, confirmed_unchanged=False):
     """Pure verdict. No git call here -- both arguments are plain path lists.
 
     changed_files: paths that differ between the artefact's commit and HEAD,
@@ -58,6 +108,13 @@ def check_freshness(changed_files, dirty_files):
         scoping is part of the rule under test, not a precondition of it.
     dirty_files: paths currently uncommitted in the working tree, also
         repo-wide (e.g. `git status --porcelain` with no pathspec).
+    confirmed_unchanged: explicit, caller-driven override. Pass True only
+        when the caller has ALREADY confirmed -- via the corpus byte-hash
+        check, or tests/test_commando.py -- that no emitted byte actually
+        moved despite a python/h2g/ path changing. Downgrades an otherwise-
+        STALE verdict to NOT STALE and records that it did so
+        (result.overridden). Never inferred; always caller-asserted. See
+        OVERRIDE_NOTE for why this is opt-in rather than a heuristic.
     """
     h2g_changed = sorted(p for p in changed_files if p.startswith(H2G_PREFIX))
     emission_changed = sorted(p for p in h2g_changed if p != INIT_FILE)
@@ -96,12 +153,29 @@ def check_freshness(changed_files, dirty_files):
     else:
         reasons.append("working tree is clean under python/h2g/")
 
+    overridden = False
+    if stale and confirmed_unchanged:
+        stale = False
+        overridden = True
+        reasons.append(OVERRIDE_NOTE)
+
+    # EXACT_GUARANTEE_NOTE claims "no file under python/h2g/ changed" -- true
+    # only when nothing was ever stale. An overridden verdict DID have a path
+    # change (that's what was overridden), so it gets OVERRIDE_NOTE above and
+    # nothing more: printing EXACT_GUARANTEE_NOTE on top would put a false
+    # claim next to a true one.
+    if stale:
+        reasons.append(UPPER_BOUND_NOTE)
+    elif not overridden:
+        reasons.append(EXACT_GUARANTEE_NOTE)
+
     return FreshnessResult(
         stale=stale,
         reasons=reasons,
         emission_changed=emission_changed,
         version_only_changed=version_only_changed,
         dirty_emitter_files=dirty_emitter_files,
+        overridden=overridden,
     )
 
 
@@ -166,6 +240,13 @@ def _git_head(root):
 
 
 def main(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    # Explicit, caller-driven override (see check_freshness's docstring and
+    # OVERRIDE_NOTE): only a caller who has ALREADY run the corpus byte-hash
+    # check or tests/test_commando.py and confirmed no byte moved should
+    # pass this. It is never inferred from the diff.
+    confirmed_unchanged = "--confirmed-unchanged" in argv
+
     root = _repo_root()
     fidelity_path = os.path.join(root, "build", "fidelity.json")
 
@@ -187,7 +268,7 @@ def main(argv=None):
     changed = _git_diff_names(root, commit, head)
     dirty = _git_status_names(root)
 
-    result = check_freshness(changed, dirty)
+    result = check_freshness(changed, dirty, confirmed_unchanged=confirmed_unchanged)
 
     print("build/fidelity.json built at %s%s, HEAD is %s"
           % (commit, " (tree was dirty at build time)" if artefact_was_dirty else "", head))
@@ -197,7 +278,19 @@ def main(argv=None):
               "not the exact tree measured.")
     for reason in result.reasons:
         print("  - " + reason)
-    print("STALE" if result.stale else "NOT STALE")
+    # Never print a bare verdict: STALE is a conservative upper bound (an
+    # emitter path changed; may or may not have changed emitted bytes) and
+    # NOT STALE is exact (no emitter path changed, so no byte can have
+    # changed). The asymmetry is real and the wording must say so every time.
+    if result.stale:
+        print("STALE (upper bound -- unconfirmed; see note above. Pass "
+              "--confirmed-unchanged once the corpus byte-hash check or "
+              "tests/test_commando.py has confirmed no byte moved.)")
+    elif result.overridden:
+        print("NOT STALE (downgraded from STALE by --confirmed-unchanged; "
+              "see override note above)")
+    else:
+        print("NOT STALE (exact)")
 
     return 1 if result.stale else 0
 

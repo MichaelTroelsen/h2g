@@ -591,6 +591,59 @@ def _build_raw_pattern(data: bytes, addr: int,
             # fixture`). What is emitted here is not defensible as *correct* --
             # it is 21 semitones out on 110 of voice 1's notes in the corpus
             # rip -- only as *unchanged*.
+            #
+            # **COMMANDO IS NOT SPECIAL. CENSUS AT 5a2fa2d, preset options,
+            # over the 89 corpus songs in `presets.json`, by instrumenting
+            # THIS line and recording every byte it clamped:**
+            #
+            #   34 files clamp at all, 698 clamp events in total
+            #   24 of the 34 clamp a byte PAST THEIR OWN TABLE  (557 events)
+            #    9 clamp only bytes INSIDE it                   (140 events)
+            #    1 clamps a MARKER, not a pitch                 (Action_Biker, $FF)
+            #
+            # The split is exact and it is the one that matters, because the
+            # two halves have different answers. Every corpus table is 96
+            # entries (`FreqTable.length` is 96 on all 34; `shift` is 0 or -1),
+            # and `sidfile.FreqTable`'s own docstring says to "read `length`
+            # to bound an index into the table". So:
+            #
+            #  * **$5C-$5F are REAL entries 92-95** that Goattracker's note
+            #    column cannot name, since it stops at index 92. Clamping is
+            #    the only available answer and nothing here is a defect. The
+            #    nine files are Kentilla, Spellbound, Wiz, Master_of_Magic,
+            #    Las_Vegas_Video_Poker, International_Karate, Nineteen,
+            #    Star_Paws, W_A_R_Preview.
+            #  * **$60 and above index PAST the 96-entry table**, so what the
+            #    ORIGINAL sounds is whatever bytes follow it -- the
+            #    Commando-shaped case, where $68 landed on the stored-waveform
+            #    cells and sounded B-5. Each such byte is a separate reading
+            #    of a separate player and none of the other 23 files has been
+            #    read the way Commando was.
+            #
+            # WORST FIRST, by clamp count, with the past-the-table bytes:
+            #   Ricochet 71 ($60,$61,$68,$70,$7A,$7C,$7F)
+            #   Commando 58 ($68)          Last_V8 50 (18 distinct bytes to $F8)
+            #   BMX_Kidz 49 (8 bytes)      Proteus 40 ($60,$68)
+            #   Warhawk 40 ($60,$68)       Skate_or_Die_intro 33 ($64,$66,$7F)
+            #   Arcade_Classics 31 ($70,$78,$7F)
+            #   Geoff_Capes 30 ($63,$68)   Kings_of_the_Beach_ingame 10 (5 bytes)
+            # and Kentilla (60) and Spellbound (40) are the two largest files
+            # that clamp NOTHING past their table -- both are pure range limit.
+            #
+            # **$68 RECURS ACROSS SEVEN UNRELATED FILES** -- Commando,
+            # Crazy_Comets, Devils_Galop, Monty_on_the_Run,
+            # Phantoms_of_the_Asteroid, Gremlins, Geoff_Capes -- which is a
+            # lead rather than a result: the same byte past the same-sized
+            # table in seven players may or may not land on the same kind of
+            # cell, and only Commando's has been traced. A constant read from
+            # one player is a constant about one player.
+            #
+            # NOTHING IS CHANGED BY THIS CENSUS. It bounds the Commando
+            # decision -- re-cutting the fixture would be about 1 of 24 files,
+            # not about a one-off -- and it names the other 23 so the next
+            # reading starts from a list instead of a file.
+            # (`C:/t/census-which-corpus-files-cl/clamp_classified.json`
+            # carries the per-file byte sets; re-derive rather than re-quote.)
             if g_note >= 0x5C:
                 g_note = 0x5C
             # A shifted table can push the lowest byte below its own entry 0;

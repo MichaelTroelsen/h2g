@@ -1439,6 +1439,27 @@ def legalise_restarts(tracks: List[List[int]], log=None,
             # loop. CLAUDE.md still carries the v0.5.375 reading of Action
             # Biker ("856 attacks, looping with period 61.44 s"), which is
             # this branch's before-picture and is not granted here to fix.
+            #
+            # GRADED 2026-09-09 at HEAD 5a2fa2d, against `build/fidelity.json`
+            # generated at label `20bc88d` -- no `-dirty` suffix, i.e. a clean
+            # tree -- at `-t 180`, 95 rows. `20bc88d` sits 10 commits behind
+            # this HEAD, but the only intervening change to this file
+            # (9ec29bf) is a docstring-only edit inside `legalise_restarts`,
+            # 0 code lines changed, so these figures are still live for the
+            # code that runs today. ALL THIRTEEN FIGURES ABOVE REPRODUCE
+            # EXACTLY, bit for bit, re-derived fresh from that artefact rather
+            # than re-quoted: the six rows in `fidelity.original_ends`'s
+            # shortened set read Geoff_Capes_Strongman_Challenge +0.16,
+            # Action_Biker +0.14, Las_Vegas_Video_Poker +0.10,
+            # Samantha_Fox_Strip_Poker +0.10, Kings_of_the_Beach_ingame +0.08,
+            # Sigma_Seven +0.04 -- none `length_bounded`, all read straight
+            # off `length_delta` -- and the corpus-worst `|length_delta|` over
+            # all 95 rows with a measured length is still Knucklebusters
+            # -4.16 s and Sanxion -2.98 s, both inside the +-5 s tolerance and
+            # both ending EARLY. This supersedes the v0.5.461/ef8b962 citation
+            # once attached here: no note matching that wording was found in
+            # this file to re-check, so this is the first confirmed grading
+            # of this block, not a re-confirmation of a prior one.
             # An orderlist still cannot say "stop", but it can loop a pattern
             # that makes no sound, which ends the tune in every way a listener
             # can hear. Safe HERE and nowhere earlier: this pass runs after

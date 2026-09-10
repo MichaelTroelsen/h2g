@@ -1142,3 +1142,145 @@ def test_index_shows_three_states():
                     "listener_should_check": None, "evidence": {}}}
     html = A.index(["Tune"], {}, "0.5.448", APPR, {"Tune": "bbb"}, inherited=rec)
     assert 'class="i">inherited' in html
+
+
+# ---- render-check parity: the index verdict column vs an assessment -----
+#
+# C:/t/abpage-render-check/check_column.py (MEASURED at 5a2fa2d) cross-checks
+# `build/listen/index.html`'s per-tune verdict span against the status
+# `build/approvals.json` records for that tune. Its only refusal is a
+# TOTALLY EMPTY span set:
+#
+#     assert found, "REFUSING: the index carries NO verdict spans -- vacuous"
+#
+# which is a different emptiness than the one that matters. A run where
+# every tune assesses as `exact` or `uncalibrated` -- which is exactly what
+# build/approvals.json holds right now (2 exact, 2 uncalibrated, 0
+# `inherited`, 0 `stale`) -- renders plenty of spans and still exits
+# `PASS -- the column agrees with the assessment for every tune` without the
+# `inherited` column value, the one thing the whole assessment exists to
+# distinguish from a plain `approved`, ever having been checked. That is
+# this repo's own container-vs-subject bug (CLAUDE.md: "a check that cannot
+# tell its subject from what merely shares its container"): "the column
+# agrees" and "the column agrees AND `inherited` was ever rendered" read as
+# the same PASS.
+#
+# The cases below port check_column.py's per-tune EXPECT mapping into a real
+# test over `A.index`'s rendering, driven by a synthetic population built
+# HERE -- never by reading build/approvals.json, so it keeps exercising the
+# `inherited` path regardless of what that file happens to hold today (and
+# regardless of whether it gets regenerated).
+
+# status -> the verdict column value it must produce. Ported from
+# check_column.py's EXPECT rather than imported, since that script lives
+# outside this repo. `uncalibrated` cannot inherit, so `verdict()` falls
+# through to the sha rule and renders `stale` once the sha has moved --
+# `check_column.py`'s own comment on the point.
+_EXPECT_COLUMN = {"exact": "approved", "inherited": "inherited",
+                  "stale": "stale", "uncalibrated": "stale"}
+
+
+def _rendered_verdicts(names, appr, shas, inherited):
+    """check_column.py's span scrape, over `A.index`'s HTML: for each tune,
+    the word its `<span class="y|i|s">` rendered."""
+    html = A.index(names, {}, "v", appr, shas, inherited=inherited)
+    tag = {"y": "approved", "i": "inherited", "s": "stale"}
+    found = {}
+    for m in re.finditer(r'<span class="([yis])">([a-z]+)</span>', html):
+        before = html[:m.start()]
+        link_names = re.findall(r'href="([A-Za-z0-9_\-.]+)\.html"', before)
+        assert link_names, "a verdict span with no tune link before it"
+        found[link_names[-1]] = tag[m.group(1)]
+    return html, found
+
+
+def _synthetic_assessment(include_inherited=True):
+    """A build/approvals.json-shaped population covering every status
+    `_EXPECT_COLUMN` maps, by construction -- unlike the file actually on
+    disk, which (2 `exact` + 2 `uncalibrated`, measured at 5a2fa2d) has zero
+    `inherited` and zero `stale` records today, so reading it could never
+    exercise this check at all."""
+    names = ["Exact_Tune", "Inherited_Tune", "Stale_Tune", "Uncal_Tune"]
+    appr = {n: {"approved": True, "sng_sha256": "aaa", "version": "0.5.400",
+                "at": "2026-08-20"} for n in names}
+    # Exact_Tune's sha is unchanged since approval, so `verdict()` never
+    # consults `inherited` for it at all -- that IS the "exact" state.
+    shas = {"Exact_Tune": "aaa",
+            "Inherited_Tune": "bbb", "Stale_Tune": "bbb", "Uncal_Tune": "bbb"}
+    inherited = {
+        "Inherited_Tune": {"status": "inherited", "approved_sha": "aaa",
+                            "current_sha": "bbb", "since": "0.5.447",
+                            "builds_inherited": 2, "failed": [],
+                            "listener_should_check": "aud_vs_approved",
+                            "evidence": {}},
+        "Stale_Tune": {"status": "stale", "approved_sha": "aaa",
+                       "current_sha": "bbb", "since": "0.5.447",
+                       "builds_inherited": 0, "failed": ["aud_vs_approved"],
+                       "listener_should_check": "aud_vs_approved",
+                       "evidence": {}},
+        "Uncal_Tune": {"status": "uncalibrated", "approved_sha": "aaa",
+                       "current_sha": "bbb", "since": "0.5.447",
+                       "builds_inherited": 0, "failed": [],
+                       "listener_should_check": None, "evidence": {}},
+    }
+    status_of = {"Exact_Tune": "exact", "Inherited_Tune": "inherited",
+                 "Stale_Tune": "stale", "Uncal_Tune": "uncalibrated"}
+    if not include_inherited:
+        # Reproduce build/approvals.json's actual shape today: an assessment
+        # that never once reaches `inherited`.
+        del inherited["Inherited_Tune"]
+        names = [n for n in names if n != "Inherited_Tune"]
+        del appr["Inherited_Tune"]
+        del shas["Inherited_Tune"]
+        del status_of["Inherited_Tune"]
+    return names, appr, shas, inherited, status_of
+
+
+def test_index_verdict_column_agrees_with_the_assessment_and_is_not_vacuous():
+    """The distinction this task exists for: "the column agrees" must not
+    mean the same PASS whether or not `inherited` ever actually rendered.
+
+    First, per-tune agreement (check_column.py's own check, generalised
+    beyond whatever build/approvals.json happens to hold): every rendered
+    verdict must equal the column value its assessed status maps to.
+
+    Then the guard check_column.py is missing: the fixture must have
+    actually produced an `inherited` verdict, and this test asserts that it
+    did -- rather than only asserting "zero disagreements", which is true
+    (vacuously) of a population that never contained one.
+    """
+    names, appr, shas, inherited, status_of = _synthetic_assessment()
+    html, found = _rendered_verdicts(names, appr, shas, inherited)
+
+    assert set(found) == set(names), "every approved tune must render a verdict span"
+    for n in names:
+        want = _EXPECT_COLUMN[status_of[n]]
+        assert found[n] == want, (
+            "%s: assessed as %r, column rendered %r, expected %r"
+            % (n, status_of[n], found[n], want))
+
+    # THE DISTINCTION: agreement counted over a population that never
+    # reached `inherited` says nothing about the `inherited` column at all.
+    inherited_rendered = [n for n, v in found.items() if v == "inherited"]
+    assert inherited_rendered, (
+        "fixture produced no `inherited` verdict -- this check would pass "
+        "vacuously exactly like check_column.py does against today's "
+        "build/approvals.json (2 exact + 2 uncalibrated, 0 inherited)")
+    assert inherited_rendered == ["Inherited_Tune"]
+    assert _balanced(html) == []
+
+
+def test_index_verdict_agreement_over_an_inheritance_free_population_still_agrees():
+    """The companion population: build/approvals.json's actual shape right
+    now (exact + uncalibrated only) is a legitimate input and must still
+    agree column-for-column -- it just must never be read as having verified
+    the `inherited` path, which the test above's explicit guard is for."""
+    names, appr, shas, inherited, status_of = _synthetic_assessment(include_inherited=False)
+    html, found = _rendered_verdicts(names, appr, shas, inherited)
+    assert set(found) == set(names)
+    for n in names:
+        want = _EXPECT_COLUMN[status_of[n]]
+        assert found[n] == want
+    assert "inherited" not in found.values(), (
+        "sanity: this fixture must really contain no inherited tune")
+    assert _balanced(html) == []

@@ -208,3 +208,73 @@ def test_this_file_checks_only_what_an_artefact_can_derive():
         "presets.json absent: the window-free population checks are the only "
         "ones that cannot be skipped by _needs_window, so without them this "
         "file can go entirely quiet while reporting green")
+
+
+def _window_guarded_figures():
+    """The tests in this module whose body calls `_needs_window`.
+
+    DERIVED, not listed. A hand-written roster is a second place to forget:
+    a new window-guarded figure would skip silently and the roster would
+    still read complete. Reading the source means the registry cannot be
+    out of date with the tests it describes.
+    """
+    import inspect
+    import sys
+
+    mod = sys.modules[__name__]
+    found = set()
+    for name, fn in vars(mod).items():
+        if not name.startswith("test_") or not callable(fn):
+            continue
+        try:
+            src = inspect.getsource(fn)
+        except OSError:            # pragma: no cover -- source always present here
+            continue
+        if "_needs_window(" in src:
+            found.add(name)
+    return found
+
+
+def test_a_window_mismatch_fails_loudly_instead_of_skipping_quietly():
+    """The guard on the window guard: a skip must not be able to hide staleness.
+
+    `_needs_window` is RIGHT to skip -- two windows are two quantities, and
+    comparing them would manufacture a stale figure rather than find one.
+    But a skip is invisible: `5 passed, 3 skipped` reads as a healthy run,
+    and it says nothing about whether those three figures are correct, only
+    that they could not be compared. Measured at 826dec8, the file sat at
+    exactly that -- three figures unchecked behind a green run, and the only
+    reason anyone noticed was that a task named it.
+
+    So the SKIP stays (it is the honest thing to do with the assertion) and
+    the INVISIBILITY goes: when the artefact's window and `FIGURE_WINDOW`
+    disagree, this test fails once, names both windows, and names every
+    figure that has gone quiet. One red line instead of N silent skips.
+    """
+    guarded = _window_guarded_figures()
+    # Not vacuous: if the guarded set is empty, either every window-guarded
+    # figure was deleted or `_needs_window` was renamed out from under this
+    # check -- both of which would make the assertion below pass by having
+    # nothing to say.
+    assert guarded, (
+        "no test in this module calls _needs_window: either the "
+        "window-guarded figures are gone or the helper was renamed, and "
+        "either way this guard is now checking nothing")
+
+    if not FIDELITY.exists():
+        pytest.skip(
+            "build/fidelity.json absent -- it is gitignored, so a clean "
+            "checkout legitimately has none. That is a different emptiness "
+            "from a window mismatch and is not what this guard is about")
+
+    got = _window(_rows())
+    assert got == FIGURE_WINDOW, (
+        f"build/fidelity.json is -t {got} and FIGURE_WINDOW is "
+        f"{FIGURE_WINDOW}, so {len(guarded)} figure check(s) are being "
+        f"SKIPPED and the run would otherwise report green: "
+        f"{', '.join(sorted(guarded))}. Those figures are not wrong and are "
+        f"not right -- they are unchecked. Fix it by regenerating the "
+        f"artefact at -t {FIGURE_WINDOW}, or by RE-MEASURING each figure at "
+        f"-t {got} and then moving FIGURE_WINDOW; never by moving "
+        f"FIGURE_WINDOW alone, which relabels every figure as a claim about "
+        f"a window nobody measured it in")

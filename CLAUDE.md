@@ -386,7 +386,9 @@ correct null result.
    subtune, the multiplier, the startup lag, the tempo mode and the frequency
    calibration, and need only get one wrong. The harness already resolved them.
    *What catches this is two numbers that cannot both be true*, not either
-   looking wrong.
+   looking wrong. The measured instance is the `_preset_opts` key above: a
+   probe keyed on a full path recorded three files raising `ConversionAbort`
+   under their presets, and all three convert. See `docs/LESSONS.md`.
 5. **Know your readers.** `songview.parse_sng`'s `patterns` entries are flat
    lists of bytes, four per row, not row objects — iterating element-wise
    silently yields zero. And a probe that re-imports a module cannot compare
@@ -541,7 +543,12 @@ dangerous one because it reads as current and gets cited as current.
   numbering is not. Goattracker also numbers patterns in **hex**, and the
   editor's pattern is post-dedup and transposed by the orderlist — so identify a
   pattern by its note-row positions, and read the final `.sng`, not an intermediate.
-- **`_preset_opts` passes `False` for an absent key, never `None`.**
+- **`_preset_opts` passes `False` for an absent key, never `None`** — and a
+  key absent because it is *spelled* wrong (a full path, or a bare stem where
+  `presets.json` keys with the `.sid` extension) returns the always block
+  alone, so the HARDEST files silently get the EASIEST options and the run
+  still produces a number. It has warned since `e2fd3f8`; read the warning
+  rather than the count.
 - **`gplay.c:334` stops the song outright** when the gatetimer reaches the
   channel's tick — total, not graceful.
 

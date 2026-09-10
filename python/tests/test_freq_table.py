@@ -409,3 +409,64 @@ def test_calibration_maps_a_flat_table_onto_siddumps_naming():
     assert calibration(NTSC_SEMITONES) == 0x10C5
     # A whole semitone down halves nothing and moves 1/12 of an octave.
     assert calibration(-12.0) == SIDDUMP_MIDDLE_C // 2
+
+
+# ---- the note clamp has two cases and they have different answers ---------
+#
+# `patterns.py`'s `if g_note >= 0x5C` fires on 34 corpus files. On 9 of them
+# every clamped byte is a REAL table entry Goattracker cannot name; on 24 the
+# byte indexes PAST the file's own 96-entry table, which is the Commando
+# case. The split is what makes one half a range limit and the other half a
+# defect queue, so it is worth pinning the arithmetic it rests on.
+
+
+def _ft(name):
+    import pathlib
+    from h2g.sidfile import load_sid
+    from h2g import detect as D
+    corpus = pathlib.Path("C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    sid = corpus / name
+    if not sid.exists():
+        import pytest
+        pytest.skip(f"{name} not in this corpus")
+    return D.detect(load_sid(str(sid)), log=lambda m: None).freq_table
+
+
+def test_commandos_clamped_byte_is_past_its_own_table():
+    """The arithmetic the census turns on, on the one file that was traced.
+
+    `FreqTable.length` is the documented bound ("read `length` to bound an
+    index into the table"), so 0x68 being >= it is precisely what makes
+    Commando's clamp a misread rather than a range limit -- and 0x5C..0x5F
+    being < it is what makes the other nine files' clamps unavoidable.
+    """
+    ft = _ft("Commando.sid")
+    assert ft is not None and ft.length == 96
+    assert 0x68 >= ft.length, "0x68 is no longer past Commando's table"
+    for real in (0x5C, 0x5D, 0x5E, 0x5F):
+        assert real < ft.length, (
+            f"{real:#x} is no longer a real entry, so clamping it would stop "
+            f"being a Goattracker range limit")
+
+
+def test_the_two_clamp_cases_are_recorded_beside_the_clamp():
+    """Sliced to the census block, never searched over the whole module.
+
+    A phrase search over patterns.py would match its other discussions of
+    the clamp; the slice removes the container, which is the fix this repo
+    arrived at three separate times today.
+    """
+    import inspect
+    from h2g import patterns as P
+
+    src = inspect.getsource(P)
+    start = src.index("COMMANDO IS NOT SPECIAL")
+    end = src.index("if g_note >= 0x5C:", start)
+    block = " ".join(src[start:end].replace("#", " ").split())
+    for probe in ("34 files clamp at all",
+                  "24 of the 34 clamp a byte PAST THEIR OWN TABLE",
+                  "9 clamp only bytes INSIDE it"):
+        assert probe in block, f"the census no longer records {probe!r}"
+    # ...and the lead it explicitly declines to call a result.
+    assert "RECURS ACROSS SEVEN UNRELATED FILES" in block
+    assert "only Commando" in block

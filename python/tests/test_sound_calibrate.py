@@ -1,8 +1,11 @@
 """The calibration's pure reductions, and `render_doc`, the document builder.
 
-Nothing here calls `sound.render_cached`, `convert_at`, or `main` -- the five
-checks' own audio rendering is exercised only by running
-`sound_calibrate.py` for real, still by hand. What this file pins is: each
+Nothing here calls `sound.render_cached` or `main` -- the five checks' own
+audio rendering is exercised only by running `sound_calibrate.py` for real,
+still by hand. `convert_at` WAS in that list and no longer is: the last test
+in this file calls it for real with only its two OS boundaries faked, and the
+sentence that excluded it survived the test that contradicted it for as long
+as it took to read the file. What this file pins is: each
 reduction function (`shift_movement`, `noise_floor`, `closeness_floor`,
 `worse_by`, `worse_by_loud`, `comparable`, `known_bad_passed`,
 `rank_in_corpus`, `resolve_version_sha`) against fixed numbers, AND
@@ -53,6 +56,95 @@ def test_resolve_version_sha_matches_the_commit_subject_convention():
     """Every commit here is `vX.Y.Z: ...`; the resolver greps that prefix."""
     assert C.resolve_version_sha("0.5.446") == "be759f0"
     assert C.resolve_version_sha("9.9.999") == ""
+
+
+# --------------------------------------------------------------------------
+# `convert_at`'s OWN return statement -- exercised for real.
+#
+# Every existing caller of `convert_at` (approvals.assess, approvals.
+# recover_approved_sng, and this module's own checks 3/4) is tested only
+# through a hand-written stand-in for the whole function -- see
+# `test_approvals.py`'s `_fake_convert_at` and the tests that inject a bare
+# lambda. That pins each CALLER's handling of a `Converted`/`None` result;
+# none of it ever calls the real `convert_at`, so `return None if packed is
+# None else Converted(sng=out, sid=packed)` reverting to the old bare
+# `return packed` moves nothing in the suite -- MEASURED at c2cb76a, 0 failed.
+#
+# `approvals.pack_into` was made testable by finding the point where the REAL
+# function fails without its external dependency: `pack_sid` writes its
+# `.sng` in-process, before it shells out to gt2reloc, so a missing directory
+# raises with no binary involved. `convert_at` has no equivalent single
+# early-failure point -- its own "write the .sng" step IS a subprocess call
+# (a historical `python -m h2g`), not an in-process write, so there is no
+# moment before that call where a directory or file-system defect alone can
+# stand in for the whole external dependency the way `pack_sid`'s pre-write
+# does.
+#
+# What convert_at DOES have is exactly two OS boundaries: `subprocess.run`
+# (used for `git archive` and for the historical `python -m h2g` invocation)
+# and `fidelity.pack_sid` (which shells out to gt2reloc). Faking only those
+# two -- never `convert_at` itself -- lets every other line of the real
+# function run for real: `Path.mkdir`, a real (empty) tar's `extractall`,
+# `fidelity.legalise_restarts` on a real `.sng` (Commando.sng, already used
+# as a real-format fixture in test_approvals.py), the `tree_presets` OSError
+# fallback, and -- the line this exists to guard -- the final `Converted`
+# construction. No git history, no historical interpreter, and no gt2reloc
+# binary are needed.
+# --------------------------------------------------------------------------
+def test_convert_at_returns_a_converted_pair_not_the_bare_packed_path(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: reverting `convert_at`'s
+    `return None if packed is None else Converted(sng=out, sid=packed)` to the
+    old `return packed` must fail this test -- `got.sng` would then raise
+    AttributeError on a bare `Path`.
+    """
+    import io
+    import tarfile
+    import types
+    from pathlib import Path
+
+    sha = "deadbee1"
+    monkeypatch.setattr(C, "resolve_version_sha", lambda version: sha)
+
+    # The bytes the historical `python -m h2g` call would have written --
+    # a REAL .sng, because legalise_restarts (called on it for real below)
+    # parses the format at a fixed offset.
+    sng_bytes = (C.ROOT / "Commando.sng").read_bytes()
+
+    # A real, empty tar -- what `git archive` on any tree ultimately is,
+    # bytes-for-bytes something tarfile.extractall can really consume.
+    tar_buf = io.BytesIO()
+    with tarfile.open(fileobj=tar_buf, mode="w"):
+        pass
+    archive_bytes = tar_buf.getvalue()
+
+    def fake_run(cmd, **kwargs):
+        if cmd[0] == "git":
+            return types.SimpleNamespace(stdout=archive_bytes)
+        # the historical `python -m h2g ... -o <out> ...` invocation
+        out_path = Path(cmd[cmd.index("-o") + 1])
+        out_path.write_bytes(sng_bytes)
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(C.subprocess, "run", fake_run)
+
+    packed_path = tmp_path / "packed.sid"
+
+    def fake_pack_sid(*a, **k):
+        packed_path.write_bytes(b"stand-in packed .sid, gt2reloc never ran")
+        return packed_path
+
+    monkeypatch.setattr(C.F, "pack_sid", fake_pack_sid)
+
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"never read by any of the fakes above")
+
+    got = C.convert_at("9.9.998", sid, tmp_path, "gt2reloc-not-invoked", 1)
+
+    assert isinstance(got, C.Converted), (
+        f"convert_at must return a Converted pair, got {got!r}")
+    assert got.sng == tmp_path / f"Tune.{sha}.sng"
+    assert got.sng.read_bytes() == sng_bytes
+    assert got.sid == packed_path
 
 
 # The three pairs as MEASURED at v0.5.459, so these are the real numbers the
