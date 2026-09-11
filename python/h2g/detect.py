@@ -4486,6 +4486,25 @@ def _find_two_stage(sid: SidFile, det: Detection):
     # computed from, so a bad one would be silently trusted.
     if not (0 <= off and off + span + 2 <= len(data)):
         return False, -1, -1
+    # **The array this names can be the wave-program pointer array under
+    # another reading, and that is not a misread.** Ricochet: this returns
+    # $0ADF and `find_wave_program` names $0ADE -- one 8-byte row per record,
+    # read by two routines under two effect bits. Bit $04's handler takes +1
+    # as the attack waveform and +3 as its frames; bit $01's takes +0/+1 as a
+    # pointer into the player. Which reading a record gets is that record's
+    # own +7, and the file partitions exactly (measured at v0.5.480): the four
+    # bit-$04 records carry $17/$81/$81/$81 at +1 and their pointer readings
+    # land outside the player; the two bit-$01 records carry $994C/$9977,
+    # both inside it and decoding to real programs, and their +1 reads as
+    # $99 -- a byte the original never writes to $D404 (0 frames in 60 s)
+    # and the conversion never emits, because goatwriter gates this array on
+    # the record's own bit $04 (`arp_style & 0x04`), the second check
+    # CLAUDE.md requires of every per-record effect bit. The $17 is the proof
+    # the other way: 193 frames of it on the original's voice 3, one per
+    # attack of record 0. `tests/test_two_stage.py` pins the partition and
+    # the emission, so the earlier reading of this offset as "the pointer
+    # high byte named as a waveform" is retracted here, where a grep for it
+    # lands.
     return True, off, off + 2
 
 

@@ -780,7 +780,7 @@
       "multiplier": 1,
       "no_test_restart": true,
       "two_stage": true,
-      "regrid": false
+      "regrid": true
     },
     "Proteus.sid": {
       "max_rows": 128,

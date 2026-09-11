@@ -23,12 +23,27 @@ So the gate is doing real work, but it is far broader than the harm it
 prevents. Lifting it wants a guard on the pack -- see the task opened for it --
 not a wider condition here.
 
-**WHY THE PACK REFUSES IS STILL UNKNOWN, AND FIVE CANDIDATES ARE NOW EXCLUDED
-BY MEASUREMENT (fd286a5).** A guard on the pack has to know what to guard, so
-the refusal was reproduced with the gate lifted IN MEMORY (the condition on
-disk untouched, sha1 verified) and every documented cause checked against the
-bytes. Shipped arm 16558 bytes, lifted arm 29009, and only the lifted one is
-refused:
+**WHY THE PACK REFUSES -- FOUND at 24b9f1d, after five candidates were
+excluded at fd286a5.** `greloc.c`'s `packpattern()` packs each pattern for the
+player and returns -1 past **256 bytes**; `gt2reloc` then prints "PATTERN xx
+IS TOO COMPLEX (OVER 256 BYTES PACKED)!" to the console that does not exist
+headless, writes no file and exits 0. A command/data pair costs two packed
+bytes wherever it CHANGES from the previous row, and `CMD_SETPULSEPTR` on
+785 note rows changes on almost every one: four of the lifted arm's 127-row
+patterns (86, 88, 93, 96) pack to 264-270 bytes, 105 command changes and 53
+instrument bytes on top of 127 notes, where the shipped arm's largest is 118.
+`test_table_validation.packed_pattern_size` is the replica; its corpus test is
+the guard the pack was missing.
+
+Confirmed by intervention rather than by arithmetic alone: with the command
+stripped from ONLY those four patterns the lifted file packs (largest 217);
+with it stripped from every OTHER pattern and kept on the four, it is still
+refused. The three candidates fd286a5 left open -- a renumbered pulse-table
+operand, a limit on distinct pattern lengths, the two-byte `$FE nn` orderlist
+tempo -- are closed by that: none of them changes when four patterns'
+commands do.
+
+The exclusions that stand (fd286a5, lifted arm 29009 bytes against 16558):
 
     pattern count        126   against MAX_PATTERNS 208        clear
     exectable walk       NO ERRORS -- test_table_validation's
@@ -41,20 +56,12 @@ refused:
     total size           29009 bytes, where W_A_R packs at
                          58481 and Gremlins at 52269           clear
 
-So it is neither a table error nor a pattern overflow -- confirmed against this
-repo's own validator rather than asserted -- and it is not a length or a size
-bound either. `gt2reloc` returns **exit 0, prints nothing, and writes no
-output file**, which is the silent-refusal path CLAUDE.md records ("test for
-the output file, never the exit code"), so the tool itself gives no clue.
-
-What is NOT yet excluded, in the order worth trying: a `CMD_SETPULSEPTR`
-operand that is legal in the `.sng` and out of range once `greloc.c` has
-renumbered the pulse table; the 59 pattern COPIES colliding with a limit on
-distinct pattern LENGTHS rather than pattern count; and Rasputin's own
-two-byte `$FE nn` orderlist tempo command, which no other corpus file carries
-(see tracks.py) and which the pulse-phase expansion interleaves new positions
-around. The first is cheapest: dump the packed pulse table and compare every
-emitted operand against its length.
+So lifting the gate wants the pulse-phase writer to BUDGET: a pattern's
+packed size is knowable at emit time from the same rows it writes, and a
+`CMD_SETPULSEPTR` that would take a pattern past 256 has to be dropped (the
+instrument's own pointer then plays the first phase, which is what every note
+gets today) or the pattern split. Until it does, the `multiplier == 1` gate
+is what keeps Rasputin packing.
 """
 import json
 import sys

@@ -507,15 +507,43 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
     rec = det.instr_start + i * det.instr_stride
     if rec + 7 >= len(data) or not data[rec + 7] & EFFECT_PITCH_SEQ_MASK:
         return None
-    at = seq.index + i * det.instr_stride
-    if at >= len(data):
-        return None
-    idx = data[at]
-    pair = seq.pairs + 2 * idx
-    if seq.base >= len(data) or pair + 1 >= len(data):
-        return None
-    steps = [data[seq.base]] + [data[pair], data[pair + 1]]
-    steps = steps[:max(2, seq.steps)]
+    if seq.pairs < 0:
+        # **The static form, and the writer Kings of the Beach intro needs.**
+        # Its bit-$10 handler ($100E-$102A) has no per-instrument index and no
+        # pair copy: `LDY phase / CLC / LDA note,X / ADC $126B,Y / ASL / TAY`,
+        # one global table for every record carrying the bit. The table is
+        # `00 0C 18` -- the note, an octave up, two octaves up -- and the phase
+        # cell is stepped DOWN (`DEC $126E / BPL / LDA #2 / STA $126E` at
+        # $107F), so the player's order is 24, 12, 0: siddump reads 559 frames
+        # of -12 and 292 of +24 on voice 1 in 60 s, and never +12, +12, -24.
+        # Direction is the whole difference between a falling arpeggio and a
+        # rising one, so it is carried here rather than assumed.
+        #
+        # INTERIM ENCODING, until `detect.PitchSeq` grows `static` and
+        # `descending` fields (detect.py was read-only when this was written):
+        # `pairs < 0` says the table is global and sits at `base`; `steps` is
+        # its length, NEGATIVE when the phase counter decrements, in which case
+        # play order is the table read backwards. Nothing in detect.py emits
+        # this form yet -- `det.pitch_seq` is still None on the file -- so the
+        # shipped conversion is unchanged until a spelling for the block above
+        # lands there; `tests/test_pitch_seq_shapes.py` pins what this branch
+        # does with the form when it does.
+        n = abs(seq.steps)
+        if n < 2 or seq.base < 0 or seq.base + n > len(data):
+            return None
+        steps = list(data[seq.base:seq.base + n])
+        if seq.steps < 0:
+            steps.reverse()
+    else:
+        at = seq.index + i * det.instr_stride
+        if at >= len(data):
+            return None
+        idx = data[at]
+        pair = seq.pairs + 2 * idx
+        if seq.base >= len(data) or pair + 1 >= len(data):
+            return None
+        steps = [data[seq.base]] + [data[pair], data[pair + 1]]
+        steps = steps[:max(2, seq.steps)]
     if not any(steps):
         return None
     # **Rotated so the most common step follows the attack.** The player's phase
@@ -526,7 +554,17 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
     # points of mean melody across 26 files and took Chain Reaction and Zoolook
     # from 100% to 78%. Leading with the modal step is the likeliest value under
     # a uniform unknown phase, not a fit to the metric.
-    modal = Counter(steps).most_common(1)[0][0]
+    # **Ties go to the zero step.** `most_common` breaks a tie by insertion
+    # order, which is right for the pair form -- `seq[0]` is the 0 that nothing
+    # writes and it is inserted first -- and wrong for a static table read in
+    # play order: Kings of the Beach intro's (24, 12, 0) has no modal step,
+    # and leading with 24 put two octaves on every attack frame at -S5,
+    # melody 99.5% -> 91.7% and pitch 100% -> 69% in the A/B. The step that
+    # leaves the note alone is the one the attack frame needs, whatever its
+    # position in the table; `max` keeps first-inserted among equals exactly
+    # as `most_common` did, so no pair-form file can move on this.
+    counts = Counter(steps)
+    modal = max(steps, key=lambda s: (counts[s], s == 0))
     # Index 1, not index 0: entry 0 is the attack frame and must sound the
     # pattern's own note, so the modal step goes on the frame after it.
     turn = (steps.index(modal) - 1) % len(steps)
@@ -3193,6 +3231,30 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
             # The sustain is left alone: it governs the note while it plays,
             # which is not what the cut destroys.
             #
+            # **THE REST OF THE KILL IS NOT EMITTED, AND THAT IS A DECISION,
+            # NOT A GAP** (v0.5.480). The player writes $0000 to BOTH registers
+            # at the note end, and holds it until the next note; we hold the
+            # record's AD and sustain with the release zeroed. Once the gate
+            # is off only the release nibble governs the envelope, so the
+            # two are the same sound -- and the register difference is what
+            # `adsr` scores. Samantha Fox, traced beside the harness's own
+            # packed .sid over its 92 s window: of 7200 disagreeing envelope
+            # frames, 3492 are both-gates-off with only AD/S differing
+            # (inaudible) and 2499 are gate-on with only the release
+            # differing (inaudible until the gate drops, which this cut makes
+            # silent on both sides); 627 are gate-state disagreements that
+            # belong to `gate`; the audible remainder is 582 frames, and
+            # `adsr_gated_off_audible` in the row (202) is the harness's own
+            # count of the gated-off part of it -- its 3694 gated-off frames
+            # are exactly the 3492 + 202 above. The
+            # column reads 48% on a file whose envelopes SOUND right.
+            # Writing the pair to zero would take a `CMD_SETAD`/`CMD_SETSR`
+            # on the row after every note end -- two command slots the row 0
+            # clock and every slide already compete for, and two packed bytes
+            # per row against greloc.c's 256-byte pattern limit -- for a
+            # difference nothing can hear. If that trade is ever wanted, the
+            # measurement above is the one to beat.
+            #
             # **Per instrument, not per file** (v0.5.201). An instrument
             # whose effect routine runs every frame re-writes the envelope
             # after the cut, so its release survives and is heard. On
@@ -5170,6 +5232,53 @@ def _pulse_triangle(width: int, low: int, high: int,
     return entries, loop
 
 
+def _pulse_triangle_wrapped(width: int, low: int, high: int,
+                            speed: int) -> tuple[List[tuple], int]:
+    """`_pulse_triangle` for a bounds byte whose high nibble is <= its low one.
+
+    Same shape, same opening at the record's own width, same loop back to the
+    descent -- but every distance is taken modulo $1000, because that is what
+    the player does. Its sweep never clamps and never compares magnitudes: it
+    adds or subtracts the rate into a 12-bit accumulator (`ADC #$00 / AND
+    #$0F` on the high byte) and flips direction when the high nibble EQUALS
+    the bound it is heading for. So with `high` below `low` the ascent from
+    the seed runs up through $Fxx, wraps to $0xx, and continues until the
+    nibble reads `high`; the descent then runs back down through the wrap
+    until it reads `low`. Goattracker's pulse arithmetic wraps the same way
+    -- `cptr->pulse &= 0xfff` in gplay.c:893/899, and the packed player
+    carries into a high byte the SID only reads four bits of -- so a leg that
+    crosses $FFF needs no special encoding, only the right tick count.
+
+    Measured on Kings of the Beach ingame, instrument 4 (rate $84, bounds $02,
+    seed $080, all three voices): the original climbs $080 -> $FF8 in 30
+    frames of +132 and wraps to $07C; a note there never lasts longer, so the
+    first leg is the whole audible sweep. At -S3 that is 90 calls of +44.
+
+    Two approximations, both stated:
+
+    * `high == low` is a band of one nibble: the player reaches it and then
+      alternates one step down, one step up, forever. The modular descent
+      distance is then ~0 and `max(1, ...)` gives exactly that one-tick
+      jitter -- except when the ascent ended just past a wrap, where the
+      player's first descent runs a full $1000 before settling into the
+      jitter, and this leg does not. Nine corpus records read `$00`, all on
+      instrument 18 or above.
+    * As in `_pulse_triangle`, each leg turns a fraction of a step early
+      rather than a fraction late.
+    """
+    lo_v, hi_v = low << 8, high << 8
+    entries = [((0x80 | (width >> 8)) & 0xFF, width & 0xFF)]
+    first = ((hi_v - width) & 0xFFF) // speed
+    if first:
+        entries += [(t, speed) for t in _split_ticks(first)]
+    top = (width + first * speed) & 0xFFF
+    ticks = _split_ticks(max(1, ((top - lo_v) & 0xFFF) // speed))
+    loop = len(entries)
+    entries += [(t, (0x100 - speed) & 0xFF) for t in ticks]
+    entries += [(t, speed) for t in ticks]
+    return entries, loop
+
+
 def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
                    multiplier: int) -> tuple[List[tuple], int | None]:
     """The pulse-table entries for instrument `i`, and where a jump loops back.
@@ -5226,13 +5335,23 @@ def _pulse_program(sid: SidFile, det: Detection, i: int, pulse: bool,
     rate = data[rate_at]
     bounds = data[bounds_at]
     low, high = bounds & 0x0F, bounds >> 4
-    # rate 0 is the player's own "do not sweep"; high <= low leaves it no band
-    # to travel, and what it does then depends on 12-bit wrap-around. Both keep
-    # the static width -- an under-read never invents movement.
-    if rate == 0 or high <= low:
+    # rate 0 is the player's own "do not sweep", and keeps the static width.
+    if rate == 0:
         return static, None
     speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / multiplier)))
     width = ((data[base + 1] & 0x0F) << 8) | data[base]
+    # high <= low used to keep the static width too, on the reasoning that it
+    # "leaves no band to travel". It does not: the player only ever tests the
+    # high nibble for EQUALITY with a bound after the step (`ADC #$00 / AND
+    # #$0F / CMP #high`, Kings of the Beach $928D-$9294), so a band whose top
+    # is below its bottom is a band that crosses $FFF. Kings of the Beach
+    # ingame's instrument 4 is the measured case -- rate $84, bounds $02, seed
+    # $080 -- and siddump shows every note climbing $080, $104, ... $FF8 and
+    # wrapping to $07C, 30 steps of +132 on all three voices, where this
+    # branch had it frozen at $080: 1 pulse change per voice against the
+    # original's 342. 25 corpus records have this shape, on 15 files.
+    if high <= low:
+        return _pulse_triangle_wrapped(width, low, high, speed)
     return _pulse_triangle(width, low, high, speed)
 
 
@@ -5432,6 +5551,18 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
 # a ramp to the bound, and a jump into a shared alternating loop. Tick 0
 # commands run AFTER the new-note init (player.s:903-906), so the command
 # beats the instrument's own pointer load.
+#
+# **The command has a packed cost, and it is what refuses Rasputin at -S2.**
+# greloc.c's `packpattern()` charges two bytes for every row whose command or
+# data differs from the row before, and returns -1 past 256 bytes a pattern
+# ("PATTERN xx IS TOO COMPLEX", to a console nobody sees). CMD_SETPULSEPTR on
+# nearly every note row of a 127-row pattern is 105 changes on top of the
+# notes: four of Rasputin's expanded patterns pack to 264-270 (v0.5.480),
+# confirmed by stripping the command from only those four and packing. The
+# `multiplier == 1` gate in convert.py is what keeps it off that file; a
+# writer that lifts the gate has to budget the packed size per pattern --
+# `tests/test_table_validation.packed_pattern_size` is the arithmetic -- and
+# drop or split where a pattern would cross the limit.
 # --------------------------------------------------------------------------
 
 class PulsePhaseSim:
@@ -6253,8 +6384,23 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # those rows with an undefined instrument.
         highest = _highest_instrument_referenced(patterns)
         if highest > instr_used:
+            # **Say whether any orderlist reaches the pattern.** This scans
+            # ALL patterns, reachable or not, and that is right for the
+            # converter -- it must not emit a reference it cannot satisfy --
+            # but three corpus files warn about instruments no orderlist ever
+            # plays (Ricochet $20, Arcade_Classics and BMX_Kidz $32; see
+            # tests/test_instrument_bound.py's played/reported split), and
+            # every reader of the bare message since has had to re-derive
+            # reachability by hand. `instr_voices` is `tracks.instrument_voices`
+            # over the finished orderlists: only instruments a played pattern
+            # names are keys, so its highest key is the music's own answer.
+            reached = max((i for i in (instr_voices or {}) if i > instr_used),
+                          default=0)
+            where = (f"the orderlists reach ${reached:X}"
+                     if reached else "none is reached by any orderlist")
             log(f"*** PATTERNS REFERENCE INSTRUMENT ${highest:X} BUT ONLY "
-                f"${instr_used:X} WERE WRITTEN -- {highest - instr_used} DANGLING ***")
+                f"${instr_used:X} WERE WRITTEN -- {highest - instr_used} "
+                f"DANGLING; {where} ***")
 
     _write_filtertable(out, filter_entries)
     if fmt == FORMAT_GTS5:

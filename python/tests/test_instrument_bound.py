@@ -470,3 +470,31 @@ def test_every_search_combination_of_the_fullest_files_converts():
             for combo in itertools.combinations(P.FIDELITY_TOGGLES, r):
                 convert(str(path), log=lambda m: None, **base, **P.FIXED,
                         **{k: True for k in combo})
+
+
+def test_the_warning_says_whether_an_orderlist_reaches_the_dangling_instrument():
+    """v0.5.480. The warning scans ALL patterns, and three corpus files warn
+    about instruments no orderlist plays (Ricochet $20, Arcade_Classics and
+    BMX_Kidz $32) -- every reader since had to re-derive reachability by hand.
+    It now says which: the highest dangling instrument the orderlists reach,
+    or that none is reached. Pinned against `_played`, the independent walk
+    this file already uses, so the two readings cannot drift apart.
+    """
+    if not CORPUS.is_dir():
+        return
+    opts = dict(FIXED, legal_restart=True)
+    seen = 0
+    for name in ("Ricochet.sid", "Arcade_Classics.sid", "BMX_Kidz.sid"):
+        msgs = []
+        blob = convert(str(CORPUS / name), log=msgs.append, **opts)
+        m = next((x for x in msgs if "DANGLING" in x), None)
+        if m is None:
+            continue
+        seen += 1
+        hi, written, _, _ = _played(blob)
+        if "none is reached by any orderlist" in m:
+            assert hi <= written, (name, hi, written)
+        else:
+            reached = int(m.split("the orderlists reach $")[1].split()[0], 16)
+            assert reached == hi > written, (name, reached, hi, written)
+    assert seen, "no corpus file warned -- the walk is vacuous"

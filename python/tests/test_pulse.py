@@ -77,13 +77,71 @@ def test_a_zero_rate_keeps_the_static_width_the_tool_always_wrote():
     assert entries == [(0x8A, 0x40), (0xFF, 0x00)]
 
 
-def test_bounds_that_leave_no_band_keep_the_static_width():
-    """high <= low: what the player does then depends on 12-bit wrap-around,
-    so it is left alone. An under-read never invents movement."""
-    for bounds in (0x28, 0x88):          # high 2 low 8, and high 8 low 8
-        sid = _sid([_record(rate=0x40)], [bounds])
-        _, loop = _pulse_program(sid, _det(1), 0, True, 1)
-        assert loop is None
+def test_a_band_whose_top_is_below_its_bottom_crosses_fff():
+    """high <= low used to keep the static width -- "no band to travel". The
+    player never compares magnitudes: it flips when the high nibble EQUALS the
+    bound it is heading for, so a top below the bottom is a band through $FFF.
+    Kings of the Beach ingame's instrument 4 is the measured case: rate $84,
+    bounds $02, seed $080, packed at -S3, and siddump shows every note on all
+    three voices climbing $080, $104, ... $FF8 (30 frames of +132) before the
+    next note reseeds it. This branch froze it at $080: 1 pulse change per
+    voice against the original's 342, pspan 0.00. After: 394 and 1.00.
+    """
+    sid = _sid([_record(0x80, 0x00, rate=0x84)], [0x02])   # low 2, high 0
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 3)
+    assert entries[0] == (0x80, 0x80), "opens on the record's $080"
+    speed = round(0x84 / 3)                                # 44: 132 a frame
+    assert entries[1][1] == speed
+    ascent = sum(t for t, sp in entries[1:loop] if sp == speed)
+    assert ascent == ((0 - 0x80) & 0xFFF) // speed == 90, "up through the wrap"
+    top = (0x80 + ascent * speed) & 0xFFF
+    assert top == 0xFF8, "where the original's climb is seen to end"
+    down = entries[loop:]
+    assert down[0][1] == (0x100 - speed) & 0xFF, "the loop lands on the descent"
+    descent = sum(t for t, sp in down if sp == (0x100 - speed) & 0xFF)
+    assert descent == ((top - 0x200) & 0xFFF) // speed, "back down to the low nibble"
+    assert sum(t for t, sp in down if sp == speed) == descent
+
+
+def test_a_band_of_one_nibble_jitters_one_step_each_way():
+    """high == low: the player reaches the nibble and then alternates one step
+    down, one step up, forever (`CMP` equal on both branches). The modular
+    descent distance is ~0 and `max(1, ...)` gives exactly that."""
+    sid = _sid([_record(0x00, 0x08, rate=0x40)], [0x88])   # seed $800, band 8..8
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
+    assert entries == [(0x88, 0x00), (1, 0xC0), (1, 0x40)]
+    assert loop == 1
+
+
+def test_the_unwrapped_path_is_untouched_by_the_wrapped_one():
+    """The routing is on `high <= low` only; a record whose band reads the
+    right way round must produce exactly what it produced before."""
+    sid = _sid([_record(0x00, 0x04, rate=0x40)], [0x82])   # width $400, low 2, high 8
+    entries, loop = _pulse_program(sid, _det(1), 0, True, 1)
+    assert entries[0] == (0x84, 0x00)
+    assert loop == 2
+    assert _rising(entries) == ((8 << 8) - 0x400) // 0x40 + sum(
+        t for t, s in entries[loop + 1:] if s == 0x40)
+
+
+def test_kings_of_the_beach_ingame_instrument_4_is_the_measured_wrapped_case():
+    """Pins the record bytes the docstrings quote, so the claim decays loudly
+    if the file or the detection moves: rate $84 at +6, bounds $02, seed $080.
+    Measured at v0.5.480 on siddump -a4: 30 steps of +132 from $080 to $FF8,
+    then a wrap to $07C, on all three voices."""
+    path = CORPUS / "Kings_of_the_Beach_ingame.sid"
+    if not path.exists():
+        pytest.skip("corpus not present")
+    sid = load_sid(str(path))
+    det = detect(sid, log=lambda m: None)
+    base = det.instr_start + 4 * det.instr_stride
+    assert sid.data[base + det.pulse_rate_field] == 0x84
+    assert sid.data[det.pulse_bounds + 4 * det.instr_stride] == 0x02
+    assert (sid.data[base + 1] & 0x0F, sid.data[base]) == (0x00, 0x80)
+    entries, loop = _pulse_program(sid, det, 4, True, 3)
+    assert entries[0] == (0x80, 0x80)
+    assert sum(t for t, s in entries[1:loop] if s == 44) == 90
+    assert loop == 2, "set, then one 90-call ascent (under the 7F tick byte)"
 
 
 def test_a_sweep_opens_at_the_records_own_width_not_at_a_bound():

@@ -22,7 +22,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from h2g.convert import _detect_tables
+from h2g.convert import _detect_tables, convert
 from h2g.detect import (WAVEFORMS, _effect_byte_address, _find_two_stage,
                         detect)
 from h2g.sidfile import HLEN, load_sid
@@ -464,3 +464,64 @@ def test_the_interleaved_push_chain_is_interrupted_not_absent():
         want = det.two_stage_frames - det.instr_start + instr_cpu
         assert search_file(sid.data, TWO_STAGE_PUSH_ANCHORED.format(
             lo=want & 0xFF, hi=want >> 8)) > -1, name
+
+# --- one aux row, two readings ---------------------------------------------
+
+def _wavetable_left(sng: bytes) -> bytes:
+    """The wavetable's left column, walked out of the .sng bytes directly."""
+    p = 4 + 32 * 3
+    subtunes = sng[p]
+    p += 1
+    for _ in range(subtunes * 3):
+        p += 1 + sng[p] + 1
+    p += 1 + 25 * sng[p]
+    n = sng[p]
+    return sng[p + 1:p + 1 + n]
+
+
+def test_ricochet_shares_one_aux_row_between_the_two_stage_and_the_program():
+    """Refutes "`_find_two_stage` names Ricochet's wave-program pointer high
+    byte as a waveform". The two arrays are one block, one row per record,
+    and the record's own effect bit says which reading applies: bit $04 reads
+    +1 as the attack and +3 as its frames, bit $01 reads +0/+1 as a pointer.
+    The partition is exact -- every bit-$04 row's pointer reading lands
+    outside the player and every bit-$01 row's inside it.
+    """
+    if not CORPUS.is_dir():
+        return
+    sid, det = _det("Ricochet")
+    assert det.effect_two_stage and det.wave_program >= 0
+    assert det.two_stage_wave == det.wave_program + 1
+    assert det.two_stage_frames == det.wave_program + 3
+    d = sid.data
+    lo, hi = sid.load_addr, sid.load_addr + len(d) - HLEN
+    seen = {"two_stage": 0, "program": 0}
+    for i in range(det.instr_used):
+        effect = d[det.instr_start + i * det.instr_stride + 7]
+        row = det.wave_program + i * det.instr_stride
+        ptr = d[row] | d[row + 1] << 8
+        assert not (effect & 0x04 and effect & 0x01), "one reading per record"
+        if effect & 0x04:
+            seen["two_stage"] += 1
+            assert d[row + 1] in (0x17, 0x81), "a waveform, not a pointer"
+            assert not lo <= ptr < hi
+        elif effect & 0x01:
+            seen["program"] += 1
+            assert lo <= ptr < hi, "a pointer into the player"
+            assert d[row + 1] == 0x99, "which would be no waveform at all"
+    assert seen == {"two_stage": 4, "program": 2}
+
+
+def test_ricochet_emits_its_attacks_and_never_the_pointer_byte():
+    """The second check: the emitter gates the array on the record's bit $04,
+    so $99 -- the program rows' +1 -- never reaches a wavetable, while $17,
+    record 0's attack (193 frames of it in the original's first 60 s), does.
+    """
+    if not CORPUS.is_dir():
+        return
+    sng = convert(str(CORPUS / "Ricochet.sid"), log=lambda m: None,
+                  effects=True, two_stage=True, wave_program=True)
+    left = _wavetable_left(sng)
+    assert 0x99 not in left
+    assert 0x17 in left and 0x81 in left
+

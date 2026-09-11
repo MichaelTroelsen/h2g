@@ -305,6 +305,65 @@ def test_noise_frames_are_counted_over_all_frames_per_side():
     assert got["our_noise_frames"] == 0
 
 
+def _tail_voices(orig_wf, our_wf, our_sr):
+    """One voice per side: waveform events and one ADSR write at frame 0."""
+    o = fidelity.Voice(wf_events=list(orig_wf), adsr_events=[(0, 0x0A00)])
+    u = fidelity.Voice(wf_events=list(our_wf), adsr_events=[(0, 0x0A00 | our_sr)])
+    return [o, fidelity.Voice(), fidelity.Voice()], [u, fidelity.Voice(), fidelity.Voice()]
+
+
+def test_a_latched_waveform_under_a_closed_gate_is_not_charged_once_its_release_has_run_out():
+    """Kings of the Beach ingame: the original writes $D404 = $00 when the tune
+    ends, our silent park holds $40 with the gate off. 165 of its 192
+    disagreeing frames were that tail, wave 0.8477 with them and 0.9738
+    without. With release 0 the latched waveform is silent from the frame
+    after the gate drops, so only the drop frame itself is charged."""
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x00)], [(0, 0x41), (10, 0x40)], our_sr=0x0)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert got["wave_frames"] == 11 and got["wave_tail_frames"] == 19
+    assert got["wave"] == 10 / 11
+    assert got["wave_voices"][0]["tail_frames"] == 19
+
+
+def test_the_tail_is_charged_for_as_long_as_our_release_still_sounds():
+    """Release F is 24 s: a waveform latched under a closed gate sounds for
+    1200 frames against the original's silence, and every one is a real
+    difference -- Trans-Atlantic's $0AF8 shape, where a released attack rang
+    through a gap that should be silent."""
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x00)], [(0, 0x41), (10, 0x40)], our_sr=0xF)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert got["wave_tail_frames"] == 0
+    assert got["wave"] == 10 / 30
+    # Release 4 is 114 ms, six frames: charged through frame 15, free after.
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x00)], [(0, 0x41), (10, 0x40)], our_sr=0x4)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert fidelity._release_frames(0x4) == 6
+    assert got["wave_frames"] == 16 and got["wave_tail_frames"] == 14
+
+
+def test_the_tail_rule_needs_both_gates_off_and_the_original_silent():
+    # Our gate still up: the waveform is sounding, charged in full.
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x00)], [(0, 0x41)], our_sr=0x0)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert got["wave_tail_frames"] == 0 and got["wave"] == 10 / 30
+    # The original still selects a waveform: a wrong class, not a tail.
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x20)], [(0, 0x41), (10, 0x40)], our_sr=0x0)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert got["wave_tail_frames"] == 0 and got["wave"] == 10 / 30
+    # A voice silent on both sides is still left out of the denominator, not
+    # counted as a tail.
+    orig, ours = _tail_voices([(0, 0x41), (10, 0x00)], [(0, 0x41), (10, 0x00)], our_sr=0x0)
+    got = fidelity.wave_compare(orig, ours, nframes=30)
+    assert got["wave_tail_frames"] == 0 and got["wave_frames"] == 10
+
+
+def test_the_wave_dimension_declares_the_tail_rule():
+    """The blindness is stated in the Dimension itself, as CLAUDE.md asks, so
+    the report's own 'What this run compared' carries it."""
+    d = [d for d in fidelity.DIMENSIONS if d.key == "wave"][0]
+    assert "release has run out" in d.of and "wave_tail_frames" in d.of
+
+
 def test_wave_is_none_when_no_frames_are_counted():
     got = fidelity.wave_compare(_wf_voices(), _wf_voices(), nframes=5)
     assert got["wave"] is None

@@ -1493,7 +1493,10 @@ test dependency).
     0.9903 -> 0.9952 at 180 s). **What caught both was a TEST, not a reading**:
     `tests/test_claude_md_figures.py` re-derives these from `presets.json` and
     fails when this file disagrees, which is the whole argument for committing
-    the grading pass rather than repeating it by hand. The drift split is not
+    the grading pass rather than repeating it by hand. **RE-GRADED AGAIN AT
+    v0.5.481: `--regrid` has **15 adoptions** -- Powerplay_Hockey_USA_vs_USSR
+    adopted after the 180 s re-measure the interview asked for, the same
+    reversal shape as One_on_One's; the 14 above is now HISTORY.** The drift split is not
     re-graded here and must not be: it is a per-file measurement and the
     artefact is now `-t 180` where that figure was taken at `-t 60`, so the
     test SKIPS it rather than comparing two different quantities.

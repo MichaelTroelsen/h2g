@@ -70,6 +70,137 @@ def table_errors(blob: bytes) -> list:
     return out
 
 
+# greloc.c's packpattern() (v2.77) packs each pattern for the player and
+# returns -1 past this many bytes; gt2reloc then prints "PATTERN xx IS TOO
+# COMPLEX (OVER 256 BYTES PACKED)!" to the console that does not exist headless
+# and writes no file. This is what refused Rasputin under `pulse_phase` at -S2
+# (v0.5.480): CMD_SETPULSEPTR on 785 note rows made four 127-row patterns pack
+# to 264-270 bytes. Confirmed by intervention -- stripping the command from
+# ONLY those four patterns packs (max 217), stripping it from every OTHER
+# pattern and keeping the four is still refused.
+PACKED_PATTERN_LIMIT = 256
+_FX, _FXONLY, _FIRSTNOTE, _REST = 0x40, 0x50, 0x60, 0xBD
+
+
+def packed_pattern_size(rows) -> int:
+    """Bytes greloc.c's `packpattern` emits for `rows` of (note, instr, cmd,
+    data) -- its size arithmetic exactly, before the endmark.
+
+    Three rules decide it: a repeated instrument byte costs nothing, a
+    command/data pair costs two bytes only where it CHANGES from the previous
+    row (one where the command is 0), and a run of bare rests after the first
+    row collapses to one byte per 64. Table remaps are size-neutral. The one
+    thing not replicated is `CMD_SETMASTERVOL` above `$0F` being erased when
+    no author info is packed, which can only make a pattern smaller.
+    """
+    temp1, instr = [], 0
+    for c, (n, i, cmd, dat) in enumerate(rows):
+        if c and i and i == instr:
+            temp1.append((n, 0, cmd, dat))
+        else:
+            temp1.append((n, i, cmd, dat))
+            if i:
+                instr = i
+    b, command, databyte = [], -1, -1
+    for n, i, cmd, dat in temp1:
+        if i:
+            b.append(i)
+        if n == _REST:
+            if cmd != command or dat != databyte:
+                command, databyte = cmd, dat
+                b.append(_FXONLY + cmd)
+                if cmd:
+                    b.append(dat)
+            else:
+                b.append(_REST)
+        else:
+            if cmd != command or dat != databyte:
+                command, databyte = cmd, dat
+                b.append(_FX + cmd)
+                if cmd:
+                    b.append(dat)
+            b.append(n)
+    size, c = 0, 0
+    while c < len(b):
+        packok = c != 0
+        if b[c] < _FX:
+            size += 1
+            c += 1
+            packok = False
+        if c < len(b) and _FXONLY <= b[c] < _FIRSTNOTE:
+            fxnum = b[c] - _FXONLY
+            size += 2 if fxnum else 1
+            c += 2 if fxnum else 1
+            continue
+        if c < len(b) and b[c] < _FXONLY:
+            fxnum = b[c] - _FX
+            size += 2 if fxnum else 1
+            c += 2 if fxnum else 1
+            packok = False
+        if c >= len(b):
+            break
+        if b[c] != _REST:
+            packok = False
+        if not packok:
+            size += 1
+            c += 1
+        else:
+            d = c
+            while d < len(b) and b[d] == _REST and d - c < 64:
+                d += 1
+            d -= c
+            size += 1
+            c += d if d > 1 else 1
+    return size
+
+
+def _pattern_rows(flat):
+    """`songview.parse_sng` keeps a pattern as a flat byte list, four a row."""
+    return list(zip(flat[0::4], flat[1::4], flat[2::4], flat[3::4]))
+
+
+def test_the_packed_size_charges_a_command_change_two_bytes():
+    """127 notes with a command whose data changes every row: 127 + 2 x 127 =
+    381, past the limit. The same notes with no command: 127 + 1 (the first
+    row's `FX+0`) = 128, well inside it -- which is why Rasputin packs at
+    -S2 without `pulse_phase` and not with it."""
+    busy = [(0x60 + (r % 12), 0, 9, r) for r in range(127)]
+    assert packed_pattern_size(busy) == 381 > PACKED_PATTERN_LIMIT
+    quiet = [(0x60 + (r % 12), 0, 0, 0) for r in range(127)]
+    assert packed_pattern_size(quiet) == 128
+    # A repeated instrument costs nothing; a changed one costs a byte.
+    assert packed_pattern_size([(0x60, 3, 0, 0)] + [(0x61, 3, 0, 0)] * 10) == 13
+    assert packed_pattern_size([(0x60, 3, 0, 0), (0x61, 4, 0, 0)]) == 5
+    # Bare rests after the first row collapse to one byte each 64.
+    rests = [(0x60, 0, 0, 0)] + [(_REST, 0, 0, 0)] * 100
+    assert packed_pattern_size(rests) == 2 + 2
+
+
+@needs_corpus
+def test_no_corpus_conversion_packs_a_pattern_past_256_bytes():
+    """The guard the Rasputin refusal was missing. Every shipped conversion's
+    patterns pack inside greloc.c's limit; a writer that puts a command on
+    most rows of a long pattern (CMD_SETPULSEPTR under `pulse_phase` did) is
+    what pushes one over, and nothing before this could see it."""
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    bad, worst = {}, 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            blob = F.convert(str(path), log=lambda m: None,
+                             **F._preset_opts(doc, path.name))
+        except Exception:                              # noqa: BLE001
+            continue                                   # SURVEY.md's business
+        song = songview.parse_sng(blob)
+        sizes = [packed_pattern_size(_pattern_rows(p)) for p in song.patterns]
+        worst = max(worst, max(sizes, default=0))
+        over = [(i, n) for i, n in enumerate(sizes) if n > PACKED_PATTERN_LIMIT]
+        if over:
+            bad[path.name] = over
+    assert not bad, bad
+    assert worst > 0, "no pattern measured -- the walk is vacuous"
+
+
 @needs_corpus
 def test_no_corpus_conversion_builds_a_table_gt2reloc_would_refuse():
     doc = json.loads((pathlib.Path(__file__).resolve().parents[2]

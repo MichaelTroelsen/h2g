@@ -1099,6 +1099,20 @@ def startup_lag(orig: list[Voice], ours: list[Voice]) -> tuple[int, int]:
     return max(-MAX_STARTUP_LAG, min(MAX_STARTUP_LAG, raw)), raw
 
 
+# The SID's release time per nibble, in milliseconds from full level to zero
+# (6581/8580 datasheet, envelope rate table): the time a gated-off voice keeps
+# sounding on its latched waveform. In frames, rounded UP, so a release that
+# ends mid-frame is still charged for that frame.
+SID_RELEASE_MS = (6, 24, 48, 72, 114, 168, 204, 240,
+                  300, 750, 1500, 2400, 3000, 9000, 15000, 24000)
+
+
+def _release_frames(nibble: int) -> int:
+    """Frames after a gate-off during which release nibble `nibble` still
+    sounds -- never 0, so the frame the gate drops on is always charged."""
+    return max(1, -(-SID_RELEASE_MS[nibble & 0x0F] // 20))
+
+
 def _aligned(ta: list[int], tb: list[int], lag: int) -> tuple[list, list]:
     """The two timelines with `lag` frames of our head (or theirs) dropped."""
     if lag > 0:
@@ -1151,7 +1165,7 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
     if nframes is None:
         last = max((f for v in orig + ours for f, _ in v.wf_events), default=-1)
         nframes = last + 1
-    agree = total = o_noise = u_noise = 0
+    agree = total = tail = o_noise = u_noise = 0
     # Pooled across voices and reduced ONCE at the end, never a median of
     # per-voice medians: `presets._noise_pitch` pools, and the whole point of
     # this field is that the two agree.
@@ -1174,10 +1188,40 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         o_pitch += [fa[f] for f in range(nframes) if ta[f] & WF_NOISE]
         u_pitch += [fb[f] for f in range(nframes) if tb[f] & WF_NOISE]
         ta, tb = _aligned(ta, tb, lag)
-        va = vt = 0
-        for x, y in zip(ta, tb):
+        ea, eb = _aligned(register_timeline(a.adsr_events, nframes),
+                          register_timeline(b.adsr_events, nframes), lag)
+        va = vt = v_tail = 0
+        # Frames since OUR gate last dropped, or None while it is up. The
+        # tail rule below needs it: a latched waveform under a closed gate
+        # sounds only until its release has run out.
+        since_off = None
+        for x, y, _, sr in zip(ta, tb, ea, eb):
             cx, cy = x & 0xF0, y & 0xF0
+            if y & GATE_BIT:
+                since_off = None
+            elif since_off is None:
+                since_off = 0
+            else:
+                since_off += 1
             if cx == 0 and cy == 0:
+                continue
+            # **A waveform latched under a closed gate after its release has
+            # run out is not a timbre, and is not charged** (v0.5.480). The
+            # original writes $D404 = $00 when a note or the tune ends; ours
+            # keeps the last waveform selected with the gate off, which is
+            # what every Goattracker voice does and what the silent park
+            # holds at the end of a tune. While our release is still running
+            # the latched waveform SOUNDS against the original's silence, so
+            # those frames stay charged; once it has expired -- the SID's
+            # release time for our SR nibble, in frames -- the two are the
+            # same silence and only the register differs. Kings of the Beach
+            # ingame: 165 of its 192 disagreeing frames were this tail, wave
+            # 0.8477 charged and 0.9738 without it; Sanxion has 0 of 14570,
+            # because its original never drops the waveform. Counted in
+            # `wave_tail_frames` so the exclusion is visible in the row.
+            if (cx == 0 and not x & GATE_BIT and since_off is not None
+                    and since_off >= _release_frames(sr & 0x0F)):
+                v_tail += 1
                 continue
             vt += 1
             if cx == cy:
@@ -1185,16 +1229,19 @@ def wave_compare(orig: list[Voice], ours: list[Voice],
         per_voice.append({
             "wave": (va / vt) if vt else None,
             "frames": vt,
+            "tail_frames": v_tail,
             "orig_noise_frames": vo_n,
             "our_noise_frames": vu_n,
         })
         agree += va
         total += vt
+        tail += v_tail
         o_noise += vo_n
         u_noise += vu_n
     return {
         "wave": (agree / total) if total else None,
         "wave_frames": round(total),
+        "wave_tail_frames": tail,
         "orig_noise_frames": o_noise,
         "our_noise_frames": u_noise,
         # 0 rather than None where a side sounds no noise at all, which is the
@@ -3751,7 +3798,10 @@ DIMENSIONS = (
     Dimension("bend_ratio", "bend", _PITCH_REGS, "ratio",
               "how far the pitch travels within notes, over the original's"),
     Dimension("wave", "wave", ("$D404",), "fraction",
-              "per-frame agreement of the waveform-select nibble"),
+              "per-frame agreement of the waveform-select nibble; a waveform "
+              "we hold latched under a closed gate after its release has run "
+              "out, where the original selects none, is not charged "
+              "(`wave_tail_frames`)"),
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
