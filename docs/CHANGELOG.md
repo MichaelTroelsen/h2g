@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.482 — 2026-09-11
+
+- Regenerate the fidelity artefacts at 180 s after the Powerplay adoption, and the routine command gains --json
+
 ## 0.5.481 — 2026-09-11
 
 - Powerplay adopts regrid at 180 s, pulse triangle wrap, the dangling warning names reachability, and the plan at 24b9f1d closes 14

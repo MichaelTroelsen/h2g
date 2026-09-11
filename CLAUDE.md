@@ -112,9 +112,17 @@ may save a file that reads nothing and must never disturb one that reads correct
 **On demand, not every commit:** `FIDELITY.md`, then `QUEUE.md` in the same pass,
 from `python/`:
 ```sh
-python fidelity.py <sid_dir> -t 180 --presets ../presets.json -o ../docs/FIDELITY.md
+python fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound \
+    --census ../build/onset_census.md --hold-census ../build/hold_census.md \
+    --json ../build/fidelity.json -o ../docs/FIDELITY.md
 python fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json
 ```
+**`--json` is not optional**: without it `fidelity.py` writes only the report,
+`build/fidelity.json` keeps its old stamp and `QUEUE.md` and
+`tests/test_output_sha.py` read the stale one -- measured at v0.5.481, when the
+first regeneration left Powerplay's old sha in the JSON under a fresh header.
+`--sound` and the two census flags are what the current artefact carries;
+`.claude/hooks/flag_guard.py` refuses a re-run that would drop them.
 Regenerate after a commit that changes what the converter emits, and never from a
 tree with unrelated edits in `h2g/`. `QUEUE.md` reads that same
 `build/fidelity.json`, so it is only as fresh as the run before it and belongs
