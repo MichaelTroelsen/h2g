@@ -12,6 +12,9 @@ reduction function (`shift_movement`, `noise_floor`, `closeness_floor`,
 `render_doc` -- the function that turns a calibration result into
 `docs/SOUND-CALIBRATION.md` -- against every verdict branch, on a
 hand-built fixture rather than a real run."""
+import ast
+import pathlib
+
 import numpy as np
 import pytest
 
@@ -371,3 +374,54 @@ def test_the_document_has_all_five_sections_and_ends_with_a_newline():
         assert heading in doc, heading
     assert doc.startswith("# Sound calibration")
     assert doc.endswith("\n")
+
+
+# --------------------------------------------------------------------------
+# The header docstring is a claim about this file's own contents, and twice
+# in one week it was false while the suite stayed green: 9ec29bf (a docstring
+# that asserted its own absence) and the `convert_at` sentence above, which
+# said "Nothing here calls ... convert_at" for as long as the test that called
+# it took to read. Prose about a file is not checked by running the file, so
+# this test reads the docstring's exclusion list and greps the file's CODE for
+# a call to each excluded name. It keys on the two spellings the repo has
+# used -- "Nothing here calls `a`, `b` or `c`" and "`x` is not exercised" --
+# and nothing else, so it cannot be satisfied by rewording the claim into a
+# shape it does not read.
+
+def _docstring_exclusions(text):
+    import re
+    doc = ast.get_docstring(ast.parse(text)) or ""
+    names = set()
+    for m in re.finditer(r"Nothing here calls ((?:`[^`]+`(?:,\s*|\s+or\s+)?)+)", doc):
+        names.update(re.findall(r"`([^`]+)`", m.group(1)))
+    for m in re.finditer(r"`([^`]+)` is not exercised", doc):
+        names.add(m.group(1))
+    return {n.rsplit(".", 1)[-1] for n in names}
+
+
+def _called_names(text):
+    tree = ast.parse(text)
+    out = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Attribute):
+                out.add(f.attr)
+            elif isinstance(f, ast.Name):
+                out.add(f.id)
+    return out
+
+
+def test_the_header_docstrings_exclusion_list_is_true_of_the_code_below_it():
+    """SABOTAGE TARGETS: (1) add `C.main()` anywhere in this file -- the guard
+    names `main`; (2) put `convert_at` back into the docstring's "Nothing here
+    calls" list -- the guard names it, because the test above calls it."""
+    text = pathlib.Path(__file__).read_text(encoding="utf-8")
+    excluded = _docstring_exclusions(text)
+    assert excluded, ("the header docstring no longer carries a 'Nothing here calls' "
+                      "list; either it moved or this guard's regex no longer reads it")
+    called = _called_names(text)
+    lies = sorted(excluded & called)
+    assert not lies, (
+        f"the header docstring says nothing here calls {lies}, but the code below "
+        f"it does -- fix the sentence, not the test")

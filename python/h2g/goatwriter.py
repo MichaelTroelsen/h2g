@@ -2268,6 +2268,9 @@ GT_DEFAULT_TEMPO_CALLS = 6        # Goattracker's startup default
 # So the fastest steady row the format can express is tempo 2, i.e. three
 # calls, reached by a command value of 2 or 3.
 CMD_SETWAVEPTR = 8              # gcommon.h:12 -- point the wavetable at a row
+CMD_SETPULSEPTR = 9             # gcommon.h:13 -- the same for the pulse table;
+                                # patterns.py carries its own copy, pinned equal
+                                # by tests/test_pattern_budget.py
 CMD_SETTEMPO = 15
 GT_MIN_TEMPO = 2                  # below this is funktempo, not a rate
 TEMPO_FASTEST_STEADY = 3          # value -> tempo 2 -> 3 calls per row
@@ -5552,17 +5555,19 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
 # commands run AFTER the new-note init (player.s:903-906), so the command
 # beats the instrument's own pointer load.
 #
-# **The command has a packed cost, and it is what refuses Rasputin at -S2.**
+# **The command has a packed cost, and it is what refused Rasputin at -S2.**
 # greloc.c's `packpattern()` charges two bytes for every row whose command or
 # data differs from the row before, and returns -1 past 256 bytes a pattern
 # ("PATTERN xx IS TOO COMPLEX", to a console nobody sees). CMD_SETPULSEPTR on
 # nearly every note row of a 127-row pattern is 105 changes on top of the
 # notes: four of Rasputin's expanded patterns pack to 264-270 (v0.5.480),
 # confirmed by stripping the command from only those four and packing. The
-# `multiplier == 1` gate in convert.py is what keeps it off that file; a
-# writer that lifts the gate has to budget the packed size per pattern --
-# `tests/test_table_validation.packed_pattern_size` is the arithmetic -- and
-# drop or split where a pattern would cross the limit.
+# `multiplier == 1` gate in convert.py kept it off that file until the gate
+# was lifted; what keeps the file packing now is `budget_pulse_phase_commands`
+# below, run LAST in `build_sng` on the finished rows -- the arithmetic is
+# `packed_pattern_size`, with `tests/test_table_validation.packed_pattern_size`
+# as its second reader -- dropping, first-fit, the commands that would take a
+# pattern across the limit.
 # --------------------------------------------------------------------------
 
 class PulsePhaseSim:
@@ -5730,6 +5735,171 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         entries += block
 
     return entries, starts, index
+
+
+# --------------------------------------------------------------------------
+# The packed size of a pattern, and the budget the phase writer runs against.
+#
+# greloc.c's `packpattern()` (v2.77, greloc.c:1715) packs each pattern for the
+# player and returns -1 past 256 bytes; gt2reloc then prints "PATTERN xx IS
+# TOO COMPLEX (OVER 256 BYTES PACKED)!" to the console that does not exist
+# headless, writes no file and exits 0. A command/data pair costs two packed
+# bytes wherever it CHANGES from the row before, and CMD_SETPULSEPTR on nearly
+# every note row of a 127-row pattern changes on nearly every one -- which is
+# what refused Rasputin at -S2 under `pulse_phase` while the `multiplier == 1`
+# gate in convert.py was the only thing keeping the option off that file.
+# `budget_pulse_phase_commands` runs this arithmetic over the finished rows of
+# every pattern and re-places the phase commands first-fit, dropping the one
+# that would cross the limit; the note then opens on the record's own width,
+# exactly as every note did before the option. `tests/test_pattern_budget.py`
+# keeps a second reader of the same arithmetic and walks the corpus with it.
+# --------------------------------------------------------------------------
+
+PACKED_PATTERN_LIMIT = 256
+_PACK_FX, _PACK_FXONLY, _PACK_FIRSTNOTE = 0x40, 0x50, 0x60
+
+
+def packed_pattern_size(rows) -> int:
+    """Bytes `packpattern` emits for `rows` of (note, instr, cmd, data)
+    -- its size arithmetic exactly, before the endmark.
+
+    Three rules decide it: a repeated instrument byte costs nothing, a
+    command/data pair costs two bytes only where it CHANGES from the previous
+    row (one where the command is 0), and a run of bare rests after the first
+    row collapses to one byte per 64. Table remaps are size-neutral. Not
+    replicated, and both only ever make the real pack SMALLER than this: a
+    song with no command anywhere starts `command` at 0 rather than -1 (the
+    first row's `FX+0` is then free), and `CMD_SETMASTERVOL` above `$0F` is
+    erased when no author info is packed.
+    """
+    temp1, instr = [], 0
+    for c, (n, i, cmd, dat) in enumerate(rows):
+        if c and i and i == instr:
+            temp1.append((n, 0, cmd, dat))
+        else:
+            temp1.append((n, i, cmd, dat))
+            if i:
+                instr = i
+    b, command, databyte = [], -1, -1
+    for n, i, cmd, dat in temp1:
+        if i:
+            b.append(i)
+        if n == GT_REST:
+            if cmd != command or dat != databyte:
+                command, databyte = cmd, dat
+                b.append(_PACK_FXONLY + cmd)
+                if cmd:
+                    b.append(dat)
+            else:
+                b.append(GT_REST)
+        else:
+            if cmd != command or dat != databyte:
+                command, databyte = cmd, dat
+                b.append(_PACK_FX + cmd)
+                if cmd:
+                    b.append(dat)
+            b.append(n)
+    size, c = 0, 0
+    while c < len(b):
+        packok = c != 0
+        if b[c] < _PACK_FX:
+            size += 1
+            c += 1
+            packok = False
+        if c < len(b) and _PACK_FXONLY <= b[c] < _PACK_FIRSTNOTE:
+            fxnum = b[c] - _PACK_FXONLY
+            size += 2 if fxnum else 1
+            c += 2 if fxnum else 1
+            continue
+        if c < len(b) and b[c] < _PACK_FXONLY:
+            fxnum = b[c] - _PACK_FX
+            size += 2 if fxnum else 1
+            c += 2 if fxnum else 1
+            packok = False
+        if c >= len(b):
+            break
+        if b[c] != GT_REST:
+            packok = False
+        if not packok:
+            size += 1
+            c += 1
+        else:
+            d = c
+            while d < len(b) and b[d] == GT_REST and d - c < 64:
+                d += 1
+            d -= c
+            size += 1
+            c += d if d > 1 else 1
+    return size
+
+
+def pattern_rows(pattern: List[int]) -> list:
+    """A flat pattern as (note, instr, cmd, data) rows up to its ENDPATT --
+    `pattlen` in gsong.c:1328, the row count `packpattern` is handed."""
+    out = []
+    for k in range(0, len(pattern) - 3, 4):
+        if pattern[k] == 0xFF:      # ENDPATT, patterns.GT_END_PATTERN
+            break
+        out.append(tuple(pattern[k:k + 4]))
+    return out
+
+
+def budget_pulse_phase_commands(patterns: List[List[int]], command: int,
+                                log=None,
+                                limit: int = PACKED_PATTERN_LIMIT) -> List[List[int]]:
+    """Every pattern that packs past `limit`, with its `command` rows re-placed
+    first-fit in row order and the rest dropped; the others returned as they
+    are.
+
+    Runs on the FINISHED rows, after `_vibrato_command_pass`, because that is
+    the only place the size is knowable: Rasputin's four phase clones pack to
+    217 when `apply_pulse_phase` writes them and to 264-270 once the vibrato
+    pass has put `CMD_VIBRATO` on 53-68 more of their rows (v0.5.480). A
+    budget taken on the plan therefore drops nothing and the file is still
+    refused -- measured before this was moved here.
+
+    Row order rather than any smarter choice, on purpose: the pack charges a
+    change from the PREVIOUS row, so which commands fit depends on which were
+    kept before them, and the first-fit walk is the one whose result a reader
+    can reproduce by hand. A note whose command is dropped keeps the
+    instrument's own pointer, the record's (width, up) entry that
+    `build_pulse_phase_table` gives every sweeping record -- exactly what
+    every note got before the option. A pattern still past the limit with
+    every `command` stripped is not this pass's to fix, and is left as is;
+    `tests/test_pattern_budget.py` walks the corpus's finished bytes for it.
+    Changed patterns are COPIES: the caller's list may be shared with the
+    orderlist stages that built it.
+    """
+    out: List[List[int]] = []
+    dropped = over = 0
+    for pattern in patterns:
+        rows = pattern_rows(pattern)
+        if packed_pattern_size(rows) <= limit:
+            out.append(pattern)
+            continue
+        wanted = [(k, r[3]) for k, r in enumerate(rows) if r[2] == command]
+        if not wanted:
+            out.append(pattern)
+            continue
+        over += 1
+        base = [(n, i, 0, 0) if c == command else (n, i, c, d)
+                for (n, i, c, d) in rows]
+        for k, e in wanted:
+            trial = list(base)
+            trial[k] = (base[k][0], base[k][1], command, e)
+            if packed_pattern_size(trial) > limit:
+                dropped += 1
+                continue
+            base = trial
+        copy = list(pattern)
+        for k, (n, i, c, d) in enumerate(base):
+            copy[4 * k + 2], copy[4 * k + 3] = c, d
+        out.append(copy)
+    if log and over:
+        log(f"Pulse phase.............: {dropped} CMD_SETPULSEPTR dropped from "
+            f"{over} pattern(s) that would pack past {limit} bytes "
+            "(greloc.c packpattern)")
+    return out
 
 
 def _write_pulsetable(out: bytearray, entries: List[tuple]) -> None:
@@ -6363,6 +6533,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         instr_voices, gate_skip,
         real_firstwave_instruments, arps)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
+    if pulse_plan is not None:
+        # Last, after every pass that writes a command column: the packed
+        # size is a property of the finished rows and nothing else.
+        patterns = budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

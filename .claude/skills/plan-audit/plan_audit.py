@@ -14,7 +14,11 @@ plan and cost at least one task cycle:
      it held `r:` on.
   D  two `parallel` tasks overlapping with at least one writer  (lane arithmetic)
   E  a dangling `depends_on`, which silently never resolves
-  F  a verify quoting a sha/version/count with nothing to date it
+  F  a verify quoting a sha/version/count with nothing to date it. A sha
+     TOKEN is judged by ITS OWN occurrence, never by whether the same
+     digits are graded somewhere else in the same verify -- see
+     sha_occurrences's docstring for the container/subject collapse this
+     replaced.
   G  a verify whose done-condition needs a person, on a task that is NOT
      mode requires-user -- it can never programmatically succeed, so the
      runner loops on it forever. This one CLASSIFIES rather than counts: a
@@ -35,6 +39,20 @@ plan and cost at least one task cycle:
      reasons having nothing to do with naming another task, so a match is
      trusted only when it additionally NAMES AN EXISTING PLAN ID -- see
      check_i's docstring.
+  J  a task that DECLARES ITSELF a recurring obligation -- its own verify
+     instructs a runner never to treat it as permanently satisfied -- but
+     that has nonetheless been moved to `closed`, or whose last runs.jsonl
+     record reads outcome "done". The plan schema has no recurrence field
+     (see plan_audit.py's own module docstring history), so the one
+     recurring task in the repo can only declare itself in prose, and nothing
+     stops a runner from closing it on a green run anyway -- which is
+     exactly what happened to its own predecessor. CLASSIFIES rather than
+     counts: a generic recurrence-vocabulary scan (recurring/whenever/
+     periodic/...) also matches prose that merely DISCUSSES recurrence as a
+     topic (a sibling plan-audit task explaining the defect class), so a
+     match is trusted only on the narrower, operational phrases a
+     self-declaring verify actually uses to instruct a runner not to close
+     it -- see check_j's docstring.
 """
 import collections
 import json
@@ -45,6 +63,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[3]
 PLAN = ROOT / ".claude/tasks/whattask.json"
+RUNS = ROOT / ".claude/tasks/runs.jsonl"
 
 
 def split(tok):
@@ -63,6 +82,100 @@ def overlaps(a, b):
 def repo_path(p):
     return not re.match(r"^(host:|corpus:|port:|desktop:|emulator:)", p) \
         and not re.match(r"^[A-Za-z]:[\\/]", p)
+
+
+# ---- F ---------------------------------------------------------------
+# A "GRADED at <head>: <sha> is <N> commit(s) behind <head> ..." clause is
+# the remedy this check itself prescribes -- a stale sha that has been
+# dated and marked historical is not a finding, only a bare quoted one is.
+# GRADED_RE finds each such clause's body (up to the sentence's own
+# " -- " / " || " terminator, or end of string); SHA_GRADE_RE pulls every
+# sha inside that body that is explicitly said to be behind -- a clause
+# naming several ("a is N behind; b is M behind; c is K behind") grades
+# all of them, not just the first.
+#
+# A sha string collapsed into a SET of "graded shas" for the whole verify
+# is NOT this check -- it is the exact container/subject bug this file's
+# other checks were swept for: if the same 7-hex-digit string is quoted
+# TWICE in one verify -- once inside a GRADED clause (dated, fine) and
+# once again bare, elsewhere in the same text (the actual staleness this
+# check exists to catch) -- a `sha in {graded shas}` test can only see the
+# digits, not which quote it is testing, so the bare copy hides behind the
+# graded one and the finding is silently lost. sha_occurrences judges each
+# TOKEN by its own character offset against graded_positions (also offsets,
+# not strings), so a task with both a graded and a bare occurrence of the
+# same sha reports it as ungraded -- there is at least one occurrence
+# nothing has dated. See test_plan_audit.py's
+# test_check_f_bare_occurrence_beside_a_graded_one_is_still_reported for
+# the worked case, and check_f's own docstring for the two-arg contract
+# that makes this classification testable without a live git process.
+GRADED_RE = re.compile(
+    r"GRADED at [0-9a-f]{7}:(?P<body>.*?)(?:\s--\s|\s\|\|\s|$)", re.S)
+SHA_GRADE_RE = re.compile(
+    r"\b([0-9a-f]{7})\b\s+is\s+\d+\s+commit\(s\)\s+behind")
+SHA_TOKEN_RE = re.compile(r"\b[0-9a-f]{7}\b")
+
+
+def graded_positions(v):
+    """Return the set of absolute character offsets, in `v`, of every sha
+    token that sits inside a GRADED clause's own '<sha> is N commit(s)
+    behind' body. A position, not a string: two occurrences of the same
+    digits at two different offsets are two different facts about `v`."""
+    out = set()
+    for gm in GRADED_RE.finditer(v):
+        body = gm.group("body")
+        base = gm.start("body")
+        for sm in SHA_GRADE_RE.finditer(body):
+            out.add(base + sm.start(1))
+    return out
+
+
+def sha_occurrences(v):
+    """Return [(sha, is_graded), ...] for every sha-shaped token in `v`,
+    each classified by ITS OWN occurrence position -- never by whether
+    that sha's digits are graded somewhere else in `v`. This is the slice
+    check_f reads: a sha graded once and bare-quoted again later in the
+    same verify yields two entries for the same sha, one True and one
+    False, and check_f treats the pair as ungraded because not every
+    occurrence is dated."""
+    gpos = graded_positions(v)
+    return [(m.group(0), m.start() in gpos) for m in SHA_TOKEN_RE.finditer(v)]
+
+
+def _git_rev_list_behind(sha, root=ROOT, timeout=15):
+    try:
+        n = subprocess.run(["git", "rev-list", "--count", "%s..HEAD" % sha],
+                            cwd=root, capture_output=True, text=True,
+                            timeout=timeout)
+        return n.stdout.strip()
+    except Exception:                                          # noqa: BLE001
+        return "?"
+
+
+def check_f(tasks, behind_of=_git_rev_list_behind):
+    """Return (ungraded, graded), each a list of (task_id, sha, behind).
+    A (task, sha) pair lands in `ungraded` when behind_of(sha) says HEAD
+    has moved past it AND at least one of its occurrences in that task's
+    verify is not inside a GRADED clause -- sliced per-occurrence via
+    sha_occurrences, never via a bare set of sha strings (see this
+    section's docstring for the collapse that fix replaced). `behind_of`
+    is injectable so the position/slice logic is testable without a git
+    subprocess."""
+    ungraded, graded = [], []
+    for t in tasks:
+        v = t.get("verify") or ""
+        occ = sha_occurrences(v)
+        if not occ:
+            continue
+        by_sha = collections.OrderedDict()
+        for sha, is_graded in occ:
+            by_sha.setdefault(sha, []).append(is_graded)
+        for sha, flags in by_sha.items():
+            behind = behind_of(sha)
+            if behind not in ("", "0"):
+                bucket = graded if all(flags) else ungraded
+                bucket.append((t["id"], sha, behind))
+    return ungraded, graded
 
 
 # ---- G ---------------------------------------------------------------
@@ -248,6 +361,95 @@ def check_i(tasks, closed=()):
     return out
 
 
+# ---- J ---------------------------------------------------------------
+# A task that DECLARES ITSELF a recurring obligation -- one whose verify
+# tells a runner it can never be permanently satisfied -- must not appear
+# in `closed`, and must not carry a `done` last record in runs.jsonl. Both
+# are the exact failure this repo already lived through once:
+# regenerate-fidelity-artefacts-at-v0-5-459 was closed, then its successor
+# regenerate-the-fidelity-artefacts-whenever-the-converter-emission-changes
+# was written specifically to say "THIS TASK CANNOT BE SATISFIED ONCE" and
+# "a runner that finds it done ... should leave it open, not close it" --
+# in prose, because the plan schema (see split()/PLAN above) has no
+# recurrence field to hold that fact structurally.
+#
+# A generic recurrence-vocabulary scan is NOT this check. Run unfiltered
+# over the plan at 24b9f1d (101 open tasks) a bare
+# r"\b(recurring|recur|repeat|periodic|whenever|ongoing)\b" scan already
+# returns only 2 hits, but one of them --
+# a-done-run-record-describes-one-commit-and-a-later-commit-can-expire-it
+# -- is a SIBLING plan-audit task whose own verify reads "A recurring
+# obligation is not readable as permanently done" while DISCUSSING the
+# defect class (and naming the other task's history) rather than declaring
+# recurrence for ITSELF: it carries no instruction to a runner about its
+# own closure. J_DECLARE_RE narrows to the operational phrases a verify
+# actually uses to tell a runner not to close it -- "cannot be satisfied
+# once", "leave it open", "deliberately version-less" -- which fire only on
+# the one real case and 0 times on that sibling, checked in
+# test_plan_audit.py.
+#
+# Closed entries in this plan carry only id/title/closed_by/reason -- no
+# `verify` (see PLAN's own schema) -- so a declaration cannot be read back
+# off a closed record directly; J_DECLARE_RE is instead run over each
+# closed entry's title+reason too, on the chance a future close narrates
+# the same self-declaring phrase there. Over the live `closed` list at
+# 24b9f1d (286 entries) this finds 0 -- including
+# regenerate-fidelity-artefacts-is-a-recurring-obligation-modelled-as-a-
+# one-shot-task, whose title and reason both say "recurring" but neither
+# carries the operational phrase, because that task's own job was closing
+# out the one-shot MISTAKE, not declaring recurrence for itself.
+J_DECLARE_RE = re.compile(
+    r"cannot be satisfied once|leave it open|deliberately version-?less",
+    re.I)
+
+
+def check_j_declared(tasks):
+    """Return the ids of open tasks whose own verify self-declares as a
+    recurring obligation (an operational instruction not to close it)."""
+    return [t["id"] for t in tasks
+            if J_DECLARE_RE.search(t.get("verify") or "")]
+
+
+def load_runs_last(path=RUNS):
+    """Return {task_id: last record} from runs.jsonl, last line wins."""
+    last = {}
+    if not path.exists():
+        return last
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        tid = rec.get("id") or rec.get("task_id")
+        if tid:
+            last[tid] = rec
+    return last
+
+
+def check_j(tasks, closed, runs_last):
+    """Return [(task_id, reason), ...] for every task that declares itself
+    a recurring obligation and either (a) appears in `closed`, or (b) has
+    a last runs.jsonl record reading outcome "done"."""
+    declared = set(check_j_declared(tasks))
+    for c in closed:
+        text = (c.get("title") or "") + " " + (c.get("reason") or "")
+        if J_DECLARE_RE.search(text):
+            declared.add(c["id"])
+
+    closed_ids = {c["id"] for c in closed}
+    out = []
+    for tid in sorted(declared):
+        if tid in closed_ids:
+            out.append((tid, "in `closed`"))
+        rec = runs_last.get(tid)
+        if rec and rec.get("outcome") == "done":
+            out.append((tid, "runs.jsonl last record is outcome \"done\""))
+    return out
+
+
 def main() -> int:
     if not PLAN.exists():
         print("no plan at %s -- run /whattask first" % PLAN)
@@ -345,41 +547,7 @@ def main() -> int:
         print()
 
     # ---- F ---------------------------------------------------------------
-    # A "GRADED at <head>: <sha> is <N> commit(s) behind <head> ..." clause
-    # is the remedy this check itself prescribes -- a stale sha that has been
-    # dated and marked historical is not a finding, only a bare quoted one
-    # is. GRADED_RE finds each such clause's body (up to the sentence's own
-    # " -- " / " || " terminator, or end of string); SHA_GRADE_RE pulls every
-    # sha inside that body that is explicitly said to be behind -- a clause
-    # naming several ("a is N behind; b is M behind; c is K behind") grades
-    # all of them, not just the first.
-    GRADED_RE = re.compile(
-        r"GRADED at [0-9a-f]{7}:(?P<body>.*?)(?:\s--\s|\s\|\|\s|$)", re.S)
-    SHA_GRADE_RE = re.compile(
-        r"\b([0-9a-f]{7})\b\s+is\s+\d+\s+commit\(s\)\s+behind")
-
-    def graded_shas(v):
-        out = set()
-        for gm in GRADED_RE.finditer(v):
-            out.update(SHA_GRADE_RE.findall(gm.group("body")))
-        return out
-
-    ungraded = []
-    graded = []
-    for t in tasks:
-        v = t.get("verify") or ""
-        gset = graded_shas(v)
-        for sha in set(re.findall(r"\b[0-9a-f]{7}\b", v)):
-            try:
-                n = subprocess.run(["git", "rev-list", "--count",
-                                    "%s..HEAD" % sha], cwd=ROOT,
-                                   capture_output=True, text=True, timeout=15)
-                behind = n.stdout.strip()
-            except Exception:                                  # noqa: BLE001
-                behind = "?"
-            if behind not in ("", "0"):
-                (graded if sha in gset else ungraded).append(
-                    (t["id"], sha, behind))
+    ungraded, graded = check_f(tasks)
     if ungraded:
         print("F. verify quotes a sha that HEAD has moved past, ungraded "
               "(grade it, or say 'check X against Y' instead):")
@@ -423,6 +591,18 @@ def main() -> int:
         for i, tok in prose_prereq:
             print("   %-52s -> %s" % (i[:52], tok))
         findings += len(prose_prereq)
+        print()
+
+    # ---- J ---------------------------------------------------------------
+    runs_last = load_runs_last()
+    declared_recurring = check_j(tasks, plan.get("closed") or [], runs_last)
+    if declared_recurring:
+        print("J. task declares itself a recurring obligation but is closed, "
+              "or reads a `done` last run (a recurring obligation must never "
+              "be readable as permanently satisfied):")
+        for i, why in declared_recurring:
+            print("   %-52s %s" % (i[:52], why))
+        findings += len(declared_recurring)
         print()
 
     if not findings:

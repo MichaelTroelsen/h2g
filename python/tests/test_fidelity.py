@@ -891,6 +891,55 @@ def test_nrun_dimension_states_its_own_blindness_and_the_measured_split():
     assert "28 of 28" in d.of and "0 of the other 76" in d.of
 
 
+# --- noise_runs reads the gate bit, not the noise SELECT bit alone ---------
+#
+# Confuzion's lead holds the noise-select nibble latched across many notes
+# and rests -- only the gate bit toggles per note (measured live on
+# Confuzion.sid, -t 180, at v0.5.482/HEAD 760f401: gate-blind, the original
+# is one continuous $D404-noise-select stretch spanning the whole 8998-frame
+# window, so `noise_runs` finds no run that does not touch frame 0 or the
+# last frame and the reduction is EMPTY -- `noise_run_agreement` then pairs
+# zero keys and declines the file entirely (`noise_run_instruments` == 0).
+# Gate-AND'd, the same trace resolves into 486 per-note runs (365 at ADSR
+# $0300/$0308, 121 at $0909/$0909 -- decimal 768/2313) against ours' 485
+# (364/121), 7542 vs 7533 total noise frames -- `noise_run_agreement` pairs
+# 2 of 2 shared instruments, both at modal run length 21, a 9-frame total
+# difference where the gate-blind reduction found nothing comparable at all.
+
+
+def test_noise_runs_reads_the_gate_bit_not_the_noise_select_bit_alone():
+    """A synthetic version of Confuzion's mechanism: waveform SELECT stays on
+    noise (bit 7) for the whole trace, gate (bit 0) toggles per note. Two
+    notes, frames 5-8 and 14-18 (gate high), separated by a gate-off rest
+    from 9-13 and trailing gate-off from 19 to the window edge.
+
+    Gate-AND'd (current code) finds the two per-note runs untouched. A
+    gate-blind predicate (`wf & WF_NOISE` alone) sees ONE run spanning the
+    entire window -- noise-select never turns off -- which touches both
+    frame 0 and the last frame and is therefore dropped by the window-edge
+    rule, leaving `noise_runs` EMPTY. That is exactly Confuzion's failure
+    mode: not a wrong count, a silently empty reduction."""
+    adsr = [(0, 0x0A0A)]
+    wf_events = [(0, 0x80), (5, 0x81), (9, 0x80), (14, 0x81), (19, 0x80)]
+    voice = _run_voice(wf_events, adsr, attacks=[5, 14])
+    voices = [voice, fidelity.Voice(), fidelity.Voice()]
+    nframes = 30
+
+    got = fidelity.noise_runs(voices, nframes)
+    assert set(got) == {0x0A0A}
+    assert sorted(got[0x0A0A].elements()) == [4, 5]     # two per-note runs
+    assert sum(got[0x0A0A].values()) == 2
+
+    # And the failure mode this guards against: a gate-blind reading of the
+    # same events sees one 30-frame run touching both edges -- dropped -- so
+    # the reduction comes back empty, not merely differently counted.
+    wf = fidelity.register_timeline(voice.wf_events, nframes)
+    assert all(w & fidelity.WF_NOISE for w in wf)        # select never clears
+    assert not (wf[0] & fidelity.WF_GATE and wf[nframes - 1] & fidelity.WF_GATE)
+    # (gate is off at both the first and last frame, so a gate-blind run
+    # spanning the whole window would touch both edges and be dropped)
+
+
 # --- how the three reach the report ----------------------------------------
 
 

@@ -13,6 +13,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 """
 from __future__ import annotations
 
+from functools import lru_cache
 from math import gcd
 from typing import Dict, List, Optional, Set
 
@@ -253,6 +254,91 @@ def _instrument_mask(stride: int) -> int:
     return 0x7F
 
 
+# Every documented 6502 opcode that carries a 16-bit absolute operand -- abs,
+# abs,X, abs,Y, `JMP (ind)` -- so a scan for "does any instruction name this
+# address" can be a flat three-byte walk. Data that happens to look like one
+# is counted too, which errs toward declining a cell, never toward resting on
+# a cell the player writes.
+_ABS_OPERAND_OPCODES = frozenset((
+    0x0D, 0x0E, 0x20, 0x2C, 0x2D, 0x2E, 0x4C, 0x4D, 0x4E, 0x6C, 0x6D, 0x6E,
+    0x8C, 0x8D, 0x8E, 0xAC, 0xAD, 0xAE, 0xCC, 0xCD, 0xCE, 0xEC, 0xED, 0xEE,
+    0x1D, 0x1E, 0x3D, 0x3E, 0x5D, 0x5E, 0x7D, 0x7E, 0x9D, 0xBC, 0xBD, 0xDD,
+    0xDE, 0xFD, 0xFE,
+    0x19, 0x39, 0x59, 0x79, 0x99, 0xB9, 0xBE, 0xD9, 0xF9,
+))
+
+
+@lru_cache(maxsize=8)
+def _absolute_operands(data: bytes) -> frozenset:
+    """Every C64 address some three-byte absolute-operand shape in `data`
+    names. One walk per file: `decode_entry` asks once per pattern, and
+    `bytes` caches its own hash, so the memo costs nothing to key."""
+    return frozenset(data[i + 1] | (data[i + 2] << 8)
+                     for i in range(len(data) - 2)
+                     if data[i] in _ABS_OPERAND_OPCODES)
+
+
+def _absolute_references(data: bytes, lo: int, hi: int) -> int:
+    """How many addresses in `lo..hi` inclusive (C64 addresses) some
+    three-byte absolute-operand shape in `data` names."""
+    named = _absolute_operands(data)
+    return sum(1 for a in range(lo, hi + 1) if a in named)
+
+
+def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
+    """Note bytes that index PAST the player's frequency table onto a cell the
+    original sounds as silence -- the bytes the clamp below must NOT turn into
+    a note.
+
+    The note fetch is `ASL / TAY / LDA freqtbl,Y` with no bound, so a byte at
+    or above `FreqTable.length` loads whatever two bytes follow the table
+    (see the clamp's own census: 24 corpus files do this). What the original
+    then sounds is the value in that cell. Commando's `$68` lands on a
+    per-voice stored-waveform cell and sounds B-5, which is a note. Sanxion's
+    `$60` lands on `$B50D`/`$B50E` -- two of the three zero bytes between its
+    table and its next data -- and sounds frequency `$0000` with the gate on:
+    the oscillator does not advance, the pulse frames of the drum are DC, and
+    siddump shows `0000 C-0` on voice 2 at every one of them. Clamped to
+    index 92 that event is a G#7 pulse for two frames, and it is audible.
+
+    A byte qualifies as a rest on two conditions, both read statically:
+
+    * the two bytes it lands on are **$00 $00 in the file**, and
+    * **no instruction names the cell** -- no absolute-operand opcode in the
+      file has an operand in `cell-2 .. cell+1`, which covers a direct
+      reference to either byte and a per-voice `base,X` with X up to 2.
+
+    The second is what separates a constant from a variable that is zero at
+    load time: Commando's cell is written by `$515A STA $54F8,X` and would
+    not pass it. A cell nothing names keeps its load-time value for the
+    life of the tune, so the trace and the file agree, which is the whole
+    claim. Bytes at or above `$80` are not considered: the eight-bit `ASL`
+    wraps them back into the table (`2*idx & $FF`), which is a different
+    reading and not this one.
+
+    Keyed on the RAW note byte -- the value the player shifts -- before
+    `note_base`, since `note_base` is a Goattracker-side correction and the
+    player indexes with the byte as written.
+    """
+    ft = det.freq_table
+    if ft is None:
+        return frozenset()
+    data = sid.data
+    base = sid.to_offset(ft.addr)
+    out = set()
+    for n in range(ft.length, 0x80):
+        cell = base + 2 * n
+        if cell < 0 or cell + 1 >= len(data):
+            break
+        if data[cell] or data[cell + 1]:
+            continue
+        addr = ft.addr + 2 * n
+        if _absolute_references(data, addr - 2, addr + 1):
+            continue
+        out.add(n)
+    return frozenset(out)
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
@@ -269,7 +355,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        rest_wave: bool = False,
                        rest_envelope: bool = False,
                        exits_tied: Optional[List[bool]] = None,
-                       instr_mask: int = 0x7F
+                       instr_mask: int = 0x7F,
+                       rest_notes: frozenset = frozenset()
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -313,6 +400,12 @@ def _build_raw_pattern(data: bytes, addr: int,
     `note_base` shifts every note byte before it becomes a Goattracker note,
     for the player whose frequency table does not start where Goattracker's
     does (detect.Detection.note_base). Zero for all but one corpus file.
+
+    `rest_notes` is the set of raw note bytes that index past the player's
+    frequency table onto a constant `$0000` cell -- see `past_table_rests`.
+    Such a byte is emitted as a KEYOFF instead of being clamped to index 92,
+    because that is what the original sounds there: nothing. Empty by
+    default, which is the clamp's historical behaviour.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -333,6 +426,9 @@ def _build_raw_pattern(data: bytes, addr: int,
         g_note = GT_NO_NOTE
         cmd1 = 0
         cmd2 = 0
+        # This event's note byte landed on a silent cell past the table and
+        # was emitted as a rest -- see `rest_notes` and the clamp below.
+        past_rest = False
         # (command, data) for the event's FIRST hold row, where it needs one
         # of its own rather than the repeat of `cmd1` the loop below writes.
         # One (cmd, value) per HOLD row of a bit-6 event, in order.
@@ -644,14 +740,32 @@ def _build_raw_pattern(data: bytes, addr: int,
             # reading starts from a list instead of a file.
             # (`C:/t/census-which-corpus-files-cl/clamp_classified.json`
             # carries the per-file byte sets; re-derive rather than re-quote.)
-            if g_note >= 0x5C:
-                g_note = 0x5C
-            # A shifted table can push the lowest byte below its own entry 0;
-            # that entry holds $0000 in the one player this applies to, so the
-            # player sounds no pitch there at all. Goattracker's bottom note is
-            # 16 Hz and equally inaudible, which is what the byte already
-            # produced before the shift existed.
-            g_note = max(0, g_note + note_base) + 0x60
+            #
+            # **ONE OF THE 23 HAS NOW BEEN READ, AND IT IS THE OPPOSITE CASE
+            # FROM COMMANDO.** Sanxion's `$60` lands on `$B50D`/`$B50E`, which
+            # are `$00 $00` in the file and named by no instruction, so the
+            # original writes frequency `$0000` with the gate on -- a drum
+            # whose pulse frames are DC -- where the clamp sounded a G#7
+            # pulse. `rest_notes` (`past_table_rests`) is that reading made
+            # a rule: a byte past the table whose landing cell is a constant
+            # `$0000` is a rest, and a KEYOFF is the row that says so. It is
+            # checked BEFORE the clamp because the clamp is what it replaces,
+            # and it is keyed on the raw byte because the raw byte is what
+            # the player shifts. Commando's `$68` does not qualify (its cell
+            # is written at `$515A`), so the fixture is untouched.
+            if g_note in rest_notes:
+                g_note = GT_KEYOFF
+                past_rest = True
+            else:
+                if g_note >= 0x5C:
+                    g_note = 0x5C
+                # A shifted table can push the lowest byte below its own
+                # entry 0; that entry holds $0000 in the one player this
+                # applies to, so the player sounds no pitch there at all.
+                # Goattracker's bottom note is 16 Hz and equally inaudible,
+                # which is what the byte already produced before the shift
+                # existed.
+                g_note = max(0, g_note + note_base) + 0x60
 
         resc_instr = -1
         # `instr_base > 1` is not a style check: the placeholder trick points a
@@ -789,7 +903,12 @@ def _build_raw_pattern(data: bytes, addr: int,
         # reading. It was briefly believed to be what spared Saboteur_II. It is
         # not: with it in place Saboteur_II still fell from melody 98% to 69%
         # until `gate_hold` excluded the file outright.
-        pending_tie = tie and not no_note and (
+        #
+        # A past-table rest (`rest_notes`) is excluded on the same footing:
+        # its KEYOFF closed the gate, and a TONEPORTA into a closed gate is a
+        # note nobody hears. The original's next note there arrives on an
+        # envelope that ran its attack over silent DC frames; ours attacks.
+        pending_tie = tie and not no_note and not past_rest and (
             bool(no_adsr) or (wait == 0 and gate_hold))
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 in ONE_SHOT_COMMANDS:
@@ -1574,7 +1693,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               slide_high_first=det.slide_high_first,
                               steps=steps, tie=tie,
                               gate_hold=tie and det.gate_hold,
-                              exits_tied=exits_tied)
+                              exits_tied=exits_tied,
+                              rest_notes=past_table_rests(sid, det))
 
 
 def pattern_top_note(events: List[int]) -> int:

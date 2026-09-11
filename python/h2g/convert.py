@@ -606,7 +606,8 @@ def convert(sid_path: str, log: Logger = print,
     # The walk and the clone discipline live in patterns.py, the simulator
     # and the table in goatwriter.py; the table is built HERE, before the
     # patterns are patched, because the commands name its entry indices.
-    # Multispeed files are declined. **THE REASON IS NO LONGER "UNMEASURED":
+    # Multispeed files were declined until the gate below was lifted. **THE
+    # REASON WAS NO LONGER "UNMEASURED":
     # THE SWEEP STEPS PER FRAME, MEASURED AT v0.5.460, three ways that agree.**
     # This comment used to say the per-call/per-frame question "has not been
     # measured, and a wrong reading there would be silent". It is measured:
@@ -625,21 +626,27 @@ def convert(sid_path: str, log: Logger = print,
     #   originals entered twice a frame their gaps would be halved.
     #
     # So `_pulse_tri_program`'s division by `multiplier` is the correct
-    # treatment rather than a guess, and this gate is NOT protecting against a
+    # treatment rather than a guess, and the gate was NOT protecting against a
     # wrong rate unit.
     #
-    # **IT IS KEPT ANYWAY, FOR A DIFFERENT AND MEASURED REASON, and that reason
-    # is written down in `tests/test_pulse_phase.py`:** lifting the condition
-    # to admit VBI multispeed files reaches three of them, and **Rasputin's
-    # conversion then does not PACK** -- gt2reloc refuses it, with no table
-    # error and 126 patterns against a limit of 208, so the cause is neither of
-    # the two overruns this repo already guards. Of the other two, Game_Killer
-    # gains `pulse_phase` 0.79 -> 0.93 with every other column identical, and
-    # One_Man_and_his_Droid moves bytes and no number. That test pins this
-    # condition AS SOURCE and says the repair is a guard on the pack, not a
-    # wider condition here. Do not widen it without that guard.
+    # **THE `multiplier == 1` GATE THAT USED TO SIT HERE IS LIFTED (after 24b9f1d).**
+    # It was kept past that measurement for a different and measured reason,
+    # written down in `tests/test_pulse_phase.py`: lifting it reaches three
+    # VBI multispeed files, and **Rasputin's conversion then did not PACK** --
+    # gt2reloc refused it with no table error and 126 patterns against a
+    # limit of 208. The cause, found at 24b9f1d, is greloc.c's `packpattern()`
+    # returning -1 past 256 packed bytes a pattern: CMD_SETPULSEPTR on 785
+    # note rows, plus the vibrato commands `_vibrato_command_pass` adds
+    # afterwards, took four of Rasputin's 127-row clones to 264-270. The
+    # repair is `goatwriter.budget_pulse_phase_commands`, run in `build_sng`
+    # on the FINISHED rows (a budget on the plan here measured nothing to
+    # drop -- the vibrato pass is what crosses the line), and with it the
+    # file packs. Of the other two, Game_Killer gains `pulse_phase` and
+    # One_Man_and_his_Droid moves bytes and no number; `tests/test_pulse_phase.py`
+    # and `tests/test_pattern_budget.py` pin the lifted gate, the budget and
+    # Rasputin's pack.
     #
-    # **AND THE GATE IS NOT THE ONLY THING DECLINING THESE FILES**, which was
+    # **AND THE GATE WAS NOT THE ONLY THING DECLINING THESE FILES**, which was
     # not previously known: with the condition lifted, only 3 of the 10 VBI
     # carriers are reached at all. The other 7 are Devils_Galop, both Last_V8s,
     # Master_of_Magic, Monty_on_the_Run, Phantoms_of_the_Asteroid and
@@ -674,8 +681,7 @@ def convert(sid_path: str, log: Logger = print,
     # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------
     pulse_plan = None
-    if (pulse_phase and pulse and det.pulse_tri_hi >= 0
-            and multiplier == 1 and group_tempos):
+    if pulse_phase and pulse and det.pulse_tri_hi >= 0 and group_tempos:
         lead = 0 if compact_instruments else 1
         sims = pulse_phase_sims(sid, det, lead)
         if sims:

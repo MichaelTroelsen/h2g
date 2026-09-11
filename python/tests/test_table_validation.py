@@ -77,7 +77,11 @@ def table_errors(blob: bytes) -> list:
 # (v0.5.480): CMD_SETPULSEPTR on 785 note rows made four 127-row patterns pack
 # to 264-270 bytes. Confirmed by intervention -- stripping the command from
 # ONLY those four patterns packs (max 217), stripping it from every OTHER
-# pattern and keeping the four is still refused.
+# pattern and keeping the four is still refused. Since the `multiplier == 1`
+# gate was lifted, `goatwriter.budget_pulse_phase_commands` is what keeps
+# that file inside the limit -- `test_pattern_budget.py` -- and the corpus
+# walk below runs with `pulse_phase` forced on as well as under the presets,
+# because the writer that crosses the line is only reached by the first.
 PACKED_PATTERN_LIMIT = 256
 _FX, _FXONLY, _FIRSTNOTE, _REST = 0x40, 0x50, 0x60, 0xBD
 
@@ -154,9 +158,21 @@ def packed_pattern_size(rows) -> int:
     return size
 
 
+_ENDPATT = 0xFF
+
+
 def _pattern_rows(flat):
-    """`songview.parse_sng` keeps a pattern as a flat byte list, four a row."""
-    return list(zip(flat[0::4], flat[1::4], flat[2::4], flat[3::4]))
+    """`songview.parse_sng` keeps a pattern as a flat byte list, four a row,
+    ENDPATT row included. `packpattern` is handed `pattlen` rows -- the count
+    BEFORE the ENDPATT (gsong.c:1330) -- so the walk stops there. Counting the
+    end row charged every pattern one byte it never packs, which is how this
+    reader disagreed with goatwriter's the first time the two were compared
+    (`test_pattern_budget.test_the_two_readers_agree_on_the_corpus`)."""
+    rows = list(zip(flat[0::4], flat[1::4], flat[2::4], flat[3::4]))
+    for k, row in enumerate(rows):
+        if row[0] == _ENDPATT:
+            return rows[:k]
+    return rows
 
 
 def test_the_packed_size_charges_a_command_change_two_bytes():
@@ -181,23 +197,31 @@ def test_no_corpus_conversion_packs_a_pattern_past_256_bytes():
     """The guard the Rasputin refusal was missing. Every shipped conversion's
     patterns pack inside greloc.c's limit; a writer that puts a command on
     most rows of a long pattern (CMD_SETPULSEPTR under `pulse_phase` did) is
-    what pushes one over, and nothing before this could see it."""
+    what pushes one over, and nothing before this could see it. Walked under
+    the presets AND with `pulse_phase` forced on: the presets reach that
+    writer on few files, and the forced arm is where the budget earns its
+    keep (Rasputin at -S2 is in it)."""
     doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
                       / "presets.json").read_text(encoding="utf-8"))
-    bad, worst = {}, 0
+    bad, worst, walked = {}, 0, 0
     for path in sorted(CORPUS.glob("*.sid")):
-        try:
-            blob = F.convert(str(path), log=lambda m: None,
-                             **F._preset_opts(doc, path.name))
-        except Exception:                              # noqa: BLE001
-            continue                                   # SURVEY.md's business
-        song = songview.parse_sng(blob)
-        sizes = [packed_pattern_size(_pattern_rows(p)) for p in song.patterns]
-        worst = max(worst, max(sizes, default=0))
-        over = [(i, n) for i, n in enumerate(sizes) if n > PACKED_PATTERN_LIMIT]
-        if over:
-            bad[path.name] = over
+        for forced in (False, True):
+            opts = F._preset_opts(doc, path.name)
+            if forced:
+                opts["pulse_phase"] = True
+            try:
+                blob = F.convert(str(path), log=lambda m: None, **opts)
+            except Exception:                              # noqa: BLE001
+                continue                                   # SURVEY.md's business
+            walked += 1
+            song = songview.parse_sng(blob)
+            sizes = [packed_pattern_size(_pattern_rows(p)) for p in song.patterns]
+            worst = max(worst, max(sizes, default=0))
+            over = [(i, n) for i, n in enumerate(sizes) if n > PACKED_PATTERN_LIMIT]
+            if over:
+                bad[(path.name, forced)] = over
     assert not bad, bad
+    assert walked > 100, f"only {walked} conversions walked -- the walk is vacuous"
     assert worst > 0, "no pattern measured -- the walk is vacuous"
 
 

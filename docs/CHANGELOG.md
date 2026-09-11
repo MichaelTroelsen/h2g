@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.483 — 2026-09-11
+
+- pulse-phase budget lifts the multiplier gate, past-table zero cells rest, noise_runs reads the gate bit, the artefact guard matches invocations, check_column moves into the repo
+
 ## 0.5.482 — 2026-09-11
 
 - Regenerate the fidelity artefacts at 180 s after the Powerplay adoption, and the routine command gains --json

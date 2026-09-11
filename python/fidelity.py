@@ -2047,8 +2047,8 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
     (the init path writing `$D404` after it), and the tick comparison twice.
 
     A run's length does not depend on where the run begins. So this finds
-    maximal stretches of `$D404 & $80` and records how long each is, with no
-    note boundary involved at all.
+    maximal stretches where $D404 selects NOISE AND has GATE set (both bits, not either) and records how long each
+    is, with no note boundary involved at all.
 
     Two rules that keep it honest:
 
@@ -2058,6 +2058,18 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
       pair is a verbatim per-instrument copy (see `instrmap.py`), and the
       midpoint is inside the note however the run sits within it.
 
+    **Reads $D404's NOISE bit AND its GATE bit together, not NOISE alone.** The waveform
+    SELECT nibble is not re-latched at every note -- Confuzion's lead holds
+    the noise-select bit for its entire trace while GATE toggles per note --
+    so a gate-blind predicate sees one run spanning almost the whole window,
+    which the frame-0/last-frame drop rule then discards entirely. Measured
+    at v0.5.482 (HEAD 760f401) on Confuzion.sid, -t 180: gate-blind, the
+    original reads one continuous run touching both window edges (dropped
+    entirely) and `noise_run_agreement` declines the file (0 shared
+    instruments). Gate-AND'd, see the measured split in this file's
+    `noise_run_agreement` docstring -- both sides now produce comparable
+    per-note runs instead of one edge-cut stretch.
+
     Returns `{adsr: Counter({run_length: count})}`.
     """
     out: dict = {}
@@ -2066,11 +2078,11 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
         adsr = register_timeline(v.adsr_events, nframes)
         f = 0
         while f < nframes:
-            if not wf[f] & WF_NOISE:
+            if not (wf[f] & WF_NOISE and wf[f] & WF_GATE):
                 f += 1
                 continue
             start = f
-            while f < nframes and wf[f] & WF_NOISE:
+            while f < nframes and (wf[f] & WF_NOISE and wf[f] & WF_GATE):
                 f += 1
             if start == 0 or f >= nframes:
                 continue                      # cut by the window
@@ -3181,6 +3193,19 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     test_fidelity.py` pins both the file-level blindness and this exact
     split so a future change to `noise_runs`' keying re-runs the check
     rather than silently drifting the figures above.
+
+    **`noise_runs` reads $D404's NOISE bit AND GATE bit together, not NOISE alone -- see its
+    own docstring.** Without the gate AND, a waveform SELECT that stays
+    latched on noise across many notes (Confuzion's lead) reads as one run
+    spanning nearly the whole window, dropped entirely by the window-edge
+    rule: measured at v0.5.482 (HEAD 760f401) on Confuzion.sid, -t 180,
+    gate-blind `noise_runs` returns EMPTY for the original (one continuous
+    8998-frame run touching both edges) and this function pairs zero keys,
+    declining the file (`noise_run_instruments` == 0). Gate-AND'd, the same
+    trace resolves into 486 per-note runs (7542 frames total) against ours'
+    485 (7533 frames), pairs 2 of 2 shared instruments and reads
+    `noise_run_agreement` == 1.0 -- a 9-frame difference where the
+    gate-blind reduction found nothing comparable at all.
     """
     a, b = noise_runs(orig, nframes), noise_runs(ours, nframes)
     shared = paired_keys(a, b)
@@ -3956,7 +3981,14 @@ DIMENSIONS = (
               "held note (its original modal noise run equals its original "
               "modal held length) -- measured exact over 138 corpus "
               "instruments carrying both: 28 of 28 such instruments read "
-              "nrun delta -1 and 0 of the other 76 do"),
+              "nrun delta -1 and 0 of the other 76 do. Also blind to a "
+              "latched waveform SELECT with no gate: it reads "
+              "$D404's NOISE bit AND GATE bit together, not NOISE alone -- Confuzion's lead "
+              "holds noise-select across many notes, and gate-blind that "
+              "reads as one run touching both window edges (dropped, 0 "
+              "shared instruments); gate-AND'd it reads 486 per-note runs "
+              "(7542 frames) against ours' 485 (7533), 2 of 2 paired, "
+              "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
     # this project's life. `nrun` compares noise runs and is silent about a
     # pitched note; `tail` reads the envelope after the gate closes, not how
