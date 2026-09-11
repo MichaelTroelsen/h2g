@@ -172,3 +172,189 @@ def test_reach_is_four_files_decoded_and_one_played():
                 break
     assert hit == {"BMX_Kidz.sid", "Kings_of_the_Beach_ingame.sid",
                    "Ricochet.sid", "Sanxion.sid"}
+
+
+# ---------------------------------------------------------------------------
+# The other half of the same reading: a past-table byte on a constant cell
+# that is NOT zero sounds that cell's pitch, and `patterns.past_table_notes`
+# re-reads it as the nearest entry of the player's own table.
+#
+# In Proteus, Warhawk and Thing_on_a_Spring the byte `$60` lands exactly on
+# the player's per-voice offset table `00 07 0E`, which follows the frequency
+# table and is read by `LDA offsets,X` and written by nothing. The original
+# sounds `$0700` there -- siddump at -m1 over 180 s shows `0700 G#2` at 48 /
+# 29 / 114 gate-on edges (Proteus v3, Warhawk v3, Thing v2) -- 23 cents above
+# entry 32, G#2. The clamp made every one of them G#7. Measured at 50a6178
+# under presets.json at -t 180, G#2 against the clamp: melody 87->88 / 89->90
+# / 93->98 %, sequence 77->89 / 81->90 / 94->98 %, and `our_noise_pitch`
+# moved toward the original on all three (Warhawk 12604 -> 10599 against
+# 10590). The corpus byte-hash under presets named exactly the three;
+# Commando.sng did not move.
+# ---------------------------------------------------------------------------
+
+THREE = {
+    # file: (table address, cell `$60` lands on = table + 2 * 96)
+    "Proteus.sid": (0x0CA3, 0x0D63),
+    "Warhawk.sid": (0x14AC, 0x156C),
+    "Thing_on_a_Spring.sid": (0xC3A9, 0xC469),
+}
+G_SHARP_2 = patterns.GT_FIRSTNOTE + 32
+# Table entry (hex) -> rows its `$60` events land on, decoded under the
+# presets' grammar (slides + status_bit6, the always block). Warhawk under
+# the DEFAULT grammar also moves entries 32-34, but those are a two-byte
+# slide operand mis-read as a note -- `slides` reads it correctly and they
+# vanish, which is why the grammar is pinned here.
+THREE_ROWS = {
+    "Proteus.sid": {0x15: [8, 24], 0x18: [8, 24], 0x1A: [8, 24]},
+    "Warhawk.sid": {0x15: [8, 24], 0x18: [8, 24], 0x1A: [8, 24]},
+    "Thing_on_a_Spring.sid": {0x1B: [3, 12, 21, 27, 36, 45]},
+}
+GRAMMAR = dict(slides=True, status_bit6=True)
+
+
+def _load(name):
+    sid = load_sid(str(CORPUS / name))
+    return sid, detect(sid, log=lambda m: None)
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", sorted(THREE))
+def test_byte_60_lands_on_the_offset_table_a_load_names(name):
+    sid, det = _load(name)
+    table, cell = THREE[name]
+    ft = det.freq_table
+    assert (ft.addr, ft.length) == (table, 96)
+    off = sid.to_offset(cell)
+    assert sid.data[off:off + 3] == b"\x00\x07\x0e"
+    # A LOAD names the cell (the player's `LDA offsets,X`), so the rest
+    # rule's predicate refuses it -- correctly, it is not a rest...
+    assert patterns._absolute_references(sid.data, cell - 2, cell + 1) > 0
+    assert 96 not in patterns.past_table_rests(sid, det)
+    # ...and no WRITER names it, so it is a constant, and the constant is
+    # `$0700`: nearest the player's own entry 32.
+    assert patterns._absolute_writers(sid.data, cell - 2, cell + 1) == 0
+    assert patterns.past_table_notes(sid, det)[0x60] == 32
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", sorted(THREE))
+def test_the_three_sound_g_sharp_2_where_the_clamp_sounded_g_sharp_7(
+        name, monkeypatch):
+    sid, det = _load(name)
+    real = patterns.past_table_notes
+    hits = {}
+    for i in range(det.pattern_used):
+        monkeypatch.setattr(patterns, "past_table_notes", real)
+        on = patterns.decode_entry(sid, det, i, **GRAMMAR)
+        monkeypatch.setattr(patterns, "past_table_notes", lambda s, d: {})
+        off = patterns.decode_entry(sid, det, i, **GRAMMAR)
+        assert (on is None) == (off is None), i
+        if on is None:
+            continue
+        assert len(on) == len(off), i
+        rows = [k // 4 for k in range(0, len(on), 4) if on[k] != off[k]]
+        for k in range(0, len(on), 4):
+            if on[k] != off[k]:
+                # The note column is the only thing that moves, and it
+                # moves from the clamp's G#7 to G#2 -- never anywhere else.
+                assert (off[k], on[k]) == (G_SHARP_7, G_SHARP_2), (i, k // 4)
+                assert on[k + 1:k + 4] == off[k + 1:k + 4], (i, k // 4)
+        if rows:
+            hits[i] = rows
+    assert hits == THREE_ROWS[name]
+
+
+@needs_corpus
+def test_a_constant_note_needs_no_writer_and_a_zero_cell_is_a_rest_first():
+    sid, det = _load("Proteus.sid")
+    _, cell = THREE["Proteus.sid"]
+    # An `STA $0D63` anywhere in the file makes the cell a variable and the
+    # byte goes back to the clamp.
+    patched = bytearray(sid.data)
+    patched[-3:] = bytes((0x8D, cell & 0xFF, cell >> 8))
+    assert 0x60 not in patterns.past_table_notes(
+        replace(sid, data=bytes(patched)), det)
+    # So does a per-voice `STA $0D61,X`, which reaches the cell with X=2.
+    patched = bytearray(sid.data)
+    patched[-3:] = bytes((0x9D, (cell - 2) & 0xFF, (cell - 2) >> 8))
+    assert 0x60 not in patterns.past_table_notes(
+        replace(sid, data=bytes(patched)), det)
+    # A read-modify-write is a writer too: `INC $0D63`.
+    patched = bytearray(sid.data)
+    patched[-3:] = bytes((0xEE, cell & 0xFF, cell >> 8))
+    assert 0x60 not in patterns.past_table_notes(
+        replace(sid, data=bytes(patched)), det)
+    # A second LOAD changes nothing: `LDA $0D63` is how the player reads it.
+    patched = bytearray(sid.data)
+    patched[-3:] = bytes((0xAD, cell & 0xFF, cell >> 8))
+    assert patterns.past_table_notes(
+        replace(sid, data=bytes(patched)), det)[0x60] == 32
+    # Zero the cell and it is the rest rule's case, not this one -- and
+    # since a load still names it, it is neither: back to the clamp.
+    patched = bytearray(sid.data)
+    patched[sid.to_offset(cell) + 1] = 0
+    sid0 = replace(sid, data=bytes(patched))
+    assert 0x60 not in patterns.past_table_notes(sid0, det)
+    assert 96 not in patterns.past_table_rests(sid0, det)
+
+
+def test_the_rest_wins_over_the_note_and_the_default_is_still_the_clamp():
+    # A two-event pattern, `01 60` then `FF`, as in test_the_default_is_the_clamp.
+    raw = bytes((0, 0, 0x01, 0x60, 0xFF))
+    assert patterns._build_raw_pattern(raw, 2)[0] == G_SHARP_7
+    assert patterns._build_raw_pattern(
+        raw, 2, const_notes={0x60: 32})[0] == G_SHARP_2
+    # The mapped entry takes the ordinary path: `note_base` applies to it.
+    assert patterns._build_raw_pattern(
+        raw, 2, const_notes={0x60: 32}, note_base=-1)[0] == G_SHARP_2 - 1
+    # `rest_notes` is consulted first: a byte in both is a rest.
+    assert patterns._build_raw_pattern(
+        raw, 2, rest_notes=frozenset({0x60}),
+        const_notes={0x60: 32})[0] == patterns.GT_KEYOFF
+
+
+def test_commando_byte_68_is_not_a_constant_either():
+    # Commando's `$68` cell `$54F8` is written by `$515A STA $54F8,X`, so it
+    # fails the writer test exactly as it fails the rest rule's -- the
+    # byte-exact fixture stays green (test_commando.py). Its `$60` DOES map
+    # (the same `00 07 0E` offset table follows its 96-entry table) and no
+    # Commando pattern carries a `$60`, which the fixture also pins.
+    sid = load_sid(str(COMMANDO))
+    det = detect(sid, log=lambda m: None)
+    assert patterns._absolute_writers(sid.data, 0x54F8 - 2, 0x54F8 + 1) > 0
+    notes = patterns.past_table_notes(sid, det)
+    assert 0x68 not in notes
+    assert notes[0x60] == 32
+
+
+@needs_corpus
+def test_note_reach_is_four_files_decoded_and_three_played(monkeypatch):
+    # Where the constant-note rule reaches at the DECODE level under the
+    # presets' grammar (slides + status_bit6), over every classic-dialect
+    # corpus file: four. Ricochet's entries are ones no orderlist plays
+    # (prune drops them), so the corpus byte-hash under presets.json at
+    # 50a6178 named exactly Proteus, Thing_on_a_Spring and Warhawk. Pinned
+    # so a change in reach is a change someone has to explain.
+    real = patterns.past_table_notes
+    hit = set()
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        try:
+            det = detect(sid, log=lambda m: None)
+        except Exception:  # noqa: BLE001 -- the six non-Hubbard files
+            continue
+        if det.freq_table is None or det.pattern_dialect != "classic":
+            continue
+        if not real(sid, det):
+            continue
+        for i in range(max(det.pattern_used, 0)):
+            monkeypatch.setattr(patterns, "past_table_notes", real)
+            on = patterns.decode_entry(sid, det, i, **GRAMMAR)
+            monkeypatch.setattr(patterns, "past_table_notes",
+                                lambda s, d: {})
+            off = patterns.decode_entry(sid, det, i, **GRAMMAR)
+            if on is not None and on != off:
+                hit.add(path.name)
+                break
+    assert hit == {"Proteus.sid", "Ricochet.sid", "Thing_on_a_Spring.sid",
+                   "Warhawk.sid"}

@@ -14,7 +14,7 @@ zero-initialized arrays) was proven equivalent to plain chunking.
 from __future__ import annotations
 
 from functools import lru_cache
-from math import gcd
+from math import gcd, log2
 from typing import Dict, List, Optional, Set
 
 from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN,
@@ -339,6 +339,106 @@ def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
     return frozenset(out)
 
 
+# The subset of `_ABS_OPERAND_OPCODES` that WRITES its operand address:
+# STA/STX/STY abs, STA abs,X / abs,Y, and the read-modify-write group
+# (ASL/LSR/ROL/ROR/INC/DEC abs and abs,X). Every other absolute-operand
+# shape only reads the cell, and a cell that is only ever read keeps its
+# load-time value -- which is the whole claim `past_table_notes` rests on.
+_ABS_WRITER_OPCODES = frozenset((
+    0x8C, 0x8D, 0x8E, 0x99, 0x9D,
+    0x0E, 0x1E, 0x2E, 0x3E, 0x4E, 0x5E, 0x6E, 0x7E,
+    0xCE, 0xDE, 0xEE, 0xFE,
+))
+
+
+@lru_cache(maxsize=8)
+def _absolute_writes(data: bytes) -> frozenset:
+    """Every C64 address some three-byte absolute-operand WRITER shape in
+    `data` names -- `_absolute_operands` restricted to the opcodes that
+    store. Data that happens to look like a store is counted too, which
+    errs toward declining a cell (and so toward the clamp), never toward
+    sounding a constant the player overwrites."""
+    return frozenset(data[i + 1] | (data[i + 2] << 8)
+                     for i in range(len(data) - 2)
+                     if data[i] in _ABS_WRITER_OPCODES)
+
+
+def _absolute_writers(data: bytes, lo: int, hi: int) -> int:
+    """How many addresses in `lo..hi` inclusive (C64 addresses) some
+    three-byte absolute-operand WRITER shape in `data` names."""
+    named = _absolute_writes(data)
+    return sum(1 for a in range(lo, hi + 1) if a in named)
+
+
+def past_table_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
+    """Note bytes that index PAST the player's frequency table onto a cell
+    the original sounds as a constant PITCH -- mapped to the table entry
+    nearest that pitch, so the clamp below emits the note the original
+    plays instead of G#7.
+
+    The sibling of `past_table_rests`, and the other half of the same
+    reading: the note fetch is `ASL / TAY / LDA freqtbl,Y` with no bound, so
+    a byte at or above `FreqTable.length` loads the two bytes that follow
+    the table. Where those are a constant `$0000` the original rests
+    (`past_table_rests`); where they are a constant that is NOT zero the
+    original sounds it. In Proteus, Warhawk and Thing_on_a_Spring the byte
+    `$60` lands exactly on the player's per-voice offset table `00 07 0E`,
+    which sits right after the frequency table and is read with
+    `LDA offsets,X` and written by nothing -- so the original sounds
+    frequency `$0700`, 23 cents above its own entry 32 (G#2), on every one
+    of those events; siddump shows `0700 G#2` at each. Clamped to index 92
+    that event is a G#7, five octaves out.
+
+    A byte qualifies on two conditions, both read statically:
+
+    * the two bytes it lands on are **not both zero** in the file (that is
+      the rest rule's case, and it is checked first), and
+    * **no writer names the cell** -- no absolute-operand STORE or
+      read-modify-write opcode (`_ABS_WRITER_OPCODES`) in the file has an
+      operand in `cell-2 .. cell+1`, covering a direct store to either byte
+      and a per-voice `base,X` with X up to 2.
+
+    This is a WEAKER constancy test than the rest rule's, deliberately: a
+    cell the player only LOADS is still a constant, and the offset table is
+    loaded by design. Commando's `$68` cell (`$54F8`, written by `$515A STA
+    $54F8,X`) fails it exactly as it fails the rest rule's, so the fixture
+    is untouched. What neither rule can see is an indirect store through a
+    zero-page pointer -- `STA (zp),Y` names no absolute address -- which is
+    the same blindness the rest rule carries and is stated there.
+
+    The value is placed against the player's OWN table, not against
+    Goattracker's: the entry whose frequency is nearest the cell's in log
+    space is the note the original's other voices would call it, and
+    `note_base` then applies to it exactly as to a byte read from inside
+    the table. Keyed on the RAW note byte, like `rest_notes`, and bytes at
+    or above `$80` are not considered for the same reason.
+    """
+    ft = det.freq_table
+    if ft is None:
+        return {}
+    data = sid.data
+    base = sid.to_offset(ft.addr)
+    table = [data[base + 2 * i] | (data[base + 2 * i + 1] << 8)
+             for i in range(ft.length)
+             if 0 <= base + 2 * i and base + 2 * i + 1 < len(data)]
+    if len(table) != ft.length or not any(table):
+        return {}
+    out: Dict[int, int] = {}
+    for n in range(ft.length, 0x80):
+        cell = base + 2 * n
+        if cell < 0 or cell + 1 >= len(data):
+            break
+        value = data[cell] | (data[cell + 1] << 8)
+        if value == 0:
+            continue
+        addr = ft.addr + 2 * n
+        if _absolute_writers(data, addr - 2, addr + 1):
+            continue
+        out[n] = min(range(ft.length),
+                     key=lambda i: abs(log2(max(table[i], 1) / value)))
+    return out
+
+
 def _build_raw_pattern(data: bytes, addr: int,
                        slide_operand: bool = False,
                        note_flag: bool = False,
@@ -356,7 +456,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        rest_envelope: bool = False,
                        exits_tied: Optional[List[bool]] = None,
                        instr_mask: int = 0x7F,
-                       rest_notes: frozenset = frozenset()
+                       rest_notes: frozenset = frozenset(),
+                       const_notes: Optional[Dict[int, int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -406,6 +507,14 @@ def _build_raw_pattern(data: bytes, addr: int,
     Such a byte is emitted as a KEYOFF instead of being clamped to index 92,
     because that is what the original sounds there: nothing. Empty by
     default, which is the clamp's historical behaviour.
+
+    `const_notes` maps a raw note byte that indexes past the table onto a
+    constant NON-zero cell to the table entry nearest the pitch that cell
+    holds -- see `past_table_notes`. Such a byte is re-read as that entry
+    before the clamp, so the original's G#2 (Proteus, Warhawk,
+    Thing_on_a_Spring: `$60` on the `00 07 0E` offset table) is emitted as
+    G#2 rather than the clamp's G#7. `rest_notes` is consulted first: a
+    zero cell is a rest, not a note. None by default, which is the clamp.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -757,6 +866,15 @@ def _build_raw_pattern(data: bytes, addr: int,
                 g_note = GT_KEYOFF
                 past_rest = True
             else:
+                # The other half of the same reading (`past_table_notes`):
+                # a past-table byte on a constant NON-zero cell sounds
+                # that cell's pitch, so it is re-read as the nearest table
+                # entry and then takes the ordinary path below -- the
+                # clamp (still needed for an entry 92-95) and `note_base`.
+                # Proteus/Warhawk/Thing_on_a_Spring's `$60` lands on the
+                # `00 07 0E` offset table and becomes entry 32, G#2.
+                if const_notes and g_note in const_notes:
+                    g_note = const_notes[g_note]
                 if g_note >= 0x5C:
                     g_note = 0x5C
                 # A shifted table can push the lowest byte below its own
@@ -1694,7 +1812,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               steps=steps, tie=tie,
                               gate_hold=tie and det.gate_hold,
                               exits_tied=exits_tied,
-                              rest_notes=past_table_rests(sid, det))
+                              rest_notes=past_table_rests(sid, det),
+                              const_notes=past_table_notes(sid, det))
 
 
 def pattern_top_note(events: List[int]) -> int:

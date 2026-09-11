@@ -196,6 +196,98 @@ def test_mode_token_reference_is_exempt():
 
 
 # ---------------------------------------------------------------------
+# (e) `listen.py` / `listen.<attr>` is a FILENAME/module reference, not
+# the verb -- swept in at 50a6178 (6 of the 8 live-plan findings).
+# ---------------------------------------------------------------------
+def test_listen_module_reference_is_exempt():
+    t = base_task(
+        id="listen-module-task",
+        verify="python/listen.py:939 calls run_siddump without `calls`; "
+               "listen.render_sidplayfp already threads mute correctly.")
+    assert plan_audit.check_g([t]) == []
+
+
+# SABOTAGE-VERIFY: plant a genuine bare "listen" (the verb, not the
+# filename) OUTSIDE the listen.py mention, with no other exempt source
+# nearby -- the finding must survive even though the filename is present
+# elsewhere in the same verify.
+def test_listen_verb_beside_a_filename_mention_is_still_reported():
+    t = base_task(
+        id="listen-verb-and-file-task",
+        mode="main",
+        verify="python/listen.py needs the multiplier fix. Separately, "
+               "DONE means someone must listen to the render and confirm "
+               "it sounds right -- no script can check this.")
+    findings = plan_audit.check_g([t])
+    assert [f[0] for f in findings] == ["listen-verb-and-file-task"]
+
+
+# ---------------------------------------------------------------------
+# (f) "the user has set/placed ... priority" generalises (a) to a
+# paraphrase; "the user named <path> ... error/exist" is the same
+# descriptive-prose shape one step further.
+# ---------------------------------------------------------------------
+def test_user_priority_paraphrase_is_exempt():
+    t = base_task(
+        id="priority-paraphrase-task",
+        verify="the user has placed them behind the 83 RH files -- so "
+               "this becomes ready and LOW priority, not ready and next.")
+    assert plan_audit.check_g([t]) == []
+
+
+def test_user_named_path_description_is_exempt():
+    t = base_task(
+        id="named-path-desc-task",
+        verify="A path the user named that does not exist should be an "
+               "error, not an empty preset document.")
+    assert plan_audit.check_g([t]) == []
+
+
+# SABOTAGE-VERIFY: a genuine done-condition needing a person, planted
+# beside a priority-paraphrase sentence that alone would be exempt, must
+# still be reported.
+def test_genuine_condition_beside_priority_paraphrase_is_still_reported():
+    t = base_task(
+        id="priority-and-genuine-task",
+        mode="main",
+        verify="the user has placed them behind the 83 RH files -- so "
+               "this becomes ready and LOW priority, not ready and next. "
+               "Separately, DONE means a person must listen and confirm "
+               "the render sounds right -- no script can check this.")
+    findings = plan_audit.check_g([t])
+    assert [f[0] for f in findings] == ["priority-and-genuine-task"]
+
+
+# ---------------------------------------------------------------------
+# (g) "NOTE FOR THE USER: ..." is a sequencing aside, not the
+# done-condition.
+# ---------------------------------------------------------------------
+def test_note_for_the_user_clause_is_exempt():
+    t = base_task(
+        id="note-for-user-task",
+        verify="re-run listen.py once the fix lands. || NOTE FOR THE "
+               "USER: the pending sign-off tasks read these notes, so "
+               "this should land before any further listening is asked "
+               "for.")
+    assert plan_audit.check_g([t]) == []
+
+
+# SABOTAGE-VERIFY: a genuine done-condition needing a person, placed in a
+# clause BEFORE a "NOTE FOR THE USER:" aside, must still be reported --
+# the aside must not swallow the whole verify.
+def test_genuine_condition_before_note_for_the_user_is_still_reported():
+    t = base_task(
+        id="genuine-before-note-task",
+        mode="main",
+        verify="DONE means a person has listened to the render and "
+               "confirmed it sounds right -- no script can check this. "
+               "|| NOTE FOR THE USER: this should land before any "
+               "further listening is asked for.")
+    findings = plan_audit.check_g([t])
+    assert [f[0] for f in findings] == ["genuine-before-note-task"]
+
+
+# ---------------------------------------------------------------------
 # The positive case: a genuine unsatisfiable done-condition on a task that
 # is NOT mode requires-user IS a real defect and must be reported.
 # ---------------------------------------------------------------------
@@ -276,6 +368,67 @@ def test_check_h_selfref_plan_audit_task_is_exempt():
 
 
 # ---------------------------------------------------------------------
+# A "BLOCKED at <sha>: ..." or "PARTIAL at <sha>: ..." clause narrates a
+# PAST run of the verify (what did or didn't happen), not this task's own
+# promise -- swept in at 50a6178.
+# ---------------------------------------------------------------------
+def test_blocked_clause_is_exempt():
+    t = base_task(
+        id="blocked-clause-task",
+        verify="BLOCKED at fd286a5: NOT RUN. The verify writes "
+               "python/h2g/convert.py -- nothing was written.")
+    assert plan_audit.check_h([t]) == []
+
+
+def test_partial_clause_is_exempt():
+    t = base_task(
+        id="partial-clause-task",
+        verify="PARTIAL at fd286a5: writing the exact patch to scratch; "
+               "stopped at the undeclared python/h2g/convert.py -- "
+               "partial.")
+    assert plan_audit.check_h([t]) == []
+
+
+# SABOTAGE-VERIFY: a genuine spent-creation-promise clause OUTSIDE the
+# BLOCKED/PARTIAL narration, in the same verify, must still be reported.
+def test_genuine_promise_beside_blocked_clause_is_still_reported():
+    t = base_task(
+        id="blocked-and-genuine-task",
+        verify="BLOCKED at fd286a5: NOT RUN, nothing was written. || "
+               "DONE means this task creates python/h2g/convert.py with "
+               "the new option wired through.")
+    findings = plan_audit.check_h([t])
+    assert [f[0] for f in findings] == ["blocked-and-genuine-task"]
+
+
+# ---------------------------------------------------------------------
+# "a fan-out writing <path>" narrates a DIFFERENT, concurrently-run task's
+# write, not this task's own -- inline prose, not wrapped in a "<TAG> at
+# <sha>:" clause, so it needs its own strip.
+# ---------------------------------------------------------------------
+def test_fanout_writing_phrase_is_exempt():
+    t = base_task(
+        id="fanout-task",
+        verify="this cycle claimed the task alongside a fan-out writing "
+               "python/h2g/convert.py; lockctl saw no conflict because "
+               "the read was never declared.")
+    assert plan_audit.check_h([t]) == []
+
+
+# SABOTAGE-VERIFY: a genuine spent-creation-promise beside a fan-out
+# mention of the SAME path must still be reported.
+def test_genuine_promise_beside_fanout_mention_is_still_reported():
+    t = base_task(
+        id="fanout-and-genuine-task",
+        verify="this cycle claimed the task alongside a fan-out writing "
+               "python/h2g/tracks.py; lockctl saw no conflict. || DONE "
+               "means this task creates python/h2g/convert.py with the "
+               "new option wired through.")
+    findings = plan_audit.check_h([t])
+    assert [f[0] for f in findings] == ["fanout-and-genuine-task"]
+
+
+# ---------------------------------------------------------------------
 # The positive case: a genuine promise to create a path that already
 # exists, OUTSIDE any GRANTS-clause, IS a real defect and must be reported.
 # ---------------------------------------------------------------------
@@ -286,6 +439,21 @@ def test_check_h_genuine_spent_promise_is_reported():
                "the new option wired through.")
     findings = plan_audit.check_h([t])
     assert [f[0] for f in findings] == ["spent-promise-task"]
+
+
+def test_check_h_a_write_to_a_build_artefact_is_not_a_creation_promise(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop the `build/` exclusion in h_path_exists. build/
+    is gitignored output, present only in a checkout that has run the tools,
+    so without the exclusion the check reads differently in a worktree and
+    in the main checkout (measured at 50a6178: 0 vs 2 findings, one plan)."""
+    (tmp_path / "build").mkdir()
+    (tmp_path / "build" / "approvals.json").write_text("{}")
+    monkeypatch.setattr(plan_audit, "ROOT", tmp_path)
+    t = base_task(id="regen-task",
+                  verify="Done when `python approvals.py <corpus> -o "
+                         "../build/approvals.json` writes build/approvals.json "
+                         "from a clean tree.")
+    assert plan_audit.check_h([t]) == []
 
 
 def test_check_h_promise_to_create_absent_path_is_not_reported():
@@ -301,14 +469,32 @@ def test_check_h_promise_to_create_absent_path_is_not_reported():
 # =======================================================================
 
 # ---------------------------------------------------------------------
-# 0 findings on the real, current plan (the invariant the verify names --
-# ab-9's GATE case is now clean because its depends_on edge was added).
+# The real plan at 50a6178 has exactly one surviving check_i finding, and
+# it is a genuine plan ambiguity rather than a check bug (ab-9's GATE case
+# itself is clean -- its depends_on edge was added):
+# `after-8-bit40-index-cell-disagrees-by-4-bytes` is a READ-ONLY
+# investigation whose verify says it must "report which the fallback in
+# `fixed-pitch-index-from-the-bit40-handler-operand` must prefer" -- the
+# cue word "must" there governs what the NAMED task will do with the
+# report, not a condition on THIS task's own completion (contrast the
+# genuine-edge test below, where "`X` must <verb> ... before a line is
+# written" gates THIS task on X's recorded outcome). Telling the two
+# apart needs the sentence's grammatical subject, which this check does
+# not parse -- so rather than papering over a real ambiguity with a
+# regex that would also swallow genuine finds sharing the same "`X`
+# must <verb>" shape (see test_check_i_genuine_missing_edge_is_reported
+# below), this test pins the one specific finding down instead of
+# asserting zero. Whether the fix is a depends_on edge (in either
+# direction) or a reworded verify is a plan-authoring call, not a check
+# bug -- see the task's `opened` list.
 # ---------------------------------------------------------------------
-def test_check_i_real_plan_has_zero_findings():
+def test_check_i_real_plan_has_one_known_ambiguous_finding():
     plan = importlib.import_module("json").loads(
         (REPO / ".claude/tasks/whattask.json").read_text(encoding="utf-8"))
     findings = plan_audit.check_i(plan["tasks"], plan.get("closed") or [])
-    assert findings == [], findings
+    assert findings == [
+        ("after-8-bit40-index-cell-disagrees-by-4-bytes",
+         "fixed-pitch-index-from-the-bit40-handler-operand")], findings
 
 
 # ---------------------------------------------------------------------
@@ -346,6 +532,89 @@ def test_prerequisite_with_existing_edge_is_not_reported():
         depends_on=["other-task"],
         verify="This must wait on `other-task` finishing first.")
     assert plan_audit.check_i([t, other], []) == []
+
+
+# ---------------------------------------------------------------------
+# The recurring "OPENED by `X` at <sha>; every figure in this text is
+# HISTORICAL at that head and must be re-measured, not re-quoted." is
+# PROVENANCE (which task's finding opened this one) -- it pastes a cue
+# word ("must") next to an id 64 times on the live plan, none of them a
+# prerequisite.
+# ---------------------------------------------------------------------
+def test_opened_boilerplate_is_exempt():
+    other = base_task(id="fetch-minus-one-shows-up-in-three-columns")
+    t = base_task(
+        id="opened-boilerplate-task",
+        verify="OPENED by `fetch-minus-one-shows-up-in-three-columns` "
+               "at fd286a5; every figure in this text is HISTORICAL at "
+               "that head and must be re-measured, not re-quoted. "
+               "8 of 12 nrun instruments across four files have modal "
+               "noise runs of 1-2 frames.")
+    assert plan_audit.check_i([t, other], []) == []
+
+
+# The lower-case, parenthetical, backtick-less sibling shape:
+# "(opened by X, same Dimension entry)".
+def test_opened_paren_variant_is_exempt():
+    other = base_task(id="our-noise-run-is-the-note")
+    t = base_task(
+        id="opened-paren-task",
+        verify="TOUCHES WIDENED and FOLDED IN `some-other-finding` "
+               "(opened by our-noise-run-is-the-note, same Dimension "
+               "entry): the nrun Dimension `of` string must state both "
+               "blindnesses.")
+    assert plan_audit.check_i([t, other], []) == []
+
+
+# SABOTAGE-VERIFY: a genuine missing-edge GATE clause, planted OUTSIDE
+# the OPENED boilerplate but naming the SAME id the boilerplate also
+# quotes, must still be reported.
+def test_genuine_gate_beside_opened_boilerplate_is_still_reported():
+    other = base_task(id="fetch-minus-one-shows-up-in-three-columns")
+    t = base_task(
+        id="opened-and-genuine-gate-task",
+        verify="OPENED by `fetch-minus-one-shows-up-in-three-columns` "
+               "at fd286a5; every figure in this text is HISTORICAL at "
+               "that head and must be re-measured, not re-quoted. || "
+               "GATE: `fetch-minus-one-shows-up-in-three-columns` must "
+               "read outcome done in runs.jsonl before a line is "
+               "written.")
+    findings = plan_audit.check_i([t, other], [])
+    assert findings == [("opened-and-genuine-gate-task",
+                          "fetch-minus-one-shows-up-in-three-columns")]
+
+
+# ---------------------------------------------------------------------
+# A cue word that is only a SUBSTRING of a quoted id's own slug (the id
+# literally spells the cue word inside its hyphenated name) is a fact
+# about the id's name, never prerequisite language in the prose around
+# it -- `re-run-the-hold-delta-split-after-the-GATE-aware-noise-runs`.
+# ---------------------------------------------------------------------
+def test_cue_word_inside_id_slug_is_exempt():
+    other = base_task(
+        id="re-run-the-hold-delta-split-after-the-gate-aware-noise-runs")
+    t = base_task(
+        id="cue-in-slug-task",
+        verify="The corpus-wide hold-delta re-split is a separate task "
+               "(`re-run-the-hold-delta-split-after-the-gate-aware-"
+               "noise-runs`).")
+    assert plan_audit.check_i([t, other], []) == []
+
+
+# SABOTAGE-VERIFY: a genuine standalone cue word, outside the id's own
+# slug, naming the SAME id, must still be reported.
+def test_genuine_cue_outside_slug_beside_id_with_cue_in_name_is_reported():
+    other = base_task(
+        id="re-run-the-hold-delta-split-after-the-gate-aware-noise-runs")
+    t = base_task(
+        id="cue-in-slug-and-genuine-task",
+        verify="This must wait on "
+               "`re-run-the-hold-delta-split-after-the-gate-aware-"
+               "noise-runs` finishing first.")
+    findings = plan_audit.check_i([t, other], [])
+    assert findings == [
+        ("cue-in-slug-and-genuine-task",
+         "re-run-the-hold-delta-split-after-the-gate-aware-noise-runs")]
 
 
 # ---------------------------------------------------------------------

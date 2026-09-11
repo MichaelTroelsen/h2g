@@ -72,6 +72,42 @@ def _doc(name: str) -> Path:
 CHIPS = ("melody", "seq", "retrig", "wave", "gate", "hold", "onset",
          "bend", "vib", "drift")
 
+# `approvals.inherit()` returns `status == "uncalibrated"` from THREE disjoint
+# exits (see that module's docstring), told apart only by `cause`. Rendering
+# them all as a plain "stale" -- which is what a status-only reader does --
+# tells a reader the SAME thing for "wait for calibration", "the approved
+# .sng is missing, re-stage or --recover it" and "gt2reloc refused one side",
+# when only the first is actually about calibration and the other two are
+# both currently fine to wait on for a different reason. Keyed on `cause`,
+# never guessed from `status` alone, because a wrong guess here is exactly
+# what stopped a listener from re-checking a page that needed it.
+UNCAL_TEXT = {
+    "no-calibration": "uncalibrated",
+    "approved-build-absent": "no build to compare",
+    "pack-refused": "pack refused",
+}
+UNCAL_TITLE = {
+    "no-calibration": "build/sound_calibration.json has not passed, so there "
+                       "is no measured threshold to check this build against yet.",
+    "approved-build-absent": "The calibration passes, but the approved .sng "
+                              "is not on disk to compare the current build "
+                              "against -- run approvals.py --recover.",
+    "pack-refused": "gt2reloc refused to pack one of the two sides, so no "
+                     "audio comparison could be made either way.",
+}
+UNCAL_BADGE = {
+    "no-calibration": "Inheritance cannot be assessed yet: "
+                       "<code>build/sound_calibration.json</code> has not "
+                       "passed, so there is no measured threshold to check "
+                       "this build against.",
+    "approved-build-absent": "The calibration passes, but the approved "
+                              "<code>.sng</code> is not on disk to compare "
+                              "the current build against &mdash; run "
+                              "<code>approvals.py --recover</code> to restore it.",
+    "pack-refused": "gt2reloc refused to pack one of the two sides, so no "
+                     "audio comparison could be made either way.",
+}
+
 
 def fidelity_rows() -> dict[str, dict[str, str]]:
     path = _doc("FIDELITY.md")
@@ -276,6 +312,17 @@ def approval_badge(name: str, appr: dict, version: str,
                        "" if rec.get("builds_inherited", 0) == 1 else "s",
                        rec.get("listener_should_check") or "-",
                        (" " + note) if note else ""))
+        if rec and rec.get("status") == "uncalibrated":
+            # Distinct from a real (measured) stale verdict below -- see
+            # UNCAL_BADGE's comment at the top of this module. `status` alone
+            # cannot tell these three apart; `cause` can.
+            cause = rec.get("cause") or "no-calibration"
+            msg = UNCAL_BADGE.get(cause, UNCAL_BADGE["no-calibration"])
+            return ('<div class="approval uncalibrated"><b>Approved &mdash; '
+                    'conversion changed, not yet assessed</b><span>Signed off '
+                    '%s at %s, and the <code>.sng</code> no longer matches the '
+                    'one that was heard. %s%s</span></div>'
+                    % (at, was, msg, (" " + note) if note else ""))
         why = ""
         if rec and rec.get("failed"):
             why = (" What to listen for: <code>%s</code> (failed: %s)."
@@ -828,6 +875,12 @@ td a { color:var(--ink); font-weight:600; }
 .approval.stale { border-color:color-mix(in srgb, var(--a) 55%, var(--line));
   background:color-mix(in srgb, var(--a) 9%, transparent); }
 .approval.stale b { color:var(--a); }
+/* Neither red (a real, measured mismatch) nor blue (a verdict inheritance
+   could confirm): `uncalibrated` means no comparison was possible at all,
+   for one of three reasons -- see UNCAL_BADGE. Muted on purpose. */
+.approval.uncalibrated { border-style:dashed;
+  background:color-mix(in srgb, var(--muted) 9%, transparent); }
+.approval.uncalibrated b { color:var(--muted); }
 .approval.none b { color:var(--muted); font-weight:600; }
 /* The audio's own provenance. Louder than the approval above it on purpose:
    an approval that no longer holds still describes this tune, where audio
@@ -846,6 +899,7 @@ td.appr { white-space:nowrap; }
 td.appr .y { color:var(--b); font-weight:600; }
 td.appr .i { color:var(--b); font-weight:600; font-style:italic; }
 td.appr .s { color:var(--a); font-weight:600; }
+td.appr .u { color:var(--muted); font-weight:600; font-style:italic; }
 td.appr .n { color:var(--muted); }
 td.test { max-width:20em; }
 td.test .flag { color:var(--a); font-weight:600; }
@@ -2771,6 +2825,15 @@ def index(names: list[str], rows: dict, version: str,
             rec = (inherited or {}).get(n)
             if rec and rec.get("status") == "inherited":
                 return '<span class="i">inherited</span>'
+            if rec and rec.get("status") == "uncalibrated":
+                # `uncalibrated` has three disjoint causes (see UNCAL_TEXT's
+                # comment) and only one is actually about the calibration --
+                # a bare "stale" here told a reader the same thing for all
+                # three, including the two where the calibration is fine.
+                cause = rec.get("cause") or "no-calibration"
+                text = UNCAL_TEXT.get(cause, UNCAL_TEXT["no-calibration"])
+                title = UNCAL_TITLE.get(cause, UNCAL_TITLE["no-calibration"])
+                return '<span class="u" title="%s">%s</span>' % (_attr(title), text)
             return '<span class="s">stale</span>'
         return '<span class="y">approved</span>'
 

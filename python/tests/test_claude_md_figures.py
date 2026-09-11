@@ -95,36 +95,114 @@ def _needs_window(rows, taken_at=FIGURE_WINDOW):
             f"FIGURE_WINDOW.")
 
 
-def _says(text, *fragments):
-    """Assert docs/LESSONS.md contains each fragment, quoting what to fix if not."""
+# A QUOTED SENTENCE IS NOT A LINE. Every check in this file asserts that a
+# quoted phrase is present in prose, and prose wraps: the moment someone
+# re-flows a paragraph, a phrase that was on one line is on two, and a bare
+# `f in text` reads 0 for a sentence that is right there. That is CLAUDE.md's
+# own "line-based search finds nothing for a quotation that wraps across a
+# newline" -- and this guard hit it twice on one afternoon at v0.5.481-482:
+# a retraction guard asserted `"applied to the record" in source` against a
+# comment wrapped as `is applied to the` / `# record unconditionally`, and
+# the corrected Kings of the Beach figure below wrapped across a line and
+# failed until the phrase was hand-placed on one line (commit 760f401).
+# So both sides are normalised before matching: line-leading comment and
+# blockquote markers go (`#`, `//`, `>` -- the retraction case lives in a
+# Python comment, the figure case in Markdown), and every whitespace run,
+# newlines included, collapses to one space. Nothing else is touched --
+# `*` and `-` are NOT stripped as list markers, because `**` is how every
+# bold figure in the file begins and a stripped asterisk would break it.
+_LINE_MARKERS = re.compile(r"^[ \t]*(?:#+|//|>)+[ \t]?", re.MULTILINE)
+_WHITESPACE = re.compile(r"\s+")
+
+
+def _normalise(text):
+    """Strip line-leading comment/blockquote markers and collapse whitespace."""
+    return _WHITESPACE.sub(" ", _LINE_MARKERS.sub("", text)).strip()
+
+
+def _says(text, *fragments, where="docs/LESSONS.md"):
+    """Assert the prose contains each fragment, quoting what to fix if not.
+
+    Matches on the NORMALISED text and fragment, so a phrase that wraps
+    across a line, or across a comment marker, is still found.
+    """
+    norm = _normalise(text)
     for f in fragments:
-        assert f in text, (
-            f"docs/LESSONS.md no longer says {f!r} -- either the figure moved "
+        assert _normalise(f) in norm, (
+            f"{where} no longer says {f!r} -- either the figure moved "
             f"and the file needs correcting, or the wording changed and this "
             f"test needs the new wording")
 
 
 # ------------------------------------------------------------ presets.json
 
-def test_the_wave_program_split_is_what_presets_says():
-    songs, text = _songs(), _text()
+def _wave_program_fragment(songs):
     wp = [k for k, o in songs.items() if o.get("wave_program")]
     multi = sum(1 for k in wp if (songs[k].get("multiplier") or 1) > 1)
-    _says(text, f"**{multi} multispeed / {len(wp) - multi} single-speed**")
+    return f"**{multi} multispeed / {len(wp) - multi} single-speed**"
+
+
+def _regrid_fragment(songs):
+    return f"**{sum(1 for o in songs.values() if o.get('regrid'))} adoptions**"
+
+
+def _multiplier_fragments(songs):
+    m = collections.Counter((o.get("multiplier") or 1) for o in songs.values())
+    above = sum(v for k, v in m.items() if k > 1)
+    return (f"{above} of the {len(songs)} preset songs",
+            f"{m[2]} at `-S2`, {m[2] + m[3]} at")
+
+
+def test_the_wave_program_split_is_what_presets_says():
+    songs, text = _songs(), _text()
+    _says(text, _wave_program_fragment(songs))
 
 
 def test_the_regrid_adoption_count_is_what_presets_says():
     songs, text = _songs(), _text()
-    _says(text, f"**{sum(1 for o in songs.values() if o.get('regrid'))} adoptions**")
+    _says(text, _regrid_fragment(songs))
 
 
 def test_the_multiplier_population_is_what_presets_says():
     songs, text = _songs(), _text()
-    m = collections.Counter((o.get("multiplier") or 1) for o in songs.values())
-    above = sum(v for k, v in m.items() if k > 1)
-    _says(text,
-          f"{above} of the {len(songs)} preset songs",
-          f"{m[2]} at `-S2`, {m[2] + m[3]} at")
+    _says(text, *_multiplier_fragments(songs))
+
+
+# ------------------------------------------- the guard survives a re-wrap
+
+def test_says_finds_a_sentence_wrapped_across_a_comment_marker():
+    """The measured instance: a retraction guard asserted the quoted sentence
+    was present in source and FAILED against a correct retraction, because
+    the comment wrapped it as `is applied to the` / `# record unconditionally`.
+    The bare check reads 0; the normalised one finds it."""
+    src = ("    # ... so the census entry is applied to the\n"
+           "    # record unconditionally, where every other cause is gated.\n")
+    assert "applied to the record" not in src, "the bare check should still fail"
+    _says(src, "applied to the record unconditionally", where="src")
+    # The FRAGMENT may wrap too -- a test that quotes a file's line break
+    # verbatim (this file did, at the Skate_or_Die figure) must not break
+    # when the file re-flows, so both sides are normalised, not one.
+    _says(src, "applied to the\n    # record", where="src")
+    # ...and normalising must not make an ABSENT sentence present.
+    with pytest.raises(AssertionError):
+        _says(src, "applied to the pattern unconditionally", where="src")
+
+
+def test_the_population_figures_survive_a_rewrap_of_the_file():
+    """Re-flow docs/LESSONS.md as aggressively as any editor could -- every
+    space becomes a line break plus indent, every line a blockquote -- and
+    each figure fragment this file checks must still be found. A fragment
+    that only matched because the file happened to wrap elsewhere is the
+    exposure this test closes; the KotB figure was that at v0.5.482."""
+    songs, text = _songs(), _text()
+    frags = [_wave_program_fragment(songs), _regrid_fragment(songs),
+             *_multiplier_fragments(songs)]
+    rewrapped = "> " + text.replace(" ", "\n>    ")
+    for f in frags:
+        assert f not in rewrapped, (
+            f"{f!r} survived the rewrap verbatim, so this test proves nothing "
+            f"about it -- the fragment contains no space to break on")
+    _says(rewrapped, *frags)
 
 
 # ------------------------------------------------------- build/fidelity.json
@@ -144,7 +222,10 @@ def test_skate_or_die_intros_attack_counts_are_what_the_artefact_says():
     r = next((r for r in rows if r["file"] == "Skate_or_Die_intro.sid"), None)
     if r is None or r.get("our_attacks") is None:
         pytest.skip("Skate_or_Die_intro not in this artefact")
-    _says(text, f"{r['our_attacks']} attacks against the original's\n    {r['orig_attacks']}")
+    # This fragment used to carry the file's line break (`original's\n    N`)
+    # verbatim -- a wrapped quotation baked into the test, which passed only
+    # while LESSONS.md wrapped at exactly that word. `_says` normalises now.
+    _says(text, f"{r['our_attacks']} attacks against the original's {r['orig_attacks']}")
 
 
 def test_kings_of_the_beach_ingame_reads_what_the_artefact_says():
@@ -181,8 +262,11 @@ def test_the_grep_zero_rule_cites_its_measured_instances():
     """CLAUDE.md's rule about a counter that cannot see its own container
     must carry its evidence in docs/LESSONS.md, not just an assertion."""
     claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    assert "evidence about the counter, not about the file" in claude_md
-    assert "grep for a retracted sentence" in claude_md
+    _says(claude_md,
+          "evidence about the counter, not about the file",
+          "grep for a retracted sentence",
+          "normalise both sides before matching",
+          where="CLAUDE.md")
     text = _text()
     _says(text,
           "survey.py:669-670",

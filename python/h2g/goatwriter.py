@@ -5620,6 +5620,126 @@ class PulsePhaseSim:
         return c
 
 
+class PulseBoundsSim:
+    """The per-record-bounds engine's accumulator (`_pulse_program`'s), as
+    validated against the trace -- the triangle sim's sibling, for the files
+    `pulse_phase_sims` returns nothing on.
+
+    Read out of Saboteur_II's routine ($F297-$F2F0; Food_Feud carries the
+    same bytes at $92EF) and then confirmed frame for frame on both ORIGINALS
+    at `-t 180` before anything was emitted: every sweep step the trace can
+    classify is reproduced (25626/25626 on Saboteur_II, 25298/25298 on
+    Food_Feud) and every attack's onset width -- the frame `pphase` reads --
+    is predicted (1314/1314 and 1554/1554), the 56 + 29 attacks that do NOT
+    reseed included. Three things differ from `PulsePhaseSim`, and the third
+    is the one that matters:
+
+    * **One step every call, no delay counter.** The rate byte is the whole
+      step (`LDA $F56E / CLC / ADC acc`), where the triangle engine packs a
+      step and a frames-between-steps into one byte.
+    * **The bounds are the record's own two nibbles, the turn is on EQUALITY
+      of the high nibble after the step, and the at-bound value is stored**
+      (`PHA` before the `CMP`, `PLA` into `$D403` after). Equality, not
+      magnitude, so a band whose top nibble is below its bottom crosses `$FFF`
+      -- `_pulse_triangle_wrapped`'s case -- and the 12-bit mask here is the
+      routine's `AND #$0F`.
+    * **THE ACCUMULATOR IS RESEEDED AT EVERY NOTE WHOSE NOTE BYTE HAS BIT 7
+      CLEAR** (`$F162 LDA $F59A / BMI skip`: the note-start path writes the
+      record's +0/+1 straight into `$D402/$D403` and zeroes the direction
+      cell). Only a bit-7 note free-runs through the accumulator the previous
+      note left. That is the opposite of the triangle engine, whose
+      accumulator is never reseeded, and it is why the bounds engine's notes
+      open on the record width almost everywhere and on a free-running phase
+      only at bit-7 notes -- Saboteur_II voice 0's [4, 5, 6, 9] buckets are
+      exactly its 56 bit-7 attacks in 180 s, and the other three buckets are
+      record widths. `reseed()` is that path; `advance(calls, skip_first)` is
+      the sweep with the fetch call skipped, the triangle sim's convention,
+      because the fetch path (`$F1A2 ... JMP $F45F`) never reaches the sweep.
+
+    **The walk cannot drive this sim yet, and `pulse_phase_sims` does not
+    hand it out.** `patterns.collect_pulse_phases` reads Goattracker rows,
+    where the note byte's bit 7 has already been dropped (`_build_raw_pattern`
+    under `note_flag`: "the flag itself is dropped and the note is kept"), so
+    it cannot tell a reseeding note from a free-running one -- and treating
+    every note as either is wrong for one population or the other. Wiring
+    this engine in needs the decoder to carry a per-row "no reseed" flag out
+    beside `exits_tied`, the walk to call `reseed()` on the rows without it,
+    and convert.py's `det.pulse_tri_hi >= 0` gate to admit `det.pulse_bounds
+    >= 0`. Until then `pulse_bounds_sims` exists for the walk that will, and
+    `build_pulse_phase_table` already serves this engine's records.
+    """
+
+    def __init__(self, width: int, rate: int, lo: int, hi: int) -> None:
+        self.seed, self.rate = width, rate
+        self.lo, self.hi = lo, hi
+        self.width = width
+        self.direction = +1
+
+    def phase(self) -> tuple:
+        return (self.width, self.direction)
+
+    def reseed(self) -> None:
+        """The note-start path: record width, direction up."""
+        self.width, self.direction = self.seed, +1
+
+    def advance(self, calls: int, skip_first: bool = False) -> None:
+        if self.rate == 0:
+            return
+        for k in range(calls):
+            if skip_first and k == 0:
+                continue
+            if self.direction > 0:
+                self.width = (self.width + self.rate) & 0xFFF
+                if (self.width >> 8) == self.hi:
+                    self.direction = -1
+            else:
+                self.width = (self.width - self.rate) & 0xFFF
+                if (self.width >> 8) == self.lo:
+                    self.direction = +1
+
+    def clone(self) -> "PulseBoundsSim":
+        c = PulseBoundsSim(self.seed, self.rate, self.lo, self.hi)
+        c.width, c.direction = self.width, self.direction
+        return c
+
+
+def _bounds_record(sid: SidFile, det: Detection, i: int):
+    """(seed width, rate, lo nibble, hi nibble) of record `i` under the
+    per-record-bounds engine, or None where the record does not sweep or
+    the bytes are off the end of the file. `_pulse_program`'s reads, shared
+    so the sim and the phase table cannot disagree about a record."""
+    if det.pulse_bounds < 0:
+        return None
+    d = sid.data
+    rec = det.instr_start + i * det.instr_stride
+    bounds_at = det.pulse_bounds + i * det.instr_stride
+    rate_at = rec + det.pulse_rate_field
+    if rec + 1 >= len(d) or bounds_at >= len(d) or rate_at >= len(d):
+        return None
+    rate = d[rate_at]
+    if rate == 0:
+        return None
+    width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
+    return width, rate, d[bounds_at] & 0x0F, d[bounds_at] >> 4
+
+
+def pulse_bounds_sims(sid: SidFile, det: Detection, lead: int = 1) -> dict:
+    """{pattern instrument byte: PulseBoundsSim} for the records that sweep
+    under the per-record-bounds engine -- `pulse_phase_sims`'s shape for the
+    other engine. Empty where the file does not carry it. Not consumed by
+    the walk yet; see `PulseBoundsSim`."""
+    if det.pulse_bounds < 0:
+        return {}
+    out: dict = {}
+    for i in range(det.instr_used):
+        rec = _bounds_record(sid, det, i)
+        if rec is None:
+            continue
+        width, rate, lo, hi = rec
+        out[i + 1 + lead] = PulseBoundsSim(width, rate, lo, hi)
+    return out
+
+
 def pulse_phase_sims(sid: SidFile, det: Detection,
                      lead: int = 1) -> dict:
     """{pattern instrument byte: PulsePhaseSim} for the records that sweep.
@@ -5654,6 +5774,40 @@ def pulse_phase_sims(sid: SidFile, det: Detection,
     return out
 
 
+def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
+                        multiplier: int) -> tuple | None:
+    """(width, GT speed, lo_v, hi_v, wrap) of record `i`'s sweep for the
+    phase table, whichever engine the file carries, or None where it does not
+    sweep. `wrap` says whether distances cross $FFF (the bounds engine) or
+    clamp (the triangle engine).
+
+    The two engines reach the same table shape from different record bytes:
+    the triangle's step and delay are packed into +6 and its bounds are the
+    routine's constants; the bounds engine's rate is the whole
+    `pulse_rate_field` byte and its bounds are the record's own nibbles.
+    Each speed is the one that engine's static program already emits
+    (`_pulse_tri_program`, `_pulse_program`), so a note that gets no command
+    sweeps at the same rate as one that does.
+    """
+    d = sid.data
+    if det.pulse_tri_hi >= 0:
+        rec = det.instr_start + i * det.instr_stride
+        if rec + 7 >= len(d):
+            return None
+        step = d[rec + 6] & 0xE0
+        delay = (d[rec + 6] & 0x1F) + 1
+        width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
+        speed = min(GT_MAX_PULSE_SPEED,
+                    max(1, round(step / (delay * max(1, multiplier)))))
+        return width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8, False
+    rec = _bounds_record(sid, det, i)
+    if rec is None:
+        return None
+    width, rate, lo, hi = rec
+    speed = min(GT_MAX_PULSE_SPEED, max(1, round(rate / max(1, multiplier))))
+    return width, speed, lo << 8, hi << 8, True
+
+
 def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                             pulse: bool, multiplier: int,
                             phases: dict, log=None,
@@ -5661,7 +5815,9 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     """The whole pulse table with phase entry points, or None if it will not fit.
 
     `phases` is {instrument byte: set of (width, direction)} from the
-    orderlist walk. Returns (entries, starts, index) where `index` maps
+    orderlist walk. Serves both sweeping engines through
+    `_phase_sweep_params`; only the triangle one has a walk that reaches it
+    today (see `PulseBoundsSim`). Returns (entries, starts, index) where `index` maps
     (instrument byte, width, direction) to the 1-based table entry a
     CMD_SETPULSEPTR must name. Non-sweeping instruments keep exactly the
     block `_pulse_layout` gives them; a sweeping record's own start pointer
@@ -5688,14 +5844,29 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
             entries += block
             continue
 
-        rec = det.instr_start + i * det.instr_stride
-        step = d[rec + 6] & 0xE0
-        delay = (d[rec + 6] & 0x1F) + 1
-        width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
-        speed = min(GT_MAX_PULSE_SPEED,
-                    max(1, round(step / (delay * max(1, multiplier)))))
-        lo_v, hi_v = det.pulse_tri_lo << 8, det.pulse_tri_hi << 8
-        span_ticks = max(1, (hi_v - lo_v) // speed)
+        params = _phase_sweep_params(sid, det, i, multiplier)
+        if params is None:
+            # a phase was planned for a record that does not sweep under
+            # either engine: nothing to enter, so it keeps the static block
+            program, loop = _pulse_program(sid, det, i, pulse, multiplier)
+            start = len(entries) + 1
+            block = program if loop is None else program + [(0xFF, start + loop)]
+            if len(entries) + len(block) > GT_MAX_TABLELEN:
+                if log:
+                    log("*** PULSE TABLE FULL UNDER --pulse-phase ***")
+                return None
+            starts.append(start)
+            entries += block
+            continue
+        width, speed, lo_v, hi_v, wrap = params
+        # The triangle engine's distances are clamped at zero, as they always
+        # were here (its sim stores an at-bound value a step PAST the bound,
+        # and a clamp is what keeps that phase's ramp empty). The bounds
+        # engine's are taken modulo $1000, because its sweep crosses $FFF
+        # rather than clamping (`_pulse_triangle_wrapped`).
+        def dist(a: int, b: int) -> int:
+            return (a - b) & 0xFFF if wrap else max(0, a - b)
+        span_ticks = max(1, dist(hi_v, lo_v) // speed)
 
         # The shared alternating loop: a down leg and an up leg, each jumping
         # to the other. Every phase entry ramps to its bound and joins here.
@@ -5713,12 +5884,12 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
             at = len(entries) + len(block) + 1
             piece = [((0x80 | (w >> 8)) & 0xFF, w & 0xFF)]
             if direction > 0:
-                ticks = max(0, (hi_v - w)) // speed
+                ticks = dist(hi_v, w) // speed
                 if ticks:
                     piece += [(t, speed) for t in _split_ticks(ticks)]
                 piece += [(0xFF, down_head)]
             else:
-                ticks = max(0, (w - lo_v)) // speed
+                ticks = dist(w, lo_v) // speed
                 if ticks:
                     piece += [(t, (0x100 - speed) & 0xFF)
                               for t in _split_ticks(ticks)]

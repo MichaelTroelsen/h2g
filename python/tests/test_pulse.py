@@ -656,3 +656,174 @@ def test_five_title_tunes_takes_the_phase_plan_end_to_end():
                  pulse_phase=True, **base)
     assert off != on, "the option reached nothing"
     assert any("CMD_SETPULSEPTR on" in ln for ln in lines), lines
+
+
+# --- the bounds-engine phase sim -------------------------------------------
+# The per-record-bounds engine (`_pulse_program`, the array-of-nibbles
+# sweep) has no phase walk: `pulse_phase_sims` returns {} on it, so
+# --pulse-phase is byte-inert on Saboteur_II and Food_Feud. PulseBoundsSim is
+# its accumulator, validated against BOTH originals' traces at -t 180 before
+# anything was emitted: 25626/25626 and 25298/25298 classifiable sweep steps,
+# 1314/1314 and 1554/1554 attack onsets (the frame `pphase` reads). The
+# numbers pinned below are read off those traces, not derived from the 6502.
+# The one fact the triangle engine does not share: THE ACCUMULATOR IS
+# RESEEDED at every note whose note byte has bit 7 clear ($F162 BMI); only a
+# bit-7 note free-runs. The walk cannot see that bit in a Goattracker row,
+# which is why `pulse_phase_sims` still hands the walk nothing for this engine.
+
+from h2g.goatwriter import PulseBoundsSim, pulse_bounds_sims
+
+
+def test_the_bounds_sim_reproduces_saboteur_iis_measured_turnaround():
+    """Saboteur_II voice 2, record 9 (seed $100, rate $48, bounds $FC),
+    frames 1-60 of the original at -m1: reseeded on the attack at frame 1,
+    +$48 a frame, $F10 STORED at frame 51 (nibble F == hi) and then the
+    descent, $CD0 STORED at frame 59 (nibble C == lo) and then the ascent."""
+    s = PulseBoundsSim(0x100, 0x48, lo=0xC, hi=0xF)
+    s.advance(1)
+    assert s.width == 0x148, "the first frame after the fetch steps"
+    s.advance(49)                                   # frame 51
+    assert (s.width, s.direction) == (0xF10, -1), hex(s.width)
+    s.advance(1)                                    # frame 52
+    assert s.width == 0xEC8, "the at-bound value was not stored"
+    s.advance(7)                                    # frame 59
+    assert (s.width, s.direction) == (0xCD0, +1), hex(s.width)
+    s.advance(1)                                    # frame 60
+    assert s.width == 0xD18
+
+
+def test_a_reseeding_note_opens_on_the_seed_and_a_bit_7_note_free_runs():
+    """Saboteur_II voice 0, record 3 (seed $080, rate $10, bounds $C0),
+    frames 1401-1404: a bit-7 note attacks at 1403 with the width HELD at
+    $2B0 (the fetch call does not sweep) and the frame `pphase` reads is
+    $2C0 -- bucket 2, where a reseed would have read $080, bucket 0. That
+    frame is one of the 56 attacks that give voice 0 its [4, 5, 6, 9]."""
+    s = PulseBoundsSim(0x080, 0x10, lo=0x0, hi=0xC)
+    s.width = 0x2A0                                 # frame 1401
+    s.advance(1)                                    # frame 1402
+    assert s.width == 0x2B0
+    free = s.clone()
+    free.advance(2, skip_first=True)                # 1403 fetch, 1404 step
+    assert free.phase() == (0x2C0, +1), "the fetch call swept"
+    seeded = s.clone()
+    seeded.reseed()
+    assert seeded.phase() == (0x080, +1)
+    seeded.advance(2, skip_first=True)
+    assert seeded.width == 0x090
+
+
+def test_a_reseed_resets_the_direction_as_well_as_the_width():
+    s = PulseBoundsSim(0x000, 0x40, lo=0x0, hi=0x4)
+    s.advance(20)
+    assert s.direction == -1
+    s.reseed()
+    assert s.phase() == (0x000, +1)
+
+
+def test_food_feuds_zero_bound_turns_on_equality_with_nibble_zero():
+    """Food_Feud voice 0, record 5 (seed $000, rate $40, bounds $40):
+    reseeded at frame 302, $400 stored at 318, $3C0 at 319 -- and the
+    descent turns at the FIRST value whose nibble reads lo, $0C0, not at
+    $000: frames 154-158 of the original read $100, $0C0, $100, $140. A
+    band's bottom is `lo` plus whatever the rate leaves in the low byte."""
+    s = PulseBoundsSim(0x000, 0x40, lo=0x0, hi=0x4)
+    s.advance(16)
+    assert (s.width, s.direction) == (0x400, -1)
+    s.advance(1)
+    assert s.width == 0x3C0
+    s.advance(12)
+    assert (s.width, s.direction) == (0x0C0, +1), hex(s.width)
+    s.advance(2)
+    assert s.width == 0x140
+
+
+def test_a_band_whose_top_is_below_its_bottom_crosses_fff_in_the_sim():
+    """Kings of the Beach ingame instrument 4 (rate $84, bounds $02, seed
+    $080), `_pulse_triangle_wrapped`'s measured case: the original climbs
+    $080 -> $FF8 in 30 frames and wraps to $07C, where nibble 0 == hi."""
+    s = PulseBoundsSim(0x080, 0x84, lo=0x2, hi=0x0)
+    s.advance(30)
+    assert (s.width, s.direction) == (0xFF8, +1)
+    s.advance(1)
+    assert (s.width, s.direction) == (0x07C, -1), hex(s.width)
+
+
+def test_a_zero_rate_bounds_sim_never_moves():
+    s = PulseBoundsSim(0x300, 0x00, lo=0x1, hi=0x3)
+    s.advance(100)
+    assert s.phase() == (0x300, +1)
+
+
+def test_pulse_bounds_sims_names_exactly_the_sweeping_records():
+    """Records 0 and 2 sweep, record 1's rate is zero; the instrument byte
+    is the record index plus the layout's lead, as `pulse_phase_sims`."""
+    sid = _sid([_record(0x80, 0x00, rate=0x54), _record(0x00, 0x08, rate=0),
+                _record(0x40, 0x00, rate=0x40)], [0xF0, 0xFD, 0xF7])
+    sims = pulse_bounds_sims(sid, _det(3), lead=1)
+    assert sorted(sims) == [2, 4]
+    assert (sims[2].seed, sims[2].rate, sims[2].lo, sims[2].hi) == (0x080, 0x54, 0, 0xF)
+    assert (sims[4].seed, sims[4].rate, sims[4].lo, sims[4].hi) == (0x040, 0x40, 7, 0xF)
+    assert pulse_bounds_sims(sid, _det(3, swept=False), lead=1) == {}
+
+
+def test_the_walk_is_still_handed_nothing_for_the_bounds_engine():
+    """`pulse_phase_sims` is what convert.py's walk consumes, and the walk
+    cannot tell a reseeding note from a bit-7 one in a Goattracker row --
+    so handing it these sims would phase every note wrongly for one
+    population or the other. Pinned so the wiring is a deliberate change."""
+    sid = _sid([_record(0x80, 0x00, rate=0x54)], [0xF0])
+    assert pulse_phase_sims(sid, _det(1), lead=1) == {}
+
+
+def test_the_phase_table_serves_a_bounds_engine_record():
+    """A planned phase gets its set/ramp/join entry, the record's own start
+    pointer is its (seed, up) entry -- so a note WITHOUT a command reseeds,
+    exactly as the player does -- and the ramp is measured to the record's
+    own high nibble at the rate divided by the multiplier."""
+    sid = _sid([_record(0x80, 0x00, rate=0x54)], [0xF0])
+    det = _det(1)
+    phases = {2: {(0x2B0, +1), (0x2C0, -1)}}
+    got = build_pulse_phase_table(sid, det, 2, True, 1, phases, lead=1)
+    assert got is not None
+    entries, starts, index = got
+    assert starts[1] == index[(2, 0x080, +1)], "the start is not the seed phase"
+    at = index[(2, 0x2B0, +1)]
+    assert entries[at - 1] == (0x82, 0xB0)
+    assert entries[at][1] == 0x54, "the ramp speed is not the rate"
+    assert sum(t for t, s in entries[at:at + 3] if s == 0x54) == (0xF00 - 0x2B0) // 0x54
+    down = index[(2, 0x2C0, -1)]
+    assert entries[down - 1] == (0x82, 0xC0)
+    assert entries[down][1] == (0x100 - 0x54) & 0xFF, "the descent is not -rate"
+    # -S3: the emitted speed is the rate over the multiplier
+    e3, _, index3 = build_pulse_phase_table(sid, det, 2, True, 3, phases, lead=1)
+    at3 = index3[(2, 0x2B0, +1)]
+    assert e3[at3][1] == round(0x54 / 3)
+
+
+def test_a_wrapped_band_measures_its_ramps_modulo_fff_in_the_table():
+    """Bounds $02 with seed $080: the ascent to nibble 0 runs through $FFF,
+    so the up-ramp is ($000 - $080) mod $1000 ticks, not zero."""
+    sid = _sid([_record(0x80, 0x00, rate=0x84)], [0x02])
+    got = build_pulse_phase_table(sid, _det(1), 2, True, 1, {2: {(0x080, +1)}}, lead=1)
+    entries, starts, index = got
+    at = index[(2, 0x080, +1)]
+    ticks = sum(t for t, s in entries[at:at + 40] if s == 0x7F)
+    assert ticks == ((0x000 - 0x080) & 0xFFF) // 0x7F, ticks
+
+
+@needs_corpus
+def test_saboteur_ii_and_food_feud_carry_sims_the_option_cannot_reach_yet():
+    """The two files the sim was validated on: the bounds engine, sims for
+    every sweeping record, and --pulse-phase still byte-inert on both --
+    the measurement the wiring task starts from."""
+    for name, want in (("Saboteur_II.sid", [1, 4, 6, 8, 9, 10, 11, 15, 16]),
+                       ("Food_Feud.sid", [1, 2, 6, 7, 8, 11, 12])):
+        sid = load_sid(str(CORPUS / name))
+        sid2, det = _detect_tables(sid, lambda m: None, 0)
+        assert det.pulse_bounds >= 0 and det.pulse_tri_hi < 0
+        assert pulse_phase_sims(sid2, det, 0) == {}
+        assert sorted(pulse_bounds_sims(sid2, det, 0)) == want, name
+        base = dict(tempo="auto", pulse=True, compact_instruments=True)
+        off = convert(str(CORPUS / name), log=lambda m: None, **base)
+        on = convert(str(CORPUS / name), log=lambda m: None, pulse_phase=True, **base)
+        assert off == on, f"{name}: the option now reaches the bounds engine"

@@ -1173,24 +1173,34 @@ def test_index_shows_three_states():
 
 # status -> the verdict column value it must produce. Ported from
 # check_column.py's EXPECT rather than imported, since that script lives
-# outside this repo. `uncalibrated` cannot inherit, so `verdict()` falls
-# through to the sha rule and renders `stale` once the sha has moved --
-# `check_column.py`'s own comment on the point.
+# outside this repo. `uncalibrated` no longer collapses onto `stale`: it
+# renders through `A.UNCAL_TEXT`, keyed on `cause` (see that dict's comment
+# in abpage.py) -- the fix this task is about. The synthetic `Uncal_Tune`
+# below carries `cause == "no-calibration"`, so its expected column text is
+# read from the SAME table `verdict()` renders from, not re-typed here --
+# re-typing it would let the two drift the way `status` alone already did.
 _EXPECT_COLUMN = {"exact": "approved", "inherited": "inherited",
-                  "stale": "stale", "uncalibrated": "stale"}
+                  "stale": "stale",
+                  "uncalibrated": A.UNCAL_TEXT["no-calibration"]}
 
 
 def _rendered_verdicts(names, appr, shas, inherited):
     """check_column.py's span scrape, over `A.index`'s HTML: for each tune,
-    the word its `<span class="y|i|s">` rendered."""
+    the text its verdict `<span class="y|i|s|u">` rendered.
+
+    `u`'s text is cause-dependent and may contain spaces (`"no build to
+    compare"`), unlike the single-word `y`/`i`/`s` values, so this captures
+    everything up to the closing tag rather than assuming `[a-z]+`.
+    """
     html = A.index(names, {}, "v", appr, shas, inherited=inherited)
     tag = {"y": "approved", "i": "inherited", "s": "stale"}
     found = {}
-    for m in re.finditer(r'<span class="([yis])">([a-z]+)</span>', html):
+    for m in re.finditer(r'<span class="([yisu])"[^>]*>([^<]+)</span>', html):
         before = html[:m.start()]
         link_names = re.findall(r'href="([A-Za-z0-9_\-.]+)\.html"', before)
         assert link_names, "a verdict span with no tune link before it"
-        found[link_names[-1]] = tag[m.group(1)]
+        cls = m.group(1)
+        found[link_names[-1]] = tag[cls] if cls in tag else m.group(2)
     return html, found
 
 
@@ -1221,7 +1231,8 @@ def _synthetic_assessment(include_inherited=True):
         "Uncal_Tune": {"status": "uncalibrated", "approved_sha": "aaa",
                        "current_sha": "bbb", "since": "0.5.447",
                        "builds_inherited": 0, "failed": [],
-                       "listener_should_check": None, "evidence": {}},
+                       "listener_should_check": None, "evidence": {},
+                       "cause": "no-calibration"},
     }
     status_of = {"Exact_Tune": "exact", "Inherited_Tune": "inherited",
                  "Stale_Tune": "stale", "Uncal_Tune": "uncalibrated"}
@@ -1284,3 +1295,66 @@ def test_index_verdict_agreement_over_an_inheritance_free_population_still_agree
     assert "inherited" not in found.values(), (
         "sanity: this fixture must really contain no inherited tune")
     assert _balanced(html) == []
+
+
+def test_index_uncalibrated_column_text_differs_by_cause():
+    """The task this pair of functions exists for: `status == "uncalibrated"`
+    has THREE disjoint causes (approvals.py's module docstring), and the
+    index used to render all three as a bare "stale" -- indistinguishable
+    from a tune the fidelity measure actually rejected, and indistinguishable
+    from each other. `cause` must now reach the column as different text,
+    and none of the three may collide with the real, measured "stale".
+    """
+    names = ["NoCal_Tune", "NoBuild_Tune", "PackRefused_Tune", "Stale_Tune"]
+    appr = {n: {"approved": True, "sng_sha256": "aaa", "version": "0.5.400",
+                "at": "2026-08-20"} for n in names}
+    shas = {n: "bbb" for n in names}
+    base = {"approved_sha": "aaa", "current_sha": "bbb", "since": "0.5.447",
+            "builds_inherited": 0, "failed": [], "listener_should_check": None,
+            "evidence": {}}
+    inherited = {
+        "NoCal_Tune": {**base, "status": "uncalibrated", "cause": "no-calibration"},
+        "NoBuild_Tune": {**base, "status": "uncalibrated",
+                         "cause": "approved-build-absent"},
+        "PackRefused_Tune": {**base, "status": "uncalibrated",
+                             "cause": "pack-refused"},
+        "Stale_Tune": {**base, "status": "stale", "failed": ["aud_vs_approved"],
+                       "listener_should_check": "aud_vs_approved"},
+    }
+    html, found = _rendered_verdicts(names, appr, shas, inherited)
+
+    assert found["NoCal_Tune"] == A.UNCAL_TEXT["no-calibration"]
+    assert found["NoBuild_Tune"] == A.UNCAL_TEXT["approved-build-absent"]
+    assert found["PackRefused_Tune"] == A.UNCAL_TEXT["pack-refused"]
+    assert found["Stale_Tune"] == "stale"
+
+    # All four must be pairwise distinct -- the whole point.
+    assert len(set(found.values())) == 4, found
+    assert _balanced(html) == []
+
+
+def test_badge_is_uncalibrated_and_distinguishes_its_cause_from_stale():
+    """The per-tune page's own verdict badge gets the same split. It must
+    say something different for `approved-build-absent` than for the
+    generic no-calibration case, and neither may read as the measured
+    `stale` badge (`class="approval stale"`), which implies a fidelity
+    check actually ran and failed."""
+    rec_absent = {"status": "uncalibrated", "approved_sha": "aaa",
+                  "current_sha": "bbb", "since": "0.5.447",
+                  "builds_inherited": 0, "failed": [],
+                  "listener_should_check": None, "evidence": {},
+                  "cause": "approved-build-absent"}
+    html = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "bbb"},
+                            inherited={"Tune": rec_absent})
+    assert 'class="approval uncalibrated"' in html
+    assert 'class="approval stale"' not in html
+    assert "approved <code>.sng</code> is not on disk" in html
+
+    rec_nocal = dict(rec_absent, cause="no-calibration")
+    html2 = A.approval_badge("Tune", APPR, "0.5.448", {"Tune": "bbb"},
+                             inherited={"Tune": rec_nocal})
+    assert 'class="approval uncalibrated"' in html2
+    assert "sound_calibration.json" in html2
+    # The two causes must read as different prose, not the same template
+    # with the cause silently swapped for nothing.
+    assert html != html2

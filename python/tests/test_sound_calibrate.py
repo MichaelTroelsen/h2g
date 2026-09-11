@@ -365,6 +365,15 @@ def test_an_approved_tune_below_the_median_gets_the_caveat_not_a_bare_no():
     assert "this doc picks neither" in doc
 
 
+def test_the_header_names_why_the_window_was_chosen_not_just_which():
+    """The doc must say the window matches what approvals.py compares at,
+    not merely state the number -- that's the whole point of this task."""
+    doc = C.render_doc(_out(seconds=180))
+    assert "approvals.py" in doc
+    assert "180 s" in doc
+    assert "different quantity" in doc
+
+
 def test_the_document_has_all_five_sections_and_ends_with_a_newline():
     doc = C.render_doc(_out())
     for heading in ("## 1. Identity", "## 2. Inaudible shift",

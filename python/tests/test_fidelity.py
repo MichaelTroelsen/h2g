@@ -881,14 +881,55 @@ def test_nrun_sees_holds_minus_one_only_when_the_noise_fills_the_whole_note():
     assert got_nrun["noise_run_agreement"] == 0.5
 
 
+def test_nrun_at_modal_length_one_cannot_register_a_one_frame_shortening():
+    """A run whose modal length is 1 is not merely likely to hide a
+    shortening (the general Zoolook blindness above) -- it CANNOT register
+    one at all, because a run shortened by its only frame is 0 frames long,
+    and `noise_runs` never opens a run for a zero-length stretch. Ten
+    one-frame noise ticks on the original; on ours every one of them is
+    shortened to 0 frames (the noise-select frame itself dropped) -- a
+    complete, 100%-of-occurrences loss of the event `nrun` exists to catch,
+    and the modal comparison still reads perfect agreement because there is
+    no shorter run to become the new mode: there is no run there at all."""
+    adsr = [(0, 0x0C0C)]
+    orig_ticks = [2, 5, 8, 11, 14, 17, 20, 23, 26, 29]
+
+    def orig_side():
+        events = []
+        for f in orig_ticks:
+            events.append((f, 0x81))      # noise+gate for exactly one frame
+            events.append((f + 1, 0x41))  # ...then plain tonal waveform
+        return _run_side(events, adsr)
+
+    def ours_side_all_shortened_to_zero():
+        # Every tick's single noise frame is gone -- the instrument plays
+        # only the plain tonal waveform, never selecting noise at all.
+        events = [(0, 0x41)]
+        return _run_side(events, adsr)
+
+    orig, ours = orig_side(), ours_side_all_shortened_to_zero()
+    na, nb = fidelity.noise_runs(orig, 40), fidelity.noise_runs(ours, 40)
+    assert sum(na[0x0C0C].values()) == 10
+    assert 0x0C0C not in nb or not nb[0x0C0C]   # every run vanished, none shortened
+
+    got = fidelity.noise_run_agreement(orig, ours, nframes=40)
+    # Both sides carry no shared key at all now (ours has zero noise runs),
+    # so this specific instrument is *absent* from the comparison -- the
+    # structural point is what noise_runs itself shows above: the 10 lost
+    # frames never appear as a shortened run, they simply do not exist.
+    assert (0x0C0C, 0x0C0C) not in fidelity.paired_keys(na, nb)
+
+
 def test_nrun_dimension_states_its_own_blindness_and_the_measured_split():
     """The registry entry is the one place a report reader sees this without
-    opening the source -- pin its prose so the two claims above cannot be
+    opening the source -- pin its prose so the claims above cannot be
     quietly dropped from what the report prints."""
     d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
     assert "blind" in d.of
     assert "199 noise frames" in d.of
     assert "28 of 28" in d.of and "0 of the other 76" in d.of
+    assert "STRUCTURALLY IMMUNE" in d.of
+    assert "10 of 12" in d.of and "5 corpus files" in d.of
 
 
 # --- noise_runs reads the gate bit, not the noise SELECT bit alone ---------

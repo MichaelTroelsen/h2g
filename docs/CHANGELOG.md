@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.484 — 2026-09-11
+
+- past-table constant cells decode as their nearest note, the bounds-engine pulse sim, gate-aware nrun states its blindness, abpage renders the uncalibrated cause, _says normalises, plan-audit checks G/H/I stop reading their container
+
 ## 0.5.483 — 2026-09-11
 
 - pulse-phase budget lifts the multiplier gate, past-table zero cells rest, noise_runs reads the gate bit, the artefact guard matches invocations, check_column moves into the repo

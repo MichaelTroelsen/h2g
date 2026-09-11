@@ -3194,6 +3194,19 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     split so a future change to `noise_runs`' keying re-runs the check
     rather than silently drifting the figures above.
 
+    **"A run cannot lose a frame it does not have to spare" is structural,
+    not just common.** At a modal run length of 1, a run shortened by one
+    frame is 0 frames long -- which `noise_runs` never records as a run at
+    all (its window-edge rule aside, a zero-length stretch never opens a
+    run in the first place), so it drops out of the Counter instead of
+    appearing as a shorter modal candidate, and the mode cannot move down
+    to register the loss. Re-measured at HEAD 50a6178 (v0.5.483, `-t 180`,
+    after `noise_runs`' gate-AND change): 10 of 12 `nrun`-carrying
+    instruments across 5 corpus files (Zoolook, Commando, Sanxion, Monty on
+    the Run, One Man and his Droid) sit at a modal noise run of <=2 frames
+    on BOTH sides -- see `C:/t/nrun-blind-to-tick-length-no/probe_nrun.py`
+    and `per_instrument_nrun.json` for the per-instrument trace.
+
     **`noise_runs` reads $D404's NOISE bit AND GATE bit together, not NOISE alone -- see its
     own docstring.** Without the gate AND, a waveform SELECT that stays
     latched on noise across many notes (Confuzion's lead) reads as one run
@@ -3968,8 +3981,11 @@ DIMENSIONS = (
               "no instrument key was shared** -- the comparison did not "
               "happen, which is a candidate for work and not an honest gap"),
     # See noise_run_agreement's own docstring for the measured population
-    # behind the two claims in `of` below (Zoolook's 100%-while-losing-199-
-    # frames case, and the 28-of-28 / 0-of-76 hold-minus-1 split).
+    # behind the claims in `of` below (Zoolook's 100%-while-losing-199-
+    # frames case, the 28-of-28 / 0-of-76 hold-minus-1 split, and the
+    # 10-of-12/5-file modal-<=2 floor sample -- probe and raw data in
+    # C:/t/nrun-blind-to-tick-length-no/probe_nrun.py and
+    # per_instrument_nrun.json, re-run at HEAD 50a6178).
     Dimension("noise_run_agreement", "nrun", ("$D404",), "fraction",
               "instruments whose noise runs as long as the original's -- "
               "**blind to a loss its own MODAL comparison cannot move**: "
@@ -3981,7 +3997,17 @@ DIMENSIONS = (
               "held note (its original modal noise run equals its original "
               "modal held length) -- measured exact over 138 corpus "
               "instruments carrying both: 28 of 28 such instruments read "
-              "nrun delta -1 and 0 of the other 76 do. Also blind to a "
+              "nrun delta -1 and 0 of the other 76 do. "
+              "**A modal run of 1-2 frames is STRUCTURALLY IMMUNE to a "
+              "one-frame shortening, not merely at risk of the blindness "
+              "above**: at a modal length of 1, a run shortened by one frame "
+              "is 0 frames long, which is not a run at all -- it drops out "
+              "of the Counter instead of appearing as a shorter modal "
+              "candidate, so the mode cannot move down to register the loss. "
+              "10 of 12 nrun-carrying instruments across 5 corpus files "
+              "(Zoolook, Commando, Sanxion, Monty on the Run, One Man and "
+              "his Droid, -t 180) sit at a modal noise run of <=2 frames on "
+              "BOTH sides -- v0.5.483, HEAD 50a6178. Also blind to a "
               "latched waveform SELECT with no gate: it reads "
               "$D404's NOISE bit AND GATE bit together, not NOISE alone -- Confuzion's lead "
               "holds noise-select across many notes, and gate-blind that "

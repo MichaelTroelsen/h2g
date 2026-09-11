@@ -465,6 +465,12 @@ def render_doc(out: dict) -> str:
                   f"{out['head']}), {out['seconds']} s renders. **FAIL** -- nothing "
                   "downstream may inherit an approval on these numbers.",
              "",
+             f"The window is {out['seconds']} s because `approvals.py` compares "
+             "renders at whatever window `build/approvals.json` was generated "
+             "at, and a floor measured at any other window is a floor about a "
+             "different quantity -- re-run this calibration at the window "
+             "`approvals.py` currently uses, not at a convenient one.",
+             "",
              "The two numbers every decision uses, measured here and typed nowhere:", "",
              f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest movement of "
              "`aud`/`loud` under a 3 ms (48 rasterline) and a 20 ms (one frame) delay "

@@ -143,3 +143,74 @@ def test_the_engine_population_and_its_multispeed_share():
     assert multispeed == 11, (
         f"{multispeed} of them are multispeed; the gate declined exactly "
         "these, and only 3 of them emit anything now it is lifted")
+
+
+
+def test_the_bounds_engine_has_a_sim_and_no_walk_yet():
+    """The other sweeping engine -- the per-record-bounds array of
+    `_pulse_program`, `pulse_bounds >= 0` -- is what `pulse_phase_sims`
+    returns {} on, so this option is byte-inert on Saboteur_II and Food_Feud.
+    `goatwriter.PulseBoundsSim` is its accumulator, validated on both
+    originals' traces (test_pulse.py pins the measured frames), and
+    `build_pulse_phase_table` serves its records. What is NOT there is the
+    walk: `collect_pulse_phases` reads Goattracker rows, and the bit that
+    decides whether a note reseeds the accumulator (the note byte's bit 7,
+    `$F162 LDA $F59A / BMI` in Saboteur_II) was dropped by the decoder.
+    Wiring it is three edits and this test names them so it is not done by
+    half: a per-row no-reseed flag out of `_build_raw_pattern`, `reseed()`
+    calls in the walk on every other note row, and convert.py's gate
+    admitting `det.pulse_bounds >= 0`. Until then the seams stay as pinned.
+    """
+    conv = (PYTHON_ROOT / "h2g" / "convert.py").read_text(encoding="utf-8")
+    pats = (PYTHON_ROOT / "h2g" / "patterns.py").read_text(encoding="utf-8")
+    gw = (PYTHON_ROOT / "h2g" / "goatwriter.py").read_text(encoding="utf-8")
+    assert "class PulseBoundsSim" in gw and "def pulse_bounds_sims" in gw
+    assert "pulse_bounds_sims" not in conv and "pulse_bounds_sims" not in pats, (
+        "the bounds sims reached the walk: it must call reseed() on every "
+        "note row whose note byte has bit 7 clear, or every phase is wrong")
+    assert "if det.pulse_tri_hi < 0:\n        return {}" in gw, (
+        "pulse_phase_sims no longer declines the bounds engine for the walk")
+
+
+def test_the_bounds_engine_population_and_how_its_players_reseed():
+    """42 preset files carry the engine, 23 of them multispeed. All 42 turn
+    the sweep the same way (store-at-bound, equality on the high nibble,
+    up and down); 28 reseed the accumulator behind Saboteur_II's exact
+    `LDA note / BMI` test, 13 behind a differently spelled test (After_8:
+    `LDA $1684 / BNE`), and IK_plus writes the register another way. The
+    sim's reseed rule was validated on two of the 28; a walk that reaches
+    the other 14 must read their gate first. Re-measured here so the
+    docstring cannot go quietly stale."""
+    presets = REPO_ROOT / "presets.json"
+    corpus = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    if not presets.exists() or not corpus.is_dir():
+        import pytest
+        pytest.skip("corpus or presets.json not available here")
+    sys.path.insert(0, str(PYTHON_ROOT))
+    from h2g.detect import detect
+    from h2g.search import search_file
+    from h2g.sidfile import load_sid
+    doc = json.loads(presets.read_text(encoding="utf-8"))
+    reseed_bmi = "AD ?? ?? 30 ?? BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+    turn = ("48 BD ?? ?? 69 00 29 0F 48 C9 ?? D0 ?? FE",
+            "48 BD ?? ?? E9 00 29 0F 48 C9 ?? D0 ?? DE")
+    engine = multispeed = bmi = turns = 0
+    for name, entry in doc["songs"].items():
+        path = corpus / name
+        if not path.exists():
+            continue
+        try:
+            sid = load_sid(str(path))
+            det = detect(sid, lambda *a, **k: None)
+        except Exception:                              # noqa: BLE001
+            continue
+        if det.pulse_bounds < 0:
+            continue
+        engine += 1
+        multispeed += entry.get("multiplier", 1) > 1
+        bmi += search_file(sid.data, reseed_bmi) > 0
+        turns += all(search_file(sid.data, t) > 0 for t in turn)
+    assert engine == 42, f"the bounds pulse engine reaches {engine} files"
+    assert multispeed == 23, multispeed
+    assert turns == engine, "a player turns its sweep some other way"
+    assert bmi == 28, f"{bmi} players carry the LDA/BMI reseed gate"

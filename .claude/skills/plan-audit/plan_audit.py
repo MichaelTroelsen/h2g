@@ -200,12 +200,52 @@ def check_f(tasks, behind_of=_git_rev_list_behind):
 #       collision this repo has hit before (CLAUDE.md, "A grep for a
 #       retracted sentence is the structural case").
 # Each source is stripped BEFORE a leftover user/person/listen match is
-# trusted; only what survives all four is reported. Over the plan at
-# 665939c (105 open tasks) this returns 0 findings; dropping exemption (a)
+# trusted; only what survives all seven is reported. Over the plan at
+# 665939c (105 open tasks) this returned 0 findings; dropping exemption (a)
 # resurfaces the 12 ILV tasks, dropping (b) resurfaces the 3 build/listen
 # tasks -- see .claude/skills/plan-audit/test_plan_audit.py.
-G_ILV_SENTENCE = "The user has set these to LOW PRIORITY"
+#
+# Two more sources showed up sweeping this check at 50a6178, both container/
+# subject collapses of the same shape as (b) and (a):
+#   (e) `python/listen.py` (the harness module) and its attribute accesses
+#       (`listen.render_sidplayfp`) are a FILENAME/module reference -- the
+#       substring "listen" inside a dotted identifier is not the verb.
+#       8 of the 8 findings on the live plan at 50a6178 were this shape
+#       (`preset-key-misses-should-be-countable-not-only-warnable`,
+#       `artefact-guard-blocks-a-mention-and-misses-approvals-py`,
+#       `listen-py-traces-our-side-without-the-multiplier`,
+#       `restage-listening-md-after-the-multiplier-fix`,
+#       `test-that-a-preset-multiplier-file-is-traced-at-its-rate`,
+#       `aud-voices-needs-the-artefact-grant-and-a-mute-aware-render-cache`)
+#       -- dropping this exemption resurfaces all 6.
+#   (f) "the user has set/placed ... priority" generalises (a) beyond the
+#       one pasted ILV sentence -- `unblock-the-six-interleaved-classic-
+#       files-their-material-now-exists` says "the user has placed them
+#       behind the 83 RH files ... LOW priority", a paraphrase, not the
+#       literal sentence (a) matched. "the user named <path>" describing a
+#       CLI's own behaviour ("a path the user named that does not exist
+#       should be an error") is the same non-signal one step further:
+#       descriptive prose about what the TOOL does with a user-supplied
+#       value, not a done-condition needing a person -- see
+#       `a-missing-presets-file-runs-fidelity-on-defaults-instead-of-refusing`.
+#   (g) "NOTE FOR THE USER: ..." is a sequencing ASIDE addressed to a
+#       person, appended after the done-condition, not the done-condition
+#       itself -- `restage-listening-md-after-the-multiplier-fix`'s verify
+#       is satisfied by re-running listen.py and regenerating LISTENING.md;
+#       the trailing note ("the 13 pending sign-off tasks read these
+#       notes, so this should land before any further listening is asked
+#       for") only tells a human what to prioritise NEXT.
+# All narrowed to the operational shape (a preposition immediately after
+# "the user", or the literal "NOTE FOR THE USER:" clause marker), never a
+# bare "user" stopword list -- see test_plan_audit.py.
+G_PRIORITY_RE = re.compile(
+    r"the user has (?:set|placed)\b[^.]*?\bpriority\b", re.I)
+G_NAMED_DESC_RE = re.compile(
+    r"the user named\b[^.]*?\b(?:error|exist)\w*\b", re.I)
+G_NOTE_RE = re.compile(
+    r"NOTE FOR THE USER:.*?(?:\s\|\|\s|\Z)", re.I | re.S)
 G_PATH_RE = re.compile(r"\bbuild/listen\b")
+G_FILENAME_RE = re.compile(r"\blisten\.(?:py\b|[a-z_][a-z0-9_]*)", re.I)
 G_MODE_TOKEN_RE = re.compile(r"requires-user")
 G_CAND_RE = re.compile(r"\b(user|person|listen)\b", re.I)
 G_SELFREF_RE = re.compile(r"plan[-_]audit|plan_audit\.py")
@@ -221,8 +261,11 @@ def g_is_selfref(t):
 def g_strip_exempt(v):
     """Remove every span attributable to a known non-signal source, so a
     leftover user/person/listen match means something."""
-    v = v.replace(G_ILV_SENTENCE, "")
+    v = G_PRIORITY_RE.sub("", v)
+    v = G_NAMED_DESC_RE.sub("", v)
+    v = G_NOTE_RE.sub("", v)
     v = G_PATH_RE.sub("", v)
+    v = G_FILENAME_RE.sub("", v)
     v = G_MODE_TOKEN_RE.sub("", v)
     return v
 
@@ -261,6 +304,29 @@ def check_g(tasks):
 # bookkeeping ("GRANTS CORRECTED/WIDENED at <sha>: ..."), so that clause is
 # stripped -- structurally, like check_g's exemptions -- before a leftover
 # verb+existing-path match is trusted. Doing so drops all 3 to 0.
+#
+# Sweeping this check at 50a6178 surfaced two more container/subject
+# collapses of the same shape, both narration ABOUT a write rather than a
+# promise of THIS task's own:
+#   - a "BLOCKED at <sha>: ..." or "PARTIAL at <sha>: ..." clause narrates
+#     a PAST run of the verify, explicitly saying what did or didn't
+#     happen ("NOT RUN, AND DELIBERATELY SO ... NOTHING WAS WRITTEN"; "...
+#     writing the exact patch to scratch; stopped at the undeclared
+#     python/fidelity.py ... partial") -- see
+#     `promote-pulse-phase-into-fidelity-toggles-once-the-multiplier-gate-
+#     is-settled` and
+#     `noise-run-agreement-is-blind-to-the-gate-bit-and-that-is-most-of-its-
+#     disagreement`. Folded into H_GRANTS_RE's clause-stripping alongside
+#     GRANTS CORRECTED/WIDENED, since all four are this plan's "<TAG> at
+#     <sha>: <narration>" bookkeeping shape.
+#   - "a fan-out writing <path>" narrates a DIFFERENT, concurrently-run
+#     task's write (a lockctl/lane-contention war story), not this task's
+#     own -- see `the-approvals-regeneration-task-does-not-grant-python-
+#     h2g-though-it-converts-the-corpus` and its sibling
+#     `the-approvals-task-touches-omit-python-h2g-though-the-run-converts-
+#     the-whole-corpus`. Stripped as its own narrow phrase, since it is
+#     inline prose, not wrapped in a "<TAG> at <sha>:" clause.
+# Dropping either exemption resurfaces exactly the 4 findings named above.
 H_VERB_RE = re.compile(
     r"\b(?:creates?|creating|writes?|writing|generates?|generating)\b",
     re.I)
@@ -269,14 +335,21 @@ H_PATH_RE = re.compile(r"\b((?:python|docs|build|tests|\.claude)/"
 H_INLINE_PATH_RE = re.compile(r"`([A-Za-z0-9_./-]+\.[A-Za-z0-9]+)`")
 H_WINDOW = 200
 H_GRANTS_RE = re.compile(
-    r"GRANTS (?:CORRECTED|WIDENED) at [0-9a-f]{7}\b.*?(?:\s\|\|\s|\Z)",
+    r"\b(?:GRANTS (?:CORRECTED|WIDENED)|BLOCKED|PARTIAL) at [0-9a-f]{7}\b"
+    r".*?(?:\s\|\|\s|\Z)",
     re.S)
+H_FANOUT_RE = re.compile(
+    r"\bfan-out writing\s+[A-Za-z0-9_./-]+", re.I)
 
 
 def h_strip_exempt(v):
-    """Remove GRANTS-CORRECTED/WIDENED bookkeeping clauses -- narration
-    about this task's OWN touches history, never its done-condition."""
-    return H_GRANTS_RE.sub(" ", v)
+    """Remove GRANTS-CORRECTED/WIDENED/BLOCKED/PARTIAL bookkeeping clauses
+    -- narration about this task's OWN history, never its done-condition
+    -- and "a fan-out writing <path>" phrases narrating a DIFFERENT task's
+    write."""
+    v = H_GRANTS_RE.sub(" ", v)
+    v = H_FANOUT_RE.sub(" ", v)
+    return v
 
 
 def h_find_path(tail):
@@ -290,6 +363,15 @@ def h_find_path(tail):
 
 
 def h_path_exists(cand):
+    """True for a SOURCE path that already exists. `build/` is excluded on
+    purpose: it is gitignored, regenerable output, so a verify that writes
+    build/approvals.json describes a regeneration, not a promise to create a
+    file that is already there -- and because that directory exists only in
+    a checkout that has run the tools, one plan read 0 findings in a fresh
+    worktree and 2 in the main checkout (measured at 50a6178). A check whose
+    answer depends on which clone runs it is not a check."""
+    if cand.startswith("build/"):
+        return False
     norm = cand if cand.startswith(("python/", "docs/", "build/",
                                     ".claude/")) else "python/" + cand
     return (ROOT / norm).exists() or (ROOT / cand).exists()
@@ -332,24 +414,98 @@ def check_h(tasks):
 # what separates the one real historical case (ab-9, before its edge was
 # added) from the noise, and it is structural, like check_g's exemptions,
 # never a tightened phrase list.
+#
+# Sweeping this check at 50a6178 found the cue-word scan itself has a
+# container/subject collapse: a " || "-delimited CLAUSE is not the unit the
+# cue word and the id belong to -- one clause is often several sentences,
+# and this plan's own opening boilerplate puts a cue word and an id in the
+# SAME clause but a DIFFERENT sentence from each other:
+#   "OPENED by `X` at <sha>; every figure in this text is HISTORICAL at
+#   that head and must be re-measured, not re-quoted."
+# pastes an id X next to "must" 64 times across the live plan -- every one
+# of them a PROVENANCE reference (which task's finding opened this one),
+# never a prerequisite. I_OPENED_RE strips this exact recurring sentence
+# before the cue/id search runs, since the id inside it can never be a
+# dependency of the task it is quoted in (it is that task's own origin).
+# A second, rarer shape survives even that: `unblock-the-six-interleaved-
+# classic-files-their-material-now-exists`'s clause reads "...must be
+# re-measured, not re-quoted. `the-six-interleaved-classic-files-have-
+# never-been-listened-to` is recorded blocked at 4b5d7f0 on '0 of the six
+# appear...'" -- two separate SENTENCES (the boilerplate, then a status
+# report on a different task) sharing one `||` clause. I_SENTENCE_RE slices
+# each clause at sentence boundaries so the cue and the id must occur in
+# the SAME sentence, not merely the same clause, before either can pair up
+# -- the count-then-slice fix, applied at the sentence level because the
+# clause level is too coarse a container. `nrun-blind-to-tick-length-noise`
+# has the same provenance shape spelled WITHOUT backticks, lower-case, and
+# parenthetical -- "(opened by our-noise-run-is-the-note, same Dimension
+# entry)" -- so I_OPENED_PAREN_RE strips that shape too.
+#
+# A THIRD collapse showed up on `noise-run-agreement-is-blind-to-the-gate-
+# bit-and-that-is-most-of-its-disagreement`: the cue word GATE matched
+# inside the quoted id `re-run-the-hold-delta-split-after-the-GATE-aware-
+# noise-runs` itself -- the id's own slug happens to spell the cue word.
+# A cue match inside an id token's own span is a fact about the id's NAME,
+# never a prerequisite in the surrounding prose, so id token spans are
+# computed FIRST and a cue match fully contained in one is not trusted --
+# see _cue_outside_ids.
+# Dropping the OPENED-boilerplate strip, the parenthetical strip, or the
+# id-span exclusion resurfaces 64, 1 and 1 finding(s) respectively; see
+# test_plan_audit.py.
 I_CUE_RE = re.compile(
     r"\b(?:before|ahead of|must|requires|GATE|depends on|blocked by|"
     r"prerequisite|needs)\b", re.I)
 I_ID_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b")
+I_OPENED_RE = re.compile(
+    r"OPENED by `[a-z][a-z0-9-]*` at [0-9a-f]{7};\s*every figure in this "
+    r"text is HISTORICAL at that head and must be re-measured, not "
+    r"re-quoted\.",
+    re.I)
+I_OPENED_PAREN_RE = re.compile(
+    r"\(opened by [a-z][a-z0-9-]*[^)]*\)", re.I)
+I_SENTENCE_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def i_strip_exempt(v):
+    """Remove the plan's recurring "OPENED by `X` at <sha>; ... must be
+    re-measured, not re-quoted." boilerplate, and its parenthetical
+    "(opened by X, ...)" sibling -- both PROVENANCE, naming which task's
+    finding opened or folded into this one, never a prerequisite on it."""
+    v = I_OPENED_RE.sub(" ", v)
+    v = I_OPENED_PAREN_RE.sub(" ", v)
+    return v
+
+
+def _cue_outside_ids(clause):
+    """True if `clause` has an I_CUE_RE match that does NOT sit entirely
+    inside an I_ID_TOKEN_RE span -- so a cue word that is only a substring
+    of a quoted id's own slug (e.g. "...-the-gate-aware-...") never counts
+    as prerequisite language in the surrounding prose."""
+    id_spans = [m.span() for m in I_ID_TOKEN_RE.finditer(clause)]
+    for cm in I_CUE_RE.finditer(clause):
+        cs, ce = cm.span()
+        if not any(s <= cs and ce <= e for s, e in id_spans):
+            return True
+    return False
 
 
 def check_i(tasks, closed=()):
-    """Return [(task_id, named_id), ...] for every clause that reads as a
-    prerequisite, names a real plan id (open or in `closed`), and has no
-    corresponding `depends_on` edge on that task."""
+    """Return [(task_id, named_id), ...] for every SENTENCE that reads as
+    a prerequisite, names a real plan id (open or in `closed`), and has no
+    corresponding `depends_on` edge on that task. Sliced at the sentence,
+    not the `||` clause, so a cue word in one sentence cannot pair with an
+    id quoted in a neighbouring sentence of the same clause -- see
+    I_SENTENCE_RE's docstring above."""
     all_ids = {t["id"] for t in tasks} | {c["id"] for c in closed}
     out = []
     seen = set()
     for t in tasks:
         dep = set(t.get("depends_on") or ())
-        v = t.get("verify") or ""
-        for clause in v.split(" || "):
-            if not I_CUE_RE.search(clause):
+        v = i_strip_exempt(t.get("verify") or "")
+        sentences = [s for clause in v.split(" || ")
+                     for s in I_SENTENCE_RE.split(clause)]
+        for clause in sentences:
+            if not _cue_outside_ids(clause):
                 continue
             for tok in I_ID_TOKEN_RE.findall(clause):
                 if tok == t["id"] or tok not in all_ids or tok in dep:

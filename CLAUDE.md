@@ -439,6 +439,16 @@ dangerous one because it reads as current and gets cited as current.
 - **`tests/test_claude_md_figures.py` re-derives the live figures here from
   `presets.json` and fails when this file disagrees.** That committed check is
   the argument for grading in a test rather than by hand.
+- **A check that asserts a quoted sentence is present in prose or source must
+  normalise both sides before matching** — strip line-leading comment and
+  blockquote markers, collapse every whitespace run — because prose wraps and
+  a bare `phrase in text` reads 0 the moment anyone re-flows the paragraph.
+  This is the grep-returning-0 rule's wrapped-quotation case met by a guard
+  that enforced it: a retraction guard failed against a correct retraction
+  wrapped across a `#`, and the figure guard failed against a corrected
+  figure wrapped across a line, on one afternoon. `_says` in
+  `tests/test_claude_md_figures.py` is the shape; a new presence check
+  anywhere else should call something like it, never `in` on raw text.
 - **A commit message is not a doc, and it is also not erasable.** When one
   carries a wrong mechanism, retract it somewhere a grep for its own words lands.
 - **Write evidence with filenames in it**: it decays loudly instead of quietly.
