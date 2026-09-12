@@ -14,11 +14,12 @@ from fractions import Fraction
 from typing import List, Optional, Tuple
 
 from .detect import (Detection, EFFECT_BIT40_MASK, FILTER_ENABLE_BIT,
-                     decode_wave_program,
+                     _effect_byte_address, decode_wave_program,
                      TRIANGLE_VIBRATO_GATE, TRIANGLE_VIBRATO_MAX_SHIFT,
                      TRIANGLE_VIBRATO_PEAK, TRIANGLE_VIBRATO_PERIOD,
                      VIBRATO_BOUND_MASK, VIBRATO_BOUND_SHIFT,
                      VIBRATO_SHIFT_MASK)
+from .search import search_file
 from .sidfile import GT_FREQ0, SidFile, find_freq_table
 
 HEADER_LEN = 0x64
@@ -4000,6 +4001,204 @@ def _arp_relative(arp_fixed: int, arp_note: int) -> int:
     return (0x80 - arp_note) & 0xFF
 
 
+# The fixed-interval arpeggio's counter mask this phase reading is defined
+# for: `AND #$01 / BEQ` -- up on every odd call. The other masks in the
+# corpus ($02, $04, $07: 3:3, 4:4 and 1:7 per frame) are periods this emitter
+# cannot express at all, so no phase is attributed to them here.
+FIXED_ARP_PARITY_MASK = 0x01
+
+
+def _fixed_arp_counter(sid: SidFile, det: Detection) -> Optional[int]:
+    """Address of the frame counter the `AND #$01 / BEQ` octave block reads.
+
+    The same signature `detect._find_effect_routines` reads the `ADC` operand
+    from, re-searched here for the two bytes it wildcards (the mask and the
+    branch sense) and for the counter's own operand, because `Detection`
+    records only the interval. None for any other mask or sense.
+    """
+    if not det.arp_fixed_up:
+        return None
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return None
+    addr, zp = found
+    load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
+    lead = 2 if zp else 3
+    at = search_file(
+        sid.data,
+        f"{load} 29 04 F0 ?? AD ?? ?? 29 ?? F0 ?? BD ?? ?? 18 69 ??")
+    if at < 1 or sid.data[at + lead + 8] != FIXED_ARP_PARITY_MASK:
+        return None
+    return sid.data[at + lead + 5] | sid.data[at + lead + 6] << 8
+
+
+# `LDA #$00 / STA counter` -- the new-song path's reset, which sits within
+# this many bytes of the play entry's `INC counter` in every file that has one
+# (`INC ctr / BIT flag / BMI / BVC / LDA #0 / STA ctr`, 15 bytes).
+FIXED_ARP_RESET_WINDOW = 24
+
+
+def fixed_arp_counter_base(sid: SidFile, det: Detection) -> Optional[int]:
+    """What the octave block's counter reads on frame `k`, less `k`.
+
+    The counter is `INC`'d at the play entry, before the block reads it. Two
+    shapes, and the corpus has both:
+
+    * **Reset.** Commando `$5012 INC $5525 / BIT $5519 / BMI / BVC / LDA #0 /
+      STA $5525`: the new-song call -- the first, since the init sets the flag
+      -- clears it after the increment, so frame 0 reads 0 and frame k reads
+      k. Base 0.
+    * **No reset.** Hunter_Patrol `$A006 INC $A426 / LDX #2 / DEC $A418 ...`
+      goes straight into the sequencer and nothing in the file ever stores
+      the counter, so frame k reads the file's own byte plus k plus one.
+
+    The octave is up where the value is odd (`AND #$01 / BEQ` takes the base
+    path on zero), so the parity of `base + frame` is the whole of the phase.
+    **Measured** (v0.5.485, siddump of the originals, up-frames against the
+    frame numbers): odd in Commando, Crazy_Comets, Gerry_the_Germ,
+    5_Title_Tunes, Geoff_Capes_Strongman_Challenge and Gremlins -- the six
+    with a reset -- and EVEN in Hunter_Patrol, whose byte is `$1E`: `$1E + 1`
+    is odd, so its odd counter values fall on even frames. The one file that
+    disagreed with the six is the one whose player differs, which is what
+    makes this a derivation rather than a table.
+
+    None where the block is another mask or the counter's `INC` is not found.
+    """
+    ctr = _fixed_arp_counter(sid, det)
+    if ctr is None:
+        return None
+    data = sid.data
+    lo, hi = ctr & 0xFF, ctr >> 8
+    inc = search_file(data, f"EE {lo:02X} {hi:02X}")
+    if inc < 1:
+        return None
+    reset = data.find(bytes([0xA9, 0x00, 0x8D, lo, hi]), inc,
+                      inc + FIXED_ARP_RESET_WINDOW)
+    if reset >= 0:
+        return 0
+    off = sid.to_offset(ctr)
+    if not 0 <= off < len(data):
+        return None
+    return data[off] + 1
+
+
+def fixed_arp_first_fetch(sid: SidFile, det: Detection) -> Optional[int]:
+    """The frame the player fetches its first row on: the gate counter's byte.
+
+    The speed gate is `DEC ctr / BPL +6 / LDA reload / STA ctr`, then
+    `LDA ctr / CMP reload / BNE nofetch` (Commando $5052): a voice takes a
+    new event only on the call that reloads the counter, which is the call
+    on which it underflows. Starting from the byte the file holds, `c`, that
+    is call `c` -- and every row after it lands `reload + 1` calls later. The
+    init does not write the counter (Commando $5F0C writes the reload from
+    its per-subtune table and nothing else; the new-song path at $501C clears
+    the per-voice cells and the frame counter, not this one), so the byte in
+    the file IS the phase of the whole tune.
+
+    **Measured, not argued** (v0.5.485, seven corpus files, first attack
+    frame in a siddump of the original against this byte): Commando 0/0,
+    Geoff_Capes 0/0, Crazy_Comets 1/1, Gerry_the_Germ 1/1, Hunter_Patrol
+    1/1, Gremlins 2/2, 5_Title_Tunes 3/3 -- and the repo's own
+    `Commando.sid`, a mid-run snapshot whose byte is 1, attacks on frame 1
+    where the corpus copy of the same player attacks on frame 0.
+    `tests/test_arp_octave.py` re-measures two of them whenever siddump is
+    on the machine.
+
+    None where no absolute-spelled gate is found; the gate nearest the
+    instrument table is the detected player's own, `find_song_speeds`'s rule.
+    """
+    data = sid.data
+    hits = []
+    for m in SPEED_GATE.finditer(data):
+        ctr, ctr2 = m.group(1), m.group(3)
+        if ctr != ctr2:
+            continue
+        hits.append((abs(m.start() - det.instr_start), ctr[0] | ctr[1] << 8))
+    if not hits:
+        return None
+    _, ctr = min(hits)
+    off = sid.to_offset(ctr)
+    if not 0 <= off < len(data):
+        return None
+    return data[off]
+
+
+def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
+                     patterns: List[List[int]]) -> dict:
+    """{Goattracker instrument: offset of its first octave-up frame (1 or 2)}.
+
+    **The phase is per NOTE, and a wavetable is per instrument.** The block's
+    counter reads `base + k` on frame `k` (`fixed_arp_counter_base`) and the
+    octave is up where that is odd, whatever the note: Commando attacks on
+    even frames and its first octave is offset 1, Crazy_Comets on odd frames
+    and offset 2, Hunter_Patrol on both (60:36) with its offsets split the
+    same way. The init call does not run the effect, so a note attacking on
+    frame `a` gets its first octave on `a + 1` when `base + a` is even and
+    on `a + 2` when it is odd.
+
+    `a` is static: `fixed_arp_first_fetch` plus the note's row index times
+    the subtune's row length in frames (`SongSpeeds.frames_for`) -- checked
+    against the trace on Hunter_Patrol voice 2, 131 attacks of 131 on the
+    frame the walk names. Walked here over the finished orderlists and
+    patterns in play order, one lap, repeats expanded, the instrument column
+    sticky (`instr 00` keeps the current one); each note votes for its
+    instrument, and the instrument takes the majority -- exact wherever a
+    row is an even number of frames or the instrument's notes all sit on
+    rows of one parity, and a per-note split (two wavetables per record) is
+    what would make Hunter_Patrol's minority right. A group whose row is not
+    a whole number of frames (an outer gate) or whose numbering a split has
+    shifted casts no vote.
+
+    Empty for any file whose block is not the `AND #$01 / BEQ` spelling, or
+    whose counters cannot be read.
+    """
+    base = fixed_arp_counter_base(sid, det)
+    first = fixed_arp_first_fetch(sid, det)
+    if base is None or first is None:
+        return {}
+    speeds = find_song_speeds(sid, det)
+    if speeds is None:
+        return {}
+    groups = len(tracks) // 3
+    if groups > max(sid.subtunes, 1):
+        return {}                        # a split subtune shifted the numbering
+    votes: dict = {}
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        if frames is None or speeds.skip_for(ti // 3):
+            continue
+        row, current, repeat = 0, 0, 1
+        operand = False
+        for b in track:
+            if operand:                  # $FF's restart position
+                operand = False
+                continue
+            if b == 0xFF:                # patterns.GT_ORDER_RESTART
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:         # a transpose, no row of its own
+                continue
+            if 0xD0 <= b < 0xE0:         # patterns.GT_REPEAT: the NEXT entry
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:   # ENDPATT, patterns.GT_END_PATTERN
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+                    if current and GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                        parity = (base + first + row * frames) & 1
+                        votes.setdefault(current, [0, 0])[parity] += 1
+                    row += 1
+            repeat = 1
+    return {instr: (1 if even >= odd else 2)
+            for instr, (even, odd) in votes.items()}
+
+
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        fmt: str, speed_table: List[tuple],
                        multiplier: int = 1,
@@ -4016,7 +4215,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        no_test_restart: bool = False,
                        voice_two_stage: bool = False,
                        voice: Optional[int] = None,
-                       gate_skip: Optional[int] = None) -> tuple:
+                       gate_skip: Optional[int] = None,
+                       arp_phase: Optional[int] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -4370,6 +4570,10 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     # the rise's jump targets still name the entry they mean. Variable-length
     # wavetables (v0.5.163) are what make the extra entries affordable.
     off = 0
+    # A ticked fixed-interval record at -S1 whose phase is known: the octave
+    # alternation is carried on the tick entries' right side as well as the
+    # tails', so it starts on the original's frame rather than after the tick.
+    phased = False
     if tick:
         # **DROPPING THIS GATE BIT IS REFUSED, and the reason is measured over
         # the population it reaches -- 33 of the 89 corpus songs at f0fd20c.**
@@ -4452,6 +4656,25 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # by one and `gt2reloc` refused the file. Where there is no room the
         # record keeps the five-entry shape below -- the tick is what is lost,
         # not the table.
+        # **The noise tick was holding the base note, and the original does
+        # not.** The drum block writes $D404 and the octave block then writes
+        # the frequency, every frame, tick included: Commando's original reads
+        # `b U b U` from the frame after the attack on every octave onset
+        # (`bUbUbUbUbUbU` x32 on voice 0), and this shape put the first octave
+        # on entry 4, after both tick entries -- `0 0 0 0 1 0 1` against the
+        # original's `0 1 0 1`, a swing that is wrong on EVERY frame of every
+        # note. The phase is the note's attack-frame parity
+        # (`fixed_arp_phases`); with it known, each tick entry is one frame --
+        # a delay could not alternate -- and carries the octave where the
+        # frame is odd. Only where the extra entries fit; otherwise the
+        # unphased shape stands, as it does for every record the phase is not
+        # known for. -S1 only: above it the tick is a delay of calls and the
+        # loop below is per call, a defect of its own (see SUMMARY item 4 of
+        # the-seven-file-adc-0c-family).
+        if (arp and arp_fixed and arp_phase in (1, 2) and multiplier == 1
+                and len(frame0) + extra + 5 <= budget):
+            tl, tr = [noise] * (extra + 1), [0x00] * (extra + 1)
+            phased = True
         tick = len(frame0) + len(tl) + 4 <= budget
     if tick:
         off = len(tl) + len(frame0) - 1
@@ -4461,6 +4684,17 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # entries belong and the loop is never reached.
         left = frame0 + tl + [tail, tail, 0xFF, 0xFF]
         right = frame0_r + tr + [0x00, 0x00, 0x00, 0x00]
+        if phased:
+            # Entry k plays on frame k + 1 - len(frame0) after the attack
+            # siddump names: with the lead, entry 0 is the record's waveform
+            # on the frame the attack is read from (the test-bit frame before
+            # it is silent to the trace); without it (`written`), the
+            # instrument's firstwave owns frame 0 and entry 0 is frame 1. The
+            # octave sits on every second frame from `arp_phase`, tails
+            # included, and the two-entry loop keeps the parity.
+            for k in range(len(frame0), len(frame0) + len(tl) + 2):
+                if (k + 1 - len(frame0) - arp_phase) % 2 == 0:
+                    right[k] = _arp_relative(arp_fixed, arp_note)
 
     # A record that sets both bits gets both blocks in the player -- the drum
     # sets the waveform, the arpeggio then overwrites the frequency it swept
@@ -4542,7 +4776,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # corpus files with an arpeggio routine. The rate and the interval
             # were always right; only the phase was late.
             if effects:
-                right[2 + off] = _arp_relative(arp_fixed, arp_note)
+                if not phased:
+                    right[2 + off] = _arp_relative(arp_fixed, arp_note)
                 right[3 + off] = second
             else:
                 # `effects` off means "reproduce the VB6 original", and the
@@ -5060,7 +5295,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       instr_voices: Optional[dict] = None,
                       gate_skip: Optional[int] = None,
                       real_firstwave_instruments: tuple = (),
-                      arps: Optional[List[tuple]] = None) -> tuple:
+                      arps: Optional[List[tuple]] = None,
+                      arp_phases: Optional[dict] = None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -5122,7 +5358,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          voice_two_stage=voice_two_stage,
                                          voice=_record_voice(instr_voices,
                                                              gt_number),
-                                         gate_skip=gate_skip)
+                                         gate_skip=gate_skip,
+                                         arp_phase=(None if arp_phases is None
+                                                    else arp_phases.get(gt_number)))
         starts.append(start)
         entries += list(zip(left, right))
 
@@ -6690,6 +6928,14 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # and the other two engines have no gate to express (_vibrato_delay).
     if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
         vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)
+    # The fixed-interval octave's phase per instrument, from the finished
+    # orderlists: a note's attack-frame parity is static, and the tick
+    # entries carry the octave from the original's frame (`fixed_arp_phases`).
+    # Gated exactly as the record's own read of the +7 byte is -- `effects` --
+    # and on -S1, the only rate the shape below is right at.
+    arp_phases = (fixed_arp_phases(sid, det, tracks, patterns)
+                  if effects and det.arp_fixed_up and multiplier == 1
+                  else None)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts, arp_starts = _wavetable_layout(
@@ -6702,7 +6948,8 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         no_test_restart,
         voice_two_stage,
         instr_voices, gate_skip,
-        real_firstwave_instruments, arps)
+        real_firstwave_instruments, arps,
+        arp_phases=arp_phases)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     if pulse_plan is not None:
         # Last, after every pass that writes a command column: the packed

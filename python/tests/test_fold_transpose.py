@@ -25,8 +25,8 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from h2g.detect import Detection
 from h2g.patterns import (GT_END_PATTERN, GT_KEYOFF, GT_NO_NOTE,
-                          convert_patterns, pattern_top_note, reindex_tracks,
-                          shift_notes)
+                          convert_patterns, decode_entry, pattern_top_note,
+                          reindex_tracks, shift_notes)
 from h2g.sidfile import HLEN, SidFile
 from h2g.tracks import GT_TRANSUP, convert_tracks, fold_transposes
 
@@ -206,3 +206,43 @@ def test_a_variant_survives_pruning_of_its_source():
                                        used={2}, variants=variants)
     assert index[0] == [] and index[1] == []
     assert patterns[index[2][0]][0] == 0x70 + 24
+
+
+# Pattern 0 becomes: `$83 03 <LOW_NOTE>` (instrument record 3 on a 4-row
+# note) then `$47` (a bit-6 rest, 8 rows), then end.
+_INSTR_PATTERN = bytes([0x83, 0x03, 0x10, 0x47, 0xFF])
+
+_GRAMMAR = dict(status_bit6=True, rest_instrument=True, instr_base=1,
+                rest_keyoff=True, rest_envelope=True)
+
+
+def _sid_with_instrument() -> SidFile:
+    sid = _sid([0x98, 0x00, 0xFF])
+    data = bytearray(sid.data)
+    data[PATT_AT[0]:PATT_AT[0] + len(_INSTR_PATTERN)] = _INSTR_PATTERN
+    sid.data = bytes(data)
+    return sid
+
+
+def test_a_pruned_source_is_decoded_for_its_variant_under_the_conversion_grammar():
+    # A source the orderlists never play unshifted is pruned from the primary
+    # loop and decoded only by the variants loop -- which until v0.5.485
+    # decoded it under decode_entry's DEFAULT grammar, not the conversion's:
+    # instr_base 2 instead of 1 (every instrument column off by one) and the
+    # legacy C-0 placeholder rest instead of KEYOFF.
+    sid, det = _sid_with_instrument(), _det()
+    det.status_bit6 = True
+    det.rest_silence_envelope = True
+    raw: list = []
+    tracks = convert_tracks(sid, det, lambda m: None, raw)
+    variants = fold_transposes(sid, det, tracks, raw, status_bit6=True)
+    assert variants == [(0, 2)]
+    patterns, index = convert_patterns(sid, det, lambda m: None,
+                                       used={2}, variants=variants, **_GRAMMAR)
+    variant = patterns[index[2][0]]
+    expect = shift_notes(decode_entry(sid, det, 0, **_GRAMMAR), 24)
+    # instrument column: record 3 under instr_base 1 is instrument 4
+    assert variant[1] == 4, variant[:8]
+    # the bit-6 rest is a KEYOFF, not the legacy C-0-on-instrument-1 placeholder
+    assert variant[4 * 4] == GT_KEYOFF, variant[16:20]
+    assert variant == expect

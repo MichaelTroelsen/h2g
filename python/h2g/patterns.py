@@ -2270,8 +2270,20 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             # already decoded, so `arps` has already collected whatever it
             # arms; passing the list again would append the same pairs a
             # second time and index the second copies.
+            #
+            # Decoded under the SAME grammar the primary loop uses. Until
+            # v0.5.485 this call omitted rest_instrument / instr_base /
+            # rest_keyoff / rest_wave / rest_envelope, so a source the
+            # orderlists never play directly (pruned above, decoded only
+            # here for its octave variant) got the default instr_base
+            # under --compact-instruments -- every instrument column off
+            # by one -- and the legacy C-0 rest instead of KEYOFF.
             base = decode_entry(sid, det, src, slides, status_bit6,
-                                steps, tie=tie, exits_tied=ex, arps=arps)
+                                steps, rest_instrument, instr_base,
+                                tie=tie, rest_keyoff=rest_keyoff,
+                                rest_wave=rest_wave,
+                                rest_envelope=rest_envelope,
+                                exits_tied=ex, arps=arps)
             exits[src] = bool(ex and ex[0])
         # A variant is the source's own event stream with its notes shifted, so
         # it ends on the source's status byte and leaves the gate exactly as

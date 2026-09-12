@@ -640,3 +640,25 @@ def test_a_non_boolean_option_is_excluded_and_must_be_hand_recorded():
     # None of them may be in the walk.
     assert not (non_boolean & set(presets.FIDELITY_TOGGLES)), sorted(
         non_boolean & set(presets.FIDELITY_TOGGLES))
+
+
+# ---------------------------------------------------------------------------
+# Every boolean always-block flag carries a measured live-file count beside
+# FIXED, or an explicit None. A flag with no entry is the failure this pins:
+# a policy nobody has measured, reading exactly like one the corpus depends
+# on. The counts themselves are a snapshot (LIVE_ON_MEASURED_AT) and are NOT
+# asserted here -- re-measuring them is a corpus run, not a test.
+
+def test_every_boolean_always_flag_has_a_live_file_count():
+    """SABOTAGE TARGETS: delete one key from LIVE_ON -> fails naming it;
+    add a boolean flag to FIXED without a LIVE_ON entry -> fails naming it."""
+    import presets as P
+    booleans = {k for k, v in P.FIXED.items() if isinstance(v, bool)}
+    missing = sorted(booleans - set(P.LIVE_ON))
+    assert not missing, f"FIXED flags with no LIVE_ON entry: {missing}"
+    stale = sorted(set(P.LIVE_ON) - booleans)
+    assert not stale, f"LIVE_ON names flags FIXED does not carry: {stale}"
+    for k, v in P.LIVE_ON.items():
+        assert v is None or (isinstance(v, int) and 0 <= v <= 95), (k, v)
+    assert P.LIVE_ON["reject_phantoms"] == 0 and P.LIVE_ON["compact_instruments"] == 89,         "the two anchoring facts the comment states must match the table"
+

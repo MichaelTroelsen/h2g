@@ -53,6 +53,25 @@ plan and cost at least one task cycle:
      match is trusted only on the narrower, operational phrases a
      self-declaring verify actually uses to instruct a runner not to close
      it -- see check_j's docstring.
+
+Head-freshness note: the worked figures quoted in each check's own comment
+block above (665939c for check_e's exemption drops, 5a2fa2d for check_h and
+check_i's clause/finding counts, 24b9f1d for check_j's recurrence-vocabulary
+and closed-entries scans) are HISTORICAL readings taken at those heads --
+they are not re-derived on every import, and nothing here re-checks them
+against the live plan. The plan itself has moved on (144 open / 344 closed
+at eae8d8d, vs the 101-105 open / 286 closed the comments were measured
+against), so those specific counts are already stale -- only the
+CLASSIFICATION each comment argues for (which exemption, which narrowing)
+is still the live behaviour. This file's checks were last re-run against
+the live plan and runs.jsonl -- not merely the comments re-read -- at
+eae8d8d (v0.5.484): check_i returns 1 finding and check_j returns 0,
+matching test_check_i_real_plan_has_one_known_ambiguous_finding and
+test_check_j_real_plan_has_zero_findings. Re-verifying a check's own
+figures means re-running it against the live plan/closed/runs.jsonl at a
+current head and updating this paragraph's head and counts, not editing
+the per-check historical worked examples above, which stay pinned to the
+head that produced them.
 """
 import collections
 import json
@@ -110,7 +129,7 @@ def repo_path(p):
 # the worked case, and check_f's own docstring for the two-arg contract
 # that makes this classification testable without a live git process.
 GRADED_RE = re.compile(
-    r"GRADED at [0-9a-f]{7}:(?P<body>.*?)(?:\s--\s|\s\|\|\s|$)", re.S)
+    r"GRADED\s+at\s+[0-9a-f]{7}:(?P<body>.*?)(?:\s--\s|\s\|\|\s|$)", re.S)
 SHA_GRADE_RE = re.compile(
     r"\b([0-9a-f]{7})\b\s+is\s+\d+\s+commit\(s\)\s+behind")
 SHA_TOKEN_RE = re.compile(r"\b[0-9a-f]{7}\b")
@@ -453,7 +472,7 @@ def check_h(tasks):
 # id-span exclusion resurfaces 64, 1 and 1 finding(s) respectively; see
 # test_plan_audit.py.
 I_CUE_RE = re.compile(
-    r"\b(?:before|ahead of|must|requires|GATE|depends on|blocked by|"
+    r"\b(?:before|ahead\s+of|must|requires|GATE|depends\s+on|blocked\s+by|"
     r"prerequisite|needs)\b", re.I)
 I_ID_TOKEN_RE = re.compile(r"\b[a-z][a-z0-9]*(?:-[a-z0-9]+)+\b")
 I_OPENED_RE = re.compile(
@@ -555,15 +574,30 @@ def check_i(tasks, closed=()):
 # carries the operational phrase, because that task's own job was closing
 # out the one-shot MISTAKE, not declaring recurrence for itself.
 J_DECLARE_RE = re.compile(
-    r"cannot be satisfied once|leave it open|deliberately version-?less",
+    r"cannot\s+be\s+satisfied\s+once|leave\s+it\s+open|"
+    r"deliberately\s+version-?less",
     re.I)
+
+
+J_QUOTED_RE = re.compile(r"`[^`]*`|'[^']*'")
+
+
+def j_strip_quoted(text):
+    """A declaration phrase inside backticks or single quotes is MENTIONED,
+    not declared -- the task at eae8d8d that fixed J_DECLARE_RE's own
+    whitespace handling quoted its phrases ('cannot be satisfied once',
+    'leave it open') in its verify, closed as done, and check J read the
+    quotation as a recurring obligation that had been closed. Same
+    container/subject collapse as checks G/H/I: the phrase belongs to the
+    sentence quoting it, not to this task's done-condition."""
+    return J_QUOTED_RE.sub(" ", text)
 
 
 def check_j_declared(tasks):
     """Return the ids of open tasks whose own verify self-declares as a
     recurring obligation (an operational instruction not to close it)."""
     return [t["id"] for t in tasks
-            if J_DECLARE_RE.search(t.get("verify") or "")]
+            if J_DECLARE_RE.search(j_strip_quoted(t.get("verify") or ""))]
 
 
 def load_runs_last(path=RUNS):
@@ -592,7 +626,7 @@ def check_j(tasks, closed, runs_last):
     declared = set(check_j_declared(tasks))
     for c in closed:
         text = (c.get("title") or "") + " " + (c.get("reason") or "")
-        if J_DECLARE_RE.search(text):
+        if J_DECLARE_RE.search(j_strip_quoted(text)):
             declared.add(c["id"])
 
     closed_ids = {c["id"] for c in closed}

@@ -488,13 +488,26 @@ def test_check_h_promise_to_create_absent_path_is_not_reported():
 # direction) or a reworded verify is a plan-authoring call, not a check
 # bug -- see the task's `opened` list.
 # ---------------------------------------------------------------------
-def test_check_i_real_plan_has_one_known_ambiguous_finding():
+def test_check_i_real_plan_has_zero_findings():
+    """The one ambiguity this test used to pin (after-8 -> fixed-pitch-index)
+    was settled at eae8d8d by adding the depends_on edge, so the live plan
+    reads 0 again; a new finding here is a new prose-only prerequisite."""
     plan = importlib.import_module("json").loads(
         (REPO / ".claude/tasks/whattask.json").read_text(encoding="utf-8"))
     findings = plan_audit.check_i(plan["tasks"], plan.get("closed") or [])
-    assert findings == [
-        ("after-8-bit40-index-cell-disagrees-by-4-bytes",
-         "fixed-pitch-index-from-the-bit40-handler-operand")], findings
+    assert findings == [], findings
+
+
+def test_check_j_a_quoted_declaration_phrase_is_a_mention_not_a_declaration():
+    """SABOTAGE TARGET: make j_strip_quoted the identity. The task that fixed
+    J_DECLARE_RE quoted its own phrases in its verify and closed as done."""
+    t = base_task(id="regex-fix",
+                  verify="J_DECLARE_RE ('cannot be satisfied once', 'leave it "
+                         "open') used literal spaces; use whitespace classes.")
+    assert plan_audit.check_j_declared([t]) == []
+    real = base_task(id="regen", verify="THIS TASK CANNOT BE SATISFIED ONCE: "
+                                        "leave it open after every regeneration.")
+    assert plan_audit.check_j_declared([real]) == ["regen"]
 
 
 # ---------------------------------------------------------------------
@@ -762,6 +775,64 @@ def test_declared_recurring_task_with_partial_last_run_is_not_reported():
     runs_last = {"regen-fidelity": {"id": "regen-fidelity",
                                      "outcome": "partial"}}
     assert plan_audit.check_j([t], [], runs_last) == []
+
+
+# =======================================================================
+# GRADED_RE, J_DECLARE_RE and I_CUE_RE match multi-word phrases. Written
+# against a literal single space between each word, a verify string that
+# has been WRAPPED -- a line-fill inserting a run of spaces, or a hard
+# newline where the phrase happened to break -- reads 0 for a phrase that
+# is plainly present, exactly the grep-returning-0 / wrapped-quotation
+# family CLAUDE.md already names for prose checks. SHA_GRADE_RE already
+# used \s+ for its own internal spaces; these three did not.
+# =======================================================================
+def test_graded_re_matches_across_a_wrapped_space_run():
+    # a line-fill / reflow turning "GRADED at" into "GRADED  at" (or a
+    # hard newline in the same spot) must still be found.
+    v = "GRADED  at d3775b4: fd286a5 is 5 commit(s) behind."
+    assert plan_audit.GRADED_RE.search(v) is not None, v
+    v_nl = "GRADED at\nd3775b4: fd286a5 is 5 commit(s) behind."
+    assert plan_audit.GRADED_RE.search(v_nl) is not None, v_nl
+
+
+def test_check_f_reports_a_sha_inside_a_wrapped_graded_clause_as_graded():
+    t = base_task(
+        id="wrapped-grade-task",
+        verify="GRADED  at d3775b4: fd286a5 is 5 commit(s) behind.")
+    ungraded, graded = plan_audit.check_f(
+        [t], behind_of=_behind_except_grade_anchor)
+    assert ungraded == []
+    assert [(i, s) for i, s, b in graded] == [("wrapped-grade-task",
+                                                "fd286a5")]
+
+
+def test_j_declare_re_matches_across_a_wrapped_space_run():
+    v = "this task cannot  be satisfied once started; leave\nit open."
+    assert plan_audit.J_DECLARE_RE.search(v) is not None, v
+
+
+def test_check_j_reports_a_wrapped_self_declaration():
+    t = base_task(
+        id="wrapped-recurring-task",
+        verify="THIS TASK CANNOT  BE SATISFIED ONCE: leave it\nopen, not "
+               "close it.")
+    assert plan_audit.check_j_declared([t]) == ["wrapped-recurring-task"]
+
+
+def test_i_cue_re_matches_multiword_cues_across_a_wrapped_space_run():
+    for wrapped in ("ahead  of", "ahead\nof", "depends  on", "depends\non",
+                     "blocked  by", "blocked\nby"):
+        assert plan_audit.I_CUE_RE.search(wrapped) is not None, wrapped
+
+
+def test_check_i_reports_a_wrapped_cue_phrase():
+    other = base_task(id="some-real-plan-id")
+    t = base_task(
+        id="wrapped-cue-task",
+        verify="this task is blocked  by `some-real-plan-id` until it "
+               "reads outcome done.")
+    findings = plan_audit.check_i([t, other], [])
+    assert findings == [("wrapped-cue-task", "some-real-plan-id")]
 
 
 if __name__ == "__main__":

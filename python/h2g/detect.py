@@ -318,6 +318,12 @@ class Detection:
     # is deliberately not applied here, only reported.
     freq_table: Optional[FreqTable] = None
     note_base: int = 0
+    # A multi-player file's players, one per play routine the init/play
+    # dispatch names, each with the tables read from its own code range.
+    # Empty for every single-player file. Read, not converted: the fields
+    # above still describe the first player, exactly as before. See
+    # `find_players`.
+    players: Tuple["PlayerTables", ...] = ()
 
     @property
     def can_convert(self) -> bool:
@@ -468,7 +474,8 @@ def _count_instruments(data: bytes, start: int, stride: int, log: Logger) -> int
         j += stride
 
 
-def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
+def _find_instrument_index(sid: SidFile, det: Detection, log: Logger,
+                           search: Optional[Callable[[str], int]] = None) -> int:
     """Locate the per-voice instrument array, and return the match offset.
 
     Fills `det.initial_instruments` with the array's image bytes: the
@@ -485,7 +492,7 @@ def _find_instrument_index(sid: SidFile, det: Detection, log: Logger) -> int:
     existing path.
     """
     data = sid.data
-    i = search_file(data, INSTRUMENT_INDEX_SHAPE)
+    i = (search or _windowed_search(data, 0, len(data)))(INSTRUMENT_INDEX_SHAPE)
     if i <= -1:
         return -1
     off = sid.to_offset(_addr16(data, i + 1, i + 2))
@@ -916,40 +923,237 @@ def find_music_subtunes(sid: SidFile) -> Optional[int]:
     return None
 
 
-def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
-    """Read one player's tables out of `sid`.
+# --- Multi-player files -----------------------------------------------------
+#
+# Two corpus files are COMPILATIONS: several separately assembled players in
+# one image, with a dispatch at the PSID init and play addresses choosing
+# between them by subtune number. Every signature chain takes the FIRST match
+# in the file, so on such a file the tables read are the first player's
+# whatever `startSong` says, and the other players' tables are never read at
+# all. The two spell the dispatch differently:
+#
+# 5_Title_Tunes, init $0B10 / play $0B40 -- a CMP/BNE/JSR ladder, one rung a
+# subtune, the play ladder's rungs naming five play routines in ascending
+# order ($0C06 $18A3 $1FFC $283C $315F) and the init ladder's five init
+# routines ($1850 $1FA9 $280C $310C $38CF), each sitting inside the range its
+# play routine opens:
+#
+#     0B10  8D 6F 0B  STA $0B6F        ; the subtune, kept for the play ladder
+#     0B13  C9 00     CMP #$00
+#     0B15  D0 04     BNE $0B1B        ; next rung
+#     0B17  20 50 18  JSR $1850        ; this subtune's player
+#     0B1A  60        RTS
+#     0B1B  C9 01     CMP #$01 ...     ; (rung 2 pads with three NOPs)
+#     0B36  C9 04 / D0 DD              ; the last rung's BNE goes BACK
+#
+# Commodore_64_Music_Examples, init $087C -- a pointer PAIR the subtune
+# number indexes, written over a JSR's operand: `ADC #$0F / TAX / LDA
+# $08EC,X / STA $0878 / LDA $08D8,X / STA $0879 / RTS`. The tables abut
+# (HI at $08D8, LO at $08EC, 20 entries each); entries 0-14 are the fifteen
+# subtunes' init routines, entries 15-19 the five play routines, and the
+# `ADC` operand is the split. Init n therefore belongs to whichever player's
+# code range contains it, which is how the eleven inits that share the last
+# player are assigned to it here.
+#
+# `find_players` reads either spelling as "this file carries N players", one
+# per distinct play routine in ascending address order, and runs the four
+# table chains again with `find` anchored to player k's range -- from its
+# play routine up to the next player's, the last running to the end of the
+# file. **Detection only**: the tables are carried in `Detection.players`
+# and nothing converts from them yet; the corpus byte-hash is unchanged by
+# construction, because `detect()`'s own reading is untouched.
+#
+# The census is pinned in tests/test_multi_player.py: exactly those two files
+# carry a dispatch, five players each, and no single-player file matches
+# either spelling.
 
-    `engine` selects *which* player, for a file that carries more than one.
-    0 is the one the PSID header's `startSong` plays and the only one anything
-    here converts by default; 1 is "not the digi engine", which is what
-    separates the two copies in the only corpus file where they differ (see
-    § 7.kkkkk). On a file with a single classic player the two are identical
-    by construction -- `_detect_digi` returns False either way -- so the
-    option can only ever change a file that has something else to find.
+LADDER_MIN_RUNGS = 2
+
+
+@dataclass(frozen=True)
+class PlayerDispatch:
+    kind: str                            # "ladder" or "table"
+    inits: Tuple[Tuple[int, int], ...]   # (subtune, init address)
+    plays: Tuple[Tuple[int, int], ...]   # (subtune or player, play address)
+
+
+@dataclass(frozen=True)
+class PlayerTables:
+    """One player of a multi-player file, and the tables read from its range.
+
+    Addresses are C64 addresses (what the player's own operands name);
+    `start`/`end` are the file-offset window the chains were anchored to.
+    `instr_used`/`pattern_used` are the counts `detect()` would have taken.
+    """
+    index: int
+    play: int
+    inits: Tuple[int, ...]
+    subtunes: Tuple[int, ...]
+    start: int
+    end: int
+    instr_addr: int = -1
+    instr_used: int = -1
+    track_lo_addr: int = -1
+    track_hi_addr: int = -1
+    track_selector: bool = False
+    pattern_lo_addr: int = -1
+    pattern_hi_addr: int = -1
+    pattern_used: int = -1
+
+
+def _windowed_search(data: bytes, lo: int, hi: int) -> Callable[[str], int]:
+    """`search_file` over `data[lo:hi]`, returning file offsets.
+
+    With `lo == 0` this IS `search_file(data, pattern)`: same start, same
+    first-match rule, same never-tests-offset-0 quirk. A window starting past
+    0 is searched from `lo - 1` so that `lo` itself is the first offset tried.
+    """
+    base = max(lo - 1, 0)
+    view = data[base:hi]
+
+    def search(pattern: str) -> int:
+        i = search_file(view, pattern)
+        return base + i if i >= 1 else -1
+    return search
+
+
+def _read_ladder(sid: SidFile, addr: int) -> Optional[Tuple[Tuple[int, int], ...]]:
+    """`[STA/LDA abs] (CMP #n / BNE / [NOP...] / JSR abs / RTS)+` at `addr`."""
+    data = sid.data
+    p = sid.to_offset(addr)
+    if not 0 <= p < len(data):
+        return None
+    if data[p] in (0x8D, 0xAD):          # STA var / LDA var
+        p += 3
+    rungs = []
+    seen = set()
+    while p + 8 <= len(data) and data[p] == 0xC9 and data[p + 2] == 0xD0:
+        n, rr = data[p + 1], data[p + 3]
+        q = p + 4
+        while q < len(data) and data[q] == 0xEA:
+            q += 1
+        if q + 4 > len(data) or data[q] != 0x20 or data[q + 3] != 0x60:
+            break
+        target = _addr16(data, q + 1, q + 2)
+        if n in seen or not 0 <= sid.to_offset(target) < len(data):
+            break
+        rungs.append((n, target))
+        seen.add(n)
+        nxt = q + 4
+        # A forward BNE has to land on the next rung, or this is not a
+        # ladder but a coincidence; the last rung's may go anywhere.
+        if rr < 0x80 and p + 4 + rr != nxt:
+            break
+        p = nxt
+    if len(rungs) < LADDER_MIN_RUNGS:
+        return None
+    return tuple(rungs)
+
+
+# `ADC #split / TAX / LDA lo,X / STA jsr+1 / LDA hi,X / STA jsr+2 / RTS`
+TABLE_DISPATCH_SHAPE = "69 ?? AA BD ?? ?? 8D ?? ?? BD ?? ?? 8D ?? ?? 60"
+TABLE_DISPATCH_MAX = 64
+
+
+def _read_table_dispatch(sid: SidFile) -> Optional[PlayerDispatch]:
+    data = sid.data
+    for i in _search_all(data, TABLE_DISPATCH_SHAPE):
+        split = data[i + 1]
+        t1, t2 = _addr16(data, i + 7, i + 8), _addr16(data, i + 13, i + 14)
+        first, second = _addr16(data, i + 4, i + 5), _addr16(data, i + 10, i + 11)
+        if t2 == t1 + 1:
+            jsr, lo, hi = t1 - 1, first, second
+        elif t1 == t2 + 1:
+            jsr, lo, hi = t2 - 1, second, first
+        else:
+            continue
+        j = sid.to_offset(jsr)
+        if not (0 <= j < len(data) and data[j] == 0x20):
+            continue          # the stores do not patch a JSR's operand
+        count = abs(lo - hi)
+        if not 0 < count <= TABLE_DISPATCH_MAX or split >= count:
+            continue
+        lo_off, hi_off = sid.to_offset(lo), sid.to_offset(hi)
+        if not (0 <= lo_off and lo_off + count <= len(data)
+                and 0 <= hi_off and hi_off + count <= len(data)):
+            continue
+        entries = [data[lo_off + k] | data[hi_off + k] << 8 for k in range(count)]
+        if not all(0 <= sid.to_offset(a) < len(data) for a in entries):
+            continue
+        return PlayerDispatch(
+            "table",
+            tuple((n, entries[n]) for n in range(split)),
+            tuple((k, entries[split + k]) for k in range(count - split)))
+    return None
+
+
+def find_player_dispatch(sid: SidFile) -> Optional[PlayerDispatch]:
+    """The init/play dispatch of a multi-player file, or None.
+
+    Silent on every single-player file: the ladder has to parse at BOTH the
+    init and the play address, and the table spelling has to patch a JSR.
+    """
+    init = _read_ladder(sid, sid.init_addr)
+    play = _read_ladder(sid, sid.play_addr)
+    if init and play:
+        return PlayerDispatch("ladder", init, play)
+    return _read_table_dispatch(sid)
+
+
+def find_players(sid: SidFile, det: Detection) -> Tuple[PlayerTables, ...]:
+    """Every player a multi-player file's dispatch names, with its tables.
+
+    Player k's range runs from its play routine to the next player's (the
+    last to the end of the file); the four table chains are re-run with
+    `find` anchored to it. `det` supplies the record stride and nothing else.
+    """
+    disp = find_player_dispatch(sid)
+    if disp is None:
+        return ()
+    data = sid.data
+    plays = sorted({a for _, a in disp.plays})
+    if len(plays) < 2:
+        return ()
+    bounds = [sid.to_offset(a) for a in plays] + [len(data)]
+    out = []
+    for k, play in enumerate(plays):
+        start, end = bounds[k], bounds[k + 1]
+        inits = tuple(a for _, a in disp.inits if start <= sid.to_offset(a) < end)
+        subtunes = tuple(n for n, a in disp.inits
+                         if start <= sid.to_offset(a) < end)
+        pdet = Detection()
+        pdet.instr_stride = det.instr_stride
+        search = _windowed_search(data, start, end)
+        _locate_tables(sid, pdet, _silent, search, search, digi=False)
+
+        def addr(off: int) -> int:
+            return sid.to_address(off) if off >= 0 else -1
+        out.append(PlayerTables(
+            k, play, inits, subtunes, start, end,
+            instr_addr=addr(pdet.instr_start), instr_used=pdet.instr_used,
+            track_lo_addr=addr(pdet.track_lo), track_hi_addr=addr(pdet.track_hi),
+            track_selector=pdet.track_selector,
+            pattern_lo_addr=addr(pdet.pattern_lo),
+            pattern_hi_addr=addr(pdet.pattern_hi),
+            pattern_used=pdet.pattern_used))
+    return tuple(out)
+
+
+def _silent(_msg: str) -> None:
+    pass
+
+
+def _locate_tables(sid: SidFile, det: Detection, log: Logger,
+                   find: Callable[[str], int], search: Callable[[str], int],
+                   digi: bool) -> None:
+    """The instrument, orderlist, selector and pattern-table chains.
+
+    `find` and `search` are `detect()`'s: the first records a match as player
+    code, the second does not. Both may be anchored to a window of the file,
+    which is how one player of a multi-player file is read without the chain
+    taking the first copy's tables (`find_players`).
     """
     data = sid.data
-    det = Detection()
-
-    def find(pattern: str) -> int:
-        i = search_file(data, pattern)
-        if i >= 1:
-            # A successful match IS player code -- that is the premise the
-            # whole detection method rests on -- so remember where it was.
-            det.code_spans.append((i, len(pattern.split())))
-        return i
-
-    # Probed before anything else: it sets the instrument record size the
-    # instrument pass below depends on, and its tables are read from their own
-    # signatures rather than the classic chains.
-    #
-    # `engine` is asked here because this one probe is what forks the whole
-    # rest of the function: every chain below is guarded on `digi`, so
-    # declining it runs the classic chains over the same file and they find
-    # the other player unaided. Powerplay Hockey's nine cues need no new
-    # signature at all -- tracks $3C60/$3C63, selector $3C66, patterns
-    # $3C9C/$3CBB and instruments $3BA0 all fall out of chains that were
-    # already there and were simply never reached (§ 7.kkkkk).
-    digi = False if engine else _detect_digi(sid, det, log)
 
     # --- Instruments ---------------------------------------------------
     # Every signature in this chain fingerprints the *store* into the SID:
@@ -959,8 +1163,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     # $F06E` and matches none of them, so it converted with zero instruments
     # and played silence. INSTRUMENT_INDEX_SHAPE below fingerprints the *load*
     # instead, which is common to both.
-    counted_at_stride = det.instr_stride
-    idx = _find_instrument_index(sid, det, log)
+    idx = _find_instrument_index(sid, det, log, search)
     shape_used = "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4"    # Chimera
     i = find(shape_used)
     if i <= -1:
@@ -1012,7 +1215,6 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             # Voice" record, so -1 would write a count byte of 0 that disagrees
             # with the record that follows it.
             det.instr_start, det.instr_used = -1, 0
-        counted_at_stride = det.instr_stride
         instr_used = _count_instruments(data, det.instr_start,
                                         det.instr_stride, log)
         det.instr_used = instr_used
@@ -1172,6 +1374,50 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         else:
             _span_warn("PATTERN LO", det.pattern_lo, det.pattern_used, len(data), log)
             _span_warn("PATTERN HI", det.pattern_hi, det.pattern_used, len(data), log)
+
+
+def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
+    """Read one player's tables out of `sid`.
+
+    `engine` selects *which* player, for a file that carries more than one.
+    0 is the one the PSID header's `startSong` plays and the only one anything
+    here converts by default; 1 is "not the digi engine", which is what
+    separates the two copies in the only corpus file where they differ (see
+    § 7.kkkkk). On a file with a single classic player the two are identical
+    by construction -- `_detect_digi` returns False either way -- so the
+    option can only ever change a file that has something else to find.
+    """
+    data = sid.data
+    det = Detection()
+    search = _windowed_search(data, 0, len(data))
+
+    def find(pattern: str) -> int:
+        i = search(pattern)
+        if i >= 1:
+            # A successful match IS player code -- that is the premise the
+            # whole detection method rests on -- so remember where it was.
+            det.code_spans.append((i, len(pattern.split())))
+        return i
+
+    # Probed before anything else: it sets the instrument record size the
+    # instrument pass below depends on, and its tables are read from their own
+    # signatures rather than the classic chains.
+    #
+    # `engine` is asked here because this one probe is what forks the whole
+    # rest of the function: every chain below is guarded on `digi`, so
+    # declining it runs the classic chains over the same file and they find
+    # the other player unaided. Powerplay Hockey's nine cues need no new
+    # signature at all -- tracks $3C60/$3C63, selector $3C66, patterns
+    # $3C9C/$3CBB and instruments $3BA0 all fall out of chains that were
+    # already there and were simply never reached (§ 7.kkkkk).
+    digi = False if engine else _detect_digi(sid, det, log)
+
+    # The four table chains, in a function so that a multi-player file can
+    # run them again with `find` anchored to one player's code range -- see
+    # `find_players`. Verbatim the chains that sat here; the corpus byte-hash
+    # is what pins the move.
+    counted_at_stride = det.instr_stride
+    _locate_tables(sid, det, log, find, search, digi)
 
     # --- Interleaved tables, classic grammar (last resort) -----------------
     # Only where the classic chains found neither table, so it cannot disturb
@@ -1589,6 +1835,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         elif abs(ft.detune) > 0.2:
             log(f"Note frequency table....: ${ft.addr:04X}, tuned "
                 f"{-100 * ft.detune:.0f} cents flat of Goattracker's")
+
+    det.players = find_players(sid, det)
+    if det.players:
+        log(f"Players.................: {len(det.players)} "
+            f"({find_player_dispatch(sid).kind} dispatch at init "
+            f"${sid.init_addr:X} / play ${sid.play_addr:X}); instruments "
+            + "/".join(f"${p.instr_addr:X}" if p.instr_addr >= 0 else "-"
+                       for p in det.players)
+            + ", patterns "
+            + "/".join(f"${p.pattern_lo_addr:X}" if p.pattern_lo_addr >= 0
+                       else "-" for p in det.players))
 
     det.music_subtunes = find_music_subtunes(sid)
     if det.music_subtunes is not None:

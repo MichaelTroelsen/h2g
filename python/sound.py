@@ -292,8 +292,38 @@ def _overlap(a: Features, b: Features, lag: int):
     return slice(-lag, -lag + n), slice(0, n)
 
 
-def compare_features(a: Features, b: Features, lag_hops: int) -> dict:
+def _prefix(sa: slice, sb: slice, keep: int) -> tuple[slice, slice]:
+    """The first `keep` frames of an aligned overlap, on both sides at once.
+
+    `_overlap` returns two slices of equal length that start where the two
+    sides coincide, so cutting both at `start + keep` keeps them aligned; a
+    `keep` past the overlap's end leaves the overlap as it was.
+    """
+    keep = max(0, keep)
+    return (slice(sa.start, min(sa.stop, sa.start + keep)),
+            slice(sb.start, min(sb.stop, sb.start + keep)))
+
+
+def compare_features(a: Features, b: Features, lag_hops: int,
+                     window_s: float | None = None) -> dict:
     """Score two aligned feature sets.
+
+    `window_s` SCORES A FIXED PREFIX OF THE ALIGNED OVERLAP -- the alignment
+    is the caller's and was found on the whole render; only the scoring is
+    cut. It exists because every column here is a MEAN OVER FRAMES, so a
+    defect of fixed length is diluted in proportion to the window it is
+    measured in: sound_calibrate.py's W_A_R pair (a ~40 s event in 20-60 s
+    of the render, measured at 50a6178, HISTORICAL) read `aud` +0.167 over a
+    60 s window and +0.066 over 180 s -- its share of the mean halved as the
+    window tripled, and would read ~0.02 at 600 s. A check whose margin
+    shrinks with the render length is a check on the render length. `None`
+    scores the whole overlap, which is what every FIDELITY column does.
+
+    The cut is on the OVERLAP, not on either side's own timeline: after
+    `_overlap` the two slices begin where the sides coincide, so the prefix
+    is the first `window_s` seconds of material both sides have. With the
+    lags this repo sees (a few hops, the packed player's startup) that is
+    the original's first `window_s` seconds to within a hop.
 
     THE BAND DENOMINATOR IS THE BANDS THAT SOUND, NOT ALL 64 -- and the plan
     this module was transcribed from (`docs/superpowers/plans/
@@ -321,6 +351,8 @@ def compare_features(a: Features, b: Features, lag_hops: int) -> dict:
     -- the frame-level rules are the plan's and are unchanged.
     """
     sa, sb = _overlap(a, b, lag_hops)
+    if window_s is not None:
+        sa, sb = _prefix(sa, sb, int(window_s / a.hop_s))
     la, lb = a.logmel[sa], b.logmel[sb]
     ra, rb = a.rms_db[sa], b.rms_db[sb]
     on_a, on_b = ra > SILENCE_DB, rb > SILENCE_DB
@@ -348,15 +380,21 @@ def compare_features(a: Features, b: Features, lag_hops: int) -> dict:
     return {"aud": aud, "loud": loud, "loud_ratio": ratio, "sound_frames": n}
 
 
-def compare_wavs(a: Path, b: Path, prior_s: float | None = None) -> dict:
-    """`a` is the original, `b` ours. Aligns on the envelope, then scores."""
+def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
+                 window_s: float | None = None) -> dict:
+    """`a` is the original, `b` ours. Aligns on the envelope, then scores.
+
+    `window_s` cuts the SCORING to a prefix of the aligned overlap; the
+    alignment itself is always found on the whole render (see
+    `compare_features`).
+    """
     xa, ra = read_wav_mono(a)
     xb, rb = read_wav_mono(b)
     if ra != rb:
         raise ValueError(f"sample rates differ: {ra} vs {rb}")
     fa, fb = features(xa, ra), features(xb, rb)
     lag = align(fa, fb, prior_s=prior_s)
-    got = compare_features(fa, fb, lag)
+    got = compare_features(fa, fb, lag, window_s=window_s)
     got["sound_lag_ms"] = round(1000.0 * lag * fa.hop_s, 1)
     return got
 
@@ -399,13 +437,17 @@ def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
 def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
                  sub_ours: int, prior_s: float | None = None,
                  cache: Path = AUDIO_DIR,
-                 renderer=listen.render_sidplayfp) -> dict:
+                 renderer=listen.render_sidplayfp,
+                 window_s: float | None = None) -> dict:
     """Render both sides with ONE renderer and score them.
 
     A pair split across two emulators would measure the emulators; the
     `renderer` is a single callable for exactly that reason (listen.py's
     `pick_renderer` rule). A failed render names its side rather than
     scoring a silent WAV against music.
+
+    `window_s` scores a prefix of the aligned overlap (`compare_features`);
+    the render is still `seconds` long, so the cache key does not move.
     """
     a = render_cached(orig, seconds, sub_orig, "orig", cache, renderer)
     if a is None:
@@ -413,6 +455,6 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
     b = render_cached(ours, seconds, sub_ours, "ours", cache, renderer)
     if b is None:
         return {"sound_failed": "ours"}
-    got = compare_wavs(a, b, prior_s=prior_s)
+    got = compare_wavs(a, b, prior_s=prior_s, window_s=window_s)
     got["sound_cache"] = [a.name, b.name]
     return got

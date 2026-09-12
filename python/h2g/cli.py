@@ -128,8 +128,10 @@ def main(argv=None) -> int:
              "every note on the record's width -- FIDELITY.md's pspan read "
              "5 Title Tunes at 0.47x and pphase at 0.25x for exactly this; "
              "with the option both read 1.0x with every other column "
-             "unchanged. Costs pattern copies and pulse-table entries; "
-             "single-speed files only for now. Off by default: it changes "
+             "unchanged. Costs pattern copies and pulse-table entries; a "
+             "multispeed file's commands are budgeted per pattern, dropping "
+             "CMD_SETPULSEPTR first-fit once a pattern would pack past "
+             "greloc.c's 256-byte limit. Off by default: it changes "
              "the output bytes")
     parser.add_argument(
         "--vibrato", action="store_true",

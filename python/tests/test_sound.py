@@ -123,6 +123,77 @@ def test_compare_wavs_aligns_then_scores(tmp_path):
     assert abs(got["sound_lag_ms"] - 100.0) < 25.0
 
 
+# --------------------------------------------------------------------------
+# `window_s`: a prefix of the ALIGNED overlap. The pair below differs only in
+# 2.5-4 s of a 6 s signal, so a 2 s prefix sees identical material and reads
+# exactly 1.0 (the gap is there because a frame is 2048 samples wide -- a
+# difference starting AT 2.0 s reaches 16 frames of a 2 s prefix and reads
+# 0.9936, measured), the whole reads under it, and a window past the end is
+# the whole. All three matter: the first alone passes on a slice from the wrong
+# end, the second alone on a window that is ignored.
+# --------------------------------------------------------------------------
+def _pair_differing_in(t0, t1, seconds=6.0, hz_other=880.0):
+    a = _sine(seconds)
+    b = a.copy()
+    i0, i1 = int(t0 * RATE), int(t1 * RATE)
+    b[i0:i1] = _sine(seconds, hz=hz_other)[i0:i1]
+    return a, b
+
+
+def test_window_s_scores_a_prefix_of_the_overlap_and_none_scores_the_whole():
+    a, b = _pair_differing_in(2.5, 4.0)
+    fa, fb = sound.features(a, RATE), sound.features(b, RATE)
+    prefix = sound.compare_features(fa, fb, 0, window_s=2.0)
+    whole = sound.compare_features(fa, fb, 0)
+    beyond = sound.compare_features(fa, fb, 0, window_s=1000.0)
+    assert prefix["aud"] == pytest.approx(1.0, abs=1e-9), (
+        "the first 2 s are identical on both sides; a prefix that sees the "
+        "880 Hz stretch is not a prefix")
+    assert whole["aud"] < 0.9
+    assert beyond == whole, "a window past the overlap's end is the whole overlap"
+    # and the prefix is that many frames, not some other count
+    assert prefix["sound_frames"] == int(2.0 / fa.hop_s)
+
+
+def test_window_s_is_cut_after_alignment_not_before():
+    """`b` is delayed 0.2 s. Aligned, its first 2 s of material are the
+    original's first 2 s and the prefix scores clean; scored at lag 0 the same
+    prefix compares the tone against 0.2 s of silence and reads lower. If the
+    cut were taken on either side's own timeline before the lag was applied,
+    the two would not separate this way."""
+    a, b = _pair_differing_in(2.5, 4.0)
+    delayed = np.concatenate([np.zeros(int(0.2 * RATE), dtype=np.float32), b])
+    fa, fb = sound.features(a, RATE), sound.features(delayed, RATE)
+    lag = sound.align(fa, fb, prior_s=0.0, window_s=0.5)
+    assert abs(lag * fa.hop_s - 0.2) <= 2 * fa.hop_s
+    aligned = sound.compare_features(fa, fb, lag, window_s=2.0)
+    unaligned = sound.compare_features(fa, fb, 0, window_s=2.0)
+    assert aligned["aud"] > 0.99
+    assert unaligned["aud"] < aligned["aud"] - 0.05
+
+
+def test_prefix_keeps_both_slices_aligned_under_a_negative_lag():
+    """`_overlap` under a negative lag starts `a` late and `b` at 0; the prefix
+    must cut both at the same length from their own starts."""
+    sa, sb = sound._overlap(sound.features(_sine(1.0), RATE),
+                            sound.features(_sine(1.0), RATE), -10)
+    pa, pb = sound._prefix(sa, sb, 50)
+    assert (pa.start, pa.stop) == (10, 60)
+    assert (pb.start, pb.stop) == (0, 50)
+    # a window past the end leaves the overlap as it was
+    assert sound._prefix(sa, sb, 10 ** 9) == (sa, sb)
+
+
+def test_compare_wavs_passes_window_s_through(tmp_path):
+    a, b = _pair_differing_in(2.5, 4.0)
+    _write(tmp_path / "a.wav", a)
+    _write(tmp_path / "b.wav", b)
+    prefix = sound.compare_wavs(tmp_path / "a.wav", tmp_path / "b.wav", window_s=2.0)
+    whole = sound.compare_wavs(tmp_path / "a.wav", tmp_path / "b.wav")
+    assert prefix["aud"] == pytest.approx(1.0, abs=1e-9)
+    assert whole["aud"] < 0.9
+
+
 def _fake_renderer(samples_by_name: dict):
     """A renderer that writes a synthetic WAV keyed by the .sid's stem, and
     counts how often it was asked -- the cache's whole contract is that the
@@ -173,6 +244,20 @@ def test_compare_sids_scores_the_two_renders(tmp_path):
     assert got["aud"] > 0.99
     assert got["loud_ratio"] == pytest.approx(0.5, rel=0.02)
     assert len(got["sound_cache"]) == 2
+
+
+def test_compare_sids_passes_window_s_through_without_moving_the_cache_key(tmp_path):
+    o, u = tmp_path / "O.sid", tmp_path / "U.sid"
+    o.write_bytes(b"orig"), u.write_bytes(b"ours")
+    a, b = _pair_differing_in(2.5, 4.0)
+    r = _fake_renderer({"O": a, "U": b})
+    prefix = sound.compare_sids(o, u, 6, 0, 0, cache=tmp_path / "c", renderer=r,
+                                window_s=2.0)
+    whole = sound.compare_sids(o, u, 6, 0, 0, cache=tmp_path / "c", renderer=r)
+    assert prefix["aud"] == pytest.approx(1.0, abs=1e-9)
+    assert whole["aud"] < 0.9
+    assert prefix["sound_cache"] == whole["sound_cache"]
+    assert r.calls == ["O.sid", "U.sid"], "the window is scoring, not rendering"
 
 
 def test_compare_sids_names_the_failed_side(tmp_path):

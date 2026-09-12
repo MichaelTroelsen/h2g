@@ -3379,3 +3379,33 @@ def test_the_retracted_claim_is_retracted_where_a_grep_for_it_lands():
         "claim as absent rather than as corrected")
     assert "WRONG ABOUT THE EMITTER" in block
     assert "det.pitch_seq" in block
+
+
+# --- option_drift: a JSON round-tripped tuple must not read as a difference -
+
+def test_option_drift_normalizes_json_round_tripped_tuple_vs_list():
+    """A baseline JSON round-trips a tuple option value (e.g.
+    real_firstwave_instruments=()) as a list ([]). option_drift must not
+    report that as a settings difference when the two sides are otherwise
+    identical -- () != [] in plain Python, which is exactly what happens
+    when `base` comes from json.load() and `new` still holds live tuples."""
+    base = {"a.sid": {"options": {"real_firstwave_instruments": []}, "multiplier": 1}}
+    new = {"a.sid": {"options": {"real_firstwave_instruments": ()}, "multiplier": 1}}
+    assert fidelity.option_drift(base, new) == []
+
+
+def test_option_drift_still_reports_a_real_difference():
+    base = {"a.sid": {"options": {"real_firstwave_instruments": [1, 2]}, "multiplier": 1}}
+    new = {"a.sid": {"options": {"real_firstwave_instruments": (3, 4)}, "multiplier": 1}}
+    drift = fidelity.option_drift(base, new)
+    assert len(drift) == 1
+    assert "real_firstwave_instruments" in drift[0]
+    assert "(1, 2)" in drift[0] and "(3, 4)" in drift[0]
+
+
+def test_option_drift_still_reports_multiplier_difference():
+    base = {"a.sid": {"options": {}, "multiplier": 1}}
+    new = {"a.sid": {"options": {}, "multiplier": 2}}
+    drift = fidelity.option_drift(base, new)
+    assert len(drift) == 1
+    assert "multiplier" in drift[0]

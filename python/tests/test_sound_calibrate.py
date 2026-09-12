@@ -6,9 +6,12 @@ still by hand. `convert_at` WAS in that list and no longer is: the last test
 in this file calls it for real with only its two OS boundaries faked, and the
 sentence that excluded it survived the test that contradicted it for as long
 as it took to read the file. What this file pins is: each
-reduction function (`shift_movement`, `noise_floor`, `closeness_floor`,
-`worse_by`, `worse_by_loud`, `comparable`, `known_bad_passed`,
-`rank_in_corpus`, `resolve_version_sha`) against fixed numbers, AND
+reduction function (`shift_movement`, `shift_movements`, `noise_floor`,
+`closeness_floor`, `worse_by`, `worse_by_loud`, `comparable`,
+`known_bad_passed`, `rank_in_corpus`, `resolve_version_sha`) against fixed
+numbers, `score_pair` and `CHECK_WINDOW_S` -- the prefix checks 2-4 are
+scored over -- against a synthetic pair whose defect has a known share of
+each window, AND
 `render_doc` -- the function that turns a calibration result into
 `docs/SOUND-CALIBRATION.md` -- against every verdict branch, on a
 hand-built fixture rather than a real run."""
@@ -38,6 +41,141 @@ def test_shift_movement_is_small_for_an_inaudible_shift():
 
 def test_noise_floor_is_the_largest_movement_seen():
     assert C.noise_floor([0.001, 0.004, 0.002]) == 0.004
+
+
+# --------------------------------------------------------------------------
+# CHECK_WINDOW_S: checks 2-4 score a fixed prefix of the aligned render.
+#
+# `aud` and `loud` are means over frames, so a defect of fixed length reads
+# smaller the longer the render it is averaged into -- W_A_R's ~40 s event
+# read +0.168 at 60 s and +0.066 at 180 s (50a6178, historical). The pair
+# below is that shape made synthetic: 180 s of one tone, the "bad" build a
+# different tone in 20-60 s and the "good" build identical to the original.
+# The whole-window margin is then EXACTLY the prefix margin diluted by
+# 180/60, which is what the 3x assertion pins.
+# --------------------------------------------------------------------------
+_LOW_RATE = 16000          # 180 s at 44.1 kHz is a 1 GB feature pass; 16 kHz keeps
+                           # F_MAX (8 kHz) inside Nyquist and the test under a few s
+
+
+def _tone(seconds, hz, rate=_LOW_RATE, amp=0.5):
+    t = np.arange(int(seconds * rate)) / rate
+    return (amp * np.sin(2 * np.pi * hz * t)).astype(np.float32)
+
+
+def _write(path, samples, rate=_LOW_RATE):
+    import wave
+    pcm = np.clip(samples * 32767, -32768, 32767).astype("<i2").tobytes()
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+
+
+def _fixed_defect_pair(tmp_path, total_s=180.0, t0=20.0, t1=60.0):
+    """(orig, bad, good) WAV paths: bad differs from orig only in [t0, t1)."""
+    orig = _tone(total_s, 440.0)
+    bad = orig.copy()
+    i0, i1 = int(t0 * _LOW_RATE), int(t1 * _LOW_RATE)
+    bad[i0:i1] = _tone(total_s, 880.0)[i0:i1]
+    paths = {}
+    for name, x in (("orig", orig), ("bad", bad), ("good", orig)):
+        paths[name] = tmp_path / f"{name}.wav"
+        _write(paths[name], x)
+    return paths
+
+
+def _renders_from(paths, monkeypatch):
+    """`score_pair` renders through `sound.render_cached`; hand it the WAVs
+    by the .sid's stem instead, and count what it asked for."""
+    calls = []
+
+    def fake(sid, seconds, sub, tag, *a, **k):
+        calls.append((sid.stem, seconds, tag))
+        return paths[sid.stem]
+    monkeypatch.setattr(C.sound, "render_cached", fake)
+    return calls
+
+
+def test_check_window_is_sixty_seconds():
+    assert C.CHECK_WINDOW_S == 60
+
+
+def test_a_fixed_defect_reads_three_times_larger_on_the_prefix_than_on_the_whole(
+        tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop the `window_s` slice from `sound.compare_features`
+    (or stop `score_pair` passing CHECK_WINDOW_S) and the prefix margin equals
+    the whole margin, so the 3x ratio below reads 1x and this fails.
+
+    The defect occupies 40 s. Averaged over the 60 s prefix it is 2/3 of the
+    frames; over 180 s, 2/9. The ratio of the two `worse_by` margins is
+    therefore 180/60 = 3, to within the frame rounding at the window edges.
+    """
+    paths = _fixed_defect_pair(tmp_path)
+    calls = _renders_from(paths, monkeypatch)
+    bad_prefix, bad_whole = C.score_pair(tmp_path / "orig.sid", tmp_path / "bad.sid", 180, 0)
+    good_prefix, good_whole = C.score_pair(tmp_path / "orig.sid", tmp_path / "good.sid", 180, 0)
+    m_prefix = C.worse_by(bad_prefix, good_prefix)
+    m_whole = C.worse_by(bad_whole, good_whole)
+    assert good_prefix["aud"] == pytest.approx(1.0, abs=1e-9)
+    assert m_whole > 0.05, f"the whole-window margin must see the defect at all: {m_whole}"
+    assert m_prefix / m_whole == pytest.approx(3.0, rel=0.03), (
+        f"prefix {m_prefix:.4f} / whole {m_whole:.4f} = {m_prefix / m_whole:.3f}x; "
+        f"a 40 s defect in a {C.CHECK_WINDOW_S} s prefix of a 180 s render is 3x "
+        f"its whole-window share -- if this reads 1x, the prefix is not being cut")
+    # the prefix is scored, not re-rendered: one render per side per pair
+    assert [c[1] for c in calls] == [180] * 4
+    # and the frames the prefix scored are CHECK_WINDOW_S worth, not the whole
+    assert bad_prefix["sound_frames"] == int(C.CHECK_WINDOW_S / (sound.HOP / _LOW_RATE))
+    assert bad_whole["sound_frames"] > 2.9 * bad_prefix["sound_frames"]
+
+
+def test_score_pair_names_a_failed_render_on_both_windows(monkeypatch):
+    monkeypatch.setattr(C.sound, "render_cached",
+                        lambda sid, *a, **k: None if sid.stem == "U" else sid)
+    got = C.score_pair(pathlib.Path("O.sid"), pathlib.Path("U.sid"), 1, 0)
+    assert got == ({"sound_failed": "ours"}, {"sound_failed": "ours"})
+
+
+def test_shift_movement_over_a_window_is_the_windowed_movement():
+    """`shift_movements` scores several windows from one feature pass and
+    `shift_movement(window_s=w)` is its single-window face; the floor for
+    checks 3 and 4 is the one measured over CHECK_WINDOW_S, so the two must
+    agree on it."""
+    s = _sine(4.0)
+    both = C.shift_movements(s, RATE, [0.003, 0.02], [1.0, None])
+    assert both[0] == C.shift_movement(s, RATE, [0.003, 0.02], window_s=1.0)
+    assert both[1] == C.shift_movement(s, RATE, [0.003, 0.02])
+    assert all(0.0 <= m < 0.01 for m in both)
+
+
+def test_main_scores_checks_2_to_4_through_the_windowed_paths_only():
+    """A guard on the wiring `main` is hand-run through: it must reach the
+    scoring only via `shift_movements` (handed CHECK_WINDOW_S) and
+    `score_pair`, never `sound.compare_sids`/`compare_wavs`/`compare_features`
+    directly, since those default to the whole window. Check 1 is the one
+    exception and calls `compare_features` on identical features, where a
+    window changes nothing."""
+    text = pathlib.Path(C.__file__).read_text(encoding="utf-8")
+    main = next(n for n in ast.walk(ast.parse(text))
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    calls = [n for n in ast.walk(main) if isinstance(n, ast.Call)]
+
+    def name(c):
+        return c.func.attr if isinstance(c.func, ast.Attribute) else getattr(c.func, "id", None)
+    names = [name(c) for c in calls]
+    assert "compare_sids" not in names and "compare_wavs" not in names
+    assert names.count("score_pair") >= 2, "checks 3 and 4 both go through score_pair"
+    shift = [c for c in calls if name(c) == "shift_movements"]
+    assert shift, "check 2 goes through shift_movements"
+    assert any(isinstance(n, ast.Name) and n.id == "CHECK_WINDOW_S"
+               for c in shift for n in ast.walk(c)), (
+        "check 2's floor must be measured over CHECK_WINDOW_S")
+    pair_src = ast.get_source_segment(text, next(
+        n for n in ast.walk(ast.parse(text))
+        if isinstance(n, ast.FunctionDef) and n.name == "score_pair"))
+    assert "CHECK_WINDOW_S" in pair_src
 
 
 def test_closeness_floor_is_the_least_agreement_a_human_called_the_same():
@@ -265,12 +403,16 @@ def _out(**kw):
     out = {
         "version": "0.5.460", "head": "826dec8", "seconds": 60,
         "pass": True, "noise_floor": 0.0051, "closeness_floor": 0.9,
+        "check_window_s": 60,
+        "whole": {"noise_floor": 0.0052, "closeness_floor": 0.89},
         "checks": {
             "identity": {"Commando": {"aud": 1.0, "loud": 1.0,
                                       "loud_ratio": 1.0}},
-            "shift": {"movements": [0.001, 0.002]},
+            "shift": {"movements": [0.001, 0.002],
+                      "whole": {"movements": [0.0015, 0.0025]}},
             "inaudible": [{"file": "ACE_II", "versions": ["a", "b"],
-                           "aud": 0.97, "loud": 0.96}],
+                           "aud": 0.97, "loud": 0.96,
+                           "whole": {"aud": 0.96, "loud": 0.95}}],
             "known_bad": [],
             "approved_rank": {"Commando": {"rank": 2, "of": 89,
                                            "upper_half": True}},
@@ -372,6 +514,36 @@ def test_the_header_names_why_the_window_was_chosen_not_just_which():
     assert "approvals.py" in doc
     assert "180 s" in doc
     assert "different quantity" in doc
+
+
+def test_the_header_says_checks_2_to_4_are_scored_over_the_prefix_and_shows_both_floors():
+    """A reader of the doc applies the floors somewhere -- approvals.py over
+    the whole window -- so the doc must say which window each floor is about
+    and print the whole-window pair beside the prefix pair, never one that
+    reads as the other."""
+    doc = C.render_doc(_out(seconds=180, check_window_s=60,
+                            whole={"noise_floor": 0.0033, "closeness_floor": 0.955}))
+    assert "first 60 s of the aligned 180 s render" in doc
+    assert "CHECK_WINDOW_S" in doc
+    assert "0.0033" in doc and "0.9550" in doc
+    assert "`approvals.py` applies the floors over the whole window" in doc
+    # and the per-row whole figures are in the tables
+    doc = C.render_doc(_out(checks=dict(
+        _out()["checks"], known_bad=[_bad(whole={"worse_by": 0.033})])))
+    assert "| +0.100 | +0.033 |" in doc
+    assert "| 0.9700 | 0.9600 | 0.9600 | 0.9500 |" in doc
+
+
+def test_a_result_without_a_check_window_still_renders():
+    """Older JSON (pre-CHECK_WINDOW_S) has neither key; the doc must not
+    invent a window for it."""
+    out = _out()
+    del out["check_window_s"], out["whole"]
+    out["checks"]["shift"].pop("whole")
+    out["checks"]["inaudible"][0].pop("whole")
+    doc = C.render_doc(out)
+    assert "CHECK_WINDOW_S" not in doc
+    assert "| 0.9700 | 0.9600 | - | - |" in doc
 
 
 def test_the_document_has_all_five_sections_and_ends_with_a_newline():

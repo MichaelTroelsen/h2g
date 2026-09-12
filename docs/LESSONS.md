@@ -1553,9 +1553,9 @@ test dependency).
     otherwise assume this pair had moved too. **RE-GRADED AT v0.5.481: the pair
     is no longer window-robust in the sense above, because `wave` moved for a
     different reason -- Kings of the Beach ingame now reads
-    `wave` 94.4% / `gate` 85.2%** after the pulse writer reached it (`pul` 3 -> 1182, `pspan`
-    0.00 -> 1.00 in the 0.5.475 -> 0.5.481 A/B); `gate` is unchanged, and the
-    84.8% above is HISTORY.
+    `wave` 94.4% / `gate` 85.2%** after the pulse writer reached it (`pul`
+    3 -> 1182, `pspan` 0.00 -> 1.00 in the 0.5.475 -> 0.5.481 A/B); `gate` is
+    unchanged, and the 84.8% above is HISTORY.
   And the sentence this paragraph used to end on -- "the last two matter
   because two OPEN tasks key their verify on them" -- is itself HISTORY:
   checked against `.claude/tasks/whattask.json` at v0.5.454, **no task quotes

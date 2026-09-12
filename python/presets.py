@@ -108,6 +108,40 @@ FIXED = {"fmt": FORMAT_GTS5, "tempo": "auto", "legal_restart": True,
          "rest_instrument": True, "compact_instruments": True,
          "voice_two_stage": True, "rest_keyoff": True}
 
+# HOW MANY CORPUS FILES EACH `always` FLAG ACTUALLY REACHES. A policy flag
+# that moves no bytes on any file is indistinguishable, from inside this
+# dict, from one the whole corpus depends on -- both read `True`. This table
+# is the measurement: for each boolean FIXED flag, the number of the 89
+# converting corpus files whose .sng bytes CHANGE when that one flag is
+# flipped off with every other always-block flag held at its shipped
+# setting (C:/t/name-the-minority-of-files-e/census.py, sha256 of the
+# emitted bytes, run record `name-the-minority-of-files-each-always-flag-
+# actually-earns-its-place-on`). MEASURED AT v0.5.483 / 50a6178; a figure
+# in the present tense decays, so re-run the census before quoting one.
+#   Two flags are live on NOTHING as shipped -- reject_phantoms and
+#   rest_instrument: nothing in this corpus distinguishes their True from
+#   their False. Two are live on EVERY file -- compact_instruments and
+#   no_hard_restart -- the strongest evidence any always flag has. The
+#   rest are a minority of files each, which is what the ratio column in
+#   SURVEY.md cannot show. This is a one-flag-at-a-time MARGINAL census: a
+#   flag masked by another always-on flag reads inert here and may not be
+#   inert with both removed (`multi-flag-interaction-census-for-the-near-
+#   inert-always-flags` measures that).
+# tests/test_presets.py checks this table names every boolean FIXED flag,
+# so a new always flag cannot be added without a count -- or an explicit
+# `None` saying it has not been measured.
+LIVE_ON = {
+    "legal_restart": 30, "silent_park": 30, "skip_gate": 47,
+    "slides": 28, "effects": 72, "status_bit6": 56,
+    "reject_phantoms": 0, "fold_transpose": 14,
+    "sustain_exact": 67, "no_hard_restart": 89,
+    "filters": 26, "pulse": 71, "vibrato": 82,
+    "vibrato_command": 25, "cut_release": 31, "tie": 66,
+    "rest_instrument": 0, "compact_instruments": 89,
+    "voice_two_stage": 1, "rest_keyoff": 56,
+}
+LIVE_ON_MEASURED_AT = "0.5.483"
+
 # convert() options deliberately NOT in the `always` block, and why. Every
 # other option must appear there: one left out silently measures as doing
 # nothing, which is how --slides and --filter each shipped dead.

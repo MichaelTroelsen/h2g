@@ -28,6 +28,15 @@ Five checks:
                      half on `aud`; if one does not, the doc says which of
                      (metric, approval) to check and picks neither
 
+CHECKS 2, 3 AND 4 SCORE THE FIRST `CHECK_WINDOW_S` SECONDS OF THE ALIGNED
+RENDER, not the whole of it -- see the constant's own comment. The render
+is still `-t` seconds long and the alignment is found on all of it; only the
+scoring is cut, so nothing is re-rendered and the cache keys do not move.
+Each of the three also records the whole-window figure beside the prefix
+one, because `approvals.py` applies the two floors over the whole window
+and the doc has to show the reader both quantities rather than one that
+reads as the other.
+
 The v0.5.177 half-speed Last_V8 audition the spec listed under check 4 is a
 siddump TRACE trap (calls per frame), not a render: sidplayfp plays a packed
 .sid at its own multispeed, so there is no wrong-rate WAV to score. Left out
@@ -90,6 +99,31 @@ ROOT = Path(__file__).resolve().parent.parent
 RASTERLINES_48_S = 48 * 63 / 985248.0     # PAL cycles per line / cycles per second
 FRAME_S = 0.02
 
+# THE WINDOW CHECKS 2-4 ARE SCORED OVER, IN SECONDS OF THE ALIGNED RENDER.
+#
+# `aud` and `loud` are means over frames, so a defect of FIXED length is
+# diluted in proportion to the window it is averaged into -- and check 4's
+# margin was shrinking with the render length rather than with anything about
+# the metric. Measured at 50a6178 (HISTORICAL; the live figures are in
+# build/sound_calibration.json): W_A_R 0.5.399 -> 0.5.400 read `aud` +0.1683
+# over a 60 s render and +0.0658 over 180 s, `loud` +0.0876 and +0.0391; its
+# defect is a ~40 s event in 20-60 s (10 s bins read d_aud +0.205/+0.204/
+# +0.320/+0.296 there and -0.010..+0.038 after), so its share of the mean
+# halves as the window triples and would sit near 0.02 at 600 s. Human_Race
+# 0.5.329 -> 0.5.330 read `loud` +0.0136 at 60 s and -0.0003 at 180 s, the
+# good build's ratio sliding to 0.755 from 140 s on. Scoring the FIRST 60 s
+# OF THE 180 s RENDER (sliced after `sound.align` on the whole, no re-render)
+# reproduced the 60 s verdicts to 0.001: W_A_R +0.1672/+0.0879, Human_Race
+# -0.0051/+0.0136, noise floor 0.0018 on the prefix and 0.0018 on the whole.
+#
+# 60 and not a sliding maximum: the best 10 s window over 35 positions is a
+# maximum over windows, which can only rise, and it turned Samantha_Fox into a
+# comparable-and-unseen FAIL. A fixed prefix is one number per pair and the
+# same number whatever `-t` the render was made at, which is the property
+# this constant exists for. Check 1 is unaffected (identity is 1.0 over any
+# window) and check 5 reads build/fidelity.json, which is whole-window.
+CHECK_WINDOW_S = 60
+
 INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # **W_A_R IS THE ONLY PAIR HERE THE `aud` COLUMN CAN VALIDATE, ADDED v0.5.469.**
 # The three original pairs leave `aud` unexercised: two are EXCLUDED (their good
@@ -127,8 +161,9 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # this module's header (grep `multiplier: 1, bytes: 12444`), the W_A_R note
 # just above, and `comparable`'s own docstring (grep `quartering the 60 s
 # render`). All three figures below are HISTORICAL at the versions named --
-# build/sound_calibration.json is currently stamped v0.5.474 at 60 s renders,
-# so re-measure before quoting any of them as live.
+# build/sound_calibration.json was stamped v0.5.474 at 60 s renders when this
+# was written and 180 s renders scored over CHECK_WINDOW_S since, so re-measure
+# before quoting any of them as live.
 #
 # THREE OUTCOMES, and a candidate has to be checked against all three:
 #
@@ -165,16 +200,62 @@ KNOWN_BAD = [("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
 
 
 # ---- pure reductions ------------------------------------------------------
-def shift_movement(samples: np.ndarray, rate: int, shifts_s: list[float]) -> float:
-    """Largest movement of aud/loud when one side is delayed by each shift."""
+def shift_movement(samples: np.ndarray, rate: int, shifts_s: list[float],
+                   window_s: float | None = None) -> float:
+    """Largest movement of aud/loud when one side is delayed by each shift.
+
+    `window_s` scores the first `window_s` seconds of the aligned overlap;
+    the alignment is found on the whole signal either way. A floor has to be
+    measured over the same window the margins it bounds are, so `main` passes
+    CHECK_WINDOW_S here and to checks 3 and 4 alike.
+    """
+    return shift_movements(samples, rate, shifts_s, [window_s])[0]
+
+
+def shift_movements(samples: np.ndarray, rate: int, shifts_s: list[float],
+                    windows_s: list[float | None]) -> list[float]:
+    """`shift_movement` over several windows from ONE set of features -- the
+    features of a 180 s render are the expensive part, and `main` wants the
+    prefix floor and the whole-window floor of the same signal."""
     a = sound.features(samples, rate)
-    worst = 0.0
+    worst = [0.0] * len(windows_s)
     for s in shifts_s:
         d = np.concatenate([np.zeros(int(round(s * rate)), dtype=np.float32), samples])
         b = sound.features(d, rate)
-        got = sound.compare_features(a, b, sound.align(a, b))
-        worst = max(worst, abs(1.0 - (got["aud"] or 0.0)), abs(1.0 - (got["loud"] or 0.0)))
+        lag = sound.align(a, b)
+        for i, w in enumerate(windows_s):
+            got = sound.compare_features(a, b, lag, window_s=w)
+            worst[i] = max(worst[i], abs(1.0 - (got["aud"] or 0.0)),
+                           abs(1.0 - (got["loud"] or 0.0)))
     return worst
+
+
+def score_pair(orig: Path, ours: Path, seconds: int, sub: int) -> tuple[dict, dict]:
+    """`sound.compare_sids` on the prefix AND on the whole from one feature
+    pass: (prefix, whole). The prefix is what checks 3 and 4 decide on; the
+    whole is recorded beside it. Two `compare_sids` calls would featurise
+    each 180 s render twice, and the features are the cost once the renders
+    are cached. A failed render names its side on both, as `compare_sids`
+    does."""
+    a = sound.render_cached(orig, seconds, sub, "orig")
+    if a is None:
+        return {"sound_failed": "orig"}, {"sound_failed": "orig"}
+    b = sound.render_cached(ours, seconds, sub, "ours")
+    if b is None:
+        return {"sound_failed": "ours"}, {"sound_failed": "ours"}
+    xa, ra = sound.read_wav_mono(a)
+    xb, rb = sound.read_wav_mono(b)
+    if ra != rb:
+        raise ValueError(f"sample rates differ: {ra} vs {rb}")
+    fa, fb = sound.features(xa, ra), sound.features(xb, rb)
+    lag = sound.align(fa, fb)
+    out = []
+    for w in (CHECK_WINDOW_S, None):
+        got = sound.compare_features(fa, fb, lag, window_s=w)
+        got["sound_lag_ms"] = round(1000.0 * lag * fa.hop_s, 1)
+        got["sound_cache"] = [a.name, b.name]
+        out.append(got)
+    return out[0], out[1]
 
 
 def noise_floor(movements: list[float]) -> float:
@@ -372,8 +453,10 @@ def main(argv=None) -> int:
     approved = json.loads((ROOT / "approved.json").read_text(encoding="utf-8"))["tunes"]
     names = [n for n in approved if (sid_dir / f"{n}.sid").exists()]
 
-    # 1 + 2: identity and shift, over every approved tune's original.
-    idents, moves = {}, []
+    # 1 + 2: identity and shift, over every approved tune's original. The
+    # floor that DECIDES is the prefix one; the whole-window one is recorded
+    # beside it because approvals.py applies it over the whole window.
+    idents, moves, moves_whole = {}, [], []
     for n in names:
         sid = sid_dir / f"{n}.sid"
         sub = F.resolve_subtune(sid, "auto")
@@ -383,9 +466,15 @@ def main(argv=None) -> int:
         x, rate = sound.read_wav_mono(wav)
         f = sound.features(x, rate)
         idents[n] = sound.compare_features(f, f, 0)
-        moves.append(shift_movement(x, rate, [RASTERLINES_48_S, FRAME_S]))
+        m_prefix, m_whole = shift_movements(x, rate, [RASTERLINES_48_S, FRAME_S],
+                                            [CHECK_WINDOW_S, None])
+        moves.append(m_prefix)
+        moves_whole.append(m_whole)
     checks["identity"] = idents
-    checks["shift"] = {"movements": moves, "noise_floor": noise_floor(moves)}
+    checks["shift"] = {"movements": moves, "noise_floor": noise_floor(moves),
+                       "window_s": CHECK_WINDOW_S,
+                       "whole": {"movements": moves_whole,
+                                 "noise_floor": noise_floor(moves_whole)}}
 
     # 3: the pair a listener called inaudible.
     pairs = []
@@ -396,8 +485,9 @@ def main(argv=None) -> int:
         b = convert_at(v_new, sid, workdir, args.gt2reloc, mult)
         if a and b:
             sub = F.resolve_subtune(sid, "auto")
-            got = sound.compare_sids(a.sid, b.sid, args.seconds, sub, sub)
-            got.update(file=name, versions=[v_old, v_new])
+            got, whole = score_pair(a.sid, b.sid, args.seconds, sub)
+            got.update(file=name, versions=[v_old, v_new],
+                       whole={k: whole.get(k) for k in ("aud", "loud", "loud_ratio")})
             pairs.append(got)
     checks["inaudible"] = pairs
     closeness = closeness_floor(pairs) if pairs else None
@@ -413,8 +503,8 @@ def main(argv=None) -> int:
         if not (pb and pg):
             bad.append({"file": name, "error": "could not build both versions"})
             continue
-        gb = sound.compare_sids(sid, pb.sid, args.seconds, sub, sub)
-        gg = sound.compare_sids(sid, pg.sid, args.seconds, sub, sub)
+        gb, wb = score_pair(sid, pb.sid, args.seconds, sub)
+        gg, wg = score_pair(sid, pg.sid, args.seconds, sub)
         floor = checks["shift"]["noise_floor"]
         why = comparable(gb, gg)
         row = {"file": name, "versions": [v_bad, v_good],
@@ -422,7 +512,14 @@ def main(argv=None) -> int:
                "worse_by": worse_by(gb, gg),
                "worse_by_loud": worse_by_loud(gb, gg),
                "loud_ratio": [gb.get("loud_ratio"), gg.get("loud_ratio")],
-               "incomparable": why}
+               "incomparable": why,
+               # The whole-window reading, RECORDED AND NOT SCORED: it is the
+               # figure the check used to rest on, kept so the doc can show
+               # how much of the prefix margin the window was hiding.
+               "whole": {"worse_by": worse_by(wb, wg),
+                         "worse_by_loud": worse_by_loud(wb, wg),
+                         "loud_ratio": [wb.get("loud_ratio"), wg.get("loud_ratio")],
+                         "incomparable": comparable(wb, wg)}}
         # Either column seeing it is enough; neither is the failure. And an
         # incomparable pair is NEITHER seen nor unseen -- it is excluded, with
         # its reason recorded, because scoring it would report a build problem
@@ -447,8 +544,15 @@ def main(argv=None) -> int:
               and closeness is not None
               and known_bad_passed(bad))
     out = {"version": __version__, "head": F.git_label(ROOT), "seconds": args.seconds,
+           "check_window_s": CHECK_WINDOW_S,
            "noise_floor": checks["shift"]["noise_floor"],
-           "closeness_floor": closeness, "checks": checks, "pass": passed}
+           "closeness_floor": closeness,
+           # The same two floors over the whole render, for a reader that
+           # applies them over the whole render (approvals.py does).
+           "whole": {"noise_floor": checks["shift"]["whole"]["noise_floor"],
+                     "closeness_floor": (closeness_floor([p["whole"] for p in pairs])
+                                         if pairs else None)},
+           "checks": checks, "pass": passed}
     Path(args.json).parent.mkdir(parents=True, exist_ok=True)
     Path(args.json).write_text(json.dumps(out, indent=2) + "\n", encoding="utf-8")
     Path(args.output).write_text(render_doc(out), encoding="utf-8")
@@ -456,8 +560,14 @@ def main(argv=None) -> int:
     return 0 if passed else 1
 
 
+def _fmt(v, spec: str = ".4f") -> str:
+    return "-" if v is None else format(v, spec)
+
+
 def render_doc(out: dict) -> str:
     c = out["checks"]
+    win = out.get("check_window_s")
+    whole = out.get("whole") or {}
     lines = ["# Sound calibration", "",
              f"Generated by `python/sound_calibrate.py` (h2g {out['version']}, "
              f"{out['head']}), {out['seconds']} s renders. **PASS**" if out["pass"]
@@ -470,30 +580,50 @@ def render_doc(out: dict) -> str:
              "at, and a floor measured at any other window is a floor about a "
              "different quantity -- re-run this calibration at the window "
              "`approvals.py` currently uses, not at a convenient one.",
-             "",
-             "The two numbers every decision uses, measured here and typed nowhere:", "",
-             f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest movement of "
-             "`aud`/`loud` under a 3 ms (48 rasterline) and a 20 ms (one frame) delay "
-             "of one side. A change smaller than this is not a change.",
-             f"* **closeness floor** = `{out['closeness_floor']}` -- the least agreement "
-             "between two renders a listener called the same (check 3). A build at "
-             "least this close to an approved render sounds like what was approved.",
-             "", "## 1. Identity", "", "| tune | aud | loud | ratio |", "|---|---:|---:|---:|"]
+             ""]
+    if win is not None:
+        lines += [f"**Checks 2, 3 and 4 are scored over the first {win} s of the "
+                  f"aligned {out['seconds']} s render** (`CHECK_WINDOW_S`; the "
+                  "alignment is found on the whole render and only the scoring is "
+                  "cut). `aud` and `loud` are means over frames, so a defect of "
+                  "fixed length is diluted in proportion to the window it is "
+                  "averaged into, and a margin that shrinks as the render grows "
+                  "is a fact about the render length, not the metric. Each "
+                  "table below carries the whole-window figure beside the prefix "
+                  "one; the prefix decides. Over the whole render the two floors "
+                  f"read noise `{_fmt(whole.get('noise_floor'))}` and closeness "
+                  f"`{_fmt(whole.get('closeness_floor'))}` -- `approvals.py` "
+                  "applies the floors over the whole window, so those are the "
+                  "ones to read beside its verdicts.", ""]
+    lines += ["The two numbers every decision uses, measured here and typed nowhere:", "",
+              f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest movement of "
+              "`aud`/`loud` under a 3 ms (48 rasterline) and a 20 ms (one frame) delay "
+              "of one side. A change smaller than this is not a change.",
+              f"* **closeness floor** = `{out['closeness_floor']}` -- the least agreement "
+              "between two renders a listener called the same (check 3). A build at "
+              "least this close to an approved render sounds like what was approved.",
+              "", "## 1. Identity", "", "| tune | aud | loud | ratio |", "|---|---:|---:|---:|"]
     for n, v in c["identity"].items():
         lines.append(f"| {n} | {v['aud']:.4f} | {v['loud']:.4f} | {v['loud_ratio']:.3f} |")
     lines += ["", "## 2. Inaudible shift", "",
-              f"Movements per tune: {', '.join(f'{m:.4f}' for m in c['shift']['movements'])}",
-              "", "## 3. A change a listener called inaudible", "",
-              "| file | versions | aud | loud |", "|---|---|---:|---:|"]
+              f"Movements per tune: {', '.join(f'{m:.4f}' for m in c['shift']['movements'])}"]
+    if c["shift"].get("whole"):
+        lines.append(f"Whole-window movements per tune: "
+                     f"{', '.join(f'{m:.4f}' for m in c['shift']['whole']['movements'])}")
+    lines += ["", "## 3. A change a listener called inaudible", "",
+              "| file | versions | aud | loud | aud (whole) | loud (whole) |",
+              "|---|---|---:|---:|---:|---:|"]
     for pr in c["inaudible"]:
+        w = pr.get("whole") or {}
         lines.append(f"| {pr['file']} | {' -> '.join(pr['versions'])} | "
-                     f"{pr['aud']:.4f} | {pr['loud']:.4f} |")
+                     f"{pr['aud']:.4f} | {pr['loud']:.4f} | "
+                     f"{_fmt(w.get('aud'))} | {_fmt(w.get('loud'))} |")
     lines += ["", "## 4. Known-bad builds", "",
-              "| file | bad -> good | aud bad | aud good | worse by | seen? |",
-              "|---|---|---:|---:|---:|---|"]
+              "| file | bad -> good | aud bad | aud good | worse by | worse by (whole) | seen? |",
+              "|---|---|---:|---:|---:|---:|---|"]
     for b in c["known_bad"]:
         if "error" in b:
-            lines.append(f"| {b['file']} | - | - | - | - | {b['error']} |")
+            lines.append(f"| {b['file']} | - | - | - | - | - | {b['error']} |")
         else:
             if b.get("incomparable"):
                 verdict = f"EXCLUDED -- {b['incomparable']}"
@@ -503,8 +633,10 @@ def render_doc(out: dict) -> str:
                            f"does not see it")
             else:
                 verdict = "NO -- a blind spot; name it in the Dimension"
+            w = b.get("whole") or {}
             lines.append(f"| {b['file']} | {' -> '.join(b['versions'])} | {b['bad']:.3f} | "
-                         f"{b['good']:.3f} | {b['worse_by']:+.3f} | {verdict} |")
+                         f"{b['good']:.3f} | {b['worse_by']:+.3f} | "
+                         f"{_fmt(w.get('worse_by'), '+.3f')} | {verdict} |")
     lines += ["", "## 5. Where the approved tunes sit", "",
               "| tune | rank | of | upper half? |", "|---|---:|---:|---|"]
     for n, v in c["approved_rank"].items():

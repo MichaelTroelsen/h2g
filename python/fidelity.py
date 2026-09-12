@@ -6086,6 +6086,15 @@ def settings_mismatch(base: dict, new: dict) -> list[str]:
     return bad
 
 
+def _normalize_opt_value(v):
+    """JSON round-trips a tuple option value as a list; a list and the
+    equal-contents tuple it came from must compare equal here, or every
+    --baseline A/B leads with a false `real_firstwave_instruments [] -> ()`
+    line even when nothing differed (`_preset_opts` builds it as a tuple,
+    the --json writer serializes it as a list -- ()  != [] in Python)."""
+    return tuple(v) if isinstance(v, list) else v
+
+
 def option_drift(base: dict, new: dict) -> list[str]:
     """Conversion settings that differ, aggregated over the files they differ on."""
     diffs: dict[tuple, set] = {}
@@ -6096,8 +6105,9 @@ def option_drift(base: dict, new: dict) -> list[str]:
         bo = base[name].get("options") or {}
         no = n.get("options") or {}
         for k in set(bo) | set(no):
-            if bo.get(k) != no.get(k):
-                diffs.setdefault((k, repr(bo.get(k)), repr(no.get(k))), set()).add(name)
+            bv, nv = _normalize_opt_value(bo.get(k)), _normalize_opt_value(no.get(k))
+            if bv != nv:
+                diffs.setdefault((k, repr(bv), repr(nv)), set()).add(name)
         if base[name].get("multiplier") != n.get("multiplier"):
             diffs.setdefault(("multiplier", repr(base[name].get("multiplier")),
                               repr(n.get("multiplier"))), set()).add(name)
