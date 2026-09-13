@@ -97,13 +97,37 @@ def approved_tunes() -> dict:
 
 
 def load_calibration() -> dict | None:
+    """The calibration, with `noise_floor`/`closeness_floor` overridden to the
+    WHOLE-WINDOW figures, not sound_calibrate.py's top-level ones.
+
+    Since checks 2-4 moved to scoring a `CHECK_WINDOW_S` (60 s) prefix of the
+    aligned render, `sound_calibrate.py`'s top-level `noise_floor` and
+    `closeness_floor` are PREFIX quantities, and the whole-window figures live
+    under `cal["whole"]` (docs/SOUND-CALIBRATION.md). `assess()` below never
+    passes `window_s` to `sound.compare_sids` -- it scores the WHOLE aligned
+    overlap between a build and the original/approved render, not a
+    `CHECK_WINDOW_S` prefix of it. A prefix floor bounds how much a quantity
+    scored over 60 s can move; applying it to a quantity scored over the
+    whole render compares two different things, and the whole-window floor is
+    reliably the LOOSER of the two here (0.0018 vs 0.0018 noise, 0.9698 vs
+    0.9726 closeness) only by coincidence of this corpus -- nothing guarantees
+    that ordering in general, so this does not substitute one for the other by
+    assumption. Read the whole-window figures instead: the doc's own text
+    ("`approvals.py` applies the floors over the whole window, so those are
+    the ones to read beside its verdicts") already says this is the intended
+    behaviour. A calibration file with no `whole` block, or one whose `whole`
+    is missing `closeness_floor`, is treated the same as an absent
+    calibration -- there is no floor left that describes what `assess()`
+    actually measures.
+    """
     path = ROOT / "build" / "sound_calibration.json"
     if not path.exists():
         return None
     cal = json.loads(path.read_text(encoding="utf-8"))
-    if not cal.get("pass") or cal.get("closeness_floor") is None:
+    whole = cal.get("whole") or {}
+    if not cal.get("pass") or whole.get("noise_floor") is None or whole.get("closeness_floor") is None:
         return None
-    return cal
+    return dict(cal, noise_floor=whole["noise_floor"], closeness_floor=whole["closeness_floor"])
 
 
 def load_approvals_json() -> dict:

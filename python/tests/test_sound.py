@@ -236,6 +236,61 @@ def test_render_cached_returns_none_when_the_renderer_fails(tmp_path):
                                renderer=lambda *a, **k: False) is None
 
 
+# --------------------------------------------------------------------------
+# `render_repeat`: a FRESH render every call, because the noise floor is the
+# render's reproducibility. sidplayfp's power-on delay is random by default
+# (`--delay=<n>` fixes it; listen.render_sidplayfp does not pass it), so two
+# renders of one .sid differ -- and `render_cached`, by design, can never
+# see that: its second ask for the same bytes is free.
+# --------------------------------------------------------------------------
+def test_render_repeat_renders_fresh_every_call_and_numbers_the_results(tmp_path):
+    """SABOTAGE TARGET: make `render_repeat` return the existing renders
+    without rendering (a cache hit) and the second call's count stays at 1."""
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    r = _fake_renderer({"Tune": _sine(0.5)})
+    first = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
+    second = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
+    assert r.calls == ["Tune.sid", "Tune.sid"], "every call renders again"
+    key = sound.content_key(sid)
+    assert [p.name for p in first] == [f"repeat.{key}.s0.t1.r1.wav"]
+    assert [p.name for p in second] == [f"repeat.{key}.s0.t1.r1.wav",
+                                        f"repeat.{key}.s0.t1.r2.wav"]
+    assert all(p.exists() for p in second)
+    # and the cached render of the same bytes is a different file, untouched
+    c = sound.render_cached(sid, 1, 0, "orig", cache=tmp_path / "c", renderer=r)
+    assert c.name == f"orig.{key}.s0.t1.wav" and c not in second
+
+
+def test_render_repeat_keeps_only_the_newest_and_a_failed_render_adds_nothing(tmp_path):
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    r = _fake_renderer({"Tune": _sine(0.5)})
+    for _ in range(4):
+        have = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
+                                   renderer=r, keep=3)
+    assert [p.name.rsplit(".", 2)[1] for p in have] == ["r2", "r3", "r4"]
+    assert not (tmp_path / "c" / f"repeat.{sound.content_key(sid)}.s0.t1.r1.wav").exists()
+    # a failed render: what was there is returned, nothing is added or removed
+    got = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
+                              renderer=lambda *a, **k: False, keep=3)
+    assert got == have
+    # numbering continues from the highest on disk, not from the count
+    have = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
+                               renderer=r, keep=3)
+    assert have[-1].name.endswith(".r5.wav")
+
+
+def test_render_repeat_keys_on_content_like_render_cached(tmp_path):
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    r = _fake_renderer({"Tune": _sine(0.5)})
+    a = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
+    sid.write_bytes(b"PSID-bytes-2")
+    b = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
+    assert a[0].name != b[0].name and len(b) == 1
+
+
 def test_compare_sids_scores_the_two_renders(tmp_path):
     o, u = tmp_path / "O.sid", tmp_path / "U.sid"
     o.write_bytes(b"orig"), u.write_bytes(b"ours")

@@ -2510,3 +2510,15 @@ Rules:
   `graphify update .` once, the same way `SURVEY.md`/`presets.json`/
   `FIDELITY.md` are regenerated once on `master` after merges rather than by
   each branch.
+
+- **The repo fixture is not the corpus copy, even of the same tune.**
+  `Commando.sid` in the repo root is the corpus `Commando.sid`'s player saved
+  mid-run: `fixed_arp_first_fetch` reads 1 on the fixture and 0 on the corpus
+  file, so the first attack lands one frame later, and a fixed-arp phase
+  tabled from the fixture's siddump was one frame off on every corpus file
+  sharing that player (v0.5.485, `tests/test_arp_octave.py` pins both
+  readings: fixture base 0 / first 1, corpus `PHASE_READINGS`). The
+  byte-exact test could not see it — the fixture converts with `effects`
+  off. Rule in `CLAUDE.md` § Emitting, the global-counter bullet: read the
+  counter's base and first fetch off the player, never off a trace of one
+  file. Same family as "A fixture is not the corpus" under Preset search.

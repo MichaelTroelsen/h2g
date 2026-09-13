@@ -11577,3 +11577,59 @@ with each other; only the labels were wrong. Both corrections are cheap —
 reachability is a set of PCs, the value is one memory read — and both have to
 be instrumented in the *same run* as the ablation, or the label is a guess
 dressed as an observation.
+
+### 7.bbbbbb The fixed-arp phase is per note, static, and carried per instrument
+
+§7.jjj put the octave alternation on the right *call* and left its *phase*
+alone, on the argument the global-counter rule in `CLAUDE.md` makes: the block
+reads a counter the play entry `INC`s every call (`$5525` in Commando) and
+takes the octave where `AND #$01` is odd, so which frame of a note is up
+depends on the frame the note attacked on — and a wavetable restarts at every
+note, so it cannot know. That argument is right about the wavetable and wrong
+about the knowledge. The counter's value at a note's attack is not a runtime
+accident; it is a sum of three things the file already holds.
+
+**The base.** What the counter reads on frame `k`, less `k`. Two spellings in
+the corpus: the new-song path clears it after the increment (Commando `$5012
+INC $5525 … LDA #0 / STA $5525`), so frame 0 reads 0 — base 0; or nothing in
+the file ever stores it (Hunter_Patrol `$A006 INC $A426` straight into the
+sequencer), so frame `k` reads the file's own byte plus `k` plus one. Measured
+against siddumps of the originals at v0.5.485: the six reset files put the
+octave on odd frames and Hunter_Patrol, whose byte is `$1E`, on even ones. The
+one file that disagreed with the six is the one whose player differs — which
+is what makes it a derivation rather than a table.
+
+**The first fetch.** The speed gate is `DEC ctr / BPL / LDA reload / STA ctr`
+then `LDA ctr / CMP reload / BNE`: a voice takes a new event only on the call
+that reloads the counter, which is the call on which it underflows, and the
+init does not write the counter. So the byte in the file *is* the frame of
+the first row, and every later row lands `reload + 1` calls after it.
+Measured on seven files, first attack frame in the original's siddump against
+the byte: seven of seven.
+
+**The row.** Attack frame `a` = first fetch + row index × frames per row, the
+row length from `SongSpeeds.frames_for`. Checked on Hunter_Patrol voice 2:
+131 attacks of 131 on the frame the walk names.
+
+Then `base + a` even means the first octave lands on `a + 1`, odd on `a + 2`,
+and the emitter walks the finished orderlists and patterns in play order, one
+lap, repeats expanded, instrument column sticky, and lets each note vote for
+its instrument; the instrument takes the majority (`fixed_arp_phases`). That
+is exact whenever a row is an even number of frames, or all of an
+instrument's notes sit on rows of one parity — and wrong on the minority
+otherwise: Hunter_Patrol instrument 11 attacks 60:36 across the two parities,
+and the 36 get the other file's phase. A per-note split, two wavetables per
+record chosen by attack parity, is the shape that would fix those, at the
+cost of instrument budget; it is opened, not built.
+
+**The trap that cost the first attempt.** The phase was first read off a
+siddump of `Commando.sid` — the repo fixture, not the corpus file — and the
+two disagree: the fixture is the same player saved mid-run, so its gate
+counter byte is 1 where the corpus copy's is 0, and it attacks one frame
+later. A phase tabled from the fixture's trace is off by one on every corpus
+file that shares its player, and nothing in the byte-exact test can see it,
+because the fixture is converted with `effects` off. The rule that survives:
+read the base and the first fetch *off the player's bytes*
+(`fixed_arp_counter_base`, `fixed_arp_first_fetch`), and let
+`tests/test_arp_octave.py` re-measure both against the originals' traces
+every run, the fixture asserted separately at base 0 / first 1.

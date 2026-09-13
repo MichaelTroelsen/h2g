@@ -640,6 +640,41 @@ def check_j(tasks, closed, runs_last):
     return out
 
 
+# ---- C: a path named in `verify` that no `touches` entry covers -------
+C_PATHRE = re.compile(r"\b((?:python|docs|build|tests|\.claude)/"
+                      r"[A-Za-z0-9_./-]+)\b")
+C_EXTENSIONS = ("py", "md", "json", "exe", "js", "txt", "sid", "sng", "wav")
+C_ATTR_RE = re.compile(r"^(.*/[A-Za-z0-9_]+)\.([A-Za-z_][A-Za-z0-9_]*)$")
+
+
+def check_c(tasks):
+    """(id, hit, why) for every verify path token no touches entry covers.
+
+    `tests/test_x.attr` is a module attribute, not a path: the dotted tail
+    is an identifier, and the file it names is `tests/test_x.py`. Measured
+    at d2160e0 on design-a-cross-voice-synchronised-filter-clear-via-
+    cmd-setfilterctrl, whose touches already granted the .py file -- the
+    check read the container (a slash-bearing token) for its subject.
+    """
+    gaps = []
+    for t in tasks:
+        g = dict((p, m) for m, p in (split(x) for x in t["touches"]))
+        for hit in sorted(set(C_PATHRE.findall(t.get("verify") or ""))):
+            norm = hit if hit.startswith(("python/", "docs/", "build/",
+                                          ".claude/")) else "python/" + hit
+            forms = [norm, hit]
+            attr = C_ATTR_RE.match(norm)
+            if attr and attr.group(2) not in C_EXTENSIONS:
+                forms.append(attr.group(1) + ".py")
+            covered = None
+            for p, m in g.items():
+                if any(overlaps(f, p) for f in forms):
+                    covered = "rw" if (covered == "rw" or m == "rw") else m
+            if covered is None:
+                gaps.append((t["id"], hit, "ABSENT from touches"))
+    return gaps
+
+
 def main() -> int:
     if not PLAN.exists():
         print("no plan at %s -- run /whattask first" % PLAN)
@@ -685,20 +720,7 @@ def main() -> int:
         print()
 
     # ---- C ---------------------------------------------------------------
-    PATHRE = re.compile(r"\b((?:python|docs|build|tests|\.claude)/"
-                        r"[A-Za-z0-9_./-]+)\b")
-    gaps = []
-    for t in tasks:
-        g = dict((p, m) for m, p in (split(x) for x in t["touches"]))
-        for hit in sorted(set(PATHRE.findall(t.get("verify") or ""))):
-            norm = hit if hit.startswith(("python/", "docs/", "build/",
-                                          ".claude/")) else "python/" + hit
-            covered = None
-            for p, m in g.items():
-                if overlaps(norm, p) or overlaps(hit, p):
-                    covered = "rw" if (covered == "rw" or m == "rw") else m
-            if covered is None:
-                gaps.append((t["id"], hit, "ABSENT from touches"))
+    gaps = check_c(tasks)
     if gaps:
         print("C. path named in `verify` but not covered by `touches`:")
         for i, h, why in gaps:

@@ -6,12 +6,13 @@ still by hand. `convert_at` WAS in that list and no longer is: the last test
 in this file calls it for real with only its two OS boundaries faked, and the
 sentence that excluded it survived the test that contradicted it for as long
 as it took to read the file. What this file pins is: each
-reduction function (`shift_movement`, `shift_movements`, `noise_floor`,
-`closeness_floor`, `worse_by`, `worse_by_loud`, `comparable`,
-`known_bad_passed`, `rank_in_corpus`, `resolve_version_sha`) against fixed
-numbers, `score_pair` and `CHECK_WINDOW_S` -- the prefix checks 2-4 are
-scored over -- against a synthetic pair whose defect has a known share of
-each window, AND
+reduction function (`shift_movement`, `shift_movements`,
+`shift_movements_each`, `half_hop_s`, `rerender_movements`, `floors`,
+`lost_to_floor`, `noise_floor`, `closeness_floor`, `worse_by`,
+`worse_by_loud`, `comparable`, `known_bad_passed`, `rank_in_corpus`,
+`resolve_version_sha`) against fixed numbers, `score_pair` and
+`CHECK_WINDOW_S` -- the prefix checks 2-4 are scored over -- against a
+synthetic pair whose defect has a known share of each window, AND
 `render_doc` -- the function that turns a calibration result into
 `docs/SOUND-CALIBRATION.md` -- against every verdict branch, on a
 hand-built fixture rather than a real run."""
@@ -167,15 +168,116 @@ def test_main_scores_checks_2_to_4_through_the_windowed_paths_only():
     names = [name(c) for c in calls]
     assert "compare_sids" not in names and "compare_wavs" not in names
     assert names.count("score_pair") >= 2, "checks 3 and 4 both go through score_pair"
-    shift = [c for c in calls if name(c) == "shift_movements"]
-    assert shift, "check 2 goes through shift_movements"
+    shift = [c for c in calls if name(c) == "shift_movements_each"]
+    assert shift, "check 2 goes through shift_movements_each"
     assert any(isinstance(n, ast.Name) and n.id == "CHECK_WINDOW_S"
                for c in shift for n in ast.walk(c)), (
         "check 2's floor must be measured over CHECK_WINDOW_S")
+    # ...and the half-hop shift is in the list it is handed: the 3 ms and
+    # 20 ms shifts are 4 and 14 samples off a hop node and read 0.0018 where
+    # the half-hop reads 0.0077 (d2160e0, historical).
+    assert any(name(n) == "half_hop_s" for c in shift for n in ast.walk(c)
+               if isinstance(n, ast.Call)), "check 2 must shift by half a hop"
+    rerender = [c for c in calls if name(c) == "rerender_movements"]
+    assert rerender, "check 2 measures a second render against the cached one"
+    assert any(isinstance(n, ast.Name) and n.id == "CHECK_WINDOW_S"
+               for c in rerender for n in ast.walk(c)), (
+        "the re-render movement must be measured over CHECK_WINDOW_S")
+    assert any(name(c) == "render_repeat" for c in calls), (
+        "the second render must be FRESH (sound.render_repeat), not render_cached: "
+        "a cached one would compare the render against itself")
     pair_src = ast.get_source_segment(text, next(
         n for n in ast.walk(ast.parse(text))
         if isinstance(n, ast.FunctionDef) and n.name == "score_pair"))
     assert "CHECK_WINDOW_S" in pair_src
+
+
+# --------------------------------------------------------------------------
+# Check 2's floor is the render's reproducibility, not the grid's.
+#
+# The 3 ms and 20 ms shifts are 132 and 882 samples: 4 and 14 samples off a
+# 128-sample hop node, which `align` nearly absorbs, so the 0.0018 they read
+# was a grid node. Half a hop (64 samples) is the shift no integer lag can
+# fix, and a second render of the same bytes (sidplayfp's power-on delay is
+# random by default) is larger still: 0.0031-0.0202 at d2160e0, historical.
+# --------------------------------------------------------------------------
+def _bursts(seconds=4.0, rate=RATE, hz=440.0, period_s=0.25, duty=0.5):
+    """A tone gated on and off: attacks are what a sub-hop shift smears."""
+    t = np.arange(int(seconds * rate)) / rate
+    gate = ((t % period_s) < period_s * duty).astype(np.float32)
+    return (0.5 * np.sin(2 * np.pi * hz * t) * gate).astype(np.float32)
+
+
+def test_half_a_hop_is_half_a_hop_in_samples():
+    assert C.HALF_HOP_SAMPLES == sound.HOP // 2
+    for rate in (16000, 44100, 48000):
+        assert int(round(C.half_hop_s(rate) * rate)) == sound.HOP // 2
+
+
+def test_the_half_hop_shift_moves_the_score_more_than_the_two_grid_node_shifts():
+    """SABOTAGE TARGET: hand check 2 the two old shifts only and the floor
+    reads the grid node again. The two old shifts sit 4 and 14 samples off a
+    hop node and are nearly absorbed; the half-hop is the residue the grid
+    cannot represent, so its row is the largest."""
+    s = _bursts()
+    each = C.shift_movements_each(s, RATE, [C.RASTERLINES_48_S, C.FRAME_S, C.half_hop_s(RATE)],
+                                  [1.0, None])
+    assert len(each) == 3 and all(len(row) == 2 for row in each)
+    for w in (0, 1):
+        assert each[2][w] > max(each[0][w], each[1][w]), (
+            f"window {w}: half-hop {each[2][w]:.4f} vs 3 ms {each[0][w]:.4f}, "
+            f"20 ms {each[1][w]:.4f}")
+    # and the two-shift maximum is what `shift_movements` still reports
+    assert C.shift_movements(s, RATE, [C.RASTERLINES_48_S, C.FRAME_S], [1.0, None]) == [
+        max(each[0][0], each[1][0]), max(each[0][1], each[1][1])]
+    # `feats` is the caller's feature pass, and it must not change the answer
+    again = C.shift_movements_each(s, RATE, [C.half_hop_s(RATE)], [1.0],
+                                   feats=sound.features(s, RATE))
+    assert again == [[each[2][0]]]
+
+
+def test_rerender_movement_is_zero_for_a_copy_and_not_for_a_delayed_one(tmp_path):
+    """SABOTAGE TARGET: compare the repeat renders against THEMSELVES (or drop
+    the alignment search) and the delayed copy reads 0.0 too."""
+    s = _bursts(2.0, rate=_LOW_RATE)
+    same, late = tmp_path / "r1.wav", tmp_path / "r2.wav"
+    _write(same, s)
+    _write(late, np.concatenate([np.zeros(sound.HOP // 2, dtype=np.float32), s]))
+    # the cached render's features, read back through the same 16-bit path
+    f = sound.features(*sound.read_wav_mono(same))
+    got = C.rerender_movements(f, [same, late], 1.0)
+    assert got[0] == pytest.approx(0.0, abs=1e-9)
+    assert got[1] > 0.0
+    # a whole-hop delay IS absorbed by the search, so that one reads 0.0
+    whole = tmp_path / "r3.wav"
+    _write(whole, np.concatenate([np.zeros(sound.HOP, dtype=np.float32), s]))
+    assert C.rerender_movements(f, [whole], 1.0)[0] == pytest.approx(0.0, abs=1e-9)
+    assert C.rerender_movements(f, [], 1.0) == []
+
+
+def test_floors_adopt_the_largest_of_shift_and_rerender():
+    """SABOTAGE TARGET: adopt `shift_floor` alone and the render floor is
+    recorded but decides nothing -- the second assertion is the one that
+    fails."""
+    got = C.floors(moves=[0.004, 0.007], grid=[0.001, 0.002], rerender=[0.003, 0.020, 0.011])
+    assert got == {"noise_floor": 0.020, "shift_floor": 0.007,
+                   "grid_floor": 0.002, "rerender_floor": 0.020}
+    # and the other way round when the grid is the larger
+    got = C.floors(moves=[0.030], grid=[0.001], rerender=[0.020])
+    assert got["noise_floor"] == 0.030
+    # no repeat renders at all is a floor of 0 on that axis, not a crash
+    assert C.floors([0.004], [0.001], [])["rerender_floor"] == 0.0
+
+
+def test_lost_to_floor_names_the_pairs_the_render_floor_loses():
+    rows = [{"file": "Human_Race.sid", "seen": False, "seen_under_grid_floor": True},
+            {"file": "W_A_R.sid", "seen": True, "seen_under_grid_floor": True},
+            {"file": "Las_Vegas.sid", "seen": False, "seen_under_grid_floor": False,
+             "incomparable": "loud ratio"},
+            {"file": "Never.sid", "seen": False, "seen_under_grid_floor": False},
+            {"file": "Broke.sid", "error": "could not build"}]
+    assert C.lost_to_floor(rows) == ["Human_Race.sid"]
+    assert C.lost_to_floor([]) == []
 
 
 def test_closeness_floor_is_the_least_agreement_a_human_called_the_same():
@@ -532,6 +634,83 @@ def test_the_header_says_checks_2_to_4_are_scored_over_the_prefix_and_shows_both
         _out()["checks"], known_bad=[_bad(whole={"worse_by": 0.033})])))
     assert "| +0.100 | +0.033 |" in doc
     assert "| 0.9700 | 0.9600 | 0.9600 | 0.9500 |" in doc
+
+
+def _with_render_floor(**kw):
+    """A result carrying check 2's three floors and a repeat render."""
+    out = _out(noise_floor=0.0202, grid_floor=0.0018, shift_floor=0.0077,
+               rerender_floor=0.0202)
+    out["whole"].update(grid_floor=0.0018, shift_floor=0.0070, rerender_floor=0.0190,
+                        noise_floor=0.0190)
+    out["checks"]["shift"].update(
+        grid_floor=0.0018, shift_floor=0.0077, rerender_floor=0.0202,
+        noise_floor=0.0202, grid_movements=[0.0015, 0.0018],
+        half_hop_movements=[0.0066, 0.0077], half_hop_samples=64,
+        rerender={"movements": {"ACE_II": [0.0134, 0.0031],
+                                "Devils_Galop": [0.0202]},
+                  "seconds": 60, "renders": 3})
+    out["checks"]["known_bad_lost_to_floor"] = []
+    out.update(kw)
+    return out
+
+
+def test_the_header_states_the_rerender_movement_and_that_it_is_the_renders_floor():
+    """The doc's first job is to say what the floor IS: a second render of
+    the same original against the cached one, because sidplayfp's power-on
+    delay is random. Both the number and the cause must be in the header."""
+    doc = C.render_doc(_with_render_floor())
+    assert "**noise floor** = `0.0202`" in doc
+    assert ("a second render of the same original against the cached one (`0.0202` "
+            "over 3 repeat renders of 60 s)") in doc
+    assert "power-on delay is random unless `--delay=<n>` is passed" in doc
+    assert "render's own reproducibility" in doc
+    # a maximum over samples of a random variable is a lower bound, and the
+    # doc must say so rather than print one run's roll of the dice as THE floor
+    assert "lower bound that rises as runs accumulate" in doc
+    assert "the remedy is the renderer's flag, not a wider floor" in doc
+    # the two smaller floors are printed beside it, named
+    assert "`0.0018`, the figure this file used to call the floor" in doc
+    assert "half a hop (`64` samples; with the first two, `0.0077`)" in doc
+    # and check 2 lists each component per tune
+    assert "Of which the 3 ms and 20 ms shifts alone (the grid floor): 0.0015, 0.0018" in doc
+    assert "Half a hop (64 samples) alone: 0.0066, 0.0077" in doc
+    assert ("A second render against the cached one (60 s, fresh every run): "
+            "ACE_II 0.0134, 0.0031; Devils_Galop 0.0202") in doc
+    assert "It loses no known-bad pair the grid floor saw." in doc
+
+
+def test_a_pair_the_render_floor_loses_is_named_in_the_header_and_in_its_row():
+    """SABOTAGE TARGET: drop the `seen_under_grid_floor` branch from the
+    check 4 verdict and Human_Race prints as a blind spot -- which is what
+    the row said before the floor was the render's, and is wrong: the metric
+    saw it, the render cannot resolve it."""
+    out = _with_render_floor()
+    out["checks"]["known_bad"] = [_bad(file="Human_Race", worse_by=-0.0051,
+                                       worse_by_loud=0.0136, seen=False,
+                                       seen_under_grid_floor=True, floor=0.0202)]
+    out["checks"]["known_bad_lost_to_floor"] = ["Human_Race"]
+    doc = C.render_doc(out)
+    assert "**Adopting it loses a pair the grid floor saw: `Human_Race`**" in doc
+    assert "read that row of check 4 as a margin inside the render's noise" in doc
+    assert ("NO -- inside the render floor (+0.0136 against 0.0202); the grid floor "
+            "alone saw it, so this is the render's noise, not a blind spot") in doc
+    assert "a blind spot; name it in the Dimension" not in doc
+
+
+def test_a_pair_no_floor_sees_is_still_a_blind_spot():
+    out = _with_render_floor()
+    out["checks"]["known_bad"] = [_bad(seen=False, seen_under_grid_floor=False)]
+    doc = C.render_doc(out)
+    assert "NO -- a blind spot; name it in the Dimension" in doc
+    assert "inside the render floor" not in doc
+
+
+def test_a_result_without_a_render_floor_prints_the_old_header():
+    """Pre-render-floor JSON has none of the new keys; the doc must print the
+    two-shift sentence it always did, not a header full of `-`."""
+    doc = C.render_doc(_out())
+    assert "under a 3 ms (48 rasterline) and a 20 ms (one frame) delay" in doc
+    assert "repeat renders" not in doc and "grid floor" not in doc
 
 
 def test_a_result_without_a_check_window_still_renders():

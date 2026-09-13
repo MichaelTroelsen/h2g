@@ -5726,6 +5726,53 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
     return _pulse_triangle(width, det.pulse_tri_lo, det.pulse_tri_hi, speed)
 
 
+def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
+                   lead: int, share: bool
+                   ) -> tuple[List[tuple], List[int], int, int, int]:
+    """One pass over the records' programs into a table of GT_MAX_TABLELEN.
+
+    Returns (entries, starts, dropped, silent, shared). With `share`, a
+    program identical to one already in the table -- same entries, same
+    loop index -- is not written again: its record points at the block that
+    is already there. The block's `(0xFF, start + loop)` jump encodes an
+    ABSOLUTE table index, so a block is emitted once at one start and every
+    sharer names that start; the key is (entries, loop), not the finished
+    block, because the finished block differs by the start it was written at.
+    """
+    entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
+    starts = [1] * lead                # the empty Clear Voice, if present
+    placed: dict = {}                  # (program, loop) -> 1-based start
+    dropped = silent = shared = 0
+    for (program, loop), static in zip(programs, statics):
+        key = (tuple(program), loop)
+        if share and key in placed:
+            starts.append(placed[key])
+            shared += 1
+            continue
+        start = len(entries) + 1
+        block = program if loop is None else program + [(0xFF, start + loop)]
+        if len(entries) + len(block) > GT_MAX_TABLELEN:
+            # Out of table: keep the instrument, lose only its movement.
+            dropped += 1
+            key = (tuple(static), None)
+            if share and key in placed:
+                starts.append(placed[key])
+                shared += 1
+                continue
+            block = static
+        if len(entries) + len(block) > GT_MAX_TABLELEN:
+            # Not even the static pair fits. Pointer 0 leaves the pulse width
+            # alone (readme.txt:714) -- the record must still get one, or every
+            # instrument after it reads another instrument's program.
+            starts.append(0)
+            silent += 1
+            continue
+        placed[key] = start
+        starts.append(start)
+        entries += block
+    return entries, starts, dropped, silent, shared
+
+
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                   pulse: bool, multiplier: int,
                   log=None, lead: int = 1) -> tuple[List[tuple], List[int]]:
@@ -5734,27 +5781,29 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     Entries were a fixed two per instrument until the sweep gave some of them
     four or more, so the start positions are returned rather than computed from
     a stride -- `_write_instruments` writes them into the records.
+
+    One block per record, as always, while every record's own block fits.
+    When one does not, the table is laid out again with identical programs
+    SHARED -- a record whose (entries, loop) another record already placed
+    points at that block instead of getting a second copy -- and only then
+    does a record lose its sweep to the static pair. Sharing is a rescue and
+    keeps the rescue's ordering: it never touches a file whose table was
+    already whole, because an unshared block that fits is exactly what the
+    fixture and every measured conversion encode.
     """
-    entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
-    starts = [1] * lead                # the empty Clear Voice, if present
-    dropped = silent = 0
-    for i in range(max(instr_used - lead, 0)):
-        program, loop = _pulse_program(sid, det, i, pulse, multiplier)
-        start = len(entries) + 1
-        block = program if loop is None else program + [(0xFF, start + loop)]
-        if len(entries) + len(block) > GT_MAX_TABLELEN:
-            # Out of table: keep the instrument, lose only its movement.
-            block, _ = _pulse_program(sid, det, i, False, multiplier)
-            dropped += 1
-        if len(entries) + len(block) > GT_MAX_TABLELEN:
-            # Not even the static pair fits. Pointer 0 leaves the pulse width
-            # alone (readme.txt:714) -- the record must still get one, or every
-            # instrument after it reads another instrument's program.
-            starts.append(0)
-            silent += 1
-            continue
-        starts.append(start)
-        entries += block
+    nrec = max(instr_used - lead, 0)
+    programs = [_pulse_program(sid, det, i, pulse, multiplier)
+                for i in range(nrec)]
+    statics = [_pulse_program(sid, det, i, False, multiplier)[0]
+               for i in range(nrec)]
+    entries, starts, dropped, silent, shared = _lay_out_pulse(
+        programs, statics, lead, share=False)
+    if dropped:
+        entries, starts, dropped, silent, shared = _lay_out_pulse(
+            programs, statics, lead, share=True)
+    if log and shared:
+        log(f"*** PULSE TABLE FULL -- {shared} INSTRUMENT(S) SHARE A BLOCK "
+            f"IDENTICAL TO AN EARLIER ONE ***")
     if log and dropped:
         log(f"*** PULSE TABLE FULL -- {dropped} INSTRUMENT(S) KEEP A STATIC "
             f"WIDTH INSTEAD OF THEIR SWEEP"

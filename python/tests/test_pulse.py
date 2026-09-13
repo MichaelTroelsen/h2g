@@ -293,15 +293,73 @@ def test_the_static_layout_is_exactly_two_entries_per_instrument():
 
 def test_a_full_table_keeps_the_instrument_and_loses_only_its_sweep():
     """Falling back to the static two entries is the only safe overflow: an
-    instrument without a pulse pointer plays with whatever the table holds."""
+    instrument without a pulse pointer plays with whatever the table holds.
+    The records differ in width so that no two programs are identical --
+    identical ones are shared before anything is dropped (the tests below)."""
     n = 50
-    sid = _sid([_record(rate=0x01)] * n, [0xF0] * n)
+    sid = _sid([_record(pulse_lo=i, rate=0x01) for i in range(n)], [0xF0] * n)
     messages = []
     entries, starts = _pulse_layout(sid, _det(n), n + 1, True, 1,
                                     messages.append)
     assert len(entries) <= GT_MAX_TABLELEN
     assert len(starts) == n + 1, "no instrument may lose its pointer"
-    assert messages and "STATIC" in messages[0]
+    assert messages and any("STATIC" in m for m in messages)
+
+
+# --- sharing identical programs, only once the table is full ----------------
+
+def test_identical_programs_are_not_shared_while_every_block_fits():
+    """Sharing is a rescue and keeps the rescue's ordering: a table that is
+    whole gets one block per record, which is what every measured conversion
+    (and the fixture) encodes."""
+    sid = _sid([_record(rate=0x40)] * 3, [0x82] * 3)
+    entries, starts = _pulse_layout(sid, _det(3), 4, True, 1)
+    assert starts == [1, 3, 7, 11], "three copies of the four-entry block"
+    assert len(entries) == 2 + 3 * 4
+
+
+def test_an_overflowing_table_shares_identical_programs_at_one_start():
+    """Rock_Tells_the_Tale writes the same 55-entry sweep for three records
+    and the same 48-entry one for two more, and runs out of table doing it.
+    A program identical to one already placed is not written again: its
+    record points at the block that is there. (24 records: `_sid` places
+    record 24 on top of the bounds array, so a fake table stops short of it.)"""
+    n = 24
+    sid = _sid([_record(rate=0x01)] * n, [0xF0] * n)
+    program, loop = _pulse_program(sid, _det(n), 0, True, 1)
+    assert n * (len(program) + 1) > GT_MAX_TABLELEN, "the scenario must overflow"
+    messages = []
+    entries, starts = _pulse_layout(sid, _det(n), n + 1, True, 1,
+                                    messages.append)
+    assert len(starts) == n + 1, "no instrument may lose its pointer"
+    assert set(starts[1:]) == {3}, "every record names the one block"
+    assert entries == [(0x80, 0x00), (0xFF, 0x00)] + program + [(0xFF, 3 + loop)]
+    assert messages and "SHARE" in messages[0]
+    assert not any("STATIC" in m for m in messages), "nothing had to be dropped"
+
+
+def test_a_shared_blocks_jump_is_absolute_and_lands_inside_its_own_block():
+    """`(0xFF, start + loop)` is an absolute table index. Two distinct
+    programs, each shared by many records: the second block's jump must name
+    an entry of the SECOND block, at the start it was actually written at."""
+    n = 24
+    a, b = _record(pulse_lo=0x00, rate=0x01), _record(pulse_lo=0x10, rate=0x01)
+    sid = _sid([a, b] * (n // 2), [0xF0] * n)
+    prog_a, loop_a = _pulse_program(sid, _det(n), 0, True, 1)
+    prog_b, loop_b = _pulse_program(sid, _det(n), 1, True, 1)
+    assert prog_a != prog_b
+    entries, starts = _pulse_layout(sid, _det(n), n + 1, True, 1)
+    start_a, start_b = 3, 3 + len(prog_a) + 1
+    assert starts[1::2] == [start_a] * (n // 2)
+    assert starts[2::2] == [start_b] * (n // 2)
+    assert len(entries) == start_b - 1 + len(prog_b) + 1
+    jump_b = entries[-1]
+    assert jump_b == (0xFF, start_b + loop_b)
+    assert start_b <= jump_b[1] < start_b + len(prog_b)
+    assert entries[jump_b[1] - 1][0] < 0x80, "a jump must land on a step"
+    for left, right in entries:
+        if left == 0xFF and right:
+            assert 1 <= right <= len(entries)
 
 
 # --- against the real players ----------------------------------------------

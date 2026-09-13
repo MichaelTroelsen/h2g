@@ -1,15 +1,13 @@
 {
  "generated_from": {
-  "head": "eae8d8d",
+  "head": "d2160e0",
   "sources": [
    ".claude/tasks/decisions.jsonl",
    ".claude/tasks/runs.jsonl",
-   ".claude/tasks/whattask.json (previous, at 24b9f1d)",
-   "git log 24b9f1d..eae8d8d",
+   ".claude/tasks/whattask.json (previous, at eae8d8d)",
+   "git log eae8d8d..d2160e0",
+   "the d2160e0 fidelity --baseline A/B",
    "plan_audit.py findings",
-   "docs/BACKLOG.md",
-   "todo.md",
-   "whats-next.md",
    "installed plugin cache vs marketplace checkout"
   ],
   "focus": null
@@ -550,7 +548,7 @@
    "verify": "pulse_phase is in FIDELITY_TOGGLES and the eight-toggle search runs over 89 songs at -t 180, with the result DIFFED against the shipped presets before adoption. TIME the run rather than extrapolating: seven toggles is 25m21s at -t 60 and about 75 minutes serial at -t 180. || BLOCKED at 4b5d7f0: **NOT RUN, AND DELIBERATELY SO.** The verify is an eight-toggle `--fidelity` search over 89 songs at 180 s writing `presets.json`, `docs/FIDELITY.md` and `build/fidelity.json` -- ~2.5 hours serial by the v0.5.459 timings, against a tree whose `presets.json` is being rewritten by another process this minute and whose HEAD will move within the hour. CLAUDE.md: *'Regenerate AFTER the tree is coherent and the tests pass, never while another change is half-applied: a run taken mid-edit records a state that never existed.'* **NOTHING WAS WRITTEN.** No lock record was claimed -- the gate fired before",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "rewrites three generated artefacts and runs for hours",
-   "why_lane": "overlaps 141 other task(s) on a written path",
+   "why_lane": "overlaps 139 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -691,7 +689,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 73 other task(s) on a written path",
+   "why_lane": "overlaps 75 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -724,7 +722,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 138 other task(s) on a written path",
+   "why_lane": "overlaps 137 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -755,7 +753,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 73 other task(s) on a written path",
+   "why_lane": "overlaps 75 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1070,7 +1068,7 @@
    "verify": "Either the table fits within Goattracker's bound for the four files, or the overflow is recorded as the reason they are declined, with the measured row counts beside it: 130 rows for instrument 7 on BOTH Last_V8 files, 112 for instrument 14 on Master_of_Magic, 70 for instrument 17 on Phantoms. ESTABLISHED at 846c4c4: the decline is build_pulse_phase_table's overflow and collect_pulse_phases' shared accumulator -- NOT group_tempos or empty sims, which was the standing and refuted explanation. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. RECORDING HOME, granted rw:docs/LESSONS.md: an overflow recorded as the reason four files are declined is a measured figure, and measured figures live in the evidence archive. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "it decides whether promote-pulse-phase is reachable at all",
-   "why_lane": "overlaps 67 other task(s) on a written path",
+   "why_lane": "overlaps 68 other task(s) on a written path",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed",
    "fork": null,
@@ -1103,7 +1101,7 @@
    "verify": "presets.json carries the refreshed hard-restart decisions, or the candidate is discarded with the reason recorded.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "adopting it rewrites the artefact every other measurement is taken against",
-   "why_lane": "overlaps 139 other task(s) on a written path",
+   "why_lane": "overlaps 137 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1134,7 +1132,7 @@
    "verify": "build/listen/index.html shows at least one `inherited` span and it agrees with build/approvals.json per tune. C:/t/abpage-render-check/check_column.py already does the comparison and refuses a pass over an empty span set -- run it rather than eyeballing the HTML. At a4bf43d it read 4 spans, 4 tunes, 0 disagreements and ZERO `inherited`, which is correct while the two calibration tunes are uncalibrated. || GRADED at d3775b4: a4bf43d is 11 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. || PARTIAL at 5a2fa2d: The render check agrees with the assessment on all 4 tunes with 0 disagreements, re-measured at HEAD -- but 0 inherited spans, because build/approvals.json is stamped calibrated:false from v0.5.471, and the script exits PASS anyway, which is a gap in the check.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "writes a hazard path and needs the calibration state in view",
-   "why_lane": "overlaps 30 other task(s) on a written path",
+   "why_lane": "overlaps 31 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -1203,7 +1201,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a choice between two shipped-product routes, the cheaper of which silently re-converts 17 songs",
    "why_mode": "re-runs the preset search and rewrites two generated artefacts",
-   "why_lane": "overlaps 139 other task(s) on a written path",
+   "why_lane": "overlaps 137 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1236,7 +1234,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the previous pass produced a confidently wrong frame pairing that its own successor had to retract",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "overlaps 119 other task(s) on a written path",
+   "why_lane": "overlaps 116 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1268,7 +1266,7 @@
    "why_model": "writing down a limit already derived and quoted in a run record",
    "why_effort": "the derivation exists; the work is placing it in the archive with a grade",
    "why_mode": "a single doc edit with no measurement of its own",
-   "why_lane": "overlaps 69 other task(s) on a written path",
+   "why_lane": "overlaps 70 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1303,7 +1301,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the judgement is only whether the tree is clean and the window right; the work itself is a long run",
    "why_mode": "the precondition is the user's commit; a runner hits artefact_guard until it lands",
-   "why_lane": "overlaps 111 other task(s) on a written path",
+   "why_lane": "overlaps 109 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1337,7 +1335,7 @@
    "verify": "Every tune in build/listen is the conversion build/fidelity.json measured -- for each, sha1 of <song>.h2g.sng truncated to 12 hex equals that file's output_sha -- AND every rendered pair is the same window, so a listener comparing two songs is comparing like with like. CHECK THE WAV HEADER, NOT THE FILE SIZE: these renders are MONO 16-bit 44.1 kHz, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and it chose the wrong window -- the set was read as 60/90 s when it was really 120/180 s, and 55 files were restaged at 90 s, shorter than everything else rather than matching it. Verify by sha and by wave.open(), never by exit code and never by st_size. || PARTIAL at 665939c: All 89 staged tunes are now the conversion their measurement describes -- 0 stale, verified by sha -- but the set is 66 at 180 s and 23 at 120 s, so the uniform-window half is unmet and named.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the judgement is only which window; the work is a long render",
-   "why_lane": "overlaps 99 other task(s) on a written path",
+   "why_lane": "overlaps 98 other task(s) on a written path",
    "why_mode": "renders both sides of dozens of tunes into build/listen, a documented hazard, and outlives a delegated agent",
    "fork": null,
    "branch": null,
@@ -1373,7 +1371,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the same frame is read by three columns, so a change that satisfies one and breaks another is the easy wrong answer",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "overlaps 121 other task(s) on a written path",
+   "why_lane": "overlaps 117 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1408,7 +1406,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "two readings fit the same evidence and have opposite repairs, which is the definition of a max-effort question",
    "why_mode": "the diagnosis matters far more than the measurement",
-   "why_lane": "overlaps 121 other task(s) on a written path",
+   "why_lane": "overlaps 117 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1442,7 +1440,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a new Dimension is shared-code work whose blindness has to be stated in the column itself",
    "why_mode": "changes the harness every other measurement runs through",
-   "why_lane": "overlaps 103 other task(s) on a written path",
+   "why_lane": "overlaps 101 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1477,7 +1475,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
    "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "overlaps 97 other task(s) on a written path",
+   "why_lane": "overlaps 94 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1507,7 +1505,7 @@
    "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line. || INCONCLUSIVE at 8b7b218: VERIFY NOT MET AND ITS PREMISE IS UNSOUND, which is why this is `inconclusive` rather than `partial`: there is no durable progress toward the stated goal, because the stated goal ('the six ilv files' tie counts move toward the originals' and their attack surplus falls') couples two quantities that are not causally linked by anything measured. Adding a `tie` parameter to `_build_raw_pattern_ilv` would emit `CMD_TONEPORTA` on gate-hold events; it would NOT move a metric that counts pitch changes under a held note. **CHECKS ACTUALLY RUN:** the `attacks + ties` conservation test on four voices (no",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "overlaps 80 other task(s) on a written path",
+   "why_lane": "overlaps 81 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1539,7 +1537,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 78 other task(s) on a written path",
+   "why_lane": "overlaps 79 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1570,7 +1568,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 73 other task(s) on a written path",
+   "why_lane": "overlaps 75 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1602,7 +1600,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 80 other task(s) on a written path",
+   "why_lane": "overlaps 81 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1634,7 +1632,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 80 other task(s) on a written path",
+   "why_lane": "overlaps 81 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1665,7 +1663,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 48 other task(s) on a written path",
+   "why_lane": "overlaps 47 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -1696,7 +1694,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 73 other task(s) on a written path",
+   "why_lane": "overlaps 75 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1727,7 +1725,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 135 other task(s) on a written path",
+   "why_lane": "overlaps 134 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -1759,7 +1757,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "overlaps 78 other task(s) on a written path",
+   "why_lane": "overlaps 79 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1788,7 +1786,7 @@
    "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "overlaps 116 other task(s) on a written path",
+   "why_lane": "overlaps 113 other task(s) on a written path",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong",
    "fork": null,
@@ -1817,7 +1815,7 @@
    "verify": "The user has listened to the six interleaved files and a verdict for each is recorded by approvals.py against that file's CURRENT output sha. BEFORE asking, check the material: sha1 of build/listen/<song>.h2g.sng truncated to 12 hex must equal that file's output_sha in build/fidelity.json, and restage with listen.py --files <song>.sid -t 180 if it does not. These six are SIDId Jason_Page/RobTracker, not Rob_Hubbard, and the user has put them behind the RH files -- do not raise this ahead of an RH sign-off. || BLOCKED at 4b5d7f0: **NOT RUN -- a `requires-user` task has no verify this session can execute.** The command's mode gate is explicit: *'STOP. Print `blocked_on` verbatim and ask for exactly the thing it names. Do not attempt a workaround; the blocker is the answer.'* **NOTHING WAS WRITTEN.** All three `touches` are `r:` (`presets.json`, `build/listen`, `docs/FIDELITY.md`) and all three were read only; the task has no host scratch grant, so this record's scratch is the claim script alone. `git status -- build/fidelity.json` is unchanged from before this run bar the run log.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "overlaps 52 other task(s) on a written path",
+   "why_lane": "overlaps 53 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -1879,7 +1877,7 @@
    "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "overlaps 99 other task(s) on a written path",
+   "why_lane": "overlaps 97 other task(s) on a written path",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed",
    "fork": null,
@@ -1913,7 +1911,7 @@
    "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the trade is per song and wants the surrounding ILV context",
-   "why_lane": "overlaps 99 other task(s) on a written path",
+   "why_lane": "overlaps 97 other task(s) on a written path",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed",
    "fork": null,
@@ -2015,35 +2013,6 @@
    "reason": null
   },
   {
-   "id": "multiplier-does-not-explain-slot",
-   "title": "the corpus-wide slot_delta rate is not monotone in the multiplier (m2 2.6% sits below m1 12.5% while m3 is 41.7%), so whatever relabels a fetch row as",
-   "source": "runs.jsonl#fetch-minus-one-shows-up-in-three-columns",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/multiplier-does-not-explain-"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "PARTIAL at 760f401: Agent re-took the corpus hold census at 760f401 (~65 min, 818 records) and confirmed the non-monotone slot rate (m1 11.1%, m2 2.6%, m3 39.8%, m4-m10 18.9/42.6/71.4/9.7/18.2/13.6), so the anomaly is live, but the root cause is still open -- recorded partial, since the task's own text says it is unexplained and this run explains nothing yet. || PARTIAL at 24b9f1d: Agent was cut off by the session limit mid-corpus-pass with no slot_delta figure written; partial, nothing to re-quote. || OPENED by `fetch-minus-one-shows-up-in-three-columns` at 5a2fa2d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. the corpus-wide slot_delta rate is not monotone in the multiplier (m2 2.6% sits below m1 12.5% while m3 is 41.7%), so whatever relabels a fetch row as slot is not the call rate and is currently unexplained.",
-   "why_model": "bounded, mechanical work against an existing harness",
-   "why_effort": "bounded work needing ordinary judgement",
-   "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 21 other task(s) on a written path",
-   "fork": null,
-   "branch": null,
-   "reason": null
-  },
-  {
    "id": "the-vibrato-docstring-predicts-2x-the-code-and-on-the-wrong-side-of-1",
    "title": "python/h2g/goatwriter.py:3332 derives `rshift = shift + 1 + log2(multiplier)` while :3430 is `shift + _rate_shift(multiplier)`",
    "source": "runs.jsonl#the-vibrato-emitters-step-size-is-wrong-on-three-files-and-two-terms-are-named",
@@ -2067,7 +2036,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2099,7 +2068,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 62 other task(s) on a written path",
+   "why_lane": "overlaps 63 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2198,7 +2167,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 82 other task(s) on a written path",
+   "why_lane": "overlaps 80 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2232,7 +2201,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 58 other task(s) on a written path",
+   "why_lane": "overlaps 59 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2270,7 +2239,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 82 other task(s) on a written path",
+   "why_lane": "overlaps 80 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2304,7 +2273,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 60 other task(s) on a written path",
+   "why_lane": "overlaps 59 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2334,7 +2303,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 65 other task(s) on a written path",
+   "why_lane": "overlaps 66 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2363,7 +2332,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2392,7 +2361,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2450,7 +2419,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2508,7 +2477,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2538,7 +2507,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 26 other task(s) on a written path",
+   "why_lane": "overlaps 27 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2567,7 +2536,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 134 other task(s) on a written path",
+   "why_lane": "overlaps 133 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2598,7 +2567,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 71 other task(s) on a written path",
+   "why_lane": "overlaps 73 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2629,7 +2598,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 71 other task(s) on a written path",
+   "why_lane": "overlaps 73 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2662,7 +2631,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 71 other task(s) on a written path",
+   "why_lane": "overlaps 73 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2784,7 +2753,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 53 other task(s) on a written path",
+   "why_lane": "overlaps 52 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2847,7 +2816,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 69 other task(s) on a written path",
+   "why_lane": "overlaps 70 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2908,7 +2877,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 38 other task(s) on a written path",
+   "why_lane": "overlaps 39 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2947,7 +2916,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "overlaps 93 other task(s) on a written path",
+   "why_lane": "overlaps 94 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -3008,7 +2977,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -3038,36 +3007,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "mechanical and cheap to redo",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 65 other task(s) on a written path",
-   "fork": null,
-   "branch": null,
-   "reason": null
-  },
-  {
-   "id": "fidelity-baseline-reports-real-firstwave-instruments-list-vs-tuple-as-an-option-difference",
-   "title": "every --baseline A/B this cycle led with 'conversion settings that differ: `real_firstwave_instruments` [] -> () on N file(s)' when nothing differed",
-   "source": "runs.jsonl#kings-of-the-beach-ingame-emits-3-pulse-changes-against-the-originals-1026-though-detection-reads-the-sweep",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "rw:host:C:/t/fidelity-baseline-reports-re",
-    "rw:python/fidelity.py",
-    "rw:python/tests/test_fidelity.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "PARTIAL at 50a6178: Agent located the false 'settings differ' line at fidelity.option_drift (tuple vs JSON-round-tripped list compared with !=), reproduced it against today's three A/Bs and wrote the normalising patch + test sketch to scratch; the fix needs rw:python/fidelity.py. || OPENED by `kings-of-the-beach-ingame-emits-3-pulse-changes-against-the-originals-1026-though-detection-reads-the-sweep` at 24b9f1d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. every --baseline A/B this cycle led with 'conversion settings that differ: `real_firstwave_instruments` [] -> () on N file(s)' when nothing differed -- the baseline JSON round-trips the tuple as a list and the comparison uses `!=`. Harmless but it is the FIRST line of the section that caught a genuinely wrong run this cycle, so it trains readers to skip that section. Normalise both sides to lists before comparing. [subagent], sonnet/low. || TOUCHES WIDENED at eae8d8d: apply C:/t/fidelity-baseline-reports-re/option_drift.patch to fidelity.option_drift (normalise both sides to lists) and land its three test cases in tests/test_fidelity.py. SABOTAGE-VERIFY: 0 failed; reverting the normalisation fails the identical-settings case, mutated region printed from disk.",
-   "why_model": "bounded, mechanical work against an existing harness",
-   "why_effort": "mechanical and cheap to redo",
-   "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 61 other task(s) on a written path",
+   "why_lane": "overlaps 66 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -3128,7 +3068,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -3223,7 +3163,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "overlaps 118 other task(s) on a written path",
+   "why_lane": "overlaps 115 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -3260,7 +3200,7 @@
    "why_model": "a new convert option across three files plus an emitter, which has to be understood before it is changed",
    "why_effort": "the failure mode is an option that looks wired and is inert in one of three places",
    "why_mode": "self-contained emitter+option work verified by byte-hash and a targeted A/B",
-   "why_lane": "overlaps 74 other task(s) on a written path",
+   "why_lane": "overlaps 76 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3290,7 +3230,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a doc bullet whose only judgement is placing it in the right family",
    "why_mode": "edits the two hand-written docs the repo says are updated in the same commit as the rule; needs the surrounding CLAUDE.md context",
-   "why_lane": "overlaps 32 other task(s) on a written path",
+   "why_lane": "overlaps 33 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3353,7 +3293,7 @@
    "why_model": "a new detection signature and an emitter fallback across two modules, with a plausible-but-wrong operand as the failure mode",
    "why_effort": "code that has to be understood before it can be safely changed",
    "why_mode": "self-contained, verified by byte-hash, a targeted A/B and a pinned constant",
-   "why_lane": "overlaps 76 other task(s) on a written path",
+   "why_lane": "overlaps 77 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3387,7 +3327,7 @@
    "why_model": "a detection-scoping change where the wrong engine produces a plausible number",
    "why_effort": "code that has to be understood before it can be safely changed",
    "why_mode": "confined to detect.py and its tests",
-   "why_lane": "overlaps 49 other task(s) on a written path",
+   "why_lane": "overlaps 48 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3419,7 +3359,7 @@
    "why_model": "a grammar extension in the pattern decoder plus an emitter spelling that has to be read out of gplay.c",
    "why_effort": "a plausible-looking spelling that writes no ADSR is the expensive failure",
    "why_mode": "self-contained decoder+emitter work with a targeted A/B",
-   "why_lane": "overlaps 78 other task(s) on a written path",
+   "why_lane": "overlaps 79 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3450,7 +3390,7 @@
    "why_model": "an emitter gate whose wrong generalisation is silent",
    "why_effort": "code that has to be understood before it can be safely changed",
    "why_mode": "self-contained census+gate verified by byte-hash",
-   "why_lane": "overlaps 71 other task(s) on a written path",
+   "why_lane": "overlaps 73 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3578,7 +3518,7 @@
    "why_model": "arithmetic in the decoder that must match the player's own",
    "why_effort": "code that has to be understood before it can be safely changed",
    "why_mode": "self-contained, verified by byte-hash",
-   "why_lane": "overlaps 55 other task(s) on a written path",
+   "why_lane": "overlaps 54 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3636,7 +3576,7 @@
    "why_model": "a measurement-design question with an existing probe to run",
    "why_effort": "bounded design work with the probe already written",
    "why_mode": "read-only, returns a proposal",
-   "why_lane": "overlaps 40 other task(s) on a written path",
+   "why_lane": "overlaps 39 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3666,7 +3606,7 @@
    "why_model": "a bounded harness question answered by reading two traces",
    "why_effort": "a real diagnosis whose failure mode is a plausible wrong frame",
    "why_mode": "read-only diagnosis returning findings",
-   "why_lane": "overlaps 40 other task(s) on a written path",
+   "why_lane": "overlaps 39 other task(s) on a written path",
    "reason": null
   },
   {
@@ -3699,39 +3639,8 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a corpus re-measurement whose only judgement is reading which files moved",
    "why_mode": "whole-corpus pass on shared binaries",
-   "why_lane": "overlaps 53 other task(s) on a written path",
+   "why_lane": "overlaps 52 other task(s) on a written path",
    "reason": null
-  },
-  {
-   "id": "fold-transpose-variant-of-a-pruned-source-decodes-under-the-default-grammar",
-   "title": "The fold-transpose variant loop re-decodes a pruned source under the default grammar: an instrument-column off-by-one on 614 note rows in 6 files",
-   "source": "runs.jsonl#bmx-kidz-drops-a-vibrato-the-player-performs",
-   "model": "opus",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:Commando.sng",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/fold-transpose-variant-of-a-",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_fold_transpose.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178; figures HISTORICAL. In patterns.convert_patterns' variants loop (grep for the fallback decode_entry call beside `used` rather than trusting a line number) pass rest_instrument, instr_base, rest_keyoff, rest_wave and rest_envelope to the fallback decode_entry exactly as the primary loop does (prototype: C:/t/bmx-kidz-drops-a-vibrato-the/patched/h2g/patterns.py). Add the regression test from C:/t/bmx-kidz-drops-a-vibrato-the/test_variant_grammar_proto.py to tests/test_fold_transpose.py (on HEAD it fails with `assert 5 == 4`). Done when the corpus byte-hash under presets moves exactly BMX_Kidz, Kings_of_the_Beach_intro, Mega_Apocalypse, One_on_One_Jordan_vs_Bird, Rock_Tells_the_Tale and Wiz with the Commando fixture unmoved, and BMX_Kidz's `depth` row pairs instead of `-!`. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "a decoder seam whose wrong fix silently changes six files' instruments",
-   "why_effort": "the fix is small but the reach is 614 note rows",
-   "why_mode": "confined to patterns.py and its test, verified by byte-hash",
-   "why_lane": "overlaps 54 other task(s) on a written path"
   },
   {
    "id": "bmx-kidz-0878-vibrato-is-five-times-too-shallow",
@@ -3763,7 +3672,7 @@
    "why_model": "a per-call arithmetic derivation where a plausible constant is the failure mode",
    "why_effort": "a real diagnosis against the player's own loop",
    "why_mode": "confined to goatwriter.py and its test",
-   "why_lane": "overlaps 71 other task(s) on a written path"
+   "why_lane": "overlaps 73 other task(s) on a written path"
   },
   {
    "id": "wire-the-bounds-sim-into-the-pulse-phase-walk",
@@ -3797,7 +3706,7 @@
    "why_model": "a change across the pattern walker, the planner and convert's gate",
    "why_effort": "a confident wrong flag placement silently moves every bounds-engine file",
    "why_mode": "self-contained, verified by byte-hash and the two-file A/B",
-   "why_lane": "overlaps 78 other task(s) on a written path"
+   "why_lane": "overlaps 79 other task(s) on a written path"
   },
   {
    "id": "detect-the-reseed-gate-spelling-per-player",
@@ -3827,34 +3736,7 @@
    "why_model": "a signature census against an existing probe",
    "why_effort": "bounded work, the shape is already measured on 28 files",
    "why_mode": "confined to detect.py and its soundness test",
-   "why_lane": "overlaps 49 other task(s) on a written path"
-  },
-  {
-   "id": "cli-pulse-phase-help-still-says-single-speed-only",
-   "title": "python/h2g/cli.py's --pulse-phase help says 'single-speed files only for now', which is false since the gate was lifted",
-   "source": "runs.jsonl#the-pulse-phase-writer-must-budget-each-patterns-packed-size-before-the-multiplier-gate-can-lift",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:README.md",
-    "rw:host:C:/t/cli-pulse-phase-help-still-s",
-    "rw:python/h2g/cli.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 760f401. The gate was lifted in 011ccd7; rewrite the --pulse-phase help to say multispeed files are budgeted per pattern (CMD_SETPULSEPTR dropped first-fit past 256 packed bytes), and README.md wherever it restates the option (grep for 'pulse-phase' rather than trusting a line). Done when `python -m h2g --help` no longer says single-speed. Doc/help pass; no test change.",
-   "why_model": "a help-string edit",
-   "why_effort": "a one-line doc sync",
-   "why_mode": "confined to cli.py and README",
-   "why_lane": "overlaps 15 other task(s) on a written path"
+   "why_lane": "overlaps 48 other task(s) on a written path"
   },
   {
    "id": "presets-search-pulse-phase-on-the-three-multispeed-carriers",
@@ -3887,7 +3769,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a measured adoption whose only judgement is reading the diff",
    "why_mode": "regenerates presets.json (a hazard) and serialises on the binaries",
-   "why_lane": "overlaps 137 other task(s) on a written path"
+   "why_lane": "overlaps 136 other task(s) on a written path"
   },
   {
    "id": "pulse-phase-budget-split-instead-of-drop",
@@ -3916,7 +3798,7 @@
    "why_model": "a measurement whose wrong conclusion builds an unneeded writer",
    "why_effort": "a real A/B on one file with a prototype",
    "why_mode": "read-only design measurement",
-   "why_lane": "overlaps 59 other task(s) on a written path"
+   "why_lane": "overlaps 60 other task(s) on a written path"
   },
   {
    "id": "confuzion-style-permanent-noise-latch-is-invisible-to-nrun",
@@ -4010,7 +3892,7 @@
    "why_model": "a detection field plus a track-level emitter across three modules",
    "why_effort": "code that has to be understood before it can be safely changed",
    "why_mode": "self-contained, verified by byte-hash and two A/Bs",
-   "why_lane": "overlaps 60 other task(s) on a written path"
+   "why_lane": "overlaps 59 other task(s) on a written path"
   },
   {
    "id": "the-nibble-arpeggio-alternates-every-2-or-4-calls-when-the-nibble-is-0c",
@@ -4039,35 +3921,7 @@
    "why_model": "a bounded --vice measurement",
    "why_effort": "one measurement, cheap to redo",
    "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 59 other task(s) on a written path"
-  },
-  {
-   "id": "food-feuds-pitch-seq-reads-a-second-copy-of-the-freq-table",
-   "title": "Food Feud's pitch-seq path reads $94D5,Y after SBC #$30: entries 0..8 mirror the primary's 48..56",
-   "source": "runs.jsonl#the-version-0-note-addend-has-three-spellings-and-only-one-is-a-region-transpose",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/food-feuds-pitch-seq-reads-a"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 760f401. $9385 `LDA $94D5,Y` after `ADC $955F,Y / SEC / SBC #$30`: entries 0..8 of $94D5 equal the primary table's 48..56, so instruments 2 and 3 (effect $34) look up the same pitches for notes >= 48 and wrap below. Confirm from the trace that no note under bit $10 is below 48 and that the emitter's pitch_seq for Food Feud (not in its preset) is unaffected. Read-only; findings.",
-   "why_model": "a bounded table check",
-   "why_effort": "cheap to redo",
-   "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 21 other task(s) on a written path"
+   "why_lane": "overlaps 60 other task(s) on a written path"
   },
   {
    "id": "delta-mix-and-chicken-song-play-differently-on-their-second-pass",
@@ -4095,37 +3949,6 @@
    "why_effort": "a listening-shaped decision",
    "why_mode": "blocked on a decision about what the tune should sound like",
    "why_lane": "overlaps 21 other task(s) on a written path"
-  },
-  {
-   "id": "fixed-arp-phase-under-the-noise-tick",
-   "title": "Ticked fixed-arp records start their octave alternation on the wrong frame: carry the octave on the tick entries' right side at the original's offset",
-   "source": "runs.jsonl#the-seven-file-adc-0c-family-is-per-frame-octave-alternation-and-commando-is-in-it",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:Commando.sng",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/fixed-arp-phase-under-the-no",
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_arp_octave.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 760f401; figures HISTORICAL. For ticked fixed-arp records at -S1 carry the octave on the tick entries' right side so the alternation starts at the original's offset (Commando/Crazy_Comets/Gerry/5_Title: offset 2 -- wavetable entries wave 41 note 00, then 81/00, 81/0C, 41/00, 41/0C, then FF looping to entry 4; Geoff/Gremlins/Last_V8/Monty: offset 1). The phase is the global counter's parity at the attack, constant per file in every file measured but not derivable statically yet -- derive it from the player (counter reset path + first-call parity) or record it per file as a data table with a re-measuring test. A/B on `vib`/reversal_ratio and the per-offset profile (C:/t/the-seven-file-adc-0c-family/v482/trace_profile.py); the corpus byte-hash must move exactly the ticked fixed-arp records, and the Commando fixture (effects off) must not. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "an emitter phase question against the player's counter",
-   "why_effort": "a plausible constant is the expensive failure",
-   "why_mode": "self-contained emitter work verified by byte-hash",
-   "why_lane": "overlaps 71 other task(s) on a written path"
   },
   {
    "id": "fixed-arp-duty-from-the-mask",
@@ -4158,7 +3981,7 @@
    "why_model": "an emitter encoding against the player's own counter",
    "why_effort": "a wrong duty is audible and plausible",
    "why_mode": "self-contained, verified by --vice and byte-hash",
-   "why_lane": "overlaps 71 other task(s) on a written path"
+   "why_lane": "overlaps 73 other task(s) on a written path"
   },
   {
    "id": "ticked-fixed-arp-at-s2-is-a-100hz-trill",
@@ -4186,11 +4009,11 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 760f401. At -S2 Rasputin/One_Man/Master_of_Magic toggle the octave inside every frame (279/399 frames at ~157/155 rasterlines, C:/t/the-seven-file-adc-0c-family/v482/vice_probe.py), which siddump cannot see. Give the ticked shape the m-call hold entries the unticked shape already has (loop target past the tick, not entry 0). Verify with vice_probe.py, not siddump; corpus byte-hash names exactly the ticked multispeed records. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "verify": "OPENED at 760f401. At -S2 Rasputin/One_Man/Master_of_Magic toggle the octave inside every frame (279/399 frames at ~157/155 rasterlines, C:/t/the-seven-file-adc-0c-family/v482/vice_probe.py), which siddump cannot see. Give the ticked shape the m-call hold entries the unticked shape already has (loop target past the tick, not entry 0). Verify with vice_probe.py, not siddump; corpus byte-hash names exactly the ticked multispeed records. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk. || FOLDED at d2160e0 (`ticked-fixed-arp-at-multispeed` from the fixed-arp-phase record): the affected files are Last_V8 x2, Monty, Rasputin, One_Man, Master_of_Magic, Phantoms, Battle_of_Britain; the fix needs hold entries per half PLUS the derived phase (goatwriter.fixed_arp_counter_base / fixed_arp_first_fetch, b6ef5e6) scaled by the multiplier.",
    "why_model": "an emitter loop-target change only --vice can see",
    "why_effort": "bounded, the probe exists",
    "why_mode": "self-contained, verified by --vice and byte-hash",
-   "why_lane": "overlaps 71 other task(s) on a written path"
+   "why_lane": "overlaps 73 other task(s) on a written path"
   },
   {
    "id": "vicetrace-freq-hi-byte-reads-ff",
@@ -4249,38 +4072,7 @@
    "why_model": "a player-reading question whose wrong answer changes the fixture's neighbours",
    "why_effort": "a real diagnosis",
    "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 59 other task(s) on a written path"
-  },
-  {
-   "id": "multi-player-dispatch-detection",
-   "title": "Read a CMP #n / BNE / JSR abs init+play ladder as 'file carries N players' and anchor each signature search to player k's code range",
-   "source": "runs.jsonl#5-title-tunes-subtunes-1-4-use-instrument-tables-detection-does-not-read",
-   "model": "opus",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/multi-player-dispatch-detect",
-    "rw:python/h2g/detect.py",
-    "rw:python/tests/test_detection_soundness.py",
-    "rw:python/tests/test_multi_player.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 760f401. 5_Title_Tunes' init $0B10 / play $0B40 are `STA/LDA var; CMP #n / BNE / JSR abs / RTS` ladders to five separately assembled players; search_file takes the first match so players 1-4's tables are never read. Census the corpus for the ladder shape first (and Commodore_64_Music_Examples' $08EC LO-table dispatch as a second spelling), then read it in detect.py as N players with per-player table addresses, anchoring each signature search to player k's range (the k-th JSR target up to the next). Done when Detection carries the per-player addresses for 5_Title_Tunes ($1D02/$245B/$2C9B/$35BE instruments etc.), the census is pinned, and the corpus byte-hash is unchanged (detection only; conversion is the next task). tests/test_multi_player.py does not exist at this head; the task creates it. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "a new detection shape across the signature search",
-   "why_effort": "unfamiliar dispatch code that has to be read first",
-   "why_mode": "confined to detect.py and tests, byte-inert",
-   "why_lane": "overlaps 49 other task(s) on a written path"
+   "why_lane": "overlaps 60 other task(s) on a written path"
   },
   {
    "id": "multi-player-conversion",
@@ -4301,7 +4093,10 @@
     "rw:python/h2g/goatwriter.py",
     "rw:python/h2g/patterns.py",
     "rw:python/h2g/tracks.py",
+    "rw:python/presets.py",
     "rw:python/tests/test_multi_player.py",
+    "rw:python/tests/test_preset_passthrough.py",
+    "rw:python/tests/test_presets.py",
     "rw:python/tests/test_tracks.py"
    ],
    "mcp": [],
@@ -4314,11 +4109,11 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 760f401. Convert subtune k from player k's tables, merging instruments and patterns into GoatTracker's global tables under MAX_PATTERNS 208 and the 63-instrument cap. Done when siddump -a1..4 of the original pairs with our subtunes 1-4 on melody at -t 180, the corpus byte-hash moves exactly 5_Title_Tunes (and any file the dispatch census names), and the fixture is unmoved. presets.json/SURVEY.md regeneration afterwards is [main]. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "verify": "OPENED at 760f401. Convert subtune k from player k's tables, merging instruments and patterns into GoatTracker's global tables under MAX_PATTERNS 208 and the 63-instrument cap. Done when siddump -a1..4 of the original pairs with our subtunes 1-4 on melody at -t 180, the corpus byte-hash moves exactly 5_Title_Tunes (and any file the dispatch census names), and the fixture is unmoved. presets.json/SURVEY.md regeneration afterwards is [main]. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk. || REFINED at d2160e0 (dispatch detection landed in b6ef5e6: Detection.players carries per-player table addresses): add a `player=` option on convert()/detect() that builds a Detection from Detection.players[k] (offsets via sid.to_offset of the *_addr fields, plus a windowed run of the track-version chain, which PlayerTables does not yet carry), under the three-place option rule (signature, presets.FIXED, _preset_opts; tests/test_preset_passthrough.py fails if one escapes).",
    "why_model": "a change spanning five converter modules",
    "why_effort": "a wrong merge silently corrupts every subtune",
    "why_mode": "self-contained once detection exists, verified by byte-hash",
-   "why_lane": "overlaps 81 other task(s) on a written path"
+   "why_lane": "overlaps 84 other task(s) on a written path"
   },
   {
    "id": "sanxion-voice-2-drum-noise-frame-sounds-an-absolute-b-5",
@@ -4349,35 +4144,7 @@
    "why_model": "a wavetable emission against a measured trace",
    "why_effort": "bounded, the frame is already measured",
    "why_mode": "self-contained emitter work verified by byte-hash",
-   "why_lane": "overlaps 71 other task(s) on a written path"
-  },
-  {
-   "id": "confirm-the-three-unreached-past-table-entries-are-phantoms",
-   "title": "Ricochet, BMX_Kidz and Kings_of_the_Beach_ingame decode a qualifying past-table byte in entries no orderlist plays: confirm they are phantoms, not mis-sliced",
-   "source": "runs.jsonl#sanxion-byte-60-is-a-rest-in-the-original-and-a-g-sharp-7-in-ours",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tests/test_past_table_bytes.py",
-    "rw:host:C:/t/confirm-the-three-unreached-"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 760f401. tests/test_past_table_bytes.py pins the decode-level set of four files; three of them reach the rule only in entries no orderlist plays (rows 155-3003 into the entry). Confirm with songview and the orderlists that none is reachable in any subtune, since a change to prune/reject_phantoms would let the rule reach them silently; also confirm Ricochet's 9 constant-byte entries ($6E-$7C -> entry 19) that prune removes. Read-only; findings.",
-   "why_model": "a bounded orderlist check",
-   "why_effort": "cheap to redo",
-   "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 34 other task(s) on a written path"
+   "why_lane": "overlaps 73 other task(s) on a written path"
   },
   {
    "id": "wave-reduction-moved-1-to-9-pp-on-14-byte-identical-files-between-0-5-475-and-0-5-481",
@@ -4436,7 +4203,7 @@
    "why_model": "a harness correspondence rule touching presets and resolve_subtune",
    "why_effort": "a wrong override silently rescores a file",
    "why_mode": "confined to fidelity/presets and their tests",
-   "why_lane": "overlaps 63 other task(s) on a written path"
+   "why_lane": "overlaps 64 other task(s) on a written path"
   },
   {
    "id": "depth-refusal-should-say-which-side-of-the-trace-is-empty",
@@ -4467,148 +4234,6 @@
    "why_lane": "overlaps 61 other task(s) on a written path"
   },
   {
-   "id": "rewrap-the-over-long-kotb-line-in-lessons-md-now-that-says-normalises",
-   "title": "docs/LESSONS.md's KotB wave/gate line was hand-held on one line for the old `_says`; re-flow it",
-   "source": "runs.jsonl#sweep-the-prose-presence-guards-for-wrapped-quotations",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:python/tests/test_claude_md_figures.py",
-    "rw:docs/LESSONS.md",
-    "rw:host:C:/t/rewrap-the-over-long-kotb-li"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178. Re-flow the `wave` 94.4% / `gate` 85.2% line (grep for it rather than trusting a line number) to the file's column width; `python -m pytest tests/test_claude_md_figures.py -q` from python/ must still read 0 failed, which is the proof `_says` now normalises. Doc pass.",
-   "why_model": "a re-flow",
-   "why_effort": "trivial",
-   "why_mode": "confined to LESSONS.md",
-   "why_lane": "overlaps 22 other task(s) on a written path"
-  },
-  {
-   "id": "plan-audit-phrase-regexes-use-literal-spaces-and-its-docstrings-cite-old-heads",
-   "title": "plan_audit's GRADED/J_DECLARE/I_CUE regexes match literal spaces (a wrapped verify reads 0), and its check docstrings cite superseded heads",
-   "source": "runs.jsonl#sweep-the-prose-presence-guards-for-wrapped-quotations",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "rw:.claude/skills/plan-audit/plan_audit.py",
-    "rw:.claude/skills/plan-audit/test_plan_audit.py",
-    "rw:host:C:/t/plan-audit-phrase-regexes-us"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178 (two items, one file). (1) GRADED_RE ('GRADED at'), J_DECLARE_RE ('cannot be satisfied once', 'leave it open'), I_CUE_RE ('ahead of', 'depends on', 'blocked by') use literal single spaces; SHA_GRADE_RE already uses `\\s+`. Either use `\\s+` in those regexes or collapse whitespace in the field before every phrase check; add a test with a wrapped verify string. (2) The A-F/J check docstrings cite historical heads (665939c, 5a2fa2d, 24b9f1d); add a module-docstring note saying which head last re-verified each check's own figures. `python -m pytest .claude/skills/plan-audit/test_plan_audit.py -q` reads 0 failed. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "a regex and docstring sweep in one skill file",
-   "why_effort": "bounded",
-   "why_mode": "confined to the skill's two files",
-   "why_lane": "overlaps 22 other task(s) on a written path"
-  },
-  {
-   "id": "record-the-per-flag-live-set-beside-presets-fixed",
-   "title": "Write each always-block flag's live-file count beside FIXED in presets.py so an evidenced flag can be told from a decorative one",
-   "source": "runs.jsonl#name-the-minority-of-files-each-always-flag-actually-earns-its-place-on",
-   "model": "session",
-   "effort": "low",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:presets.json",
-    "rw:host:C:/t/record-the-per-flag-live-set",
-    "rw:python/presets.py",
-    "rw:python/tests/test_presets.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178. From C:/t/name-the-minority-of-files-e/census.json (89 files x 20 flags at 50a6178: reject_phantoms and rest_instrument live on 0, compact_instruments and no_hard_restart live on 89, voice_two_stage 1, fold_transpose 14, vibrato_command 25, ...), add a doc comment per flag beside FIXED and the always-block-emitting loop naming its live count and the head it was measured at, and a test that the comment names every always-block flag. A comment edit: presets.json need not be regenerated (say so by byte-hashing it before and after). SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "a doc pass with the numbers already measured",
-   "why_mode": "edits the file the search reads its policy from; needs the surrounding context",
-   "why_lane": "overlaps 36 other task(s) on a written path"
-  },
-  {
-   "id": "multi-flag-interaction-census-for-the-near-inert-always-flags",
-   "title": "Test whether the flags inert one-at-a-time (reject_phantoms, rest_instrument, voice_two_stage) stay inert when removed together with another",
-   "source": "runs.jsonl#name-the-minority-of-files-each-always-flag-actually-earns-its-place-on",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/multi-flag-interaction-censu"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178. The one-at-a-time census cannot see a flag masked by another always-on flag. For each of reject_phantoms, rest_instrument and voice_two_stage, flip it together with one and two of the other near-inert flags (fold_transpose, vibrato_command) and byte-hash the 89 files; report every pair that moves a file the single flips did not. Read-only against the repo; census JSON + markdown in scratch.",
-   "why_model": "a mechanical byte-hash sweep with the harness already written",
-   "why_effort": "bounded",
-   "why_mode": "read-only census",
-   "why_lane": "overlaps 21 other task(s) on a written path"
-  },
-  {
-   "id": "check-4-scores-a-fixed-60-s-prefix-of-the-180-s-render",
-   "title": "Score the calibration's checks 2-4 on a fixed 60 s prefix of the aligned 180 s render so a fixed audible defect is not diluted by duration",
-   "source": "runs.jsonl#check-4-now-rests-on-one-file-and-its-margin-is-shrinking-with-the-window",
-   "model": "opus",
-   "effort": "high",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/sound_calibration.json",
-    "r:docs/SOUND-CALIBRATION.md",
-    "rw:host:C:/t/check-4-scores-a-fixed-60-s-",
-    "rw:python/sound.py",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_sound.py",
-    "rw:python/tests/test_sound_calibrate.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178; figures HISTORICAL. Add CHECK_WINDOW_S = 60 to sound_calibrate.py and slice the aligned overlap (after sound.align on the whole render) before compare_features for checks 2, 3 and 4; expose a window_s parameter on sound.compare_features/compare_wavs. Expected live numbers at 50a6178: W_A_R +0.1672/+0.0879, Human_Race -0.0051/+0.0136, floor 0.0018 on the prefix. SABOTAGE-VERIFY: 0 failed, and removing the slice makes a test built from a synthetic pair whose difference sits in 20-60 s of a 180 s signal read a 3x smaller margin, mutated region printed from disk. docs/SOUND-CALIBRATION.md and build/sound_calibration.json regenerate afterwards ([main]).",
-   "why_model": "a measurement-window change every calibration check reads",
-   "why_effort": "a plausible slice in the wrong place silently changes every verdict",
-   "why_mode": "confined to the two sound modules and their tests",
-   "why_lane": "overlaps 22 other task(s) on a written path"
-  },
-  {
    "id": "the-noise-floor-is-a-grid-node-and-sidplayfp-is-not-deterministic",
    "title": "Check 2's floor (0.0018) is a grid artefact: the half-hop shift moves 0.0077 and sidplayfp's own re-render moves up to 0.033",
    "source": "runs.jsonl#check-4-now-rests-on-one-file-and-its-margin-is-shrinking-with-the-window",
@@ -4634,7 +4259,7 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 50a6178; figures HISTORICAL. Check 2 must measure max(the half-hop shift = HOP/2 samples, the movement between two renders of one approved original) -- measured 0.0077 and up to 0.0326 at 50a6178 against the artefact's 0.0018; add the second render to check 2 (one extra 60 s render per run into build/audio) and state the re-render movement in the doc header; then re-read every 'seen' verdict under it. Also probe whether sidplayfp has a flag fixing its start state (WAV lengths differ by 0-176 samples run to run). SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "verify": "OPENED at 50a6178; figures HISTORICAL. Check 2 must measure max(the half-hop shift = HOP/2 samples, the movement between two renders of one approved original) -- measured 0.0077 and up to 0.0326 at 50a6178 against the artefact's 0.0018; add the second render to check 2 (one extra 60 s render per run into build/audio) and state the re-render movement in the doc header; then re-read every 'seen' verdict under it. Also probe whether sidplayfp has a flag fixing its start state (WAV lengths differ by 0-176 samples run to run). SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk. || NOW READY (check-4 prefix landed in b6ef5e6 and the calibration reads PASS at d2160e0): note that the re-render movement (~0.03) is larger than Human_Race's +0.0136 loud margin, so applying it as the floor would turn Human_Race from seen to unseen again -- measure before adopting and say which pairs the new floor loses; also folded from the check-4 record: the floor is the render's reproducibility, not the grid's.",
    "why_model": "a floor definition every verdict rests on",
    "why_effort": "a wrong floor makes every margin a lie",
    "why_mode": "confined to the sound modules, their tests and build/audio",
@@ -4665,35 +4290,7 @@
    "why_model": "a coverage decision",
    "why_effort": "a decision",
    "why_mode": "blocked on a decision about the calibration's population",
-   "why_lane": "overlaps 26 other task(s) on a written path"
-  },
-  {
-   "id": "las-vegas-and-samantha-good-builds-end-at-20-s-against-originals-of-100-s",
-   "title": "The -S4 'good' builds of Las_Vegas and Samantha_Fox go silent from ~20 s while the originals play to ~100/90 s",
-   "source": "runs.jsonl#check-4-now-rests-on-one-file-and-its-margin-is-shrinking-with-the-window",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/las-vegas-and-samantha-good-"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 50a6178. Run fidelity.py --pace on Las_Vegas_Video_Poker.sid and Samantha_Fox_Strip_Poker.sid under presets.json (read the MEDIAN and the drift line); the 10 s loudness profile at 50a6178 shows the -S4 builds silent from ~20 s while the -S1 'bad' builds play to ~80/70 s. Say whether the preset multiplier or the silent-park length rule (CLAUDE.md's +-5 s) is wrong on both. Findings only.",
-   "why_model": "a two-file pace measurement",
-   "why_effort": "cheap to redo",
-   "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 21 other task(s) on a written path"
+   "why_lane": "overlaps 24 other task(s) on a written path"
   },
   {
    "id": "should-the-rest-rules-constancy-predicate-be-writers-only",
@@ -4722,7 +4319,7 @@
    "why_model": "a bounded corpus measurement with a monkeypatch",
    "why_effort": "cheap to redo",
    "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 32 other task(s) on a written path"
+   "why_lane": "overlaps 31 other task(s) on a written path"
   },
   {
    "id": "thing-on-a-springs-noise-drum-sweeps-0700-to-0600-the-frame-after-attack",
@@ -4751,7 +4348,395 @@
    "why_model": "a player-reading question with an emitter design",
    "why_effort": "a real diagnosis",
    "why_mode": "read-only diagnosis",
-   "why_lane": "overlaps 59 other task(s) on a written path"
+   "why_lane": "overlaps 60 other task(s) on a written path"
+  },
+  {
+   "id": "tempo-alignment-rounding-decision",
+   "title": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
+   "source": "runs.jsonl#multiplier-does-not-explain-slot",
+   "model": "opus",
+   "effort": "medium",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/tempo-alignment-rounding-dec"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": [
+    "adopt",
+    "refuse"
+   ],
+   "branch": null,
+   "blocked_on": "Whether to accept a tempo-alignment change that rounds effective_frames to the nearest whole frame before multiplying by the multiplier -- eliminating the slot-swallowing frame shift on most multispeed files at the cost of average-rate accuracy. Needs a --pace/drift comparison on Food_Feud, Rasputin and Knucklebusters from a scratch prototype and a listening call, not just a byte-hash.",
+   "decision": null,
+   "verify": "A FORK: the human answers `adopt` or `refuse` and /runhuman records it as `chose`. The measurement behind it (runs.jsonl `multiplier-does-not-explain-slot` at eae8d8d): a note reads `slot` rather than `fetch` in the hold census exactly when the derived CMD_SETTEMPO (calls per row) is NOT a multiple of the file's multiplier (Battle_of_Britain 4 % 2 == 0 -> fetch; Food_Feud 8/3 rounded -> slot), so the next note's arrival shifts by a whole frame. Rounding effective_frames to a whole frame before multiplying makes every CMD_SETTEMPO a multiple and removes the shift, at the cost of average-rate accuracy on multispeed files whose native row length is not a whole frame. The evidence to put in front of the human: --pace MEDIAN and drift on Food_Feud, Rasputin and Knucklebusters with a scratch prototype of the rounding, and a listen of one of them.",
+   "why_model": "a decision",
+   "why_effort": "a judgement between two measured costs",
+   "why_mode": "blocked on a decision about which error a listener prefers",
+   "why_lane": "overlaps 21 other task(s) on a written path"
+  },
+  {
+   "id": "implement-tempo-command-value-rounding",
+   "title": "Make CMD_SETTEMPO always a multiple of the multiplier in tempo_command_value and orderlist_tempo_values",
+   "source": "runs.jsonl#multiplier-does-not-explain-slot",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:Commando.sng",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/implement-tempo-command-valu",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_song_speed.py",
+    "rw:python/tests/test_tempo.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "tempo-alignment-rounding-decision"
+   ],
+   "fork": null,
+   "branch": {
+    "tempo-alignment-rounding-decision": "adopt"
+   },
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Only under the fork's `adopt` branch. In goatwriter.tempo_command_value (grep for TEMPO_FASTEST_STEADY rather than trusting a line) use `frames_int = max(1, round(f)); value = min(max(frames_int * multiplier, TEMPO_FASTEST_STEADY), 0x7F)`, and apply the same rounding in orderlist_tempo_values' `round(base*(r+1)/r*mult)` (Rasputin's mechanism). Verify with --pace and drift on Food_Feud, Rasputin and Knucklebusters, a corpus byte-hash naming exactly the multispeed files whose tempo was not already aligned, and the Commando fixture unmoved (multiplier 1). Pin the rounding in tests/test_tempo.py (and test_song_speed.py if it asserts tempo values). SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "a bounded arithmetic change with the measurement already made",
+   "why_effort": "ordinary judgement, the mechanism is named",
+   "why_mode": "confined to goatwriter.py and its tempo tests",
+   "why_lane": "overlaps 73 other task(s) on a written path"
+  },
+  {
+   "id": "re-run-the-hold-census-after-the-tempo-rounding",
+   "title": "Confirm the slot share collapses toward 0 on files whose tempo now aligns, and that the fetch share is unaffected",
+   "source": "runs.jsonl#multiplier-does-not-explain-slot",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/re-run-the-hold-census-after"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "whole-corpus trace pass on the shared siddump binary",
+   "depends_on": [
+    "tempo-alignment-rounding-decision",
+    "implement-tempo-command-value-rounding"
+   ],
+   "fork": null,
+   "branch": {
+    "tempo-alignment-rounding-decision": "adopt"
+   },
+   "blocked_on": null,
+   "decision": null,
+   "verify": "After the rounding lands: re-run the corpus hold census (`fidelity.py <corpus> -t 180 --presets ../presets.json --sound --hold-census <scratch>.md --json <scratch>.json`, ~65 min measured) and say per multiplier whether `slot` collapsed and `fetch` (the separate gplay.c note-fetch artefact) stayed. Corpus-scale, serialises on the binaries.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "a corpus re-measurement whose only judgement is reading the split",
+   "why_mode": "whole-corpus pass on the shared binary",
+   "why_lane": "overlaps 39 other task(s) on a written path"
+  },
+  {
+   "id": "kings-of-the-beach-intro-hold-fell-100-to-89-under-the-variant-grammar-fix",
+   "title": "KotB intro's hold column dropped 100 -> 89 while every other column rose: which instrument population changed under it?",
+   "source": "d2160e0 fidelity A/B",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/kings-of-the-beach-intro-hol"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at d2160e0 from the 0.5.484 -> 0.5.485 A/B: Kings_of_the_Beach_intro hold 100% -> 89% while adsr 63 -> 100, bend 0.35 -> 0.92, pspan 0.83 -> 0.97 -- the variant-grammar fix changed which instrument 324 of its rows carry, so the hold column's paired population changed under it. Read the hold census rows for the file at both versions (build/fidelity.json is the 0.5.485 one; the 0.5.484 copy is under the session scratchpad as fidelity_0.5.484.json) and say whether the 89% is a new defect on the newly-named instrument or a population artefact. Read-only; findings.",
+   "why_model": "a bounded two-artefact comparison",
+   "why_effort": "cheap to redo",
+   "why_mode": "read-only diagnosis",
+   "why_lane": "overlaps 25 other task(s) on a written path"
+  },
+  {
+   "id": "c64me-other-engine",
+   "title": "What are the players at $0903/$1D8B/$2A23/$33DB in Commodore_64_Music_Examples -- Hubbard variants worth a signature, or another author's to decline explicitly?",
+   "source": "runs.jsonl#multi-player-dispatch-detection",
+   "model": "sonnet",
+   "effort": "low",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "rw:host:C:/t/c64me-other-engine"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. Detection.players (b6ef5e6) names five play routines in C64ME; read the four besides $1119 (LDA var / BMI / INC ... shape, STA $D4xx,X stores) and say whether each is a Hubbard variant worth a signature or an unrelated example player to be declined by name. Read-only; findings.",
+   "why_model": "a bounded disassembly read",
+   "why_effort": "cheap to redo",
+   "why_mode": "read-only diagnosis",
+   "why_lane": "overlaps 21 other task(s) on a written path"
+  },
+  {
+   "id": "approvals-applies-whole-window-floors-while-the-calibration-scores-a-prefix",
+   "title": "approvals.py applies noise_floor/closeness_floor over the whole render while the calibration's top-level floors are now 60 s prefix quantities",
+   "source": "runs.jsonl#check-4-scores-a-fixed-60-s-prefix-of-the-180-s-render",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/approvals.json",
+    "r:build/sound_calibration.json",
+    "r:docs/SOUND-CALIBRATION.md",
+    "r:python/sound.py",
+    "r:python/sound_calibrate.py",
+    "rw:host:C:/t/approvals-applies-whole-wind",
+    "rw:python/approvals.py",
+    "rw:python/tests/test_approvals.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d; at d2160e0 docs/SOUND-CALIBRATION.md carries the whole-window floors beside the prefix ones precisely because of this. Either read `whole.noise_floor` / `whole.closeness_floor` from build/sound_calibration.json in load_calibration, or score approvals over the same CHECK_WINDOW_S prefix (compare_sids takes window_s); decide which quantity approvals should apply, say why in the docstring, and pin it in tests/test_approvals.py. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "a bounded consistency fix between two modules",
+   "why_effort": "ordinary judgement with both options measured",
+   "why_mode": "confined to approvals.py and its test",
+   "why_lane": "overlaps 37 other task(s) on a written path"
+  },
+  {
+   "id": "readme-sound-calibration-paragraph-says-checks-score-the-prefix",
+   "title": "README's SOUND-CALIBRATION paragraph (labelled v0.5.453) should say checks 2-4 score the first CHECK_WINDOW_S seconds of the aligned render",
+   "source": "runs.jsonl#check-4-scores-a-fixed-60-s-prefix-of-the-180-s-render",
+   "model": "session",
+   "effort": "low",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "rw:README.md",
+    "rw:host:C:/t/readme-sound-calibration-par"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. Add one sentence to README.md's sound-calibration paragraph (grep for 'SOUND-CALIBRATION' rather than trusting a line number) saying checks 2, 3 and 4 score the first CHECK_WINDOW_S = 60 s of the aligned 180 s render and why (a fixed defect diluted by duration), and re-label the paragraph's version. Doc pass.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "a one-sentence doc sync",
+   "why_mode": "README is a hand-written doc the repo says travels with the behaviour change",
+   "why_lane": "overlaps 2 other task(s) on a written path"
+  },
+  {
+   "id": "unticked-fixed-arp-phase",
+   "title": "Apply the derived fixed-arp phase to the UNTICKED -S1 shape, which hard-codes offset 2 where Commando/Geoff/Gremlins want offset 1",
+   "source": "runs.jsonl#fixed-arp-phase-under-the-noise-tick",
+   "model": "opus",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:Commando.sng",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/unticked-fixed-arp-phase",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_arp_octave.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. The unticked -S1 fixed-arp wavetable (wave 41 note 00, 41/00, 41/0C, FF looping to entry 1) hard-codes offset 2; goatwriter.fixed_arp_counter_base / fixed_arp_first_fetch (b6ef5e6) give the original's offset (1 on Commando/Geoff/Gremlins). Apply the same phase to this shape; A/B on the per-offset profile and `vib` (C:/t/fixed-arp-phase-under-the-no/ probes); the corpus byte-hash must move exactly the unticked fixed-arp -S1 files and the Commando fixture (effects off) must not. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "the same derivation applied to a second emitter shape",
+   "why_effort": "bounded, the derivation exists",
+   "why_mode": "self-contained, verified by byte-hash",
+   "why_lane": "overlaps 73 other task(s) on a written path"
+  },
+  {
+   "id": "per-note-fixed-arp-phase",
+   "title": "Files whose attack parity varies per note (Hunter_Patrol instr 11: 36 of 96 onsets) need a per-note phase; measure the instrument and command-column cost first",
+   "source": "runs.jsonl#fixed-arp-phase-under-the-noise-tick",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/h2g/goatwriter.py",
+    "r:python/h2g/patterns.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/per-note-fixed-arp-phase"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. Where attack parity is not constant per instrument (Hunter_Patrol instr 11's minority, any even-row-length file with mixed rows) the per-instrument phase is wrong on the minority. Two spellings: a second wavetable per record chosen per note by attack parity (instrument budget), or CMD_SETWAVEPTR in the pattern (command-column contention with tempo/vibrato/pulse-phase). Measure the instrument count and command-column cost over the six fixed-arp files with a scratch prototype and say which spelling fits; open the emitter as a task with touches. Read-only against the repo.",
+   "why_model": "a design measurement between two emitter spellings",
+   "why_effort": "a wrong spelling costs the instrument budget silently",
+   "why_mode": "read-only design measurement",
+   "why_lane": "overlaps 64 other task(s) on a written path"
+  },
+  {
+   "id": "docs-the-fixed-arp-counter-phase-is-static-per-note",
+   "title": "H2G-CONVERSION-METHOD.md section 7 and CLAUDE.md's global-counter bullet deserve the refinement that the phase at each note is static and carriable per instrument",
+   "source": "runs.jsonl#fixed-arp-phase-under-the-noise-tick",
+   "model": "session",
+   "effort": "medium",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:python/tests/test_claude_md_figures.py",
+    "rw:CLAUDE.md",
+    "rw:docs/H2G-CONVERSION-METHOD.md",
+    "rw:docs/LESSONS.md",
+    "rw:host:C:/t/docs-the-fixed-arp-counter-p"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. CLAUDE.md says 'A mechanism driven by a global counter cannot be put in a per-note wavetable'; b6ef5e6 shows the counter's phase at each note IS static (base + first fetch + row*frames) and is carried per instrument by majority. Refine that bullet (grep for it rather than trusting a line), add the mechanism to docs/H2G-CONVERSION-METHOD.md section 7, and record in docs/LESSONS.md the fixture-vs-corpus Commando trap (same player, different saved state, different first attack frame). Doc pass; `python -m pytest tests/test_claude_md_figures.py -q` from python/ reads 0 failed.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "three hand-written docs that must agree with a landed mechanism",
+   "why_mode": "edits CLAUDE.md, which needs the surrounding context",
+   "why_lane": "overlaps 28 other task(s) on a written path"
+  },
+  {
+   "id": "bisect-what-fixed-las-vegas-and-samantha-foxs-early-silence",
+   "title": "Name the commit between 50a6178 and eae8d8d that fixed the -S4 builds going silent at ~20 s",
+   "source": "runs.jsonl#las-vegas-and-samantha-good-builds-end-at-20-s-against-originals-of-100-s",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/bisect-what-fixed-las-vegas-"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. The early silence measured at 50a6178 does not reproduce at eae8d8d. Bisect over 50a6178..eae8d8d on the two files with fidelity.py --pace and the length row at each candidate (git archive each candidate into scratch, copy siddump.exe), and name the commit and the mechanism (max_hard_restart / silent-park / the pulse budget?). Read-only; findings, so the fix's own record can carry it.",
+   "why_model": "a mechanical bisect against an existing tool",
+   "why_effort": "bounded, cheap to redo",
+   "why_mode": "read-only diagnosis",
+   "why_lane": "overlaps 21 other task(s) on a written path"
+  },
+  {
+   "id": "extend-the-multi-flag-census-to-all-fourteen-remaining-always-flags",
+   "title": "Cross the three near-inert flags against the other 14 always-on flags for full pairwise coverage",
+   "source": "runs.jsonl#multi-flag-interaction-census-for-the-near-inert-always-flags",
+   "model": "session",
+   "effort": "low",
+   "mode": "main",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/extend-the-multi-flag-census"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "~3700 conversions over the corpus, serialises on the binaries",
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at eae8d8d. The pairwise census covered fold_transpose and vibrato_command only. Cross reject_phantoms, rest_instrument and voice_two_stage against the remaining 14 boolean always flags (~42 pairs x 89 files, the harness at C:/t/multi-flag-interaction-censu/), byte-hash, and report every pair that moves a file the single flips did not. Corpus-scale; read-only against the repo.",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "a mechanical sweep with the harness written",
+   "why_mode": "corpus-scale pass on the shared binaries",
+   "why_lane": "overlaps 21 other task(s) on a written path"
+  },
+  {
+   "id": "reject-phantoms-and-rest-instrument-are-live-on-zero-files",
+   "title": "Two always flags move no bytes on any of the 89 files, singly or paired: dead code paths, or keep them?",
+   "source": "runs.jsonl#multi-flag-interaction-census-for-the-near-inert-always-flags",
+   "model": "opus",
+   "effort": "medium",
+   "mode": "requires-user",
+   "lane": "serial",
+   "touches": [
+    "r:presets.json",
+    "r:python/presets.py",
+    "rw:host:C:/t/reject-phantoms-and-rest-ins"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": "reject_phantoms and rest_instrument read live on 0 of 89 files under every toggle tested (single at 50a6178, paired with fold_transpose/vibrato_command at eae8d8d; presets.LIVE_ON records it). Decide whether they are dead code paths worth a deliberate ablation/removal (an option removed is a signature/emitter path removed, with its tests) or policy flags kept for a population the corpus does not contain -- and whether to wait for the full pairwise census first.",
+   "decision": null,
+   "verify": "The human answers the question in blocked_on and /runhuman records it.",
+   "why_model": "a decision",
+   "why_effort": "a removal decision",
+   "why_mode": "blocked on a decision about removing two options",
+   "why_lane": "overlaps 25 other task(s) on a written path"
   }
  ],
  "closed": [
@@ -6986,6 +6971,90 @@
    "title": "measured at 24b9f1d, the mirror image of the BMX_Kidz defect and it should not be bundled with it, because the emitter has to move the other way",
    "closed_by": "measured:2026-09-11",
    "reason": "Refuted at 50a6178 (runs.jsonl `the-three-no-shared-key-depth-rows-are-a-defect-queue-not-a-gap`): the original DOES play the vibrato; the harness traces startSong s0 while our conversion is s1's music, and at -a 1 depth pairs 9/9 at 1.35x. Refiled as `commodore-64-music-examples-depth-is-a-subtune-correspondence-row-not-an-emission-defect`."
+  },
+  {
+   "id": "multiplier-does-not-explain-slot",
+   "title": "the corpus-wide slot_delta rate is not monotone in the multiplier (m2 2.6% sits below m1 12.5% while m3 is 41.7%), so whatever relabels a fetch row as",
+   "closed_by": "measured:2026-09-12",
+   "reason": "runs.jsonl last record `done` at eae8d8d, a read-only finding with scratch outside the repo: Agent explained the slot anomaly from the census on disk plus a tempo probe: the slot rate was never a function of the multiplier's value -- it is whether the derived CMD_SETTEMPO (calls per row) is a multiple of the file's own multiplier (Battle_of_Britain 4 % 2 == 0 -> fetch, Food_Feud 8/3 rounded -> slot), a coincidence of the original's frame rate; a rounding fix in tempo_command_value is opened with a [user] listening judgement attached."
+  },
+  {
+   "id": "fidelity-baseline-reports-real-firstwave-instruments-list-vs-tuple-as-an-option-difference",
+   "title": "every --baseline A/B this cycle led with 'conversion settings that differ: `real_firstwave_instruments` [] -> () on N file(s)' when nothing differed",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "fold-transpose-variant-of-a-pruned-source-decodes-under-the-default-grammar",
+   "title": "The fold-transpose variant loop re-decodes a pruned source under the default grammar: an instrument-column off-by-one on 614 note rows in 6 files",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "cli-pulse-phase-help-still-says-single-speed-only",
+   "title": "python/h2g/cli.py's --pulse-phase help says 'single-speed files only for now', which is false since the gate was lifted",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "food-feuds-pitch-seq-reads-a-second-copy-of-the-freq-table",
+   "title": "Food Feud's pitch-seq path reads $94D5,Y after SBC #$30: entries 0..8 mirror the primary's 48..56",
+   "closed_by": "measured:2026-09-12",
+   "reason": "runs.jsonl last record `done` at eae8d8d, a read-only finding with scratch outside the repo: Agent confirmed the second-copy read at Food Feud's pitch-seq path ($9387, the task's $9385 was the preceding ASL), that entries 0..8 mirror the primary's 48..56, and that no bit-$10 note in the trace is below 48, so the emitter's pitch_seq is unaffected."
+  },
+  {
+   "id": "fixed-arp-phase-under-the-noise-tick",
+   "title": "Ticked fixed-arp records start their octave alternation on the wrong frame: carry the octave on the tick entries' right side at the original's offset",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "multi-player-dispatch-detection",
+   "title": "Read a CMP #n / BNE / JSR abs init+play ladder as 'file carries N players' and anchor each signature search to player k's code range",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "confirm-the-three-unreached-past-table-entries-are-phantoms",
+   "title": "Ricochet, BMX_Kidz and Kings_of_the_Beach_ingame decode a qualifying past-table byte in entries no orderlist plays: confirm they are phantoms, not mis-sliced",
+   "closed_by": "measured:2026-09-12",
+   "reason": "runs.jsonl last record `done` at eae8d8d, a read-only finding with scratch outside the repo: Agent re-pinned the four-file decode set at eae8d8d and confirmed with the orderlist walk that Ricochet's, BMX_Kidz's and Kings_of_the_Beach_ingame's qualifying entries are reached by no subtune -- phantoms, not mis-slices."
+  },
+  {
+   "id": "rewrap-the-over-long-kotb-line-in-lessons-md-now-that-says-normalises",
+   "title": "docs/LESSONS.md's KotB wave/gate line was hand-held on one line for the old `_says`; re-flow it",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "plan-audit-phrase-regexes-use-literal-spaces-and-its-docstrings-cite-old-heads",
+   "title": "plan_audit's GRADED/J_DECLARE/I_CUE regexes match literal spaces (a wrapped verify reads 0), and its check docstrings cite superseded heads",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "record-the-per-flag-live-set-beside-presets-fixed",
+   "title": "Write each always-block flag's live-file count beside FIXED in presets.py so an evidenced flag can be told from a decorative one",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "multi-flag-interaction-census-for-the-near-inert-always-flags",
+   "title": "Test whether the flags inert one-at-a-time (reject_phantoms, rest_instrument, voice_two_stage) stay inert when removed together with another",
+   "closed_by": "measured:2026-09-12",
+   "reason": "runs.jsonl last record `done` at eae8d8d, a read-only finding with scratch outside the repo: Agent crossed reject_phantoms, rest_instrument and voice_two_stage against fold_transpose and vibrato_command singly and paired over the 89 files: no combination moves a file the single flips did not, a clean negative on the specified toggle set (the other 14 flags are not covered)."
+  },
+  {
+   "id": "check-4-scores-a-fixed-60-s-prefix-of-the-180-s-render",
+   "title": "Score the calibration's checks 2-4 on a fixed 60 s prefix of the aligned 180 s render so a fixed audible defect is not diluted by duration",
+   "closed_by": "b6ef5e6",
+   "reason": null
+  },
+  {
+   "id": "las-vegas-and-samantha-good-builds-end-at-20-s-against-originals-of-100-s",
+   "title": "The -S4 'good' builds of Las_Vegas and Samantha_Fox go silent from ~20 s while the originals play to ~100/90 s",
+   "closed_by": "measured:2026-09-12",
+   "reason": "runs.jsonl last record `done` at eae8d8d, a read-only finding with scratch outside the repo: Agent re-measured both at eae8d8d and the premise no longer reproduces: both convert cleanly (melody 100%, len within 0.1 s) under their -S4 presets, so the early silence seen at 50a6178 was fixed by a commit in between -- a clean not-reproducible, with a bisect opened if anyone wants the commit named."
   }
  ]
 }

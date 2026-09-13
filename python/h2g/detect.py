@@ -199,6 +199,20 @@ class Detection:
     # within a record that holds the per-frame step.
     pulse_bounds: int = -1
     pulse_rate_field: int = -1
+    # How the bounds engine's note-start code gates the reseed of $D402/$D403
+    # from the instrument record -- see _find_pulse_reseed_gate(). Only
+    # meaningful when pulse_bounds >= 0. "lda_bmi": the note byte itself is
+    # tested (`LDA note / BMI skip`, absolute or zero-page addressing) before
+    # the unconditional store, in 28 of 42 corpus bounds-engine files
+    # (Saboteur_II $F162, where the reseed rule below is validated against a
+    # siddump trace: 1314/1314 attack onsets). "other": the store is
+    # unconditional in this walk's own window but a *different* cell gates
+    # reaching it at all (13 files, e.g. After_8 $11A4 `LDA $1684 / BNE
+    # $11E4` -- validated the same way: 713/713 attack onsets on a 180 s
+    # trace). "" when neither shape is found (1 file, IK_plus, which writes
+    # $D402/$D403 some other way not yet characterised) -- a walk that
+    # depends on the reseed rule must not assume it holds there.
+    pulse_reseed_gate: str = ""
     # The *other* pulse engine, selected by effect bit $08 and mutually
     # exclusive with the sweep above: 34 corpus files sweep, 21 accumulate,
     # none do both. `pulse_lo_base` is the file offset of a second
@@ -1702,6 +1716,13 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.pulse_bounds >= 0:
         log(f"Pulse-width sweep.......: bounds at file +0x{det.pulse_bounds:04X}, "
             f"rate at record +{det.pulse_rate_field}")
+        det.pulse_reseed_gate = _find_pulse_reseed_gate(sid)
+        log("Pulse reseed gate.......: "
+            + {"lda_bmi": "LDA note / BMI (validated: reseeds on bit-7-clear notes)",
+               "other": "unconditional store here, gated by another test "
+                        "(validated on After_8: same reseed rule)",
+               "": "not matched -- reseed rule unconfirmed for this file"}
+            [det.pulse_reseed_gate])
 
     if det.effect_pulse_lo:
         det.pulse_lo_base = _find_pulse_lo(sid, det)
@@ -3567,6 +3588,22 @@ DRUM_NOISE_IMMEDIATE = "A9 80"
 # the routine after the block (the next effect bit's test).
 DRUM_NOISE_WINDOW = 64
 
+# The bounds engine's note-start reseed of $D402/$D403 from the instrument
+# record's +0/+1 -- see _find_pulse_reseed_gate(). `PULSE_RESEED_ABS` is
+# Saboteur_II's own spelling (28 of 42 corpus bounds-engine files): the note
+# byte is tested (absolute addressing) immediately before the two stores.
+# `PULSE_RESEED_ZP` is the same idiom with the note byte held zero-page
+# instead -- a different addressing mode is a different instruction length,
+# so it needs its own spelling rather than a near-miss of the first (see
+# CLAUDE.md "A signature encodes an addressing mode"). `PULSE_RESEED_UNCOND`
+# is the two stores alone, with no BMI/BPL immediately before them -- this is
+# what the other 13 files match (e.g. After_8 $11A4, gated instead by a
+# `LDA $1684 / BNE` against a cell this signature does not name); matching it
+# says only that *something else* gates the reseed, not what.
+PULSE_RESEED_ABS = "AD ?? ?? 30 ?? BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+PULSE_RESEED_ZP = "A5 ?? 30 ?? BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+PULSE_RESEED_UNCOND = "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+
 
 def _find_pulse_sweep(sid: SidFile, det: Detection):
     """(bounds_offset, rate_field): the per-frame pulse sweep, or (-1, -1).
@@ -3602,6 +3639,26 @@ def _find_pulse_sweep(sid: SidFile, det: Detection):
     if not 0 <= rate_field < det.instr_stride:
         return -1, -1
     return bounds, rate_field
+
+
+def _find_pulse_reseed_gate(sid: SidFile) -> str:
+    """"lda_bmi" / "other" / "": how the note-start code gates the reseed
+    of $D402/$D403 -- see the constants above and the Detection field
+    docstring. Searched file-wide rather than anchored to the sweep block
+    because the note-start routine is a different address range from the
+    per-frame sweep; a real false-positive risk is out of scope here since
+    the reseed *rule* (bit-7-clear notes reseed, bit-7 notes free-run) has
+    only been validated where a caller has confirmed it against a trace
+    (Saboteur_II for "lda_bmi", After_8 for "other") -- this function
+    reports the spelling, not a guarantee the rule holds for every file
+    that matches it.
+    """
+    if (search_file(sid.data, PULSE_RESEED_ABS) > 0
+            or search_file(sid.data, PULSE_RESEED_ZP) > 0):
+        return "lda_bmi"
+    if search_file(sid.data, PULSE_RESEED_UNCOND) > 0:
+        return "other"
+    return ""
 
 
 def _sweep_rate_cell(sid: SidFile, sweep: int) -> int:

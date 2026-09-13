@@ -12,9 +12,12 @@ typed. The doc this writes is a regenerated artefact, not prose.
 
 Five checks:
   1 identity      -- a render against itself is 1.0 / 1.0 / ratio 1.0
-  2 shift         -- 48 rasterlines (3 ms) and one frame (20 ms) of delay
-                     must move the score under a point; the largest movement
-                     seen IS the noise floor
+  2 shift         -- three delays of one side (48 rasterlines = 3 ms, one
+                     frame = 20 ms, and HALF A HOP = 64 samples) and a
+                     SECOND RENDER of the same original must each move the
+                     score under a point; the largest movement seen IS the
+                     noise floor. THE FLOOR IS THE RENDER'S REPRODUCIBILITY,
+                     NOT THE GRID'S -- see the note under CHECK_WINDOW_S.
   3 inaudible     -- ACE_II at v0.5.368 against v0.5.369: approved.json's own
                      note calls that change inaudible, so the agreement
                      between those two renders bounds the closeness floor
@@ -124,6 +127,49 @@ FRAME_S = 0.02
 # window) and check 5 reads build/fidelity.json, which is whole-window.
 CHECK_WINDOW_S = 60
 
+# CHECK 2'S 0.0018 WAS A GRID NODE, AND THE FLOOR IS THE RENDER'S, NOT THE
+# GRID'S. Measured at d2160e0 (HISTORICAL; the live figures are in
+# build/sound_calibration.json under checks.shift).
+#
+# The two shifts above -- 48 rasterlines and one frame -- are 132 and 882
+# samples at 44.1 kHz, which is 4 and 14 samples off a whole number of
+# 128-sample hops. `align` corrects by whole hops, so both were nearly
+# absorbed and the "floor" they read (0.0018) was the residue of a shift the
+# grid can almost represent. A shift of EXACTLY HALF A HOP is the one it
+# cannot: 64 samples reads 0.0066 / 0.0040 / 0.0077 / 0.0070 on ACE_II,
+# Action_Biker, 5_Title_Tunes and Devils_Galop, four times the old floor and
+# in line with the 0.0069 sound.py's own HOP table recorded at v0.5.453.
+#
+# Larger still is a SECOND RENDER of the same bytes. sidplayfp's power-on
+# delay is random by default (`--delay=<num>` in its --help-debug fixes it,
+# and `listen.render_sidplayfp` does not pass it), so three 60 s renders of
+# each approved original differed in length by 0-220 samples, aligned 0-6
+# hops apart and read 0.0031-0.0202 off each other (0.0134/0.0031 ACE_II,
+# 0.0034/0.0090 Action_Biker, 0.0089/0.0069 5_Title_Tunes, 0.0202/0.0109
+# Devils_Galop; an earlier sample at 50a6178 read up to 0.0326). The same
+# three renders under `--delay=0` are the same length every time and read
+# 0.0000-0.0001. Every score in this repo is taken against ONE cached render
+# whose delay nobody chose, so that movement is the floor under all of them
+# until the renderer fixes its start state -- and then check 2 will say so,
+# because the repeat renders are made fresh on every run.
+#
+# So check 2 now records THREE floors and adopts the largest: `grid_floor`
+# (the two old shifts, kept so the doc can show what the old figure was),
+# `shift_floor` (those plus the half-hop) and `rerender_floor` (the repeat
+# renders). Adopting the render floor is what the doc's check 4 has to be
+# read under, and it LOSES a pair the grid floor saw: Human_Race's regression
+# is +0.0136 on `loud`, below a render floor of 0.02. That is not a blind
+# spot in the metric; it is a margin the render cannot currently resolve, and
+# the doc names it as such rather than as a pass.
+REPEAT_SECONDS = CHECK_WINDOW_S     # one extra render of this length, per tune, per run
+REPEAT_TAG = "repeat"
+HALF_HOP_SAMPLES = sound.HOP // 2
+
+
+def half_hop_s(rate: int) -> float:
+    """Half a hop in seconds -- the one shift `align` cannot absorb."""
+    return HALF_HOP_SAMPLES / rate
+
 INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # **W_A_R IS THE ONLY PAIR HERE THE `aud` COLUMN CAN VALIDATE, ADDED v0.5.469.**
 # The three original pairs leave `aud` unexercised: two are EXCLUDED (their good
@@ -217,17 +263,74 @@ def shift_movements(samples: np.ndarray, rate: int, shifts_s: list[float],
     """`shift_movement` over several windows from ONE set of features -- the
     features of a 180 s render are the expensive part, and `main` wants the
     prefix floor and the whole-window floor of the same signal."""
-    a = sound.features(samples, rate)
-    worst = [0.0] * len(windows_s)
+    each = shift_movements_each(samples, rate, shifts_s, windows_s)
+    return [max((row[i] for row in each), default=0.0) for i in range(len(windows_s))]
+
+
+def _movement(got: dict) -> float:
+    return max(abs(1.0 - (got["aud"] or 0.0)), abs(1.0 - (got["loud"] or 0.0)))
+
+
+def shift_movements_each(samples: np.ndarray, rate: int, shifts_s: list[float],
+                         windows_s: list[float | None],
+                         feats: sound.Features | None = None) -> list[list[float]]:
+    """`[shift][window]` movements, one row per shift -- so the doc can say
+    which shift moved the score, since a 3 ms shift that lands 4 samples off
+    a hop node and a half-hop shift that lands exactly between two are
+    different questions (see the note under CHECK_WINDOW_S)."""
+    a = feats if feats is not None else sound.features(samples, rate)
+    out = []
     for s in shifts_s:
         d = np.concatenate([np.zeros(int(round(s * rate)), dtype=np.float32), samples])
         b = sound.features(d, rate)
         lag = sound.align(a, b)
-        for i, w in enumerate(windows_s):
-            got = sound.compare_features(a, b, lag, window_s=w)
-            worst[i] = max(worst[i], abs(1.0 - (got["aud"] or 0.0)),
-                           abs(1.0 - (got["loud"] or 0.0)))
-    return worst
+        out.append([_movement(sound.compare_features(a, b, lag, window_s=w))
+                    for w in windows_s])
+    return out
+
+
+def rerender_movements(feats: sound.Features, renders: list[Path],
+                       window_s: float | None) -> list[float]:
+    """How far each repeat render of the same bytes sits from the cached one.
+
+    `feats` is the cached render's features (the 180 s one every score is
+    taken against); each path is a `sound.render_repeat` WAV of the same
+    .sid. The alignment is searched, as `score_pair` searches it, because a
+    random power-on delay is exactly an unknown offset."""
+    out = []
+    for p in renders:
+        x, rate = sound.read_wav_mono(p)
+        b = sound.features(x, rate)
+        lag = sound.align(feats, b)
+        out.append(_movement(sound.compare_features(feats, b, lag, window_s=window_s)))
+    return out
+
+
+def floors(moves: list[float], grid: list[float], rerender: list[float]) -> dict:
+    """The three floors check 2 records, and the one it adopts.
+
+    `moves` is the per-tune maximum over every shift (the two old ones and
+    the half-hop), `grid` the per-tune maximum over the two old shifts alone,
+    `rerender` every repeat-render movement of every tune. The adopted
+    `noise_floor` is the largest of the shift floor and the render floor --
+    the render's reproducibility bounds every score taken against a cached
+    render, and a floor that ignored it would be the grid node this check
+    used to report."""
+    shift_floor, grid_floor = noise_floor(moves), noise_floor(grid)
+    rerender_floor = noise_floor(rerender)
+    return {"noise_floor": max(shift_floor, rerender_floor),
+            "shift_floor": shift_floor, "grid_floor": grid_floor,
+            "rerender_floor": rerender_floor}
+
+
+def lost_to_floor(rows: list[dict]) -> list[str]:
+    """The known-bad pairs the adopted floor loses: seen under the grid floor,
+    not seen under the render floor, and not excluded. Named in the doc so a
+    pair that stops being seen is read as 'inside the render's own noise',
+    which is what it is, rather than as a metric blind spot."""
+    return [r["file"] for r in rows
+            if not r.get("incomparable") and not r.get("error")
+            and r.get("seen_under_grid_floor") and not r.get("seen")]
 
 
 def score_pair(orig: Path, ours: Path, seconds: int, sub: int) -> tuple[dict, dict]:
@@ -456,7 +559,15 @@ def main(argv=None) -> int:
     # 1 + 2: identity and shift, over every approved tune's original. The
     # floor that DECIDES is the prefix one; the whole-window one is recorded
     # beside it because approvals.py applies it over the whole window.
+    #
+    # Check 2 records three floors and adopts the largest (see the note under
+    # CHECK_WINDOW_S): the two old shifts (`grid`), those plus the half-hop
+    # (`shift`), and a fresh render of the same bytes against the cached one
+    # (`rerender`). `moves` stays the per-tune maximum over every shift, as
+    # it always was; the per-shift rows are beside it.
     idents, moves, moves_whole = {}, [], []
+    grid, grid_whole, half, half_whole = [], [], [], []
+    repeats, repeats_whole = {}, {}
     for n in names:
         sid = sid_dir / f"{n}.sid"
         sub = F.resolve_subtune(sid, "auto")
@@ -466,15 +577,34 @@ def main(argv=None) -> int:
         x, rate = sound.read_wav_mono(wav)
         f = sound.features(x, rate)
         idents[n] = sound.compare_features(f, f, 0)
-        m_prefix, m_whole = shift_movements(x, rate, [RASTERLINES_48_S, FRAME_S],
-                                            [CHECK_WINDOW_S, None])
-        moves.append(m_prefix)
-        moves_whole.append(m_whole)
+        each = shift_movements_each(x, rate, [RASTERLINES_48_S, FRAME_S, half_hop_s(rate)],
+                                    [CHECK_WINDOW_S, None], feats=f)
+        grid.append(max(each[0][0], each[1][0]))
+        grid_whole.append(max(each[0][1], each[1][1]))
+        half.append(each[2][0])
+        half_whole.append(each[2][1])
+        moves.append(max(row[0] for row in each))
+        moves_whole.append(max(row[1] for row in each))
+        renders = sound.render_repeat(sid, REPEAT_SECONDS, sub, REPEAT_TAG)
+        repeats[n] = rerender_movements(f, renders, CHECK_WINDOW_S)
+        # A REPEAT_SECONDS render overlaps the cached one for REPEAT_SECONDS
+        # whatever the window, so the whole-window figure is the same
+        # quantity; recorded under both names so a reader of `whole` finds it.
+        repeats_whole[n] = rerender_movements(f, renders, None)
     checks["identity"] = idents
-    checks["shift"] = {"movements": moves, "noise_floor": noise_floor(moves),
+    rerender_all = [m for ms in repeats.values() for m in ms]
+    rerender_all_whole = [m for ms in repeats_whole.values() for m in ms]
+    checks["shift"] = {"movements": moves, **floors(moves, grid, rerender_all),
+                       "grid_movements": grid, "half_hop_movements": half,
+                       "half_hop_samples": HALF_HOP_SAMPLES,
+                       "rerender": {"movements": repeats, "seconds": REPEAT_SECONDS,
+                                    "renders": len(rerender_all)},
                        "window_s": CHECK_WINDOW_S,
                        "whole": {"movements": moves_whole,
-                                 "noise_floor": noise_floor(moves_whole)}}
+                                 **floors(moves_whole, grid_whole, rerender_all_whole),
+                                 "grid_movements": grid_whole,
+                                 "half_hop_movements": half_whole,
+                                 "rerender": {"movements": repeats_whole}}}
 
     # 3: the pair a listener called inaudible.
     pairs = []
@@ -506,6 +636,7 @@ def main(argv=None) -> int:
         gb, wb = score_pair(sid, pb.sid, args.seconds, sub)
         gg, wg = score_pair(sid, pg.sid, args.seconds, sub)
         floor = checks["shift"]["noise_floor"]
+        grid_floor = checks["shift"]["grid_floor"]
         why = comparable(gb, gg)
         row = {"file": name, "versions": [v_bad, v_good],
                "bad": gb.get("aud"), "good": gg.get("aud"),
@@ -527,8 +658,16 @@ def main(argv=None) -> int:
         row["seen"] = (why is None
                        and (row["worse_by"] > floor
                             or row["worse_by_loud"] > floor))
+        # ...and the same verdict under the grid floor alone, so the doc can
+        # say which pairs the render floor LOSES rather than letting a pair
+        # that was seen yesterday read as a blind spot today.
+        row["seen_under_grid_floor"] = (why is None
+                                        and (row["worse_by"] > grid_floor
+                                             or row["worse_by_loud"] > grid_floor))
+        row["floor"] = floor
         bad.append(row)
     checks["known_bad"] = bad
+    checks["known_bad_lost_to_floor"] = lost_to_floor(bad)
 
     # 5: where the approved tunes sit.
     rows = []
@@ -543,13 +682,22 @@ def main(argv=None) -> int:
               and checks["shift"]["noise_floor"] < 0.01
               and closeness is not None
               and known_bad_passed(bad))
+    sh = checks["shift"]
     out = {"version": __version__, "head": F.git_label(ROOT), "seconds": args.seconds,
            "check_window_s": CHECK_WINDOW_S,
-           "noise_floor": checks["shift"]["noise_floor"],
+           "noise_floor": sh["noise_floor"],
+           # The three floors the adopted one is the largest of -- see the
+           # note under CHECK_WINDOW_S. `grid_floor` is what this file used
+           # to call the noise floor.
+           "grid_floor": sh["grid_floor"], "shift_floor": sh["shift_floor"],
+           "rerender_floor": sh["rerender_floor"],
            "closeness_floor": closeness,
-           # The same two floors over the whole render, for a reader that
+           # The same floors over the whole render, for a reader that
            # applies them over the whole render (approvals.py does).
-           "whole": {"noise_floor": checks["shift"]["whole"]["noise_floor"],
+           "whole": {"noise_floor": sh["whole"]["noise_floor"],
+                     "grid_floor": sh["whole"]["grid_floor"],
+                     "shift_floor": sh["whole"]["shift_floor"],
+                     "rerender_floor": sh["whole"]["rerender_floor"],
                      "closeness_floor": (closeness_floor([p["whole"] for p in pairs])
                                          if pairs else None)},
            "checks": checks, "pass": passed}
@@ -595,10 +743,40 @@ def render_doc(out: dict) -> str:
                   f"`{_fmt(whole.get('closeness_floor'))}` -- `approvals.py` "
                   "applies the floors over the whole window, so those are the "
                   "ones to read beside its verdicts.", ""]
+    sh = c["shift"]
+    rer = sh.get("rerender") or {}
+    lost = c.get("known_bad_lost_to_floor")
+    if out.get("rerender_floor") is not None:
+        floor_line = (f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest of "
+                      f"three: a 3 ms (48 rasterline) or 20 ms (one frame) delay of one "
+                      f"side (`{_fmt(out.get('grid_floor'))}`, the figure this file used "
+                      f"to call the floor), a delay of exactly half a hop "
+                      f"(`{sh.get('half_hop_samples', '?')}` samples; with the first two, "
+                      f"`{_fmt(out.get('shift_floor'))}`), and **a second render of the "
+                      f"same original against the cached one (`{out['rerender_floor']:.4f}` "
+                      f"over {rer.get('renders', '?')} repeat renders of {rer.get('seconds', '?')} s)**. "
+                      "The last is the render's own reproducibility -- sidplayfp's "
+                      "power-on delay is random unless `--delay=<n>` is passed, and "
+                      "`listen.render_sidplayfp` does not pass it -- and it is the floor "
+                      "under every score taken against a cached render. It is a maximum "
+                      "over samples of a random start state, so it is a lower bound that "
+                      "rises as runs accumulate (`sound.REPEAT_KEEP` renders per tune are "
+                      "kept in build/audio across runs); the remedy is the renderer's "
+                      "flag, not a wider floor (`sound.render_repeat`). A change smaller "
+                      "than this is not a change.")
+        if lost:
+            floor_line += (" **Adopting it loses a pair the grid floor saw: "
+                           + ", ".join(f"`{n}`" for n in lost)
+                           + "** -- read that row of check 4 as a margin inside the "
+                           "render's noise, not as a blind spot.")
+        elif lost == []:
+            floor_line += " It loses no known-bad pair the grid floor saw."
+    else:
+        floor_line = (f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest movement of "
+                      "`aud`/`loud` under a 3 ms (48 rasterline) and a 20 ms (one frame) delay "
+                      "of one side. A change smaller than this is not a change.")
     lines += ["The two numbers every decision uses, measured here and typed nowhere:", "",
-              f"* **noise floor** = `{out['noise_floor']:.4f}` -- the largest movement of "
-              "`aud`/`loud` under a 3 ms (48 rasterline) and a 20 ms (one frame) delay "
-              "of one side. A change smaller than this is not a change.",
+              floor_line,
               f"* **closeness floor** = `{out['closeness_floor']}` -- the least agreement "
               "between two renders a listener called the same (check 3). A build at "
               "least this close to an approved render sounds like what was approved.",
@@ -606,10 +784,21 @@ def render_doc(out: dict) -> str:
     for n, v in c["identity"].items():
         lines.append(f"| {n} | {v['aud']:.4f} | {v['loud']:.4f} | {v['loud_ratio']:.3f} |")
     lines += ["", "## 2. Inaudible shift", "",
-              f"Movements per tune: {', '.join(f'{m:.4f}' for m in c['shift']['movements'])}"]
-    if c["shift"].get("whole"):
+              f"Movements per tune: {', '.join(f'{m:.4f}' for m in sh['movements'])}"]
+    if sh.get("grid_movements") is not None:
+        lines.append(f"Of which the 3 ms and 20 ms shifts alone (the grid floor): "
+                     f"{', '.join(f'{m:.4f}' for m in sh['grid_movements'])}")
+    if sh.get("half_hop_movements") is not None:
+        lines.append(f"Half a hop ({sh.get('half_hop_samples', '?')} samples) alone: "
+                     f"{', '.join(f'{m:.4f}' for m in sh['half_hop_movements'])}")
+    if rer.get("movements") is not None:
+        lines.append(f"A second render against the cached one ({rer.get('seconds', '?')} s, "
+                     "fresh every run): "
+                     + "; ".join(f"{n} {', '.join(f'{m:.4f}' for m in ms) or '-'}"
+                                 for n, ms in rer["movements"].items()))
+    if sh.get("whole"):
         lines.append(f"Whole-window movements per tune: "
-                     f"{', '.join(f'{m:.4f}' for m in c['shift']['whole']['movements'])}")
+                     f"{', '.join(f'{m:.4f}' for m in sh['whole']['movements'])}")
     lines += ["", "## 3. A change a listener called inaudible", "",
               "| file | versions | aud | loud | aud (whole) | loud (whole) |",
               "|---|---|---:|---:|---:|---:|"]
@@ -631,6 +820,11 @@ def render_doc(out: dict) -> str:
                 verdict = ("yes" if b["worse_by"] > 0 else
                            f"yes, on `loud` ({b['worse_by_loud']:+.4f}); `aud` "
                            f"does not see it")
+            elif b.get("seen_under_grid_floor"):
+                margin = max(b["worse_by"], b.get("worse_by_loud", b["worse_by"]))
+                verdict = (f"NO -- inside the render floor ({margin:+.4f} against "
+                           f"{_fmt(b.get('floor'))}); the grid floor alone saw it, "
+                           "so this is the render's noise, not a blind spot")
             else:
                 verdict = "NO -- a blind spot; name it in the Dimension"
             w = b.get("whole") or {}

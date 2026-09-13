@@ -358,3 +358,181 @@ def test_note_reach_is_four_files_decoded_and_three_played(monkeypatch):
                 break
     assert hit == {"Proteus.sid", "Ricochet.sid", "Thing_on_a_Spring.sid",
                    "Warhawk.sid"}
+
+
+# ---------------------------------------------------------------------------
+# The third reading of the same fetch, and the one that comes BEFORE the other
+# two: the `ASL` is eight bits wide. `ASL / TAY / LDA freqtbl,Y` has no `ROL`
+# after the shift, so bit 7 of the note byte leaves through the carry and a
+# byte at or above `$80` indexes the table from the top again --
+# `((byte << 1) & $FF) >> 1`, the low seven bits (`patterns._wrap_note`). The
+# clamp turned every such byte into G#7.
+#
+# Mega_Apocalypse is the measured case. Its note fetch at `$4B74` is
+# `INY / LDA ($FA),Y / STA $5001 / AND #$7F / CLC / ADC $5222,X / STA $B9,X /
+# ASL / TAY / LDA $4E89,Y`: the raw byte is kept as a flag, the low seven bits
+# are transposed and shifted. `detect`'s `note_flag` spellings anchor the
+# store as `9D` abs,X and this one is `95` zero page, so the flag went
+# unread and the whole byte reached the clamp. Pattern entry 25 is `BF 09 4A
+# 1F CA FF` -- a D-6 (`$4A` = 74) and then `$CA`, the same D-6 with bit 7
+# set, a legato continuation; entry 39 is `BF 10 32 1F B2 FF`, D-4 and `$B2`.
+# The player reads entries 74 and 50 (and 62 where the orderlist transposes
+# +12); the clamp read 92 for all three.
+#
+# Measured at d2160e0 (snapshots differing only in patterns.py, presets.json
+# options, -t 180, subtune 0, -m1, startup lag 7): the one occurrence inside
+# the window is voice 0 at t=77 s, 192 frames, where the original holds
+# `$4E20` (entry 74, D-6, with its own wide vibrato around it), the clamp
+# played `$DD0E` (G#7) and the wrap plays `$4E28` (D-6). Attacks 407 -> 407
+# on that voice, `melody` unchanged to full precision -- the row is a tie
+# (`3 00`), so it is not an attack and no attack-keyed column can see it;
+# the frames can. The corpus byte-hash named exactly Mega_Apocalypse
+# (3 bytes, every one `$BC` -> a D); Commando.sng did not move.
+# ---------------------------------------------------------------------------
+
+MEGA = CORPUS / "Mega_Apocalypse.sid"
+MEGA_FETCH = 0x4B74
+MEGA_FETCH_BYTES = bytes.fromhex(
+    "c8 b1 fa 8d 01 50 29 7f 18 7d 22 52 95 b9 0a a8 b9")
+MEGA_TABLE = 0x4E89
+# SID pattern-table entry -> (raw bytes, row the wrapped byte lands on,
+# raw byte, entry the player reads, that entry's frequency in the file).
+MEGA_TWO = {
+    25: (bytes.fromhex("bf 09 4a 1f ca ff"), 32, 0xCA, 74, 0x4E20),
+    39: (bytes.fromhex("bf 10 32 1f b2 ff"), 32, 0xB2, 50, 0x1388),
+}
+
+
+def test_the_wrap_is_the_eight_bit_shift_and_it_comes_first():
+    # The arithmetic, on the bytes the docstring names.
+    assert patterns._wrap_note(0xB2) == 50
+    assert patterns._wrap_note(0xCA) == 74
+    assert patterns._wrap_note(0xE0) == 96
+    # ...and it is the identity below $80: a `$68` still reads 104, so the
+    # Commando reading (and the fixture) is untouched.
+    assert patterns._wrap_note(0x68) == 104
+    assert all(patterns._wrap_note(b) == b for b in range(0x80))
+    # Through the decoder: `01 B2` then `FF`, as in test_the_default_is_the_clamp.
+    raw = bytes((0, 0, 0x01, 0xB2, 0xFF))
+    assert patterns._build_raw_pattern(raw, 2)[0] == patterns.GT_FIRSTNOTE + 50
+    raw = bytes((0, 0, 0x01, 0xCA, 0xFF))
+    assert patterns._build_raw_pattern(raw, 2)[0] == patterns.GT_FIRSTNOTE + 74
+    # `note_flag` masks the same bit the shift drops, so it changes nothing.
+    assert (patterns._build_raw_pattern(raw, 2, note_flag=True)
+            == patterns._build_raw_pattern(raw, 2, note_flag=False))
+    # A wrapped byte that lands PAST the table is the other two readings'
+    # case, keyed on the wrapped value: `$E0` is `$60` to them.
+    raw = bytes((0, 0, 0x01, 0xE0, 0xFF))
+    assert patterns._build_raw_pattern(raw, 2)[0] == G_SHARP_7
+    assert patterns._build_raw_pattern(
+        raw, 2, rest_notes=frozenset({0x60}))[0] == patterns.GT_KEYOFF
+    assert patterns._build_raw_pattern(
+        raw, 2, const_notes={0x60: 32})[0] == G_SHARP_2
+    # A real entry 92-95 still clamps: the wrap is not a second clamp.
+    raw = bytes((0, 0, 0x01, 0x5F, 0xFF))
+    assert patterns._build_raw_pattern(raw, 2)[0] == G_SHARP_7
+
+
+@needs_corpus
+def test_mega_apocalypse_masks_transposes_and_shifts_its_note_byte():
+    sid = load_sid(str(MEGA))
+    det = detect(sid, log=lambda m: None)
+    assert det.pattern_dialect == "classic"
+    off = sid.to_offset(MEGA_FETCH)
+    assert sid.data[off:off + len(MEGA_FETCH_BYTES)] == MEGA_FETCH_BYTES
+    ft = det.freq_table
+    assert (ft.addr, ft.length) == (MEGA_TABLE, 96)
+    base = sid.to_offset(MEGA_TABLE)
+    data = sid.data
+    for i, (raw, row, byte, entry, freq) in MEGA_TWO.items():
+        step = i * det.table_stride
+        addr = sid.to_offset(data[det.pattern_hi + step] * 256
+                             + data[det.pattern_lo + step])
+        assert data[addr:addr + len(raw)] == raw, i
+        assert raw[4] == byte
+        assert patterns._wrap_note(byte) == entry
+        assert data[base + 2 * entry] | (data[base + 2 * entry + 1] << 8) == freq
+        ev = patterns.decode_entry(sid, det, i, **GRAMMAR)
+        assert ev[4 * row] == patterns.GT_FIRSTNOTE + entry, (i, row)
+        # The note before it is the same entry, read from a byte below $80:
+        # the flagged byte is a legato continuation of it, so the wrap and
+        # the note it follows agree, which is what the trace shows.
+        assert ev[0] == patterns.GT_FIRSTNOTE + entry, i
+
+
+@needs_corpus
+def test_mega_apocalypse_without_the_wrap_is_the_clamp(monkeypatch):
+    # The same rows with the wrap stood down (identity) read G#7: what the
+    # clamp emitted, and what removing the `& 0xFF` from `_wrap_note` would
+    # restore -- `(b << 1) >> 1` is `b` again.
+    sid = load_sid(str(MEGA))
+    det = detect(sid, log=lambda m: None)
+    on = {i: patterns.decode_entry(sid, det, i, **GRAMMAR) for i in MEGA_TWO}
+    monkeypatch.setattr(patterns, "_wrap_note", lambda b: b)
+    off = {i: patterns.decode_entry(sid, det, i, **GRAMMAR) for i in MEGA_TWO}
+    for i, (_, row, _, entry, _) in MEGA_TWO.items():
+        assert len(on[i]) == len(off[i]), i
+        assert off[i][4 * row] == G_SHARP_7, i
+        assert on[i][4 * row] == patterns.GT_FIRSTNOTE + entry, i
+        # The note column on that one row is all that moves.
+        assert [k for k in range(0, len(on[i]), 4)
+                if on[i][k:k + 4] != off[i][k:k + 4]] == [4 * row], i
+        assert on[i][4 * row + 1:4 * row + 4] == off[i][4 * row + 1:4 * row + 4]
+
+
+def _classic_corpus():
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        try:
+            det = detect(sid, log=lambda m: None)
+        except Exception:  # noqa: BLE001 -- the six non-Hubbard files
+            continue
+        if det.pattern_dialect != "classic":
+            continue
+        yield path, sid, det
+
+
+@needs_corpus
+def test_every_classic_table_is_read_through_an_eight_bit_shift():
+    # "Every 8-bit ASL player" is a claim about the corpus, so it is checked
+    # against the corpus: every classic-dialect file whose table was found
+    # carries `ASL / TAY / LDA tbl,Y` or `ASL / TAX / LDA tbl,X` at that
+    # table's address. A 16-bit index would need a `ROL` after the shift and
+    # a different lookup shape, and none has one.
+    missing = []
+    seen = 0
+    for path, sid, det in _classic_corpus():
+        ft = det.freq_table
+        if ft is None:
+            continue
+        seen += 1
+        lo, hi = ft.addr & 0xFF, ft.addr >> 8
+        tay = bytes((0x0A, 0xA8, 0xB9, lo, hi))
+        tax = bytes((0x0A, 0xAA, 0xBD, lo, hi))
+        if sid.data.find(tay) < 0 and sid.data.find(tax) < 0:
+            missing.append(path.name)
+    assert missing == []
+    assert seen >= 70, seen           # 73 of 79 classic files at d2160e0
+
+
+@needs_corpus
+def test_wrap_reach_is_three_files_decoded_and_one_played(monkeypatch):
+    # Where the wrap reaches at the DECODE level under the presets' grammar,
+    # over every classic-dialect corpus file: three. Commodore_64_Music_
+    # Examples' and Confuzion's are a `$83` (entry 3) in entries no orderlist
+    # plays, so the corpus byte-hash under presets.json at d2160e0 named
+    # exactly Mega_Apocalypse. Pinned so a change in reach is a change
+    # someone has to explain.
+    real = patterns._wrap_note
+    hit = set()
+    for path, sid, det in _classic_corpus():
+        for i in range(max(det.pattern_used, 0)):
+            monkeypatch.setattr(patterns, "_wrap_note", real)
+            on = patterns.decode_entry(sid, det, i, **GRAMMAR)
+            monkeypatch.setattr(patterns, "_wrap_note", lambda b: b)
+            off = patterns.decode_entry(sid, det, i, **GRAMMAR)
+            if on is not None and on != off:
+                hit.add(path.name)
+                break
+    assert hit == {"Commodore_64_Music_Examples.sid", "Confuzion.sid",
+                   "Mega_Apocalypse.sid"}

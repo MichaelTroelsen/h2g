@@ -76,6 +76,21 @@ N_FFT = 2048
 # time resolution. The cost is CPU: featurise-plus-compare over the corpus
 # goes 31 s -> 119 s, against a corpus pass whose 15m46s is dominated by
 # rendering.
+#
+# RETRACTED IN PART: "THE HOP IS THE NOISE FLOOR" names the GRID's floor, and
+# the grid's floor is not the floor. Two things were measured at d2160e0
+# (HISTORICAL; the live figures are check 2 of docs/SOUND-CALIBRATION.md).
+# First, the 3 ms and 20 ms shifts the calibration used are 132 and 882
+# samples -- 4 and 14 samples off a 128-sample grid node -- so the 0.0018 they
+# read was the residue of nearly-whole-hop shifts, not of the half-hop one
+# the table above is about: a shift of exactly HOP/2 samples reads 0.0040-
+# 0.0077 on the four approved originals, in line with the 0.0069 above.
+# Second, and larger: two renders of the SAME .sid through
+# `listen.render_sidplayfp` read 0.0031-0.0202 apart (up to 0.0326 in an
+# earlier sample), because sidplayfp's power-on delay is random unless
+# `--delay=<n>` is passed -- see `render_repeat`. The floor under any score
+# taken against a cached render is the render's reproducibility, and the grid
+# only bounds it from below.
 HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
@@ -432,6 +447,64 @@ def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
         out.unlink(missing_ok=True)
         return None
     return out
+
+
+# How many repeat renders of one file `render_repeat` keeps beside each other.
+# Each is CHECK_WINDOW_S of mono 16-bit PCM (5.3 MB at 60 s); six of four
+# tunes is 127 MB, and six samples of a random start state is enough to see
+# its range where one is not (measured at d2160e0, HISTORICAL: three renders
+# of Devils_Galop read 0.0202 and 0.0109 against the cached one).
+REPEAT_KEEP = 6
+
+
+def render_repeat(sid: Path, seconds: int, subtune: int, tag: str,
+                  cache: Path = AUDIO_DIR,
+                  renderer=listen.render_sidplayfp,
+                  keep: int = REPEAT_KEEP) -> list[Path]:
+    """A FRESH render of `sid` on every call, kept beside the earlier ones.
+
+    `render_cached` answers "what does this .sid sound like" once per distinct
+    set of bytes, so it can never measure how far two renders of the SAME
+    bytes sit apart -- and they do. sidplayfp's `--delay=<num>` ("simulate
+    c64 power on delay (default: random)", its --help-debug) is left at its
+    default by `listen.render_sidplayfp`, so every render starts the C64 a
+    different number of cycles into its own timeline: measured at d2160e0
+    (HISTORICAL; the live figure is check 2 of docs/SOUND-CALIBRATION.md),
+    three 60 s renders of each approved original differ in length by 0-220
+    samples, align 0-6 hops apart, and read `aud`/`loud` 0.0031-0.0202 off
+    each other, where the same three under `--delay=0` are the same length
+    every time and read 0.0000-0.0001. That movement is a property of the
+    RENDER, not of the feature grid, and it is the floor under every score
+    taken against a cached render until the renderer fixes its start state.
+
+    Each call renders again to `<tag>.<key>.s<sub>.t<seconds>.r<k>.wav`,
+    numbered after the renders of these bytes already on disk, drops the
+    oldest beyond `keep`, and returns every one still there, oldest first.
+    A failed render adds nothing and returns what was already there.
+    """
+    cache = Path(cache)
+    cache.mkdir(parents=True, exist_ok=True)
+    stem = f"{tag}.{content_key(sid)}.s{subtune}.t{seconds}"
+
+    def _have() -> list[Path]:
+        got = []
+        for p in cache.glob(f"{stem}.r*.wav"):
+            k = p.name[len(stem) + 2:-4]
+            if k.isdigit() and p.stat().st_size > listen.EMPTY_WAV:
+                got.append((int(k), p))
+        return [p for _, p in sorted(got)]
+
+    have = _have()
+    k = (int(have[-1].name[len(stem) + 2:-4]) + 1) if have else 1
+    out = cache / f"{stem}.r{k}.wav"
+    ok = renderer(Path(sid), out, seconds, subtune)
+    if not ok or not out.exists() or out.stat().st_size <= listen.EMPTY_WAV:
+        out.unlink(missing_ok=True)
+        return have
+    have = _have()
+    for p in have[:-keep] if keep > 0 else have:
+        p.unlink(missing_ok=True)
+    return _have()
 
 
 def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,

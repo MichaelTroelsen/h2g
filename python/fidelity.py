@@ -78,6 +78,7 @@ import functools
 import hashlib
 import inspect
 import json
+import math
 import os
 import re
 import shutil
@@ -1688,7 +1689,16 @@ def paired_keys(a: dict, b: dict) -> list[tuple[int, int]]:
     return pairs
 
 
-def pitch_motion(voices: list[Voice], nframes: int) -> dict:
+def _skip_span(skip_radius) -> tuple[int, int]:
+    """`(before, after)` samples skipped around an attack: an int is
+    symmetric, a pair is not -- see `vice_pitch_voices`."""
+    if isinstance(skip_radius, tuple):
+        return skip_radius
+    return skip_radius, skip_radius
+
+
+def pitch_motion(voices: list[Voice], nframes: int,
+                 skip_radius: int | tuple[int, int] = 1) -> dict:
     """Pitch movement split into oscillation and travel, without a threshold.
 
     `slides` and `bend` lump every kind of pitch movement together, and on
@@ -1714,13 +1724,20 @@ def pitch_motion(voices: list[Voice], nframes: int) -> dict:
     jump and would read as a reversal; unlike a fixed offset, though, dropping a
     frame here costs one sample of many rather than shifting the whole
     measurement (the mistake `noise_runs` exists to avoid).
+
+    `skip_radius` is that hole, in samples either side of the attack -- or a
+    `(before, after)` pair. It is 1 for a siddump trace, where a sample is a
+    frame; `vice_pitch_voices` hands over a trace with a sample per PLAY
+    CALL, its attacks anchored on the frame's first call, and passes
+    `vice_skip_span(m)`, so the hole is the same three frames.
     """
+    before, after = _skip_span(skip_radius)
     reversals = gross = net = 0
     for v in voices:
         fq = register_timeline(v.freq_events, nframes)
         skip = set()
         for a in v.attack_frames:
-            skip |= {a - 1, a, a + 1}
+            skip |= set(range(a - before, a + after + 1))
         atk = sorted(v.attack_frames)
         for j, a in enumerate(atk):
             nxt = atk[j + 1] if j + 1 < len(atk) else nframes
@@ -1738,14 +1755,16 @@ def pitch_motion(voices: list[Voice], nframes: int) -> dict:
 
 
 def pitch_motion_compare(orig: list[Voice], ours: list[Voice],
-                         nframes: int) -> dict:
+                         nframes: int,
+                         skip_radius: int | tuple[int, int] = 1) -> dict:
     """Our pitch oscillation *rate* over the original's, and both shares.
 
     The rate is the number that a call-skipping packer changes and that `slides`
     obscured: an oscillator dropped on one tick in three runs at two thirds
     speed, whatever its depth.
     """
-    a, b = pitch_motion(orig, nframes), pitch_motion(ours, nframes)
+    a = pitch_motion(orig, nframes, skip_radius)
+    b = pitch_motion(ours, nframes, skip_radius)
     return {
         "orig_reversals": a["reversals"],
         "our_reversals": b["reversals"],
@@ -1891,7 +1910,8 @@ def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
 
 
 def oscillation_depths(voices: list[Voice], nframes: int,
-                       keys: set[int] | None = None) -> dict:
+                       keys: set[int] | None = None,
+                       skip_radius: int | tuple[int, int] = 1) -> dict:
     """`{ADSR: median cycle swing, as a fraction of the pitch}`.
 
     **Segmented on gate rising edges** -- `Voice.attack_frames`, the frames
@@ -1917,7 +1937,11 @@ def oscillation_depths(voices: list[Voice], nframes: int,
     as exactly, because `--cut-release` rewrites the release nibble on our
     side and an exact-only filter would drop every instrument whose release
     the conversion changed.
+
+    `skip_radius` as in `pitch_motion`: 1 frame-sample for siddump,
+    `vice_skip_span(m)` calls for a VICE trace.
     """
+    before, after = _skip_span(skip_radius)
     masked = {instrument_key(k) for k in keys} if keys is not None else None
     pooled: dict = {}
     for v in voices:
@@ -1925,7 +1949,7 @@ def oscillation_depths(voices: list[Voice], nframes: int,
         adsr = register_timeline(v.adsr_events, nframes)
         skip = set()
         for a in v.attack_frames:
-            skip |= {a - 1, a, a + 1}
+            skip |= set(range(a - before, a + after + 1))
         atk = sorted(v.attack_frames)
         for j, a in enumerate(atk):
             key = adsr[a] if a < nframes else 0
@@ -1942,7 +1966,8 @@ def oscillation_depths(voices: list[Voice], nframes: int,
 
 
 def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
-                  keys: set[int] | None = None) -> dict:
+                  keys: set[int] | None = None,
+                  skip_radius: int | tuple[int, int] = 1) -> dict:
     """How deep our vibrato swings, over the original's.
 
     `vib` is a *count* of pitch reversals -- the rate -- and this project has
@@ -1994,8 +2019,16 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
         # Both refusals leave `depth_ratio` absent and so both print `-`;
         # `depth_refusal` is what tells them apart, because the dash cannot.
         return {"depth_refusal": "no-population"}
-    a = oscillation_depths(orig, nframes, keys)
-    b = oscillation_depths(ours, nframes, keys)
+    return _depth_compare_sided(orig, ours, nframes, nframes, keys,
+                                skip_radius, skip_radius)
+
+
+def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
+                         skip_orig, skip_ours) -> dict:
+    """`depth_compare` with each side on its own axis -- see
+    `vice_pitch_compare`, where ours is indexed by its own play calls."""
+    a = oscillation_depths(orig, n_orig, keys, skip_orig)
+    b = oscillation_depths(ours, n_ours, keys, skip_ours)
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
         # The population EXISTS and the comparison failed -- the candidate-for-
@@ -3615,6 +3648,424 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     return out
 
 
+def vice_skip_span(calls_per_frame: int) -> tuple[int, int]:
+    """`pitch_motion`'s attack hole -- frames f-1, f, f+1 -- in play calls.
+
+    A call-indexed attack is anchored on its frame's FIRST call, so the hole
+    is `m` calls before it and `2m - 1` after: `(1, 1)` at `-S1`, which is
+    the siddump rule itself, and `(3, 5)` at `-S3`. Exact where `m` divides
+    312; at `-S5`, `-S7`, `-S9` and `-S10` a frame holds a fraction of a call
+    more or less than the next and the hole can be one call short or long at
+    one end. See vice_pitch_voices.
+    """
+    m = max(1, calls_per_frame)
+    return m, 2 * m - 1
+
+
+def vice_call_phase(writes: list[int], period: float) -> float:
+    """The rasterline phase, modulo `period`, at which a side's play call
+    begins -- the end of the widest gap in `writes mod period`, so that no
+    call's writes straddle a call boundary."""
+    if not writes:
+        return 0.0
+    ph = sorted(w % period for w in writes)
+    gaps = [(ph[i + 1] - ph[i], ph[i + 1]) for i in range(len(ph) - 1)]
+    gaps.append((ph[0] + period - ph[-1], ph[0]))
+    return max(gaps)[1]
+
+
+def vice_frame_offset(samples: list, keyed_by: list[Voice]) -> int:
+    """How many frames the VICE trace runs behind siddump's, 0..2.
+
+    VICE's dump starts at reset and siddump's at the first play call, so the
+    same frame sits at a different index in the two: one frame later on
+    Zoolook's original, zero or one on its `-S3` conversion. Estimated on the
+    LOW byte of every voice's frame-end frequency, which the dump never gets
+    wrong, over every whole frame: the offset that agrees most often.
+    """
+    lines = vicetrace.PAL_LINES_PER_FRAME
+    nframes = len(samples) // lines
+    tls = [register_timeline(v.freq_events, nframes) for v in keyed_by[:3]]
+    best, best_at = -1, 0
+    for off in (0, 1, 2):
+        hits = 0
+        for f in range(off, nframes):
+            smp = samples[f * lines + lines - 1]
+            for vi, tl in enumerate(tls):
+                if vi < len(smp.voices) and                         (smp.voices[vi].freq & 0xFF) == (tl[f - off] & 0xFF):
+                    hits += 1
+        if hits > best:
+            best, best_at = hits, off
+    return best_at
+
+
+def vice_freq_repair(raw: list[int], attacks: list[int],
+                     oracle: list[int] | None = None,
+                     offset: int = 0) -> tuple[list[int], dict]:
+    """Undo the VICE dump's sign-extended low byte on a 16-bit register stream.
+
+    **The `dump` sound device prints every 16-bit field as `(hi << 8) |
+    (signed char) lo`.** Measured on Zoolook's original at v0.5.485, frame by
+    frame against siddump: `$0D6D` prints `0d6d`, `$0E33` prints `0e33`, and
+    `$0DD0` prints `ffd0`, `$1BA1` `ffa1`, `$52BC` `ffbc`; ADSR `$0BF0` prints
+    `fff0` and `$9900` prints `9900`. The low byte is never wrong (0 of 1499
+    frames on all three voices) and the high byte is `ff` exactly when the
+    low byte has bit 7 set. Which is a sign extension, and it destroys the
+    high byte rather than shifting it, so nothing in the dump itself says
+    what it was.
+
+    That defect sits under EVERY 16-bit column `--vice` has ever reported --
+    `adsr`, `pul`, `pspan` -- and this function repairs only the frequency
+    stream `vib` and `depth` read, because `vicetrace.parse` is where the
+    repair belongs and this change does not reach it. A pulse sweep crossing
+    lo `$7F -> $80` under `--vice` still reads as a jump of `$FF00`.
+
+    **SIDDUMP IS THE ORACLE, WHERE IT SAW THE VALUE.** `oracle` is siddump's
+    per-frame frequency timeline for the same voice and side, `offset` how
+    many frames the VICE trace runs behind it (`vice_frame_offset`). A
+    corrupt sample in VICE frame `F` whose low byte equals siddump's at frame
+    `F - offset`, or one frame either side, takes that frame's high byte --
+    which, for a side that writes once a frame, is every sample, and is what
+    makes the original's reading under `--vice` siddump's own: the first
+    version had only the continuity rule below and put Zoolook's voice 0,
+    which alternates `$52BC` and `$DD08` frame by frame, at `$DDBC` on 208
+    of its 1499 frames. A conversion writing three times a frame has two
+    calls in three siddump never saw; those fall through to continuity.
+
+    THE CONTINUITY RULE is exact for any motion whose step per sample is
+    under `$80` -- every vibrato and slide, since at 312 samples a frame
+    each play call's write is its own sample -- and a guess for anything
+    faster, which the counts say. A corrupt run
+    is a maximal stretch of samples with `hi == $FF` and `lo >= $80`. The
+    high byte changes only when the low byte wraps `$FF -> $00`, and `$00` is
+    read correctly, so a wrap always ENDS a run: the run's true high byte is
+    the lower of its two neighbours' when they differ by one (rising run:
+    before `h`, after `h + 1`; falling: before `h + 1`, after `h`), and their
+    common value when they agree.
+
+    Attacks are barriers: a neighbour on the other side of a gate rise is a
+    different note and says nothing about this one. A run opening a note
+    takes the high byte of the first correct sample after it, a run closing
+    one takes the last correct sample before it, and a run that is a whole
+    note -- a short note whose low byte never drops below `$80` -- falls back
+    to the nearest correct sample on either side, barrier or not, and is
+    counted as `unanchored`: its swing is still exact (the high byte is
+    constant across it) but its centre may be another note's.
+
+    A run between neighbours differing by MORE than one is a jump inside a
+    note -- a tie, or a drum sweep stepping over the whole `$00-$7F` range --
+    and the true high byte is unknowable. Each sample takes the high byte
+    that keeps it nearest the straight line between its neighbours, so a
+    monotone sweep stays monotone and no turning point is invented; counted
+    as `ambiguous`.
+    """
+    n = len(raw)
+    out = list(raw)
+    stats = {"repaired": 0, "by_oracle": 0, "ambiguous": 0, "unanchored": 0}
+    atk = sorted(set(attacks))
+    lines = vicetrace.PAL_LINES_PER_FRAME
+
+    def corrupt(v: int) -> bool:
+        return (v >> 8) == 0xFF and bool(v & 0x80)
+
+    if oracle:
+        raw = list(raw)
+        for i in range(n):
+            if not corrupt(raw[i]):
+                continue
+            f = i // lines - offset
+            lo = raw[i] & 0xFF
+            his = {oracle[g] >> 8 for g in (f - 1, f, f + 1)
+                   if 0 <= g < len(oracle) and (oracle[g] & 0xFF) == lo}
+            if len(his) == 1:
+                raw[i] = out[i] = (his.pop() << 8) | lo
+                stats["by_oracle"] += 1
+                stats["repaired"] += 1
+
+    i = 0
+    while i < n:
+        if not corrupt(raw[i]):
+            i += 1
+            continue
+        s = i
+        while i < n and corrupt(raw[i]):
+            i += 1
+        e = i                                   # run is raw[s:e]
+        # the note this run belongs to: [note_start, note_end)
+        note_start = 0
+        note_end = n
+        for a in atk:
+            if a <= s:
+                note_start = a
+            elif a > s:
+                note_end = a
+                break
+        before = raw[s - 1] if s - 1 >= note_start else None
+        after = raw[e] if e < note_end else None
+        if before is not None and after is not None:
+            hb, ha = before >> 8, after >> 8
+            if hb == ha or abs(hb - ha) == 1:
+                his = [min(hb, ha)] * (e - s)
+            else:
+                stats["ambiguous"] += e - s
+                lo_h, hi_h = min(hb, ha), max(hb, ha)
+                his = []
+                for k in range(s, e):
+                    t = (k - (s - 1)) / (e - (s - 1))
+                    target = before + (after - before) * t
+                    lo = raw[k] & 0xFF
+                    his.append(min(range(lo_h, hi_h + 1),
+                                   key=lambda h: abs(((h << 8) | lo) - target)))
+        elif before is not None:
+            his = [before >> 8] * (e - s)
+        elif after is not None:
+            his = [after >> 8] * (e - s)
+        else:
+            stats["unanchored"] += e - s
+            # Nearest correct, sounding sample on either side; a silent
+            # voice's 0 says nothing about the note's octave.
+            j = s - 1
+            while j >= 0 and (corrupt(raw[j]) or not raw[j]):
+                j -= 1
+            k = e
+            while k < n and (corrupt(raw[k]) or not raw[k]):
+                k += 1
+            cands = [(s - j, j) for j in (j,) if j >= 0] +                     [(k - e + 1, k) for k in (k,) if k < n]
+            his = [(raw[min(cands)[1]] >> 8) if cands else 0] * (e - s)
+        for k, h in zip(range(s, e), his):
+            out[k] = (h << 8) | (raw[k] & 0xFF)
+        stats["repaired"] += e - s
+    return out, stats
+
+
+def vice_pitch_voices(samples: list, reduce: str | None = None,
+                      keyed_by: list[Voice] | None = None,
+                      calls_per_frame: int = 1) -> list[Voice]:
+    """Three `Voice`s read off a VICE trace, for the pitch-motion columns.
+
+    `_vice_pitch_voices` is the same reader returning the repair count too.
+
+    `vib` and `depth` are computed from `Voice.freq_events`, `attack_frames`
+    and `adsr_events`, all indexed by siddump's frame. Under `--vice` there
+    is no siddump trace, and before this reader existed (v0.5.485 and
+    earlier) the two columns were simply not computed -- the row printed `-`
+    for both, on precisely the run whose resolution they need: a conversion
+    packed at `-S3` writes its vibrato three times a frame, siddump samples
+    once, and whether a 0.73-0.90 depth residual is an undersampled emission
+    or a genuinely shallow one is a question only a sub-frame trace can
+    answer.
+
+    **The unit of `Voice` here is a play call, not a frame.** With
+    `reduce=None` the index is the call: call `k` of a side making `m` calls
+    a frame covers rasterlines `[phase + k * 312 / m, phase + (k + 1) * 312 /
+    m)`, with `phase` read off the trace (`vice_call_phase`), and the call's
+    value is the frequency it left standing. The oscillation statistics are
+    resolution-blind by construction -- `pitch_motion` and `vibrato_swings`
+    both drop zero deltas -- so a call-indexed `Voice` is a legal input to
+    them, and at `m = 1` it is siddump's frame-indexed one, value for value.
+
+    **The attack hole is siddump's, frame for frame.** `pitch_motion` skips
+    the attack frame and one either side; here each attack is anchored on
+    its frame's first call and the callers pass `vice_skip_span(m)`, so the
+    hole is exactly frames `f-1, f, f+1`. It was first a symmetric frame of
+    rasterlines either side of the gate line, and that hole is a frame
+    shorter; then a frame and a half either side of a mid-frame anchor,
+    which is the right three frames of LINES but lets the previous frame's
+    value -- still standing on the first lines of frame `f+2`, before that
+    frame's write -- lead every segment. On Zoolook's original, which
+    writes once a frame and so cannot have sub-frame motion, the two read
+    858 and 734 reversals on voice 0 against 659 at one sample a frame: one
+    extra turning point per note from the segment being longer, and nothing
+    to do with resolution. Indexing by call is what removes it: a segment
+    is then the calls of frames `f+2 .. g-2`, which is siddump's segment.
+    Two gate rises in one frame are one attack here, as they are to siddump.
+
+    **BUT THE VALUE IS THE CALL'S, NOT THE RASTERLINE'S.** A play call writes
+    a voice's frequency more than once -- measured on Zoolook at v0.5.485,
+    the original's voice 0 holds 2650 of its 4686 distinct values for two or
+    three rasterlines and our `-S3` conversion holds 9786 of 12485 for three
+    or four, against a call period of 312 and 104 -- so read raw, the trace
+    oscillates between a call's first write and its last and `vib` counts
+    that as vibrato: the ORIGINAL, which writes once a frame, read 1936
+    reversals at rasterline resolution against 1529 at one sample a frame.
+    What the chip sounds is the value the call lets stand, so `freq_events`
+    keeps only a value held for at least HALF A CALL PERIOD --
+    `PAL_LINES_PER_FRAME // (2 * calls_per_frame)`, 156 lines for the
+    original and 15 at the corpus's fastest `-S10` -- which is longer than
+    any intra-call spacing seen (44 lines, Hubbard; 4, Goattracker) and
+    shorter than any call. `calls_per_frame` is the side's own rate: 1 for
+    the original, the packed multiplier for ours.
+
+    **The frequency is repaired first** -- see `vice_freq_repair`: the dump
+    sign-extends the low byte into the high one, and read raw, Zoolook's
+    original swings 180% of its pitch where siddump reads 5.6%.
+
+    **Instrument keys come from siddump, not from the dump's ADSR field**,
+    which has the same sign extension (`$0BF0` prints `fff0`) and, being
+    piecewise constant, no continuity to repair it by. `keyed_by` is the
+    siddump `Voice` list of the SAME side: each VICE attack takes the ADSR
+    siddump holds at its nearest attack on that voice within two frames --
+    the two traces sit 0-1 frames apart on both sides of Zoolook -- and, for
+    an attack siddump did not see (the sub-frame gate `--vice` exists to
+    catch), the ADSR siddump holds at that frame. Without `keyed_by` the
+    dump's own ADSR is used, sign extension and all, which is fit for a
+    synthetic test and for nothing else: a key with sustain/release `>= $80`
+    then never joins `vibrato_records`.
+
+    `reduce="last"` keeps one sample a frame -- the frame's closing value,
+    which IS siddump's sampling rule -- and indexes by frame, so the callers'
+    default `skip_radius=1` applies. It exists so the finer trace can be run
+    under the coarser rule first: the difference between `reduce="last"` and
+    `reduce=None` on the same two traces is the resolution alone, which is
+    the translation CLAUDE.md requires before a `--vice` number is believed.
+    Whole frames only, as `frame_cells`.
+    """
+    return _vice_pitch_voices(samples, reduce, keyed_by, calls_per_frame)[0]
+
+
+def _vice_pitch_voices(samples: list, reduce: str | None = None,
+                       keyed_by: list[Voice] | None = None,
+                       calls_per_frame: int = 1) -> tuple[list[Voice], dict]:
+    """`vice_pitch_voices` plus the summed `vice_freq_repair` counts."""
+    lines = vicetrace.PAL_LINES_PER_FRAME
+    nframes = len(samples) // lines
+    total = nframes * lines
+    hold = lines // (2 * max(1, calls_per_frame))
+    voices = []
+    repair = {"repaired": 0, "by_oracle": 0, "ambiguous": 0, "unanchored": 0}
+    offset = vice_frame_offset(samples[:total], keyed_by) if keyed_by else 0
+    for vi in range(3):
+        v = Voice()
+        raw = [smp.voices[vi].freq if vi < len(smp.voices) else 0
+               for smp in samples[:total]]
+        edges = vicetrace.gate_edges(samples[:total], vi)
+        oracle = (register_timeline(keyed_by[vi].freq_events, nframes)
+                  if keyed_by is not None and vi < len(keyed_by) else None)
+        freq, stats = vice_freq_repair(raw, edges, oracle, offset)
+        for k in repair:
+            repair[k] += stats[k]
+        # ADSR at each attack: siddump's, by nearest attack, or the dump's.
+        sd_adsr = sd_attacks = None
+        if keyed_by is not None and vi < len(keyed_by):
+            sd_adsr = register_timeline(keyed_by[vi].adsr_events, nframes + 2)
+            sd_attacks = sorted(keyed_by[vi].attack_frames)
+
+        def key_at(i: int) -> int:
+            if sd_adsr is None:
+                return samples[i].voices[vi].adsr if vi < len(samples[i].voices) else 0
+            f = i // lines
+            near = [a for a in sd_attacks if abs(a - f) <= 2]
+            if near:
+                a = min(near, key=lambda a: (abs(a - f), a))
+                return sd_adsr[a] if a < len(sd_adsr) else 0
+            return sd_adsr[min(f, len(sd_adsr) - 1)]
+
+        if reduce == "last":
+            prev_f = None
+            for f in range(nframes):
+                fq = freq[f * lines + lines - 1]
+                if fq != prev_f:
+                    v.freq_events.append((f, fq))
+                    prev_f = fq
+            seen = set()
+            for i in edges:
+                f = vicetrace.frame_of(i)
+                if f not in seen:
+                    seen.add(f)
+                    v.attack_frames.append(f)
+                    v.adsr_events.append((f, key_at(i)))
+        else:
+            # Runs of one value; a run shorter than `hold` is a write the
+            # same call overwrote, and never reaches the events.
+            writes = []
+            i = 0
+            while i < total:
+                j = i + 1
+                while j < total and freq[j] == freq[i]:
+                    j += 1
+                if j - i >= hold or j == total:
+                    writes.append((i, freq[i]))
+                i = j
+            period = lines / max(1, calls_per_frame)
+            phase = vice_call_phase([w for w, _ in writes if w], period)
+
+            def call_of(line: int) -> int:
+                return max(0, int((line - phase) // period))
+
+            def first_call_in(frame: int) -> int:
+                # the first call STARTING in the frame, not the one still
+                # running across its first `phase` lines
+                return max(0, math.ceil((frame * lines - phase) / period))
+
+            prev = None
+            for w, value in writes:
+                if value != prev:
+                    v.freq_events.append((call_of(w), value))
+                    prev = value
+            seen = set()
+            for i in edges:
+                f = vicetrace.frame_of(i)
+                if f not in seen:
+                    seen.add(f)
+                    anchor = first_call_in(f)
+                    v.attack_frames.append(anchor)
+                    v.adsr_events.append((anchor, key_at(i)))
+        voices.append(v)
+    return voices, repair
+
+
+def vice_pitch_compare(orig_samples: list, our_samples: list,
+                       keys: set[int] | None, reduce: str | None = None,
+                       orig_keyed_by: list[Voice] | None = None,
+                       our_keyed_by: list[Voice] | None = None,
+                       our_calls_per_frame: int = 1) -> dict:
+    """`vib` and `depth` from two VICE traces -- the same keys as
+    `pitch_motion_compare` + `depth_compare`, so a `--vice` row is a drop-in
+    for a siddump row in `--baseline`.
+
+    Both sides are cut to the shorter trace's whole frames, as the register
+    dimensions are. `reduce` is passed to `vice_pitch_voices`; the row records
+    which resolution produced the number as `vice_pitch_resolution`, because a
+    `vib` of 1.0x at one sample a frame and at 312 are two different claims,
+    and `vice_freq_repair` -- how many samples the dump's sign extension
+    cost, per side, and how many of those had to be guessed.
+    """
+    lines = vicetrace.PAL_LINES_PER_FRAME
+    nframes = min(len(orig_samples), len(our_samples)) // lines
+    a, ra = _vice_pitch_voices(orig_samples[:nframes * lines], reduce,
+                               orig_keyed_by, 1)
+    b, rb = _vice_pitch_voices(our_samples[:nframes * lines], reduce,
+                               our_keyed_by, our_calls_per_frame)
+    if reduce == "last":
+        out = pitch_motion_compare(a, b, nframes, skip_radius=1)
+        out.update(depth_compare(a, b, nframes, keys, skip_radius=1))
+    else:
+        # Each side is indexed by ITS OWN calls, so the two are compared at
+        # their own lengths -- the counts and medians the columns reduce to
+        # do not need a shared axis, only the same window, which they have.
+        m = max(1, our_calls_per_frame)
+        pa = pitch_motion(a, nframes, vice_skip_span(1))
+        pb = pitch_motion(b, nframes * m, vice_skip_span(m))
+        out = {
+            "orig_reversals": pa["reversals"],
+            "our_reversals": pb["reversals"],
+            "reversal_ratio": (pb["reversals"] / pa["reversals"]
+                               if pa["reversals"] else None),
+            "orig_oscillation": pa["oscillation"],
+            "our_oscillation": pb["oscillation"],
+        }
+        out.update(_depth_compare_sided(a, b, nframes, nframes * m, keys,
+                                        vice_skip_span(1), vice_skip_span(m)))
+    out["vice_pitch_resolution"] = "frame" if reduce == "last" else "call"
+    out["vice_freq_repair"] = {"orig": ra, "ours": rb}
+    out["vice_frame_offset"] = {
+        "orig": vice_frame_offset(orig_samples[:nframes * lines], orig_keyed_by)
+        if orig_keyed_by else None,
+        "ours": vice_frame_offset(our_samples[:nframes * lines], our_keyed_by)
+        if our_keyed_by else None}
+    return out
+
+
 def _nibble_hist(hist):
     """A $D404 histogram folded to waveform classes.
 
@@ -3682,11 +4133,16 @@ NOT_MEASURED = (
     "the original's sampling; Off_the_Cuff 76% against **100%**. Corpus-wide "
     "the gap is about eight points, and it widens as the converter uses the "
     "multiplier more. Read `--equal-calls` for the sequence dimensions of any "
-    "row whose multiplier exceeds 4, and `--vice` for the register ones -- it "
-    "traces both sides at 312 samples a frame instead of one, so a value "
-    "written and overwritten inside a frame is visible. Neither is the "
-    "default: `--equal-calls` drops the frame-aligned dimensions, and "
-    "`--vice` costs two emulator runs a row",
+    "row whose multiplier exceeds 4, and `--vice` for the register ones and "
+    "for `vib` and `depth` -- it traces both sides at 312 samples a frame "
+    "instead of one, so a value written and overwritten inside a frame is "
+    "visible. Neither is the default: `--equal-calls` drops the "
+    "frame-aligned dimensions, and `--vice` costs two emulator runs a row. "
+    "**And the VICE dump sign-extends the low byte of every 16-bit field "
+    "into the high one** (`vice_freq_repair`): `vib` and `depth` repair the "
+    "frequency against siddump before reading it, but `adsr`, `pul` and "
+    "`pspan` under `--vice` still read a pulse width or envelope whose low "
+    "byte is `$80` or more with `$FF` for its high byte",
     "**tempo and row rate** -- no column here scores how long a row "
     "*lasts*, and `--pace` is the mode that does: on this corpus it "
     "finds row-length errors of 10-33%. What the table now does see "
@@ -3934,9 +4390,28 @@ DIMENSIONS = (
     # differently if their notes differ in length, and a file whose notes are
     # a few half-periods long can swing wildly on a change that is small in
     # calls. See `test_reversal_step_function`.
+    #
+    # AND IT IS SAMPLED ONCE A FRAME. siddump reads `$D400/$D401` at the frame
+    # boundary, so on a conversion packed at `-Sm` it sees one write in `m`
+    # and a turning point between two of the others is not in its trace. So
+    # is `depth`, below. Through v0.5.485 `--vice` -- the mode that exists
+    # for exactly this, 312 samples a frame -- did not compute either column
+    # and printed `-` for both; it now reads them per PLAY CALL, every write
+    # seen (`vice_pitch_compare`), and a row says which under
+    # `vice_pitch_resolution`. Measured on Zoolook (`-S3`) at -t 30, v0.5.485
+    # tree: `vib` 1.02x at one sample a frame (1497/1465 siddump, 1498/1462
+    # VICE reduced to siddump's rule) and 1.14x per call (1668/1462); `depth`
+    # 0.45 (0.0256 over 0.0565) at one sample a frame and 0.65 (0.0368) per
+    # call -- the finer trace reproduces siddump's own numbers to the decimal
+    # when reduced to siddump's rule first, so the difference is the
+    # resolution alone. Read the siddump number as a floor on the motion,
+    # never as the motion, for any row whose multiplier exceeds 1.
     Dimension("reversal_ratio", "vib", ("$D400/$D401",), "ratio",
               "how fast the pitch oscillates, over the original's rate -- a "
-              "STEP function of the rate on short notes, not proportional"),
+              "STEP function of the rate on short notes, not proportional, "
+              "and at one sample a frame blind to every turning point "
+              "between two of a multiplier-m conversion's m writes: "
+              "`--vice` reads it per play call"),
     # The other half of `vib`, and the half a count is structurally incapable
     # of answering -- the same pairing as `cut` beside `filt` and `bend`
     # beside `slides`, and the last mechanism here that had only a count.
@@ -3979,7 +4454,10 @@ DIMENSIONS = (
               "the original carries a vibrato byte** (nothing to compare, "
               "nothing to fix), while **`-!` means the population exists and "
               "no instrument key was shared** -- the comparison did not "
-              "happen, which is a candidate for work and not an honest gap"),
+              "happen, which is a candidate for work and not an honest gap. "
+              "Sampled once a frame like `vib`, so a swing that turns "
+              "between two of a multiplier-m conversion's writes is "
+              "understated; `--vice` reads it per play call"),
     # See noise_run_agreement's own docstring for the measured population
     # behind the claims in `of` below (Zoolook's 100%-while-losing-199-
     # frames case, the 28-of-28 / 0-of-76 hold-minus-1 split, and the
@@ -4950,6 +5428,10 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # not approximated here, they are omitted -- dimensions_present then
         # reports them absent, which is the difference between "not measured"
         # and "measured as disagreeing".
+        # Read once and shared by the column and its census, so the two
+        # cannot restrict to different populations. Hoisted above the branch
+        # because both the siddump path and the VICE path key `depth` on it.
+        vib_keys = vibrato_records(sid)
         if getattr(args, "vice", False):
             # Both sides at 312 samples a frame. Tracing only ours would trade
             # one bias for another: the original reads more gate edges under
@@ -4964,6 +5446,19 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                out=workdir / "vice_ours.txt")
             if vo and vu:
                 row.update(vice_register_compare(vo, vu, args.vice_reduce))
+                # `vib` and `depth` from the same two traces, at rasterline
+                # resolution -- the reading this mode exists for. Through
+                # v0.5.485 they were not computed here at all and the row
+                # printed `-` for both, which on a multiplier-3 file is the
+                # one instrument that could see a sub-frame vibrato reporting
+                # nothing.
+                # `a` and `best_dump` supply the instrument keys: the
+                # dump's own ADSR field is sign-extended (vice_freq_repair).
+                row.update(vice_pitch_compare(
+                    vo, vu, vib_keys,
+                    orig_keyed_by=a, our_keyed_by=best_dump,
+                    our_calls_per_frame=(
+                        getattr(args, "calls_per_frame", None) or multiplier)))
             else:
                 # Never silently fall back to the coarser trace under a flag
                 # that promises the finer one -- the row would claim a
@@ -5027,9 +5522,6 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # only where a drift figure was actually reported, since it
                 # is only meaningful next to one.
                 row["drift_gate_skip"] = _drift_gate_skip_declined(sid, sub)
-            # Read once and shared by the column and its census, so the two
-            # cannot restrict to different populations.
-            vib_keys = vibrato_records(sid)
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a

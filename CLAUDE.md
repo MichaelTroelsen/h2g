@@ -519,7 +519,14 @@ dangerous one because it reads as current and gets cited as current.
   per-frame instrument can see.** Anchor only where you must and otherwise carry
   the player's own running state.
 - **A mechanism driven by a global counter cannot be put in a per-note
-  wavetable** — a wavetable restarts at every note.
+  wavetable** — a wavetable restarts at every note. **But the counter's phase
+  at each note is static**: it is the counter's value at the first fetch plus
+  the note's row index times the row length in frames, so what the wavetable
+  cannot carry per note it can carry per instrument by majority
+  (`goatwriter.fixed_arp_phases`), exact wherever a row is an even number of
+  frames. Read the counter's base and the first-fetch frame off the player,
+  never off a trace of one file: the repo's Commando fixture is the corpus
+  Commando saved mid-run, same player and a different first attack frame.
 - **Reading a bit is not drawing its consequence.** A flag already parsed with
   nothing observable depending on it is a lead, not a finished feature.
 - **A rate byte may not be only a rate** — one engine packs the step and the

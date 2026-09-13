@@ -41,15 +41,33 @@ FIDELITY = ROOT / "build" / "fidelity.json"
 SURVEY = ROOT / "docs" / "SURVEY.md"
 
 
+# TWO KINDS OF EMPTINESS, AND ONLY ONE MAY BE QUIET. A guard that reads a
+# file the checkout legitimately lacks -- a GITIGNORED artefact, absent on
+# every clean clone -- may `pytest.skip`: nothing is wrong, there is nothing
+# to read. A guard that reads a TRACKED file, or a shape inside a file it did
+# open, must FAIL when it finds nothing: the file was moved, the artefact's
+# format changed, or a regex stopped matching, and each of those is the check
+# breaking, not the input being absent. Skipping there leaves a green run
+# that says nothing, which is the shape
+# `test_a_window_mismatch_fails_loudly_instead_of_skipping_quietly` was
+# written against for the window guard; this applies the same rule to every
+# other guard in the file. `test_every_quiet_skip_names_a_gitignored_artefact`
+# reads the source and refuses any new skip that is not of the first kind.
+def _broken(what):
+    pytest.fail(f"{what} -- this is the check breaking, not an input being "
+                f"legitimately absent, so it fails rather than skips; see the "
+                f"two-kinds-of-emptiness note above _broken()")
+
+
 def _text():
     if not CLAUDE_MD.exists():
-        pytest.skip(f"{CLAUDE_MD.name} absent")
+        _broken(f"{CLAUDE_MD.relative_to(ROOT)} is tracked and absent")
     return CLAUDE_MD.read_text(encoding="utf-8")
 
 
 def _songs():
     if not PRESETS.exists():
-        pytest.skip("presets.json absent")
+        _broken("presets.json is tracked and absent")
     return json.loads(PRESETS.read_text(encoding="utf-8"))["songs"]
 
 
@@ -81,7 +99,8 @@ def _window(rows):
     for r in rows:
         if r.get("seconds") is not None:
             return r["seconds"]
-    pytest.skip("build/fidelity.json rows carry no `seconds`")
+    _broken("build/fidelity.json exists but no row carries `seconds`: the "
+            "artefact's shape changed under this guard")
 
 
 def _needs_window(rows, taken_at=FIGURE_WINDOW):
@@ -221,7 +240,8 @@ def test_skate_or_die_intros_attack_counts_are_what_the_artefact_says():
     _needs_window(rows)
     r = next((r for r in rows if r["file"] == "Skate_or_Die_intro.sid"), None)
     if r is None or r.get("our_attacks") is None:
-        pytest.skip("Skate_or_Die_intro not in this artefact")
+        _broken("Skate_or_Die_intro has no attack row in build/fidelity.json, "
+                "so the figure LESSONS.md carries for it is unchecked")
     # This fragment used to carry the file's line break (`original's\n    N`)
     # verbatim -- a wrapped quotation baked into the test, which passed only
     # while LESSONS.md wrapped at exactly that word. `_says` normalises now.
@@ -233,7 +253,9 @@ def test_kings_of_the_beach_ingame_reads_what_the_artefact_says():
     _needs_window(rows)
     r = next((r for r in rows if r["file"] == "Kings_of_the_Beach_ingame.sid"), None)
     if r is None or r.get("wave") is None:
-        pytest.skip("Kings_of_the_Beach_ingame not in this artefact")
+        _broken("Kings_of_the_Beach_ingame has no wave row in "
+                "build/fidelity.json, so the figure LESSONS.md carries for it "
+                "is unchecked")
     _says(text, f"`wave` {r['wave'] * 100:.1f}% / `gate` {r['gate'] * 100:.1f}%")
 
 
@@ -243,11 +265,13 @@ def test_the_corpus_counts_name_both_option_sets():
     """95 tested / 89 on presets / 86 on defaults -- and the file must say which."""
     rows, text = _rows(), _text()
     if not SURVEY.exists():
-        pytest.skip("docs/SURVEY.md absent")
+        _broken("docs/SURVEY.md is tracked and absent")
     sur = SURVEY.read_text(encoding="utf-8")
     m = re.search(r"Converted: \*\*(\d+)\*\* of (\d+) in reach", sur)
     if not m:
-        pytest.skip("SURVEY.md header not in the expected shape")
+        _broken("SURVEY.md header no longer matches `Converted: **N** of M in "
+                "reach` -- the regex stopped matching, which is "
+                "indistinguishable from the format changing under this test")
     on_defaults, in_reach = int(m.group(1)), int(m.group(2))
     measured = sum(1 for r in rows if r.get("status") == "measured")
     _says(text,
@@ -362,3 +386,32 @@ def test_a_window_mismatch_fails_loudly_instead_of_skipping_quietly():
         f"-t {got} and then moving FIGURE_WINDOW; never by moving "
         f"FIGURE_WINDOW alone, which relabels every figure as a claim about "
         f"a window nobody measured it in")
+
+
+def test_every_quiet_skip_names_a_gitignored_artefact():
+    """Read this module's own source: every `pytest.skip(` left in it must be
+    the legitimately-absent kind. The permitted reasons are listed by the
+    substring the skip message carries, not by line number, so re-flowing
+    the file cannot silently un-cover a site -- and a NEW skip has to be
+    added to this list with its justification, which is the moment someone
+    asks whether it is the quiet kind at all.
+    """
+    import inspect
+    import sys
+
+    src = inspect.getsource(sys.modules[__name__])
+    # Everything from the marker on is this test's own body and docstring.
+    body = src[:src.index("def test_every_quiet_skip_names_a_gitignored_artefact")]
+    sites = re.findall(r'pytest\.skip\(\s*(f?"[^"]*")', body)
+    assert sites, "no pytest.skip call found in this module: the scan itself broke"
+    permitted = (
+        "build/fidelity.json absent -- it is gitignored",   # _rows: clean clone
+        "artefact is -t ",                                   # _needs_window: the
+                                                             # loud guard covers it
+    )
+    unjustified = [x for x in sites if not any(p in x for p in permitted)]
+    assert not unjustified, (
+        f"quiet skip(s) whose reason is not a gitignored artefact: "
+        f"{unjustified}. A tracked file that is absent, or a shape that "
+        f"stopped matching, is the check breaking and must go through "
+        f"_broken() instead")

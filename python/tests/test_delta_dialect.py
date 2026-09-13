@@ -83,10 +83,11 @@ def _first_note(raw, note_flag):
 
 
 def test_note_flag_masks_bit_7_before_the_clamp():
-    # $01 $B4 is a one-frame event with note $B4. Without the mask the clamp
-    # collapses it onto $5C; with it, $B4 & $7F = $34 survives as a real note.
+    # $01 $B4 is a one-frame event with note $B4. The player's `ASL / TAY`
+    # table fetch reads it as $34 (patterns._wrap_note) whether or not the
+    # note_flag mask ran first, so the clamp onto $5C is never reached.
     assert _first_note([0x01, 0xB4, 0xFF], note_flag=True) == 0x34 + 0x60
-    assert _first_note([0x01, 0xB4, 0xFF], note_flag=False) == 0x5C + 0x60
+    assert _first_note([0x01, 0xB4, 0xFF], note_flag=False) == 0x34 + 0x60
 
 
 def test_unflagged_notes_are_untouched_by_the_mask():

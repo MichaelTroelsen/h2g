@@ -849,3 +849,31 @@ if __name__ == "__main__":
             traceback.print_exc()
     print("\n%d/%d passed, %d failed" % (len(tests) - failed, len(tests), failed))
     sys.exit(1 if failed else 0)
+
+
+# =======================================================================
+# check_c -- a verify path token is a module attribute, not a path.
+# =======================================================================
+def test_check_c_module_attribute_after_a_granted_test_file_is_covered():
+    t = base_task(touches=["r:python/tests/test_table_validation.py"],
+                  verify="reuse tests/test_table_validation.packed_pattern_size")
+    assert plan_audit.check_c([t]) == []
+
+
+def test_check_c_module_attribute_of_an_ungranted_file_is_still_reported():
+    t = base_task(touches=["r:python/tests/test_pulse.py"],
+                  verify="reuse tests/test_table_validation.packed_pattern_size")
+    assert [g[1] for g in plan_audit.check_c([t])] == [
+        "tests/test_table_validation.packed_pattern_size"]
+
+
+def test_check_c_a_real_extension_is_not_rewritten_to_py():
+    t = base_task(touches=["r:docs/FIDELITY.py"],
+                  verify="read docs/FIDELITY.md")
+    assert [g[1] for g in plan_audit.check_c([t])] == ["docs/FIDELITY.md"]
+
+
+def test_check_c_real_plan_has_zero_findings():
+    plan = importlib.import_module("json").loads(
+        (REPO / ".claude/tasks/whattask.json").read_text(encoding="utf-8"))
+    assert plan_audit.check_c(plan["tasks"]) == []

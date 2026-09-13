@@ -80,6 +80,49 @@ def test_no_calibration_means_no_inheritance():
     assert got["status"] == "uncalibrated"
 
 
+def _write_calibration(tmp_path, **overrides):
+    doc = {"pass": True, "noise_floor": 0.005, "closeness_floor": 0.90,
+           "whole": {"noise_floor": 0.02, "closeness_floor": 0.70}}
+    doc.update(overrides)
+    build = tmp_path / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    (build / "sound_calibration.json").write_text(json.dumps(doc), encoding="utf-8")
+
+
+def test_load_calibration_reads_the_whole_window_floors_not_the_prefix_ones(tmp_path, monkeypatch):
+    """`assess()` never passes `window_s` to `sound.compare_sids`, so it scores
+    the whole aligned render -- the top-level `noise_floor`/`closeness_floor`
+    in sound_calibrate's output are CHECK_WINDOW_S-prefix quantities since
+    docs/SOUND-CALIBRATION.md's whole-window split, and applying a prefix
+    floor to a whole-window score would compare two different things."""
+    monkeypatch.setattr(AP, "ROOT", tmp_path)
+    _write_calibration(tmp_path)
+    cal = AP.load_calibration()
+    assert cal["noise_floor"] == 0.02
+    assert cal["closeness_floor"] == 0.70
+
+
+def test_load_calibration_is_none_without_a_whole_block(tmp_path, monkeypatch):
+    """An older-format calibration with no `whole` block carries no floor that
+    describes what `assess()` actually measures, so it is treated as absent --
+    same as a missing top-level `closeness_floor` used to be."""
+    monkeypatch.setattr(AP, "ROOT", tmp_path)
+    _write_calibration(tmp_path, whole=None)
+    assert AP.load_calibration() is None
+
+
+def test_load_calibration_is_none_when_whole_lacks_a_closeness_floor(tmp_path, monkeypatch):
+    monkeypatch.setattr(AP, "ROOT", tmp_path)
+    _write_calibration(tmp_path, whole={"noise_floor": 0.02})
+    assert AP.load_calibration() is None
+
+
+def test_load_calibration_is_none_when_the_calibration_did_not_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(AP, "ROOT", tmp_path)
+    _write_calibration(tmp_path, **{"pass": False})
+    assert AP.load_calibration() is None
+
+
 def test_listener_should_check_names_the_criterion_nearest_its_bound():
     got = AP.inherit(_vs(0.90, 0.90), _vs(0.899, 0.95), {"aud": 0.91, "loud": 0.99},
                      _structure(), CAL)

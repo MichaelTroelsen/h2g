@@ -3409,3 +3409,200 @@ def test_option_drift_still_reports_multiplier_difference():
     drift = fidelity.option_drift(base, new)
     assert len(drift) == 1
     assert "multiplier" in drift[0]
+
+
+# --- --vice reads `vib` and `depth` per play call ----------------------------
+#
+# Through v0.5.485 the `--vice` branch of `_measure` computed the register
+# dimensions only, so the two pitch-motion columns printed `-` on the one run
+# whose resolution they need. The reader that fills them has three parts,
+# each pinned here: the dump's sign-extended low byte is repaired
+# (`vice_freq_repair`), a play call's standing value is what counts
+# (`vice_call_phase`, the hold filter), and the attack hole is siddump's
+# frame for frame (`vice_skip_span`), so that at `-S1` the finer trace
+# reproduces siddump's own numbers -- which is the translation the repo
+# requires before a `--vice` number is believed.
+
+def _vice_samples(per_voice_calls, calls_per_frame, phase=12, ctrl=0x41,
+                  adsr=0x0900, frames=None, note_frames=8):
+    """A synthetic VICE trace: `per_voice_calls[v]` is the frequency each
+    play call leaves standing on voice v, written `phase` lines into the
+    call, with a transient one line long before it (the dump sees the call's
+    first write too), and printed the way the dump prints it -- low byte
+    sign-extended into the high one. Gates rise on the first call of every
+    `note_frames`-th frame."""
+    import vicetrace as V
+    lines = V.PAL_LINES_PER_FRAME
+    period = lines / calls_per_frame
+    ncalls = max(len(c) for c in per_voice_calls)
+    frames = frames or -(-ncalls // calls_per_frame)
+    total = frames * lines
+    out = []
+    for i in range(total):
+        vs = []
+        for vi in range(3):
+            calls = per_voice_calls[vi] if vi < len(per_voice_calls) else []
+            k = int((i - phase) // period) if i >= phase else -1
+            k = min(k, len(calls) - 1)
+            f = calls[k] if k >= 0 else 0
+            # the transient: on the call's first line the high byte is still
+            # the previous call's and the low byte is already the new one --
+            # what the dump shows of a player writing the two bytes on
+            # different rasterlines (Zoolook: `5208` a line before `52bc`)
+            if calls and i >= phase and int((i - phase) % period) == 0 and \
+                    0 < k < len(calls):
+                f = (calls[k - 1] & 0xFF00) | (f & 0xFF)
+            g = 1 if (i // lines) % note_frames == 0 and i % lines < 8 else 0
+            vs.append(V.VoiceLine(freq=_signext(f), ctrl=(ctrl & ~1) | g,
+                                  adsr=adsr))
+        out.append(V.Sample(voices=vs))
+    return out
+
+
+def _signext(v):
+    """What the VICE dump prints for a 16-bit register value."""
+    return (0xFF00 | (v & 0xFF)) if v & 0x80 else v
+
+
+def test_vice_freq_repair_undoes_the_sign_extension_by_continuity():
+    """A vibrato rising through lo=$80 and wrapping lo $FF -> $00 comes back
+    exactly; the run's high byte is the lower neighbour's."""
+    truth = list(range(0x0C70, 0x0D10, 4))          # rises through $0C80.., wraps at $0D00
+    raw = [_signext(v) for v in truth]
+    assert any((r >> 8) == 0xFF for r in raw), "the fixture must be corrupt"
+    out, stats = fidelity.vice_freq_repair(raw, [])
+    assert out == truth
+    assert stats["ambiguous"] == 0 and stats["unanchored"] == 0
+    assert stats["repaired"] == sum(1 for v in truth if v & 0x80)
+    # ...and falling back through the same range
+    out, _ = fidelity.vice_freq_repair([_signext(v) for v in truth[::-1]], [])
+    assert out == truth[::-1]
+
+
+def test_vice_freq_repair_takes_siddumps_high_byte_where_it_saw_the_value():
+    """Zoolook's voice 0 alternates $52BC and $DD08 frame by frame: no
+    continuity rule can put $52 back, and the first version put $DD. siddump
+    saw both values, so its per-frame timeline is the oracle."""
+    import vicetrace as V
+    L = V.PAL_LINES_PER_FRAME
+    frames = [0x52BC, 0xDD08] * 4
+    raw = [_signext(frames[i // L]) for i in range(len(frames) * L)]
+    # the VICE trace runs one frame behind siddump's, so its frame 0 is
+    # before siddump's trace begins and has no oracle: compare from frame 1
+    oracle = frames[1:] + [frames[-1]]
+    out, stats = fidelity.vice_freq_repair(raw, [], oracle, offset=1)
+    assert out[L:] == [frames[i // L] for i in range(L, len(frames) * L)]
+    assert stats["by_oracle"] == stats["repaired"] - L > 0
+    assert stats["ambiguous"] == 0
+
+
+def test_vice_freq_repair_keeps_a_jump_monotone_rather_than_inventing_a_turn():
+    """A drum sweep stepping over the whole $00-$7F range has neighbours
+    whose high bytes differ by more than one. The high byte is unknowable;
+    the repair must at least not add a turning point."""
+    truth = [0x2000, 0x1A00, 0x1480, 0x0F00, 0x0980, 0x0400]
+    raw = [_signext(v) for v in truth]
+    out, stats = fidelity.vice_freq_repair(raw, [])
+    deltas = [out[i + 1] - out[i] for i in range(len(out) - 1)]
+    assert all(d < 0 for d in deltas), out
+    assert stats["ambiguous"] == 2
+    # a run closing the trace has one neighbour and takes its high byte --
+    # the honest guess, and counted as repaired, not as ambiguous
+    out, stats = fidelity.vice_freq_repair([_signext(v) for v in truth[:-1]], [])
+    assert out[-1] == 0x0F80 and stats["ambiguous"] == 1
+
+
+def test_vice_freq_repair_treats_an_attack_as_a_barrier():
+    """A run opening a note takes the high byte from inside the note, never
+    from the previous note across the gate rise."""
+    prev, new = 0x0D00, 0x52BC
+    truth = [prev] * 4 + [new] * 6 + [0x5270] * 2
+    raw = [_signext(v) for v in truth]
+    out, _ = fidelity.vice_freq_repair(raw, attacks=[4])
+    assert out == truth
+
+
+def test_vice_call_phase_is_the_end_of_the_widest_gap():
+    """Writes at 12 and 15 lines into every 104-line call: the call starts
+    at 12, and every write of one call lands in one bucket."""
+    writes = [k * 104 + off for k in range(20) for off in (12, 15)]
+    phase = fidelity.vice_call_phase(writes, 104.0)
+    assert phase == pytest.approx(12.0)
+    buckets = {int((w - phase) // 104.0) for w in writes}
+    assert len(buckets) == 20
+
+
+def test_vice_skip_span_is_siddumps_three_frame_hole_in_calls():
+    assert fidelity.vice_skip_span(1) == (1, 1)
+    assert fidelity.vice_skip_span(3) == (3, 5)
+    assert fidelity._skip_span(1) == (1, 1)
+    assert fidelity._skip_span((3, 5)) == (3, 5)
+
+
+def test_a_call_indexed_voice_at_one_call_a_frame_is_siddumps_voice():
+    """The translation: at `-S1` the finer trace reduced per call must give
+    exactly what a frame-indexed Voice gives, reversal for reversal. On
+    Zoolook's original this holds to the count (659 vs 660 on voice 0, 806
+    vs 805 on voice 1, gross travel identical); here it is pinned on a
+    synthetic triangle with a transient before every write."""
+    seg = _osc(30, 400)
+    samples = _vice_samples([seg, [], []], calls_per_frame=1)
+    calls = fidelity.vice_pitch_voices(samples, calls_per_frame=1)
+    last = fidelity.vice_pitch_voices(samples, reduce="last")
+    n = len(samples) // 312
+    a = fidelity.pitch_motion(calls, n, fidelity.vice_skip_span(1))
+    b = fidelity.pitch_motion(last, n, 1)
+    assert a["reversals"] == b["reversals"] > 20
+    assert a["gross"] == b["gross"]
+    # the transient never reaches the events
+    assert all(v in seg for _, v in calls[0].freq_events)
+
+
+def test_a_sub_frame_vibrato_is_visible_per_call_and_not_per_frame():
+    """Three writes a frame, a triangle with a period of three calls: the
+    frame-end value never moves, so one sample a frame reads no motion at
+    all, and per call reads every turning point. This is the reading
+    `--vice` exists for and did not make through v0.5.485."""
+    cycle = [0x1000, 0x1040, 0x1000]          # rises and falls inside every frame
+    calls = cycle * 60
+    samples = _vice_samples([calls, [], []], calls_per_frame=3)
+    orig = _vice_samples([[0x1000, 0x1040] * 30, [], []], calls_per_frame=1)
+    got = fidelity.vice_pitch_compare(orig, samples, keys=None,
+                                      our_calls_per_frame=3)
+    assert got["vice_pitch_resolution"] == "call"
+    assert got["our_reversals"] > 50, got
+    assert got["reversal_ratio"] > 1.5
+    flat = fidelity.vice_pitch_compare(orig, samples, keys=None, reduce="last",
+                                       our_calls_per_frame=3)
+    assert flat["vice_pitch_resolution"] == "frame"
+    assert flat["our_reversals"] == 0
+    assert flat["reversal_ratio"] == 0.0
+
+
+def test_vice_depth_is_keyed_from_siddump_not_the_dumps_adsr():
+    """The dump's ADSR field is sign-extended too ($0BF0 prints fff0), so an
+    instrument whose sustain/release has bit 7 set could never join
+    `vibrato_records`. `keyed_by` hands the key over from siddump."""
+    seg = _osc(30, 400)
+    samples = _vice_samples([seg, [], []], calls_per_frame=1, adsr=0xFFF0,
+                            note_frames=64)
+    n = len(samples) // 312
+    sd = fidelity.Voice(freq_events=[(0, 0x1000)],
+                        adsr_events=[(0, 0x0BF0)],
+                        attack_frames=[f for f in range(0, n, 64)])
+    keyed = [sd, fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF0},
+                                      orig_keyed_by=keyed, our_keyed_by=keyed)
+    assert got.get("depth_instruments") == 1, got
+    assert got["depth_ratio"] == pytest.approx(1.0)
+    unkeyed = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF0})
+    assert unkeyed.get("depth_refusal") == "no-shared-key"
+
+
+def test_the_vib_and_depth_dimensions_declare_the_frame_sampling_blindness():
+    """CLAUDE.md: a column that can read wrong because the trace cannot see
+    the defect states the blindness in the Dimension itself."""
+    for key in ("reversal_ratio", "depth_ratio"):
+        d = next(x for x in fidelity.DIMENSIONS if x.key == key)
+        assert "--vice" in d.of, key
+        assert "play call" in d.of, key

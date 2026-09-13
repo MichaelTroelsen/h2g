@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.486 — 2026-09-13
+
+- pulse reseed gate detection, shared pulse-table programs, 8-bit note wrap, static fixed-arp phase, prefix-window calibration
+
 ## 0.5.485 — 2026-09-12
 
 - fold-transpose variants decode under the conversion grammar, the fixed-arp phase is derived from the player, multi-player dispatch is detected, and the calibration scores a 60 s prefix

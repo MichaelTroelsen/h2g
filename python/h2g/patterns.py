@@ -285,6 +285,23 @@ def _absolute_references(data: bytes, lo: int, hi: int) -> int:
     return sum(1 for a in range(lo, hi + 1) if a in named)
 
 
+def _wrap_note(byte: int) -> int:
+    """The frequency-table entry a classic player's note fetch reads for a
+    pattern note byte: `((byte << 1) & $FF) >> 1`, the low seven bits.
+
+    The fetch is `ASL / TAY / LDA freqtbl,Y`, an 8-bit shift with no `ROL`
+    after it, so bit 7 leaves through the carry and a byte at or above `$80`
+    indexes the table from the top again -- `$B2` is entry 50, `$CA` entry
+    74, `$E0` entry 96 (past a 96-entry table, exactly as `$60` is). Spelled
+    as the shift rather than as `& 0x7F` because the shift is what the
+    player does and the mask is only its consequence; the two are the same
+    number for every byte. Named so that every reader of a classic note
+    byte calls the same arithmetic (`_build_raw_pattern` is the one today),
+    and so a test can stand it down to read the pre-wrap clamp.
+    """
+    return ((byte << 1) & 0xFF) >> 1
+
+
 def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
     """Note bytes that index PAST the player's frequency table onto a cell the
     original sounds as silence -- the bytes the clamp below must NOT turn into
@@ -313,8 +330,9 @@ def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
     not pass it. A cell nothing names keeps its load-time value for the
     life of the tune, so the trace and the file agree, which is the whole
     claim. Bytes at or above `$80` are not considered: the eight-bit `ASL`
-    wraps them back into the table (`2*idx & $FF`), which is a different
-    reading and not this one.
+    wraps them back into the table (`2*idx & $FF`), and `_build_raw_pattern`
+    applies that wrap (`_wrap_note`) BEFORE consulting this set, so the byte
+    it looks up here is already below `$80`.
 
     Keyed on the RAW note byte -- the value the player shifts -- before
     `note_base`, since `note_base` is a Goattracker-side correction and the
@@ -411,7 +429,8 @@ def past_table_notes(sid: SidFile, det: Detection) -> Dict[int, int]:
     space is the note the original's other voices would call it, and
     `note_base` then applies to it exactly as to a byte read from inside
     the table. Keyed on the RAW note byte, like `rest_notes`, and bytes at
-    or above `$80` are not considered for the same reason.
+    or above `$80` are not considered for the same reason: `_wrap_note` has
+    already folded them by the time `_build_raw_pattern` looks one up here.
     """
     ft = det.freq_table
     if ft is None:
@@ -750,12 +769,53 @@ def _build_raw_pattern(data: bytes, addr: int,
         if get_next or not no_note:
             i2 += 1
             g_note = data[addr + i2]
+            # **THE LOOKUP IS EIGHT BITS WIDE, SO A BYTE AT OR ABOVE $80 WRAPS
+            # INTO THE TABLE.** Every classic player indexes its frequency
+            # table with `ASL / TAY / LDA freqtbl,Y` (or `TAX`/`,X`) --
+            # `sidfile._freq_table_sites` finds no other idiom, and
+            # tests/test_past_table_bytes.py checks the shape is in every
+            # classic-dialect corpus file at its own table address. The ASL
+            # is an 8-bit shift with no ROL after it, so bit 7 of the note
+            # goes into the carry and is lost: Y = (2 * note) & $FF, and the
+            # entry read is `((note << 1) & $FF) >> 1` -- the low seven bits.
+            # The players that add a transpose do so BEFORE the shift
+            # (`CLC / ADC transpose,X / ASL / TAY`), so the entry is really
+            # `((note + transpose) << 1) & $FF >> 1`; the transpose is
+            # Goattracker's orderlist's job and is added to the emitted note
+            # at play time, which agrees with the player wherever
+            # `(note & $7F) + transpose` stays below 128 -- everywhere a
+            # note can be heard.
+            #
+            # Mega_Apocalypse is the measured case: its pattern bytes `$B2`
+            # and `$CA` are read at `$4B75 LDA ($FA),Y / STA $5001 / AND #$7F
+            # / CLC / ADC $5222,X / STA $B9,X / ASL / TAY / LDA $4E89,Y` --
+            # bit 7 stored as a flag, the rest transposed and shifted -- so
+            # they are entries 50 and 74 (D-4, D-6), and 62 (D-5) where the
+            # orderlist transposes +12. The clamp below made every one of
+            # them G#7, because `detect`'s `note_flag` spellings anchor the
+            # store as `9D` abs,X and this player stores to zero page (`95`),
+            # which is the addressing-mode lesson from CLAUDE.md: a near-miss
+            # search never finds the other spelling. The wrap does not need
+            # the flag: where the player masks with `AND #$7F` (`note_flag`,
+            # the legato-marker players -- Delta, Sanxion, W.A.R., Zoolook,
+            # Auf Wiedersehen Monty) and where it does not, the shift throws
+            # the same bit away, so `note_flag`'s mask below is redundant
+            # with the wrap and is kept as the record of what those players
+            # do.
+            # Goattracker has no tie, so the flag is dropped and the note is
+            # kept -- the player still re-gates, so the attack is real.
+            #
+            # Applied FIRST, before `rest_notes`, `const_notes` and the
+            # clamp, because those are keyed on the entry the player reads
+            # and the player reads the wrapped one: a `$E0` lands on entry
+            # 96 exactly as a `$60` does, and `past_table_rests` /
+            # `past_table_notes` stop at `$80` for that reason.
             if note_flag:
-                # Bit 7 is the player's legato flag (`AND #$7F` before the
-                # frequency lookup), not part of the note. Goattracker has no
-                # tie, so the flag itself is dropped and the note is kept --
-                # the player still re-gates, so the attack is real.
+                # The player's own `AND #$7F`, kept as written so that the
+                # wrap below stood down (its test does that) reads exactly
+                # what this decoder read before the wrap existed.
                 g_note &= 0x7F
+            g_note = _wrap_note(g_note)
             # **THE CLAMP IS RIGHT FOR EVERY BYTE BUT ONE, AND THE ONE IS
             # NOTE 104 ON COMMANDO -- PRICED AT v0.5.461 AND BLOCKED ONLY BY
             # THE BYTE-EXACT FIXTURE.**
@@ -1205,6 +1265,12 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # ($BD) would sustain the previous note instead.
             events += [GT_KEYOFF, 0x00, 0x00, 0x00]
         else:
+            # Checked for the classic path's `_wrap_note` (the 8-bit ASL
+            # folding a byte >= $80 into the table): NOT NEEDED HERE. Every
+            # byte at or above `$80` was dispatched above -- a two-operand
+            # command, or the `return None` for the values that spin the
+            # player -- so `b` is `$00-$7F` on this line and the wrap is the
+            # identity on it. The clamp is a range limit for `$5D-$7F` only.
             note = max(0, min(b, DIGI_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
         if cmd is not None:
@@ -1588,6 +1654,10 @@ def _build_raw_pattern_ilv(data: bytes, addr: int,
         if b == ILV_REST:
             events += [GT_KEYOFF, 0x00, 0x00, 0x00]
         else:
+            # Checked for the classic path's `_wrap_note`: NOT NEEDED HERE.
+            # `$C0-$FF` is a duration and `$80-$BF` a command, both dispatched
+            # above, so `b` is `$00-$7F` on this line and the 8-bit ASL wrap
+            # is the identity on it. The clamp is a range limit for `$5D-$7F`.
             note = max(0, min(b, ILV_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
         row = len(events) - 4
@@ -1693,6 +1763,11 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
         else:
             if addr + 1 >= len(data):
                 return None
+            # Checked for the classic path's `_wrap_note`: ALREADY APPLIED,
+            # in the mask spelling. This player's bit 7 is a legato flag it
+            # strips with `AND #$7F` before the lookup (the grammar block
+            # above), and `b & 0x7F == ((b << 1) & 0xFF) >> 1` for every
+            # byte, so the wrap and the mask are one number here.
             note = max(0, min(data[addr + 1] & 0x7F,
                               CMDTABLE_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
