@@ -667,16 +667,23 @@ def convert(sid_path: str, log: Logger = print,
     #   Thing_on_a_Spring on 0, Devils_Galop on 1). That is the player's one
     #   pulse accumulator per record, not a table limit -- a real refusal,
     #   and correct.
-    # * **`build_pulse_phase_table` returns no table (4 files)** -- both
-    #   Last_V8s, Master_of_Magic, Phantoms_of_the_Asteroid. Cause: the pulse
-    #   table OVERFLOWS. *"PULSE PHASE NEEDS 130 TABLE ROWS FOR INSTRUMENT 7"*
-    #   (both Last_V8s), 112 rows for instrument 14 (Master_of_Magic), 70 for
-    #   instrument 17 (Phantoms) -- against `GT_MAX_TABLELEN`. This one is a
-    #   CAPACITY limit rather than a musical refusal, so it is the half that
-    #   could conceivably move.
+    # * **`build_pulse_phase_table` used to return no table for these 4
+    #   files** -- both Last_V8s, Master_of_Magic, Phantoms_of_the_Asteroid.
+    #   Cause: the pulse table OVERFLOWS. *"PULSE PHASE NEEDS 130 TABLE ROWS
+    #   FOR INSTRUMENT 7"* (both Last_V8s), 112 rows for instrument 14
+    #   (Master_of_Magic), 70 for instrument 17 (Phantoms) -- against
+    #   `GT_MAX_TABLELEN`. This one was a CAPACITY limit rather than a
+    #   musical refusal (see task
+    #   pulse-phase-table-has-no-exhaustion-instrumentation): the function
+    #   now falls a record whose phase set will not fit back to a static
+    #   width, then to pointer 0, and only returns None where NOTHING
+    #   survives -- so these four now ship a partial table (logged as
+    #   dropped/silent counts) instead of losing the whole expansion,
+    #   PROVIDED at least one sweeping record's phase plan still fits.
     #
-    # So the two causes are unequal and only one is a candidate for work: a
-    # shared accumulator is the player, a full table is our encoding.
+    # So the two causes are unequal: a shared accumulator is the player and
+    # stays a real refusal; a full table is our encoding and now degrades
+    # gracefully instead of failing outright.
     #
     # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------

@@ -731,7 +731,13 @@ Stock siddump cannot see it. It calls the play routine `seconds * 50`
     is identical with and without -S -- which is why every multiplier-2 song
     was measured at half speed until v0.5.96. `run_siddump(calls=multiplier)`
     against the tools/siddump-rt build closes that; the packed bytes here are
-    unchanged either way.
+    unchanged either way. The two flags spend the same number and neither
+    implies the other: `listen.py` packed at -S{multiplier} and traced with
+    `calls` defaulted until v0.5.486, so every staging note on a
+    multiplier>1 file compared the original against ours at 1/multiplier
+    speed (Saboteur_II at -S3: 920 attacks against the original's 2566, and
+    2564 once traced at -m3). Every caller tracing a file this packed must
+    pass `calls`; grep for `run_siddump(packed` rather than for `calls=`.
 
     **`-O0` is passed unless `pulse_skip` says otherwise.** gt2reloc's
     pulse-optimization skipping is DEFAULT=on (readme:1225) and makes the packed
@@ -2103,9 +2109,25 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
     `noise_run_agreement` docstring -- both sides now produce comparable
     per-note runs instead of one edge-cut stretch.
 
-    Returns `{adsr: Counter({run_length: count})}`.
+    Returns `{adsr: Counter({run_length: count})}`. The runs the first rule
+    drops are counted by `noise_edge_runs`, from the same walk -- see there
+    for why a dropped run has to be recorded rather than merely dropped.
     """
     out: dict = {}
+    for key, length, cut in _noise_run_walk(voices, nframes):
+        if cut:
+            continue                          # cut by the window
+        out.setdefault(key, Counter())[length] += 1
+    return out
+
+
+def _noise_run_walk(voices: list[Voice], nframes: int):
+    """Every maximal noise-AND-gate run, as `(adsr_at_midpoint, length, cut)`.
+
+    One walk shared by `noise_runs` (which keeps the uncut runs) and
+    `noise_edge_runs` (which counts the cut ones), so the two can never
+    disagree about what a run is.
+    """
     for v in voices:
         wf = register_timeline(v.wf_events, nframes)
         adsr = register_timeline(v.adsr_events, nframes)
@@ -2117,11 +2139,36 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
             start = f
             while f < nframes and (wf[f] & WF_NOISE and wf[f] & WF_GATE):
                 f += 1
-            if start == 0 or f >= nframes:
-                continue                      # cut by the window
-            key = adsr[(start + f - 1) // 2]
-            out.setdefault(key, Counter())[f - start] += 1
-    return out
+            yield adsr[(start + f - 1) // 2], f - start, (start == 0 or f >= nframes)
+
+
+def noise_edge_runs(voices: list[Voice], nframes: int) -> dict:
+    """How much noise `noise_runs` declined because the window cut it.
+
+    Dropping a run that touches the window edge is right for a LENGTH -- but a
+    side whose noise is ONE run the whole window long has nothing left after
+    the drop, and `noise_run_agreement` then reads `noise_run_instruments` 0
+    and `nrun` `-`, which is indistinguishable in the row from a file that
+    plays no noise at all. That was Confuzion's row before `noise_runs` read
+    the gate bit (v0.5.483): gate-blind, the original's voice 1 was one
+    8998-frame run touching both edges, dropped whole, and the file's entire
+    noise behaviour was visible only as the one-sided `noise` count. The
+    gate-AND fixed THAT file; it did not make the mechanism impossible -- a
+    voice holding noise with the gate open across the window edge is still
+    dropped, and still silently. CLAUDE.md: a `-` is a finding, not a gap;
+    this records the finding so the row can say WHY.
+
+    Returns `{"runs": n, "frames": f}` -- the count of edge-cut runs and the
+    frames they cover. Both are 0 for a side that sounds no noise at all, so
+    a reader can tell "no noise" (0 instruments, 0 edge runs, 0 noise frames)
+    from "noise the window could not measure" (0 instruments, >0 edge runs).
+    """
+    runs = frames = 0
+    for _key, length, cut in _noise_run_walk(voices, nframes):
+        if cut:
+            runs += 1
+            frames += length
+    return {"runs": runs, "frames": frames}
 
 
 def release_tails(voices: list[Voice], nframes: int) -> dict:
@@ -3192,6 +3239,13 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     is for. This answers the narrower question the count cannot: given that we
     sound it, do we sound it for as long?
 
+    **A `-` here has two causes and the row names which.** `noise_runs` drops
+    a run touching the window edge, so a side whose ONLY noise is runs the
+    window cut contributes no instrument and the column declines. The
+    `noise_run_*_edge_runs` / `_edge_frames` keys record what was dropped per
+    side; `noise_run_instruments` 0 beside `noise_run_orig_edge_runs` > 0 is
+    "the window could not measure it", not "no noise" (see `noise_edge_runs`).
+
     **Blind to a loss the MODAL comparison cannot move.** This asks only
     whether the single most common run length agrees, the same reduction
     `noise_runs` returns -- so an instrument that fires many separate SHORT
@@ -3257,12 +3311,20 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     shared = paired_keys(a, b)
     matched = sum(1 for ka, kb in shared
                   if a[ka].most_common(1)[0][0] == b[kb].most_common(1)[0][0])
+    # What the window cut, per side, so a row reading `-` here can say WHY:
+    # 0 instruments with edge runs on the original side is a file whose noise
+    # the window could not measure, not a file without noise.
+    ea, eb = noise_edge_runs(orig, nframes), noise_edge_runs(ours, nframes)
     return {
         "noise_run_instruments": len(shared),
         "noise_run_matched": matched,
         "noise_run_agreement": (matched / len(shared)) if shared else None,
         "noise_run_orig_only": len(set(a) - set(b)),
         "noise_run_ours_only": len(set(b) - set(a)),
+        "noise_run_orig_edge_runs": ea["runs"],
+        "noise_run_orig_edge_frames": ea["frames"],
+        "noise_run_ours_edge_runs": eb["runs"],
+        "noise_run_ours_edge_frames": eb["frames"],
     }
 
 
@@ -4285,7 +4347,18 @@ DIMENSIONS = (
     Dimension("retrigger_ratio", "retrig", _PITCH_REGS, "ratio",
               "how many times as often we strike a note"),
     Dimension("slides", "slides", _PITCH_REGS, "count",
-              "frames on which a voice's pitch moved without a retrigger",
+              "frames on which a voice's pitch moved without a retrigger -- "
+              "siddump splits that movement between two printed forms (a "
+              "bare delta and a parenthesised note) by whether the new "
+              "frequency lands near a table entry, so a change in step SIZE "
+              "moves frames between the two buckets without changing how "
+              "much pitch moved. This count reads only one bucket and can "
+              "therefore report a ratio with the WRONG SIGN: Food_Feud read "
+              "`slides` at 6270/3413 (1.84x) at v0.5.485 while its total "
+              "non-retriggered pitch-change count (slides plus ties) was "
+              "0.874x, an actual deficit -- historical, re-measure before "
+              "quoting a figure. See `bend_ratio`, which sums the movement "
+              "itself and is not split this way",
               source="our_slides"),
     # The other half of the same question, and the half a count cannot answer
     # -- `cut` exists beside `filt` for exactly this reason.
@@ -4492,7 +4565,9 @@ DIMENSIONS = (
               "reads as one run touching both window edges (dropped, 0 "
               "shared instruments); gate-AND'd it reads 486 per-note runs "
               "(7542 frames) against ours' 485 (7533), 2 of 2 paired, "
-              "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180"),
+              "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180. Declines (`-`) "
+              "a file whose only noise is runs the window cut, and records "
+              "the cut runs and frames per side so the `-` says why"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
     # this project's life. `nrun` compares noise runs and is silent about a
     # pitched note; `tail` reads the envelope after the gate closes, not how
@@ -6061,6 +6136,30 @@ def report(rows: list[dict], args) -> str:
                 + (f"; **{len(invented)}** file(s) play noise where the "
                    "original never does (marked `!` above)" if invented else ""),
             ]
+            # `nrun` reads `-` for a file whose noise the window CUT as well
+            # as for one without noise, and the table cannot tell them apart.
+            # Name the first kind: an original whose every noise run touched
+            # the window edge contributed no instrument to the comparison.
+            edge_declined = [
+                r for r in waved
+                if not r.get("noise_run_instruments")
+                and r.get("noise_run_orig_edge_runs")
+                and not r.get("noise_run_orig_only")]
+            if edge_declined:
+                out.append(
+                    f"  - `nrun` declined **{len(edge_declined)}** file(s) "
+                    "whose original sounds noise ONLY in runs the window "
+                    "cut, so no length could be measured -- a `-` that is "
+                    "a finding, not a gap: "
+                    + "; ".join(
+                        f"{r['file']} (original {r['noise_run_orig_edge_runs']} "
+                        f"edge run(s), {r['noise_run_orig_edge_frames']} of "
+                        f"{r.get('orig_noise_frames', 0)} noise frames; ours "
+                        f"{r.get('noise_run_ours_only', 0)} uncut instrument(s), "
+                        f"{r['noise_run_ours_edge_runs']} edge run(s), "
+                        f"{r['noise_run_ours_edge_frames']} frame(s))"
+                        for r in sorted(edge_declined,
+                                        key=lambda r: r["file"].lower())))
         gated = [r for r in measured if r.get("gate") is not None]
         if gated:
             ringing = sum(r.get("gate_ours_ringing", 0) for r in gated)

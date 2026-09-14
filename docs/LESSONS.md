@@ -61,11 +61,11 @@ test dependency).
   repo root, `.\convert.ps1` wraps the same thing and `.\play.ps1` also opens the
   result in GoatTracker.
 - **Open a song for listening with `.\play.ps1 -Presets presets.json`, never by
-  launching `goattrk2.exe` yourself.** **49 of the 89 preset songs pack above
-  `-S1` -- 30 of them at `-S2` or `-S3`** (v0.5.454, counted from
-  `presets.json`) -- so they advance a row every 2-3
-  frames or faster, and the editor calls the player once a frame, so a bare
-  launch plays them at 1/multiplier speed. The `.sng` cannot encode the rate —
+  launching `goattrk2.exe` yourself.** **Most preset songs pack above `-S1`**
+  (the population is counted, and guarded, in the per-frame-rate bullet under
+  Emitting: "A rate read out of the player is per *frame*") -- so they advance
+  a row every 2-3 frames or faster, and the editor calls the player once a
+  frame, so a bare launch plays them at 1/multiplier speed. The `.sng` cannot encode the rate —
   Goattracker's fastest steady row is 3 calls (`TEMPO_FASTEST_STEADY`) — but the
   *editor* can be set to it with **SHIFT+F6**, and `play.ps1` reads the song's
   multiplier and prints how many presses. Bypassing it in v0.5.177 produced a
@@ -2433,6 +2433,44 @@ bare token `sound_run`. A check written to confirm "the note didn't create a
 collision" and keyed on either count would report a different verdict
 depending only on which regex it used, on the same file, unchanged. See
 CLAUDE.md's "Documenting a naming collision creates one" bullet for the rule.
+
+## A presence guard must assert against the slice, not the file
+
+**HISTORICAL, measured at 5a2fa2d (v0.5.479) by a worktree agent; recorded here
+at v0.5.486 (working tree, uncommitted).** Counting every guarded fragment
+against its whole file before touching the guards found three figures whose
+presence check would pass after the line it guards was deleted, because a
+second copy of the same words sat elsewhere in the same file:
+
+- `'49 of the 89 preset songs'` occurred **twice** in `docs/LESSONS.md` — the
+  listening bullet (v0.5.454) and the per-frame-rate bullet — and
+  `test_the_multiplier_population_is_what_presets_says` asserted it against
+  the whole file. Deleting either copy left the guard green. Reduced to one
+  copy at v0.5.486 (the listening bullet now cites the per-frame-rate one), so
+  a grep for the phrase now reads 1; before that it read 2 and the guard could
+  not tell which it had found.
+- Kings of the Beach ingame `wave` 84.8% / `gate` 85.2% occurs **twice** in
+  `docs/LESSONS.md` still (the `STALE` v0.5.454 entry and the 180 s re-take
+  that quotes it to retract it), and `test_kings_of_the_beach_ingame_reads_what_
+  the_artefact_says` asserts the artefact's figure against the whole file.
+  This one is the structural case CLAUDE.md's grep-returning-0 rule names: the
+  retraction is *required* to quote the wording it retracts, so a whole-file
+  guard for the figure will always find the retraction too.
+- `'no-calibration'` / `'approved-build-absent'` each occur **twice**
+  in `python/approvals.py`'s module docstring (the cause table and the
+  sentence that retracts the calibration-only wording), and `test_the_module_docstring_states_all_three_causes`
+  asserts each name `in doc` — any one occurrence satisfies it.
+
+The fix the agent wrote — `_says(region, ...)` with `_item_from(text, anchor)`
+(anchor sentence to the end of its markdown list item) and `_section(text,
+heading)`, and test_approvals slicing the docstring to its `THREE DISJOINT
+CAUSES` paragraph — was verified in its worktree (32 passed, 5 skipped) and
+**never reached master**: at v0.5.486 `grep -n _item_from
+python/tests/test_claude_md_figures.py` reads 0 and `_says` still takes the
+whole text. So the guards above still assert against the file, and this
+section is the rule's evidence rather than a record of its repair. The repair
+is a `[subagent]` task confined to the two test files; grep for `_item_from`
+before believing it has landed, never this paragraph.
 
 ## A misspelled preset key downgrades the hardest files and still returns a count
 

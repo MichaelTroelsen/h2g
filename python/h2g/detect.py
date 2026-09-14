@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from .search import match_at, search_file
 from .sidfile import HLEN, FreqTable, SidFile, find_freq_table
@@ -121,6 +121,16 @@ class Detection:
     # Whether the player tests effect bit $40 -- a fixed pitch for the attack,
     # taken from its own note table. _find_effect_bit40().
     effect_bit40: bool = False
+    # File offset of the per-instrument NOTE-INDEX array bit $40's handler
+    # reads its fixed pitch from (`LDA idx,Y` in its own body), indexed by
+    # i * instr_stride like the records; -1 where the handler was not read.
+    # Distinct from `wave_program`: the two name the same cell in 26 corpus
+    # files and a different one in After_8 (handler +12, wave_program +8),
+    # and this is the one the player sounds. Powerplay Hockey was a second
+    # disagreement only while `find_wave_program` was file-wide and named
+    # the other engine's array; scoped to the selected engine the two agree
+    # there too (`_wave_program_fetch_site`). _find_fixed_pitch_index().
+    fixed_pitch_index: int = -1
     # Effect bit $10's arpeggio: a three-step semitone sequence stepped by a
     # *global* phase counter. _find_pitch_seq().
     pitch_seq: Optional["PitchSeq"] = None
@@ -160,6 +170,24 @@ class Detection:
     # assumed from the version, for the reason `track_fd_ends` records.
     track_fd_transpose: bool = False
     track_fe_command: bool = False
+    # File offset of a static PER-INSTRUMENT note-transpose table, or -1.
+    # One corpus file has it (Food_Feud, $956D, 14 bytes: +12 on records 11
+    # and 12, 0 elsewhere). The player reads it at every instrument change
+    # with X = the pattern's instrument operand and stores the byte in a
+    # per-voice cell that is ADDED TO EVERY NOTE before the frequency lookup
+    # -- so it is a sticky per-voice transpose keyed on the instrument in
+    # force, applied at the note, and the voice's orderlist carries nothing
+    # for it (Food Feud's voice-0 orderlist has no byte >= $80 at all). See
+    # INSTR_TRANSPOSE_SHAPE and patterns._build_raw_pattern's `instr_transpose`.
+    instr_transpose: int = -1
+    # ...and, for each pattern that sounds a note BEFORE naming an
+    # instrument, the cell's value when the orderlists reach it -- carried in
+    # from the previous pattern on that voice. Empty unless `instr_transpose`
+    # is set; filled by tracks.instrument_transposes at the end of
+    # convert_tracks, because it needs the orderlists in play order and
+    # patterns.decode_entry -- every reader of a pattern -- needs the answer.
+    # A pattern absent from the map starts at 0.
+    instr_entry_transposes: Dict[int, int] = field(default_factory=dict)
     two_stage_wave: int = -1    # file offset of the attack-waveform table
     two_stage_frames: int = -1  # file offset of its duration table
     # Bit $02 in the SAME family, and not the rise: the voice's waveform
@@ -296,6 +324,11 @@ class Detection:
     # -1 when the shape is absent. See _cmdtable_slide().
     cmd_slide: int = -1
     cmd_slide_mask: int = 0
+    # "cmdtable" dialect: which $8x command writes the per-voice transpose
+    # cell the note fetch adds (`AND #$7F / CLC / ADC cell,X`), or -1. When
+    # it is found the track-read version becomes 11 -- version 0's reader
+    # with that command lifted into the orderlist. See _cmdtable_transpose().
+    cmd_transpose: int = -1
     # Player calls one emitted row is meant to last. 1 everywhere except the
     # "cmdtable" dialect, whose durations come from a table of multiples --
     # see patterns.cmdtable_frames_per_row, which fills this in.
@@ -819,6 +852,65 @@ def _cmdtable_slide(sid: SidFile, data: bytes, cmd_lo: int, cmd_hi: int,
     return -1, 0
 
 
+# The command-table engine's per-voice TRANSPOSE. Its note fetch adds a cell
+# to every note before the frequency lookup -- Hollywood or Bust $04F0,
+# Chicken Song $10E7 (which adds a second, restart-creep cell after it):
+#
+#     04F0  29 7F     AND #$7F           ; strip the legato flag
+#     04F2  18        CLC
+#     04F3  7D C7 09  ADC $09C7,X        ; <- the transpose cell
+#     04F6  9D 7A 09  STA $097A,X
+#     04F9  0A / A8   ASL / TAY          ; index the frequency table
+#
+# and exactly one command handler writes that cell, `$85 nn` in both files
+# (Hollywood $0896, Chicken Song $1479):
+#
+#     0896  C8        INY
+#     0897  B1 4D     LDA ($4D),Y        ; the operand
+#     0899  9D C7 09  STA $09C7,X        ; <- the same cell
+#     089C  C8        INY
+#     089D  4C A9 04  JMP fetch
+#
+# An 8-bit add, so the operand is SIGNED: Hollywood's $F4 is -12. The
+# handler assigns rather than accumulates, and the cell persists across
+# patterns and across the tune's restart -- the same semantics as a
+# Goattracker orderlist transpose, which is what tracks.py emits it as.
+# The decoder (patterns._build_raw_pattern_cmdtable) read it for length and
+# dropped it until v0.5.487; measured on the corpus, the command sits at a
+# pattern start in every use but one, and that one follows a single rest.
+CMDTABLE_TRANSPOSE_FETCH = "29 7F 18 7D ?? ??"
+
+
+def _cmdtable_transpose(sid: SidFile, data: bytes, cmd_lo: int, cmd_hi: int,
+                        count: int) -> int:
+    """Command index of the cmdtable transpose, or -1.
+
+    Same discipline as _cmdtable_slide: the fetch names the cell and the
+    handler that stores it names the command, and both are required. The
+    handler must be the bare `INY / LDA (zp),Y / STA cell,X / INY / JMP`
+    shape -- a handler that also does something else is not a plain assign.
+    """
+    at = search_file(data, CMDTABLE_TRANSPOSE_FETCH)
+    if at < 1:
+        return -1
+    cell = data[at + 4] | data[at + 5] << 8
+    found = -1
+    for c in range(count):
+        if cmd_hi + c >= len(data):
+            break
+        h = sid.to_offset(data[cmd_lo + c] | data[cmd_hi + c] << 8)
+        if not 0 < h or h + 8 > len(data):
+            continue
+        b = data[h:h + 8]
+        if (b[0] == 0xC8 and b[1] == 0xB1 and b[3] == 0x9D
+                and (b[4] | b[5] << 8) == cell
+                and b[6] == 0xC8 and b[7] == 0x4C):
+            if found >= 0:
+                return -1       # two handlers write the cell: not a reading
+            found = c
+    return found
+
+
 def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     """Recognise the command-table pattern grammar, or leave `det` untouched."""
     data = sid.data
@@ -863,6 +955,16 @@ def _detect_cmdtable(sid: SidFile, det: Detection, log: Logger) -> bool:
     if det.cmd_slide >= 0:
         log(f"Pattern slide command...: ${0x80 + det.cmd_slide:02X} "
             f"(low, high & ${det.cmd_slide_mask:02X} + bit 7 direction, delay)")
+    det.cmd_transpose = _cmdtable_transpose(sid, data, cmd_lo, cmd_hi, count)
+    if det.cmd_transpose >= 0 and det.read_track_version == 0:
+        # Version 0's reader, but the emitted orderlist now carries
+        # Goattracker transposes ($E0-$FE), so the command floor has to move
+        # -- see patterns.command_floor. Version 0's own floor is $FF, and
+        # reindex_tracks would drop every transpose byte as a dangling
+        # pattern reference under it.
+        det.read_track_version = 11
+        log(f"Pattern transpose cmd...: ${0x80 + det.cmd_transpose:02X} "
+            "(signed, per voice, lifted into the orderlist; track reader 11)")
     log(f"Pattern grammar.........: command-table ({count} commands, "
         f"${0x80 + instrument:02X} sets the instrument)")
     log("Note durations..........: " + " ".join(
@@ -1664,6 +1766,10 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     det.effect_bit40 = _find_effect_bit40(sid)
     if det.effect_bit40:
         log("Effect bit $40..........: fixed attack pitch from the note table")
+        det.fixed_pitch_index = _find_fixed_pitch_index(sid, det)
+        if det.fixed_pitch_index >= 0:
+            log(f"Effect bit $40 index....: note-index array at file "
+                f"+0x{det.fixed_pitch_index:04X} (the handler's own operand)")
 
     det.envelope_cut = find_envelope_cut(sid)
     if det.envelope_cut:
@@ -1759,6 +1865,13 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             + (" and $FE nn is a two-byte tempo command"
                if det.track_fe_command else ""))
 
+    det.instr_transpose = _find_instr_transpose(sid, det)
+    if det.instr_transpose >= 0:
+        tbl = instr_transpose_table(data, det)
+        log(f"Instrument transpose....: per-instrument note offset table at "
+            f"file +0x{det.instr_transpose:04X}, {len(tbl)} bytes "
+            f"({', '.join(f'{i}:+{v}' for i, v in enumerate(tbl) if v) or 'all zero'})")
+
     (det.effect_two_stage, det.two_stage_wave,
      det.two_stage_frames) = _find_two_stage(sid, det)
     if det.effect_two_stage:
@@ -1838,7 +1951,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Instrument effect byte..: bit $80 steps the frequency from a "
             "duration/delta table (read, not written)")
 
-    det.wave_program, det.wave_program_gate = find_wave_program(sid)
+    det.wave_program, det.wave_program_gate = find_wave_program(sid, det)
     if det.wave_program >= 0:
         where = (f"effect bit ${det.wave_program_gate:02X}"
                  if det.wave_program_gate else "an unrecognised gate")
@@ -2155,6 +2268,73 @@ SLIDE_OPERAND_SHAPE = "C8 B1 ?? 10 ?? 9D ?? ?? C8 B1 ?? 9D ?? ??"
 
 def _find_slide_operand(data: bytes) -> bool:
     return search_file(data, SLIDE_OPERAND_SHAPE) >= 1
+
+
+# The instrument-indexed note transpose. Food Feud $90F8, anchored on the
+# instruction that names the table:
+#
+#     90F8  C8        INY
+#     90F9  B1 FA     LDA ($FA),Y      ; the pattern's instrument operand
+#     90FB  9D 26 95  STA $9526,X      ; the voice's instrument index
+#     90FE  AA        TAX              ; X := instrument
+#     90FF  BD 6D 95  LDA $956D,X      ; <-- the table this shape names
+#     9102  AE 2E 95  LDX $952E        ; back to the voice index
+#     9105  9D 44 95  STA $9544,X      ; the voice's standing transpose
+#     ...
+#     9111  29 7F     AND #$7F
+#     9113  18        CLC
+#     9114  7D 44 95  ADC $9544,X      ; note + transpose, EVERY note
+#     9117  9D 23 95  STA $9523,X
+#     911A  0A A8 B9 10 94             ; ASL / TAY / LDA freqtbl,Y
+#
+# The bare `TAX / LDA abs,X / LDX abs / STA abs,X` matches three corpus files
+# (Chicken_Song $14BE and Hollywood_or_Bust $08A0 are a different shape that
+# happens to spell the same four opcodes); the instrument fetch in front of
+# it and the `ADC reg,X` on the same register within reach behind it are
+# what make it this mechanism, and with both required Food_Feud is the only
+# match in the corpus (C:/t/food-feud-needs-an-instrumen/shape_census.py at
+# v0.5.486). The register the STA names is checked against the ADC's, so a
+# match is a table whose value really reaches the note.
+INSTR_TRANSPOSE_SHAPE = "B1 ?? 9D ?? ?? AA BD ?? ?? AE ?? ?? 9D ?? ??"
+INSTR_TRANSPOSE_ADC_REACH = 50
+
+
+def instr_transpose_table(data: bytes, det: Detection) -> bytes:
+    """The per-instrument note-transpose table's bytes, one per record.
+
+    Empty unless `det.instr_transpose` is set. One byte per instrument the
+    player has, and never past the instrument records themselves: Food
+    Feud's table sits immediately below them ($956D + 14 == $957B, the
+    instrument start), and `instr_used` is over-counted until
+    `_bound_instruments` has run, so the record start is the bound that
+    holds at every point of detection.
+    """
+    off = det.instr_transpose
+    if off < 0:
+        return b""
+    n = max(det.instr_used, 0)
+    if 0 <= off < det.instr_start:
+        n = min(n, det.instr_start - off)
+    return bytes(data[off:off + n])
+
+
+def _find_instr_transpose(sid: SidFile, det: Detection) -> int:
+    """File offset of the per-instrument note-transpose table, or -1."""
+    data = sid.data
+    at = search_file(data, INSTR_TRANSPOSE_SHAPE)
+    while at >= 1:
+        table = data[at + 7] | data[at + 8] << 8
+        reg = data[at + 13:at + 15]
+        end = min(at + 15 + INSTR_TRANSPOSE_ADC_REACH, len(data) - 3)
+        for j in range(at + 15, end):
+            if data[j] == 0x7D and data[j + 1:j + 3] == reg:
+                off = sid.to_offset(table)
+                if 0 < off < len(data) - max(det.instr_used, 0):
+                    return off
+                break
+        nxt = search_file(data[at + 1:], INSTR_TRANSPOSE_SHAPE)
+        at = at + 1 + nxt if nxt >= 1 else -1
+    return -1
 
 
 # The fetch above says a second byte exists. It does not say which half of the
@@ -2709,6 +2889,102 @@ def _find_effect_bit40(sid: SidFile) -> bool:
                     and data[i + 3] in (0x50, 0x70)):
                 return True
     return False
+
+
+# How far past the handler's `LDA idx,Y` (or its `JMP` target) the note-table
+# fetch `ASL / TAY / LDA table,Y` may sit. 37 of 43 corpus handlers jump
+# straight to it; the six 16-byte-record files of Go Go Dash's family
+# ($1B53) clamp the index first -- `CMP #$60 / BCC + / LDA #$03 / STA $D021 /
+# LDA #$5F / +` -- and reach the same fetch 11 bytes in. Measured at
+# v0.5.486; a window this size is what stops the clamp from being read as
+# "no note table", which would have declined exactly the six files that have
+# no `wave_program` to fall back on.
+FIXED_PITCH_FETCH_WINDOW = 16
+
+
+def _find_fixed_pitch_index(sid: SidFile, det: Detection) -> int:
+    """File offset of the note-index array bit $40's handler reads, or -1.
+
+    The handler, at Food Feud `$93B0` / Trans-Atlantic `$1150` / After 8
+    `$1427`, is one shape in all 43 corpus files that test the bit:
+
+        BIT effect        ; the record's +7, in the cell the player keeps it
+        BVC out           ; bit 6 clear: no fixed pitch
+        LDA counter,X     ; the attack countdown bit $04's waveform shares
+        BEQ +             ; ran out: the pattern's own note
+        DEC counter,X
+        LDA idx,Y         ; <- THIS operand, Y = record offset
+        JMP fetch         ; ASL / TAY / LDA table,Y / STA freqlo,X / ...
+
+    **The operand is read out of the handler and not inferred from
+    `wave_program`.** `_fixed_attack_note` used to index `det.wave_program`
+    on the strength of the two agreeing in the files it was derived on, and
+    that reading had two holes. Sixteen corpus files carry `$40` records and
+    no byte-code wave program at all (Food Feud, Sanxion, Tarzan, Delta,
+    Knucklebusters, ...), so their fixed pitch was never emitted -- Food
+    Feud's voice 3 sounded 36 ties where the original has 1396. And in two
+    files the arrays differ: After 8's handler reads record `+12` where
+    `wave_program` is `+8`, and the trace sounds the `+12` byte (note 60,
+    C-5, on every voice-2 attack) and never the `+8` one. Where both exist
+    they agree in 26 of 27 (Powerplay Hockey was a second disagreement
+    until `find_wave_program` was scoped to the selected engine; its two
+    engines' arrays are $3C00 and $4A08, and a file-wide scan handed the
+    $4A00 engine the $3BA0 copy's); the handler is what the player runs,
+    so it is what this returns and `wave_program` is only ever the fallback.
+
+    **Anchored on the effect cell `_effect_byte_address` names**, i.e. on
+    the instrument table detection settled on, never file-wide. Powerplay
+    Hockey carries two copies of the player and a file-wide scan returns
+    whichever handler comes first; anchored, the operand resolves against
+    the selected copy's own records (`$4A08` = its `$4A00` table `+8`).
+
+    Declined, returning -1, unless the fetch the handler jumps to indexes
+    the same table `find_freq_table` finds -- the table `_freq_table_note`
+    decodes the byte through -- and the array lies inside the file across
+    every record in use. Over the corpus neither guard declines a file
+    (43 of 43 read); they are there for the file that is not in the corpus.
+    """
+    found = _effect_byte_address(sid, det)
+    if not found or det.instr_start < 0:
+        return -1
+    addr, zp = found
+    data = sid.data
+    # Two spellings of `BIT effect`, two instruction lengths; the handler's
+    # remaining bytes are the same after either.
+    heads = ((bytes((0x24, addr)),) if zp
+             else (bytes((0x2C, addr & 0xFF, (addr >> 8) & 0xFF)),))
+    table = find_freq_table(sid)
+    if table is None:
+        return -1
+    for head in heads:
+        n = len(head)
+        for i in range(len(data) - n - 14 - FIXED_PITCH_FETCH_WINDOW):
+            if data[i:i + n] != head or data[i + n] not in (0x50, 0x70):
+                continue
+            j = i + n + 2
+            # LDA abs,X / BEQ / DEC abs,X (same cell) / LDA abs,Y
+            if not (data[j] == 0xBD and data[j + 3] == 0xF0
+                    and data[j + 5] == 0xDE
+                    and data[j + 1:j + 3] == data[j + 6:j + 8]
+                    and data[j + 8] == 0xB9):
+                continue
+            idx = data[j + 9] | data[j + 10] << 8
+            tail = j + 11
+            if data[tail] == 0x4C:
+                tail = sid.to_offset(data[tail + 1] | data[tail + 2] << 8)
+            if not 0 <= tail < len(data):
+                continue
+            window = data[tail:tail + FIXED_PITCH_FETCH_WINDOW]
+            fetch = bytes((0x0A, 0xA8, 0xB9, table.addr & 0xFF,
+                           (table.addr >> 8) & 0xFF))
+            if fetch not in window:
+                continue                # the index is not a note in that table
+            off = sid.to_offset(idx)
+            span = max(det.instr_used, 0) * det.instr_stride
+            if not (0 <= off and off + span <= len(data)):
+                continue
+            return off
+    return -1
 
 
 @dataclass
@@ -4006,7 +4282,55 @@ _WAVE_PROGRAM_SIGN_BRANCH = (0x10, 0x30)     # BPL / BMI -- the bit is $80
 _WAVE_PROGRAM_BRANCH = (0x10, 0x30, 0xD0, 0xF0)
 
 
-def find_wave_program(sid: SidFile) -> tuple[int, int]:
+def _wave_program_fetch_site(sid: SidFile, det: Optional[Detection]) -> int:
+    """File offset of the `WAVE_PROGRAM_FETCH` this detection's player runs.
+
+    **A file carrying two copies of the player carries two fetches, and the
+    first in the file is not the selected engine's.** Powerplay Hockey's
+    cue engine fetches at `$3975` from the array at `$3C00` (the `$3BA0`
+    table's, one row past its 12 records); its tune engine -- the one
+    `presets.json` selects and the one whose patterns convert -- fetches at
+    `$471D` from `$4A08`, inside its own 16-byte records. A file-wide
+    `search_file` returned `$3975` for both, so `wave_program_entries` on
+    the tune engine's records would have dereferenced the cue engine's
+    pointers with the tune engine's record offsets. `_find_fixed_pitch_index`
+    already reads its array off the selected engine; this is the same
+    scoping for the same cell's other meaning.
+
+    The anchor is the effect cell `_effect_byte_address` names for the
+    instrument table the detection settled on: the gate `find_wave_program`
+    walks back to is `LDA effect / AND #bit / branch`, so the selected
+    engine's block names that cell within the same 40-byte window the walk
+    already searches. Corpus census at v0.5.486: 29 files carry the fetch;
+    27 carry it once, One_on_One four times with the first anchored, and
+    Powerplay twice with the second -- so this moves Powerplay and nothing
+    else. Where nothing anchors (no detection, no instrument table, or a
+    dialect that loads the cell some other way) the first site is returned,
+    which is the file-wide reading this replaces: a rescue may save a file
+    that reads nothing and must never disturb one that reads correctly.
+    """
+    d = sid.data
+    sites = _search_all(d, WAVE_PROGRAM_FETCH)
+    if not sites:
+        return -1
+    if len(sites) == 1 or det is None:
+        return sites[0]
+    found = _effect_byte_address(sid, det)
+    if not found:
+        return sites[0]
+    addr, zp = found
+    needles = ((bytes((0xA5, addr)), bytes((0x24, addr))) if zp
+               else (bytes((0xAD, addr & 0xFF, addr >> 8)),
+                     bytes((0x2C, addr & 0xFF, addr >> 8))))
+    for off in sites:
+        window = d[max(0, off - 40):off]
+        if any(n in window for n in needles):
+            return off
+    return sites[0]
+
+
+def find_wave_program(sid: SidFile,
+                      det: Optional[Detection] = None) -> tuple[int, int]:
     """(pointer-array offset, gating bit) for the byte-code program, or (-1, 0).
 
     Anchored on the fetch rather than on any one player's operands: the
@@ -4017,6 +4341,10 @@ def find_wave_program(sid: SidFile) -> tuple[int, int]:
     is reported as unread, never guessed, because emitting on a wrong bit would
     invent a program for every record carrying it.
 
+    **Which fetch, in a file that has two, is `det`'s question** -- see
+    `_wave_program_fetch_site`. Without a detection this is the file-wide
+    reading, the first fetch in the file.
+
     **The store between the branch and the load may be zero page.** The walk
     stepped back a fixed three bytes for it, which is `STX abs` -- the form 28
     of the 29 use. Mega Apocalypse writes `STX $E4` (two bytes) and, one byte
@@ -4026,7 +4354,7 @@ def find_wave_program(sid: SidFile) -> tuple[int, int]:
     shape as `_burst_cutoff_start` (v0.5.210): a signature anchored at a fixed
     byte distance reads one dialect and silently declines the next.
     """
-    off = search_file(sid.data, WAVE_PROGRAM_FETCH)
+    off = _wave_program_fetch_site(sid, det)
     if off < 0:
         return -1, 0
     d = sid.data

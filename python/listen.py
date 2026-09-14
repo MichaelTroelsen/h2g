@@ -876,12 +876,22 @@ def main(argv=None) -> int:
             continue
         sng_out.write_bytes(sng)
 
-        # The multiplier is not optional here, as it is in fidelity.py. siddump
-        # ignores the PSID speed field, so a trace is identical with and without
-        # -S; a *render* is not. Packed at -S1 a tune whose player wants two
-        # calls per frame plays at half speed, which is what a listener hears
-        # first and what the attack metric can never report. Reported by ear on
-        # Formula_1_Simulator, where every staged file had multiplier 2.
+        # The multiplier is not optional here, as it is in fidelity.py, and it
+        # is spent twice, on two different flags. gt2reloc's -S{multiplier}
+        # prepends the CIA stub that makes the packed player run at its real
+        # rate on hardware and in a *render* (pack_sid's docstring); packed at
+        # -S1 a tune whose player wants two calls per frame plays at half
+        # speed, which is what a listener hears first and what the attack
+        # metric can never report. Reported by ear on Formula_1_Simulator,
+        # where every staged file had multiplier 2. The *trace* below needs
+        # the same number again, as siddump-rt's -m: siddump ignores the
+        # PSID speed field and the CIA stub alike (siddump.c:309/325), so
+        # without `calls=multiplier` our side is dumped at 50 calls a second,
+        # 1/multiplier speed, and every derived note compares 180 s of the
+        # original against 60 s of ours. Measured on Saboteur_II (-S3) at
+        # v0.5.486: ties 1631 against the original's 8046 and attacks 920
+        # against 2566 with `calls` left at 1, 7386 and 2564 with it passed,
+        # and a "No legato" note that exists only at the wrong rate.
         multiplier = _preset_multiplier(doc, name)
         packed = pack_sid(legalise_restarts(sng)[0], workdir, args.gt2reloc,
                           multiplier)
@@ -935,8 +945,11 @@ def main(argv=None) -> int:
                 print(f"  {name:44} per-voice: {solo_ok}/6 rendered "
                       f"({choice.engine} cannot mute)", file=sys.stderr)
 
+        # The original at one call per frame, ours at the rate it was packed
+        # for -- the multiplier belongs to our side only.
         orig = run_siddump(src, args.seconds, sub_orig, args.siddump)
-        ours = run_siddump(ours_sid, args.seconds, sub_ours, args.siddump)
+        ours = run_siddump(ours_sid, args.seconds, sub_ours, args.siddump,
+                           calls=multiplier)
 
         # The register panel's data. Written beside the pair so `abpage.py`
         # can build the panel without re-tracing anything.
@@ -976,9 +989,9 @@ def main(argv=None) -> int:
             lines += [f"Packed at `-S{multiplier}`: this player wants "
                       f"{multiplier} calls per frame, so the CIA stub runs the "
                       f"tune at {50 * multiplier} Hz. Rate is the one thing "
-                      f"`FIDELITY.md` cannot check at all -- siddump ignores "
-                      f"the PSID speed field -- so if this sounds slow or fast "
-                      f"against the original, say so.", ""]
+                      f"`FIDELITY.md` cannot check at all -- every column "
+                      f"compares what is played, never when -- so if this "
+                      f"sounds slow or fast against the original, say so.", ""]
         for note in listen_notes(r, orig, ours):
             lines += [f"- {note}"]
         lines += [""]

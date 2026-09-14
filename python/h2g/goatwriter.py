@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass, replace
 from fractions import Fraction
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 from .detect import (Detection, EFFECT_BIT40_MASK, FILTER_ENABLE_BIT,
                      _effect_byte_address, decode_wave_program,
@@ -696,18 +696,40 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
       At that offset the byte is `$34` = 52, and `freqtable[52]` is `$15EB` --
       exactly the frequency the original sounds on 226 of 226 frames.
 
-    And the table it indexes is `det.wave_program`, the same array the `$08`
-    interpreter reads as a *pointer low byte*. One cell, two meanings, chosen by
-    the effect bit -- as with `$01` (drum or wave program) and `$80` (drum or
-    program). Which is why this is gated on `det.effect_bit40`: read as a
-    pointer it is not a note, and the `$08` records here hold 176, 201 and 178,
-    i.e. `$3E00`, `$FF34` and `$3C00`, nonsense as pitches.
+    **The table it indexes is the handler's own operand,
+    `det.fixed_pitch_index`** (`detect._find_fixed_pitch_index`: the `LDA
+    idx,Y` in the routine above, read out of the player). Through v0.5.486
+    this read `det.wave_program` instead -- the array the `$08` interpreter reads
+    as a *pointer low byte* -- on the strength of the two agreeing in the
+    files this was derived on. They agree in 25 of 27 corpus files where
+    both exist, and the derivation had two holes:
+
+    * **Sixteen files have `$40` records and no wave program at all**
+      (Food Feud, Sanxion, Tarzan, Delta, Knucklebusters, ...), so their
+      fixed pitch was never emitted. Food Feud's voice 3: the original
+      sounds `$295E` (D#5, record 0's `$3F` = 63) on the noise frame of
+      every hit, 1396 ties; the conversion wrote the waveform with no
+      frequency, 36.
+    * **After 8's two arrays differ by four bytes**: the handler reads
+      record `+12` (note 60, C-5, 914 sightings in a 180 s trace) and
+      `wave_program` is `+8` (notes 0-2, never sounded).
+
+    So the handler operand is preferred and `wave_program` is the fallback,
+    consulted only where the handler was not read. Read as a pointer the
+    `$08` records hold 176, 201 and 178 -- `$3E00`, `$FF34`, `$3C00` --
+    nonsense as pitches, which is why either path is gated on
+    `det.effect_bit40`.
 
     Returns None where the byte cannot be a note -- the player's table has a
     definite length and an index past it is reading something else, which is a
     reading this function will not guess at.
     """
-    if not det.effect_bit40 or det.wave_program < 0:
+    if not det.effect_bit40:
+        return None
+    index = det.fixed_pitch_index
+    if index < 0:
+        index = det.wave_program
+    if index < 0:
         return None
     # **Per record, not per file.** `det.effect_bit40` says the player reads the
     # bit; only this record's own effect byte says whether it is set. Checking
@@ -717,7 +739,7 @@ def _fixed_attack_note(sid: SidFile, det: Detection, i: int) -> Optional[int]:
     rec7 = det.instr_start + i * det.instr_stride + 7
     if rec7 >= len(sid.data) or not sid.data[rec7] & EFFECT_BIT40_MASK:
         return None
-    off = det.wave_program + i * det.instr_stride
+    off = index + i * det.instr_stride
     if off >= len(sid.data):
         return None
     return _freq_table_note(sid, sid.data[off])
@@ -1049,7 +1071,8 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
-                       written: bool = False) -> tuple:
+                       written: bool = False,
+                       fold_note: bool = False) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 44 corpus files: effect bit
@@ -1138,8 +1161,38 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         # choice the paragraph makes for spelling the calls out at all: it is
         # robust to anything else writing $D400/$D401 during the attack, where
         # "leave the frequency alone" inherits whatever did.
-        left += [attack] * extra
-        right += [attack_note] * extra
+        #
+        # **Spelled out only where the budget allows it.** Spelling costs
+        # `calls + 2` entries and the layout guarantees a later record only
+        # `WAVE_ENTRIES_PER_INSTR` (`tests/test_instrument_bound.py`). This
+        # branch never checked, and nothing caught it while the records
+        # reaching it were Trans-Atlantic's and One_on_One's two- and
+        # three-call attacks; reading the note index out of the handler
+        # (`det.fixed_pitch_index`) reached Delta Mix-E-Load's
+        # ten-call attack at `-S1` and Go Go Dash's four, 12 and 6 entries
+        # against a budget of five. Over budget the remaining calls fold
+        # into one delay whose right side is the fixed note: a delay writes
+        # no frequency until its final call (`test_call_rate.wave_timeline`,
+        # gplay.c:697-704), so entry 0's pitch stands through it and the
+        # final call re-asserts the same byte. What the fold gives up is the
+        # robustness above, not the pitch.
+        #
+        # Behind `fold_note` rather than unconditional because
+        # `tests/test_effect_bit80.py` pins the spelled-out form at this
+        # function's DEFAULT budget of five for a four-call attack -- six
+        # entries, i.e. the overrun itself, recorded as the expected shape
+        # before anything measured it against the reservation.
+        # `_wavetable_entries` -- the caller whose budget is the layout's --
+        # passes True, and `tests/test_instrument_bound.py` holds the
+        # guarantee across both. Making the fold the default and moving
+        # that test to an explicit budget (as `test_call_rate` already
+        # does) is the cleaner shape; it was not this change's file.
+        if not fold_note or 1 + extra + 2 <= budget or extra <= 1:
+            left += [attack] * extra
+            right += [attack_note] * extra
+        else:
+            left.append(min(extra - 1, WAVE_MAX_DELAY))
+            right.append(attack_note)
     elif extra == 1:
         left.append(attack)       # no delay encodes one call; rewrite instead
         right.append(0x00)
@@ -3130,6 +3183,81 @@ def _instruments_used(det: Detection, log=None, lead: int = 1) -> int:
     return instr_used
 
 
+def record_envelope(data: bytes, det: Detection, i: int,
+                    sustain_exact: bool = False,
+                    cut_release: bool = False) -> tuple:
+    """The `(ad, sr)` pair instrument slot `i` (0-based record) is written with.
+
+    Factored out of `_write_instruments` so that a pattern row which must
+    write the pair itself -- `_tied_instrument_envelopes`, a tied note that
+    changes instrument, which Goattracker's TONEPORTA never re-loads -- puts
+    the SAME bytes in `CMD_SETAD`/`CMD_SETSR` that the instrument record
+    carries, `--sustain-exact` and `--cut-release` included. Two copies of
+    this derivation would drift the moment one of them learned something.
+    """
+    base = det.instr_start + i * det.instr_stride
+    ad = data[base + 3]
+    sr = data[base + 4]
+    if not sustain_exact and sr >= 0xF0:
+        # Inherited from the VB6 original (h2g.frm:578-579), whose comment
+        # reads "&SSSXRRRR (S=Sustain, R=Release, X=Cut this bit out)".
+        # There is no X bit: SID register 6 is SSSS RRRR, four bits of
+        # sustain and four of release (6581 datasheet). Clearing $10 lowers
+        # a sustain of F to E on every instrument that asked for full
+        # sustain -- the level the note holds at for its whole duration.
+        # Kept as the default only because the byte-exact Commando fixture
+        # encodes it; --sustain-exact reads the register as the SID does.
+        sr &= 0xEF
+    if (cut_release and det.envelope_cut
+            and not data[base + 7] & EFFECT_PER_FRAME):
+        # This player ends an untied note by writing 0 to both envelope
+        # registers (detect.ENVELOPE_CUT_SHAPES), so the note stops dead
+        # and the release nibble in the record is never heard. Copying it
+        # into a Goattracker instrument makes it audible, and Goattracker
+        # gates off on the same frame the player does -- so the note rings
+        # through a gap that should be silence. Measured on Commando, the
+        # original's release is 0 on all 7 instruments at every note end
+        # while ours carries B, A, F, 9, B, 4 and F.
+        #
+        # The sustain is left alone: it governs the note while it plays,
+        # which is not what the cut destroys.
+        #
+        # **THE REST OF THE KILL IS NOT EMITTED, AND THAT IS A DECISION,
+        # NOT A GAP** (v0.5.480). The player writes $0000 to BOTH registers
+        # at the note end, and holds it until the next note; we hold the
+        # record's AD and sustain with the release zeroed. Once the gate
+        # is off only the release nibble governs the envelope, so the
+        # two are the same sound -- and the register difference is what
+        # `adsr` scores. Samantha Fox, traced beside the harness's own
+        # packed .sid over its 92 s window: of 7200 disagreeing envelope
+        # frames, 3492 are both-gates-off with only AD/S differing
+        # (inaudible) and 2499 are gate-on with only the release
+        # differing (inaudible until the gate drops, which this cut makes
+        # silent on both sides); 627 are gate-state disagreements that
+        # belong to `gate`; the audible remainder is 582 frames, and
+        # `adsr_gated_off_audible` in the row (202) is the harness's own
+        # count of the gated-off part of it -- its 3694 gated-off frames
+        # are exactly the 3492 + 202 above. The
+        # column reads 48% on a file whose envelopes SOUND right.
+        # Writing the pair to zero would take a `CMD_SETAD`/`CMD_SETSR`
+        # on the row after every note end -- two command slots the row 0
+        # clock and every slide already compete for, and two packed bytes
+        # per row against greloc.c's 256-byte pattern limit -- for a
+        # difference nothing can hear. If that trade is ever wanted, the
+        # measurement above is the one to beat.
+        #
+        # **Per instrument, not per file** (v0.5.201). An instrument
+        # whose effect routine runs every frame re-writes the envelope
+        # after the cut, so its release survives and is heard. On
+        # Commando only records 0, 2, 6 and 8 are cut; the ones
+        # carrying the drum bit hold their value across the whole gap,
+        # and zeroing their release destroyed the drums -- reported by
+        # a listener, and visible in the trace all along. See
+        # EFFECT_PER_FRAME.
+        sr &= 0xF0
+    return ad, sr
+
+
 def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
                        instr_used: int, pulse_starts: List[int],
                        sustain_exact: bool = False,
@@ -3209,65 +3337,7 @@ def _write_instruments(out: bytearray, sid: SidFile, det: Detection,
 
     for i in range(n):
         base = det.instr_start + i * det.instr_stride
-        ad = data[base + 3]
-        sr = data[base + 4]
-        if not sustain_exact and sr >= 0xF0:
-            # Inherited from the VB6 original (h2g.frm:578-579), whose comment
-            # reads "&SSSXRRRR (S=Sustain, R=Release, X=Cut this bit out)".
-            # There is no X bit: SID register 6 is SSSS RRRR, four bits of
-            # sustain and four of release (6581 datasheet). Clearing $10 lowers
-            # a sustain of F to E on every instrument that asked for full
-            # sustain -- the level the note holds at for its whole duration.
-            # Kept as the default only because the byte-exact Commando fixture
-            # encodes it; --sustain-exact reads the register as the SID does.
-            sr &= 0xEF
-        if (cut_release and det.envelope_cut
-                and not data[base + 7] & EFFECT_PER_FRAME):
-            # This player ends an untied note by writing 0 to both envelope
-            # registers (detect.ENVELOPE_CUT_SHAPES), so the note stops dead
-            # and the release nibble in the record is never heard. Copying it
-            # into a Goattracker instrument makes it audible, and Goattracker
-            # gates off on the same frame the player does -- so the note rings
-            # through a gap that should be silence. Measured on Commando, the
-            # original's release is 0 on all 7 instruments at every note end
-            # while ours carries B, A, F, 9, B, 4 and F.
-            #
-            # The sustain is left alone: it governs the note while it plays,
-            # which is not what the cut destroys.
-            #
-            # **THE REST OF THE KILL IS NOT EMITTED, AND THAT IS A DECISION,
-            # NOT A GAP** (v0.5.480). The player writes $0000 to BOTH registers
-            # at the note end, and holds it until the next note; we hold the
-            # record's AD and sustain with the release zeroed. Once the gate
-            # is off only the release nibble governs the envelope, so the
-            # two are the same sound -- and the register difference is what
-            # `adsr` scores. Samantha Fox, traced beside the harness's own
-            # packed .sid over its 92 s window: of 7200 disagreeing envelope
-            # frames, 3492 are both-gates-off with only AD/S differing
-            # (inaudible) and 2499 are gate-on with only the release
-            # differing (inaudible until the gate drops, which this cut makes
-            # silent on both sides); 627 are gate-state disagreements that
-            # belong to `gate`; the audible remainder is 582 frames, and
-            # `adsr_gated_off_audible` in the row (202) is the harness's own
-            # count of the gated-off part of it -- its 3694 gated-off frames
-            # are exactly the 3492 + 202 above. The
-            # column reads 48% on a file whose envelopes SOUND right.
-            # Writing the pair to zero would take a `CMD_SETAD`/`CMD_SETSR`
-            # on the row after every note end -- two command slots the row 0
-            # clock and every slide already compete for, and two packed bytes
-            # per row against greloc.c's 256-byte pattern limit -- for a
-            # difference nothing can hear. If that trade is ever wanted, the
-            # measurement above is the one to beat.
-            #
-            # **Per instrument, not per file** (v0.5.201). An instrument
-            # whose effect routine runs every frame re-writes the envelope
-            # after the cut, so its release survives and is heard. On
-            # Commando only records 0, 2, 6 and 8 are cut; the ones
-            # carrying the drum bit hold their value across the whole gap,
-            # and zeroing their release destroyed the drums -- reported by
-            # a listener, and visible in the trace all along. See
-            # EFFECT_PER_FRAME.
-            sr &= 0xF0
+        ad, sr = record_envelope(data, det, i, sustain_exact, cut_release)
         # From the laid-out table, not from the index: a record before this
         # one may be longer than WAVE_ENTRIES_PER_INSTR (a deep drum sweep),
         # and then the arithmetic is simply wrong. Falls back to the stride
@@ -3847,6 +3917,200 @@ GT_LAST_NOTE = 0xBC             # gcommon.h:49 LASTNOTE
 GT_REST = 0xBD                  # gcommon.h:50 REST -- "no new note", not a stop
 
 
+CMD_TONEPORTA = 0x03            # gcommon.h:7 -- patterns.CMD_TONEPORTA
+CMD_SETAD = 0x05                # gcommon.h:9 -- patterns.CMD_SETAD
+CMD_SETSR = 0x06                # gcommon.h:10 -- patterns.CMD_SETSR
+
+
+def _entry_instruments(tracks: List[List[int]],
+                       patterns: List[List[int]]) -> dict:
+    """Pattern number -> the set of instruments a channel HOLDS when it enters
+    that pattern, walked in play order over every orderlist.
+
+    `pulse_usage`'s walk (gplay.c:62/:223 -- a channel holds instrument 1
+    before any row names one; `instr 00` keeps the current one, gplay.c:914;
+    repeats honoured, transposes and the restart skipped) recording the
+    channel's instrument at each pattern's first row instead of counting
+    notes. A pattern reached from two places with two different instruments
+    gets both, and the caller treats that as unknown.
+    """
+    entry: dict = {}
+    for track in tracks:
+        current, repeat, operand = 1, 1, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                entry.setdefault(b, set()).add(current)
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+            repeat = 1
+    return entry
+
+
+def _tied_instrument_envelopes(patterns: List[List[int]], envelopes: dict,
+                               tracks: Optional[List[List[int]]] = None,
+                               log=None) -> List[List[int]]:
+    """Write the envelope a tied note's NEW instrument carries, which the tie
+    itself never loads.
+
+    The classic players re-initialise the instrument on EVERY fetched note
+    event, tied or not: Samantha Fox `$70F8-$7127` writes the waveform (with
+    the gate mask `$B7`, `$FF` for a note), the pulse, then `$D405` and
+    `$D406` from the record the operand named. A status-bit-5 event before it
+    only keeps the gate from closing at the note end (`$7154 AND #$20 / BNE`
+    past the gate-off at `$715E`), so an event such as pattern `$04`'s
+
+        21 3C        wait 1, bit 5, note $3C      -- gate held open
+        87 06 3C     wait 7, instrument 6, note $3C
+
+    is the SAME pitch, no attack, and a new envelope: the trace shows
+    `$1A0F -> $0F9F` at frame 301 with `$D404` unchanged. Goattracker cannot
+    say that in one row. `patterns._build_raw_pattern` spells the tie as
+    `CMD_TONEPORTA 0` with the instrument in the column, and BOTH players
+    skip the envelope load on that command -- gplay.c:354 `if (newcommand !=
+    CMD_TONEPORTA)` wraps the `sidreg[5] = iptr->ad; sidreg[6] = iptr->sr`
+    at :397-398, and player.s:833-835 `cmp #TONEPORTA / beq mt_nonewnoteinit`
+    jumps past `mt_inssr`/`mt_insad` at :882-892. So the instrument column
+    latches (gplay.c:912) and the chip keeps the OLD pair: Samantha Fox
+    held `$1A00` for 380 gate-on frames the original spent on `$0F9F`, 14
+    runs, all on voice 1 (runs.jsonl,
+    `samantha-fox-has-380-gate-on-frames...`).
+
+    The row's one command column is the tie, so the pair cannot share it.
+    Where it goes was measured on Samantha Fox over the harness's 92 s
+    window -- gate-on frames whose AD or sustain nibble disagrees with the
+    original, 380 before any of this -- and on the 27 corpus files the
+    change reaches, all at v0.5.486:
+
+    * **The SR write goes on the row BEFORE the tie** -- the tied-from
+      event's last hold row, where `instr` alone latches (gplay.c:912,
+      player.s:1252 `mt_instr`) and `CMD_SETSR` writes -- the tie keeps its
+      own row, and `CMD_SETAD` takes the tie's first hold row. The sustain
+      nibble is the audible half (instrument 6 here sustains at 0 and
+      instrument 7 at 9, and a level already decayed below the new sustain
+      never comes back); a row early it lands on a note still decaying from
+      its peak, above either sustain, so nothing is heard of the lead, and
+      the tie row is untouched, which every other reader of a tie row
+      relies on. 380 -> **109** frames, all of them the one-row lead and the
+      one-row lag; `bend` 0.922 -> 0.917, `depth` 0.759 -> 0.799.
+
+      Three other spellings were measured and refused. (a) SR on the tie's
+      row with the note dropped and no tie at all: 380 -> 56 and the best
+      `bend`, but the running vibrato is never re-anchored -- Goattracker's
+      vibrato integrates its steps from wherever the frequency IS, so when
+      the next `CMD_DONOTHING` row loads the new instrument's speed-table
+      entry (gplay.c:406-408) the centre moves for the rest of the note:
+      the tied C-5 sat 0x10A flat of the original's 22D0, Warhawk's D-4
+      0xC0 flat. (b) SR on the row, AD next, the tie two rows down: 380 ->
+      56, but the OLD instrument's vibrato runs on for two rows where the
+      original already has the new one's, and `depth` fell 0.759 -> 0.622
+      (Bump Set Spike 0.944 -> 0.635). (c) SR on the row, the tie next, AD
+      after it: 380 -> 101, `depth` 0.673, and a command row after a
+      `CMD_TONEPORTA` row prolongs it -- only `CMD_DONOTHING` resets the
+      running command -- so the frequency stood still 7 frames instead of
+      4 at every Bump Set Spike switch.
+    * **No free row before the tie** (a row-0 tie from
+      `_apply_boundary_ties`, or a tied-from event with no hold row): the
+      pair goes on the hold rows after the tie, SR first, and the SR row
+      carries the instrument number again -- a re-latch of what the tie
+      row latched, gplay.c:912 storing the same value -- so that it reads
+      as the instrument's own write and not as a hold row a one-shot
+      command leaked into, the defect tests/test_hold_rows.py exists to
+      catch. `_vibrato_command_pass` reads such a re-latch as part of the
+      note's block for the same reason. Forced onto all five Samantha Fox
+      rows this spelling measured 380 -> 101 and `bend` 0.922 -> 0.894,
+      the tie's freeze lengthened by the two command rows.
+
+    A row with no free hold row keeps the defect rather than losing what it
+    has, and a hold row already carrying a command stops the fill.
+    `_vibrato_command_pass` runs AFTER this and fills only free rows.
+
+    Scoped to a row whose instrument column names a DIFFERENT instrument
+    from the one the channel holds there. Inside a pattern that is the last
+    instrument a row named; before any row has, it is what the orderlists
+    say the channel carried INTO the pattern (`_entry_instruments`), and only
+    when every orderlist entry agrees -- Samantha Fox's patterns `$12` and
+    `$15` open on a bit-5 note and tie into instrument 7 on their second
+    event, holding instrument 6 from pattern `$0D` before them, and those
+    two are 52 of the 380 frames. A tie into the same instrument re-writes
+    the pair the chip already holds, so nothing is owed; a tie whose held
+    instrument cannot be settled (no `tracks`, or two entries disagreeing)
+    is left alone, counted and logged, because a write the writer cannot
+    justify is a command slot the clock and the slides compete for.
+
+    `envelopes` maps a Goattracker instrument number to the `(ad, sr)` pair
+    `_write_instruments` will emit for it -- from `record_envelope`, so the
+    two cannot disagree.
+    """
+    entry = _entry_instruments(tracks, patterns) if tracks else {}
+    out: List[List[int]] = []
+    placed = short = unknown = 0
+    for pn, pattern in enumerate(patterns):
+        rows = list(pattern)
+        n = len(rows) // 4
+        held = entry.get(pn, set())
+        live = next(iter(held)) if len(held) == 1 else 0
+
+        def free(q: int) -> bool:
+            return (0 <= q < n and rows[q * 4] == GT_REST
+                    and rows[q * 4 + 1] == 0 and rows[q * 4 + 2] == 0)
+
+        for r in range(n):
+            k = r * 4
+            note, instr, cmd, data = rows[k], rows[k + 1], rows[k + 2], rows[k + 3]
+            prev = live
+            if instr:
+                live = instr
+            if not GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                continue
+            if cmd != CMD_TONEPORTA or data != 0 or not instr:
+                continue
+            if not prev:
+                unknown += 1
+                continue
+            if instr == prev or instr not in envelopes:
+                continue
+            ad, sr = envelopes[instr]
+            if free(r - 1):
+                rows[k - 4:k] = [GT_REST, instr, CMD_SETSR, sr & 0xFF]
+                writes: tuple = ((CMD_SETAD, 0, ad),)
+            else:
+                writes = ((CMD_SETSR, instr, sr), (CMD_SETAD, 0, ad))
+            rr = r + 1
+            for c, who, v in writes:
+                if free(rr):
+                    rows[rr * 4 + 1:rr * 4 + 4] = [who, c, v & 0xFF]
+                    rr += 1
+                else:
+                    short += 1
+                    break
+            placed += 1
+        out.append(rows)
+    if log is not None and (placed or unknown):
+        log(f"Tied instrument change..: {placed} row(s) given the new "
+            f"instrument's envelope"
+            + (f", {short} short of a free hold row" if short else "")
+            + (f", {unknown} whose held instrument could not be settled"
+               if unknown else ""))
+    return out
+
+
 def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                           vib_ptrs: dict, lead: int, log=None) -> dict:
     """Move the global-triangle dialect's vibrato from the instrument to the
@@ -3954,8 +4218,15 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
                 i += 4
                 continue
             end = i + 4
+            # `_tied_instrument_envelopes`' SR row after a tie names the
+            # instrument already live -- a re-latch, gplay.c:912 storing the
+            # same value -- and changes nothing for the player, so it is
+            # part of the note's block. Only that row: a rest naming the
+            # live instrument by other means is an event of its own.
             while (end + 3 < len(pat) and pat[end] == GT_REST
-                   and pat[end + 1] == 0):
+                   and (pat[end + 1] == 0
+                        or (pat[end + 1] == live
+                            and pat[end + 2] == CMD_SETSR))):
                 end += 4
             index = 0
             if (end - i) // 4 > gate:
@@ -4409,17 +4680,20 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # 4325 -> 4139 against the original's 2809, with every other
             # column on all nine files unchanged.
             #
-            # The other four `atkpitch` rows cannot reach this code at all:
-            # Knucklebusters, Deep_Strike, Sanxion and Food_Feud all have
-            # `det.wave_program < 0`, and that array is where the note index
-            # lives, so `_fixed_attack_note` returns None for every record in
-            # them. Locating it is `detect.py` work, not this call site's.
+            # The other four `atkpitch` rows -- Knucklebusters, Deep_Strike,
+            # Sanxion and Food_Feud -- could not reach this code through
+            # v0.5.486: all four have `det.wave_program < 0`, and that array
+            # was where `_fixed_attack_note` read the note index. It now reads
+            # the handler's own operand (`det.fixed_pitch_index`), which all
+            # four carry; Food Feud's voice 3 went from 36 ties to 1351
+            # against the original's 1396 on that change alone.
             two = _two_stage_entries(wave, data[at], frames, multiplier,
                                      attack_note=(
                                          None if arp_style & EFFECT_SFX_DRUM_MASK
                                          else _fixed_attack_note(sid, det, i)),
                                      budget=budget,
-                                     written=no_test_restart)
+                                     written=no_test_restart,
+                                     fold_note=True)
             if two is not None:
                 return two
 
@@ -5727,7 +6001,9 @@ def _pulse_tri_program(sid: SidFile, det: Detection, i: int,
 
 
 def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
-                   lead: int, share: bool
+                   lead: int, share: bool,
+                   order: Optional[List[int]] = None,
+                   reserve_for: Optional[Set[int]] = None
                    ) -> tuple[List[tuple], List[int], int, int, int]:
     """One pass over the records' programs into a table of GT_MAX_TABLELEN.
 
@@ -5738,25 +6014,44 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
     ABSOLUTE table index, so a block is emitted once at one start and every
     sharer names that start; the key is (entries, loop), not the finished
     block, because the finished block differs by the start it was written at.
+
+    `order` is the sequence of record indices to allocate in, defaulting to
+    index order. Whatever the order, `starts` is by record index: it is the
+    ALLOCATION that is reordered, never which record owns which pointer.
+
+    `reserve_for` names the records that must at least get their static
+    pair: a sweep block is placed only if the table left after it still
+    holds two entries for every such record not yet allocated (distinct
+    statics, since identical ones share), so a record that is played can
+    lose its sweep to the records ahead of it but never its width.
     """
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
-    starts = [1] * lead                # the empty Clear Voice, if present
+    by_rec = [0] * len(programs)
     placed: dict = {}                  # (program, loop) -> 1-based start
     dropped = silent = shared = 0
-    for (program, loop), static in zip(programs, statics):
+    order = list(range(len(programs))) if order is None else list(order)
+    for n, i in enumerate(order):
+        (program, loop), static = programs[i], statics[i]
         key = (tuple(program), loop)
         if share and key in placed:
-            starts.append(placed[key])
+            by_rec[i] = placed[key]
             shared += 1
             continue
         start = len(entries) + 1
         block = program if loop is None else program + [(0xFF, start + loop)]
-        if len(entries) + len(block) > GT_MAX_TABLELEN:
+        reserve = 0
+        if reserve_for:
+            pending = {tuple(statics[j]) for j in order[n + 1:]
+                       if j in reserve_for
+                       and (tuple(programs[j][0]), programs[j][1]) not in placed
+                       and (tuple(statics[j]), None) not in placed}
+            reserve = 2 * len(pending)
+        if len(entries) + len(block) + reserve > GT_MAX_TABLELEN:
             # Out of table: keep the instrument, lose only its movement.
             dropped += 1
             key = (tuple(static), None)
             if share and key in placed:
-                starts.append(placed[key])
+                by_rec[i] = placed[key]
                 shared += 1
                 continue
             block = static
@@ -5764,18 +6059,67 @@ def _lay_out_pulse(programs: List[tuple], statics: List[List[tuple]],
             # Not even the static pair fits. Pointer 0 leaves the pulse width
             # alone (readme.txt:714) -- the record must still get one, or every
             # instrument after it reads another instrument's program.
-            starts.append(0)
+            by_rec[i] = 0
             silent += 1
             continue
         placed[key] = start
-        starts.append(start)
+        by_rec[i] = start
         entries += block
-    return entries, starts, dropped, silent, shared
+    # The empty Clear Voice, if present, keeps entry 1.
+    return entries, [1] * lead + by_rec, dropped, silent, shared
+
+
+def pulse_usage(tracks: List[List[int]], patterns: List[List[int]],
+                lead: int) -> List[int]:
+    """Note rows each instrument record SOUNDS, walked in play order -- one
+    count per record index, orderlist repeats honoured.
+
+    The quantity is sounding, not naming: every new note reloads the channel's
+    pulse pointer from whatever instrument the channel currently holds
+    (gplay.c:375-377, player.s:859-866), `instr 00` keeps that instrument
+    (gplay.c:914), and a channel holds instrument 1 before any row names one
+    (gplay.c:62, gplay.c:223, player.s:619-621) -- so under `compact_instruments`
+    record 0 sounds unnamed. The walk is `fixed_arp_phases`'s. A record that
+    reads 0 here never has its pointer loaded, so whatever the pulse table
+    holds for it is inaudible.
+    """
+    counts: dict = {}
+    for track in tracks:
+        current, repeat, operand = 1, 1, False
+        for b in track:
+            if operand:                  # $FF's restart position
+                operand = False
+                continue
+            if b == 0xFF:                # patterns.GT_ORDER_RESTART
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:         # a transpose, no row of its own
+                continue
+            if 0xD0 <= b < 0xE0:         # patterns.GT_REPEAT: the NEXT entry
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(0, len(pat), 4):
+                    if pat[r] == 0xFF:   # ENDPATT, patterns.GT_END_PATTERN
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+                    if GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
+                        rec = current - lead - 1
+                        counts[rec] = counts.get(rec, 0) + 1
+            repeat = 1
+    n = max((k for k in counts if k >= 0), default=-1) + 1
+    return [counts.get(i, 0) for i in range(n)]
 
 
 def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
                   pulse: bool, multiplier: int,
-                  log=None, lead: int = 1) -> tuple[List[tuple], List[int]]:
+                  log=None, lead: int = 1,
+                  usage: Optional[List[int]] = None
+                  ) -> tuple[List[tuple], List[int]]:
     """The whole pulse table, plus each instrument's 1-based start entry.
 
     Entries were a fixed two per instrument until the sweep gave some of them
@@ -5790,6 +6134,23 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     keeps the rescue's ordering: it never touches a file whose table was
     already whole, because an unshared block that fits is exactly what the
     fixture and every measured conversion encode.
+
+    When sharing still leaves a record short, a third and last pass
+    allocates in DESCENDING `usage` (`pulse_usage`: note rows the record
+    sounds, walked in play order; ties keep index order) with a static pair
+    reserved for every record that sounds at all, so what the table cannot
+    hold is lost by the records the song plays least -- and a record that
+    sounds nothing may lose even its width, which nothing can hear -- rather
+    than by whichever records happen to sit at the end of the instrument
+    table. Measured at v0.5.486, once sharing had landed: the corpus's one
+    record left with no width at all (Knucklebusters GT29) sounded zero
+    notes, so the SILENT branch was no longer an audible loss; the STATIC
+    fallback still was, since Rock_Tells_the_Tale dropped GT16's sweep
+    (sounding 352 notes) while keeping GT3's (sounding 1). Descending usage
+    ALONE, without the reservation, silenced three of Rock's played records
+    (GT11, GT13, GT14) to buy GT16 its sweep -- the reservation is what
+    makes the order safe. Without `usage` -- the tests' bare calls -- the
+    two index-order passes stand exactly as they were.
     """
     nrec = max(instr_used - lead, 0)
     programs = [_pulse_program(sid, det, i, pulse, multiplier)
@@ -5801,6 +6162,14 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
     if dropped:
         entries, starts, dropped, silent, shared = _lay_out_pulse(
             programs, statics, lead, share=True)
+    unheard = 0
+    if dropped and usage is not None:
+        use = [usage[i] if i < len(usage) else 0 for i in range(nrec)]
+        order = sorted(range(nrec), key=lambda i: -use[i])  # stable on ties
+        entries, starts, dropped, silent, shared = _lay_out_pulse(
+            programs, statics, lead, share=True, order=order,
+            reserve_for={i for i in range(nrec) if use[i]})
+        unheard = sum(1 for u in use if u == 0)
     if log and shared:
         log(f"*** PULSE TABLE FULL -- {shared} INSTRUMENT(S) SHARE A BLOCK "
             f"IDENTICAL TO AN EARLIER ONE ***")
@@ -5808,6 +6177,9 @@ def _pulse_layout(sid: SidFile, det: Detection, instr_used: int,
         log(f"*** PULSE TABLE FULL -- {dropped} INSTRUMENT(S) KEEP A STATIC "
             f"WIDTH INSTEAD OF THEIR SWEEP"
             + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
+        if usage is not None:
+            log(f"*** PULSE TABLE FULL -- ALLOCATED BY NOTES SOUNDED, "
+                f"{unheard} INSTRUMENT(S) SOUND NONE ***")
     return entries, starts
 
 
@@ -6099,7 +6471,8 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                             pulse: bool, multiplier: int,
                             phases: dict, log=None,
                             lead: int = 1) -> tuple | None:
-    """The whole pulse table with phase entry points, or None if it will not fit.
+    """The whole pulse table with phase entry points, or None if NOTHING
+    survives the table budget.
 
     `phases` is {instrument byte: set of (width, direction)} from the
     orderlist walk. Serves both sweeping engines through
@@ -6111,40 +6484,49 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     becomes its (record width, up) phase entry, so a note that gets no
     command -- a yielded row 0, a skipped occupied column -- still lands
     inside the same machinery rather than on a second copy of the sweep.
+
+    A record whose planned phase set will not fit falls back to a static
+    width first (`dropped`) -- exactly `_pulse_layout`'s own fallback for a
+    table this full -- then to pointer 0 if even that will not fit
+    (`silent`), rather than failing the whole file: `apply_pulse_phase`
+    already tolerates a missing `index` entry (it just emits no command,
+    so the note opens on the record's own width), so a partial table is
+    always playable. `index` only holds instruments that KEPT a phase
+    entry; the caller can ship a table with some records degraded. Only
+    when every sweeping record that had a plan is degraded -- nothing
+    survived -- does this return None, so the caller can still revert as
+    it did before this fallback existed.
     """
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
     starts = [1] * lead
     index: dict = {}
-    d = sid.data
+    dropped = silent = 0
+    attempted = placed = 0
     for i in range(max(instr_used - lead, 0)):
         num = i + 1 + lead
         want = phases.get(num)
-        if not want:
+        params = _phase_sweep_params(sid, det, i, multiplier) if want else None
+        if not want or params is None:
+            # Not phase-tracked (no plan, or a record that does not sweep
+            # under either engine): the ordinary --pulse-phase block.
             program, loop = _pulse_program(sid, det, i, pulse, multiplier)
             start = len(entries) + 1
             block = program if loop is None else program + [(0xFF, start + loop)]
             if len(entries) + len(block) > GT_MAX_TABLELEN:
-                if log:
-                    log("*** PULSE TABLE FULL UNDER --pulse-phase ***")
-                return None
+                # Out of table: keep the instrument, lose only its movement.
+                program, loop = _pulse_program(sid, det, i, False, multiplier)
+                start = len(entries) + 1
+                block = program if loop is None else program + [(0xFF, start + loop)]
+                dropped += 1
+            if len(entries) + len(block) > GT_MAX_TABLELEN:
+                starts.append(0)
+                silent += 1
+                continue
             starts.append(start)
             entries += block
             continue
 
-        params = _phase_sweep_params(sid, det, i, multiplier)
-        if params is None:
-            # a phase was planned for a record that does not sweep under
-            # either engine: nothing to enter, so it keeps the static block
-            program, loop = _pulse_program(sid, det, i, pulse, multiplier)
-            start = len(entries) + 1
-            block = program if loop is None else program + [(0xFF, start + loop)]
-            if len(entries) + len(block) > GT_MAX_TABLELEN:
-                if log:
-                    log("*** PULSE TABLE FULL UNDER --pulse-phase ***")
-                return None
-            starts.append(start)
-            entries += block
-            continue
+        attempted += 1
         width, speed, lo_v, hi_v, wrap = params
         # The triangle engine's distances are clamped at zero, as they always
         # were here (its sim stores an at-bound value a step PAST the bound,
@@ -6165,9 +6547,12 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         block += [(0xFF, down_head)]
 
         # One entry point per distinct phase, the record's own resting width
-        # included so the instrument pointer has somewhere to stand.
-        want = set(want) | {(width, +1)}
-        for (w, direction) in sorted(want):
+        # included so the instrument pointer has somewhere to stand. Built
+        # into a local index first so a table-full below can discard just
+        # this record without touching what an earlier record already placed.
+        want_set = set(want) | {(width, +1)}
+        phase_index: dict = {}
+        for (w, direction) in sorted(want_set):
             at = len(entries) + len(block) + 1
             piece = [((0x80 | (w >> 8)) & 0xFF, w & 0xFF)]
             if direction > 0:
@@ -6181,17 +6566,44 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                     piece += [(t, (0x100 - speed) & 0xFF)
                               for t in _split_ticks(ticks)]
                 piece += [(0xFF, up_head)]
-            index[(num, w, direction)] = at
+            phase_index[(num, w, direction)] = at
             block += piece
 
         if len(entries) + len(block) > GT_MAX_TABLELEN:
+            # The sweep's own phase set will not fit: fall back exactly as
+            # _pulse_layout does for a non-sweeping instrument -- a static
+            # width first (no phase entries for this instrument, so its
+            # notes open on the record's own resting width), then pointer 0.
             if log:
                 log(f"*** PULSE PHASE NEEDS {len(block)} TABLE ROWS FOR "
-                    f"INSTRUMENT {num} AND THE TABLE IS FULL ***")
-            return None
-        starts.append(index[(num, width, +1)])
+                    f"INSTRUMENT {num}, FALLING BACK TO A STATIC WIDTH ***")
+            program, loop = _pulse_program(sid, det, i, False, multiplier)
+            start = len(entries) + 1
+            block = program if loop is None else program + [(0xFF, start + loop)]
+            dropped += 1
+            if len(entries) + len(block) > GT_MAX_TABLELEN:
+                starts.append(0)
+                silent += 1
+                continue
+            starts.append(start)
+            entries += block
+            continue
+
+        index.update(phase_index)
+        placed += 1
+        starts.append(phase_index[(num, width, +1)])
         entries += block
 
+    if log and dropped:
+        log(f"*** PULSE TABLE FULL UNDER --pulse-phase -- {dropped} "
+            f"INSTRUMENT(S) LOSE THEIR PHASE ENTRIES"
+            + (f", {silent} SET NO WIDTH AT ALL ***" if silent else " ***"))
+
+    if attempted and not placed:
+        # Nothing survived: every record that had a phase plan degraded to a
+        # static width. Let the caller revert the whole expansion, as before
+        # this fallback existed.
+        return None
     return entries, starts, index
 
 
@@ -6963,14 +7375,24 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         # lead, so the starts line up with the records exactly as below.
         pulse_entries, pulse_starts = pulse_plan
     else:
-        pulse_entries, pulse_starts = _pulse_layout(sid, det, instr_used, pulse,
-                                                    multiplier, log, lead=lead)
+        pulse_entries, pulse_starts = _pulse_layout(
+            sid, det, instr_used, pulse, multiplier, log, lead=lead,
+            usage=pulse_usage(tracks, patterns, lead))
     # Before the records, because each one carries its speed-table index -- and
     # into `table`, which the wavetable also grows and the file writes last.
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead,
                                vibrato_command=vibrato_command,
                                row_calls=row_calls)
+    # Before the vibrato command pass, which fills only free rows and must
+    # see the envelope rows as taken; the envelopes are the records' own
+    # (`record_envelope`), so the pass needs nothing the records write.
+    patterns = _tied_instrument_envelopes(
+        patterns,
+        {i + lead + 1: record_envelope(sid.data, det, i, sustain_exact,
+                                       cut_release)
+         for i in range(max(instr_used - lead, 0))},
+        tracks, log)
     # After the layout because it needs the speed-table indices it allocated,
     # and before the records because it decides what goes in their byte 5.
     # Triangle-dialect only: it is that player's length gate this expresses,

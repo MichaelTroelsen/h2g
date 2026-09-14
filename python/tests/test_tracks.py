@@ -331,3 +331,30 @@ def test_a_parked_track_loops_on_silence_rather_than_restarting_at_zero():
     assert parked[0] == GT_KEYOFF and parked[1] == 0, (
         "a parked pattern that names a note or an instrument sounds")
     assert parked[4] == GT_END_PATTERN, "and it has to end after that one row"
+
+
+def test_version_11_lifts_a_pattern_transpose_into_the_orderlist():
+    """The command-table engine's `$85 nn` (tests/test_cmd_transpose.py) is
+    handed in per pattern as (entry, exit): a byte goes before every
+    reference whose pattern sets an entry value, the exit value carries into
+    the references after it, and a pattern that assigns nothing inherits.
+    Version 0 reading the same bytes emits none -- the version is the gate."""
+    data = bytes([0, 1, 2, 3, 1, 0xFF])
+    tx = {1: (9, 9), 2: (None, -12), 3: (-12, -12)}
+    got = _build_track(data, 0, 11, cmd_transposes=tx)
+    assert got == [0, 0xF9, 1, 2, 0xE4, 3, 0xF9, 1, 0xFF, 0x00], got
+    assert _build_track(data, 0, 0, cmd_transposes=tx) == [0, 1, 2, 3, 1, 0xFF, 0]
+    # The positions of the bytes, as fold_transposes reads them.
+    seen: dict = {}
+    _build_track(data, 0, 11, transposes=seen, cmd_transposes=tx)
+    assert seen == {1: 9, 4: -12, 6: 9}, seen
+
+
+def test_version_11_re_emits_an_unchanged_assignment():
+    """Two references in a row to a pattern assigning +9 get two bytes. The
+    second looks redundant on the first pass and is not on the second: the
+    list can loop back carrying whatever its tail left, and the player's
+    handler assigns unconditionally."""
+    data = bytes([1, 1, 0xFF])
+    got = _build_track(data, 0, 11, cmd_transposes={1: (9, 9)})
+    assert got == [0xF9, 1, 0xF9, 1, 0xFF, 0x00], got

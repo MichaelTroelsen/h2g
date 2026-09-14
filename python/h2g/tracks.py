@@ -12,8 +12,8 @@ from .detect import Detection
 from .patterns import (DEFAULT_TRACK, GT_END_PATTERN, GT_KEYOFF, GT_LASTNOTE,
                        GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
                        MAX_PATTERNS, MAX_TRACK_LEN,
-                       command_floor, decode_entry, pattern_references,
-                       pattern_top_note)
+                       cmdtable_transposes, command_floor, decode_entry,
+                       pattern_references, pattern_top_note)
 
 # The pattern a finished tune parks on. One KEYOFF row, then ENDPATT: the
 # gate closes on every voice that reaches it and nothing sounds again however
@@ -54,7 +54,9 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                  fd_ends: bool = False,
                  fe_command: bool = False,
                  fd_transpose: bool = False,
-                 tempos: Optional[Dict[int, int]] = None) -> List[int]:
+                 tempos: Optional[Dict[int, int]] = None,
+                 cmd_transposes: Optional[Dict[int, Tuple[int, int]]] = None,
+                 ) -> List[int]:
     """One voice's orderlist. `transposes` records what was clamped away.
 
     The emitted byte cannot say whether it is a real +14 or a clamped +48, so
@@ -68,10 +70,23 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
     occupies no step. Goattracker's orderlist has no tempo command, so
     expressing it means a `CMD_SETTEMPO` in the pattern played there; see
     `patterns.reindex_tracks`.
+
+    `cmd_transposes` is version 11's input: {pattern: (entry, exit)} from
+    `patterns.cmdtable_transposes`, the per-voice transpose the command-table
+    engine's `$85 nn` assigns from INSIDE a pattern. The player's cell and
+    Goattracker's `trans` have the same semantics -- assigned, per voice,
+    persisting across patterns and across the restart -- so a transpose byte
+    is emitted before every reference whose pattern assigns one, whether or
+    not the value changes: an assignment skipped because the value already
+    matched would be wrong on the second time round the loop, when the voice
+    arrives carrying whatever the tail of the list left. Between such
+    references neither side writes the cell, so nothing is emitted and both
+    carry. Positions are recorded in `transposes` like every other dialect's.
     """
     track: List[int] = []
     i2 = 0
     _delta_repeat = 1        # version 10 only; see that branch
+    _cmd_carry = 0           # version 11 only: the cell after the last reference
     while True:
         # The track byte stream is only terminated by a marker byte, so a bad
         # start address (or a stream with no terminator before EOF) walks off
@@ -239,7 +254,11 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
             _delta_repeat = nxt or 256
             i2 += 1
 
-        elif version in (0, 1, 3):  # Warhawk / Last V8 / Samantha Fox
+        elif version in (0, 1, 3, 11):  # Warhawk / Last V8 / Samantha Fox
+            # 11 is version 0's reader for the command-table engine, with
+            # its `$85 nn` pattern transpose lifted into the orderlist -- see
+            # the `cmd_transposes` paragraph in the docstring. Every marker
+            # below is read exactly as version 0 reads it.
             # **`$FD` ends a voice's list in the three players that test it.**
             # Rasputin `$C094`, and the same shape in Knucklebusters and
             # Tarzan:
@@ -304,6 +323,20 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 track += [0xFF, 0xFD]
                 break
             if b1 <= 0xFD:
+                if version == 11 and cmd_transposes and b1 in cmd_transposes:
+                    entry, exit_ = cmd_transposes[b1]
+                    if entry is not None:
+                        _cmd_carry = entry
+                        if track and GT_TRANSPOSE_DOWN <= track[-1] < 0xFF:
+                            track[-1] = _transpose_byte(_cmd_carry)
+                        else:
+                            track.append(_transpose_byte(_cmd_carry))
+                        if transposes is not None:
+                            transposes[len(track) - 1] = _cmd_carry
+                    track.append(b1)
+                    if exit_ is not None:
+                        _cmd_carry = exit_
+                    continue
                 track.append(b1)
 
         else:
@@ -435,6 +468,8 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     """
     data = sid.data
     tracks: List[List[int]] = []
+    # Version 11 only (the command-table engine's `$85 nn`); {} otherwise.
+    cmd_tx = cmdtable_transposes(sid, det, log)
 
     # The track table has no length field, and the PSID header's song count is
     # frequently larger than the table really is (Knucklebusters claims 11
@@ -524,7 +559,8 @@ def convert_tracks(sid: SidFile, det: Detection, log,
                                        fd_ends=det.track_fd_ends,
                                        fe_command=det.track_fe_command,
                                        fd_transpose=det.track_fd_transpose,
-                                       tempos=smap))
+                                       tempos=smap,
+                                       cmd_transposes=cmd_tx))
         built.append(voices)
         tmaps.append(maps)
         smaps.append(speeds)
@@ -627,7 +663,128 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     # -- ACE 2 reported 15599 bytes of nothing. An empty list is the honest
     # answer; convert() turns it into a refusal.
 
+    # Last, with the orderlists final and still in Hubbard numbering: the one
+    # per-pattern fact only the orderlists know. See instrument_transposes.
+    if det.instr_transpose >= 0:
+        det.instr_entry_transposes = instrument_transposes(sid, det, tracks,
+                                                           log)
+
     return tracks
+
+
+def instrument_transposes(sid: SidFile, det: Detection,
+                          tracks: List[List[int]], log=None) -> Dict[int, int]:
+    """Entry value of the instrument-indexed transpose, per pattern.
+
+    Food Feud's player keeps a per-voice note offset that it reloads from a
+    static per-instrument table at every instrument byte and adds to every
+    note (detect.INSTR_TRANSPOSE_SHAPE). Within a pattern the decoder can
+    follow that itself -- `_build_raw_pattern`'s `instr_transpose` -- but a
+    pattern that sounds notes before naming an instrument sounds them under
+    whatever the voice's PREVIOUS pattern left in the cell, and only the
+    orderlists know what that was. Goattracker cannot say it either: the
+    offset lives in the instrument operand, not the orderlist, and Food
+    Feud's voice-0 orderlist carries no transpose byte at all. So the notes
+    are shifted in the pattern, and this walk supplies the entry state.
+
+    Walks every voice in play order, twice, carrying the cell: the second
+    pass starts from the restart position with the first pass's exit state,
+    which is what the loop does, and a third pass could add nothing -- an
+    orderlist that names any instrument leaves the same cell whatever it
+    entered with, and one that names none never changes it.
+
+    Returns {pattern: entry value} for the patterns whose entry value reaches
+    a note and is non-zero; every other pattern starts at 0 and needs no
+    entry. A pattern reached under two different entry values would need
+    two copies, since the notes are shifted in the pattern data and the
+    patterns are global; no corpus file does that (Food Feud's four changes
+    put patterns 23 and 28 under +12 only), so the first value in play order
+    is kept and the conflict is logged rather than silently averaged.
+
+    Measured at v0.5.486 on Food Feud: 116 notes move up an octave -- 72 on
+    instrument 12 and 44 on 11 -- and every one of them is a note the
+    original sounds an octave above what the conversion played.
+
+    Called from convert_tracks, which does not know the conversion's
+    `slides` / `status_bit6` options, so the structure is read under every
+    reading of the options this player has (`det.slide_operand`,
+    `det.status_bit6`) and a pattern whose structure DEPENDS on them is
+    logged, since the walk would then be answering for a grammar the
+    conversion may not use. None of Food Feud's do. The right home for the
+    call is beside fold_transposes in convert.py, with the options passed
+    through; it was not in this change's grant.
+    """
+    floor = command_floor(det.read_track_version)
+    # (notes before the first instrument byte, cell value at the end or None)
+    shape: Dict[int, Tuple[int, Optional[int]]] = {}
+    unstable: List[int] = []
+
+    def structure(entry: int) -> Tuple[int, Optional[int]]:
+        if entry not in shape:
+            readings = set()
+            for sl in ((False, True) if det.slide_operand else (False,)):
+                for sb in ((False, True) if det.status_bit6 else (False,)):
+                    out: List[tuple] = []
+                    decode_entry(sid, det, entry, slides=sl, status_bit6=sb,
+                                 transpose_exit=out)
+                    readings.add(out[0] if out else (0, None))
+            if len(readings) > 1:
+                unstable.append(entry)
+            out = []
+            decode_entry(sid, det, entry, transpose_exit=out)
+            shape[entry] = out[0] if out else (0, None)
+        return shape[entry]
+
+    # First entry value seen per pattern that sounds a note before naming an
+    # instrument, 0 included -- so a pattern first reached under 0 and later
+    # under +12 is a conflict, not a late adoption of +12.
+    seen: Dict[int, int] = {}
+    conflicts: Dict[int, set] = {}
+    for track in tracks:
+        body: List[int] = []
+        restart = 0
+        i = 0
+        while i < len(track):
+            b = track[i]
+            if b == GT_ORDER_RESTART:
+                restart = track[i + 1] if i + 1 < len(track) else 0
+                break
+            if b < floor:
+                body.append(b)
+            i += 1
+        # The restart operand is a position in the emitted track; every
+        # command byte before it is one position, so it indexes `track`, not
+        # `body`. Map it onto the body by counting the references before it.
+        start = sum(1 for j in range(min(restart, len(track)))
+                    if track[j] < floor)
+        cell = 0
+        for first in (0, min(start, len(body))):
+            for p in body[first:]:
+                notes_before, exit_cell = structure(p)
+                if notes_before:
+                    if p not in seen:
+                        seen[p] = cell
+                    elif seen[p] != cell:
+                        conflicts.setdefault(p, {seen[p]}).add(cell)
+                if exit_cell is not None:
+                    cell = exit_cell
+    entries = {p: v for p, v in seen.items() if v}
+    if log and unstable:
+        log(f"*** INSTRUMENT TRANSPOSE ENTRY STATE OF {len(unstable)} "
+            "PATTERN(S) DEPENDS ON THE SLIDE/STATUS-BIT-6 GRAMMAR, READ "
+            "UNDER DEFAULTS: "
+            + ", ".join(f"${p:X}" for p in sorted(unstable)) + " ***")
+    if log and entries:
+        log(f"Instrument transpose....: {len(entries)} pattern(s) enter under "
+            "a non-zero offset ("
+            + ", ".join(f"${p:X}:+{v}" for p, v in sorted(entries.items()))
+            + ")")
+    if log and conflicts:
+        log(f"*** {len(conflicts)} PATTERN(S) ENTER THE INSTRUMENT TRANSPOSE "
+            "UNDER TWO VALUES, FIRST KEPT: "
+            + ", ".join(f"${p:X}:{sorted(v)}" for p, v in sorted(conflicts.items()))
+            + " ***")
+    return entries
 
 
 SEMITONES_PER_OCTAVE = 12

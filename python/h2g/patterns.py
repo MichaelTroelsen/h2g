@@ -15,9 +15,9 @@ from __future__ import annotations
 
 from functools import lru_cache
 from math import gcd, log2
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
-from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN,
+from .detect import (Detection, SLIDE_HIGH_FIRST_DOWN, instr_transpose_table,
                      SLIDE_HIGH_FIRST_MASK)
 from .goatwriter import CMD_SETTEMPO, CMD_SETWAVEPTR
 from .sidfile import SidFile
@@ -168,6 +168,10 @@ def command_floor(version: int) -> int:
                      because the player reads bit 7 as a command flag
         9            $FE is the only marker it has (loop to start), so $FD is
                      still a pattern number
+        11           version 0's reader, but the command-table engine's `$85 nn`
+                     pattern transpose is lifted into the orderlist as $E0-$FE
+                     (tracks._build_track, detect._cmdtable_transpose), so the
+                     floor is Goattracker's own transpose range
 
     Reading a version-0 track with Goattracker's own $D0 boundary silently
     reinterprets pattern numbers $D0-$FD as repeat and transpose commands. That
@@ -180,6 +184,8 @@ def command_floor(version: int) -> int:
     """
     if version in (2, 6, 7, 8):
         return GT_TRANSPOSE_UP
+    if version == 11:
+        return GT_TRANSPOSE_DOWN
     if version == 9:
         return 0xFE
     return GT_ORDER_RESTART
@@ -476,7 +482,10 @@ def _build_raw_pattern(data: bytes, addr: int,
                        exits_tied: Optional[List[bool]] = None,
                        instr_mask: int = 0x7F,
                        rest_notes: frozenset = frozenset(),
-                       const_notes: Optional[Dict[int, int]] = None
+                       const_notes: Optional[Dict[int, int]] = None,
+                       instr_transpose: Optional[bytes] = None,
+                       entry_transpose: int = 0,
+                       transpose_exit: Optional[List[tuple]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -534,6 +543,29 @@ def _build_raw_pattern(data: bytes, addr: int,
     Thing_on_a_Spring: `$60` on the `00 07 0E` offset table) is emitted as
     G#2 rather than the clamp's G#7. `rest_notes` is consulted first: a
     zero cell is a rest, not a note. None by default, which is the clamp.
+
+    `instr_transpose` is the player's static per-instrument note-transpose
+    table (detect.Detection.instr_transpose; one corpus file, Food_Feud).
+    The player reads `table[instrument]` at every instrument byte into a
+    per-voice cell and adds that cell to EVERY note byte before the frequency
+    lookup (`AND #$7F / CLC / ADC cell,X / ASL / TAY`), so the offset is
+    applied here, at the same seam, to every note from the instrument change
+    on -- exactly where the player applies it. It is NOT an orderlist
+    transpose: the voice's orderlist carries nothing for it, and the
+    instrument operand is what changes the octave.
+
+    `entry_transpose` is the cell's value when the pattern STARTS -- carried
+    in from whatever the voice played before, so a pattern that sounds notes
+    before naming an instrument sounds them under it. Only
+    tracks.instrument_transposes knows it, since it needs the orderlist;
+    0 for a pattern that names an instrument first, where it cannot matter.
+
+    `transpose_exit`, when given a list, receives one `(notes_before, exit)`
+    tuple: how many notes sounded before the pattern's first instrument
+    byte (0 means the entry value is irrelevant), and the cell's value at
+    the pattern's end, or None where the pattern named no instrument and
+    the entry value carries through. Nothing is appended when the decode
+    fails.
     """
     if addr <= 1 or addr >= len(data):
         return None
@@ -543,6 +575,10 @@ def _build_raw_pattern(data: bytes, addr: int,
     g_old_instr1 = -1
     g_old_instr2 = -2
     i2 = 0
+    # The voice's standing note offset under `instr_transpose`; see above.
+    transpose = entry_transpose if instr_transpose is not None else 0
+    notes_before_instr = 0
+    named_instr = False
     # Set by an event whose status bit 5 is clear-gate-suppressed; consumed by
     # the next event that carries a note. See the `tie` block below.
     pending_tie = False
@@ -572,6 +608,9 @@ def _build_raw_pattern(data: bytes, addr: int,
                 span.append(i2 + 1)
             if exits_tied is not None:
                 exits_tied.append(pending_tie)
+            if transpose_exit is not None:
+                transpose_exit.append((notes_before_instr,
+                                       transpose if named_instr else None))
             break
 
         get_next = b1 & 0x80
@@ -765,6 +804,14 @@ def _build_raw_pattern(data: bytes, addr: int,
                 g_instrument = (b2 & instr_mask) + instr_base
                 g_old_instr2 = g_old_instr1
                 g_old_instr1 = g_instrument
+                named_instr = True
+                if instr_transpose is not None:
+                    # `LDA table,X` with X = the operand the player stored;
+                    # an operand past the table reads whatever follows it,
+                    # which no corpus file does, so it is taken as 0.
+                    rec = b2 & instr_mask
+                    transpose = (instr_transpose[rec]
+                                 if rec < len(instr_transpose) else 0)
 
         if get_next or not no_note:
             i2 += 1
@@ -815,6 +862,14 @@ def _build_raw_pattern(data: bytes, addr: int,
                 # wrap below stood down (its test does that) reads exactly
                 # what this decoder read before the wrap existed.
                 g_note &= 0x7F
+            if not named_instr:
+                notes_before_instr += 1
+            if transpose:
+                # The instrument-indexed transpose, added where the player
+                # adds it: after its own `AND #$7F` and BEFORE the shift, so
+                # the sum wraps into the table exactly as `ADC cell,X / ASL
+                # / TAY` does (an 8-bit add, then bit 7 lost).
+                g_note = ((g_note & 0x7F) + transpose) & 0xFF
             g_note = _wrap_note(g_note)
             # **THE CLAMP IS RIGHT FOR EVERY BYTE BUT ONE, AND THE ONE IS
             # NOTE 104 ON COMMANDO -- PRICED AT v0.5.461 AND BLOCKED ONLY BY
@@ -1786,6 +1841,79 @@ def _build_raw_pattern_cmdtable(data: bytes, addr: int, durations: int,
     return events
 
 
+def cmdtable_transposes(sid: SidFile, det: Detection,
+                        log=None) -> Dict[int, Tuple[int, int]]:
+    """Per pattern, the `$85 nn` transpose it assigns: {pattern: (entry, exit)}.
+
+    `entry` is the value in effect for the pattern's first NOTE -- the last
+    transpose command before it, or None when the pattern sounds its first
+    note under whatever the voice carried in. `exit` is the value the pattern
+    leaves in the cell, or None when it never writes it. Both are signed
+    semitones (an 8-bit add in the player; Hollywood's $F4 is -12).
+
+    Only patterns that use the command appear. A command AFTER the first
+    note cannot be an orderlist transpose -- Goattracker applies one to the
+    whole pattern -- so such a pattern is logged: its notes after the
+    command are emitted under the entry value, and its exit value is still
+    carried to the patterns after it. No corpus file has one (Chicken Song's
+    pattern 31 puts the command after a single REST, which is not a note),
+    so the log line is the census of a case this reader cannot express.
+    """
+    out: Dict[int, Tuple[int, int]] = {}
+    if det.pattern_dialect != "cmdtable" or det.cmd_transpose < 0:
+        return out
+    data = sid.data
+    operands = det.cmd_operands
+    mid: List[int] = []
+    for p in range(det.pattern_used + 1):
+        if max(det.pattern_lo, det.pattern_hi) + p >= len(data):
+            break
+        addr = sid.to_offset(data[det.pattern_lo + p] | data[det.pattern_hi + p] << 8)
+        if addr <= 1 or addr >= len(data):
+            continue
+        entry = exit_ = None
+        notes = 0
+        for _ in range(20000):
+            if addr >= len(data):
+                break
+            b = data[addr]
+            if b == GT_END_PATTERN:
+                break
+            if b & 0x80:
+                c = b & 0x0F
+                if c >= len(operands) or addr + operands[c] >= len(data):
+                    break
+                if c == det.cmd_transpose:
+                    v = data[addr + 1]
+                    v = v - 0x100 if v >= 0x80 else v
+                    exit_ = v
+                    if notes == 0:
+                        entry = v
+                    elif p not in mid:
+                        mid.append(p)
+                addr += 1 + operands[c]
+                continue
+            if b & 0x40:
+                addr += 1           # a hold or rest: no note sounds
+            else:
+                notes += 1
+                addr += 2
+            if addr < len(data) and data[addr] == GT_END_PATTERN:
+                break
+        if exit_ is not None:
+            out[p] = (entry, exit_)
+    if log and out:
+        log(f"Pattern transposes......: {len(out)} pattern(s) assign one ("
+            + ", ".join(f"${p:X}:{v[1]:+d}" for p, v in sorted(out.items()))
+            + ")")
+    if log and mid:
+        log(f"*** {len(mid)} PATTERN(S) TRANSPOSE AFTER THEIR FIRST NOTE, "
+            "WHICH AN ORDERLIST TRANSPOSE CANNOT SAY -- NOTES AFTER IT ARE "
+            "EMITTED UNDER THE ENTRY VALUE: "
+            + ", ".join(f"${p:X}" for p in mid) + " ***")
+    return out
+
+
 def cmdtable_frames_per_row(sid: SidFile, det: Detection,
                             used: Optional[Set[int]] = None) -> int:
     """How many player calls one Goattracker row should last, for this tune.
@@ -1841,7 +1969,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  rest_wave: bool = False,
                  rest_envelope: bool = False,
                  exits_tied: Optional[List[bool]] = None,
-                 arps: Optional[List[tuple]] = None
+                 arps: Optional[List[tuple]] = None,
+                 transpose_exit: Optional[List[tuple]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -1852,6 +1981,12 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     know a pattern's highest note before deciding whether an octave can be
     folded into it, and reading that under a different grammar would answer a
     question about a file that is not being converted.
+
+    `transpose_exit` is _build_raw_pattern's out-parameter of that name, for
+    tracks.instrument_transposes -- the one caller that walks the orderlists
+    to learn what `det.instr_entry_transposes` should say. The classic
+    grammar is the only one with the mechanism, and the only one that fills
+    the list.
     """
     data = sid.data
     step = i * det.table_stride
@@ -1888,7 +2023,12 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                               gate_hold=tie and det.gate_hold,
                               exits_tied=exits_tied,
                               rest_notes=past_table_rests(sid, det),
-                              const_notes=past_table_notes(sid, det))
+                              const_notes=past_table_notes(sid, det),
+                              instr_transpose=(
+                                  instr_transpose_table(data, det)
+                                  if det.instr_transpose >= 0 else None),
+                              entry_transpose=det.instr_entry_transposes.get(i, 0),
+                              transpose_exit=transpose_exit)
 
 
 def pattern_top_note(events: List[int]) -> int:

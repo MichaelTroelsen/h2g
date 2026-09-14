@@ -266,6 +266,20 @@ for a human listening check into gitignored `build/listen/`.
   methods, which is the same lesson again one level up. See
   `docs/LESSONS.md` for the measured instance.
 
+- **A presence guard must assert against the slice, not the file.** A check
+  that a figure or a sentence is *present* — `phrase in text` — passes for as
+  long as any copy of the phrase survives anywhere in the file, so a figure
+  with a second copy (a STALE entry and its re-take, a listening bullet and
+  the per-frame-rate bullet it repeats, a docstring's cause names quoted in
+  a retraction) is unguarded in exactly the place the guard was written for:
+  delete the guarded line and the guard stays green on the other copy. Slice
+  first — the list item the anchor sentence starts, the section under a
+  heading, the docstring paragraph — and assert inside the slice; the
+  `_says` normalisation above is still needed, but on the slice. Same family
+  as the three bullets above: a check whose subject and container share a
+  substring cannot tell them apart by counting. See `docs/LESSONS.md` for the
+  measured instance and which guards still assert against the whole file.
+
 ## Measurement discipline
 
 **`FIDELITY.md` is generated at `-t 180`** (since v0.5.459), and so is
@@ -315,7 +329,20 @@ the window that produced them.
   (`bend` over `slides`, `cut` beside `filt`, `depth` beside `vib`) — **and take
   the measurement from the tool rather than re-deriving it.**
 - **Compare a ratio in log space.** 2.0x and 0.5x are the same size of wrong.
-- **A `-` in the report is a finding, not a gap.**
+- **A `-` in the report is a finding, not a gap** — and a column that can
+  decline for more than one reason must record, per side, *which*. A guard
+  that is right for the quantity (drop a run the window cut, because its
+  length is a fact about the window) can drop the only material a file has,
+  and then "the window could not measure it" and "there is nothing to
+  measure" print the same `-`; a one-sided count elsewhere in the row does
+  not say which. Record what the guard dropped (count and frames, each
+  side) beside the verdict: `noise_run_agreement`'s `*_edge_runs` /
+  `*_edge_frames` keys are the shape, and the report names the files the
+  first cause declined. The measured instance was Confuzion under the
+  gate-blind `noise_runs` (v0.5.480: one 8998-frame original run the whole
+  window long, dropped whole, `nrun` `-`); the gate-AND at v0.5.483 fixed
+  *that file* (2 of 2 paired, `nrun` 1.0 at v0.5.486), not the mechanism.
+  Read the row's `-` beside those keys before reading it as "no noise".
 - **A column can read 100% because the trace cannot see the defect.** State the
   blindness in the `Dimension` itself. Adding a column means adding a
   `Dimension` entry; `tests/test_fidelity.py` fails if the registry and the

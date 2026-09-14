@@ -20,6 +20,7 @@ import pathlib
 import shutil
 import subprocess
 import warnings
+from collections import Counter
 
 import pytest
 
@@ -981,6 +982,96 @@ def test_noise_runs_reads_the_gate_bit_not_the_noise_select_bit_alone():
     # spanning the whole window would touch both edges and be dropped)
 
 
+# --- a `-` from `nrun` has two causes, and the row says which ---------------
+#
+# `noise_runs` drops a run touching frame 0 or the last frame -- right for a
+# LENGTH, since a cut run's length is a fact about the window -- but a side
+# whose only noise is such runs then contributes no instrument, and
+# `noise_run_agreement` reads `noise_run_instruments` 0 / `nrun` `-` exactly
+# as it does for a file that plays no noise at all. Measured both ways on
+# Confuzion.sid, -t 180 (nframes 9000), subtune 0, -m1, this session:
+#
+#   BEFORE the gate-AND (the v0.5.480 harness at HEAD 24b9f1d, patched with
+#   these counters): the original's voice 1 selects noise from frame 2 to
+#   frame 8999 without a break -- ONE run of 8998 frames touching the window
+#   end, dropped whole -- so `noise_run_instruments` 0, `nrun` `-`, and the
+#   new keys read `noise_run_orig_edge_runs` 1, `noise_run_orig_edge_frames`
+#   8998 (of `orig_noise_frames` 8998); ours 2 uncut instruments, 1 edge run
+#   of 4 frames (`C:/t/nrun-declines-any-file-whose/head_patched_Confuzion_
+#   t180.json` first run, tree at 24b9f1d).
+#
+#   AFTER (v0.5.486, HEAD 6075de0, same file and window): the gate-AND
+#   resolves the same voice into 486 per-note runs (365 at $0300, 121 at
+#   $0909, 7542 frames, both modal 21), none touching an edge --
+#   `noise_run_orig_edge_runs` 0 / `_frames` 0, 2 of 2 instruments paired,
+#   `nrun` 1.0; ours still has 1 edge run of 4 frames.
+#
+# The gate-AND fixed THIS file; it did not retire the mechanism. Any voice
+# holding noise with the gate open across a window edge is still dropped,
+# and without these keys still silently.
+
+
+def test_a_side_whose_only_noise_the_window_cut_says_so_instead_of_reading_as_no_noise():
+    """Confuzion's gate-blind shape in miniature: one noise+gate run from
+    frame 2 to the window's end on the original; ours breaks the same span
+    into per-note runs. Dropping the original's run is right for a length,
+    but it is the only run it has, so `nrun` declines -- and the edge keys
+    are what separates that `-` from "this file has no noise"."""
+    adsr = [(1, 0x0A99)]
+    orig = _run_side([(1, 0x41), (2, 0x81)], adsr)                  # to the edge
+    ours = _run_side([(1, 0x41), (2, 0x81), (4, 0x41), (6, 0x81), (8, 0x41)],
+                     adsr)
+    got = fidelity.noise_run_agreement(orig, ours, 12)
+    assert got["noise_run_instruments"] == 0
+    assert got["noise_run_agreement"] is None
+    assert got["noise_run_orig_only"] == 0                 # nothing kept to be "only"
+    assert got["noise_run_ours_only"] == 1
+    # The WHY: the original's noise was cut, not absent.
+    assert got["noise_run_orig_edge_runs"] == 1
+    assert got["noise_run_orig_edge_frames"] == 10         # frames 2..11 of 12
+    assert got["noise_run_ours_edge_runs"] == 0
+    assert got["noise_run_ours_edge_frames"] == 0
+    # ...and a side with no noise at all reads 0/0, which is the distinction.
+    none = _run_side([(1, 0x41)], adsr)
+    assert fidelity.noise_edge_runs(none, 12) == {"runs": 0, "frames": 0}
+    # Both edges count, and the counts come from the same walk noise_runs
+    # uses: two cut runs, frames 0-2 and 9-11, and nothing kept between.
+    both = _run_side([(0, 0x81), (3, 0x41), (9, 0x81)], [(0, 0x0A99)])
+    assert fidelity.noise_runs(both, 12) == {}
+    assert fidelity.noise_edge_runs(both, 12) == {"runs": 2, "frames": 6}
+    # A gate-off stretch to the edge is not a noise run (the v0.5.483 rule),
+    # so a latched SELECT nibble with the gate closed is cut by nothing.
+    latched = _run_side([(2, 0x81), (5, 0x80)], adsr)
+    assert fidelity.noise_edge_runs(latched, 12) == {"runs": 0, "frames": 0}
+    assert fidelity.noise_runs(latched, 12) == {0x0A99: Counter({3: 1})}
+
+
+def test_the_report_names_an_edge_declined_file_and_not_a_noiseless_one():
+    """Two rows print `-` under `nrun`; only the one whose original had noise
+    the window cut is a finding, and the summary must name that one alone."""
+    cut = _row("Cut.sid", "measured", 1.0, 50, 50)
+    cut.update(wave=0.9, wave_frames=100, orig_noise_frames=90,
+               our_noise_frames=80, noise_run_instruments=0,
+               noise_run_orig_only=0, noise_run_ours_only=2,
+               noise_run_orig_edge_runs=1, noise_run_orig_edge_frames=90,
+               noise_run_ours_edge_runs=1, noise_run_ours_edge_frames=4)
+    quiet = _row("Quiet.sid", "measured", 1.0, 50, 50)
+    quiet.update(wave=0.9, wave_frames=100, orig_noise_frames=0,
+                 our_noise_frames=0, noise_run_instruments=0,
+                 noise_run_orig_only=0, noise_run_ours_only=0,
+                 noise_run_orig_edge_runs=0, noise_run_orig_edge_frames=0,
+                 noise_run_ours_edge_runs=0, noise_run_ours_edge_frames=0)
+    text = fidelity.report([cut, quiet], _Args())
+    line = next(l for l in text.splitlines() if "`nrun` declined" in l)
+    assert "**1** file(s)" in line
+    assert "Cut.sid (original 1 edge run(s), 90 of 90 noise frames; ours 2 " \
+           "uncut instrument(s), 1 edge run(s), 4 frame(s))" in line
+    assert "Quiet.sid" not in line
+    # And the dimension says so, where a report reader looks.
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "records the cut runs and frames per side" in d.of
+
+
 # --- how the three reach the report ----------------------------------------
 
 
@@ -1114,6 +1205,33 @@ def test_a_file_compared_with_itself_is_a_perfect_match(tmp_path):
     assert wave["wave_frames"] > 0
     assert wave["wave"] == 1.0
     assert wave["orig_noise_frames"] == wave["our_noise_frames"]
+
+
+@needs_corpus
+@needs_siddump
+def test_confuzions_original_noise_is_no_longer_one_edge_cut_run_and_the_counters_say_so():
+    """The live half of the pin above, on the ORIGINAL side only (one siddump
+    trace, no pack): at HEAD the gate-AND leaves Confuzion no edge-cut run
+    and 486 per-note runs; gate-blind, the same trace is one contiguous
+    noise-select stretch from frame 2 to the last frame -- which is what the
+    edge counters were written to make visible."""
+    path = CORPUS / "Confuzion.sid"
+    if not path.exists():
+        pytest.skip("Confuzion.sid not in the corpus")
+    n = 180 * 50
+    orig = fidelity.run_siddump(path, 180, 0, siddump)
+    assert fidelity.noise_edge_runs(orig, n) == {"runs": 0, "frames": 0}
+    runs = fidelity.noise_runs(orig, n)
+    assert set(runs) == {0x0300, 0x0909}
+    assert sum(sum(c.values()) for c in runs.values()) == 486
+    assert sum(l * m for c in runs.values() for l, m in c.items()) == 7542
+    assert all(c.most_common(1)[0][0] == 21 for c in runs.values())
+    # The gate-blind reading the counters were built for: noise SELECT is
+    # latched on voice 1 from frame 2 to the window's last frame, one
+    # 8998-frame stretch that touches the edge and would be dropped whole.
+    wf = fidelity.register_timeline(orig[1].wf_events, n)
+    noisy = [f for f in range(n) if wf[f] & fidelity.WF_NOISE]
+    assert (noisy[0], noisy[-1], len(noisy)) == (2, n - 1, 8998)
 
 
 # --- what a row's status means ---------------------------------------------
@@ -1263,6 +1381,104 @@ def test_a_run_mixing_multipliers_names_each_one_generically():
     assert "each song its own multiplier" in text
     # The per-file mechanism sentence is generic, not pinned to one number.
     assert "advances a row every `multiplier` frames" in text
+
+
+# --- every trace of a packed file passes `calls` -----------------------
+#
+# `pack_sid(..., multiplier)` is gt2reloc's -S; siddump ignores it entirely
+# (siddump.c:309/325; pack_sid's own docstring), so a trace of the packed
+# file is at the wrong rate unless it is told the same number again as
+# siddump-rt's -m. `run_siddump`'s `calls` keyword defaults to 1, so a call
+# site that packs at multiplier>1 and then omits `calls` compiles, runs, and
+# silently traces at 1/multiplier speed for the whole window -- the exact
+# defect fixed in fidelity.py at v0.5.96 and independently reintroduced in
+# listen.py, found at v0.5.486 (Saboteur_II: 920 attacks against the
+# original's 2566 with `calls` defaulted, 2564 once passed).
+#
+# A test pinned to one call site passes forever once that one call site is
+# fixed, without exercising the invariant anywhere else the harness reaches
+# it -- exactly CLAUDE.md's "a regression test whose scenario the pipeline
+# has drifted away from will pass forever without exercising the guard".
+# This test is pinned at the SEAM instead: it parses both files' ASTs, finds
+# every variable assigned from `pack_sid(...)` (and every `shutil.copyfile`
+# destination copied from one -- listen.py traces the *copy*, not `packed`
+# itself, so a literal grep for `run_siddump(packed` -- pack_sid's own
+# docstring's advice -- misses it), and asserts every `run_siddump` call
+# whose first argument is one of those names carries an explicit `calls=`
+# keyword. It fires on ANY future call site with the same omission, in
+# either file, without being told where to look.
+
+
+def _packed_result_names(tree: object) -> set:
+    """Every name bound to a `pack_sid(...)` call, plus every
+    `shutil.copyfile` destination copied from one of those names (fixed
+    point, so a chain of copies is followed to its end)."""
+    import ast
+    names: set = set()
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call):
+                fn = node.value.func
+                fname = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+                if fname == "pack_sid":
+                    for t in node.targets:
+                        if isinstance(t, ast.Name) and t.id not in names:
+                            names.add(t.id)
+                            changed = True
+            if isinstance(node, ast.Call):
+                fn = node.func
+                fname = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+                if fname == "copyfile" and len(node.args) >= 2:
+                    src, dst = node.args[0], node.args[1]
+                    if (isinstance(src, ast.Name) and src.id in names
+                            and isinstance(dst, ast.Name) and dst.id not in names):
+                        names.add(dst.id)
+                        changed = True
+    return names
+
+
+def _run_siddump_calls_missing_calls_kw(path) -> list:
+    """Line numbers of every `run_siddump(<packed-derived name>, ...)` call
+    in `path` that has no `calls=` keyword -- the seam this test guards."""
+    import ast
+    tree = ast.parse(pathlib.Path(path).read_text(encoding="utf-8"))
+    tracked = _packed_result_names(tree)
+    violations = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            fn = node.func
+            fname = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+            if fname == "run_siddump" and node.args:
+                first = node.args[0]
+                if (isinstance(first, ast.Name) and first.id in tracked
+                        and not any(kw.arg == "calls" for kw in node.keywords)):
+                    violations.append(node.lineno)
+    return violations
+
+
+def test_every_trace_of_a_packed_file_passes_calls():
+    import listen  # noqa: F401  (imported for its __file__, not its symbols)
+    fidelity_path = pathlib.Path(fidelity.__file__)
+    listen_path = pathlib.Path(listen.__file__)
+    assert _run_siddump_calls_missing_calls_kw(fidelity_path) == []
+    assert _run_siddump_calls_missing_calls_kw(listen_path) == []
+
+
+def test_seam_probe_catches_a_dropped_calls_kw_on_a_packed_trace(tmp_path):
+    """Falsifies the guard above: a source file that packs at `multiplier`
+    and then traces the packed result's *copy* (as listen.py does, via
+    shutil.copyfile) with `calls` omitted must be flagged."""
+    src = tmp_path / "bad.py"
+    src.write_text(
+        "def stage(sid, workdir, multiplier):\n"
+        "    packed = pack_sid(sid, workdir, GT2RELOC, multiplier)\n"
+        "    ours_sid = workdir / 'ours.sid'\n"
+        "    shutil.copyfile(packed, ours_sid)\n"
+        "    return run_siddump(ours_sid, 180, 0, SIDDUMP)\n",
+        encoding="utf-8")
+    assert _run_siddump_calls_missing_calls_kw(src) == [5]
 
 
 # --- the scratch directory -------------------------------------------------
@@ -3260,6 +3476,23 @@ def test_gate_and_hold_each_explain_the_other_s_sign():
         "hold's entry no longer explains that gate charges the same frame "
         "-- the pair is down to one half explaining the other")
     assert "opposite signs" in hold
+
+
+def test_slides_declares_its_own_tie_bucket_blindness():
+    """The Dimension's description must say the count can read the wrong sign.
+
+    `compare()`'s comment and `_bend_travel`'s docstring already describe the
+    bucket migration (a step-size change moves frames between siddump's bare-
+    delta and parenthesised-note forms without changing how much pitch
+    moved), but that lived only next to the code, not in the report-facing
+    `Dimension`. Anchored on the phrase that states the consequence, not on
+    the word `slides`, which survives in ordinary prose.
+    """
+    of = _dim("slides").of
+    assert "WRONG SIGN" in of
+    assert "`bend_ratio`" in of, (
+        "slides' entry no longer points a reader at the dimension that "
+        "is not split into two buckets")
 
 
 def test_the_trade_is_stated_where_both_columns_live():

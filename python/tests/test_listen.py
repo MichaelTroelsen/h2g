@@ -333,3 +333,59 @@ def test_traces_only_is_the_documented_exception_that_skips_renders(
     assert render_calls == []
     # The pre-existing WAV is untouched, which is the point of the mode.
     assert (outdir / "Tune.original.wav").read_bytes() == b"PREEXISTING"
+
+
+# --- the trace of our side runs at the rate it was packed for ---------------
+#
+# `pack_sid(..., multiplier)` is gt2reloc's -S: the packed player wants that
+# many calls per frame. siddump ignores the CIA stub the flag prepends, so the
+# trace of our side has to be told the same number again as siddump-rt's -m.
+# listen.py packed at -S{multiplier} and traced with `calls` left at its
+# default of 1 until v0.5.486, so on a -S3 file our side was dumped at a third
+# of its speed for the whole window and every derived staging note compared
+# 180 s of the original against 60 s of ours. Measured on Saboteur_II: ties
+# 1631 against the original's 8046 with `calls` defaulted, 7386 with it
+# passed; attacks 920 against 2566, then 2564 -- and a "No legato" note that
+# exists only at the wrong rate.
+
+
+def _stage_one(monkeypatch, tmp_path, songs):
+    corpus = tmp_path / "corpus"
+    _make_sid(corpus / "Tune.sid")
+    outdir = tmp_path / "build" / "listen"
+    workdir = tmp_path / "work"
+    presets = _presets(tmp_path, songs)
+    _stage_stub_env(monkeypatch, tmp_path)
+    calls = []
+    monkeypatch.setattr(L, "run_siddump",
+                        lambda *a, **k: calls.append((a, k)) or [])
+    rc = L.main([str(corpus), "--files", "Tune.sid", "-o", str(outdir),
+                "--presets", presets, "--workdir", str(workdir), "-t", "1",
+                "--traces-only"])
+    assert rc == 0
+    assert len(calls) == 2, calls
+    return calls
+
+
+def test_our_side_is_traced_at_the_multiplier_it_was_packed_at(
+        tmp_path, monkeypatch):
+    (orig_a, orig_k), (ours_a, ours_k) = _stage_one(
+        monkeypatch, tmp_path, {"Tune.sid": {"multiplier": 3}})
+    # The original is the corpus file, traced at one call per frame: the
+    # multiplier belongs to our side only.
+    assert Path(orig_a[0]).name == "Tune.sid"
+    assert orig_k.get("calls", 1) == 1
+    # Ours is the packed .sid, traced at the rate gt2reloc packed it for.
+    assert Path(ours_a[0]).name == "Tune.h2g.sid"
+    assert ours_k["calls"] == 3
+
+
+def test_a_single_speed_file_is_traced_at_one_call_per_frame(
+        tmp_path, monkeypatch):
+    """`-m1` is not `-m` omitted: run_siddump appends the flag only above 1,
+    so a file without a multiplier must arrive as exactly 1 and never as a
+    None that `calls > 1` would raise on."""
+    (_, orig_k), (_, ours_k) = _stage_one(
+        monkeypatch, tmp_path, {"Tune.sid": {}})
+    assert orig_k.get("calls", 1) == 1
+    assert ours_k["calls"] == 1

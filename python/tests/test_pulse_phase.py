@@ -214,3 +214,63 @@ def test_the_bounds_engine_population_and_how_its_players_reseed():
     assert multispeed == 23, multispeed
     assert turns == engine, "a player turns its sweep some other way"
     assert bmi == 28, f"{bmi} players carry the LDA/BMI reseed gate"
+
+
+def _forced_pulse_phase_logs(name: str) -> list[str]:
+    """Convert `name` from the corpus under its own preset options, with
+    `pulse_phase` forced True, and return only the log lines mentioning the
+    pulse-phase table. Import is local so the two skip-guarded tests below
+    do not require h2g on every collection run."""
+    presets = REPO_ROOT / "presets.json"
+    corpus = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    path = corpus / name
+    if not presets.exists() or not path.exists():
+        import pytest
+        pytest.skip("corpus or presets.json not available here")
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import fidelity
+    from h2g.convert import convert
+    doc = json.loads(presets.read_text(encoding="utf-8"))
+    kwargs = fidelity._preset_opts(doc, name)
+    kwargs["pulse_phase"] = True
+    logs: list[str] = []
+    convert(str(path), log=logs.append, **kwargs)
+    return [l for l in logs if "PULSE" in l.upper() and "PHASE" in l.upper()]
+
+
+def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
+    """`build_pulse_phase_table` used to return None outright once one
+    instrument's phase set overflowed `GT_MAX_TABLELEN`, and convert.py's
+    caller reverted the WHOLE expansion -- Last_V8 shipped with no
+    CMD_SETPULSEPTR at all rather than losing only instrument 7 and 9's
+    sweeps. Pinned here at the exact counts measured against the corpus with
+    `pulse_phase` forced on (Last_V8 does not ship it): 5 instruments lose
+    their phase entries and, of those, 3 are degraded all the way to pointer
+    0 (the static pair does not fit either) -- and the file still converts
+    and carries CMD_SETPULSEPTR on the instruments that kept their phase.
+    """
+    lines = _forced_pulse_phase_logs("Last_V8.sid")
+    full = [l for l in lines if "PULSE TABLE FULL UNDER --pulse-phase --" in l]
+    assert len(full) == 1, lines
+    assert "5 INSTRUMENT(S) LOSE THEIR PHASE ENTRIES" in full[0], full[0]
+    assert "3 SET NO WIDTH AT ALL" in full[0], full[0]
+    assert any("FALLING BACK TO A STATIC WIDTH" in l for l in lines), lines
+    assert any(l.startswith("Pulse phase.............: CMD_SETPULSEPTR")
+               for l in lines), (
+        "a partial table must still ship phase commands for the "
+        "instruments that kept one -- got:\n" + "\n".join(lines))
+
+
+def test_gerry_the_germ_has_the_least_headroom_that_has_not_yet_overflowed():
+    """Gerry_the_Germ ships `pulse_phase: true` today and, measured at this
+    head, converts with the table exactly full enough that NOTHING is
+    dropped -- 0 instruments lose their phase entries. This is the file the
+    exhaustion instrumentation exists to make visible if a future change
+    (more instruments, wider sweeps, `--max-rows`) pushes it over: this test
+    is the trip-wire, not a claim that it has tripped."""
+    lines = _forced_pulse_phase_logs("Gerry_the_Germ.sid")
+    assert not any("PULSE TABLE FULL UNDER --pulse-phase" in l for l in lines), (
+        "Gerry_the_Germ now drops a pulse-phase instrument -- re-read the "
+        "PTBL headroom figure in docs/LESSONS.md before treating this as a "
+        "regression; it may simply mean this file has finally crossed the "
+        "line the docstring warned about:\n" + "\n".join(lines))

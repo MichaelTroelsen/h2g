@@ -280,6 +280,76 @@ def test_the_corpus_counts_name_both_option_sets():
           f"leaving {in_reach} in reach")
 
 
+def _survey_not_converted():
+    """The `Not converted` table of docs/SURVEY.md as {file: reason}.
+
+    Read from the table itself, never from the header count, so the set is
+    what is checked and the count is derived from it.
+    """
+    if not SURVEY.exists():
+        _broken("docs/SURVEY.md is tracked and absent")
+    sur = SURVEY.read_text(encoding="utf-8")
+    m = re.search(r"^## Not converted \((\d+)\)\s*\n(.*?)(?=^## |\Z)",
+                  sur, re.M | re.S)
+    if not m:
+        _broken("SURVEY.md no longer carries a `## Not converted (N)` section "
+                "-- the regex stopped matching, which is indistinguishable "
+                "from the format changing under this test")
+    rows = {}
+    for line in m.group(2).splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 11 or not cells[0].startswith("`"):
+            continue
+        rows[cells[0].strip("`")] = cells[-1]
+    if len(rows) != int(m.group(1)):
+        _broken(f"SURVEY.md says `Not converted ({m.group(1)})` but its table "
+                f"lists {len(rows)} files")
+    return rows
+
+
+def test_the_three_file_gap_is_the_presets_rescuing_the_survey_failures():
+    """The 89-on-presets / 86-on-defaults pair is ONE figure with two halves,
+    and the gap between them is a named set, not a count: every file the
+    survey fails on defaults must (a) be a presets.json song, (b) be
+    rescued by an option that defaults off and is NOT in the `always`
+    block, so that a default run really does lack it, and (c) be named in
+    docs/LESSONS.md beside the pair. `test_the_corpus_counts_name_both_
+    option_sets` checks the two counts; this checks the set between them,
+    because a count decays whenever an unrelated song moves and the set is
+    what the claim is about (CLAUDE.md, "State the SET, not the count").
+    """
+    songs, text = _songs(), _text()
+    doc = json.loads(PRESETS.read_text(encoding="utf-8"))
+    failed = _survey_not_converted()
+    assert failed, "SURVEY.md lists no default failure; the pair collapsed"
+    not_in_presets = sorted(set(failed) - set(songs))
+    assert not not_in_presets, (
+        f"{not_in_presets} fail on defaults and have no preset either -- "
+        f"the gap is no longer 'rescued by presets'")
+    rescue = {"prune", "dedup", "max_rows"}
+    for f, reason in failed.items():
+        assert "TOO MANY NEW PATTERN" in reason, (
+            f"{f} fails on defaults for {reason!r}, not the pattern limit "
+            f"the LESSONS bullet attributes the whole gap to")
+        opts = songs[f]
+        used = {k for k in rescue
+                if opts.get(k) and (k != "max_rows" or opts[k] != 94)}
+        assert used, f"{f}'s preset carries none of {sorted(rescue)}"
+        assert not (used & set(doc["always"])), (
+            f"{f} is rescued by {sorted(used & set(doc['always']))}, which "
+            f"is in the `always` block, so a default run would have it too")
+    stems = sorted(f[:-len(".sid")] for f in failed)
+    _says(text,
+          f"leaving {len(songs)} in reach",
+          "The three-file gap is **" + ", ".join(stems[:-1])
+          + " and " + stems[-1] + "**"
+          if len(stems) == 3 else
+          "The three-file gap is **")
+    if len(stems) != 3:
+        pytest.fail(f"the default failures are {stems}, {len(stems)} files; "
+                    f"docs/LESSONS.md still says 'three-file gap'")
+
+
 # --------------------------------------------------- grep-zero-on-a-quotation
 
 def test_the_grep_zero_rule_cites_its_measured_instances():

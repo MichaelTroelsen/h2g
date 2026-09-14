@@ -718,10 +718,10 @@ value` — which is why every event above appends exactly 4 bytes, and why the
 
 ---
 
-## 6. The orderlist / track format and its 10 dialects
+## 6. The orderlist / track format and its 11 dialects
 
 `tracks.py::_build_track` walks the raw orderlist byte stream and rewrites it.
-Six behaviours, selected by `read_track_version`:
+Seven behaviours, selected by `read_track_version`:
 
 ```python
 version == 4:                 # ACE 2
@@ -757,6 +757,20 @@ version == 10:                # Delta
     repeat count woven between the pattern numbers; each pattern is emitted
     r times (a stored 0 counts 256: the player's DEC wraps and BNE replays)
     0xFE / 0xFF -> as version 0 (the BMI leaves markers unconsumed)
+
+version == 11:                # Chicken Song / Hollywood or Bust (v0.5.487)
+    version 0's read, but the command-table engine's pattern command `$85 nn`
+    stores a signed per-voice transpose the note fetch adds (Chicken Song
+    handler $1479 -> cell $15E7; Hollywood $0896 -> $09C7). The decoder reads
+    each pattern's entry/exit value (`patterns.cmdtable_transposes`) and the
+    orderlist walk emits a Goattracker transpose byte before every reference
+    that assigns one, carrying the value across the restart as the player's
+    cell does. Its command floor is $E0 (`GT_TRANSPOSE_DOWN`) rather than
+    version 0's $FF, because Hollywood's -12 is $E4 -- under the $FF floor
+    `reindex_tracks` would have read the emitted byte as a pattern number
+    and dropped it. Detected by `det.cmd_transpose` (the `29 7F 18 7D cell`
+    fetch plus exactly one `C8 B1 ?? 9D cell C8 4C` handler naming it);
+    exactly the two files above carry it.
 ```
 
 **Version 4 emitted nothing at all until v0.5.48.** Its branch tested the end
@@ -4024,7 +4038,19 @@ STA phase`, so its length is read rather than assumed.
 
 And the index array is `det.wave_program` for the third time: a pointer low byte
 under bit `$08`, a note index under `$40` (§ 7.qqq), a sequence index under
-`$10`. One cell, three meanings, chosen by the bit.
+`$10`. One cell, three meanings, chosen by the bit. Since v0.5.487 the `$40`
+note index is read off the handler's own operand instead
+(`det.fixed_pitch_index`, `detect._find_fixed_pitch_index`: the `BIT cell /
+BVC / LDA cnt,X / BEQ / DEC cnt,X / LDA idx,Y` shape anchored on the selected
+table's effect cell, declined unless the fetch after it indexes
+`find_freq_table`'s table), and `_fixed_attack_note` falls back to
+`wave_program` only where the handler was not read. The two agree on 26 of the
+27 files carrying both; After 8 is the one disagreement (handler +12, pointer
+array +8) and the handler wins, per the 914-sighting C-5 measured there. The
+handler reading reaches 16 further files whose `wave_program` is unread
+(Food Feud's voice 3 among them). `find_wave_program` is engine-scoped the
+same way since the same version: on Powerplay Hockey's two players it takes
+the fetch site whose window names the selected table's effect cell.
 
 #### It works, and the global phase is why it is off by default
 

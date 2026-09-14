@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.487 — 2026-09-14
+
+- instrument/cmdtable transposes, handler-operand fixed pitch, usage-ordered pulse table, partial pulse-phase table, tied instrument envelopes, listen.py traces at -m
+
 ## 0.5.486 — 2026-09-13
 
 - pulse reseed gate detection, shared pulse-table programs, 8-bit note wrap, static fixed-arp phase, prefix-window calibration

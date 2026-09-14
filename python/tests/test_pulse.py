@@ -21,9 +21,10 @@ from h2g.convert import convert
 from h2g.detect import detect
 from h2g.sidfile import load_sid
 from h2g.detect import Detection, _find_pulse_sweep, detect
-from h2g.goatwriter import (GT_MAX_PULSE_SPEED, GT_MAX_PULSE_TICKS,
-                            GT_MAX_TABLELEN, _pulse_layout, _pulse_program,
-                            _split_ticks)
+from h2g.goatwriter import (GT_FIRST_NOTE, GT_MAX_PULSE_SPEED,
+                            GT_MAX_PULSE_TICKS, GT_MAX_TABLELEN, GT_REST,
+                            _pulse_layout, _pulse_program, _split_ticks,
+                            pulse_usage)
 from h2g.sidfile import SidFile, load_sid
 
 CORPUS = _CORPUS
@@ -360,6 +361,140 @@ def test_a_shared_blocks_jump_is_absolute_and_lands_inside_its_own_block():
     for left, right in entries:
         if left == 0xFF and right:
             assert 1 <= right <= len(entries)
+
+
+# --- allocating by usage, only once sharing still leaves a record short ------
+#
+# Sharing is the second pass; this is the third. Both index-order passes lost
+# whichever records sat at the END of the instrument table, and at v0.5.486
+# Rock_Tells_the_Tale dropped GT16's sweep (352 notes sounded) while keeping
+# GT3's (1 note). `usage` comes from `pulse_usage` in the real pipeline; the
+# tests hand it in directly so the scenario is the code's, not a file's.
+
+BIG = 0x02          # rate: a 42-entry program against bounds $F0
+SMALL = 0x40        # rate: a 4-entry program against bounds $82
+
+
+def _cost(sid, det, i):
+    program, loop = _pulse_program(sid, det, i, True, 1)
+    return len(program) + (0 if loop is None else 1)
+
+
+def test_without_usage_the_index_order_passes_stand_as_they_were():
+    """The tests above and every `_pulse_layout` call that hands in no usage
+    are the old two passes exactly: the third never runs on `usage=None`."""
+    n = 7
+    sid = _sid([_record(pulse_lo=i, rate=BIG) for i in range(n)], [0xF0] * n)
+    assert _pulse_layout(sid, _det(n), n + 1, True, 1) == \
+        _pulse_layout(sid, _det(n), n + 1, True, 1, usage=None)
+
+
+def test_a_full_table_drops_the_least_played_sweep_not_the_last_one():
+    """Six 42-entry programs fill the table to 254 of 255; a seventh, 4-entry
+    one at the END overflows it. Index order gave the last record NOTHING --
+    not even its width -- because the records before it had used the table
+    up. By usage the least-played record is the one that loses, and it loses
+    only its sweep."""
+    n = 7
+    recs = [_record(pulse_lo=i, rate=BIG) for i in range(6)]
+    recs.append(_record(pulse_lo=6, rate=SMALL))
+    bounds = [0xF0] * 6 + [0x82]
+    sid, det = _sid(recs, bounds), _det(n)
+    assert sum(_cost(sid, det, i) for i in range(n)) + 2 > GT_MAX_TABLELEN
+    usage = [1] + [10] * 6                  # record 0 is the least played
+    entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)
+    assert len(entries) <= GT_MAX_TABLELEN
+    last = starts[n]
+    program, loop = _pulse_program(sid, det, n - 1, True, 1)
+    assert entries[last - 1:last - 1 + len(program)] == program, \
+        "the last record, played, keeps its sweep"
+    first = starts[1]
+    static, _ = _pulse_program(sid, det, 0, False, 1)
+    assert entries[first - 1:first + 1] == static, \
+        "the least-played record keeps its width and loses only its sweep"
+    assert 0 not in starts, "every played record has a pointer"
+
+
+def test_a_record_that_sounds_keeps_at_least_its_width():
+    """Descending usage alone would let the big, popular programs fill the
+    table and leave a dozen quiet-but-played records with NO width at all --
+    Rock_Tells_the_Tale's GT11, GT13 and GT14 in the first cut. A static pair
+    is reserved for every record that sounds, so the last big program yields
+    its sweep to twelve widths instead."""
+    big, quiet = 6, 12
+    recs = [_record(pulse_lo=i, rate=BIG) for i in range(big)]
+    recs += [_record(pulse_lo=0x10 + i, rate=0) for i in range(quiet)]
+    n = len(recs)
+    sid, det = _sid(recs, [0xF0] * n), _det(n)
+    assert 2 + sum(_cost(sid, det, i) for i in range(big)) + 2 > GT_MAX_TABLELEN, \
+        "the six sweeps alone must leave no room for a static pair"
+    usage = [100] * big + [1] * quiet       # all of them sound
+    entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)
+    assert 0 not in starts[1:], "a record that sounds never loses its width"
+    for i in range(big, n):
+        static, _ = _pulse_program(sid, det, i, False, 1)
+        st = starts[1 + i]
+        assert entries[st - 1:st + 1] == static
+    kept = 0
+    for i in range(big):
+        program, _ = _pulse_program(sid, det, i, True, 1)
+        st = starts[1 + i]
+        kept += entries[st - 1:st - 1 + len(program)] == program
+    assert kept == big - 1, "exactly one big program yielded to the reserve"
+
+
+def test_a_record_that_sounds_nothing_is_the_one_that_goes_without():
+    """A record no note ever sounds under never has its pulse pointer loaded
+    (gplay.c:375), so whatever it points at is inaudible. It is allocated
+    last and, here, gets nothing -- while the six played records after it in
+    the instrument table all keep their sweeps. Index order gave the unplayed
+    record the first block and silenced the last played one."""
+    n = 7
+    sid = _sid([_record(pulse_lo=i, rate=BIG) for i in range(n)], [0xF0] * n)
+    det = _det(n)
+    usage = [0] + [10] * 6
+    entries, starts = _pulse_layout(sid, det, n + 1, True, 1, usage=usage)
+    assert starts[1] == 0, "the unplayed record is the one with no width"
+    for i in range(1, n):
+        program, _ = _pulse_program(sid, det, i, True, 1)
+        st = starts[1 + i]
+        assert st and entries[st - 1:st - 1 + len(program)] == program
+
+
+# --- pulse_usage: notes SOUNDED per record, in play order -------------------
+
+def _row(note=GT_FIRST_NOTE, instr=0):
+    return [note, instr, 0, 0]
+
+
+def test_usage_counts_notes_sounded_and_instr_00_inherits():
+    """gplay.c:914 keeps the channel's instrument on `instr 00`, and every new
+    note reloads the pulse pointer from it (gplay.c:375-377) -- so the second
+    and third notes below sound under GT2 although only the first names it.
+    A rest is not a note."""
+    pat = (_row(instr=2) + _row() + _row(GT_REST) + _row(instr=3) + _row()
+           + [0xFF, 0, 0, 0])
+    assert pulse_usage([[0, 0xFF, 0]], [pat], lead=1) == [2, 2]
+
+
+def test_a_channel_holds_instrument_1_before_any_row_names_one():
+    """gplay.c:62 and :223 (player.s:619-621): under `compact_instruments`
+    that is record 0, which sounds unnamed; with the Clear Voice lead it is
+    the placeholder, and no record is credited."""
+    pat = _row() + _row() + [0xFF, 0, 0, 0]
+    assert pulse_usage([[0, 0xFF, 0]], [pat], lead=0) == [2]
+    assert pulse_usage([[0, 0xFF, 0]], [pat], lead=1) == []
+
+
+def test_usage_honours_repeats_and_skips_transposes_and_the_restart():
+    pat = _row(instr=2) + [0xFF, 0, 0, 0]
+    track = [0xE3, 0xD2, 0, 0xF1, 0, 0xFF, 0]     # x3, then once, restart to 0
+    assert pulse_usage([track], [pat], lead=1) == [4]
+
+
+def test_usage_stops_at_endpatt_and_ignores_a_pattern_byte_out_of_range():
+    pat = _row(instr=2) + [0xFF, 0, 0, 0] + _row(instr=2)
+    assert pulse_usage([[0, 5, 0xFF, 0]], [pat], lead=1) == [1]
 
 
 # --- against the real players ----------------------------------------------

@@ -225,3 +225,123 @@ def test_pulse_reseed_gate_is_empty_for_ik_plus():
 #   (skip the search entirely) -- breaks test_pulse_reseed_gate_census_
 #   matches_pinned_population (the 13 "other" files and IK_plus all read
 #   "lda_bmi") AND test_pulse_reseed_gate_is_empty_for_ik_plus.
+
+
+# --- fixed_pitch_index: the bit-$40 handler's own note-index array, per file --
+#
+# Every corpus file whose player tests effect bit $40 (`det.effect_bit40`,
+# 43 files under their presets.json engine) carries the handler shape
+# `BIT effect / BVC / LDA counter,X / BEQ / DEC counter,X / LDA idx,Y`, and
+# `detect._find_fixed_pitch_index` reads the `idx` operand out of it. This
+# census pins, per file, how that operand relates to `det.wave_program` --
+# the array `_fixed_attack_note` read until v0.5.486 -- so a signature edit
+# that silently moves a file between the three groups fails a named test:
+#
+#   AGREE     both arrays exist and name the same offset (26 files; the
+#             reading the old code was derived on, unchanged by the new one).
+#             Powerplay Hockey joined this group when `find_wave_program`
+#             was scoped to the selected engine (`_wave_program_fetch_site`):
+#             file-wide it returned the OTHER player's array ($3C00, the
+#             $3BA0 copy's) while the handler read the selected $4A00
+#             table's own +8; both now name $4A08.
+#   DISAGREE  both exist and differ (After 8: handler +12, wave_program +8)
+#             -- the handler's byte is what the original sounds
+#   REACH     no wave_program at all, and the handler operand is the only
+#             reading (16 files); every one of them has records with $40 set
+#
+# Recorded at v0.5.486 against the corpus; every name is in presets.json.
+_FIXED_PITCH_AGREE = {
+    "ACE_II.sid", "Arcade_Classics.sid", "Auf_Wiedersehen_Monty.sid",
+    "Bangkok_Knights.sid", "BMX_Kidz.sid", "I_Ball.sid", "IK_plus.sid",
+    "Kings_of_the_Beach_intro.sid", "Mr_Meaner.sid", "Nemesis_the_Warlock.sid",
+    "Nineteen.sid", "Off_the_Cuff.sid", "One_on_One_Jordan_vs_Bird.sid",
+    "Pandora.sid", "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid",
+    "Ricochet.sid", "Rikky.sid",
+    "Rock_Tells_the_Tale.sid", "Saboteur_II.sid", "Shockway_Rider.sid",
+    "Skate_or_Die_intro.sid", "Star_Paws.sid", "Thundercats.sid",
+    "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
+}
+_FIXED_PITCH_DISAGREE = {"After_8.sid"}
+_FIXED_PITCH_REACH = {
+    "Deep_Strike.sid", "Delta.sid", "Delta_Mix-E-Load_loader.sid",
+    "Dragons_Lair_Part_II.sid", "Food_Feud.sid", "Go_Go_Dash.sid",
+    "Knucklebusters.sid", "Lakers_vs_Celtics.sid", "Lightforce.sid",
+    "Lion_Heart.sid", "Pacific_Coast.sid", "Radio_ACE.sid", "Sanxion.sid",
+    "Sigma_Seven.sid", "Sun_Never_Shines.sid", "Tarzan.sid",
+}
+
+assert len(_FIXED_PITCH_AGREE) == 26
+assert len(_FIXED_PITCH_DISAGREE) == 1
+assert len(_FIXED_PITCH_REACH) == 16
+assert not (_FIXED_PITCH_AGREE & _FIXED_PITCH_DISAGREE)
+assert not (_FIXED_PITCH_AGREE & _FIXED_PITCH_REACH)
+assert not (_FIXED_PITCH_DISAGREE & _FIXED_PITCH_REACH)
+
+_ALL_BIT40_FILES = (_FIXED_PITCH_AGREE | _FIXED_PITCH_DISAGREE
+                    | _FIXED_PITCH_REACH)
+
+
+def _detect_all_bit40_files():
+    """name -> (sid, Detection) for every presets.json file whose player
+    tests effect bit $40, detected under the engine its preset selects."""
+    import json
+
+    from corpus import CORPUS
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+
+    presets_path = pathlib.Path(__file__).resolve().parents[2] / "presets.json"
+    songs = json.loads(presets_path.read_text(encoding="utf-8"))["songs"]
+    out = {}
+    for name, entry in songs.items():
+        p = CORPUS / name
+        if not p.exists():
+            continue
+        try:
+            sid = load_sid(str(p))
+            det = detect(sid, lambda *a, **k: None,
+                         engine=int(entry.get("engine") or 0))
+        except Exception:
+            continue
+        if det.effect_bit40:
+            out[name] = (sid, det)
+    return out
+
+
+@corpus.needs_corpus
+def test_fixed_pitch_index_census_matches_pinned_population():
+    dets = _detect_all_bit40_files()
+    assert set(dets) == _ALL_BIT40_FILES, (
+        "the set of bit-$40 files presets.json names has changed -- "
+        "re-derive the three groups below, do not just widen this set")
+    for name, (sid, det) in dets.items():
+        assert det.fixed_pitch_index >= 0, (
+            f"{name}: the handler operand was not read")
+        if name in _FIXED_PITCH_AGREE:
+            assert det.wave_program >= 0, name
+            assert det.fixed_pitch_index == det.wave_program, (
+                f"{name}: handler +0x{det.fixed_pitch_index:04X} != "
+                f"wave_program +0x{det.wave_program:04X}")
+        elif name in _FIXED_PITCH_DISAGREE:
+            assert det.wave_program >= 0, name
+            assert det.fixed_pitch_index != det.wave_program, name
+        else:
+            assert det.wave_program < 0, name
+            recs = [i for i in range(det.instr_used)
+                    if sid.data[det.instr_start + i * det.instr_stride + 7]
+                    & 0x40]
+            assert recs, f"{name}: no record sets $40, so nothing is reached"
+
+
+# Mutation E: drop the engine scope in `_wave_program_fetch_site` (return
+#   sites[0] unconditionally) -- breaks
+#   test_fixed_pitch_index_census_matches_pinned_population on Powerplay
+#   Hockey (wave_program reads the $3BA0 copy's $3C00 again, so it leaves
+#   AGREE) AND tests/test_fixed_pitch_index.py's two Powerplay wave-program
+#   pins. The other 28 files carrying the fetch are unmoved by the scope:
+#   27 have one site and One_on_One's first of four is the anchored one.
+# Mutation D: read the `DEC counter,X` operand (data[j + 6]) instead of the
+#   `LDA idx,Y` one (data[j + 9]) in _find_fixed_pitch_index -- breaks
+#   test_fixed_pitch_index_census_matches_pinned_population (every AGREE
+#   file's offset stops equalling wave_program) AND tests/
+#   test_fixed_pitch_index.py's Food Feud pin ($95EB -> 63 -> D#5).
