@@ -1,6 +1,6 @@
 # H2G conversion survey — Rob Hubbard SID corpus
 
-- Converter: `h2g` **0.5.486**
+- Converter: `h2g` **0.5.487**
 - Corpus: `C:\Users\mit\claude\c64server\SIDM2\SID\Hubbard_Rob`
 - Files tested: **95**
 - Pattern slicing: **94 rows** (original VB6 behaviour)
@@ -25,7 +25,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 | Version | Player family | Files |
 |---:|---|---:|
-| 0 | Warhawk | 37 |
+| 0 | Warhawk | 35 |
 | 1 | Last V8 | 8 |
 | 2 | Auf Wiedersehen Monty | 14 |
 | 3 | Samantha Fox | 1 |
@@ -34,6 +34,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | 6 | Mega Apocalypse | 1 |
 | 7 | IK+ | 14 |
 | 9 | Chain Reaction | 1 |
+| 11 | Chicken Song | 2 |
 
 ## SIDId player identification
 
@@ -77,7 +78,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `BMX_Kidz.sid` | BMX Kidz | RSID v2 | Rob_Hubbard, (Rob_Hubbard_Digi), Sidplayer | Auf Wiedersehen Monty | 2 | 1 (hdr 4) | 12 | 93 | - | 30580 | y |  |
 | `Bump_Set_Spike.sid` | Bump Set Spike | PSID v2 | Rob_Hubbard | Warhawk | 0 | 2 | 26 | 78 | - | 19770 | y |  |
 | `Chain_Reaction.sid` | Chain Reaction | PSID v2 | Rob_Hubbard | Chain Reaction | 9 | 1 | 30 | 37 | - | 10769 | y |  |
-| `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | Warhawk | 0 | 1 | 26 | 120 | - | 34060 | y | 1 subtune(s) too long |
+| `Chicken_Song.sid` | The Chicken Song | PSID v2 | Rob_Hubbard | Chicken Song | 11 | 1 | 26 | 120 | - | 34060 | y | 1 subtune(s) too long |
 | `Chimera.sid` | Chimera | RSID v2 | Rob_Hubbard, Voicemaster_Covox | Last V8 | 1 | 2 (hdr 4) | 20 | 65 | - | 14307 | y |  |
 | `Commando.sid` | Commando | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 19) | 14 | 65 | - | 15193 | y |  |
 | `Commodore_64_Music_Examples.sid` | Commodore 64 Music Examples | PSID v2 | Companion, Rob_Hubbard | Battle of Britain | 5 | 1 (hdr 15) | 14 | 145 | - | 10134 | y |  |
@@ -94,7 +95,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 | `Gerry_the_Germ.sid` | Gerry the Germ | PSID v2 | Rob_Hubbard | Warhawk | 0 | 7 (hdr 23) | 28 | 171 | - | 42153 | y |  |
 | `Go_Go_Dash.sid` | Go Go Dash | PSID v2 | Jason_Page/RobTracker | Warhawk | 0 | 1 | 19 | 69 | **1** (sub0 1) | 18861 | y |  |
 | `Gremlins.sid` | Gremlins | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 7 (hdr 26) | 33 | 196 | - | 51685 | y |  |
-| `Hollywood_or_Bust.sid` | Hollywood or Bust | PSID v2 | Rob_Hubbard | Warhawk | 0 | 3 (hdr 10) | 21 | 136 | - | 38958 | y |  |
+| `Hollywood_or_Bust.sid` | Hollywood or Bust | PSID v2 | Rob_Hubbard | Chicken Song | 11 | 3 (hdr 10) | 21 | 136 | - | 38966 | y |  |
 | `Human_Race.sid` | The Human Race | PSID v2 | Rob_Hubbard | Last V8 | 1 | 5 | 25 | 102 | - | 23230 | y |  |
 | `Hunter_Patrol.sid` | Hunter Patrol | PSID v2 | Rob_Hubbard | Battle of Britain | 5 | 1 | 33 | 78 | - | 21844 | y |  |
 | `I_Ball.sid` | I, Ball | RSID v2 | Rob_Hubbard | IK+ | 7 | 1 (hdr 4) | 19 | 51 | - | 12957 | y |  |
@@ -159,7 +160,7 @@ Regenerate with: `python survey.py "C:\Users\mit\claude\c64server\SIDM2\SID\Hubb
 
 | File | Title | Source | SIDId | Stage | Player | Sub (hdr) | Instr? | Trk? | Pat? | Reason |
 |---|---|---|---|---|---|---:|:-:|:-:|:-:|---|
-| `Delta.sid` | Delta | PSID v2 | Rob_Hubbard | patterns | - | 13 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
+| `Delta.sid` | Delta | PSID v2 | Rob_Hubbard | patterns | Delta | 13 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `Dragons_Lair_Part_II.sid` | Dragon's Lair Part II | PSID v2 | Rob_Hubbard | patterns | Warhawk | 10 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 | `W_A_R.sid` | W.A.R. | PSID v2 | Rob_Hubbard | patterns | Warhawk | 9 | y | y | y | TOO MANY NEW PATTERN CREATED, CAN'T EXPORT TO GOATTRACKER |
 
