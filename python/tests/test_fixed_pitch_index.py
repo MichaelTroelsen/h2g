@@ -286,3 +286,26 @@ def test_the_fixture_has_no_such_handler():
     assert det.fixed_pitch_index == -1
     assert all(_fixed_attack_note(sid, det, i) is None
                for i in range(max(det.instr_used, 0)))
+
+
+@needs_corpus
+def test_detects_own_freq_table_call_is_anchored_on_the_selected_engine():
+    """`detect()`'s own `det.freq_table = find_freq_table(sid)` used to call
+    with no `near`, unlike `fidelity.engine_freq_table`'s re-derivation of
+    the same table, which anchors on `(det.pattern_lo, det.instr_start)`.
+    Blind, both engines land on the longest run -- Powerplay Hockey's tune
+    table at $4895 (run 96) -- even for engine 1, whose own player is the
+    OTHER table, at $3A36 (run 95, one entry short of winning the blind
+    tie-break). Anchored the way `engine_freq_table` already is, engine 0's
+    own pattern pointers sit near $4895 and engine 1's near $3A36, so the two
+    engines now read two different tables -- the property a synthetic
+    two-table file would exist to prove, except Powerplay already is one.
+    """
+    sid, det0 = _load("Powerplay_Hockey_USA_vs_USSR", engine=0)
+    _, det1 = _load("Powerplay_Hockey_USA_vs_USSR", engine=1)
+    assert det0.freq_table.addr == 0x4895
+    assert det1.freq_table.addr == 0x3A36
+    assert det0.freq_table.addr != det1.freq_table.addr
+    # Neither table carries a shift, so this file's own conversion bytes do
+    # not move -- the corpus byte-hash covers every other file.
+    assert det0.note_base == 0 and det1.note_base == 0

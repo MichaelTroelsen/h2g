@@ -246,3 +246,71 @@ def test_a_pruned_source_is_decoded_for_its_variant_under_the_conversion_grammar
     # the bit-6 rest is a KEYOFF, not the legacy C-0-on-instrument-1 placeholder
     assert variant[4 * 4] == GT_KEYOFF, variant[16:20]
     assert variant == expect
+
+
+# --- the bit-7 side channel through variants, slices and dedup ---------------
+# `convert_patterns(free_rows=True)` carries `_build_raw_pattern`'s bit-7 rows
+# out per OUTPUT pattern (TrackIndex.free_rows) for the bounds pulse engine's
+# phase walk. A variant is its source's rows; a slice owns the raw rows it was
+# cut from, re-based; and dedup keys on the flags as well as the bytes, since
+# the byte the flag lived in is gone from the slice.
+
+def _sid_with_pattern0(pattern: bytes) -> SidFile:
+    sid = _sid([0x98, 0x00, 0xFF])
+    data = bytearray(sid.data)
+    data[PATT_AT[0]:PATT_AT[0] + len(pattern)] = pattern
+    sid.data = bytes(data)
+    return sid
+
+
+def test_a_variant_inherits_its_sources_bit_7_rows():
+    # `$03 10` (4 rows), `$00 90` (row 4, bit 7), end.
+    sid, det = _sid_with_pattern0(bytes([0x03, 0x10, 0x00, 0x90, 0xFF])), _det()
+    det.note_flag = True
+    raw: list = []
+    tracks = convert_tracks(sid, det, lambda m: None, raw)
+    variants = fold_transposes(sid, det, tracks, raw)
+    assert variants == [(0, 2)]
+    patterns, index = convert_patterns(sid, det, lambda m: None,
+                                       variants=variants, free_rows=True)
+    src, var = index[0][0], index[2][0]
+    assert index.free_rows[src] == frozenset({4})
+    assert index.free_rows[var] == frozenset({4}), "the variant lost the flag"
+    assert index.free_rows[index[1][0]] == frozenset()
+    # ...and nothing is recorded unless asked for
+    _, plain = convert_patterns(sid, det, lambda m: None, variants=variants)
+    assert plain.free_rows == {}
+
+
+def test_a_slices_flags_are_re_based_to_its_own_row_0():
+    # rows 0-3 one note, row 4 a bit-7 note, rows 5-6 a bit-7 two-row note.
+    sid, det = _sid_with_pattern0(bytes([0x03, 0x10, 0x00, 0x90, 0x01, 0x92, 0xFF])), _det()
+    det.note_flag = True
+    for terminate in (False, True):
+        patterns, index = convert_patterns(sid, det, lambda m: None, max_rows=4,
+                                           terminate_patterns=terminate,
+                                           free_rows=True)
+        first, second = index[0][:2]
+        assert index.free_rows[first] == frozenset(), terminate
+        assert index.free_rows[second] == frozenset({0, 1}), terminate
+        assert patterns[second][0] == 0x70 and patterns[second][4] == 0x72
+
+
+def test_dedup_keeps_two_identical_slices_apart_when_their_flags_differ():
+    # Entries 0 and 1 decode to the same bytes -- `$00 10` and `$00 90` are one
+    # C-1 each once the bit is dropped -- and only entry 1's note is free.
+    sid = _sid([0x00, 0x01, 0xFF])
+    data = bytearray(sid.data)
+    data[PATT_AT[0]:PATT_AT[0] + 3] = bytes([0x00, 0x10, 0xFF])
+    data[PATT_AT[1]:PATT_AT[1] + 3] = bytes([0x00, 0x90, 0xFF])
+    sid.data = bytes(data)
+    det = _det()
+    det.note_flag = True
+    shared, idx = convert_patterns(sid, det, lambda m: None, dedup=True)
+    assert idx[0] == idx[1] and len(shared) == 1, "dedup no longer shares them"
+    apart, idx = convert_patterns(sid, det, lambda m: None, dedup=True,
+                                  free_rows=True)
+    assert idx[0] != idx[1] and len(apart) == 2
+    assert idx.free_rows[idx[0][0]] == frozenset()
+    assert idx.free_rows[idx[1][0]] == frozenset({0})
+    assert apart[0] == apart[1] == shared[0], "the bytes themselves moved"

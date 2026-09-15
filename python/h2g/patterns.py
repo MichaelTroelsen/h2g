@@ -154,7 +154,7 @@ PULSE_PHASE_PREROLL = 7
 GT_COMMAND_FLOOR = MAX_PATTERNS
 
 
-def command_floor(version: int) -> int:
+def command_floor(version: int, fd_transpose: bool = False) -> int:
     """Lowest byte a version-`version` orderlist uses as a command.
 
     _build_track leaves each dialect's pattern numbers as it found them and
@@ -178,17 +178,33 @@ def command_floor(version: int) -> int:
     is wrong twice over: the pattern reference is lost, and a command that was
     never in the tune is inserted. 146 such bytes occur across 7 corpus files.
 
+    `fd_transpose` is `Detection.track_fd_transpose`: version 0's reader in
+    the six ILV players whose `$FD nn` is a two-byte per-voice transpose
+    (detect.py's last-in-chain probe). _build_track lifts it into the
+    orderlist as $E0-$FE -- the operand is signed, so this is version 11's
+    range rather than the version 2/6/7/8 dialects' unsigned $F0-$FE -- and
+    the floor has to admit it or reindex_tracks drops every byte as a
+    dangling pattern reference. Which it did: 80 transpose bytes emitted
+    across the six files at v0.5.487 and none reaching the .sng. Keyed on
+    the flag rather than on a new version number because the flag is the
+    thing that makes _build_track emit the byte; a version that could be set
+    without the flag would admit a range nothing writes.
+
     Post-reindex tracks are a different thing entirely -- they are in
     Goattracker numbering, where $D0-$FF really are commands, and callers
     reading those should use GT_COMMAND_FLOOR.
     """
     if version in (2, 6, 7, 8):
-        return GT_TRANSPOSE_UP
-    if version == 11:
-        return GT_TRANSPOSE_DOWN
-    if version == 9:
-        return 0xFE
-    return GT_ORDER_RESTART
+        floor = GT_TRANSPOSE_UP
+    elif version == 11:
+        floor = GT_TRANSPOSE_DOWN
+    elif version == 9:
+        floor = 0xFE
+    else:
+        floor = GT_ORDER_RESTART
+    if fd_transpose:
+        floor = min(floor, GT_TRANSPOSE_DOWN)
+    return floor
 
 
 ERROR_PATTERN = [0xBD, 0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00]
@@ -485,7 +501,8 @@ def _build_raw_pattern(data: bytes, addr: int,
                        const_notes: Optional[Dict[int, int]] = None,
                        instr_transpose: Optional[bytes] = None,
                        entry_transpose: int = 0,
-                       transpose_exit: Optional[List[tuple]] = None
+                       transpose_exit: Optional[List[tuple]] = None,
+                       free_rows: Optional[List[int]] = None
                        ) -> Optional[List[int]]:
     """Flat event stream for one Hubbard pattern, or None if out of range.
 
@@ -525,6 +542,20 @@ def _build_raw_pattern(data: bytes, addr: int,
     next. Nothing is appended when the decode fails. It is an out-parameter
     rather than a second return value so that no caller has to change, and it
     changes no byte of the event stream. See `boundary_ties`.
+
+    `free_rows`, when given a list, receives the row index (in this event
+    stream, hold rows counted) of every note whose note byte carried BIT 7
+    under `note_flag` -- read BEFORE the `AND #$7F` below throws it away.
+    The players that test that bit (`LDA note / BMI`, Saboteur_II $F162)
+    skip the note-start path on it: no pulse reseed, no ADSR write, so the
+    note free-runs on whatever the voice's pulse accumulator holds
+    (goatwriter.PulseBoundsSim). Everywhere else in this decoder the bit is
+    dropped and the note kept, and it still is; this is the side channel
+    that lets `collect_pulse_phases` tell a reseeding note from a
+    free-running one, since a Goattracker row has no bit to carry it in.
+    It travels exactly as `exits_tied` does -- an out-parameter that changes
+    no byte of the stream -- and is empty for a player without `note_flag`,
+    where bit 7 is pitch (see the wrap below) and not a flag.
 
     `note_base` shifts every note byte before it becomes a Goattracker note,
     for the player whose frequency table does not start where Goattracker's
@@ -572,8 +603,6 @@ def _build_raw_pattern(data: bytes, addr: int,
 
     events: List[int] = []
     g_instrument = 0
-    g_old_instr1 = -1
-    g_old_instr2 = -2
     i2 = 0
     # The voice's standing note offset under `instr_transpose`; see above.
     transpose = entry_transpose if instr_transpose is not None else 0
@@ -754,11 +783,52 @@ def _build_raw_pattern(data: bytes, addr: int,
         if get_next:
             i2 += 1
             b2 = data[addr + i2]
-            if no_adsr:
-                if g_old_instr1 == g_old_instr2:
-                    cmd1 = 3   # Portamento (no new ADSR)
-                    cmd2 = 0x00
-                g_old_instr2 = g_old_instr1
+            # **Status bit 5 does nothing to the event that carries it.** The
+            # VB6 original (h2g.frm:927-933) read it as "NoRelease ... doesn't
+            # set new ADSR values" and, when bit 7 was also set and the two
+            # instruments last named happened to be equal (`gOLDInstrument1 =
+            # gOLDInstrument2`, a history the player keeps nowhere), wrote
+            # `CMD_TONEPORTA 0` on THIS event -- and the port kept that branch
+            # here through v0.5.487. The player's own fetch does not consult the
+            # bit. Commando reads the status byte at $50C2 and tests bit 6
+            # ($50CF `BIT $5502 / BVS`) and bit 7 ($50DA `BPL`) only; then, for
+            # every event that is not a rest, it writes the frequency ($5106,
+            # $510F), the waveform with the gate ON ($5136 `AND $5501`, the
+            # mask being $FF unless the rest branch DEC'd it, then $5139 `STA
+            # $D404,Y`), and the record's ADSR pair ($514B `STA $D405,Y`,
+            # $5151 `STA $D406,Y`). A bit-5 event's attack, envelope and gate
+            # are written exactly as any other event's. IK_plus is the same
+            # routine at $E0EE/$E0F9 and $E160-$E17B. The one place a classic
+            # player tests the bit is the hold path at the note's END:
+            #
+            #     517F  BD F5 54  LDA $54F5,X    ; the event's status byte
+            #     5182  29 20     AND #$20
+            #     5184  D0 15     BNE $519B      ; bit 5 set -> keep the gate
+            #     5186  BD F2 54  LDA $54F2,X    ; the row counter
+            #     5189  D0 10     BNE $519B      ; not the last frame yet
+            #     518B  BD F8 54  LDA $54F8,X / AND #$FE / STA $D404,Y ; gate off
+            #     5193  A9 00     LDA #$00 / STA $D405,Y / STA $D406,Y
+            #
+            # (IK_plus $E1B8-$E1C6, the same five instructions into its gate
+            # mask $E5E0,X). So the bit means "do not close the gate when this
+            # note ends", and the note it ties is the NEXT one -- which is what
+            # the `tie` block below writes, on the next note, from
+            # `pending_tie`. A census of every `AND #$20` in the 95 corpus
+            # files at v0.5.487 (dis6502.find_all, the load before and the
+            # branch after each): every classic-grammar player has exactly
+            # one status-byte test
+            # and it is this hold-path shape (`detect.GATE_HOLD_SHAPE`); the
+            # other sites are the instrument filter bit (`FILTER_SHAPE`) and
+            # the digi/ILV engines, which `_build_raw_pattern` never reads.
+            #
+            # The VB6 row therefore silenced an attack the original sounds
+            # whenever the event before it had no bit 5, and it never tied
+            # the note that IS tied. At v0.5.487 defaults it reached 19 corpus
+            # files (279 note rows, IK_plus pattern 29 among them) and Commando's
+            # fixture not at all; under the presets' `tie=True` every one of
+            # those rows either coincided with a tie the block below writes
+            # anyway or was wrong. The branch is gone; nothing replaces it,
+            # because the correct spelling already exists and is opt-in.
             if b2 & 0x80:
                 # Bit 0 is the direction, and it is the player's own test:
                 # Warhawk $132D does `AND #$01 / BEQ add`, so a clear bit adds
@@ -802,8 +872,6 @@ def _build_raw_pattern(data: bytes, addr: int,
                         cmd2 = min(speed // 4, 0xFF)
             else:
                 g_instrument = (b2 & instr_mask) + instr_base
-                g_old_instr2 = g_old_instr1
-                g_old_instr1 = g_instrument
                 named_instr = True
                 if instr_transpose is not None:
                     # `LDA table,X` with X = the operand the player stored;
@@ -813,9 +881,13 @@ def _build_raw_pattern(data: bytes, addr: int,
                     transpose = (instr_transpose[rec]
                                  if rec < len(instr_transpose) else 0)
 
+        # This event's note byte carried bit 7 under `note_flag` -- see
+        # `free_rows` in the docstring. Read here, before the mask below.
+        free_note = False
         if get_next or not no_note:
             i2 += 1
             g_note = data[addr + i2]
+            free_note = bool(note_flag and g_note & 0x80)
             # **THE LOOKUP IS EIGHT BITS WIDE, SO A BYTE AT OR ABOVE $80 WRAPS
             # INTO THE TABLE.** Every classic player indexes its frequency
             # table with `ASL / TAY / LDA freqtbl,Y` (or `TAX`/`,X`) --
@@ -1143,6 +1215,9 @@ def _build_raw_pattern(data: bytes, addr: int,
         # envelope that ran its attack over silent DC frames; ours attacks.
         pending_tie = tie and not no_note and not past_rest and (
             bool(no_adsr) or (wait == 0 and gate_hold))
+        if (free_rows is not None and free_note
+                and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
+            free_rows.append(len(events) // 4)
         events += [g_note, g_instrument, cmd1, cmd2]
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
@@ -1970,7 +2045,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                  rest_envelope: bool = False,
                  exits_tied: Optional[List[bool]] = None,
                  arps: Optional[List[tuple]] = None,
-                 transpose_exit: Optional[List[tuple]] = None
+                 transpose_exit: Optional[List[tuple]] = None,
+                 free_rows: Optional[List[int]] = None
                  ) -> Optional[List[int]]:
     """Decoded event stream for pattern-table entry `i`, or None if unusable.
 
@@ -1981,6 +2057,11 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     know a pattern's highest note before deciding whether an octave can be
     folded into it, and reading that under a different grammar would answer a
     question about a file that is not being converted.
+
+    `free_rows` is _build_raw_pattern's out-parameter of that name -- the
+    rows whose note byte carried bit 7 under `note_flag`. Classic grammar
+    only: the digi, ilv and cmdtable decoders read no such bit, so on those
+    dialects the list stays empty and every note reseeds.
 
     `transpose_exit` is _build_raw_pattern's out-parameter of that name, for
     tracks.instrument_transposes -- the one caller that walks the orderlists
@@ -2028,7 +2109,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
                                   instr_transpose_table(data, det)
                                   if det.instr_transpose >= 0 else None),
                               entry_transpose=det.instr_entry_transposes.get(i, 0),
-                              transpose_exit=transpose_exit)
+                              transpose_exit=transpose_exit,
+                              free_rows=free_rows)
 
 
 def pattern_top_note(events: List[int]) -> int:
@@ -2375,11 +2457,21 @@ class TrackIndex(list):
     A plain list is still a valid `track_index` -- `reindex_tracks` reads the
     attribute with `getattr`, so a caller that builds one by hand simply gets
     no boundary ties.
+
+    `free_rows` is the other side channel, and it is keyed differently: by
+    OUTPUT pattern index, not table entry, because its consumer
+    (`collect_pulse_phases`) walks the finished orderlists over the sliced
+    patterns. `free_rows[p]` is the set of rows of `new_patterns[p]` whose
+    note byte carried bit 7 under `note_flag` (`_build_raw_pattern`'s
+    `free_rows`), re-based to the slice. Filled only when `convert_patterns`
+    is asked for it, and empty otherwise -- see `inherit_free_rows` for why
+    the dedup key has to change when it is.
     """
 
-    def __init__(self, items=(), exits_tied=None):
+    def __init__(self, items=(), exits_tied=None, free_rows=None):
         super().__init__(items)
         self.exits_tied: List[bool] = list(exits_tied or ())
+        self.free_rows: Dict[int, frozenset] = dict(free_rows or {})
 
 
 def convert_patterns(sid: SidFile, det: Detection, log,
@@ -2397,7 +2489,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                      instr_base: int = 2, tie: bool = False,
                      rest_keyoff: bool = False,
                      rest_wave: bool = False,
-                     rest_envelope: bool = False):
+                     rest_envelope: bool = False,
+                     free_rows: bool = False):
     """Decode, slice and (optionally) de-duplicate every pattern.
 
     `used` (from referenced_patterns) restricts output to the patterns some
@@ -2428,6 +2521,19 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     entry `det.pattern_used + 1 + j`, which is the number the folded
     orderlists already reference. A source that `used` pruned is decoded here
     anyway -- the variant is played even when the unshifted original is not.
+
+    `free_rows` asks for `TrackIndex.free_rows`: per output pattern, the rows
+    whose note byte carried bit 7 under `note_flag` (`_build_raw_pattern`).
+    A variant inherits its source's (shift_notes moves no row), and a slice
+    owns the raw rows it was cut from, re-based to its own row 0. **With it
+    on, `dedup` keys on (bytes, flags) rather than bytes alone**: two
+    byte-identical slices can come from events whose bit-7 flags differ --
+    the byte the flag lived in is gone -- and sharing one output pattern
+    between them would give one of them the other's reseed rows. So the
+    request can change the output where dedup would otherwise have shared
+    such a pair, which is why it is opt-in and convert.py asks only where
+    the walk that reads it (`collect_pulse_phases` on a bounds-engine file)
+    is going to run.
     """
     if not 1 <= max_rows <= GT_MAX_ROWS:
         raise ValueError(f"max_rows must be 1..{GT_MAX_ROWS}, got {max_rows}")
@@ -2439,6 +2545,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     # what every entry that is not decoded at all (pruned, phantom, out of
     # range) has to be: an ERROR_PATTERN carries no note and ties into nothing.
     exits: Dict[int, bool] = {}
+    # Entry -> raw rows whose note byte carried bit 7 (only when asked for).
+    free: Dict[int, List[int]] = {}
     for i in range(det.pattern_used + 1):
         if used is not None and i not in used:
             # Not decoded at all: an unreferenced entry is often out-of-range
@@ -2463,13 +2571,16 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
 
         ex: List[bool] = []
+        fr: List[int] = []
         events = decode_entry(sid, det, i, slides, status_bit6, steps,
                               rest_instrument, instr_base, tie=tie,
                               rest_keyoff=rest_keyoff,
                               rest_wave=rest_wave,
                               rest_envelope=rest_envelope, exits_tied=ex,
-                              arps=arps)
+                              arps=arps,
+                              free_rows=fr if free_rows else None)
         exits[i] = bool(ex and ex[0])
+        free[i] = fr
         if events is None:
             log(f"*** PATTERN ${i:X} ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
             events = list(ERROR_PATTERN)
@@ -2481,6 +2592,7 @@ def convert_patterns(sid: SidFile, det: Detection, log,
         base = raw_patterns[src] if 0 <= src < len(raw_patterns) else None
         if base is None:
             ex = []
+            fr = []
             # A variant is a transposition of a pattern the loop above
             # already decoded, so `arps` has already collected whatever it
             # arms; passing the list again would append the same pairs a
@@ -2498,12 +2610,16 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                                 tie=tie, rest_keyoff=rest_keyoff,
                                 rest_wave=rest_wave,
                                 rest_envelope=rest_envelope,
-                                exits_tied=ex, arps=arps)
+                                exits_tied=ex, arps=arps,
+                                free_rows=fr if free_rows else None)
             exits[src] = bool(ex and ex[0])
+            free[src] = fr
         # A variant is the source's own event stream with its notes shifted, so
         # it ends on the source's status byte and leaves the gate exactly as
-        # the source does.
+        # the source does -- and its bit-7 notes are the source's, row for
+        # row, since shift_notes moves no row.
         exits[len(raw_patterns)] = exits.get(src, False)
+        free[len(raw_patterns)] = list(free.get(src, ()))
         if base is None:
             log(f"*** PATTERN ${len(raw_patterns):X} (${src:X} +{12 * octaves}) "
                 "ADDRESS OUT OF RANGE, CAN'T CONVERT ***")
@@ -2516,6 +2632,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
     seen: dict = {}          # pattern bytes -> index in new_patterns
     reused = 0
 
+    pattern_free: Dict[int, frozenset] = {}
+
     for i, events in enumerate(raw_patterns):
         if events is None:
             # No track names this pattern, so its (empty) index list is never
@@ -2524,8 +2642,21 @@ def convert_patterns(sid: SidFile, det: Detection, log,
             continue
         slices = _slice_pattern(events, max_len, terminate_patterns)
         indices: List[int] = []
+        entry_free = free.get(i, ())
+        base_row = 0
         for k, s in enumerate(slices):
-            key = bytes(s) if dedup else None
+            # The raw rows this slice was cut from, re-based to its row 0.
+            # `terminate` appended an ENDPATT row to a non-final slice, which
+            # is not a raw row and must not advance the base.
+            data_rows = len(s) // 4
+            if terminate_patterns and k < len(slices) - 1:
+                data_rows -= 1
+            flags = frozenset(r - base_row for r in entry_free
+                              if base_row <= r < base_row + data_rows)
+            base_row += data_rows
+            key = None
+            if dedup:
+                key = (bytes(s), flags) if free_rows else bytes(s)
             if key is not None and key in seen:
                 idx = seen[key]
                 reused += 1
@@ -2534,6 +2665,8 @@ def convert_patterns(sid: SidFile, det: Detection, log,
                 new_patterns.append(s)
                 if key is not None:
                     seen[key] = idx
+                if free_rows:
+                    pattern_free[idx] = flags
             indices.append(idx)
             if k < len(slices) - 1:
                 # idx+1 equals len(new_patterns) when nothing is shared, so the
@@ -2559,7 +2692,55 @@ def convert_patterns(sid: SidFile, det: Detection, log,
 
     return new_patterns, TrackIndex(
         track_index,
-        [exits.get(i, False) for i in range(len(raw_patterns))])
+        [exits.get(i, False) for i in range(len(raw_patterns))],
+        pattern_free)
+
+
+def inherit_free_rows(patterns: List[List[int]], free_rows: Dict[int, frozenset],
+                      log=None) -> Dict[int, frozenset]:
+    """`TrackIndex.free_rows` extended to the patterns appended since.
+
+    Between `convert_patterns` and the walk that reads the flags, half a
+    dozen passes append COPIES of existing patterns -- the tempo pass
+    (`apply_tempos`), the boundary ties (`_tie_step`), the initial- and
+    pre-instrument copies in tracks.py -- and every one of them is
+    `list(patterns[src])` with a column edited, none of them carrying a
+    side channel. A copy the walk cannot attribute would have every note
+    read as reseeding: no command, the record's own width -- today's
+    output, so the failure is silent and per pattern.
+
+    The copies are recovered by their NOTE COLUMN: none of those passes
+    moves a note (they write the command, instrument or -- for a silenced
+    row -- a KEYOFF over one), so a copy's note column is its source's.
+    Adopted only where the match is UNIQUE in its flags: two originals with
+    one note column and different bit-7 rows (the dedup hazard, where the
+    byte the flag lived in is gone) leave a copy matching both unattributed,
+    and logged, rather than given one of them at random. A pattern with no
+    match -- a merged pattern, a silent park, a note silenced to KEYOFF --
+    stays unattributed for the same reason.
+    """
+    out = dict(free_rows)
+    by_notes: Dict[tuple, Set[frozenset]] = {}
+    for idx, flags in free_rows.items():
+        if idx < len(patterns):
+            notes = tuple(patterns[idx][4 * r] for r in range(len(patterns[idx]) // 4))
+            by_notes.setdefault(notes, set()).add(flags)
+    ambiguous = 0
+    for idx in range(len(patterns)):
+        if idx in out:
+            continue
+        notes = tuple(patterns[idx][4 * r] for r in range(len(patterns[idx]) // 4))
+        found = by_notes.get(notes)
+        if not found:
+            continue
+        if len(found) == 1:
+            out[idx] = next(iter(found))
+        else:
+            ambiguous += 1
+    if log and ambiguous:
+        log(f"Pulse phase.............: {ambiguous} pattern copy(ies) match "
+            "two sources with different bit-7 rows; their notes all reseed")
+    return out
 
 
 def pack_repeats(track: List[int]) -> List[int]:
@@ -4075,7 +4256,9 @@ def _phase_note_rows(pattern: List[int], live_instr: int, sims: dict):
 
 
 def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
-                         tempos: List[int], sims: dict, log=None):
+                         tempos: List[int], sims: dict, log=None,
+                         free_rows: Optional[Dict[int, frozenset]] = None,
+                         calls_per_frame: int = 1):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
@@ -4088,14 +4271,57 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     its notes on different phases than its first cannot be expressed by a
     per-position command at all. Tracks are MUTATED only by `_expand_repeats`
     (playback-neutral); the caller holds a snapshot to restore on decline.
+
+    `sims` is one of two shapes and the sim says which (class attributes
+    `RESEEDS` and `PER_VOICE`, both False on goatwriter.PulsePhaseSim and
+    both True on goatwriter.PulseBoundsSim):
+
+    * The triangle engine's accumulator is per RECORD and never reseeded.
+      Every note is planned, at whatever phase the free-running sweep has
+      reached, and a record sounding on two voices declines the group.
+    * The bounds engine's accumulator is per VOICE (Saboteur_II `$F59C,X` /
+      `$F59F,X`, direction `$F572,X`, X the voice) and is RESEEDED to the
+      record's width at every note whose note byte has bit 7 clear; only a
+      bit-7 note free-runs. `free_rows` is that bit, per output pattern
+      (`TrackIndex.free_rows`, via `inherit_free_rows`): the walk calls
+      `reseed()` on every other note row, and plans a write ONLY for a
+      free row -- a reseeding note's phase is the record's own `(seed, +1)`
+      entry, which the instrument pointer already names
+      (`build_pulse_phase_table` sets `starts[]` to it), so a command there
+      is a no-op that costs packed bytes. Two voices may sound one record,
+      since each has its own accumulator; the state carries across an
+      instrument change on a voice, since the accumulator does; and a free
+      note whose previous rows were under a record with no sim (rate 0) is
+      treated as reseeding, since the state it would inherit is not
+      simulated. `free_rows` None reads as "no free rows": every note
+      reseeds and nothing is planned, which is today's output exactly.
+
+    `calls_per_frame` is the song's multiplier, and it is what puts the sim
+    on the ORIGINAL's clock: `tempos` are in OUR play calls (a row of a
+    `-S3` file is 8 calls, 2.67 frames), while the player sweeps once per
+    frame -- it is entered once per displayed frame whatever we pack at
+    (see convert.py's block above the gate). So calls are turned into
+    frames here, with the remainder carried from row to row, and the sim
+    steps once per frame; at 1 the two clocks are the same and nothing
+    changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
+    planned $756 where the original held $2B0, every free note three times
+    too far along its sweep. **Passed as 1 for the triangle engine still**
+    -- its sim has only ever been validated at `-S1` (5_Title_Tunes) and
+    its three multispeed carriers (Rasputin, Game_Killer,
+    One_Man_and_his_Droid) have not been re-measured on a frame clock, so
+    convert.py leaves their walk as it was; that is a lead, not a rule.
     """
     groups = len(tracks) // 3
     if len(tempos) != groups:
         raise ValueError(f"{groups} group(s), {len(tempos)} tempo(s)")
+    per_voice = bool(sims) and all(getattr(s, "PER_VOICE", False)
+                                   for s in sims.values())
+    free_rows = free_rows or {}
     phases: dict = {}
     writes: list = []
     for g in range(groups):
         # a record on two voices shares one accumulator: decline the group
+        # (the per-record engine only; a per-voice accumulator is not shared)
         owner: dict = {}
         clash = False
         for v in range(3):
@@ -4107,7 +4333,7 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                     continue
                 for _, kind, instr in _phase_note_rows(patterns[b], live, sims):
                     if kind == "note" and instr in sims:
-                        if owner.setdefault(instr, v) != v:
+                        if owner.setdefault(instr, v) != v and not per_voice:
                             clash = True
                     if instr:
                         live = instr
@@ -4134,7 +4360,7 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                             if b == GT_ORDER_RESTART), len(track))
             restart = track[songlen + 1] if songlen + 1 < len(track) else 0
             voice_sims = {num: sim.clone() for num, sim in sims.items()
-                          if owner.get(num) == v}
+                          if per_voice or owner.get(num) == v}
             if not voice_sims:
                 continue
             # THE STARTUP PREROLL, measured rather than derived: the record
@@ -4170,23 +4396,62 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             def one_pass(start: int, live: int):
                 out: dict = {}
                 pos = start
+                # The sim the voice's accumulator last ran under, for the
+                # per-voice engine: an instrument change carries the state
+                # over, and a run of rows under a record with no sim loses
+                # it (None).
+                cur = None
+                # Our calls not yet turned into a whole frame of the
+                # original's sweep -- see `calls_per_frame`.
+                carry = 0
+
+                def run(sim, calls: int, skip_first: bool = False) -> None:
+                    nonlocal carry
+                    total = carry + calls
+                    carry = total % calls_per_frame
+                    sim.advance(total // calls_per_frame, skip_first=skip_first)
+
                 while pos < songlen:
                     b = track[pos]
                     if b >= MAX_PATTERNS or b >= len(patterns):
                         pos += 1
                         continue
+                    free = free_rows.get(b, frozenset())
                     for r, kind, instr in _phase_note_rows(
                             patterns[b], live, voice_sims):
                         if instr:
                             live = instr
                         sim = voice_sims.get(instr)
                         if sim is None:
+                            cur = None
                             continue
+                        if per_voice and cur is not None and cur is not sim:
+                            sim.width, sim.direction = cur.width, cur.direction
+                        known = cur is not None
+                        cur = sim
                         if kind == "note":
-                            out.setdefault(pos, {})[r] = (instr, sim.phase())
-                            sim.advance(tempo, skip_first=True)
+                            if sim.RESEEDS and not (r in free and known):
+                                sim.reseed()
+                            elif sim.RESEEDS and patterns[b][4 * r + 2]:
+                                # A free note whose command column is
+                                # taken. Almost always the tie: a bit-7
+                                # note is a legato note, and the tied row
+                                # ALREADY free-runs in Goattracker, since
+                                # CMD_TONEPORTA skips the new-note init
+                                # that reloads the pulse pointer
+                                # (gplay.c:353, player.s mt_newnoteinit
+                                # `cmp #TONEPORTA / beq mt_nonewnoteinit`).
+                                # Any other occupant outranks the phase in
+                                # `apply_pulse_phase` regardless, so a plan
+                                # here would only cost a pattern copy with
+                                # nothing written into it -- 21 copies for
+                                # 19 writes on Saboteur_II before this.
+                                pass
+                            else:
+                                out.setdefault(pos, {})[r] = (instr, sim.phase())
+                            run(sim, tempo, skip_first=True)
                         else:
-                            sim.advance(tempo)
+                            run(sim, tempo)
                     pos += 1
                 return out, live
 

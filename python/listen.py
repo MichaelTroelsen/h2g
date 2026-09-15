@@ -836,6 +836,7 @@ def main(argv=None) -> int:
     lines: list[str] = []
 
     staged = 0
+    preset_misses: list = []      # names _preset_opts fell through on
     # Tunes paired by the sub_orig == sub_ours coincidence rather than a
     # measured correspondence -- see pair_subtunes. Reported once at the end
     # rather than per file, so the assumption is visible without repeating
@@ -865,6 +866,13 @@ def main(argv=None) -> int:
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 
         if name not in (doc.get("songs") or {}):
+            # Counted as well as printed: _preset_opts warns through
+            # warnings.warn, which Python DEDUPLICATES per call site, so a run
+            # keying every name wrongly (a bare stem where presets.json keys
+            # with the .sid extension) prints ONE warning and reads like a
+            # single odd name. The count at the end of the run is what makes
+            # a total miss look like one.
+            preset_misses.append(name)
             print(f"  {name:44} not in {Path(args.presets).name}; "
                   "converting with default options", file=sys.stderr)
         try:
@@ -1019,6 +1027,16 @@ def main(argv=None) -> int:
         text, carried = merge_into_existing(notes, text)
     notes.write_text(text, encoding="utf-8")
     print(f"staged {staged} tune(s) -> {outdir}", file=sys.stderr)
+    if preset_misses:
+        print(f"{len(preset_misses)} of {staged} staged tune(s) not in "
+              f"{Path(args.presets).name}'s `songs` -- converted on the "
+              f"always-block options alone: {', '.join(preset_misses)}",
+              file=sys.stderr)
+        if staged and len(preset_misses) == staged:
+            print("EVERY staged name missed presets.json's `songs`: the "
+                  "hardest files got the easiest options. presets.json keys "
+                  "songs WITH the .sid extension -- check the names are not "
+                  "bare stems.", file=sys.stderr)
     if carried:
         print(f"kept notes for {len(carried)} tune(s) this run did not stage "
               f"(named in the preamble): {', '.join(carried)}", file=sys.stderr)

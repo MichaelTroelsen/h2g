@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.488 — 2026-09-15
+
+- tie dimension, classic filter clearing record, ILV signed transposes, bounds-engine pulse-phase walk, expanding vibrato, VB6 no_adsr row retired, region-slicing guards
+
 ## 0.5.487 — 2026-09-14
 
 - instrument/cmdtable transposes, handler-operand fixed pitch, usage-ordered pulse table, partial pulse-phase table, tied instrument envelopes, listen.py traces at -m

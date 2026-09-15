@@ -564,6 +564,130 @@ def test_pulse_span_is_none_when_the_original_never_moves_the_width():
     assert got["pulse_span"] is None
 
 
+# --- `tie`: a note change with NO re-gate, ours over the original's ---------
+#
+# The third of siddump's three within-note forms. `slides` counts the bare
+# `(+ xxxx)` frames and `bend` sums them; a parenthesised note `(F#1 92)` is
+# neither, and parse_dump `continue`s on it before the bend branch, so no
+# column could see a conversion that re-attacks or drops its legato notes.
+# Opened at 5a2fa2d on Food_Feud, where every other column read clean
+# (melody 97%, retrig 1.00, onset 100%, bend 0.88x) against 2233 ties for
+# the original's 6312; re-measured at d2160e0 with identical figures, and
+# again at 01389ae (v0.5.487) where the same file reads 4882 -- the
+# tied-envelope work in 922c782 moved it, and nothing in this file could
+# have said so. The fixtures below are those v0.5.485 readings, used as
+# numbers, not as a claim about the current tree.
+
+
+def _tied(*ties):
+    return [fidelity.Voice(attacks=["C-4"], ties=t) for t in ties]
+
+
+def test_tie_ratio_is_our_tie_count_over_the_originals():
+    got = fidelity.compare(_tied(1220, 3696, 1396), _tied(462, 1735, 36))
+    assert got["orig_ties"] == 6312 and got["our_ties"] == 2233
+    assert got["tie_ratio"] == pytest.approx(2233 / 6312)
+    # Per voice too, because the measured defect WAS one voice: the file-level
+    # 0.35x hid a third voice at 0.026x (v0.5.485); at v0.5.487 the same file
+    # reads [1108, 2423, 1351] and the deficit is the second voice at 0.66x.
+    assert [v["orig_ties"] for v in got["voices"]] == [1220, 3696, 1396]
+    assert [v["our_ties"] for v in got["voices"]] == [462, 1735, 36]
+
+
+def test_tie_ratio_is_none_when_the_original_never_ties():
+    got = fidelity.compare(_tied(0, 0, 0), _tied(5, 0, 0))
+    assert got["tie_ratio"] is None
+    assert got["our_ties"] == 5
+    row = _row("A.sid", "measured", 1.0)
+    assert "tie_ratio" in fidelity.dimensions_present(row)
+    assert "tie_ratio" not in fidelity.dimensions_present(dict(row, tie_ratio=None))
+
+
+def test_tie_is_a_count_ratio_and_not_a_share_of_non_retriggered_moves():
+    """The design that was measured and rejected.
+
+    A share ties/(ties+slides) is the scale-free reading and it is WRONG,
+    because its denominator holds slides and slides scale with the sampling
+    rate: Saboteur_II traced at -m3 and at equal calls is the same music, and
+    its slides go 5538 -> 14984 while its ties go 7386 -> 8081 (measured at
+    v0.5.485 and identical at v0.5.487). The share read 0.571 -> 0.350 for
+    one signal; the count ratio 0.918 -> 1.004. Pinned as the property
+    rather than the numbers: our slide count must not reach the tie column
+    at all.
+    """
+    orig = [fidelity.Voice(attacks=["C-4"], ties=8046, slides=4659)]
+    at_m3 = [fidelity.Voice(attacks=["C-4"], ties=7386, slides=5538)]
+    equal = [fidelity.Voice(attacks=["C-4"], ties=7386, slides=14984)]
+    a, b = fidelity.compare(orig, at_m3), fidelity.compare(orig, equal)
+    assert a["tie_ratio"] == b["tie_ratio"] == pytest.approx(7386 / 8046)
+    assert a["our_slides"] != b["our_slides"], "the fixture did not vary slides"
+
+
+def test_a_dropped_tie_is_invisible_to_slides_and_bend_and_visible_to_tie():
+    """Articulation, not travel: the mechanism behind clause (c).
+
+    Take the verbatim dump and drop both parenthesised notes from our side.
+    Every slide and every bend frame survives, so `slides` and `bend` read
+    identical -- and the tie column is the only one that moved.
+    """
+    ours_text = DUMP.replace("(F#1 92)", "  ... ..").replace("(F-2 9D)", "  ... ..")
+    assert ours_text != DUMP, "the fixture's tie cells were not found"
+    orig, ours = fidelity.parse_dump(DUMP), fidelity.parse_dump(ours_text)
+    got = fidelity.compare(orig, ours)
+    assert got["orig_ties"] == 2 and got["our_ties"] == 0
+    assert got["tie_ratio"] == 0.0
+    assert got["our_slides"] == got["orig_slides"] == 3
+    assert got["our_bend"] == got["orig_bend"]
+    assert got["retrigger_ratio"] == 1.0
+
+
+def test_the_tie_dimension_is_registered_and_declares_its_three_blindnesses():
+    """The registry text is what a report reader gets. Three things it must
+    say, from the task that opened the column: (a) the LOW bias against our
+    side on multiplier>1 rows, one-directional; (b) that a tie is siddump's
+    note-table classification, not a player fact; (c) that it is
+    articulation, not travel, beside `bend` rather than instead of it.
+    """
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "tie_ratio")
+    assert d.column == "tie" and d.kind == "ratio" and d.source == ""
+    assert d.reads == fidelity._PITCH_REGS
+    of = " ".join(d.of.split())
+    # (a) -- the direction, the population and that it is one-sided
+    assert "BIASED LOW against our side" in of
+    assert "one-directionally" in of and "multiplier>1" in of
+    # (b)
+    assert "CLASSIFICATION, not a player fact" in of
+    # (c)
+    assert "ARTICULATION, not travel" in of
+    assert "complements `bend`" in of
+    # and the count-ratio-not-share decision, so nobody re-derives the share
+    assert "count RATIO and not a share" in of
+    # The column sits beside `bend`, the half it complements.
+    cols = [x.column for x in fidelity.DIMENSIONS]
+    assert cols.index("tie") == cols.index("bend") + 1
+
+
+def test_the_tie_column_is_printed_beside_bend_and_dashes_without_an_original():
+    rows = [_row("A.sid", "measured", 1.0), _row("B.sid", "measured", 1.0)]
+    rows[0].update(orig_ties=6312, our_ties=2233, tie_ratio=2233 / 6312)
+    rows[1].update(orig_ties=0, our_ties=7, tie_ratio=None)
+    text = fidelity.report(rows, _Args())
+    assert "| slides | bend | tie | vib |" in text
+    a = next(l for l in text.splitlines() if l.startswith("| A.sid |"))
+    b = next(l for l in text.splitlines() if l.startswith("| B.sid |"))
+    cells_a = [c.strip() for c in a.strip().strip("|").split("|")]
+    cells_b = [c.strip() for c in b.strip().strip("|").split("|")]
+    header = next(l for l in text.splitlines() if l.startswith("| File |"))
+    at = [c.strip() for c in header.strip().strip("|").split("|")].index("tie")
+    assert cells_a[at] == "0.35x"
+    assert cells_b[at] == "-"
+    # The column prose carries the same three declarations as the registry.
+    assert "* **tie** --" in text
+    assert "Biased low against our side on every multiplier>1 row" in text
+    assert "note-table classification, not a player fact" in text
+    assert "articulation, not travel" in text
+
+
 # --- `pphase`: where in the band a note OPENS -----------------------------
 #
 # `pul` says whether the duty cycle moves and `pspan` says how far it gets;
@@ -621,6 +745,27 @@ def test_pphase_is_read_one_frame_after_the_attack():
                                  _phase_voices((pulse, [0])), 4)
     assert got["pulse_voices"][0]["orig_pulse_phases"] == 1
     assert got["orig_pulse_phases"] == 0
+
+
+def test_onset_phases_sees_a_zero_width_onset():
+    """fidelity.py:3219 (now fixed): `and timeline[g]` treated a width of
+    exactly 0 as falsy and dropped it, so a note whose frame-after-attack
+    width is $000 was invisible to the phase set -- the same family as
+    CLAUDE.md's 'a `-` is a finding': here a 0 is a finding, not an absence.
+    A note opening at $000 must bucket into {0}, same as any other width."""
+    pulse = [(0, 0x000), (1, 0x000)]
+    assert fidelity._onset_phases(_phase_voice(pulse, [0]),
+                                  fidelity.register_timeline(pulse, 4), 4) == {0}
+
+
+def test_pphase_counts_a_zero_width_bucket_against_a_nonzero_one():
+    """End-to-end through pulse_compare: an original that opens some notes at
+    $000 and others at $800 has two phases, not one -- the zero-width onset
+    must not silently vanish from the summed count."""
+    pulse = [(0, 0x000), (2, 0x800)]
+    voices = _phase_voices((pulse, [0, 2]))
+    got = fidelity.pulse_compare(voices, voices, 4)
+    assert got["pulse_voices"][0]["orig_pulse_phases"] == 2
 
 
 def test_pphase_ignores_the_voices_whose_original_never_varies():
@@ -1254,7 +1399,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
     r = {"file": name, "status": status, "subtune": 0,
          "orig_attacks": orig, "our_attacks": ours, "retrigger_ratio": None,
          "orig_slides": 0, "our_slides": 0, "multiplier": 1,
-         "orig_bend": 0, "our_bend": 0, "bend_ratio": None}
+         "orig_bend": 0, "our_bend": 0, "bend_ratio": None,
+         "orig_ties": 0, "our_ties": 0, "tie_ratio": None}
     if melody is not None:
         r.update(melody=melody, sequence=melody, pitch_jaccard=melody,
                  retrigger_ratio=1.0, wave=melody, wave_frames=100,
@@ -1293,6 +1439,7 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_cutoff_changes=0, our_cutoff_changes=0,
                  orig_cutoff_travel=0, our_cutoff_travel=0,
                  cutoff_sweep=1.0, bend_ratio=1.0,
+                 orig_ties=10, our_ties=10, tie_ratio=1.0,
                  # `drift` reports frames per 1000; 0.0 is a real, common
                  # reading (37 corpus files are exact) and None means the fit
                  # had too little matched material, so a synthetic full row
@@ -3293,9 +3440,29 @@ def test_no_dimension_is_unreachable_from_the_generated_artefact():
             if r.get("status") == "measured"]
     if not rows:
         pytest.skip("no measured rows in the artefact")
-    dead = [d.column for d in fidelity.DIMENSIONS
+    dead = [d for d in fidelity.DIMENSIONS
             if not any(d.value(r) is not None for r in rows)]
-    assert dead == [], f"null on every one of {len(rows)} rows: {dead}"
+    # Two findings print the same `-` column and are not the same. A key that
+    # is PRESENT and None on every row is a column nobody can tell from a
+    # broken one -- that is the failure. A key ABSENT from every row is an
+    # artefact written by a fidelity.py that did not have the column yet,
+    # which is what every new column looks like until `fidelity.py --json`
+    # is re-run; the artefact cannot speak to it either way, so this is the
+    # same finding as the artefact being absent and skips the same way. The
+    # skip is keyed on the very thing that would make the assertion lie
+    # (the key's absence), not on a version or a date, and it lifts by
+    # itself on the next regeneration. What it cannot catch is a key the
+    # harness NEVER writes -- that stays absent through every regeneration
+    # and skips here forever -- so that case is owned elsewhere:
+    # test_every_dimension_value_key_reaches_the_row pins the row's keys
+    # against the registry, and each column's own compare() test pins
+    # the key it returns.
+    null = [d.column for d in dead if any((d.source or d.key) in r for r in rows)]
+    assert null == [], f"null on every one of {len(rows)} rows: {null}"
+    absent = [d.column for d in dead]
+    if absent:
+        pytest.skip(f"build/fidelity.json predates {absent}: no row carries the "
+                    f"key at all -- regenerate with `fidelity.py --json`")
 
 
 @needs_corpus

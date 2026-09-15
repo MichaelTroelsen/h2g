@@ -3915,6 +3915,7 @@ CMD_VIBRATO = 0x04              # gcommon.h:8
 GT_FIRST_NOTE = 0x60            # gcommon.h:48 FIRSTNOTE
 GT_LAST_NOTE = 0xBC             # gcommon.h:49 LASTNOTE
 GT_REST = 0xBD                  # gcommon.h:50 REST -- "no new note", not a stop
+GT_KEYOFF = 0xBE                # gcommon.h:51 KEYOFF -- patterns.GT_KEYOFF
 
 
 CMD_TONEPORTA = 0x03            # gcommon.h:7 -- patterns.CMD_TONEPORTA
@@ -4257,6 +4258,354 @@ def _vibrato_command_pass(det: Detection, patterns: List[List[int]],
             + (f", {busy} with the column in use" if busy else "")
             + (f", {unknown} on an unnamed instrument" if unknown else ""))
     return vib_ptrs
+
+
+# --- Expanding vibrato: the apply loop that adds the note's age ---------------
+#
+# Five corpus files (Arcade_Classics, BMX_Kidz, Mega_Apocalypse, Ricochet,
+# Skate_or_Die_intro) carry a vibrato routine that reads the same $78/$07 byte
+# as Warhawk's and computes a different depth from it. Warhawk's step is the
+# semitone interval shifted (VIBRATO_DEPTH_SHAPES); this one adds the note's
+# AGE IN FRAMES to the interval's high byte first, BMX_Kidz $AFA3-$AFC6:
+#
+#     BD 43 B3  LDA note,X / ASL / TAY / SEC
+#     B9 6E B2  LDA freqlo,Y / F9 6C B2  SBC freqlo-2,Y / 85 F9  STA lo
+#     B9 6F B2  LDA freqhi,Y / F9 6D B2  SBC freqhi-2,Y
+#     7D 88 B3  ADC age,X          ; <-- the per-voice frame counter
+#     4A        LSR A              ; halve the high byte (bit 0 dropped)
+#     CE 50 B3  DEC shift / 30 06 BMI done / 4A 66 F9 LSR / ROR lo / JMP
+#
+# `age,X` ($B388 there) is zeroed by the note fetch and INC'd once per frame
+# after the register write ($B193), so the step grows by 128 >> shift units
+# every frame the note holds -- 16 a frame at shift 3, whatever the pitch.
+# The apply loop then centres the swing on the note (`- (bound >> 1) * step
+# + ctr * step`, ctr walking 0..bound), so the peak-to-peak is `bound * step`
+# and it widens for as long as the note lasts. Traced on BMX_Kidz's $0878
+# (B-6, interval $0760): the frames read +172, +344, +204, 0, -236, -472 --
+# steps 172, 172, 204, 204, 236 at ages 2, 3, 4, 5, 6, which is the formula
+# below to the unit. Over an 84-frame note the swing reaches three semitones
+# and the median cycle measures 11.4% of the pitch, against 2.2% from a
+# static entry: `depth` read 0.195 on BMX_Kidz, 0.056-0.149 on the other
+# four, and 0.50-1.34 on all 51 static-shaped files (build/fidelity.json at
+# v0.5.487, -t 180, presets). Historical figures; the population split is
+# what the shape reproduces, and tests/test_vibrato.py pins it.
+#
+# A Goattracker instrument holds ONE speed-table entry, so the growth cannot
+# live in the record. It can live in the pattern: a `4xy` on a hold row
+# swaps the speed-table entry for that row without resetting the phase
+# (player.s `mt_tick0_34` stores the parameter and leaves `mt_chnvibtime`
+# alone; only a new note resets it), and the note-relative entries at
+# shifts 3, 2, 1, 0 are a staircase of doublings the linear ramp can be
+# rounded onto. That is what `_expanding_vibrato_pass` writes: per hold row,
+# the entry whose swing is nearest the original's in log space, on every
+# free row from the first that leaves the instrument's own level.
+
+# The two spellings of the loop above, anchored like VIBRATO_DEPTH_SHAPES on
+# the `ASL / TAY / SEC / LDA freqlo,Y` that names the note table, and
+# extended through the high-byte subtraction to the ADC that names the
+# counter. Absolute (`7D`, `CE`) and zero-page (`75`, `C6`) operands are two
+# instruction lengths and so two shapes (CLAUDE.md, "A signature encodes an
+# addressing mode").
+EXPANDING_VIBRATO_SHAPES = (
+    "0A A8 38 B9 ?? ?? F9 ?? ?? 85 ?? B9 ?? ?? F9 ?? ?? 7D ?? ?? 4A CE ?? ?? 30",
+    "0A A8 38 B9 ?? ?? F9 ?? ?? 85 ?? B9 ?? ?? F9 ?? ?? 75 ?? 4A C6 ?? 30",
+)
+EXPANDING_VIBRATO_TABLE_AT = 4      # `B9 lo hi`: entry 0 of the note table
+EXPANDING_VIBRATO_COUNTER_AT = 17   # `7D lo hi` / `75 zz`: the age counter
+
+
+def _expanding_vibrato_counter(sid: SidFile, det: Detection) -> Optional[int]:
+    """Address of the frame counter the vibrato step grows with, or None.
+
+    None for the static family and for anything that does not check out:
+    the note table the loop reads must be the one `find_freq_table`
+    validated (the same operand, so the intervals below are the player's
+    own), and the counter must be one the player increments somewhere
+    (`INC abs,X` / `INC zp,X`) -- a routine adding something it never
+    counts up is not this mechanism, whatever its opcodes say.
+    """
+    if det.vibrato_offset is None or det.freq_table is None:
+        return None
+    data = sid.data
+    for shape in EXPANDING_VIBRATO_SHAPES:
+        at = search_file(data, shape)
+        if at < 0:
+            continue
+        table = data[at + EXPANDING_VIBRATO_TABLE_AT] \
+            | (data[at + EXPANDING_VIBRATO_TABLE_AT + 1] << 8)
+        if table != det.freq_table.addr:
+            continue
+        zero_page = data[at + EXPANDING_VIBRATO_COUNTER_AT] == 0x75
+        if zero_page:
+            counter = data[at + EXPANDING_VIBRATO_COUNTER_AT + 1]
+            inc = "F6 %02X" % counter
+        else:
+            counter = data[at + EXPANDING_VIBRATO_COUNTER_AT + 1] \
+                | (data[at + EXPANDING_VIBRATO_COUNTER_AT + 2] << 8)
+            inc = "FE %02X %02X" % (counter & 0xFF, counter >> 8)
+        if search_file(data, inc) < 0:
+            continue
+        return counter
+    return None
+
+
+def _expanding_vibrato_step(hi: int, lo: int, age: int, shift: int) -> int:
+    """The player's per-frame step `age` frames into a note, in SID units.
+
+    `hi:lo` is `freq(note) - freq(note - 1)` from the player's own table.
+    The carry into the ADC is the SBC's, set because the interval is
+    positive, so the high byte becomes `hi + age + 1`; the `LSR A` before
+    the shift loop halves it with bit 0 falling off the end rather than
+    into the low byte; and the loop then shifts the 16-bit pair `shift`
+    times. Eight-bit arithmetic throughout: a note held past 255 frames
+    wraps, as the counter does.
+    """
+    a = ((hi + age + 1) & 0xFF) >> 1
+    return ((a << 8) | (lo & 0xFF)) >> shift
+
+
+def _player_interval(sid: SidFile, det: Detection,
+                     gt_note: int) -> Optional[Tuple[int, int]]:
+    """`(hi, lo)` of the player's semitone interval below Goattracker note
+    index `gt_note`, read from its own table; None off the table's end.
+
+    `FreqTable.shift` is what a player note is offset by to name the same
+    pitch in Goattracker, so the player's entry is `gt_note - shift`, and the
+    loop reads that entry and the one below it.
+    """
+    ft = det.freq_table
+    if ft is None:
+        return None
+    n = gt_note - ft.shift
+    if n < max(1, ft.start + 1) or n >= ft.length:
+        return None
+    off = sid.to_offset(ft.addr) + 2 * n
+    if off - 2 < 0 or off + 1 >= len(sid.data):
+        return None
+    d = sid.data
+    here = d[off] | (d[off + 1] << 8)
+    below = d[off - 2] | (d[off - 1] << 8)
+    if here <= below:
+        return None
+    ivl = here - below
+    return ivl >> 8, ivl & 0xFF
+
+
+def _expanding_vibrato_level(target: float, gt_note: int, cmp_value: int,
+                             base: int) -> int:
+    """The note-relative shift whose swing is nearest `target` in log space.
+
+    Goattracker's peak-to-peak is `(cmp + 2)` steps of `interval >> shift`,
+    the interval being the one ABOVE the note (player.s `mt_calculatedspeed`
+    reads `freqtbl+1 - freqtbl`). Compared in log space because 2.0x and
+    0.5x are the same size of wrong (CLAUDE.md); ties go to the shallower
+    entry, which is the instrument's own level wherever that is a candidate.
+    """
+    ivl = _note_freq(gt_note + 1) - _note_freq(gt_note)
+    if target <= 0 or ivl <= 0:
+        return base
+    best, err = base, None
+    for s in range(GT_MAX_VIB_SHIFT, -1, -1):     # shallowest first
+        step = ivl >> s
+        if step <= 0:
+            continue
+        e = abs(math.log((cmp_value + 2) * step) - math.log(target))
+        if err is None or e < err - 1e-9:
+            best, err = s, e
+    return best
+
+
+def _expanding_vibrato_pass(sid: SidFile, det: Detection,
+                            tracks: List[List[int]],
+                            patterns: List[List[int]], vib_ptrs: dict,
+                            speed_table: List[tuple], lead: int,
+                            multiplier: int, row_calls: int,
+                            instr_row_calls: Optional[dict] = None,
+                            log=None) -> int:
+    """Write the age-growing depth onto the rows after a note, as `4xy`.
+
+    Walked along the orderlists, not pattern by pattern, because the age is
+    the player's and not the pattern's: the counter is zeroed by a note
+    fetch and by nothing else, so a swell runs on through the key-off, the
+    rest rows after it, and the pattern boundary -- BMX_Kidz's longest
+    $0878 note gates off at frame 9, silences its envelope at 12 and is
+    still widening 417 frames later, two patterns on, and a hundred of the
+    original's 305 measured cycles are in that one tail. Each row after the
+    note row covers `row_calls / multiplier` frames of age; the original's
+    swing over them is `bound * step(age)` averaged across the row, and the
+    row wants the speed-table entry (the instrument's own `cmp`, the shift
+    from `_expanding_vibrato_level`) whose swing is nearest. Rows still at
+    the instrument's own level want nothing until the first row that is
+    not -- after which every row of the block wants a command, because an
+    empty command column resets the channel to the instrument's pointer
+    (gplay.c's CMD_DONOTHING case) and the level would fall back to the
+    shallowest step mid-swell.
+
+    **Patterns are global and orderlists are per subtune** (CLAUDE.md), so
+    a row is written only when every orderlist context that reaches it
+    wants the same entry: a pattern that voice 1 plays on the swelling
+    instrument and voice 2 on a plain one gets no command on the rows the
+    two disagree about, since a `4xy` vibrates whatever instrument is
+    sounding. Two passes for that reason -- collect what each context
+    wants per (pattern, row), then write the unanimous rows into free
+    columns. The note row itself is never commanded: the instrument's
+    `vibdelay` keeps the oscillator off the attack frame (`_vibrato_delay`),
+    which is what keeps the note's name intact for siddump and the melody
+    column, and the first frames are at the instrument's level anyway.
+
+    An orderlist transpose is applied to the note before the interval is
+    read (the age term is pitch-independent, the interval is not); a repeat
+    replays the pattern with the age running on, as the player's would. The
+    row length is the instrument's shortest (`instr_row_calls`, else the
+    file's), which under-counts the age in a slower subtune. Skipped and
+    counted: rows the contexts disagree on, rows whose command column is
+    taken (one column per row, and a portamento or a tempo change is the
+    more audible loss), notes off the player's table, and a full speed
+    table. Returns the number of rows written.
+
+    **What the columns say, and what they cannot** (v0.5.487 tree, -t 180,
+    presets, the five files): `depth` 0.195 -> 0.393 on BMX_Kidz, 0.06 ->
+    0.43 Arcade_Classics, 0.07 -> 0.89 Mega_Apocalypse, 0.12 -> 0.49
+    Ricochet, 0.15 -> 0.67 Skate_or_Die_intro, and `bend` toward 1.0 on all
+    five (0.44 -> 1.05, 0.51 -> 1.17, 0.33 -> 0.79, 0.28 -> 0.83, 0.21 ->
+    0.27). Two things bound `depth` short of 1.0 and neither is a knob
+    here. Goattracker's deepest note-relative step is the whole interval,
+    so a swing the original grows past three semitones saturates at
+    `(cmp + 2)` intervals; and the column measures every cycle to the next
+    attack, so on BMX_Kidz 248 of the original's 305 cycles are in tails
+    whose envelope the rest has already zeroed (57 cycles sound), and the
+    longest of those tails runs into a rest pattern every voice shares,
+    where the orderlists disagree and nothing can be written. Over the 57
+    audible cycles the ratio reads 0.62 before and 1.22 after -- the
+    power-of-two rounding's own floor. **Arcade_Classics's `melody` reads
+    99% -> 92% and it is the naming artefact the harness documents**, not
+    a wrong note: both sides' attack frames still carry the PREVIOUS note's
+    swinging pitch (the original's for four frames, ours for one), and a
+    deeper swing there renames it. Naming every attack from five frames in
+    instead, base and this read identically against the original -- 0.995,
+    0.998, 0.994 per voice on that file -- and the attack counts are
+    unchanged (1032 / 1030).
+    """
+    if not vib_ptrs or row_calls < 1:
+        return 0
+    mult = max(1, multiplier)
+    data = sid.data
+    by_slot: dict = {}
+    for rec, (idx, _delay) in vib_ptrs.items():
+        base = det.instr_start + rec * det.instr_stride + det.vibrato_offset
+        if not 1 <= idx <= len(speed_table) or base >= len(data):
+            continue
+        byte = data[base]
+        bound = (byte & VIBRATO_BOUND_MASK) >> VIBRATO_BOUND_SHIFT
+        if not bound:
+            continue
+        left, right = speed_table[idx - 1]
+        if not left & SPEED_NOTE_RELATIVE:
+            continue
+        by_slot[rec + 1 + lead] = (bound, byte & VIBRATO_SHIFT_MASK,
+                                   left & ~SPEED_NOTE_RELATIVE, right)
+    if not by_slot:
+        return 0
+    # (pattern, row) -> the set of entries the contexts reaching it want;
+    # None is "nothing", and a row wanted as None by any context is left.
+    wants: dict = {}
+    off_table = 0
+    for track in tracks:
+        live, transpose, repeat, operand = 0, 0, 1, False
+        block = None        # (bound, shift, cmp, base, hi, lo, frames, k, on)
+        for b in track:
+            if operand:                  # $FF's restart position
+                operand = False
+                continue
+            if b == 0xFF:                # patterns.GT_ORDER_RESTART
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:         # patterns.GT_TRANSPOSE_DOWN/UP
+                transpose = b - 0xF0
+                continue
+            if 0xD0 <= b < 0xE0:         # patterns.GT_REPEAT: the NEXT entry
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(0, len(pat) - 3, 4):
+                    note, instr = pat[r], pat[r + 1]
+                    if note == 0xFF:     # ENDPATT, patterns.GT_END_PATTERN
+                        break
+                    key = (b, r)
+                    if GT_FIRST_NOTE <= note <= GT_LAST_NOTE:
+                        if instr:
+                            live = instr
+                        block = None
+                        wants.setdefault(key, set()).add(None)
+                        if live not in by_slot:
+                            continue
+                        bound, shift, cmp_value, base = by_slot[live]
+                        gt_note = note - GT_FIRST_NOTE + transpose
+                        ivl = _player_interval(sid, det, gt_note)
+                        if ivl is None:
+                            off_table += 1
+                            continue
+                        frames = max(1, ((instr_row_calls or {}).get(live)
+                                         or row_calls) // mult)
+                        block = [bound, shift, cmp_value, base, ivl[0],
+                                 ivl[1], frames, gt_note, 0, False]
+                        continue
+                    continues = (
+                        (note == GT_REST and (instr == 0 or (
+                            instr == live and pat[r + 2] == CMD_SETSR)))
+                        or (note == GT_KEYOFF and instr in (0, live)))
+                    if not continues or block is None:
+                        if instr:
+                            live = instr
+                        block = None
+                        wants.setdefault(key, set()).add(None)
+                        continue
+                    block[8] += 1
+                    (bound, shift, cmp_value, base, hi, lo, frames, gt_note,
+                     k, on) = block
+                    ages = range(k * frames, (k + 1) * frames)
+                    target = bound * sum(
+                        _expanding_vibrato_step(hi, lo, a, shift)
+                        for a in ages) / len(ages)
+                    level = _expanding_vibrato_level(target, gt_note,
+                                                     cmp_value, base)
+                    if level == base and not on:
+                        wants.setdefault(key, set()).add(None)
+                        continue
+                    block[9] = True
+                    wants.setdefault(key, set()).add(
+                        (SPEED_NOTE_RELATIVE | cmp_value, level))
+            repeat = 1
+    written = busy = disagree = full = 0
+    touched: set = set()
+    for (b, r), entries in sorted(wants.items()):
+        if len(entries) != 1 or None in entries:
+            if entries != {None}:
+                disagree += 1
+            continue
+        pat = patterns[b]
+        if pat[r + 2] != 0:
+            busy += 1
+            continue
+        idx = _speed_index(speed_table, next(iter(entries)))
+        if not idx:
+            full += 1
+            continue
+        pat[r + 2] = CMD_VIBRATO
+        pat[r + 3] = idx
+        written += 1
+        touched.add(b)
+    if log and (written or busy or disagree or off_table or full):
+        log(f"Expanding vibrato.......: {written} row(s) in {len(touched)} "
+            f"pattern(s)"
+            + (f", {busy} with the column in use" if busy else "")
+            + (f", {disagree} the orderlists disagree on" if disagree else "")
+            + (f", {off_table} note(s) off the table" if off_table else "")
+            + (f", {full} with the speed table full" if full else ""))
+    return written
 
 
 def _arp_relative(arp_fixed: int, arp_note: int) -> int:
@@ -6243,6 +6592,14 @@ class PulsePhaseSim:
     `_pulse_tri_program`'s formula.)
     """
 
+    # What `patterns.collect_pulse_phases` asks a sim about itself: whether
+    # a note reseeds the accumulator (never, here -- the sweep free-runs
+    # across notes) and whether the accumulator is per voice (no -- per
+    # record, shared by every voice sounding it, which is the "two voices"
+    # decline in the walk). `PulseBoundsSim` answers both the other way.
+    RESEEDS = False
+    PER_VOICE = False
+
     def __init__(self, width: int, step: int, delay: int,
                  lo: int, hi: int) -> None:
         self.width, self.step, self.delay = width, step, delay
@@ -6315,18 +6672,28 @@ class PulseBoundsSim:
       the sweep with the fetch call skipped, the triangle sim's convention,
       because the fetch path (`$F1A2 ... JMP $F45F`) never reaches the sweep.
 
-    **The walk cannot drive this sim yet, and `pulse_phase_sims` does not
-    hand it out.** `patterns.collect_pulse_phases` reads Goattracker rows,
-    where the note byte's bit 7 has already been dropped (`_build_raw_pattern`
-    under `note_flag`: "the flag itself is dropped and the note is kept"), so
-    it cannot tell a reseeding note from a free-running one -- and treating
-    every note as either is wrong for one population or the other. Wiring
-    this engine in needs the decoder to carry a per-row "no reseed" flag out
-    beside `exits_tied`, the walk to call `reseed()` on the rows without it,
-    and convert.py's `det.pulse_tri_hi >= 0` gate to admit `det.pulse_bounds
-    >= 0`. Until then `pulse_bounds_sims` exists for the walk that will, and
-    `build_pulse_phase_table` already serves this engine's records.
+    And one more the walk needs, read off the sweep routine itself
+    (`$F2AC LDA $F572,X` / `$F2B5 ADC $F59C,X` / `$F2B9 LDA $F59F,X`, X the
+    voice from `$F185 LDX $F56B`): **THE ACCUMULATOR IS PER VOICE**, not per
+    record. A record sounding on two voices does not share it, so the
+    triangle walk's "two voices" decline does not apply, and the state
+    carries across an instrument change on one voice. `PER_VOICE` says so.
+
+    **The walk drives this sim through `free_rows`.** The decoder carries
+    the note byte's bit 7 out beside `exits_tied` (`_build_raw_pattern`'s
+    `free_rows`, per output pattern on `TrackIndex.free_rows`, extended to
+    the later passes' copies by `patterns.inherit_free_rows`);
+    `patterns.collect_pulse_phases` calls `reseed()` on every note row
+    without the bit and plans a `CMD_SETPULSEPTR` only for a row with it;
+    convert.py's gate admits `det.pulse_bounds >= 0` and hands the walk
+    `pulse_bounds_sims` where `pulse_phase_sims` returns nothing --
+    restricted by `pulse_reseed_gated` to the players carrying Saboteur_II's
+    own `LDA note / BMI` spelling of the reseed test, the only one the rule
+    was validated on. `build_pulse_phase_table` serves the records.
     """
+
+    RESEEDS = True
+    PER_VOICE = True
 
     def __init__(self, width: int, rate: int, lo: int, hi: int) -> None:
         self.seed, self.rate = width, rate
@@ -6382,11 +6749,31 @@ def _bounds_record(sid: SidFile, det: Detection, i: int):
     return width, rate, d[bounds_at] & 0x0F, d[bounds_at] >> 4
 
 
+# The bounds engine's reseed test as Saboteur_II spells it -- `LDA note /
+# BMI skip / LDA rec+0,X / STA $D402,Y / PHA / LDA rec+1,X / STA $D403,Y /
+# PHA` ($F162-$F174) -- and the only spelling `PulseBoundsSim`'s reseed rule
+# has been validated against (Saboteur_II and Food_Feud, 1314/1314 and
+# 1554/1554 onsets). 28 of the 42 preset files carrying the engine have it;
+# the 13 that test something else before the seed copy (After_8 `$11A4 LDA
+# $1684 / BNE`) and IK_plus, which writes $D402 another way, have not been
+# read, and a walk that reseeds them on the note byte's bit 7 would be a
+# guess about a player. `tests/test_pulse_phase.py` re-counts the 28.
+PULSE_RESEED_GATE = "AD ?? ?? 30 ?? BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+
+
+def pulse_reseed_gated(sid: SidFile) -> bool:
+    """Whether this player reseeds its pulse accumulator behind Saboteur_II's
+    `LDA note / BMI` test -- the population `PulseBoundsSim.reseed()` is a
+    reading of. convert.py hands the walk the bounds sims only here."""
+    return search_file(sid.data, PULSE_RESEED_GATE) > 0
+
+
 def pulse_bounds_sims(sid: SidFile, det: Detection, lead: int = 1) -> dict:
     """{pattern instrument byte: PulseBoundsSim} for the records that sweep
     under the per-record-bounds engine -- `pulse_phase_sims`'s shape for the
-    other engine. Empty where the file does not carry it. Not consumed by
-    the walk yet; see `PulseBoundsSim`."""
+    other engine. Empty where the file does not carry it. A record reader
+    only: whether the walk may be handed these at all is
+    `pulse_reseed_gated`'s question, asked in convert.py."""
     if det.pulse_bounds < 0:
         return {}
     out: dict = {}
@@ -6476,8 +6863,8 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 
     `phases` is {instrument byte: set of (width, direction)} from the
     orderlist walk. Serves both sweeping engines through
-    `_phase_sweep_params`; only the triangle one has a walk that reaches it
-    today (see `PulseBoundsSim`). Returns (entries, starts, index) where `index` maps
+    `_phase_sweep_params` (see `PulseBoundsSim` for how the bounds engine's
+    walk differs). Returns (entries, starts, index) where `index` maps
     (instrument byte, width, direction) to the 1-based table entry a
     CMD_SETPULSEPTR must name. Non-sweeping instruments keep exactly the
     block `_pulse_layout` gives them; a sweeping record's own start pointer
@@ -7116,6 +7503,30 @@ def _ilv_filter_passband(sid: SidFile, det: Detection) -> int:
     return 0
 
 
+def _instruments_named_per_voice(tracks: List[List[int]],
+                                 patterns: List[List[int]],
+                                 instr_base: int) -> list:
+    """The raw record indices each voice NAMES, walking its orderlists.
+
+    `instr 00` is inheritance, so naming is the quantity (CLAUDE.md). Shared
+    by both dialects' clearing gates, which ask the same question of the
+    orderlists and differ only in which records may carry a clear.
+    """
+    per_voice: list = [set() for _ in range(3)]
+    for ti, track in enumerate(tracks):
+        voice = ti % 3
+        for b in track:
+            if b >= len(patterns):      # a repeat/transpose byte, or a gap
+                continue
+            pat = patterns[b]
+            for r in range(0, len(pat), 4):
+                if pat[r] == 0xFF:      # ENDPATT, patterns.GT_END_PATTERN
+                    break
+                if pat[r + 1]:
+                    per_voice[voice].add(pat[r + 1] - instr_base)
+    return per_voice
+
+
 def _ilv_clearing_instruments(sid: SidFile, det: Detection,
                               tracks: List[List[int]],
                               patterns: List[List[int]],
@@ -7155,20 +7566,7 @@ def _ilv_clearing_instruments(sid: SidFile, det: Detection,
                          + filt.enable_off] & FILTER_ENABLE_BIT}
     if not filtered:
         return set()
-    # Instruments each voice NAMES, walking its orderlists in play order.
-    # `instr 00` is inheritance, so naming is the quantity (CLAUDE.md).
-    per_voice: list = [set() for _ in range(3)]
-    for ti, track in enumerate(tracks):
-        voice = ti % 3
-        for b in track:
-            if b >= len(patterns):      # a repeat/transpose byte, or a gap
-                continue
-            pat = patterns[b]
-            for r in range(0, len(pat), 4):
-                if pat[r] == 0xFF:      # ENDPATT, patterns.GT_END_PATTERN
-                    break
-                if pat[r + 1]:
-                    per_voice[voice].add(pat[r + 1] - instr_base)
+    per_voice = _instruments_named_per_voice(tracks, patterns, instr_base)
     filtering = {v for v in range(3) if per_voice[v] & filtered}
     if not filtering:
         return set()
@@ -7192,8 +7590,74 @@ def _ilv_clearing_instruments(sid: SidFile, det: Detection,
     return out
 
 
+def _classic_clearing_instruments(sid: SidFile, det: Detection,
+                                  tracks: List[List[int]],
+                                  patterns: List[List[int]],
+                                  instr_base: int) -> set:
+    """The classic dialect's own clear records that a Goattracker clear may carry.
+
+    **THE CLASSIC PLAYER CLEARS THE FILTER WITH A RECORD, NOT WITH A VOICE
+    MASK.** Its filter block (`FILTER_SHAPE`) runs every frame for a voice
+    whose record has `FILTER_ENABLE_BIT` set and ends `LDA resctl,Y / STA
+    $D417` -- so an enabled record whose resctl low nibble is 0 writes "route
+    nothing" on every frame it plays. That is the mechanism behind Sanxion's
+    original routing 0 for 12 of every 48 frames (107 writes of $00 against
+    106 of $F2 over 9000 frames) and I_Ball's 270 unfiltered frames.
+    `_filter_entries` used to skip those records as "nothing to hear"; they
+    are the clear, and the ONLY records the player ever clears with -- an
+    unfiltered record (bit $20 clear) skips the block and leaves $D417
+    standing, so the interleaved rule of clearing on every exclusive
+    unfiltered record over-fires here: on Sanxion it named records 3 and 10
+    beside the player's 2, on Nemesis_the_Warlock records 6 and 13 where the
+    player clears on none.
+
+    The gate is `_ilv_clearing_instruments`' -- exactly ONE voice names a
+    routed record, and the clearing record is played on no other voice --
+    for the same reason: a Goattracker filter pointer belongs to the
+    instrument and $D417 to the whole chip, so a clear written by voice A
+    stamps out a circuit voice B holds, where the player's per-frame
+    last-writer race would not. Census over the 21 classic-filter corpus
+    files at v0.5.487 (`tests/test_filter.py::CLASSIC_CLEARS` pins seven of
+    them): I_Ball {7}, Sanxion {2} and Saboteur_II {5} fire, and at `-t 180`
+    each lands within 5 frames of its original's filtered-frame count
+    (8725/8730, 7132/7133, 4696/4699) from 8992, 8416 and 7970.
+    Nemesis_the_Warlock's record 9 plays on voice 2 while voice 1 routes,
+    Food_Feud's 8 and 9, Knucklebusters' 0 and Dragons_Lair_Part_II's 23
+    play on more than one voice, Lightforce, Deep_Strike, Nineteen and
+    Auf_Wiedersehen_Monty route on two or three voices, Pandora's 14 and
+    Delta_Mix-E-Load_loader's 23 and five other files' are never named, and
+    the remaining files have no such record.
+    """
+    filt = det.filter
+    if filt is None or not tracks:
+        return set()
+    data = sid.data
+    routed, unrouted = set(), set()
+    for i in range(max(det.instr_used - 1, 0)):
+        base = filt.offset + i * det.instr_stride
+        status = filt.status + i * det.instr_stride
+        if base + 1 >= len(data) or status >= len(data):
+            break
+        if not data[status] & FILTER_ENABLE_BIT:
+            continue
+        (routed if data[base] & 0x0F else unrouted).add(i)
+    if not routed or not unrouted:
+        return set()
+    per_voice = _instruments_named_per_voice(tracks, patterns, instr_base)
+    filtering = {v for v in range(3) if per_voice[v] & routed}
+    if len(filtering) != 1:
+        return set()
+    out = set()
+    for i in unrouted:
+        played_on = {v for v in range(3) if i in per_voice[v]}
+        if played_on and played_on <= filtering:
+            out.add(i)
+    return out
+
+
 def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
-                    lead: int = 1, multiplier: int = 1):
+                    lead: int = 1, multiplier: int = 1,
+                    clearing_instruments: set | None = None):
     """(entries, pointers) for the filter table, or ([], {}) when unreadable.
 
     The player adds a per-instrument step to a per-voice cutoff accumulator
@@ -7225,8 +7689,13 @@ def _filter_entries(sid: SidFile, det: Detection, instr_used: int,
         if not data[status] & FILTER_ENABLE_BIT:
             continue
         resctl, step = data[base], data[base + 1]
-        if not resctl & 0x0F:
-            continue  # routes no voice through the filter: nothing to hear
+        if not resctl & 0x0F and i not in (clearing_instruments or ()):
+            # Routes no voice through the filter. The player writes that $00
+            # to $D417 every frame the record plays -- it is its clear -- and
+            # `_classic_clearing_instruments` names the records where a
+            # Goattracker clear can say the same thing; elsewhere it stays
+            # unsaid rather than stamping out another voice's circuit.
+            continue
         block = [(FILT_SET_PARAMS | filt.passband, resctl),
                  (FILT_SET_CUTOFF, filt.cutoff)]
         per_call = _filter_step_per_call(step, multiplier)
@@ -7356,8 +7825,10 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # instrument's pulse program is longer than a static one's, so that start
     # position is not a stride either.
     if filters:
-        filter_entries, filter_ptrs = _filter_entries(sid, det, instr_used,
-                                                      lead, multiplier)
+        filter_entries, filter_ptrs = _filter_entries(
+            sid, det, instr_used, lead, multiplier,
+            _classic_clearing_instruments(
+                sid, det, tracks, patterns, 1 if compact_instruments else 2))
         if not filter_entries:
             # The interleaved dialect, consulted only where the classic
             # reader found nothing. The two populations are disjoint.
@@ -7399,6 +7870,17 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # and the other two engines have no gate to express (_vibrato_delay).
     if vibrato_command and vib_ptrs and det.triangle_vibrato is not None:
         vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)
+    # The classic engine's age-growing variant, five files: the instrument
+    # entry stays the shallow first-frames level and the hold rows carry the
+    # swell as `4xy` commands. Behind `vibrato_command` because commands are
+    # the mechanism, and only where the routine is the age-adding one --
+    # `_expanding_vibrato_counter` returns None for the 51 static-shaped
+    # files, whose bytes this must not move.
+    if (vibrato_command and vib_ptrs and det.vibrato_offset is not None
+            and _expanding_vibrato_counter(sid, det) is not None):
+        _expanding_vibrato_pass(sid, det, tracks, patterns, vib_ptrs, table,
+                                lead, multiplier, row_calls,
+                                instr_row_calls=instr_row_calls, log=log)
     # The fixed-interval octave's phase per instrument, from the finished
     # orderlists: a note's attack-frame parity is static, and the tick
     # entries carry the octave from the original's frame (`fixed_arp_phases`).

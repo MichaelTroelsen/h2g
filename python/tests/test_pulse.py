@@ -853,18 +853,24 @@ def test_five_title_tunes_takes_the_phase_plan_end_to_end():
 
 # --- the bounds-engine phase sim -------------------------------------------
 # The per-record-bounds engine (`_pulse_program`, the array-of-nibbles
-# sweep) has no phase walk: `pulse_phase_sims` returns {} on it, so
-# --pulse-phase is byte-inert on Saboteur_II and Food_Feud. PulseBoundsSim is
-# its accumulator, validated against BOTH originals' traces at -t 180 before
-# anything was emitted: 25626/25626 and 25298/25298 classifiable sweep steps,
-# 1314/1314 and 1554/1554 attack onsets (the frame `pphase` reads). The
-# numbers pinned below are read off those traces, not derived from the 6502.
-# The one fact the triangle engine does not share: THE ACCUMULATOR IS
-# RESEEDED at every note whose note byte has bit 7 clear ($F162 BMI); only a
-# bit-7 note free-runs. The walk cannot see that bit in a Goattracker row,
-# which is why `pulse_phase_sims` still hands the walk nothing for this engine.
+# sweep). PulseBoundsSim is its accumulator, validated against BOTH
+# originals' traces at -t 180 before anything was emitted: 25626/25626 and
+# 25298/25298 classifiable sweep steps, 1314/1314 and 1554/1554 attack onsets
+# (the frame `pphase` reads). The numbers pinned below are read off those
+# traces, not derived from the 6502. The one fact the triangle engine does
+# not share: THE ACCUMULATOR IS RESEEDED at every note whose note byte has
+# bit 7 clear ($F162 BMI); only a bit-7 note free-runs. A Goattracker row
+# has no bit to carry that in, so the decoder carries it out beside
+# `exits_tied` (`_build_raw_pattern`'s `free_rows`) and the walk reseeds on
+# every note row without it -- the tests after the sim's own are that walk.
+# The accumulator is also PER VOICE (`$F59C,X`, X the voice), unlike the
+# triangle engine's per-record one.
 
-from h2g.goatwriter import PulseBoundsSim, pulse_bounds_sims
+from h2g.goatwriter import (PulseBoundsSim, pulse_bounds_sims,
+                            pulse_reseed_gated)
+from h2g.patterns import (GT_KEYOFF, GT_NO_NOTE, TrackIndex,
+                          _build_raw_pattern, collect_pulse_phases,
+                          convert_patterns, inherit_free_rows)
 
 
 def test_the_bounds_sim_reproduces_saboteur_iis_measured_turnaround():
@@ -959,13 +965,218 @@ def test_pulse_bounds_sims_names_exactly_the_sweeping_records():
     assert pulse_bounds_sims(sid, _det(3, swept=False), lead=1) == {}
 
 
-def test_the_walk_is_still_handed_nothing_for_the_bounds_engine():
-    """`pulse_phase_sims` is what convert.py's walk consumes, and the walk
-    cannot tell a reseeding note from a bit-7 one in a Goattracker row --
-    so handing it these sims would phase every note wrongly for one
-    population or the other. Pinned so the wiring is a deliberate change."""
+def test_pulse_phase_sims_is_the_triangle_engines_builder_alone():
+    """The two engines' sims are built by two functions and convert.py
+    takes whichever is non-empty (`pulse_phase_sims(...) or bounds_sims`):
+    the triangle builder must keep returning nothing on a bounds-engine
+    file, or the walk would run the never-reseeding model on a player
+    that reseeds at almost every note."""
     sid = _sid([_record(0x80, 0x00, rate=0x54)], [0xF0])
     assert pulse_phase_sims(sid, _det(1), lead=1) == {}
+    assert pulse_bounds_sims(sid, _det(1), lead=1) != {}
+
+
+def test_the_sims_declare_how_the_walk_must_drive_them():
+    """The walk reads two class attributes and nothing else about an
+    engine: whether a note reseeds the accumulator, and whether the
+    accumulator is per voice. Both are the bounds engine's answers alone."""
+    assert PulseBoundsSim.RESEEDS and PulseBoundsSim.PER_VOICE
+    assert not PulsePhaseSim.RESEEDS and not PulsePhaseSim.PER_VOICE
+    assert not hasattr(PulsePhaseSim, "reseed")
+
+
+# --- the decoder's bit-7 side channel ---------------------------------------
+
+def test_a_bit_7_note_is_recorded_at_its_row_with_hold_rows_counted():
+    """Two events under note_flag: `$02 <note>` (a 3-row note) then
+    `$00 <note|$80>` -- the second's row is 3, after the first's hold rows,
+    and its emitted note is the same pitch with the bit dropped."""
+    data = bytes([0, 0, 0x02, 0x10, 0x00, 0x90, 0xFF])
+    free: list = []
+    events = _build_raw_pattern(data, 2, note_flag=True, free_rows=free)
+    assert events[0] == 0x70 and events[12] == 0x70, events
+    assert free == [3]
+
+
+def test_without_note_flag_bit_7_is_pitch_and_no_row_is_free():
+    """The other players index their frequency table with the bit (it
+    wraps, `_wrap_note`), so it is not a flag there and nothing is recorded
+    even when a list is offered."""
+    data = bytes([0, 0, 0x00, 0x10, 0x00, 0x90, 0xFF])
+    free: list = []
+    _build_raw_pattern(data, 2, note_flag=False, free_rows=free)
+    assert free == []
+
+
+def test_the_side_channel_changes_no_byte_of_the_stream():
+    data = bytes([0, 0, 0x02, 0x10, 0x00, 0x90, 0x01, 0x8C, 0xFF])
+    with_list = _build_raw_pattern(data, 2, note_flag=True, free_rows=[])
+    without = _build_raw_pattern(data, 2, note_flag=True)
+    assert with_list == without
+
+
+# --- the walk under the bounds engine ----------------------------------------
+
+def _bounds(seed=0x080, rate=0x54, lo=0x0, hi=0xF) -> PulseBoundsSim:
+    return PulseBoundsSim(seed, rate, lo, hi)
+
+
+def _note_pattern(rows: list) -> list:
+    """rows: (note, instr, cmd) triples; a note of None is a hold row."""
+    out: list = []
+    for note, instr, cmd in rows:
+        out += [GT_NO_NOTE if note is None else note, instr, cmd, 0]
+    return out + [0xFF, 0, 0, 0]
+
+
+def test_a_note_without_the_bit_reseeds_and_gets_no_command():
+    """Three 2-row notes on one sweeping record, none free: every note
+    opens on the seed and the plan has nothing to write, so the walk
+    returns None -- today's output exactly."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0)] * 3)
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset()})
+    assert got is None
+
+
+def test_a_free_note_is_planned_at_the_phase_the_previous_note_left():
+    """Row 2's note carries the bit: the accumulator is the first note's,
+    swept for 2 calls minus the fetch call on row 0 and 2 more on the hold
+    row = three steps of $54 past the seed -- so the phase planned is
+    ($080 + 3 * $54, up). Row 4 reseeds again and is not planned."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0),
+                         (0x72, 0, 0), (None, 0, 0),
+                         (0x74, 0, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset({2})})
+    assert got is not None
+    phases, writes = got
+    assert writes == [(0, 0, {2: (2, (0x080 + 3 * 0x54, +1))})]
+    assert phases == {2: {(0x080 + 3 * 0x54, +1)}}
+
+
+def test_a_free_note_on_an_occupied_column_is_not_planned():
+    """A tied bit-7 note (CMD_TONEPORTA in the column) already free-runs in
+    Goattracker -- the tie skips the pulse pointer reload -- and any other
+    occupant outranks the phase in apply; planning it would only clone."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0),
+                         (0x72, 0, 3), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset({2})})
+    assert got is None
+
+
+def test_free_rows_are_read_per_output_pattern():
+    """The same bytes in two patterns, flagged in one and not the other:
+    only the flagged pattern's row is planned, at its own orderlist slot."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    patterns = [list(pat), list(pat)]
+    tracks = [[0, 1, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases(patterns, tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset(), 1: frozenset({2})})
+    assert got is not None
+    _, writes = got
+    assert [(ti, pos) for ti, pos, _ in writes] == [(0, 1)]
+
+
+def test_a_record_on_two_voices_does_not_decline_the_bounds_engine():
+    """The accumulator is per voice ($F59C,X), so two voices sounding one
+    record do not share it: each voice is walked with its own copy, where
+    the per-record triangle engine declines the whole subtune."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0, 0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset({2})})
+    assert got is not None
+    _, writes = got
+    assert sorted(ti for ti, _, _ in writes) == [0, 1]
+    tri = PulsePhaseSim(0x900, 0x40, 2, 8, 0xE)
+    assert collect_pulse_phases([pat], [list(t) for t in tracks], [2],
+                                {2: tri}) is None
+
+
+def test_the_state_carries_across_an_instrument_change_on_one_voice():
+    """A free note on record B after a note on record A inherits A's
+    accumulator (per voice, not per record): planned under B at A's
+    swept width, not at B's seed."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 3, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    sims = {2: _bounds(seed=0x080), 3: _bounds(seed=0x300)}
+    got = collect_pulse_phases([pat], tracks, [2], sims,
+                               free_rows={0: frozenset({2})})
+    assert got is not None
+    _, writes = got
+    assert writes == [(0, 0, {2: (3, (0x080 + 3 * 0x54, +1))})]
+
+
+def test_a_free_note_after_a_record_with_no_sim_reseeds():
+    """Instrument 5 has no sim (rate 0): the accumulator it left is not
+    simulated, so the free note on record 2 that follows is treated as
+    reseeding -- no command, the record's width, today's output -- rather
+    than planned from a state the walk never tracked."""
+    pat = _note_pattern([(0x70, 5, 0), (None, 0, 0), (0x72, 2, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [2], {2: _bounds()},
+                               free_rows={0: frozenset({2})})
+    assert got is None
+
+
+def test_the_bounds_walk_runs_on_the_originals_frame_clock():
+    """Tempos are in OUR calls and the player sweeps once per FRAME: at
+    `-S3` a tempo of 8 is 2.67 frames a row. Row 0 (8 calls) is 2 whole
+    frames with 2 calls carried, one of them the fetch: 1 step. Row 1 is
+    2 + 8 = 10 calls, 3 frames with 1 carried: 3 steps. The free note on
+    row 2 is planned 4 steps past the seed -- not 15 (calls as frames) and
+    not 3 (each row floored on its own, the carry lost). Measured before
+    the clock existed: Saboteur_II planned $756 where the original held
+    $2B0."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    got = collect_pulse_phases([pat], tracks, [8], {2: _bounds()},
+                               free_rows={0: frozenset({2})}, calls_per_frame=3)
+    assert got is not None
+    _, writes = got
+    assert writes == [(0, 0, {2: (2, (0x080 + 4 * 0x54, +1))})]
+
+
+def test_no_free_rows_means_every_note_reseeds():
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    assert collect_pulse_phases([pat], tracks, [2], {2: _bounds()}) is None
+
+
+# --- the flags through slicing, dedup and the later passes' copies ----------
+
+def test_inherit_free_rows_attributes_a_copy_by_its_note_column():
+    """A tempo clone (command column written) and an initial-instrument
+    copy (instrument column written) both keep their source's notes and
+    take its flags; a pattern with no source stays unattributed."""
+    src = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    tempo_clone = list(src)
+    tempo_clone[2], tempo_clone[3] = 0x0F, 5
+    instr_copy = list(src)
+    instr_copy[1] = 7
+    other = _note_pattern([(0x80, 2, 0), (None, 0, 0)])
+    patterns = [src, tempo_clone, instr_copy, other]
+    got = inherit_free_rows(patterns, {0: frozenset({2})})
+    assert got == {0: frozenset({2}), 1: frozenset({2}), 2: frozenset({2})}
+
+
+def test_inherit_free_rows_declines_an_ambiguous_copy():
+    """Two sources with one note column and DIFFERENT flags: a copy of
+    either matches both, and is left out rather than given one at random."""
+    a = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
+    b = list(a)
+    b[1] = 3
+    copy = list(a)
+    copy[2] = 0x0F
+    logs: list = []
+    got = inherit_free_rows([a, b, copy], {0: frozenset({2}), 1: frozenset()}, logs.append)
+    assert 2 not in got
+    assert any("match two sources" in m for m in logs)
 
 
 def test_the_phase_table_serves_a_bounds_engine_record():
@@ -1005,18 +1216,43 @@ def test_a_wrapped_band_measures_its_ramps_modulo_fff_in_the_table():
 
 
 @needs_corpus
-def test_saboteur_ii_and_food_feud_carry_sims_the_option_cannot_reach_yet():
+def test_saboteur_ii_and_food_feud_take_the_bounds_engines_phase_plan():
     """The two files the sim was validated on: the bounds engine, sims for
-    every sweeping record, and --pulse-phase still byte-inert on both --
-    the measurement the wiring task starts from."""
+    every sweeping record, the reseed test in the validated spelling, and
+    --pulse-phase reaching both -- a plan written on the bit-7 notes only,
+    which are a small minority (Saboteur_II's 56 of 941 voice-0 attacks in
+    180 s), so the command lands on a handful of rows, not on every note as
+    it does under the triangle engine."""
     for name, want in (("Saboteur_II.sid", [1, 4, 6, 8, 9, 10, 11, 15, 16]),
                        ("Food_Feud.sid", [1, 2, 6, 7, 8, 11, 12])):
         sid = load_sid(str(CORPUS / name))
         sid2, det = _detect_tables(sid, lambda m: None, 0)
         assert det.pulse_bounds >= 0 and det.pulse_tri_hi < 0
+        assert det.note_flag, "the bit-7 flag is what the walk reads"
+        assert pulse_reseed_gated(sid2)
         assert pulse_phase_sims(sid2, det, 0) == {}
         assert sorted(pulse_bounds_sims(sid2, det, 0)) == want, name
         base = dict(tempo="auto", pulse=True, compact_instruments=True)
+        logs: list = []
         off = convert(str(CORPUS / name), log=lambda m: None, **base)
-        on = convert(str(CORPUS / name), log=lambda m: None, pulse_phase=True, **base)
-        assert off == on, f"{name}: the option now reaches the bounds engine"
+        on = convert(str(CORPUS / name), log=logs.append, pulse_phase=True, **base)
+        assert off != on, f"{name}: the option no longer reaches the bounds engine"
+        line = next((m for m in logs if "CMD_SETPULSEPTR on" in m), None)
+        assert line, logs
+        rows = int(line.split("CMD_SETPULSEPTR on ")[1].split()[0])
+        assert 0 < rows < 100, line
+
+
+@needs_corpus
+def test_ik_plus_carries_the_engine_and_not_the_validated_reseed_test():
+    """The one bounds-engine file with `note_flag` and no `LDA note / BMI`
+    spelling (it writes $D402 another way): the option must leave it
+    byte-identical, since the reseed rule has not been read there."""
+    sid = load_sid(str(CORPUS / "IK_plus.sid"))
+    sid2, det = _detect_tables(sid, lambda m: None, 0)
+    assert det.pulse_bounds >= 0 and det.note_flag
+    assert not pulse_reseed_gated(sid2)
+    base = dict(tempo="auto", pulse=True, compact_instruments=True)
+    off = convert(str(CORPUS / "IK_plus.sid"), log=lambda m: None, **base)
+    on = convert(str(CORPUS / "IK_plus.sid"), log=lambda m: None, pulse_phase=True, **base)
+    assert off == on

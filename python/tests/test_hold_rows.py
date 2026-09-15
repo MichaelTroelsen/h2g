@@ -124,3 +124,50 @@ def test_the_property_holds_in_the_written_sng():
                 note, instr, c1, _ = pat[k:k + 4]
                 assert not (note == GT_NO_NOTE and not instr
                             and c1 in ONE_SHOT_COMMANDS), (name, n, k // 4)
+
+
+@needs_corpus
+def test_no_note_row_is_tied_unless_tie_is_on():
+    """`CMD_TONEPORTA 0` on a NOTE row is the tie, and the tie is opt-in.
+
+    Through v0.5.487 `_build_raw_pattern` had a second emitter of it: the
+    VB6-inherited `no_adsr` branch (h2g.frm:927-933) wrote the command on
+    the event CARRYING status bit 5 whenever bit 7 was set too and the last
+    two instruments named were equal. The player tests bit 5 only at the
+    note's end (Commando $517F, IK_plus $E1B8 -- see the comment at the
+    operand fetch in `_build_raw_pattern`), so that event attacks in the
+    original and the row silenced it: 279 note rows in 19 corpus files at
+    defaults, IK_plus pattern 29 among them, and none in Commando's fixture.
+    With `tie` off nothing may write the command on a note row.
+
+    The vacuity guard is IK_plus itself: decoded with `tie=True` it MUST
+    yield tie rows, or the sweep never reached the bit-5 events it exists
+    to check.
+    """
+    offenders = []
+    notes = 0
+    ik_tied = None
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid, det = _detect_tables(load_sid(str(path)),
+                                      lambda *a, **k: None)
+            pats, _lens = convert_patterns(sid, det, lambda *a, **k: None)
+        except Exception:                                      # noqa: BLE001
+            continue
+        for n, pat in enumerate(pats or []):
+            for k in range(0, len(pat) - 3, 4):
+                note, _instr, c1, c2 = pat[k:k + 4]
+                if note != GT_NO_NOTE:
+                    notes += 1
+                    if c1 == 3 and c2 == 0:
+                        offenders.append((path.name, n, k // 4))
+        if path.name == "IK_plus.sid":
+            tied, _ = convert_patterns(sid, det, lambda *a, **k: None,
+                                       tie=True)
+            ik_tied = sum(1 for pat in tied or []
+                          for k in range(0, len(pat) - 3, 4)
+                          if pat[k] != GT_NO_NOTE and pat[k + 2] == 3)
+    assert notes > 10000, f"only {notes} note rows examined -- sweep is vacuous"
+    assert ik_tied, "IK_plus decoded no tie rows with tie=True -- the sweep " \
+                    "never reached the bit-5 events"
+    assert offenders == [], offenders[:8]

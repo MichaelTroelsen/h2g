@@ -14,7 +14,8 @@ import pytest
 from h2g.convert import convert
 from h2g.detect import detect, FILTER_ENABLE_BIT, _burst_cutoff_start
 from h2g.goatwriter import (GT_MAX_FILT, MAX_INSTRUMENTS, FILT_SET_PARAMS,
-                            FILT_SET_CUTOFF, FILT_STOP, _filter_entries)
+                            FILT_SET_CUTOFF, FILT_STOP, _filter_entries,
+                            _classic_clearing_instruments)
 from h2g.sidfile import load_sid
 
 CORPUS = _CORPUS
@@ -218,3 +219,78 @@ def test_burst_cutoff_start_does_not_mistake_the_sweep_for_an_init():
     i = search_file(sid.data, FILTER_SHAPE)
     cutoff_var = sid.data[i + 15] | sid.data[i + 16] << 8
     assert _burst_cutoff_start(sid.data, cutoff_var) == -1
+
+
+# The classic player's own clear: an enabled record whose resctl low nibble is
+# 0 writes "route nothing" to $D417 on every frame it plays. Which of those a
+# Goattracker clear may carry is gated exactly as the interleaved dialect's
+# is -- one routing voice, and the record played on no other -- and the gate
+# was measured over every classic-filter file at v0.5.487 (`-t 180`, filtered
+# frames ours / original): I_Ball 8992 -> 8725 / 8730, Sanxion 8416 -> 7132 /
+# 7133, Saboteur_II 7970 -> 4696 / 4699, with melody, sequence, wave and adsr
+# identical. Each entry is (clearing records, why the others are refused).
+CLASSIC_CLEARS = {
+    "I_Ball": {7},              # record 7 on voice 2, which is the routing voice
+    "Sanxion": {2},             # record 2 on voice 1, which is the routing voice
+    "Saboteur_II": {5},         # record 5 on voice 2, which is the routing voice
+    # Record 9 plays on voice 2 while voice 1 routes: EXCLUSIVITY refuses it.
+    # The original filters 8997 of 9000 frames; the clear took ours to 8214.
+    "Nemesis_the_Warlock": set(),
+    # Records 8 and 9 each play on two voices: exclusivity refuses both.
+    "Food_Feud": set(),
+    # Record 2 plays on voice 1 alone, but voices 0 AND 1 route: the
+    # ONE-ROUTING-VOICE gate refuses it.
+    "Lightforce": set(),
+    # Record 0 plays on all three voices, three voices route.
+    "Knucklebusters": set(),
+}
+
+
+def _emitter_inputs(stem, monkeypatch):
+    """(sid, det, tracks, patterns, instr_base) exactly as build_sng gets them
+    under the file's shipped presets -- the walk is over the orderlists the
+    converter emits, so it has to see them after prune/dedup, not before."""
+    import h2g.convert as C
+    import fidelity as F
+    got = {}
+    real = C.build_sng
+
+    def spy(sid, det, tracks, patterns, **kw):
+        got.update(sid=sid, det=det, tracks=tracks, patterns=patterns, kw=kw)
+        return real(sid, det, tracks, patterns, **kw)
+    monkeypatch.setattr(C, "build_sng", spy)
+    doc = json.loads((REPO / "presets.json").read_text("utf-8"))
+    convert(str(CORPUS / f"{stem}.sid"), log=lambda m: None,
+            **F._preset_opts(doc, f"{stem}.sid"))
+    assert got, stem
+    return (got["sid"], got["det"], got["tracks"], got["patterns"],
+            1 if got["kw"].get("compact_instruments") else 2)
+
+
+@pytest.mark.parametrize("stem", sorted(CLASSIC_CLEARS))
+def test_the_classic_clear_fires_on_exactly_the_measured_records(stem, monkeypatch):
+    sid, det, tracks, patterns, instr_base = _emitter_inputs(stem, monkeypatch)
+    assert det.filter is not None and det.ilv_filter is None
+    got = _classic_clearing_instruments(sid, det, tracks, patterns, instr_base)
+    assert got == CLASSIC_CLEARS[stem], (stem, got)
+    # Every clearing record is one the PLAYER clears with: enabled, unrouted.
+    for i in got:
+        status = sid.data[det.filter.status + i * det.instr_stride]
+        resctl = sid.data[det.filter.offset + i * det.instr_stride]
+        assert status & FILTER_ENABLE_BIT and not resctl & 0x0F
+
+
+@pytest.mark.parametrize("stem", [s for s in CLASSIC_CLEARS if CLASSIC_CLEARS[s]])
+def test_a_clearing_record_gets_a_block_that_routes_nothing(stem, monkeypatch):
+    """Without the set, the record is skipped; with it, its block starts with
+    a SET_PARAMS whose routing nibble is 0 and stops without modulating."""
+    sid, det, tracks, patterns, instr_base = _emitter_inputs(stem, monkeypatch)
+    n = min(det.instr_used + 1, MAX_INSTRUMENTS)
+    _, without = _filter_entries(sid, det, n)
+    entries, with_ = _filter_entries(sid, det, n,
+                                     clearing_instruments=CLASSIC_CLEARS[stem])
+    for i in CLASSIC_CLEARS[stem]:
+        assert i not in without and i in with_
+        left, right = entries[with_[i] - 1]
+        assert left & FILT_SET_PARAMS and not right & 0x0F
+        assert entries[with_[i]][0] in (FILT_SET_CUTOFF, FILT_STOP)

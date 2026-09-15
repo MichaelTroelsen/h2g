@@ -97,7 +97,10 @@ def test_the_gate_is_lifted_and_the_budget_stands_in_its_place():
         "the pulse_phase multiplier gate is back -- Rasputin packs without "
         "it only because goatwriter budgets the packed size; see this "
         "module's docstring and test_pattern_budget.py")
-    assert "if pulse_phase and pulse and det.pulse_tri_hi >= 0 and group_tempos:" in src
+    assert ("if (pulse_phase and pulse and group_tempos\n"
+            "            and (det.pulse_tri_hi >= 0 or det.pulse_bounds >= 0)):") in src, (
+        "the pulse_phase gate is neither the triangle engine's nor the "
+        "bounds engine's; see test_the_bounds_engine_has_a_sim_and_a_walk")
     gw = (PYTHON_ROOT / "h2g" / "goatwriter.py").read_text(encoding="utf-8")
     call = "patterns = budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)"
     assert gw.count(call) == 1, "the budget is not called from build_sng"
@@ -146,30 +149,41 @@ def test_the_engine_population_and_its_multispeed_share():
 
 
 
-def test_the_bounds_engine_has_a_sim_and_no_walk_yet():
+def test_the_bounds_engine_has_a_sim_and_a_walk():
     """The other sweeping engine -- the per-record-bounds array of
     `_pulse_program`, `pulse_bounds >= 0` -- is what `pulse_phase_sims`
-    returns {} on, so this option is byte-inert on Saboteur_II and Food_Feud.
-    `goatwriter.PulseBoundsSim` is its accumulator, validated on both
-    originals' traces (test_pulse.py pins the measured frames), and
-    `build_pulse_phase_table` serves its records. What is NOT there is the
-    walk: `collect_pulse_phases` reads Goattracker rows, and the bit that
-    decides whether a note reseeds the accumulator (the note byte's bit 7,
-    `$F162 LDA $F59A / BMI` in Saboteur_II) was dropped by the decoder.
-    Wiring it is three edits and this test names them so it is not done by
-    half: a per-row no-reseed flag out of `_build_raw_pattern`, `reseed()`
-    calls in the walk on every other note row, and convert.py's gate
-    admitting `det.pulse_bounds >= 0`. Until then the seams stay as pinned.
+    returns {} on. `goatwriter.PulseBoundsSim` is its accumulator, validated
+    on both originals' traces (test_pulse.py pins the measured frames), and
+    `build_pulse_phase_table` serves its records. The walk is the three
+    edits this test used to name as missing, pinned here as seams the way
+    the gate itself is: the decoder carries the note byte's bit 7 out beside
+    `exits_tied` (`_build_raw_pattern`'s `free_rows` -- the bit that decides
+    whether a note reseeds, `$F162 LDA $F59A / BMI` in Saboteur_II);
+    `collect_pulse_phases` calls `reseed()` on every other note row; and
+    convert.py hands the walk `pulse_bounds_sims` where the triangle builder
+    returns nothing -- only on the players carrying the reseed test in the
+    spelling the rule was validated on (`pulse_reseed_gated`), since a walk
+    that reseeds the other 14 on that bit would be a guess about a player.
+    test_pulse.py tests the behaviour; this pins the wiring.
     """
     conv = (PYTHON_ROOT / "h2g" / "convert.py").read_text(encoding="utf-8")
     pats = (PYTHON_ROOT / "h2g" / "patterns.py").read_text(encoding="utf-8")
     gw = (PYTHON_ROOT / "h2g" / "goatwriter.py").read_text(encoding="utf-8")
     assert "class PulseBoundsSim" in gw and "def pulse_bounds_sims" in gw
-    assert "pulse_bounds_sims" not in conv and "pulse_bounds_sims" not in pats, (
-        "the bounds sims reached the walk: it must call reseed() on every "
-        "note row whose note byte has bit 7 clear, or every phase is wrong")
+    assert "sims = pulse_phase_sims(sid, det, lead) or bounds_sims" in conv, (
+        "convert.py no longer hands the walk the bounds sims")
+    assert "and det.pulse_tri_hi < 0 and pulse_reseed_gated(sid)" in conv, (
+        "the bounds sims reach the walk on a player whose reseed test has "
+        "not been read; see goatwriter.PULSE_RESEED_GATE")
+    assert "free_rows=bool(bounds_sims))" in conv, (
+        "convert_patterns is not asked for the bit-7 rows where the walk runs")
+    assert ("if sim.RESEEDS and not (r in free and known):\n"
+            "                                sim.reseed()") in pats, (
+        "the walk no longer reseeds on every note row without the bit")
     assert "if det.pulse_tri_hi < 0:\n        return {}" in gw, (
-        "pulse_phase_sims no longer declines the bounds engine for the walk")
+        "pulse_phase_sims no longer declines the bounds engine: convert.py "
+        "takes whichever builder is non-empty, so the triangle model would "
+        "run on a reseeding player")
 
 
 def test_the_bounds_engine_population_and_how_its_players_reseed():
@@ -178,9 +192,12 @@ def test_the_bounds_engine_population_and_how_its_players_reseed():
     up and down); 28 reseed the accumulator behind Saboteur_II's exact
     `LDA note / BMI` test, 13 behind a differently spelled test (After_8:
     `LDA $1684 / BNE`), and IK_plus writes the register another way. The
-    sim's reseed rule was validated on two of the 28; a walk that reaches
-    the other 14 must read their gate first. Re-measured here so the
-    docstring cannot go quietly stale."""
+    sim's reseed rule was validated on two of the 28, and the walk is
+    restricted to the 28 (`pulse_reseed_gated`); a walk that reaches the
+    other 14 must read their gate first. The 13 are all digi or ilv
+    dialect files, whose decoders carry no bit-7 row out, so even admitted
+    they would plan nothing. Re-measured here so the docstring cannot go
+    quietly stale."""
     presets = REPO_ROOT / "presets.json"
     corpus = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
     if not presets.exists() or not corpus.is_dir():
@@ -188,10 +205,13 @@ def test_the_bounds_engine_population_and_how_its_players_reseed():
         pytest.skip("corpus or presets.json not available here")
     sys.path.insert(0, str(PYTHON_ROOT))
     from h2g.detect import detect
+    from h2g.goatwriter import PULSE_RESEED_GATE
     from h2g.search import search_file
     from h2g.sidfile import load_sid
     doc = json.loads(presets.read_text(encoding="utf-8"))
-    reseed_bmi = "AD ?? ?? 30 ?? BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48"
+    # The shape convert.py gates the walk on (`pulse_reseed_gated`), so the
+    # 28 counted here are the 28 the option can reach.
+    reseed_bmi = PULSE_RESEED_GATE
     turn = ("48 BD ?? ?? 69 00 29 0F 48 C9 ?? D0 ?? FE",
             "48 BD ?? ?? E9 00 29 0F 48 C9 ?? D0 ?? DE")
     engine = multispeed = bmi = turns = 0

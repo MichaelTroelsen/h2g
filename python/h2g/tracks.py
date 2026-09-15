@@ -31,10 +31,12 @@ from .sidfile import SidFile
 # largest transpose the format can express is **+14**, not +15.
 GT_TRANSUP = 0xF0
 GT_MAX_TRANSPOSE = 0x0E
+# The other end of the same range: $E0 is TRANSDOWN, `$E0 - $F0` = -16.
+GT_MIN_TRANSPOSE = GT_TRANSPOSE_DOWN - GT_TRANSUP
 
 
 def _transpose_byte(semitones: int) -> int:
-    """Goattracker orderlist byte for a Hubbard transpose, clamped to +14.
+    """Goattracker orderlist byte for a Hubbard transpose, clamped to -16..+14.
 
     Hubbard's version-2 players hold the transpose in a per-voice byte that is
     added to the note before the frequency lookup (`AND #$7F` / `CLC` /
@@ -44,8 +46,14 @@ def _transpose_byte(semitones: int) -> int:
     than dropped: a clamped transpose is wrong by a known number of semitones,
     whereas dropping one leaves the voice at the *previous* transpose for the
     rest of the track.
+
+    Signed on the way in: the ILV players' `$FD nn` and the command-table
+    engine's `$85 nn` both add the operand to the note index with a plain
+    8-bit `ADC`, so `$FE` is -2 (Lion_Heart $1275, Lakers_vs_Celtics's
+    `FD FE` steps). Below -16 the byte would land in the REPEAT range
+    ($D0-$DF) and read as a repeat count, so that end clamps too.
     """
-    return GT_TRANSUP + min(semitones, GT_MAX_TRANSPOSE)
+    return GT_TRANSUP + max(GT_MIN_TRANSPOSE, min(semitones, GT_MAX_TRANSPOSE))
 
 
 def _build_track(data: bytes, addr: int, version: int, log=None,
@@ -305,14 +313,25 @@ def _build_track(data: bytes, addr: int, version: int, log=None,
                 # against `#$60` (Lion_Heart $1272-$127E). Same collapse rule
                 # as the `>= $80` form above: the player assigns rather than
                 # accumulates, so consecutive commands keep only the last.
+                #
+                # The operand is SIGNED. `$111E STA $1ADA,X` stores it whole
+                # and `$1274 CLC / ADC $1ADA,X` adds it to the note index with
+                # no mask, so `$FE` is -2 and `$FB` is -5 -- both occur in
+                # Lakers_vs_Celtics and Pacific_Coast, where `& $7F` read
+                # them as +126 and +123 and clamped both to +14. Negative
+                # values land in $E0-$EF, so the collapse test and
+                # `command_floor(.., fd_transpose=True)` both start at
+                # GT_TRANSPOSE_DOWN, as version 11's do.
                 if addr + i2 >= len(data):
                     if log:
                         log("*** TRACK DATA RUNS PAST END OF FILE, TRUNCATED ***")
                     track += [0xFF, 0x00]
                     break
-                semitones = data[addr + i2] & 0x7F
+                semitones = data[addr + i2]
+                if semitones >= 0x80:
+                    semitones -= 0x100
                 i2 += 1
-                if track and GT_TRANSUP <= track[-1] < 0xFF:
+                if track and GT_TRANSPOSE_DOWN <= track[-1] < 0xFF:
                     track[-1] = _transpose_byte(semitones)
                 else:
                     track.append(_transpose_byte(semitones))
@@ -578,7 +597,7 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     # ones (Gremlins subtune 11 is 1/100), and those are real music with a byte
     # this converter still mis-decodes. Any threshold that catches the garbage
     # would discard them too.
-    floor = command_floor(det.read_track_version)
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
     playable = [
         ok and any(r <= det.pattern_used for r in pattern_references(voices, floor))
         for ok, voices in zip(usable, built)
@@ -663,17 +682,13 @@ def convert_tracks(sid: SidFile, det: Detection, log,
     # -- ACE 2 reported 15599 bytes of nothing. An empty list is the honest
     # answer; convert() turns it into a refusal.
 
-    # Last, with the orderlists final and still in Hubbard numbering: the one
-    # per-pattern fact only the orderlists know. See instrument_transposes.
-    if det.instr_transpose >= 0:
-        det.instr_entry_transposes = instrument_transposes(sid, det, tracks,
-                                                           log)
-
     return tracks
 
 
 def instrument_transposes(sid: SidFile, det: Detection,
-                          tracks: List[List[int]], log=None) -> Dict[int, int]:
+                          tracks: List[List[int]], log=None,
+                          slides: bool = False,
+                          status_bit6: bool = False) -> Dict[int, int]:
     """Entry value of the instrument-indexed transpose, per pattern.
 
     Food Feud's player keeps a per-voice note offset that it reloads from a
@@ -705,33 +720,21 @@ def instrument_transposes(sid: SidFile, det: Detection,
     instrument 12 and 44 on 11 -- and every one of them is a note the
     original sounds an octave above what the conversion played.
 
-    Called from convert_tracks, which does not know the conversion's
-    `slides` / `status_bit6` options, so the structure is read under every
-    reading of the options this player has (`det.slide_operand`,
-    `det.status_bit6`) and a pattern whose structure DEPENDS on them is
-    logged, since the walk would then be answering for a grammar the
-    conversion may not use. None of Food Feud's do. The right home for the
-    call is beside fold_transposes in convert.py, with the options passed
-    through; it was not in this change's grant.
+    `slides`/`status_bit6` are the same options `convert()` decodes every
+    pattern under (`patterns.decode_entry`'s own parameters) -- called from
+    convert.py, beside `fold_transposes`, which is the only caller that has
+    them, so the entry state is read under the one grammar convert_patterns
+    will actually use to build the patterns, not a guess at it.
     """
-    floor = command_floor(det.read_track_version)
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
     # (notes before the first instrument byte, cell value at the end or None)
     shape: Dict[int, Tuple[int, Optional[int]]] = {}
-    unstable: List[int] = []
 
     def structure(entry: int) -> Tuple[int, Optional[int]]:
         if entry not in shape:
-            readings = set()
-            for sl in ((False, True) if det.slide_operand else (False,)):
-                for sb in ((False, True) if det.status_bit6 else (False,)):
-                    out: List[tuple] = []
-                    decode_entry(sid, det, entry, slides=sl, status_bit6=sb,
-                                 transpose_exit=out)
-                    readings.add(out[0] if out else (0, None))
-            if len(readings) > 1:
-                unstable.append(entry)
-            out = []
-            decode_entry(sid, det, entry, transpose_exit=out)
+            out: List[tuple] = []
+            decode_entry(sid, det, entry, slides=slides, status_bit6=status_bit6,
+                         transpose_exit=out)
             shape[entry] = out[0] if out else (0, None)
         return shape[entry]
 
@@ -769,11 +772,6 @@ def instrument_transposes(sid: SidFile, det: Detection,
                 if exit_cell is not None:
                     cell = exit_cell
     entries = {p: v for p, v in seen.items() if v}
-    if log and unstable:
-        log(f"*** INSTRUMENT TRANSPOSE ENTRY STATE OF {len(unstable)} "
-            "PATTERN(S) DEPENDS ON THE SLIDE/STATUS-BIT-6 GRAMMAR, READ "
-            "UNDER DEFAULTS: "
-            + ", ".join(f"${p:X}" for p in sorted(unstable)) + " ***")
     if log and entries:
         log(f"Instrument transpose....: {len(entries)} pattern(s) enter under "
             "a non-zero offset ("
@@ -831,7 +829,7 @@ def fold_transposes(sid: SidFile, det: Detection, tracks: List[List[int]],
     Returns the `(source entry, octaves)` list convert_patterns needs, in
     variant order.
     """
-    floor = command_floor(det.read_track_version)
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
     first = det.pattern_used + 1
     variants: List[Tuple[int, int]] = []
     index: Dict[Tuple[int, int], int] = {}

@@ -186,6 +186,16 @@ for a human listening check into gitignored `build/listen/`.
 
 ## Reading the players
 
+- **`player.s`, `greloc.c` and `gplay.c` are NOT in this repo.** Only the
+  vendored `python/tools/siddump-rt` tree is; the two bullets below tell you
+  to read files a fresh checkout does not have. They are GoatTracker 2.77's
+  own sources: on this machine at
+  `C:/Users/mit/Downloads/GoatTracker_2.77/src/` (`player.s`, `greloc.c`,
+  `gplay.c` -- and `readme.txt` for the table semantics); elsewhere, unpack
+  the GoatTracker 2.77 source archive and read them there. Do not search the
+  filesystem for them -- two agents burned past 120 s doing exactly that
+  before this bullet existed (`docs/LESSONS.md`, "The player sources are not
+  in the repo").
 - **This repo has two players and they do not agree.** Every timing number here
   comes from `gt2reloc`'s packed player (`player.s`); the editor's `gplay.c` is
   more readable and more often read. Read `player.s` before concluding anything

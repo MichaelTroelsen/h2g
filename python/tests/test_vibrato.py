@@ -573,3 +573,259 @@ def test_the_classic_vibrato_starts_after_frame_zero():
     for m in (1, 2, 3, 4, 10):
         # frame 0 is `m` calls; the oscillator must not run inside it
         assert _vibrato_delay(Detection(vibrato_offset=5), m) == m + 1, m
+
+
+
+# --- the expanding vibrato: the apply loop that adds the note's age ---------
+#
+# Five corpus files read the same $78/$07 byte and compute a different step
+# from it: BMX_Kidz $AFB7 `ADC $B388,X` adds the note's age in frames to the
+# interval's high byte before the shift, so the swing widens by 128 >> shift
+# units every frame the note holds (goatwriter.EXPANDING_VIBRATO_SHAPES). A
+# static speed-table entry read 0.06-0.20 of the original's depth on all
+# five and 0.50-1.34 on the 51 static-shaped files, which is the split the
+# shape reproduces exactly.
+
+EXPANDING_FILES = {"Arcade_Classics.sid", "BMX_Kidz.sid", "Mega_Apocalypse.sid",
+                   "Ricochet.sid", "Skate_or_Die_intro.sid"}
+
+
+def test_the_expanding_step_is_the_one_traced_on_bmx_kidz():
+    """BMX_Kidz's $0878 on B-6 (interval $0760, bound 4, shift 3), siddump
+    frames 3984-3988 of the original: +172, +344, +204, 0, -236 from the
+    note, which are steps of 172, 172, 204, 204, 236 at ages 2 to 6 --
+    `((7 + age + 1) >> 1) << 8 | $60`, shifted three times, to the unit.
+    """
+    from h2g.goatwriter import _expanding_vibrato_step
+    assert [_expanding_vibrato_step(7, 0x60, a, 3) for a in range(2, 7)] \
+        == [172, 172, 204, 204, 236]
+    # The growth is 256 >> shift every second frame (the halved high byte
+    # moves by one every two ages) -- 16 a frame at shift 3 on average --
+    # and it does not depend on the pitch at all.
+    assert _expanding_vibrato_step(0, 0, 40, 3) == _expanding_vibrato_step(
+        0, 0, 38, 3) + 32
+    assert (_expanding_vibrato_step(9, 0xF0, 40, 3)
+            == _expanding_vibrato_step(9, 0xF0, 38, 3) + 32)
+    # The LSR drops bit 0 of the high byte rather than rolling it into the
+    # low one: hi 0, age 0 gives (0 + 0 + 1) >> 1 = 0 above the low byte.
+    assert _expanding_vibrato_step(0, 0x80, 0, 0) == 0x80
+    # Eight-bit: the counter and the sum wrap at 256, as the player's do.
+    assert _expanding_vibrato_step(7, 0x60, 250, 3) == \
+        _expanding_vibrato_step(7, 0x60, 250 - 256, 3)
+
+
+def test_the_level_is_the_nearest_swing_in_log_space_and_ties_go_shallow():
+    from h2g.goatwriter import _expanding_vibrato_level, _note_freq
+    ivl = _note_freq(84) - _note_freq(83)          # above B-6, ~2001
+    # (cmp + 2) = 3 steps a swing. 688 (4 * 172, age 2) sits at 3 * 250 =
+    # 750 for shift 3 against 1500 for shift 2.
+    assert _expanding_vibrato_level(4 * 172, 83, 1, 3) == 3
+    # 4 * 500 = 2000: shift 2 gives 1500 (0.29 in log), shift 1 gives 3000
+    # (0.41), so 2 -- nearer in log space, not in units.
+    assert _expanding_vibrato_level(2000, 83, 1, 3) == 2
+    # Deeper than any entry can go clamps at shift 0, the whole interval.
+    assert _expanding_vibrato_level(10 ** 6, 83, 1, 3) == 0
+    # The geometric midpoint of two levels is a tie, and it goes shallower.
+    mid = (3 * (ivl >> 2) * 3 * (ivl >> 1)) ** 0.5
+    assert _expanding_vibrato_level(mid, 83, 1, 3) == 2
+    # Nothing to aim at keeps the instrument's own level.
+    assert _expanding_vibrato_level(0, 83, 1, 3) == 3
+
+
+class _AgeSid:
+    """A file whose note table is Goattracker's own, at `table`, with one
+    8-byte instrument record at offset 0 carrying vibrato byte `param`."""
+
+    TABLE = 0x1000
+
+    def __init__(self, param=0x23, notes=96):
+        from h2g.goatwriter import _note_freq
+        data = bytearray([0x00, 0x00, 0x41, 0x00, 0x00, param, 0x00, 0x00])
+        data += bytes(self.TABLE - len(data))
+        for n in range(notes):
+            f = min(_note_freq(n), 0xFFFF)     # the top entries clamp
+            data += bytes([f & 0xFF, f >> 8])
+        self.data = bytes(data)
+
+    def to_offset(self, addr):
+        return addr
+
+
+def _age_det(sid):
+    from h2g.sidfile import FreqTable
+    return Detection(instr_start=0, instr_stride=8, vibrato_offset=5,
+                     freq_table=FreqTable(addr=_AgeSid.TABLE, start=0,
+                                          length=96, shift=0, detune=0.0))
+
+
+def _age_pass(patterns, tracks, sid=None, table=None, row_calls=3, mult=1,
+              lead=0, vib_ptrs=None, log=None):
+    from h2g.goatwriter import _expanding_vibrato_pass
+    sid = sid or _AgeSid()
+    tbl = table if table is not None else [(0x81, 3)]
+    n = _expanding_vibrato_pass(sid, _age_det(sid), tracks, patterns,
+                                vib_ptrs or {0: (1, 2)}, tbl, lead, mult,
+                                row_calls, log=log)
+    return n, tbl
+
+
+def _cmds(pat):
+    return [(pat[i + 2], pat[i + 3]) for i in range(0, len(pat), 4)]
+
+
+def test_the_pass_writes_a_staircase_after_the_note_row_and_leaves_it():
+    """B-6 on the $23 record, one row of three frames. Ages 3-5 are still at
+    the instrument's level (nothing written, the instrument does it); from
+    the first row that is not, every row is commanded so the channel never
+    falls back to the instrument's pointer mid-swell, and the shifts only
+    ever descend. The note row is never touched: `vibdelay` owns the
+    attack frame."""
+    from h2g.goatwriter import CMD_VIBRATO
+    pat = _pattern(_note(instr=1, note=0xB3), *[_hold() for _ in range(40)],
+                   (0xFF, 0, 0, 0))
+    n, tbl = _age_pass([pat], [[0, 0xFF, 0]])
+    cmds = _cmds(pat)
+    assert cmds[0] == (0, 0)
+    first = next(i for i, c in enumerate(cmds) if c[0] == CMD_VIBRATO)
+    assert first > 1
+    body = cmds[first:41]
+    assert all(c[0] == CMD_VIBRATO for c in body), body
+    assert n == len(body)
+    shifts = [tbl[idx - 1][1] for _, idx in body]
+    assert shifts == sorted(shifts, reverse=True) and shifts[0] < 3
+    assert set(shifts) <= {0, 1, 2, 3} and shifts[-1] == 0
+    # Every entry shares the instrument's cmp, and the table grew by them.
+    assert all(tbl[idx - 1][0] == 0x81 for _, idx in body)
+    assert tbl[0] == (0x81, 3) and len(tbl) == 4
+
+
+def test_a_static_family_file_gets_no_pass_at_all():
+    """The shape gate is in `_expanding_vibrato_counter`; the pass itself
+    also declines a record whose entry is not note-relative or whose bound
+    is zero, and an unresolved tempo."""
+    pat = _pattern(_note(instr=1, note=0xB3), *[_hold() for _ in range(10)])
+    n, tbl = _age_pass([pat], [[0, 0xFF, 0]], row_calls=0)
+    assert n == 0 and _cmds(pat) == [(0, 0)] * 11
+    n, tbl = _age_pass([pat], [[0, 0xFF, 0]], table=[(0x03, 0x40)])
+    assert n == 0 and _cmds(pat) == [(0, 0)] * 11
+    n, tbl = _age_pass([pat], [[0, 0xFF, 0]], sid=_AgeSid(param=0x03))
+    assert n == 0
+
+
+def test_the_swell_runs_through_the_key_off_and_the_rest_rows():
+    """The player's counter is zeroed by a note fetch and by nothing else,
+    so the swing widens through the rest: BMX_Kidz's B-6 gates off at frame
+    9 and is still widening at 83. A key-on or a new note ends it."""
+    from h2g.goatwriter import CMD_VIBRATO
+    pat = _pattern(_note(instr=1, note=0xB3), _hold(), _hold(),
+                   (0xBE, 0, 0, 0), *[_hold() for _ in range(20)],
+                   (0xBF, 0, 0, 0), _hold(), _hold(),
+                   _note(instr=0, note=0x90), _hold())
+    _age_pass([pat], [[0, 0xFF, 0]])
+    cmds = _cmds(pat)
+    assert cmds[3][0] == CMD_VIBRATO                # the key-off row itself
+    assert all(c[0] == CMD_VIBRATO for c in cmds[4:24])
+    assert cmds[24] == (0, 0) and cmds[25] == (0, 0) and cmds[26] == (0, 0)
+    assert cmds[27] == (0, 0)                        # the new note row
+
+
+def test_a_row_the_orderlists_disagree_on_is_left_alone():
+    """Patterns are global and orderlists per subtune: a `4xy` vibrates
+    whatever instrument is sounding, so a rest pattern voice 0 reaches
+    mid-swell and voice 1 reaches on a plain instrument gets nothing."""
+    from h2g.goatwriter import CMD_VIBRATO
+    swell = _pattern(_note(instr=1, note=0xB3), *[_hold() for _ in range(8)],
+                     (0xFF, 0, 0, 0))
+    rest = _pattern(*[_hold() for _ in range(8)], (0xFF, 0, 0, 0))
+    lines: list = []
+    n, _ = _age_pass([swell, rest], [[0, 1, 0xFF, 0], [1, 0xFF, 0]],
+                     log=lines.append)
+    assert any(c[0] == CMD_VIBRATO for c in _cmds(swell))
+    assert all(c == (0, 0) for c in _cmds(rest)[:8])
+    assert "orderlists disagree" in lines[-1], lines
+    # Alone, the same rest pattern continues the swell across the boundary.
+    rest2 = _pattern(*[_hold() for _ in range(8)], (0xFF, 0, 0, 0))
+    swell2 = list(swell)
+    for i in range(2, len(swell2), 4):
+        swell2[i] = swell2[i + 1] = 0
+    _age_pass([swell2, rest2], [[0, 1, 0xFF, 0]])
+    assert all(c[0] == CMD_VIBRATO for c in _cmds(rest2)[:8])
+
+
+def test_a_taken_column_is_skipped_and_the_rest_of_the_swell_still_lands():
+    from h2g.goatwriter import CMD_VIBRATO
+    pat = _pattern(_note(instr=1, note=0xB3), *[_hold() for _ in range(6)],
+                   _hold(cmd=1, data=5), *[_hold() for _ in range(6)],
+                   (0xFF, 0, 0, 0))
+    lines: list = []
+    _age_pass([pat], [[0, 0xFF, 0]], log=lines.append)
+    cmds = _cmds(pat)
+    assert cmds[7] == (1, 5)
+    assert all(c[0] == CMD_VIBRATO for c in cmds[8:13])
+    assert "1 with the column in use" in lines[-1], lines
+
+
+def test_an_orderlist_transpose_moves_the_interval_the_level_is_read_from():
+    """A pattern played an octave down has half the interval, so the same
+    age wants a deeper shift there -- the age term does not scale."""
+    from h2g.goatwriter import CMD_VIBRATO
+    pat_a = _pattern(_note(instr=1, note=0xB3), *[_hold() for _ in range(12)],
+                     (0xFF, 0, 0, 0))
+    pat_b = list(pat_a)
+    _, tbl_a = _age_pass([pat_a], [[0, 0xFF, 0]])
+    _, tbl_b = _age_pass([pat_b], [[0xE4, 0, 0xFF, 0]])     # $E4 = -12
+    def shifts(pat, tbl):
+        return [tbl[d - 1][1] for c, d in _cmds(pat) if c == CMD_VIBRATO]
+    assert sum(shifts(pat_b, tbl_b)) < sum(shifts(pat_a, tbl_a))
+
+
+@needs_corpus
+def test_the_age_shape_is_exactly_the_five_files_and_names_bmx_kidzs_counter():
+    """Census over every corpus file with the classic vibrato byte: the
+    ADC-age loop is in exactly these five, and nowhere in the static family
+    (Warhawk, Bangkok_Knights and 49 others). BMX_Kidz's counter is $B388,
+    the byte `$AEF6 STA $B388,X` zeroes at the note fetch and `$B193 INC
+    $B388,X` steps after the register write."""
+    from h2g.detect import detect
+    from h2g.goatwriter import _expanding_vibrato_counter
+    if not CORPUS.is_dir():
+        return
+    found = {}
+    for path in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(path))
+        det = detect(sid, lambda *a, **k: None)
+        if det.vibrato_offset is None:
+            continue
+        counter = _expanding_vibrato_counter(sid, det)
+        if counter is not None:
+            found[path.name] = counter
+    assert set(found) == EXPANDING_FILES, found
+    assert found["BMX_Kidz.sid"] == 0xB388
+
+
+@needs_corpus
+def test_bmx_kidzs_conversion_carries_the_staircase():
+    """End to end through `convert` under the shipped presets: the pass
+    runs (the log says so), the speed table holds the four levels under the
+    instrument's cmp, and pattern rows carry CMD_VIBRATO -- so the call in
+    build_sng cannot be dropped silently."""
+    import json
+    if not CORPUS.is_dir():
+        return
+    import songview
+    from h2g.convert import convert
+    from h2g.goatwriter import CMD_VIBRATO
+    from fidelity import _preset_opts
+    root = pathlib.Path(__file__).resolve().parents[2]
+    opts = _preset_opts(json.loads((root / "presets.json").read_text()),
+                        "BMX_Kidz.sid")
+    lines: list = []
+    blob = convert(str(CORPUS / "BMX_Kidz.sid"), log=lines.append, **opts)
+    said = [l for l in lines if "Expanding vibrato" in l]
+    assert said and "row(s) in 1 pattern(s)" in said[0], lines[-6:]
+    song = songview.parse_sng(blob)
+    stbl = song.tables["STBL"]
+    assert {(0x81, s) for s in range(4)} <= set(stbl), stbl
+    rows = sum(1 for pat in song.patterns
+               for i in range(0, len(pat), 4) if pat[i + 2] == CMD_VIBRATO)
+    assert rows >= 60, rows

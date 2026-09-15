@@ -2434,6 +2434,26 @@ collision" and keyed on either count would report a different verdict
 depending only on which regex it used, on the same file, unchanged. See
 CLAUDE.md's "Documenting a naming collision creates one" bullet for the rule.
 
+## The player sources are not in the repo
+
+**HISTORICAL, measured at 5a2fa2d (v0.5.479) and again this session at
+01389ae (v0.5.487).** CLAUDE.md's "Reading the players" section tells every
+reader to open `player.s`, `greloc.c` and `gplay.c`, and none of the three is
+in the repository: `git ls-files | grep -E 'player\.s|greloc\.c|gplay\.c'`
+reads 0, and `python/tools/` holds only `siddump-rt`. At 5a2fa2d two agents
+instructed by the rule could not comply -- one spent over 120 s on a
+filesystem-wide search before abandoning it (recorded by
+`the-filter-emitter-holds-the-circuit-in-where-the-player-toggles-it`). At
+01389ae two more agents found them on their own at
+`C:/Users/mit/Downloads/GoatTracker_2.77/src/` and read `gplay.c:354`,
+`player.s:833-892`, `gplay.c:62/223/375`, `player.s:619-621` and
+`player.s:1252` from there (`pulse-table-allocate-by-usage-not-record-order`,
+`samantha-fox-voice1-missing-mid-note-instrument-switch-0f9f`). The rule now
+names that path. The sources are not vendored: they are GPL GoatTracker 2.77
+files the converter does not import, and a path beside the rule costs nothing
+to keep current while a vendored copy would need its own version pin against
+the `gt2reloc.exe` the harness actually runs.
+
 ## A presence guard must assert against the slice, not the file
 
 **HISTORICAL, measured at 5a2fa2d (v0.5.479) by a worktree agent; recorded here
@@ -2465,12 +2485,27 @@ The fix the agent wrote — `_says(region, ...)` with `_item_from(text, anchor)`
 (anchor sentence to the end of its markdown list item) and `_section(text,
 heading)`, and test_approvals slicing the docstring to its `THREE DISJOINT
 CAUSES` paragraph — was verified in its worktree (32 passed, 5 skipped) and
-**never reached master**: at v0.5.486 `grep -n _item_from
-python/tests/test_claude_md_figures.py` reads 0 and `_says` still takes the
-whole text. So the guards above still assert against the file, and this
-section is the rule's evidence rather than a record of its repair. The repair
-is a `[subagent]` task confined to the two test files; grep for `_item_from`
-before believing it has landed, never this paragraph.
+did not reach master until v0.5.488: at v0.5.486 `grep -n _item_from
+python/tests/test_claude_md_figures.py` read 0. LANDED at v0.5.488 by
+`land-the-region-slicing-presence-guard-that-was-lost-in-a-worktree`:
+`tests/test_claude_md_figures.py` has `_item_from` and `_section`, every
+figure caller slices before `_says`, and
+`test_every_lessons_figure_guard_asserts_on_a_slice` reads the module's own
+source and refuses a new whole-file `_says(text, ...)`; `tests/test_approvals.py`
+slices the docstring to its `THREE DISJOINT CAUSES` paragraph plus the cause
+table and requires each cause to open a row there. Measured on a scratch copy:
+blanking the rate bullet's `49 of the 89 preset songs` while the copy in this
+section survives — old guard passed, new guard failed; deleting approvals.py's
+table key `"no-calibration"` while the retraction sentence survives — old
+guard passed, new guard failed. The Kings of the Beach instance is no longer
+discriminating on its own (since v0.5.481 the guarded figure is `wave` 94.4%
+and the STALE copy says 84.8%, so the whole-file guard already failed that
+deletion); the slice from the re-take item's opening sentence (its `RE-GRADED AT`
+v0.5.481 anchor -- not quoted here, because quoting it would make the anchor
+ambiguous, which is this rule one level up) to the end of its
+item is what keeps it discriminating the next time a re-take quotes the figure
+it retracts. `grep -c _item_from python/tests/test_claude_md_figures.py`
+reads 24; grep for it before believing this paragraph, as before.
 
 ## A misspelled preset key downgrades the hardest files and still returns a count
 

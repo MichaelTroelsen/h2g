@@ -837,6 +837,15 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
             "melody": _ratio(a.collapsed, b.collapsed),
             "orig_pitches": sorted(set(a.attacks)),
             "our_pitches": sorted(set(b.attacks)),
+            # Per voice because the one measured tie defect was ONE voice:
+            # Food_Feud read [1220, 3696, 1396] against [462, 1735, 36] at
+            # v0.5.485, a file-level 0.35x hiding a third voice at 0.026x.
+            # Re-measured at v0.5.487 it reads [1108, 2423, 1351] -- the
+            # tied-envelope work in between restored that voice -- and the
+            # remaining deficit is the SECOND voice, at 0.66x. Historical
+            # both times; re-measure before quoting either.
+            "orig_ties": a.ties,
+            "our_ties": b.ties,
         })
 
     weights = [max(v["orig_attacks"], 1) if (v["orig_attacks"] or v["our_attacks"])
@@ -850,6 +859,8 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
     ua = sum(v["our_attacks"] for v in per_voice)
     ob = sum(_bend_travel(v) for v in orig)
     ub = sum(_bend_travel(v) for v in ours)
+    ot = sum(v.ties for v in orig)
+    ut = sum(v.ties for v in ours)
     op = set().union(*(set(v["orig_pitches"]) for v in per_voice)) if per_voice else set()
     up = set().union(*(set(v["our_pitches"]) for v in per_voice)) if per_voice else set()
     return {
@@ -879,6 +890,25 @@ def compare(orig: list[Voice], ours: list[Voice]) -> dict:
         "orig_bend": ob,
         "our_bend": ub,
         "bend_ratio": (ub / ob) if ob else None,
+        # ... and the third form siddump prints: a note change with NO
+        # re-gate -- the tie. Neither `slides` nor `bend` can see one:
+        # the parser `continue`s on a tie before the bend branch, so a
+        # tie contributes zero travel BY CONSTRUCTION, and a conversion
+        # that re-attacks or drops every legato note reads clean on both
+        # (Food_Feud at v0.5.485: bend 0.88x, retrig 1.00, melody 97%,
+        # onset 100% -- and 2233 ties against the original's 6312; at
+        # v0.5.487 the same file reads 4882, 0.77x, beside melody 100%,
+        # retrig 1.00, onset 100% and bend 1.07x -- every other column
+        # clean or above the original). A COUNT RATIO, deliberately not a
+        # share of non-retriggered moves: the share's denominator holds
+        # slides, and slides scale with the sampling rate (x2.7 at
+        # equal calls), so on Saboteur_II at v0.5.487 the share reads
+        # 0.571 at -m3 and 0.350 at equal calls for identical music
+        # where the count ratio moves 0.918 -> 1.004. Historical; see
+        # the `tie` Dimension for the bias.
+        "orig_ties": ot,
+        "our_ties": ut,
+        "tie_ratio": (ut / ot) if ot else None,
         "voices": per_voice,
     }
 
@@ -3396,7 +3426,7 @@ def _onset_phases(v: Voice, timeline: list, nframes: int) -> set:
     out = set()
     for f in v.attack_frames:
         g = f + 1
-        if 0 <= g < nframes and timeline[g]:
+        if 0 <= g < nframes:
             out.add(timeline[g] // PULSE_PHASE_BUCKET)
     return out
 
@@ -4357,13 +4387,44 @@ DIMENSIONS = (
               "`slides` at 6270/3413 (1.84x) at v0.5.485 while its total "
               "non-retriggered pitch-change count (slides plus ties) was "
               "0.874x, an actual deficit -- historical, re-measure before "
-              "quoting a figure. See `bend_ratio`, which sums the movement "
-              "itself and is not split this way",
+              "quoting a figure (at v0.5.487 the same file's ties read "
+              "4882/6312 and the total 1.15x). `tie` reads the OTHER "
+              "bucket, as a count ratio; see `bend_ratio`, which sums the "
+              "movement itself and is not split this way",
               source="our_slides"),
     # The other half of the same question, and the half a count cannot answer
     # -- `cut` exists beside `filt` for exactly this reason.
     Dimension("bend_ratio", "bend", _PITCH_REGS, "ratio",
               "how far the pitch travels within notes, over the original's"),
+    # The third of siddump's three within-note forms. `slides` counts the
+    # bare-delta frames and `bend` sums them; a TIE -- a parenthesised
+    # note, a pitch change with no re-gate -- is neither, and the parser
+    # `continue`s on it before the bend branch, so no column above can
+    # see a conversion that re-attacks or drops its legato notes.
+    Dimension("tie_ratio", "tie", _PITCH_REGS, "ratio",
+              "how many times as often we change a voice's note without "
+              "re-gating it -- ARTICULATION, not travel: a tie adds zero "
+              "to `bend` by construction, so this complements `bend` "
+              "rather than replacing it. It is siddump's note-table "
+              "CLASSIFICATION, not a player fact: an ungated frequency "
+              "move that lands near a note in siddump's table prints as "
+              "a tie and one that does not prints as a bare delta, so a "
+              "change in step size moves frames between this and "
+              "`slides` (which is why it is a count RATIO and not a share "
+              "of non-retriggered moves -- the share's denominator holds "
+              "slides, which scale with the sampling rate). **BIASED LOW "
+              "against our side, one-directionally, on every "
+              "multiplier>1 row** (49 of 95 at v0.5.487): siddump samples "
+              "once per frame at -m{n} and discards n-1 of every n calls, "
+              "so a tie that lands and moves on inside one frame is never "
+              "printed for us and always for the original -- measured at "
+              "v0.5.487 as 9% of our ties on Saboteur_II (7386 at -m3, "
+              "8081 at equal calls, 8046 in the original) and 7% on "
+              "Food_Feud (4882 / 5231 / 6312), both -S3, and 16% on "
+              "Food_Feud two versions earlier; a ratio below 1.00 by less "
+              "than that on a multiplier>1 file is sampling, not a defect, "
+              "and --equal-calls removes it. Historical, re-measure before "
+              "quoting a figure. `-` is an original with no ties"),
     Dimension("wave", "wave", ("$D404",), "fraction",
               "per-frame agreement of the waveform-select nibble; a waveform "
               "we hold latched under a closed gate after its release has run "
@@ -5979,6 +6040,20 @@ def report(rows: list[dict], args) -> str:
         "original's. Every other column is blind to these: they happen "
         "*within* a note, so a change that only adds or removes pitch "
         "movement leaves melody, seq and retrig identical.",
+        "* **tie** -- how many times as often we change a voice's note "
+        "WITHOUT re-gating it (siddump's parenthesised `(C-4 ...)` form), "
+        "ours over the original's -- articulation, not travel. A tie adds "
+        "zero to **bend** by construction and is not one of the frames "
+        "**slides** counts, so a conversion that re-attacks or drops every "
+        "legato note reads clean on both. It is siddump's note-table "
+        "classification, not a player fact, and it is a count ratio "
+        "rather than a share because the share's denominator holds "
+        "slides, which scale with the sampling rate. **Biased low against "
+        "our side on every multiplier>1 row** -- siddump sees one of "
+        "every `-m` calls, so a tie that lands and moves on inside one "
+        "frame is never printed for us: 9% (Saboteur_II) and 7% "
+        "(Food_Feud) of our ties at v0.5.487, one-directional; "
+        "`--equal-calls` removes it. `-` is an original with no ties.",
         "* **bend** -- our pitch *travel*: the summed magnitude of every "
         "frequency move siddump printed as a bend (`(+ xxxx)` / `(- xxxx)`, "
         "the frames **slides** counts) -- "
@@ -6066,8 +6141,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -6092,6 +6167,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r['sequence'])} | {_fmt_pct(r['pitch_jaccard'])} | "
             f"{r.get('our_slides', 0)}/{r.get('orig_slides', 0)} | "
             f"{'-' if r.get('bend_ratio') is None else f'{r["bend_ratio"]:.2f}x'} | "
+            f"{'-' if r.get('tie_ratio') is None else f'{r["tie_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
             f"{_fmt_depth(r)} | "
             f"{_fmt_drift(r)} | "

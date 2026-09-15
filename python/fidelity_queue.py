@@ -145,8 +145,10 @@ def refusal_entries(refusals: list[dict]) -> list[dict]:
 def voice_deficits(rows: list[dict]) -> list[dict]:
     """A voice whose `aud` sits well below the file's others.
 
-    Needs the per-voice readings `fidelity.py --sound-voices` stores as
-    `aud_voices: [v0, v1, v2]`; a row without them contributes nothing.
+    Needs the per-voice readings as `aud_voices: [v0, v1, v2]` in a row.
+    There is no `fidelity.py` flag that writes this yet -- it is OWED
+    (see the tier-4 note above), not merely unrun; a row without it
+    contributes nothing.
     """
     out = []
     for r in rows:

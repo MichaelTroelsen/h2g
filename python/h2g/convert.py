@@ -7,6 +7,7 @@ from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
+                         pulse_bounds_sims, pulse_reseed_gated,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
                          pack_subtune, recommended_multiplier)
 from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
@@ -17,12 +18,14 @@ from .patterns import (DEFAULT_TRACK, GT_COMMAND_FLOOR, GT_DEFAULT_ROWS,
                        min_played_notes, median_played_durations,
                        pattern_references, phantom_patterns,
                        referenced_patterns, reindex_tracks,
-                       collect_pulse_phases, apply_pulse_phase)
+                       collect_pulse_phases, apply_pulse_phase,
+                       inherit_free_rows)
 from .sidfile import SidFile, load_sid
 from .tracks import (apply_initial_instruments, convert_tracks,
                      ensure_playable_orderlists, fold_transposes,
                      silence_pre_instrument_notes,
                      instrument_row_calls, instrument_voices,
+                     instrument_transposes,
                      legalise_restarts)
 
 Logger = Callable[[str], None]
@@ -333,7 +336,7 @@ def convert(sid_path: str, log: Logger = print,
     tracks = convert_tracks(sid, det, log, raw_transposes, raw_tempos)
     # These three all read orderlists that are still in Hubbard numbering, so
     # they need the dialect's command boundary rather than Goattracker's.
-    floor = command_floor(det.read_track_version)
+    floor = command_floor(det.read_track_version, det.track_fd_transpose)
     check_detection_sound(tracks, det.pattern_used, log, floor)
     # After the soundness check, which counts a reference above pattern_used as
     # dangling -- and every variant this adds is one, by construction. Before
@@ -342,6 +345,16 @@ def convert(sid_path: str, log: Logger = print,
     variants = (fold_transposes(sid, det, tracks, raw_transposes, log,
                                 slides, status_bit6)
                 if fold_transpose else [])
+    # Beside fold_transposes rather than inside convert_tracks: both walk the
+    # orderlists for a per-pattern fact the patterns alone cannot supply, and
+    # both need this call's own `slides`/`status_bit6` -- the grammar the
+    # instrument-indexed transpose's entry state is read under is the grammar
+    # convert_patterns will actually decode each pattern with, not a
+    # convert_tracks-time guess at every reading the player admits. See
+    # tracks.instrument_transposes.
+    if det.instr_transpose >= 0:
+        det.instr_entry_transposes = instrument_transposes(
+            sid, det, tracks, log, slides=slides, status_bit6=status_bit6)
     played = referenced_patterns(tracks, floor)
     # Decided before the patterns are built, because it sets how many rows
     # each event becomes -- and it is only ever anything but 1 for the
@@ -376,6 +389,18 @@ def convert(sid_path: str, log: Logger = print,
     # other dialect, so nothing else can grow a command column.
     ilv_arps: list | None = [] if (arpeggio and det.pattern_dialect == "ilv") else None
     instr_base = 1 if compact_instruments else 2
+    # The bounds pulse engine's phase walk (below, beside the triangle
+    # engine's) needs the note byte's bit 7 carried out of the decoder per
+    # row, and the request changes the dedup key -- so it is made only
+    # where that walk is going to run: the option on, the engine present
+    # with its reseed test in the spelling the sim was validated on, and a
+    # record that sweeps. `pulse_phase_sims` (the triangle engine) returns
+    # nothing on these files, and vice versa, so the two never both apply.
+    phase_lead = 0 if compact_instruments else 1
+    bounds_sims = (pulse_bounds_sims(sid, det, phase_lead)
+                   if pulse_phase and pulse and det.pulse_bounds >= 0
+                   and det.pulse_tri_hi < 0 and pulse_reseed_gated(sid)
+                   else {})
     new_patterns, track_index = convert_patterns(
         sid, det, log, max_rows, terminate_patterns, dedup,
         used=played if prune else None,
@@ -392,7 +417,8 @@ def convert(sid_path: str, log: Logger = print,
         # the half a KEYOFF cannot say. See
         # detect._find_rest_silence_envelope.
         rest_envelope=rest_envelope_silence and det.rest_silence_envelope,
-        instr_base=instr_base, tie=tie)
+        instr_base=instr_base, tie=tie,
+        free_rows=bool(bounds_sims))
     # Captured before reindexing: groups equal header subtune numbers until a
     # split inserts extra ones, and the tempo derivation is per subtune.
     subtunes_before = len(tracks) // 3
@@ -687,14 +713,36 @@ def convert(sid_path: str, log: Logger = print,
     #
     # 5_Title_Tunes, the measured case for the emission itself, is -S1.
     # ------------------------------------------------------------------
+    # **THE GATE ADMITS BOTH SWEEPING ENGINES.** `det.pulse_tri_hi >= 0` is
+    # the triangle engine, whose walk this comment block is about;
+    # `det.pulse_bounds >= 0` is the per-record-bounds engine (Saboteur_II,
+    # Food_Feud -- 42 preset files), whose accumulator is per voice and
+    # RESEEDED at every note without bit 7 in its note byte, so its walk is
+    # driven by `free_rows` (the bit, carried out of `convert_patterns`
+    # above and extended to the later passes' pattern copies by
+    # `inherit_free_rows`) and plans a command only on the notes that
+    # free-run. See goatwriter.PulseBoundsSim for the reading and
+    # patterns.collect_pulse_phases for the two engines' walk. `bounds_sims`
+    # is empty where the option is off, the engine absent, or the player's
+    # reseed test is not the spelling the rule was validated on
+    # (`pulse_reseed_gated`), and then this arm is the triangle engine's
+    # alone, exactly as before.
     pulse_plan = None
-    if pulse_phase and pulse and det.pulse_tri_hi >= 0 and group_tempos:
-        lead = 0 if compact_instruments else 1
-        sims = pulse_phase_sims(sid, det, lead)
+    if (pulse_phase and pulse and group_tempos
+            and (det.pulse_tri_hi >= 0 or det.pulse_bounds >= 0)):
+        lead = phase_lead
+        sims = pulse_phase_sims(sid, det, lead) or bounds_sims
         if sims:
             snapshot = [list(t) for t in tracks]
-            plan = collect_pulse_phases(new_patterns, tracks, group_tempos,
-                                        sims, log)
+            free_rows = (inherit_free_rows(new_patterns, track_index.free_rows, log)
+                         if bounds_sims else None)
+            plan = collect_pulse_phases(
+                new_patterns, tracks, group_tempos, sims, log,
+                free_rows=free_rows,
+                # The bounds engine's sim runs on the original's frame
+                # clock; the triangle engine's stays on ours, as it was
+                # -- see collect_pulse_phases on `calls_per_frame`.
+                calls_per_frame=multiplier if bounds_sims else 1)
             table = None
             if plan:
                 phases, writes = plan

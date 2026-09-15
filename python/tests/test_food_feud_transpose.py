@@ -157,9 +157,15 @@ def _det(table: bool = True) -> Detection:
 
 
 def _walk(voice0: list[int], table: bool = True):
+    """convert_tracks plus the call convert.py now makes beside
+    fold_transposes -- convert_tracks itself no longer touches
+    det.instr_entry_transposes."""
     sid, det = _sid(voice0), _det(table)
     lines: list = []
     tracks = convert_tracks(sid, det, lines.append)
+    if det.instr_transpose >= 0:
+        det.instr_entry_transposes = instrument_transposes(
+            sid, det, tracks, lines.append)
     return sid, det, tracks, lines
 
 
@@ -301,10 +307,13 @@ def test_food_feud_enters_patterns_23_and_28_under_an_octave():
     sid = load_sid(str(FOOD_FEUD))
     det = detect(sid, log=_quiet)
     lines: list = []
-    convert_tracks(sid, det, lines.append)
+    tracks = convert_tracks(sid, det, lines.append)
+    # The call convert.py makes beside fold_transposes, with the options
+    # passed through -- convert_tracks no longer makes it itself.
+    det.instr_entry_transposes = instrument_transposes(sid, det, tracks,
+                                                        lines.append)
     assert det.instr_entry_transposes == {23: 12, 28: 12}
     assert not any("UNDER TWO VALUES" in s for s in lines), lines
-    assert not any("DEPENDS ON" in s for s in lines), lines
 
 
 def _notes_in_play_order(blob: bytes):

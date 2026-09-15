@@ -1,6 +1,7 @@
 """Whether a build inherits a human approval. Pure logic on fixture records;
 the render/trace plumbing is exercised by hand in Task 5 step 6."""
 import json
+import re
 
 import pytest
 
@@ -384,17 +385,65 @@ def test_a_decided_verdict_carries_no_cause_to_be_misread():
     assert inh.get("cause") is None
 
 
+def _three_causes_paragraph(doc):
+    """The `THREE DISJOINT CAUSES` paragraph of the module docstring plus
+    the indented cause table hanging off it, and nothing after.
+
+    Blocks are separated by blank lines; the slice is the block holding the
+    anchor and every following block whose lines are all indented (the
+    table), stopping at the first flush-left block -- the `MEASURED at`
+    paragraph that RETRACTS the calibration-only wording by quoting the
+    same cause names. A guard on the whole docstring found those quotes.
+    """
+    blocks = doc.split("\n\n")
+    at = [i for i, b in enumerate(blocks) if "THREE DISJOINT CAUSES" in b]
+    assert len(at) == 1, f"anchor occurs {len(at)} times in the docstring, not once"
+    out = [blocks[at[0]]]
+    for b in blocks[at[0] + 1:]:
+        if not all(ln.startswith((" ", "\t")) for ln in b.splitlines() if ln.strip()):
+            break
+        out.append(b)
+    return "\n\n".join(out)
+
+
 def test_the_module_docstring_states_all_three_causes():
     """The docstring's own sentence names only the calibration.
 
     It is true and, alone, misleading -- a reader stops at the cause it
     names. The retraction quotes it, so a grep for the original wording
     lands on its own correction rather than on a bare deletion.
+
+    ASSERTED AGAINST THE SLICE, NOT THE DOCSTRING. `no-calibration` and
+    `approved-build-absent` each occur twice in the docstring -- once in
+    the cause table and once in the `MEASURED at` paragraph that names
+    which cause reaches the corpus -- so `cause in doc` was satisfied by
+    either copy and stayed green with the table row deleted (measured at
+    5a2fa2d; docs/LESSONS.md, "A presence guard must assert against the
+    slice, not the file"). The table is where the causes are DEFINED, so
+    the check reads the table: each name must open its own row.
     """
     doc = AP.__doc__ or ""
+    table = _three_causes_paragraph(doc)
     for cause in ("no-calibration", "approved-build-absent", "pack-refused"):
-        assert cause in doc, f"docstring does not name the cause {cause!r}"
-    assert "THREE DISJOINT CAUSES" in doc
+        assert re.search(rf'^[ \t]+"{re.escape(cause)}"[ \t]+\S', table, re.M), (
+            f"the THREE DISJOINT CAUSES table does not open a row with "
+            f"{cause!r}; a mention elsewhere in the docstring does not count")
+    assert "MEASURED at" not in table, (
+        "the slice ran into the retraction paragraph, which quotes the same "
+        "cause names -- the guard would again be satisfied by either copy")
+
+
+def test_the_cause_table_guard_is_not_satisfied_by_the_retraction():
+    """The sabotage the slice exists for, kept as a test: drop the table's
+    own `no-calibration` row while the retraction sentence that quotes the
+    name survives, and the guard must fail."""
+    doc = AP.__doc__ or ""
+    row = re.search(r'^[ \t]+"no-calibration"[ \t]+', doc, re.M)
+    assert row, "the cause table no longer opens a row with no-calibration"
+    sabotaged = doc[:row.start()] + "    (row deleted)" + doc[row.end():]
+    assert '"no-calibration"' in sabotaged, "the retraction copy must survive"
+    table = _three_causes_paragraph(sabotaged)
+    assert not re.search(r'^[ \t]+"no-calibration"[ \t]+\S', table, re.M)
 
 
 def test_every_cal_none_exit_declares_its_own_cause():

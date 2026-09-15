@@ -93,3 +93,54 @@ def test_note_flag_masks_bit_7_before_the_clamp():
 def test_unflagged_notes_are_untouched_by_the_mask():
     assert _first_note([0x01, 0x34, 0xFF], note_flag=True) == \
         _first_note([0x01, 0x34, 0xFF], note_flag=False)
+
+
+# --- status bit 5 -----------------------------------------------------------
+#
+# Bit 5 of a classic status byte is tested by the player in ONE place, the
+# hold path at the note's end (Commando $517F `LDA $54F5,X / AND #$20 / BNE`
+# past the gate-off at $518B; IK_plus $E1B8 into its mask at $E5E0,X). The
+# fetch writes the frequency, the gated waveform and the ADSR pair for a
+# bit-5 event exactly as for any other ($5106-$5151), so the event that
+# carries the bit attacks, and the NEXT note is the one that arrives on an
+# open gate. The VB6 original (h2g.frm:927-933) put `CMD_TONEPORTA 0` on the
+# bit-5 event itself when bit 7 was set and the last two instruments named
+# were equal; the port carried that through v0.5.487. See the comment at the
+# operand fetch in patterns._build_raw_pattern.
+
+def _rows(raw, **kw):
+    events = _build_raw_pattern(bytes([0x00, 0x00]) + bytes(raw), 2, **kw)
+    return [tuple(events[k:k + 4]) for k in range(0, len(events), 4)]
+
+
+# wait 1 + instr 2 + note; the same again (so the VB6 history test would
+# hold); wait 1 + BIT 5 + instr 2 + note; wait 1 + note; end.
+_BIT5_RUN = [0x81, 0x02, 0x30, 0x81, 0x02, 0x34, 0xA1, 0x02, 0x38,
+             0x01, 0x3C, 0xFF]
+
+
+def test_the_event_carrying_bit_5_attacks():
+    # Row 4 is the bit-5 event. The player writes its gate and envelope like
+    # any other note, so no command may suppress its attack -- at defaults
+    # or with `tie`, since a tie is the NEXT note's property.
+    for tie in (False, True):
+        rows = _rows(_BIT5_RUN, tie=tie)
+        assert rows[4][0] == 0x38 + 0x60, rows
+        assert rows[4][2:] == (0, 0), (tie, rows[4])
+
+
+def test_the_note_after_a_bit_5_event_is_the_tied_one():
+    # Row 6 is the note the player never gated off before: `tie` spells it
+    # TONEPORTA 0, and without `tie` nothing else may.
+    assert _rows(_BIT5_RUN, tie=True)[6] == (0x3C + 0x60, 0x04, 3, 0)
+    assert _rows(_BIT5_RUN, tie=False)[6] == (0x3C + 0x60, 0x04, 0, 0)
+
+
+def test_no_note_row_carries_toneporta_without_tie():
+    # The property behind both: with `tie` off, `_build_raw_pattern` has no
+    # emitter of CMD_TONEPORTA left. Every bit-5 / bit-7 / instrument-history
+    # combination the VB6 branch keyed on is in this run.
+    raw = [0x81, 0x02, 0x30, 0xA1, 0x02, 0x34, 0xA1, 0x02, 0x38,
+           0xA1, 0x83, 0x3C, 0xA1, 0x02, 0x40, 0x21, 0x44, 0xFF]
+    for note, _instr, cmd, _data in _rows(raw, tie=False):
+        assert cmd != 3, (note, cmd)

@@ -1959,7 +1959,18 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
             f"+0x{det.wave_program:04X}, selected by {where} "
             f"(read, not written)")
 
-    det.freq_table = find_freq_table(sid)
+    # The pattern pointers for preference -- the anchor `_nearest_table`
+    # already uses -- with the instrument table as the fallback for a
+    # detection that found one and not the other. Mirrors
+    # fidelity.engine_freq_table, which re-derives this same anchor from a
+    # freshly re-run detect() rather than threading it through; keeping both
+    # in step is why this file's own call gets one too, not just fidelity's.
+    freq_near = None
+    for anchor in (det.pattern_lo, det.instr_start):
+        if anchor and anchor > 0:
+            freq_near = anchor
+            break
+    det.freq_table = find_freq_table(sid, near=freq_near)
     if det.freq_table is not None:
         ft = det.freq_table
         det.note_base = ft.shift

@@ -153,6 +153,112 @@ def _says(text, *fragments, where="docs/LESSONS.md"):
             f"test needs the new wording")
 
 
+# A PRESENCE GUARD MUST ASSERT AGAINST THE SLICE, NOT THE FILE. `_says` on
+# the whole file passes as long as the words are ANYWHERE in it, and this
+# repo's grading rule guarantees they are somewhere else too: a corrected
+# figure is required to quote the wording it corrects, and a lesson about a
+# duplicated figure has to name the figure to make its point. Measured at
+# 5a2fa2d (docs/LESSONS.md, "A presence guard must assert against the slice,
+# not the file"): three guarded figures each occurred twice in their file,
+# so deleting the guarded line left the guard green -- `49 of the 89 preset
+# songs` sat in both the rate bullet and the section that documents the
+# duplication; Kings of the Beach's `wave`/`gate` pair sat in the STALE
+# entry and in the 180 s re-take that retracts it; `no-calibration` sat in
+# approvals.py's cause table and in the sentence retracting the
+# calibration-only wording. So every figure caller below slices FIRST --
+# `_item_from` to the markdown list item the figure lives in, `_section` to
+# a heading's body -- and asserts against the slice. The fix was written in
+# a worktree at 5a2fa2d and never reached master; `_item_from` in this file
+# is what says it has.
+_LIST_MARKER = re.compile(r"^([ \t]*)(?:[*+-]|\d+[.)])[ \t]+")
+_HEADING = re.compile(r"^(#+)[ \t]+(.*?)[ \t]*$")
+
+
+def _anchor_re(anchor):
+    """`anchor` with every whitespace run matching any whitespace run, so an
+    anchor sentence that wraps across a line in the file is still found --
+    the wrapped-quotation rule `_says` obeys, applied to the slice too."""
+    return re.compile(r"\s+".join(re.escape(w) for w in anchor.split()))
+
+
+def _indent(line):
+    return len(line) - len(line.lstrip(" \t"))
+
+
+def _item_from(text, anchor):
+    """The slice of `text` from `anchor` to the end of its markdown list item.
+
+    `anchor` must occur EXACTLY ONCE (whitespace-insensitively): an anchor
+    found twice would silently pick one of two items, which is the defect
+    this helper exists to remove, one level up. The item is the nearest
+    list-marker line at or above the anchor, not crossing a blank line; it
+    ends at the first later line that is blank, a heading, or indented no
+    deeper than the marker (the next sibling item, or the paragraph that
+    follows the list). An anchor in a plain paragraph slices to the
+    paragraph's end. Anchor mid-item and the slice starts mid-item: the
+    figure has to be AFTER the anchor.
+    """
+    hits = list(_anchor_re(anchor).finditer(text))
+    if len(hits) != 1:
+        _broken(f"anchor {anchor!r} occurs {len(hits)} times, not once, so "
+                f"the slice it names is ambiguous")
+    start = hits[0].start()
+    lines = text.splitlines(keepends=True)
+    offsets, pos = [], 0
+    for ln in lines:
+        offsets.append(pos)
+        pos += len(ln)
+    at = max(i for i, o in enumerate(offsets) if o <= start)
+    marker_indent = _indent(lines[at])
+    for i in range(at, -1, -1):
+        ln = lines[i]
+        if not ln.strip() or _HEADING.match(ln):
+            break
+        m = _LIST_MARKER.match(ln)
+        if m:
+            marker_indent = len(m.group(1))
+            break
+    end = len(text)
+    for j in range(at + 1, len(lines)):
+        ln = lines[j]
+        if not ln.strip() or _HEADING.match(ln) or _indent(ln) <= marker_indent:
+            end = offsets[j]
+            break
+    return text[start:end]
+
+
+def _section(text, heading):
+    """The body of the markdown section titled `heading`, up to the next
+    heading of the same or a higher level. `heading` must occur once."""
+    hits = [(i, len(m.group(1))) for i, ln in enumerate(text.splitlines())
+            for m in [_HEADING.match(ln)]
+            if m and m.group(2) == heading]
+    if len(hits) != 1:
+        _broken(f"heading {heading!r} occurs {len(hits)} times, not once")
+    lines = text.splitlines(keepends=True)
+    at, level = hits[0]
+    end = len(lines)
+    for j in range(at + 1, len(lines)):
+        m = _HEADING.match(lines[j])
+        if m and len(m.group(1)) <= level:
+            end = j
+            break
+    return "".join(lines[at:end])
+
+
+# The anchors, named once so a moved paragraph is fixed in one place. Each
+# is a sentence of the item that carries the figure and none contains the
+# figure it guards (an attribution key must not contain the quantity being
+# attributed): an anchor that quoted the number would find the number.
+POPULATION_ITEM = "RE-GRADED AGAIN AT v0.5.459, AND BOTH HAVE MOVED"
+RATE_ITEM = "every table Goattracker applies it with steps per"
+CORPUS_ITEM = ("the replacement needs TWO numbers because the two artefacts "
+               "answer DIFFERENT QUESTIONS")
+DRIFT_ITEM = "The drift split at 180 s is"
+SKATE_ITEM = "Skate or Die intro at 180 s is"
+KOTB_ITEM = "RE-GRADED AT v0.5.481: the pair"
+
+
 # ------------------------------------------------------------ presets.json
 
 def _wave_program_fragment(songs):
@@ -174,17 +280,23 @@ def _multiplier_fragments(songs):
 
 def test_the_wave_program_split_is_what_presets_says():
     songs, text = _songs(), _text()
-    _says(text, _wave_program_fragment(songs))
+    _says(_item_from(text, POPULATION_ITEM), _wave_program_fragment(songs),
+          where=f"docs/LESSONS.md's {POPULATION_ITEM!r} item")
 
 
 def test_the_regrid_adoption_count_is_what_presets_says():
     songs, text = _songs(), _text()
-    _says(text, _regrid_fragment(songs))
+    _says(_item_from(text, POPULATION_ITEM), _regrid_fragment(songs),
+          where=f"docs/LESSONS.md's {POPULATION_ITEM!r} item")
 
 
 def test_the_multiplier_population_is_what_presets_says():
+    """The measured duplicate: `49 of the 89 preset songs` is ALSO in the
+    LESSONS section that documents its own duplication, so the whole-file
+    check passed with the rate bullet deleted. Sliced to the bullet."""
     songs, text = _songs(), _text()
-    _says(text, *_multiplier_fragments(songs))
+    _says(_item_from(text, RATE_ITEM), *_multiplier_fragments(songs),
+          where=f"docs/LESSONS.md's {RATE_ITEM!r} bullet")
 
 
 # ------------------------------------------- the guard survives a re-wrap
@@ -214,14 +326,107 @@ def test_the_population_figures_survive_a_rewrap_of_the_file():
     that only matched because the file happened to wrap elsewhere is the
     exposure this test closes; the KotB figure was that at v0.5.482."""
     songs, text = _songs(), _text()
-    frags = [_wave_program_fragment(songs), _regrid_fragment(songs),
-             *_multiplier_fragments(songs)]
-    rewrapped = "> " + text.replace(" ", "\n>    ")
-    for f in frags:
-        assert f not in rewrapped, (
-            f"{f!r} survived the rewrap verbatim, so this test proves nothing "
-            f"about it -- the fragment contains no space to break on")
-    _says(rewrapped, *frags)
+    # Slice first, exactly as the guards do, then re-flow the SLICE: the
+    # item boundaries are what `_item_from` reads and a rewrap that
+    # destroyed them would be testing a file no editor produces.
+    regions = [(_item_from(text, POPULATION_ITEM),
+                [_wave_program_fragment(songs), _regrid_fragment(songs)]),
+               (_item_from(text, RATE_ITEM), list(_multiplier_fragments(songs)))]
+    for region, frags in regions:
+        rewrapped = "> " + region.replace(" ", "\n>    ")
+        for f in frags:
+            assert f not in rewrapped, (
+                f"{f!r} survived the rewrap verbatim, so this test proves "
+                f"nothing about it -- the fragment contains no space to break on")
+        _says(rewrapped, *frags)
+
+
+# --------------------------------------------- the guard asserts on the slice
+
+_TWO_ITEMS = (
+    "## Figures\n"
+    "\n"
+    "- **STALE -- the split is 84.8% / 85.2%** at v0.5.454, and this\n"
+    "  entry is kept saying so.\n"
+    "- **RE-TAKEN at 180 s: the split\n"
+    "  is 94.4% / 85.2%** after the pulse writer reached it; the 84.8%\n"
+    "  above is HISTORY.\n"
+    "  * a nested item, deeper than its parent, stays inside it\n"
+    "- **Another item** that also says 94.4% / 85.2% by accident.\n"
+    "And a paragraph after the list that says 94.4% / 85.2% too.\n"
+    "\n"
+    "## Next\n"
+    "\n"
+    "Nothing here.\n"
+)
+
+
+def test_item_from_slices_the_anchors_item_and_nothing_past_it():
+    """The synthetic shape of all three measured instances: the figure a
+    guard wants is in one item, and a copy of the same words is in another
+    item, in the paragraph after the list, and in a section further down.
+    The slice from the anchor to the end of its item sees exactly one."""
+    item = _item_from(_TWO_ITEMS, "RE-TAKEN at 180 s: the split is")
+    assert item.startswith("RE-TAKEN at 180 s: the split\n  is 94.4%")
+    assert item.endswith("stays inside it\n"), item
+    assert "Another item" not in item and "paragraph after" not in item
+    # An anchor sentence that wraps across a line is still one anchor.
+    assert "\n" in "RE-TAKEN at 180 s: the split\n  is"
+    _says(item, "94.4% / 85.2%", where="item")
+    # The guard is on the SLICE: delete the guarded figure from this item
+    # and the copies elsewhere in the file do not rescue it.
+    sabotaged = _TWO_ITEMS.replace("  is 94.4% / 85.2%** after", "  is xx** after")
+    assert "94.4% / 85.2%" in sabotaged, "the other copies must survive"
+    with pytest.raises(AssertionError):
+        _says(_item_from(sabotaged, "RE-TAKEN at 180 s: the split is"),
+              "94.4% / 85.2%", where="item")
+    # A mid-item anchor starts mid-item: what is before it is not seen.
+    tail = _item_from(_TWO_ITEMS, "after the pulse writer reached it")
+    assert tail.startswith("after the pulse") and "RE-TAKEN" not in tail
+    # A plain-paragraph anchor slices to the paragraph's end.
+    para = _item_from(_TWO_ITEMS, "And a paragraph after the list")
+    assert para == "And a paragraph after the list that says 94.4% / 85.2% too.\n"
+
+
+def test_item_from_and_section_refuse_an_ambiguous_anchor():
+    """Two matches would silently pick one item -- the whole-file defect
+    one level up -- so the helpers fail loudly instead of choosing."""
+    with pytest.raises(pytest.fail.Exception, match="occurs 2 times"):
+        _item_from(_TWO_ITEMS, "85.2%**")
+    with pytest.raises(pytest.fail.Exception, match="occurs 0 times"):
+        _item_from(_TWO_ITEMS, "not in the text at all")
+    with pytest.raises(pytest.fail.Exception, match="occurs 0 times"):
+        _section(_TWO_ITEMS, "Figure")            # exact title, not a prefix
+
+
+def test_section_runs_to_the_next_heading_of_the_same_or_higher_level():
+    body = _section(_TWO_ITEMS, "Figures")
+    assert body.startswith("## Figures\n") and body.endswith("too.\n\n")
+    assert "Nothing here" not in body
+    nested = "# Top\n\n## A\n\ntext a\n\n### A.1\n\ntext a1\n\n## B\n\ntext b\n"
+    assert _section(nested, "A") == "## A\n\ntext a\n\n### A.1\n\ntext a1\n\n"
+    assert _section(nested, "A.1") == "### A.1\n\ntext a1\n\n"
+    assert _section(nested, "Top") == nested
+
+
+def test_every_lessons_figure_guard_asserts_on_a_slice():
+    """Read this module's own source: no test may call `_says(text, ...)`
+    or `_says(claude_md, ...)` on a whole file again. The three measured
+    instances each passed a whole-file check with their guarded line
+    deleted; a new caller that reaches for the file instead of a slice
+    reopens exactly that, silently, and this is the check that says so."""
+    import inspect
+    import sys
+
+    src = inspect.getsource(sys.modules[__name__])
+    body = src[:src.index("def test_every_lessons_figure_guard_asserts_on_a_slice")]
+    # `(?<!def )`: the helper's own signature is `_says(text, ...)`, and a
+    # scan that could not tell it from a call would be this file's lesson.
+    whole = re.findall(r"(?<!def )_says\((?:text|claude_md|_text\(\))\b", body)
+    assert not whole, (
+        f"{len(whole)} `_says` call(s) assert against a whole file; slice "
+        f"with _item_from or _section first")
+    assert "_item_from(" in body and "_section(" in body
 
 
 # ------------------------------------------------------- build/fidelity.json
@@ -232,7 +437,9 @@ def test_the_drift_split_is_what_the_artefact_says():
     have = [r for r in rows
             if r.get("status") == "measured" and r.get("drift_per_1000") is not None]
     zero = sum(1 for r in have if abs(r["drift_per_1000"]) < 1e-9)
-    _says(text, f"**{zero} zero / {len(have) - zero} drifting of {len(have)} rows")
+    _says(_item_from(text, DRIFT_ITEM),
+          f"**{zero} zero / {len(have) - zero} drifting of {len(have)} rows",
+          where=f"docs/LESSONS.md's {DRIFT_ITEM!r} item")
 
 
 def test_skate_or_die_intros_attack_counts_are_what_the_artefact_says():
@@ -245,7 +452,9 @@ def test_skate_or_die_intros_attack_counts_are_what_the_artefact_says():
     # This fragment used to carry the file's line break (`original's\n    N`)
     # verbatim -- a wrapped quotation baked into the test, which passed only
     # while LESSONS.md wrapped at exactly that word. `_says` normalises now.
-    _says(text, f"{r['our_attacks']} attacks against the original's {r['orig_attacks']}")
+    _says(_item_from(text, SKATE_ITEM),
+          f"{r['our_attacks']} attacks against the original's {r['orig_attacks']}",
+          where=f"docs/LESSONS.md's {SKATE_ITEM!r} item")
 
 
 def test_kings_of_the_beach_ingame_reads_what_the_artefact_says():
@@ -256,7 +465,14 @@ def test_kings_of_the_beach_ingame_reads_what_the_artefact_says():
         _broken("Kings_of_the_Beach_ingame has no wave row in "
                 "build/fidelity.json, so the figure LESSONS.md carries for it "
                 "is unchecked")
-    _says(text, f"`wave` {r['wave'] * 100:.1f}% / `gate` {r['gate'] * 100:.1f}%")
+    # The structural duplicate: the STALE v0.5.454 entry and the 180 s
+    # re-take that quotes it to retract it both carry a `wave` / `gate`
+    # pair, and the retraction is REQUIRED to quote the wording it
+    # retracts. Sliced from the v0.5.481 re-grade to the end of its item,
+    # so only the live figure can satisfy it.
+    _says(_item_from(text, KOTB_ITEM),
+          f"`wave` {r['wave'] * 100:.1f}% / `gate` {r['gate'] * 100:.1f}%",
+          where=f"docs/LESSONS.md's {KOTB_ITEM!r} item")
 
 
 # ------------------------------- the two artefacts that answer different questions
@@ -274,10 +490,11 @@ def test_the_corpus_counts_name_both_option_sets():
                 "indistinguishable from the format changing under this test")
     on_defaults, in_reach = int(m.group(1)), int(m.group(2))
     measured = sum(1 for r in rows if r.get("status") == "measured")
-    _says(text,
+    _says(_item_from(text, CORPUS_ITEM),
           f"**{measured} convert",
           f"**{on_defaults} convert on DEFAULT",
-          f"leaving {in_reach} in reach")
+          f"leaving {in_reach} in reach",
+          where=f"docs/LESSONS.md's {CORPUS_ITEM!r} item")
 
 
 def _survey_not_converted():
@@ -339,12 +556,13 @@ def test_the_three_file_gap_is_the_presets_rescuing_the_survey_failures():
             f"{f} is rescued by {sorted(used & set(doc['always']))}, which "
             f"is in the `always` block, so a default run would have it too")
     stems = sorted(f[:-len(".sid")] for f in failed)
-    _says(text,
+    _says(_item_from(text, CORPUS_ITEM),
           f"leaving {len(songs)} in reach",
           "The three-file gap is **" + ", ".join(stems[:-1])
           + " and " + stems[-1] + "**"
           if len(stems) == 3 else
-          "The three-file gap is **")
+          "The three-file gap is **",
+          where=f"docs/LESSONS.md's {CORPUS_ITEM!r} item")
     if len(stems) != 3:
         pytest.fail(f"the default failures are {stems}, {len(stems)} files; "
                     f"docs/LESSONS.md still says 'three-file gap'")
@@ -356,18 +574,21 @@ def test_the_grep_zero_rule_cites_its_measured_instances():
     """CLAUDE.md's rule about a counter that cannot see its own container
     must carry its evidence in docs/LESSONS.md, not just an assertion."""
     claude_md = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
-    _says(claude_md,
+    _says(_section(claude_md, "Reading the players"),
           "evidence about the counter, not about the file",
           "grep for a retracted sentence",
+          where="CLAUDE.md section Reading the players")
+    _says(_section(claude_md, "Grading measured figures"),
           "normalise both sides before matching",
-          where="CLAUDE.md")
-    text = _text()
-    _says(text,
+          where="CLAUDE.md section Grading measured figures")
+    grep_zero = "A grep returning 0 is evidence about the counter, not about the file"
+    _says(_section(_text(), grep_zero),
           "survey.py:669-670",
           "fidelity.py:2780-2781",
           "H2G-CONVERSION-METHOD.md:4511",
           "NAMING ARTEFACTS",
-          "a grep for a retracted sentence hits the retraction itself")
+          "a grep for a retracted sentence hits the retraction itself",
+          where=f"docs/LESSONS.md section {grep_zero}")
 
 
 def test_this_file_checks_only_what_an_artefact_can_derive():

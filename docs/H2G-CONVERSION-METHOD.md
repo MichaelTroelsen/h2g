@@ -554,7 +554,9 @@ A pattern is a byte stream of variable-length events. Each event starts with a
 ```
 bit 7  0x80  GetNext   -> a second byte follows (instrument or pitch bend)
 bit 6  0x40  NoNote    -> no note byte follows
-bit 5  0x20  NoADSR    -> reuse ADSR (legato / tone-portamento candidate)
+bit 5  0x20  hold      -> do not close the gate when this note ENDS (the
+                          NEXT note is tied; see § 7.ooo). VB6 called it
+                          "NoADSR / portamento" -- retracted at v0.5.488
 bits 0-4 0x1F  Wait    -> number of extra rows to hold before the next event
 0xFF          end of pattern
 ```
@@ -11659,3 +11661,147 @@ read the base and the first fetch *off the player's bytes*
 (`fixed_arp_counter_base`, `fixed_arp_first_fetch`), and let
 `tests/test_arp_octave.py` re-measure both against the originals' traces
 every run, the fixture asserted separately at base 0 / first 1.
+
+### 7.cccccc Status bit 5 was never tested at the fetch: the VB6 `no_adsr` row retired
+
+`_build_raw_pattern` carried, from the VB6 port, a branch that emitted
+`CMD_TONEPORTA 0` on a note row when status bit 5 was set and the instrument
+had not changed (`if no_adsr: if g_old_instr1 == g_old_instr2: cmd1 = 3`,
+h2g.frm's "Portamento (no new ADSR)" reading). Read against the players at
+v0.5.487 it is an approximation, not a reading: no classic player tests bit 5
+at the fetch. Commando's fetch at `$50C0` tests bit 6 (`BIT / BVS`) and bit 7
+(`BPL`) and every non-rest event then writes frequency, waveform with the gate
+on, and the record's ADSR; the ONLY bit-5 test is on the hold path at the note
+end (`$517F LDA status,X / AND #$20 / BNE` past the gate-off and envelope
+zero). A corpus census of every `AND #$20` in the 95 files finds 78 hold-path
+sites of that shape, 37 `FILTER_SHAPE` instrument-bit tests, and none at a
+fetch. So bit 5 means *hold the gate open at this note's end*, and the tied
+note is the next one -- which the opt-in `tie` block already writes.
+
+The branch and its instrument-history tracking are removed. Commando.sng is
+byte-identical (the fixture never reached it). Under default options exactly
+the 19 files the legacy-row census named move (279 such rows; IK_plus 13);
+under presets only Crazy_Comets, International_Karate, Kentilla, Sanxion and
+W_A_R, where a legacy row did not coincide with a real tie -- Sanxion's `filt`
+8416 -> 7132 and `cut` 2.59 -> 1.95, no column regresses. Tests:
+`test_delta_dialect.py` (the bit-5 event attacks; the note after it is the tied
+one; no note row carries TONEPORTA without `tie`) and `test_hold_rows.py`.
+
+### 7.dddddd The classic filter clears WITH a record, not with a mask
+
+The ILV dialect clears the filter through a per-voice mask, and
+`_ilv_clearing_instruments` names the record that does it by exclusivity. Run
+verbatim on the 12 classic-filter files that rule fires on three (I_Ball,
+Nemesis, Sanxion) -- and is the wrong reading for the dialect. The classic
+`FILTER_SHAPE` block runs every frame for a record carrying
+`FILTER_ENABLE_BIT` and ends `LDA resctl,Y / STA $D417`; an ENABLED record
+whose resctl routing nibble is 0 therefore writes *route nothing* every frame
+it plays, while an unfiltered record skips the block and leaves `$D417`
+standing. `_filter_entries` skipped exactly those enabled-unrouted records as
+"nothing to hear". Sanxion's original writes `$00` to `$D417` 107 times and
+`$F2` 106 times (7133 of 9000 frames filtered); I_Ball 8730; Nemesis one `$00`
+at init (8997) -- the ILV rule's {6,13} on Nemesis and {3,10} on Sanxion clear
+where the player never does.
+
+`_classic_clearing_instruments` names the enabled-unrouted records, gated on
+exactly one voice naming a routed record and the clearing record being played
+on no other voice (Nemesis, Food_Feud and Lightforce show why both gates are
+needed), and `_filter_entries` emits the record's own block -- `SET_PARAMS`
+with routing 0, `SET_CUTOFF`, `STOP`. Measured at -t 180: I_Ball filtered
+frames 8992 -> 8725 (original 8730), Sanxion 8416 -> 7132 (7133), Saboteur_II
+7970 -> 4696 (4699), melody/wave/adsr identical; exactly those three files
+move. The two-routing-voice files (Lightforce, Deep_Strike, Nineteen,
+Dragons_Lair) keep their over-production: they need the cross-voice
+`CMD_SETFILTERCTRL` model, not this gate. `tests/test_filter.py` pins the
+clearing set for seven files.
+
+### 7.eeeeee The bounds engine's pulse phase: a free flag, a per-voice sim, and the original's clock
+
+§ 7.ccc's bounds engine reseeds `$D402/$D403` from the record at every note
+whose note byte has bit 7 clear, and free-runs across a bit-7 note (the
+`LDA note / BMI` gate `_find_pulse_reseed_gate` reads). The pulse-phase walk
+could not use `PulseBoundsSim` until it knew, per row, which notes free-run.
+`_build_raw_pattern` now carries that bit out beside `exits_tied` as a
+per-row *free* flag -- byte-inert, re-based to each slice's own row 0, kept
+distinct through dedup by keying on `(bytes, flags)`, and inherited by the
+pattern copies later passes append (`inherit_free_rows`, by exact note
+column; an ambiguous copy is left unattributed, which is today's output).
+`collect_pulse_phases` reseeds the sim on every other note row, plans a
+`CMD_SETPULSEPTR` only on a free row whose command column is empty (a tied
+bit-7 row already free-runs in Goattracker: the player skips the pulse-pointer
+reload after `TONEPORTA`), and runs the sim per voice, because the player's
+sweep state is per voice (`$F2AC LDA $F572,X`, X = voice).
+
+The clock was found by measurement. Advancing the sim by OUR calls per row,
+as the triangle walk does, planned `$756` on Saboteur_II where the original
+held `$2B0`: tempo 8 at `-S3` is 2.67 frames a row and the player sweeps once
+per FRAME. `calls_per_frame` turns our-call tempos into the original's frames
+with a carried remainder. Result at -t 180 with `pulse_phase` forced:
+Saboteur_II voice 0 opens on the original's 8 buckets (from 4), 86 -> 32
+per-attack bucket mismatches with none introduced; Food_Feud's `pphase`
+0.647 -> 1.000 on all three voices. Under shipped presets 0 files move; under
+the forced flag 14 bounds-engine files move and all 14 pack. The triangle
+engine's walk still steps by our calls (deliberately, to keep this change's
+reach to bounds files); Rasputin, Game_Killer and One_Man_and_his_Droid run
+their sim 2x/9x/2x fast by the same reading and are opened.
+
+### 7.ffffff An expanding vibrato: five files add a per-note frame counter to the step
+
+BMX_Kidz's instrument `$0878` read `depth` 0.20x after the variant-grammar
+fix, and the reason is not Warhawk's loop. Its apply loop at `$AFA3`
+computes the interval, then `ADC $B388,X / LSR / DEC shift / BMI / LSR / ROR`
+-- `$B388,X` is a per-voice frame counter zeroed at the note fetch and
+incremented once per frame after the register write, never by a rest. So the
+step is `((((HI + age + 1) & $FF) >> 1) << 8 | LO) >> shift`, growing 16
+units a frame at shift 3 whatever the pitch, and the swing (peak-to-peak
+`bound * step`, centred) widens for the whole note and its rest tail: traced
+on the original, B-6 reads steps 172, 172, 204, 204, 236 at ages 2..6, the
+formula exactly, and a 417-frame silent tail swells to 46% of pitch. The
+shape `F9 ?? ?? 7D ?? ?? 4A CE ?? ?? 30 06 4A 66 ?? 4C` (zero-page spelling
+in Mega_Apocalypse) is in exactly five files -- Arcade_Classics, BMX_Kidz,
+Mega_Apocalypse, Ricochet, Skate_or_Die_intro -- which are every `depth`
+below 0.5 in the corpus; 47 files carry the static shape.
+
+`_expanding_vibrato_pass` walks the orderlists carrying the age across
+key-off, rests and pattern boundaries and writes `CMD_VIBRATO` on hold rows
+from the first row whose level leaves the instrument's, choosing the nearest
+`(cmp+2) * (interval >> s)` to `bound * mean step` in log space, only where
+every orderlist context wants the same entry (patterns are global). Measured
+at -t 180: BMX_Kidz depth 0.195 -> 0.393 (over the 57 AUDIBLE cycles 0.62 ->
+1.22, the power-of-two floor; the column counts the 248 silent-tail cycles the
+`$57` rest zeroes), Mega_Apocalypse 0.07 -> 0.89, Ricochet 0.12 -> 0.49,
+Skate_or_Die_intro 0.15 -> 0.67, Arcade_Classics 0.056 -> 0.43, bend toward 1
+on all five. **Arcade_Classics melody 99.1% -> 91.8% and pitch 92% -> 68%
+under the pass**: the agent that landed it attributes this to attack naming
+at frame 0 (both sides carry the previous note's swinging pitch at the attack
+frame; naming from frame +5 scores base and new identically), and that claim
+is NOT yet independently verified -- it is opened as
+`arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-artefact-claim`
+and is the reason this section carries a caveat rather than a verdict.
+
+### 7.gggggg The classic vibrato is gated on a per-note frame counter, and the emitter bends from frame 1
+
+Found by refuting a lead. Food Feud's instrument transpose (§ 6, version 11's
+sibling) took the file to 100% melody and moved `bend` 0.92x -> 1.14x, and
+the lead said records 11/12 scale their pitch movement differently from the
+player. They do not: base/head bend on those records reads 2.015x and 2.010x
+for the one-octave move -- both sides are note-relative. What the octave had
+been masking is a +106k excess on the OTHER three vibrato instruments, and
+its mechanism is a gate. After the depth loop Food Feud's player runs
+`LDA $9557,X / CMP #$09 / BCC` -- `$9557,X` is a per-voice frame counter
+zeroed at the note fetch and incremented once per frame -- so the frequency
+shadow is not rewritten before frame 9 of every note; the original's first
+bend lands at k=9 (76%) or 10 on every vibrato instrument. Ours bends from
+k=1-3 (`_vibrato_delay`'s classic branch returns `multiplier + 1`, its
+docstring says the classic and LFO players "gate nothing") at 0.5-0.75x the
+per-frame slope -- two opposite errors whose product reads ~1.1-1.6 per
+instrument. A corpus census of the instruction after the subtract loop over
+the 55 classic-vibrato files: 29 gate on a running per-note counter (`CMP #4`
+on 18 files, 3/6/9/12/15/19 on others), 23 on the static duration field
+(`AND #$1F / CMP #n`, the triangle dialect's shape, n=1 on Warhawk), 3 other;
+not one "gates nothing". A scratch probe with `vibdelay = gate * multiplier`
+moves Food Feud's bend 1.13 -> 0.64 and reversal 1.29 -> 0.90 while `vib`
+moves closer -- the gate removes the frame excess that was cancelling the
+swing deficit. The detection and emitter change is opened as
+`classic-vibrato-players-gate-the-oscillator-on-a-per-note-frame-counter-and-vibdelay-can-say-so`;
+nothing here is emitted yet.

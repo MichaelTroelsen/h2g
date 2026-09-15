@@ -217,7 +217,49 @@ def test_a_name_missing_from_presets_is_reported_not_silent(
     assert received_opts == [] or received_opts[-1]["max_rows"] == 94
 
 
-def test_a_name_present_in_presets_is_not_reported(tmp_path, monkeypatch, capsys):
+def test_preset_misses_are_counted_at_the_end_of_the_run(
+        tmp_path, monkeypatch, capsys):
+    # warnings.warn in _preset_opts deduplicates per call site, so a run that
+    # misses on every name prints one warning; listen.py's own count is what
+    # says HOW MANY fell through, and says it loudly when it was all of them.
+    corpus = tmp_path / "corpus"
+    for n in ("Unknown_A.sid", "Unknown_B.sid"):
+        _make_sid(corpus / n)
+    outdir = tmp_path / "build" / "listen"
+    presets = _presets(tmp_path, {"SomeOtherTune.sid": {"max_rows": 40}})
+    _stage_stub_env(monkeypatch, tmp_path)
+    rc = L.main([
+        str(corpus), "--files", "Unknown_A.sid", "Unknown_B.sid",
+        "-o", str(outdir), "--presets", presets,
+        "--workdir", str(tmp_path / "work"), "-t", "1",
+    ])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "2 of 2 staged tune(s) not in presets.json" in err
+    assert "Unknown_A.sid, Unknown_B.sid" in err
+    assert "EVERY staged name missed" in err
+
+
+def test_a_partial_preset_miss_is_counted_but_not_shouted(
+        tmp_path, monkeypatch, capsys):
+    corpus = tmp_path / "corpus"
+    for n in ("Known.sid", "Unknown.sid"):
+        _make_sid(corpus / n)
+    outdir = tmp_path / "build" / "listen"
+    presets = _presets(tmp_path, {"Known.sid": {"max_rows": 40}})
+    _stage_stub_env(monkeypatch, tmp_path)
+    rc = L.main([
+        str(corpus), "--files", "Known.sid", "Unknown.sid",
+        "-o", str(outdir), "--presets", presets,
+        "--workdir", str(tmp_path / "work"), "-t", "1",
+    ])
+    assert rc == 0
+    err = capsys.readouterr().err
+    assert "1 of 2 staged tune(s) not in presets.json" in err
+    assert "Unknown.sid" in err.split("staged tune(s) not in")[1]
+    assert "EVERY staged name missed" not in err
+
+
     corpus = tmp_path / "corpus"
     sid = corpus / "Known.sid"
     _make_sid(sid)
