@@ -3826,8 +3826,26 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
                     vibrato: bool, fmt: str, multiplier: int,
                     speed_table: List[tuple], log=None,
                     lead: int = 1, vibrato_command: bool = False,
-                    row_calls: int = 0) -> dict:
+                    row_calls: int = 0, effects: bool = False) -> dict:
     """{instrument index: (speed-table index, vibdelay)} for `--vibrato`.
+
+    **A fixed-interval arpeggio record gets no vibrato where its mask is a
+    duty cycle.** The player's octave block writes the frequency from the
+    note table on every call, after the vibrato has moved it, so an
+    arpeggiating note never sounds a vibrato in the original: MEASURED at
+    v0.5.489 on a 30 s siddump, 0 frames off the base or octave pitch in
+    3278 arp-note frames (Zoids) and 1581 (Master_of_Magic). Goattracker
+    runs the instrument vibrato and `CMD_VIBRATO` on every call the
+    wavetable does not write a note on (gplay.c, a note entry `goto
+    PULSEEXEC`s past TICKNEFFECTS and zeroes `vibtime`; a delay entry `goto
+    TICKNEFFECTS`). The parity mask's shapes write a note on every call and
+    silence it that way; `fixed_arp_duty_entries` holds its runs on delay
+    entries, and with the vibrato left in the first cut put 600 vibrato
+    frames on Zoids' arp notes against the original's 0 (`bend` 0.91 ->
+    8.13). So such a record is skipped here, which also keeps it out of
+    `_vibrato_command_pass` and `_expanding_vibrato_pass`, both of which
+    read this dict. Gated on `effects` like every other read of the +7
+    byte, and on the duty mask, so the parity files' bytes do not move.
 
     Goattracker runs a per-instrument vibrato with no pattern command at all:
     on every new note `gplay.c:352-354` loads `cptr->vibdelay = iptr->vibdelay`
@@ -3876,10 +3894,20 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         return {}
     delay = _vibrato_delay(det, mult, commanded=vibrato_command)
     data = sid.data
+    duty_mask = (fixed_arp_mask(sid, det)
+                 if effects and det.arp_fixed_up and det.effect_arp else None)
+    if duty_mask is not None and duty_mask[0] == FIXED_ARP_PARITY_MASK:
+        duty_mask = None
     out: dict = {}
+    overwritten = 0
     for i in range(max(instr_used - lead, 0)):
         base = det.instr_start + i * det.instr_stride + offset
         if base >= len(data):
+            continue
+        effect = det.instr_start + i * det.instr_stride + 7
+        if (duty_mask is not None and effect < len(data)
+                and data[effect] & 0x04):
+            overwritten += 1
             continue
         entry = entry_of(data[base])
         if entry is None:
@@ -3893,7 +3921,9 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         log(f"Instrument vibrato......: {len(out)} of "
             f"{max(instr_used - lead, 0)} record(s), "
             f"{len({v[0] for v in out.values()})} speed-table entry(ies) "
-            f"({engine})")
+            f"({engine})"
+            + (f", {overwritten} arpeggio record(s) the octave block "
+               f"overwrites" if overwritten else ""))
     return out
 
 
@@ -4621,20 +4651,26 @@ def _arp_relative(arp_fixed: int, arp_note: int) -> int:
     return (0x80 - arp_note) & 0xFF
 
 
-# The fixed-interval arpeggio's counter mask this phase reading is defined
-# for: `AND #$01 / BEQ` -- up on every odd call. The other masks in the
-# corpus ($02, $04, $07: 3:3, 4:4 and 1:7 per frame) are periods this emitter
-# cannot express at all, so no phase is attributed to them here.
+# The fixed-interval arpeggio's counter mask Commando's block divides by:
+# `AND #$01 / BEQ` -- up on every odd call. The one-call alternation the
+# untimed shape and the tick shape emit is this mask's, and only this mask's;
+# the other three the corpus carries ($02, $04, $07) are DUTY CYCLES, and
+# `fixed_arp_duty_entries` is what emits them.
 FIXED_ARP_PARITY_MASK = 0x01
 
+# The two branch senses the block is spelled with. `BEQ` takes the base path
+# on a ZERO result, so the octave is up where the masked counter is nonzero;
+# `BNE` is the same block with the paths swapped (Zoids, One_Man_and_his_Droid).
+BEQ, BNE = 0xF0, 0xD0
 
-def _fixed_arp_counter(sid: SidFile, det: Detection) -> Optional[int]:
-    """Address of the frame counter the `AND #$01 / BEQ` octave block reads.
+
+def _fixed_arp_block(sid: SidFile, det: Detection) -> Optional[tuple]:
+    """(offset, lead) of the fixed-interval octave block, or None.
 
     The same signature `detect._find_effect_routines` reads the `ADC` operand
-    from, re-searched here for the two bytes it wildcards (the mask and the
-    branch sense) and for the counter's own operand, because `Detection`
-    records only the interval. None for any other mask or sense.
+    from, re-searched here because `Detection` records only the interval and
+    the readers below need the two bytes it wildcards (the mask and the
+    branch sense) and the counter's own operand.
     """
     if not det.arp_fixed_up:
         return None
@@ -4644,11 +4680,63 @@ def _fixed_arp_counter(sid: SidFile, det: Detection) -> Optional[int]:
     addr, zp = found
     load = f"A5 {addr:02X}" if zp else f"AD {addr & 0xFF:02X} {addr >> 8:02X}"
     lead = 2 if zp else 3
-    at = search_file(
-        sid.data,
-        f"{load} 29 04 F0 ?? AD ?? ?? 29 ?? F0 ?? BD ?? ?? 18 69 ??")
-    if at < 1 or sid.data[at + lead + 8] != FIXED_ARP_PARITY_MASK:
+    for branch in ("F0", "D0"):
+        at = search_file(
+            sid.data,
+            f"{load} 29 04 F0 ?? AD ?? ?? 29 ?? {branch} ?? BD ?? ?? 18 69 ??")
+        if at >= 1 and at + lead + 16 < len(sid.data):
+            return at, lead
+    return None
+
+
+def fixed_arp_mask(sid: SidFile, det: Detection) -> Optional[tuple]:
+    """(mask, branch opcode) the block divides its frame counter by.
+
+    Read out of the files rather than assumed, and four masks with both
+    senses are in the corpus (`tests/test_arp_octave.py::FIXED_ARP`):
+    `$01 BEQ` Commando and nine others, `$02 BEQ` Rasputin, `$04 BNE` Zoids
+    and One_Man_and_his_Droid, `$07 BEQ` Chimera, Battle_of_Britain,
+    Game_Killer, Master_of_Magic, Human_Race and Phantoms_of_the_Asteroid.
+    None where the block is not found.
+    """
+    blk = _fixed_arp_block(sid, det)
+    if blk is None:
         return None
+    at, lead = blk
+    return sid.data[at + lead + 8], sid.data[at + lead + 9]
+
+
+def fixed_arp_period(mask: int) -> int:
+    """Counter steps per cycle of `counter & mask`: 2, 4 or 8 in the corpus.
+
+    `(c & mask) == 0` repeats with the period of the mask's highest bit, so
+    `$01` alternates every step, `$02` every two, `$04` every four -- and `$07`
+    is zero on one step in eight.
+    """
+    return 1 << max(1, mask).bit_length()
+
+
+def fixed_arp_up(mask: int, branch: int, counter: int) -> bool:
+    """Whether the block adds its octave on a call whose counter reads this.
+
+    `AND #mask / BEQ base` adds where the masked value is nonzero; `BNE` is the
+    swapped spelling. **Measured, not argued** (v0.5.489, siddump of the
+    originals, every octave-up and base frame after every octave onset in 60
+    seconds against `fixed_arp_up(mask, branch, frame)`): Zoids 3524 frames
+    agree and 0 disagree, One_Man_and_his_Droid 3195/4, Chimera 837/7,
+    Master_of_Magic 3190/1, Phantoms_of_the_Asteroid 2561/1 -- all five with
+    the counter reset on the new-song call, so `counter == frame`.
+    """
+    hit = (counter & mask) != 0
+    return hit if branch == BEQ else not hit
+
+
+def _fixed_arp_counter(sid: SidFile, det: Detection) -> Optional[int]:
+    """Address of the frame counter the octave block reads, any mask."""
+    blk = _fixed_arp_block(sid, det)
+    if blk is None:
+        return None
+    at, lead = blk
     return sid.data[at + lead + 5] | sid.data[at + lead + 6] << 8
 
 
@@ -4656,6 +4744,40 @@ def _fixed_arp_counter(sid: SidFile, det: Detection) -> Optional[int]:
 # this many bytes of the play entry's `INC counter` in every file that has one
 # (`INC ctr / BIT flag / BMI / BVC / LDA #0 / STA ctr`, 15 bytes).
 FIXED_ARP_RESET_WINDOW = 24
+
+# An outer gate ending IMMEDIATELY before the `INC counter`, so the counter
+# steps on R of every R+1 play calls rather than on every one. Two spellings
+# in the corpus, both read off the files (v0.5.489):
+#
+#     0826  DEC $0C8C / BPL +6 / LDA #$09 / STA $0C8C / RTS       (Game_Killer)
+#     C012  DEC $C53A / BPL +9 / LDA $C539 / STA $C53A / JMP $C3C5 (Rasputin)
+#
+# Game_Killer's reload is the immediate 9; Rasputin's `$C539` is written by
+# the track's own `$FE nn` tempo command (tracks.py) and runs 2, 3, 5, 10,
+# 60, 120, 6 and 2 across one lap of subtune 0. With the step skipped one
+# call in R+1 the counter is no longer the frame number, so no phase can be
+# walked for these two -- and Rasputin's DUTY moves with the tempo: at the
+# opening's R = 2 its `$02` mask sounds three frames and three (12 onsets in
+# the trace), and at R >= 5 the two-and-two the mask names (232 of 293
+# octave onsets in a 240 s trace, `bbuu`). A wavetable cannot follow a
+# tempo command, so Rasputin gets the mask's own reading and the phase both
+# files get is the reset value, 0.
+FIXED_ARP_GATED_INC = (
+    re.compile(rb"\xce..\x10\x06\xa9.\x8d..\x60$", re.DOTALL),
+    re.compile(rb"\xce..\x10\x09\xad..\x8d..\x4c..$", re.DOTALL),
+)
+
+
+def fixed_arp_counter_gated(sid: SidFile, det: Detection) -> bool:
+    """True where an outer gate skips the counter's `INC` one call in R+1."""
+    ctr = _fixed_arp_counter(sid, det)
+    if ctr is None:
+        return False
+    data = sid.data
+    inc = search_file(data, f"EE {ctr & 0xFF:02X} {ctr >> 8:02X}")
+    if inc < 1:
+        return False
+    return any(g.search(data[max(0, inc - 14):inc]) for g in FIXED_ARP_GATED_INC)
 
 
 def fixed_arp_counter_base(sid: SidFile, det: Detection) -> Optional[int]:
@@ -4682,10 +4804,15 @@ def fixed_arp_counter_base(sid: SidFile, det: Detection) -> Optional[int]:
     disagreed with the six is the one whose player differs, which is what
     makes this a derivation rather than a table.
 
-    None where the block is another mask or the counter's `INC` is not found.
+    Any mask (since v0.5.489: the mask is the DUTY, `fixed_arp_period`, and
+    the counter and its reset are the same bytes whatever it divides by).
+    None where the block or the counter's `INC` is not found -- or where an
+    outer gate skips that `INC` one call in R+1 (`fixed_arp_counter_gated`:
+    Game_Killer, Rasputin), since then the counter is not the frame number
+    and `frame + base` reads nothing.
     """
     ctr = _fixed_arp_counter(sid, det)
-    if ctr is None:
+    if ctr is None or fixed_arp_counter_gated(sid, det):
         return None
     data = sid.data
     lo, hi = ctr & 0xFF, ctr >> 8
@@ -4745,7 +4872,16 @@ def fixed_arp_first_fetch(sid: SidFile, det: Detection) -> Optional[int]:
 
 def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
                      patterns: List[List[int]]) -> dict:
-    """{Goattracker instrument: offset of its first octave-up frame (1 or 2)}.
+    """{Goattracker instrument: the counter's residue on its attack frame}.
+
+    The residue is `(base + a) mod fixed_arp_period(mask)` -- what the block's
+    counter reads, modulo its cycle, on the frame the note attacks. For
+    Commando's `$01` mask that is the attack frame's parity, and the first
+    octave-up frame is `a + 1` where the residue is 0 and `a + 2` where it is
+    1 (`_wavetable_entries`' tick shape reads it that way); for the other
+    masks it is the position in a four- or eight-step cycle, and
+    `fixed_arp_duty_entries` unrolls the cycle from it. Until v0.5.489 the
+    value was the offset itself, 1 or 2, and only the parity mask voted.
 
     **The phase is per NOTE, and a wavetable is per instrument.** The block's
     counter reads `base + k` on frame `k` (`fixed_arp_counter_base`) and the
@@ -4769,13 +4905,15 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     a whole number of frames (an outer gate) or whose numbering a split has
     shifted casts no vote.
 
-    Empty for any file whose block is not the `AND #$01 / BEQ` spelling, or
-    whose counters cannot be read.
+    Empty for any file whose block is not found, whose counter is gated
+    (`fixed_arp_counter_gated`) or whose counters cannot be read.
     """
     base = fixed_arp_counter_base(sid, det)
     first = fixed_arp_first_fetch(sid, det)
-    if base is None or first is None:
+    mask = fixed_arp_mask(sid, det)
+    if base is None or first is None or mask is None:
         return {}
+    period = fixed_arp_period(mask[0])
     speeds = find_song_speeds(sid, det)
     if speeds is None:
         return {}
@@ -4811,12 +4949,222 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
                     if pat[r + 1]:
                         current = pat[r + 1]
                     if current and GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE:
-                        parity = (base + first + row * frames) & 1
-                        votes.setdefault(current, [0, 0])[parity] += 1
+                        residue = (base + first + row * frames) % period
+                        votes.setdefault(current, [0] * period)[residue] += 1
                     row += 1
             repeat = 1
-    return {instr: (1 if even >= odd else 2)
-            for instr, (even, odd) in votes.items()}
+    # The majority residue; a tie goes to the lower one, which for the parity
+    # mask is what `1 if even >= odd else 2` chose.
+    return {instr: max(range(period), key=lambda p: (counts[p], -p))
+            for instr, counts in votes.items()}
+
+
+def fixed_arp_duty_entries(wave: int, tail: int, mask: int, branch: int,
+                           phase: int, arp_note: int, multiplier: int,
+                           start: int, budget: int, written: bool = False,
+                           tick: Optional[tuple] = None) -> Optional[tuple]:
+    """The wavetable for a fixed-interval record whose mask is a duty cycle.
+
+    The block adds its octave on every call whose masked counter
+    `fixed_arp_up` says so, and the counter steps once a frame, so the octave
+    is a square wave in FRAMES with the mask's period (`fixed_arp_period`):
+    `$02` two base and two up, `$04` four and four, `$07` one base and seven
+    up. The untimed shape alternates every call, which is `$01`'s duty and
+    nobody else's -- `tests/test_arp_octave.py`'s module docstring carries
+    the A/B in which `vib`, the oscillation rate, overshot the original by up
+    to 5x on the widened files for exactly that reason.
+
+    **Measured on the originals** (v0.5.489, per-onset profiles, `b` base and
+    `u` octave up from the attack frame): Zoids `buubbbbuuuubbbbuu` on 78 of
+    108 onsets and `bbbuuuubbbbu` on 14 -- four and four, two phases;
+    One_Man_and_his_Droid `buuubbbb` on 187 of 188; Master_of_Magic
+    `buuuuuubuuuuuuub` on 174 of 244; Phantoms_of_the_Asteroid `buuuuuuu` on
+    319 of 340; Chimera `bubuuuuuuubuuuuuu` on 42 of 56. Frame 0 is base in
+    every profile: the init call runs no effect.
+
+    Frame `j` after the attack is up where `fixed_arp_up(mask, branch,
+    phase + j)`, `phase` being the counter's residue on the attack frame
+    (`fixed_arp_phases`, or 0 -- the reset value -- where no walk is
+    possible). The frames are then run-length coded onto the wavetable:
+
+    * frame 0 is the record's own waveform (unless `written`, when the
+      instrument's firstwave already owns it and the entries start at frame
+      1 -- `_first_frame_lead`'s rule);
+    * `tick` frames (`(noise byte, frames)`, the drum block's opening noise
+      for a both-bits record) follow, each a waveform entry;
+    * the first frame after them writes `tail` once;
+    * from there on nothing writes a waveform: a delay entry is current for
+      `value + 1` play calls and applies its right side on the LAST of them
+      (gplay.c's wavetable-delay `else`, `wavetime != wave` / `wavetime++`;
+      player.s `mt_waveexec`, `cmp mt_chnwavetime,x / beq mt_nowavechange /
+      inc mt_chnwavetime,x`), so a run of N calls in one state followed by a
+      change is ONE entry, `(N - 1, new note)`, split at `WAVE_MAX_DELAY`;
+    * the loop body is one whole period of frames, starting on the call after
+      a transition so that its last entry fires the same transition a cycle
+      later, and the jump lands on its first entry (a jump is read on the
+      entry BEFORE it and costs no call, gplay.c's `ptr[WTBL]++` then
+      `== 0xff` test).
+
+    **One frame is `multiplier` play calls.** Every run above is in frames
+    and is multiplied out here; the mask files all convert at -S1 today, so
+    the -S2 shape is pinned by `tests/test_arp_octave.py` rather than by any
+    corpus byte. Returns None where the entries would not fit `budget`.
+    """
+    m = max(1, multiplier)
+    period = fixed_arp_period(mask)
+    tick_noise, tick_frames = tick if tick else (None, 0)
+    first = 1 if written else 0
+    tail_frame = tick_frames + 1
+
+    def raw(j: int) -> bool:             # what the counter says on frame j
+        return fixed_arp_up(mask, branch, phase + j)
+
+    def up(j: int) -> bool:              # what sounds: frame 0 is the init
+        return j > 0 and raw(j)
+
+    # The body starts on a transition of the COUNTER's cycle, not of what
+    # sounds -- frame 0 is base whatever the counter says, so `up(1) !=
+    # up(0)` is not a transition the wrap a period later repeats.
+    body = next((j for j in range(tail_frame, tail_frame + period)
+                 if raw(j) != raw(j - 1)), None)
+    if body is None:
+        return None                      # a mask with no transition at all
+    last_frame = body + period           # its first call fires the wrap
+    notes = {False: WAVE_NOTE_BASE, True: arp_note}
+    # call -> (waveform byte or None, note or None)
+    events: dict = {}
+    for j in range(first, last_frame + 1):
+        wf = None
+        if j == 0:
+            wf = wave
+        elif j <= tick_frames:
+            wf = tick_noise
+        elif j == tail_frame:
+            wf = tail
+        fires = j == first or up(j) != up(j - 1)
+        if wf is not None or fires:
+            events[j * m] = (wf, notes[up(j)] if fires else None)
+    end = last_frame * m + 1
+    left: List[int] = []
+    right: List[int] = []
+    starts: List[int] = []
+
+    def fill(t: int, upto: int) -> None:  # calls t..upto, nothing fires
+        while t <= upto:
+            n = min(upto - t, WAVE_MAX_DELAY)
+            starts.append(t)
+            left.append(n)
+            right.append(0x80)
+            t += n + 1
+
+    t = first * m
+    pending = sorted(events)
+    while t < end:
+        nxt = next((c for c in pending if c >= t), None)
+        if nxt is None:
+            fill(t, end - 1)
+            break
+        wf, note = events[nxt]
+        if wf is not None:
+            if nxt > t:
+                fill(t, nxt - 1)
+            starts.append(nxt)
+            left.append(wf)
+            right.append(0x80 if note is None else note)
+        else:
+            while nxt - t > WAVE_MAX_DELAY:
+                starts.append(t)
+                left.append(WAVE_MAX_DELAY)
+                right.append(0x80)
+                t += WAVE_MAX_DELAY + 1
+            starts.append(t)
+            left.append(nxt - t)
+            right.append(note)
+        t = nxt + 1
+    loop = starts.index(body * m + 1)
+    left.append(WAVE_JUMP)
+    right.append((start + loop) & 0xFF)
+    if len(left) > budget:
+        return None
+    return left, right
+
+
+def ticked_arp_entries(frame0: List[int], frame0_r: List[int],
+                       tl: List[int], tr: List[int], noise: int, tail: int,
+                       arp_rel: int, multiplier: int, start: int,
+                       budget: int,
+                       arp_phase: Optional[int] = None) -> Optional[tuple]:
+    """The ticked arpeggio at -S{m}: each half of the alternation `m` calls.
+
+    Until v0.5.489 a ticked arpeggio record above -S1 was forced onto the
+    per-call two-entry loop (`_wavetable_entries`' -S1 shape), because the
+    unticked -S{m} shape loops back to entry 0 and would replay the noise
+    tick once per cycle. The player's counter steps once a FRAME, and a
+    frame is `multiplier` calls, so that loop toggled the octave inside
+    every frame: on the packed Last_V8 at -S2, vsid at 312 samples a frame
+    read the note and its octave in the same frame on 75 of 399 frames,
+    split 155-160 / 312 rasterlines -- a 100 Hz trill the original never
+    plays and siddump, sampling once a frame, cannot see
+    (C:/t/ticked-fixed-arp-at-s2-is-a-/vice_live_parity.txt). The nine
+    mask != $01 files had already left this shape for
+    `fixed_arp_duty_entries`; what remained were the parity-mask files at
+    -S2 (Last_V8 x2, Monty_on_the_Run, Devils_Galop) and the nibble
+    dialect's ticked records at -S3..-S10 (Thrust, Bump_Set_Spike,
+    Spellbound, Formula_1_Simulator, Warhawk, Proteus, International_Karate)
+    -- the same per-call loop, `m` toggles a frame.
+
+    The shape: the frame-0 lead and the tick as the caller built them, then
+    `tail:note, hold, tail:note, hold, $FF` -- a two-frame loop whose
+    target is the entry AFTER the tick, so the tick plays once. `hold` is
+    `_wave_hold_byte(multiplier, tail)`: the tail written again at -S2 (one
+    more call), a delay of `m - 2` above it (`m - 1` calls,
+    gplay.c:697-704), its right side `$80` so the last call of the up half
+    does not drag the note back (the same rule the unticked -S{m} shape
+    states). The two halves are `note` then the octave where no phase is
+    known -- the order the per-call loop had.
+
+    With `arp_phase` (the counter's residue on the attack frame,
+    `fixed_arp_phases`; parity mask only, the caller gates it) the tick
+    entries are expanded to one per call, exactly as the -S1 phased shape
+    does, and every frame `j` after the attack is up where
+    `(j - (1 + residue)) % 2 == 0` -- the tick frames on their noise
+    entries' right side, the loop's two frames in whichever order that
+    parity puts them. The walk is in frames and does not depend on the
+    rate, so the residue the -S1 shape reads is the residue here. That
+    expansion needs the tick to be a whole number of frames
+    (`WAVE_MAX_DELAY` can clamp it) and the room for one entry a call;
+    otherwise the unphased shape stands.
+
+    Returns None where even the unphased shape does not fit `budget`; the
+    caller then keeps the per-call loop, the tick being what is lost
+    rather than the table.
+    """
+    m = max(1, multiplier)
+    hold = _wave_hold_byte(m, tail)
+    if hold is None:
+        return None
+    tick_calls = sum(1 if b > WAVE_MAX_DELAY else b + 1 for b in tl)
+    first_up = False
+    tl2, tr2 = list(tl), list(tr)
+    if arp_phase is not None:
+        ph = 1 + (arp_phase & 1)
+
+        def up(frame: int) -> bool:
+            return (frame - ph) % 2 == 0
+
+        if (tick_calls % m == 0
+                and len(frame0) + tick_calls + 5 <= budget):
+            tl2 = [noise] * tick_calls
+            tr2 = [arp_rel if up(1 + t // m) else 0x00
+                   for t in range(tick_calls)]
+            first_up = up(1 + tick_calls // m)
+    if len(frame0) + len(tl2) + 5 > budget:
+        return None
+    a, b = (arp_rel, 0x00) if first_up else (0x00, arp_rel)
+    loop = start + len(frame0) + len(tl2)
+    left = frame0 + tl2 + [tail, hold, tail, hold, WAVE_JUMP]
+    right = frame0_r + tr2 + [a, 0x80, b, 0x80, loop & 0xFF]
+    return left, right
 
 
 def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
@@ -4836,7 +5184,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        voice_two_stage: bool = False,
                        voice: Optional[int] = None,
                        gate_skip: Optional[int] = None,
-                       arp_phase: Optional[int] = None) -> tuple:
+                       arp_phase: Optional[int] = None,
+                       arp_mask: Optional[tuple] = None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -5292,12 +5641,19 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # frame is odd. Only where the extra entries fit; otherwise the
         # unphased shape stands, as it does for every record the phase is not
         # known for. -S1 only: above it the tick is a delay of calls and the
-        # loop below is per call, a defect of its own (see SUMMARY item 4 of
-        # the-seven-file-adc-0c-family).
-        if (arp and arp_fixed and arp_phase in (1, 2) and multiplier == 1
+        # shape is `ticked_arp_entries`', which carries the phase itself
+        # (until v0.5.489 the loop below ran per call above -S1, SUMMARY
+        # item 4 of the-seven-file-adc-0c-family).
+        # `arp_phase` is the counter's residue on the attack frame since
+        # v0.5.489 (`fixed_arp_phases`): for the parity mask, 0 puts the
+        # first octave on offset 1 and 1 on offset 2. A duty mask never
+        # reaches this shape -- `fixed_arp_duty_entries` below takes it.
+        if (arp and arp_fixed and arp_phase is not None and multiplier == 1
+                and (arp_mask is None or arp_mask[0] == FIXED_ARP_PARITY_MASK)
                 and len(frame0) + extra + 5 <= budget):
             tl, tr = [noise] * (extra + 1), [0x00] * (extra + 1)
             phased = True
+            arp_phase = 1 + (arp_phase & 1)
         tick = len(frame0) + len(tl) + 4 <= budget
     if tick:
         off = len(tl) + len(frame0) - 1
@@ -5379,15 +5735,56 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
     third = (base_entry + 2 + off) & 0xFF
 
     if arp:
+        # A fixed-interval block dividing its counter by a DUTY mask ($02,
+        # $04, $07) is a square wave in frames, not the one-call alternation
+        # every shape below emits; `fixed_arp_duty_entries` unrolls it from
+        # the record's phase (0, the reset value, where no phase could be
+        # walked). Gated on `effects` like every other read of the +7 byte,
+        # and on the mask NOT being Commando's `$01`, whose files keep their
+        # bytes exactly: the corpus byte-hash at v0.5.489 named the nine
+        # mask != $01 files and nothing else.
+        if (effects and arp_fixed and arp_mask is not None
+                and arp_mask[0] != FIXED_ARP_PARITY_MASK):
+            duty = fixed_arp_duty_entries(
+                wave, tail, arp_mask[0], arp_mask[1],
+                0 if arp_phase is None else arp_phase,
+                _arp_relative(arp_fixed, arp_note), multiplier, base_entry,
+                budget, written=no_test_restart,
+                tick=((WAVE_NOISE_GATEOFF | (wave & 0x01),
+                       _noise_tick_frames(sid, det)) if tick else None))
+            if duty is not None:
+                return duty
         # $13CD: alternate between the note and the note minus the high
         # nibble, one frame each. Readme p.794: right side $60-$7F is a
         # negative relative note, so $80-N is -N semitones.
         hold = _wave_hold_byte(multiplier, wave)
+        # A ticked record above -S1 gets its own shape: the tick once, then
+        # a two-frame loop of `m` calls a half (`ticked_arp_entries`). Until
+        # v0.5.489 it fell to the per-call loop below, which toggled the
+        # octave `m` times a frame -- measured at 312 samples a frame on the
+        # packed Last_V8 (75 of 399 frames carrying both notes, split at
+        # the half frame), invisible to siddump. The phase is applied only
+        # under the parity mask, exactly as the -S1 tick shape gates it: a
+        # duty record only reaches here when `fixed_arp_duty_entries`
+        # declined its budget, and its residue is not a parity.
+        if tick and hold is not None:
+            shaped = ticked_arp_entries(
+                frame0, frame0_r, tl, tr, noise, tail,
+                _arp_relative(arp_fixed, arp_note), multiplier, base_entry,
+                budget,
+                arp_phase=(arp_phase if arp_fixed and arp_phase is not None
+                           and (arp_mask is None
+                                or arp_mask[0] == FIXED_ARP_PARITY_MASK)
+                           else None))
+            if shaped is not None:
+                return shaped
         if hold is None or tail != wave or tick:
             # -S1: a call is a frame, so the plain two-entry loop is already
-            # at the player's rate. A ticked record is forced onto this shape
-            # too: the multiplier shape below loops back to entry 0, which
-            # would replay the noise tick once per arpeggio cycle.
+            # at the player's rate. A ticked record lands here too: at -S1,
+            # where a call is a frame; above it only where
+            # `ticked_arp_entries` found no room, since the multiplier shape
+            # below loops back to entry 0, which would replay the noise tick
+            # once per arpeggio cycle.
             # The alternation belongs on the *third* call, not the fourth.
             # The player's own trace is `note note arp note arp ...` -- Commando
             # GT 2 reads `1D46 1D46 3A8C 1D46 3A8C` from each onset -- so the
@@ -5954,6 +6351,12 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         entries += [(0x09, 0x00), (0xFF, 0x00),
                     (0x00, 0x00), (0x00, 0x00), (0x00, 0x00)]
     n = max(instr_used - lead, 0)
+    # The fixed-interval block's counter mask, read once for the file: a duty
+    # mask ($02, $04, $07) sends every arpeggio record to
+    # `fixed_arp_duty_entries`, the parity mask ($01) keeps the shapes below.
+    # Gated on `effects` exactly as each record's read of the +7 byte is.
+    arp_mask = (fixed_arp_mask(sid, det)
+                if effects and det.arp_fixed_up else None)
     for i in range(n):
         start = len(entries) + 1
         reserved = (n - i - 1) * WAVE_ENTRIES_PER_INSTR
@@ -5983,7 +6386,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                                              gt_number),
                                          gate_skip=gate_skip,
                                          arp_phase=(None if arp_phases is None
-                                                    else arp_phases.get(gt_number)))
+                                                    else arp_phases.get(gt_number)),
+                                         arp_mask=arp_mask)
         starts.append(start)
         entries += list(zip(left, right))
 
@@ -7854,7 +8258,7 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     vib_ptrs = _vibrato_layout(sid, det, instr_used, vibrato, fmt, multiplier,
                                table, log, lead=lead,
                                vibrato_command=vibrato_command,
-                               row_calls=row_calls)
+                               row_calls=row_calls, effects=effects)
     # Before the vibrato command pass, which fills only free rows and must
     # see the envelope rows as taken; the envelopes are the records' own
     # (`record_envelope`), so the pass needs nothing the records write.
@@ -7882,13 +8286,14 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
                                 lead, multiplier, row_calls,
                                 instr_row_calls=instr_row_calls, log=log)
     # The fixed-interval octave's phase per instrument, from the finished
-    # orderlists: a note's attack-frame parity is static, and the tick
-    # entries carry the octave from the original's frame (`fixed_arp_phases`).
-    # Gated exactly as the record's own read of the +7 byte is -- `effects` --
-    # and on -S1, the only rate the shape below is right at.
+    # orderlists: a note's attack-frame residue is static, and the tick
+    # entries carry the octave from the original's frame (`fixed_arp_phases`)
+    # -- as does the duty shape (`fixed_arp_duty_entries`), at any rate.
+    # Gated exactly as the record's own read of the +7 byte is -- `effects`.
+    # The walk is in frames and does not depend on the rate: the -S1 tick
+    # shape and `ticked_arp_entries` above it read the same residue.
     arp_phases = (fixed_arp_phases(sid, det, tracks, patterns)
-                  if effects and det.arp_fixed_up and multiplier == 1
-                  else None)
+                  if effects and det.arp_fixed_up else None)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
     wave_entries, wave_starts, arp_starts = _wavetable_layout(

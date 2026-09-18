@@ -2559,6 +2559,94 @@ earlier in this file is correct and is a different quantity. That gap is between
 two OPTION SETS on the same three files; this one was between a real option set
 and a lookup that missed.
 
+## The pulse-phase table overflows on four VBI carriers, and what the degrade keeps
+
+**Measured at v0.5.488 (04fdcb5), on a `git archive HEAD` tree with
+`siddump.exe` copied in, each file converted under its own `presets.json`
+options plus `pulse_phase` forced** (`C:/t/pulse-phase-overflow/measure.py`;
+the four are shipped with `pulse_phase` OFF, so nothing here reaches the
+shipped `.sng`). Since 922c782 `goatwriter.build_pulse_phase_table` no longer
+declines a file whose phase set will not fit `GT_MAX_TABLELEN` (255): the
+overflowing record falls to a static width (`dropped`), then to pointer 0
+(`silent`), and `convert.py` ships the partial table. The row counts a
+reader would otherwise have to re-derive, and what each degrade costs:
+
+| file | asked for | verdict | note rows on that instrument (pattern data, not orderlist-weighted) | PTBL rows forced / shipped |
+|---|---|---|---|---|
+| `Last_V8.sid` | instrument 7 (`08:02-41-04`) **130** rows; instrument 9 (`0A:00-81-00`) **64** rows | both static; 5 dropped, 3 silent in the log | 16 and 34 of 1225 note rows | 255 / 104 |
+| `Last_V8_C128_version.sid` | the same two, 130 and 64 | the same 5 / 3 | 16 and 34 | 255 / 100 |
+| `Master_of_Magic.sid` | instrument 14 (`0F:00-41-00`) **112** rows | static; 1 dropped | 16 of 743 | 160 / 44 |
+| `Phantoms_of_the_Asteroid.sid` | instrument 17 (`12:02-81-02`) **70** rows | static; 1 dropped | 63 of 1113 | 250 / 64 |
+
+**Read the Last_V8 log line beside the table, because 5 / 3 overstates the
+loss.** The two phase-tracked records (7 and 9) are the only ones the
+`PULSE PHASE NEEDS n TABLE ROWS` line names; the other three `dropped`, and
+all three `silent`, are records 31, 32 and 33 -- reached AFTER the table was
+full, degraded through the ordinary `_pulse_layout` fallback, and they play
+**0 notes** in the file. So on both Last_V8 files exactly two audible
+instruments play static under `--pulse-phase` (50 note rows between them),
+and the pointer-0 records are inaudible. Master_of_Magic's 160 forced rows
+show the overflow is not a whole-table shortage: instrument 14 alone asks
+for 112 of the 255, the same shape as instrument 7's 130 on
+Last_V8 -- one record's phase SET is the cost, not the corpus's table.
+
+**What the forced table still delivers on each file:** `CMD_SETPULSEPTR` on
+546 note rows over 31 distinct pointers (Last_V8, both), 187 rows over 40
+(Master_of_Magic), 468 rows over 64 (Phantoms) -- so the degrade keeps the
+option live on every other sweeping record; before 922c782 all four files
+lost the whole expansion to the one record that did not fit. The row counts
+above are the second arm of the task
+`four-vbi-carriers-need-70-to-130-pulse-phase-table-rows-for-one-instrument-and-overflow`;
+its first arm ("the table fits") is moot now nothing is declined. Instrument
+numbers are Goattracker's (1-based, `songview.Song.instruments[i].number`),
+and the name in parentheses is the record label `songview` prints.
+
+## Retraction: "Commando as 1 of 24" counted the phantom walk, not the tune
+
+The v0.5.480 commit message (`babf9e6`: "... and Commando as 1 of 24") and the
+census comment above the clamp line in `patterns._build_raw_pattern` as it
+stood from 5a2fa2d to v0.5.488 both rested on a census that read **698 clamp
+events over 34 files, 24 of them past their own table**. **RETRACTED.** The
+census re-taken at 24b9f1d (`C:/t/trace-what-lies-past-the-tab/census_retake.json`,
+one row per file with `n` = events in the emitted phase and `n_other_phase` =
+events in `phantom_patterns`' full-table walk) shows the 698 was
+**207 emitted + 491 phantom**: `phantom_patterns` walks EVERY pattern-table
+entry whether or not an orderlist names it, so the first census double-counted
+each emitted pattern and counted entries no tune plays. Re-derived from the
+JSON at v0.5.488, this session, rather than re-quoted: 26 files clamp in an
+emitted pattern (207 events); **16** of them clamp a byte past their own table
+in an entry an orderlist reaches (102 events: Commando 25, Proteus / Warhawk /
+Thing_on_a_Spring 12 each, Gerry_the_Germ 11, Geoff_Capes 6, Sanxion 6, W_A_R 5,
+Gremlins 4, Crazy_Comets 2, Mega_Apocalypse 2, and one each on Devils_Galop,
+both Last_V8s, Monty_on_the_Run and Phantoms). The first take's worst five --
+Ricochet 71, BMX_Kidz 49, Skate_or_Die_intro 33, Arcade_Classics 31,
+Kings_of_the_Beach_ingame 10 -- are all in unreferenced entries. So the
+Commando fixture decision is bounded by **1 of 16** reached files, not 1 of 24,
+and the comment in `patterns.py` now says so (grep it for `census_retake`). A
+commit message cannot be edited, which is why this paragraph exists where a
+grep for its words lands.
+
+## `-t` became a floor at v0.5.489: the figures behind the rule
+
+Measured from a `git archive HEAD` (04fdcb5) tree with the change applied,
+presets keyed `<name>.sid` (`C:/t/fidelity-per-file-window-fro/eight_floor.json`
+against `eight_nofloor.json`): re-measured `orig_ends_at` and the window the
+floor traces -- Confuzion 305.08 s -> 307, Flash_Gordon 374.96 -> 376,
+Food_Feud 245.4 -> 247, Knucklebusters 195.44 -> 197, Rock_Tells_the_Tale
+380.84 -> 382, Saboteur_II 249.18 -> 251, Sanxion 336.98 -> 338, Zoolook
+259.22 -> 261 (the +1 s margin is `original_ended`'s own, `last // 50 + 2`,
+so 247 rather than `ceil(245.4)`). All eight `cov` 1.00; all eight
+`output_sha` identical floor vs no-floor and identical to `build/fidelity.json`
+at v0.5.488. Melody floor vs no-floor: Rock_Tells_the_Tale 0.882 vs 0.853,
+Flash_Gordon 0.994 vs 0.989, Sanxion 0.979 vs 0.972, Knucklebusters 0.999 vs
+0.998, the other four 1.000 on both. Cost 76 s against 54 s for the eight.
+`--baseline` with the no-floor JSON as baseline against a floor run refuses
+`Food_Feud.sid: window 180 -> 247`; two floor runs accept. The next
+`build/fidelity.json` regeneration moves exactly those eight rows' `cov`
+(and re-scores their columns over the whole tune) with no sha moving, and
+the old artefact cannot be `--baseline`d against the new on those eight --
+expected, not a defect.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.

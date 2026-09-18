@@ -295,7 +295,13 @@ for a human listening check into gitignored `build/listen/`.
 **`FIDELITY.md` is generated at `-t 180`** (since v0.5.459), and so is
 `presets.py --fidelity`'s search. **Numbers either side of v0.5.459 are not
 comparable**, as they are not across v0.5.195's 10 → 60 move; the header records
-the window that produced them.
+the window that produced them. **Since v0.5.489 `-t` is a floor, not the
+window**: where the length probe places the original's ending past `-t`, the
+register columns are traced over that length (`window_seconds` in the row,
+named in the header and a notes bullet; `--no-window-floor` pins the old
+behaviour), so a prefix row scores the whole tune and `--baseline` refuses
+across two files whose windows differ. A file whose original ends inside `-t`,
+or never ends, is unchanged. Evidence in `docs/LESSONS.md`.
 
 - **A score is not a clock.** Every column compares *what* is played, never
   *when*. Use `fidelity.py <file> --pace` before saying anything about speed,

@@ -11805,3 +11805,104 @@ moves closer -- the gate removes the frame excess that was cancelling the
 swing deficit. The detection and emitter change is opened as
 `classic-vibrato-players-gate-the-oscillator-on-a-per-note-frame-counter-and-vibdelay-can-say-so`;
 nothing here is emitted yet.
+
+### 7.hhhhhh The fixed-arp mask is a duty cycle, and the ticked shape holds each half for m calls
+
+§7.bbbbbb put the octave alternation's *phase* right and left its *shape* at
+one call up, one call base -- correct only for mask `$01`. The mask the
+player ANDs its counter with is a duty cycle: `$02` is two-and-two, `$04`
+four-and-four, `$07` one base then seven up, and the period is
+`1 << mask.bit_length()`. Measured at v0.5.488 on the originals' siddumps
+(30-60 s): Zoids `buubbbbuuuubbbbuu` on 78 of 108 onsets, One_Man
+`buuubbbb` 187 of 188, Master_of_Magic `buuuuuubuuuuuuub` 174 of 244,
+Phantoms `buuuuuuu` 319 of 340; a per-frame model of `up(frame)` against the
+trace agrees 3524 / 0 on Zoids and 3190 / 1 on Master_of_Magic. Rasputin's
+counter is `INC`'d at `$C020` behind the `$FE nn` tempo gate, not at the play
+entry, so its `$02` reads two-and-two on 232 of 293 onsets and three-and-three
+only for the opening's reload of 2 -- it is encoded as the mask's own reading
+with residue 0, and Game_Killer's gated counter the same way.
+
+**Emitted as wavetable delay entries** (`goatwriter.fixed_arp_duty_entries`):
+frame 0 is the record's waveform, the tick frames noise, then one delay entry
+per half whose value+1 calls is `frames x multiplier` (`player.s
+mt_waveexec` / `gplay.c`'s delay loop), split at `WAVE_MAX_DELAY`, the loop
+body one period starting the call after a counter transition. Two things the
+first cut got wrong and the trace caught: the vibrato had to be skipped on a
+duty-mask arp record (`_vibrato_layout`), because the original's octave block
+overwrites the frequency every call and the delay entries otherwise ran
+Goattracker's vibrato -- 600 vibrato frames on Zoids' arp notes, `bend` 0.91
+-> 8.13 -- and the counter base is `None` for a gated counter, so no phase is
+walked there. `--vice` at `-S2`: reversal_ratio Zoids 3.61 -> 0.96,
+Master_of_Magic 7.28 -> 0.88, Rasputin 7.36 -> 3.61, melody unmoved on all
+three. The corpus byte-hash moves exactly the nine mask != `$01` files
+(Battle_of_Britain, Chimera, Game_Killer, Human_Race, Master_of_Magic,
+One_Man_and_his_Droid, Phantoms_of_the_Asteroid, Rasputin, Zoids); Commando,
+Devils_Galop and Thing_on_a_Spring carry `ADC #$18` with mask `$01` and are
+byte-identical.
+
+**The ticked `$01` shape at a multiplier above 1 was a trill inside every
+frame.** `vsid` at 312 samples a frame read Last_V8 voice 1 octave-split at
+line 155-160 of 312 on 75 of 399 frames: the per-call two-entry loop toggles
+`m` times a frame in a player that toggles once. `ticked_arp_entries` now
+plays the tick once and then holds each octave half for exactly `m` calls
+(`_wave_hold_byte`, loop target past the tick, never entry 0), carrying the
+§7.bbbbbb residue into the tick's expansion where the tick is a whole number
+of frames. Last_V8's per-offset profile goes from `bbUUUUUb` (siddump read a
+constant octave-up) to `bUbUbUbU` against the original's `bUbUbUbU` (up
+fraction 0.00 0.99 0.01 0.99 ...), the unphased variant reads 0.18 at offset
+1 -- so the residue is right at `-S2` -- and the vsid count goes 75 -> 0.
+Eleven files move: the four mask-`$01` multispeed carriers (Last_V8 x2,
+Monty_on_the_Run, Devils_Galop) and, on the structural argument alone, the
+seven nibble-dialect ticked files at `-S3`..`-S10` (Thrust, Bump_Set_Spike,
+Spellbound, Formula_1_Simulator, Warhawk, Proteus, International_Karate) --
+at `-S7` the per-call slides give vsid seven distinct low bytes a frame and
+the probe cannot isolate the arp, and Warhawk's original alternates at two
+to three frames a half, so both arms are wrong-rate there and the shipped one
+is merely not a 350 Hz trill. Gating `ticked_arp_entries` on `arp_fixed`
+would narrow the reach to the four.
+
+### 7.iiiiii The window is a floor, the depth column's third refusal, and what `aud` cannot hear
+
+Three harness readings landed together at v0.5.489, none of them a converter
+change.
+
+**`-t` is a floor.** The report scored a fixed prefix, so the eight files
+whose length probe placed an ending past 180 s read `cov` 0.47-0.92 whatever
+the conversion did after the cut. When the probe places the ending past `-t`,
+`fidelity.window_floor` now traces the register columns over
+`original_ended`'s length instead -- Confuzion 307 s, Flash_Gordon 376,
+Food_Feud 247, Knucklebusters 197, Rock_Tells_the_Tale 382, Saboteur_II 251,
+Sanxion 338, Zoolook 261 -- and every one of the eight reads `cov` 1.00 with
+its `output_sha` unchanged, for +22 s over the eight. The row carries
+`window_seconds`, the header and a notes bullet name the widened files,
+`--baseline` refuses `window 180 -> 247` exactly as it refuses a `-t`
+mismatch, and `--no-window-floor` is the old behaviour. A file whose original
+ends inside `-t`, or never ends, is untouched.
+
+**`depth` has a third refusal.** `vibrato_records` keyed on the record byte
+alone, so 5_Title_Tunes -- whose triangle player never opens any of its six
+vibrato records (record 7's shift `$10` is at or past
+`TRIANGLE_VIBRATO_MAX_SHIFT`; the other five never play a note longer than
+the 8-row gate) -- printed `-!`, the no-shared-key alarm, for a correct empty
+pair. The harness now applies the player's two exclusions (the shift bound,
+and an orderlist walk carrying the live instrument across patterns under the
+player's own grammar) and prints `-` with `depth_refusal: gated` and the
+dropped counts beside it; 17 of the 25 triangle files lose one to three keys
+to the gate, 5_Title_Tunes is the only file emptied, and
+Commodore_64_Music_Examples keeps its nine records and its `-!`, which is a
+real conversion defect (goatwriter vibrates none of its 512 damped notes).
+
+**`aud` cannot hear a tune that has stopped.** The v0.5.401 Las_Vegas build
+scores `aud` 0.873 while rendering at 0.074x the original's loudness, and
+the reason is the instrument, not the render: the music ends around 22 s and
+the packed player's resting output -- -52.4 dB RMS, 78% DC offset -- carries
+on above `SILENCE_DB` (-60), so every tail frame is "sounding", peak
+normalisation lifts the residual to full scale, and the tail alone scores
+0.875 -- as high as the music (head 0.870). Only `loud`/`loud_ratio`, a dB
+mean over the frames both sides sound, see the stop. The Hubbard original's
+own end reads -174 dB, so the two players stop differently.
+`sound_calibrate.comparable`'s "half the window scores our silence" is wrong
+in one word: the frames are the idle floor. Nothing is changed on that
+evidence -- raising `SILENCE_DB` or DC-filtering the RMS moves `aud`/`loud`
+for every file and the calibration's floors with them, a corpus re-measure.
+`tests/test_sound.py` reproduces the mechanism synthetically.

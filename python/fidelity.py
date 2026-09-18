@@ -1863,25 +1863,103 @@ def vibrato_records(sid_path) -> set[int] | None:
     Commando that is 4 records of 7, and its depth falls to a figure a vibrato
     can actually be.
 
+    **A vibrato byte the player itself never acts on is not a population
+    either**, and the triangle engine has two such bytes -- both read out of
+    the player (detect.py's TRIANGLE_VIBRATO_* block, goatwriter's
+    `_triangle_vibrato_entry` and `_vibrato_command_pass`), and until v0.5.489
+    applied by the emitter and not by this census, which is exactly the
+    disagreement that put 5_Title_Tunes in the "no shared key" bucket for
+    twenty versions. See `vibrato_population` for the two exclusions and
+    the third refusal they produce.
+
     Returns **None**, not an empty set, where the population cannot be
     established -- detection failed, or the player has no vibrato routine at
-    all. `depth_compare` then declines rather than falling back to the
-    unrestricted reading the first pass proved worthless.
+    all, or no record carries the byte. Returns an **empty set** where
+    records carry the byte and the player's own gate and shift exclusions
+    drop every one of them: that is a population the player never opens, and
+    `depth_compare` reports it as its third refusal, `gated`, rather than as
+    `no-shared-key`. Either way `depth_compare` declines rather than falling
+    back to the unrestricted reading the first pass proved worthless.
     """
+    return vibrato_population(sid_path)["keys"]
+
+
+def vibrato_population(sid_path) -> dict:
+    """`vibrato_records` with its working shown: which records it dropped, why.
+
+    Returns `{"keys": set | None, "candidates": int, "shift_dropped": int,
+    "gate_dropped": int, "engine": str | None}`. `keys` is what
+    `vibrato_records` returns; the counts are what the report prints beside
+    a `gated` refusal, so a reader can tell "one record, shift 16" from "six
+    records, none ever played long enough" without re-running anything.
+
+    `candidates` is the count after the competing-bit exclusion and before
+    the player's own two -- the population the byte alone claims.
+    `shift_dropped` and `gate_dropped` are the triangle engine's exclusions,
+    applied in that order (a record the shift drops is not counted against
+    the gate as well), and both are 0 on the other two engines, which have
+    neither mechanism.
+
+    **THE TWO TRIANGLE EXCLUSIONS ARE THE PLAYER'S, NOT A HEURISTIC.**
+
+    * **Shift.** The record byte is a bare right-shift count applied to the
+      16-bit semitone interval, `n + 1` times (`4A / 6E / CE / 10 F7`:
+      LSR, ROR, DEC, BPL -- detect.py's TRIANGLE_VIBRATO_SHAPE), so a byte of
+      `TRIANGLE_VIBRATO_MAX_SHIFT` (15) or more shifts the interval to zero
+      and the record oscillates by nothing. 5_Title_Tunes record 7 stores
+      `$10`; Last_V8 stores 81 and Human_Race 119 (detect.py). No player in
+      the family masks the byte. The emitter's own test is `_triangle_vibrato_entry`'s
+      `byte > TRIANGLE_VIBRATO_MAX_SHIFT` -- one off from this census at
+      exactly 15, where 16 shifts of a 16-bit value are already zero; no
+      corpus record stores 15 (probe_records.py at v0.5.488: the dropped
+      bytes are $10 and $17), so the two never disagree on a corpus file.
+    * **Gate.** `LDA $14EF,X / AND #$1F / CMP #gate / BCC out`: the note's
+      own stored duration byte, and a note shorter than the gate gets no
+      vibrato at all (detect.TRIANGLE_VIBRATO_GATE, `_find_triangle_gate`
+      for the file's own constant). A record whose every *played* note is
+      shorter than the gate never oscillates, whatever its byte says. The
+      walk that decides this is `triangle_gate_records`, and it is the
+      orderlist walk `goatwriter._vibrato_command_pass` damps by -- the same
+      row arithmetic (`rows > gate` is `wait >= gate`, since `_build_raw_pattern`
+      emits `wait` hold rows after a note and `wait = b1 & 0x1F` is the
+      player's own `AND #$1F`), keyed on the live instrument.
+
+    The competing-bit exclusion above them is unchanged and still folds
+    into `None`: a record whose byte is a drum's is not a vibrato record at
+    all, which is a fact about the byte, not about the gate. Only the two
+    player exclusions can leave `keys` empty-but-not-None, because only they
+    say "this record is a vibrato record and the player never opens it".
+
+    Measured at v0.5.488 over the 25 triangle-engine corpus files
+    (C:/t/vibrato-records-should-drop-/probe_all.txt): 17 lose one to three
+    keys to the gate, 5_Title_Tunes is the only file whose population it
+    empties (6 of 6: record 7 to the shift, records 1, 4, 5, 9, 13 to the
+    gate -- the tune's longest note on any of them is two rows against a
+    gate of 8, and goatwriter's own log for the same file reads `0 note(s)
+    vibrated, 839 damped by length`), and the `$78/$07` and LFO engines
+    are untouched by construction.
+    """
+    out: dict = {"keys": None, "candidates": 0, "shift_dropped": 0,
+                 "gate_dropped": 0, "engine": None}
     try:
         sid, det = _detect_tables(load_sid(str(sid_path)), lambda *a, **k: None)
     except Exception:                                          # noqa: BLE001
-        return None
+        return out
+    triangle = False
     if det.vibrato_offset is not None:
         offset = det.vibrato_offset
+        out["engine"] = "pair"
     elif det.table_vibrato is not None:
         offset = det.table_vibrato.offset
+        out["engine"] = "table"
     elif det.triangle_vibrato is not None:
         offset = det.triangle_vibrato
+        out["engine"] = "triangle"
+        triangle = True
     else:
-        return None
+        return out
     if det.instr_start < 0 or det.instr_used <= 0:
-        return None
+        return out
     # The player's own reading of its effect byte, not a fixed table: `$01` is
     # a drum in one dialect and a wave-program selector in another, and `$04`
     # is an arpeggio in some players and a two-stage *waveform* in others --
@@ -1891,14 +1969,117 @@ def vibrato_records(sid_path) -> set[int] | None:
     for bit in pitch_effect_bits(sid_path, det):
         competing |= bit
     data = sid.data
-    keys: set[int] = set()
+    candidates: list[tuple[int, int, int]] = []       # (record, byte, key)
     for i in range(det.instr_used):
         base = det.instr_start + i * det.instr_stride
         if base + max(offset, 7) >= len(data):
             continue
         if data[base + offset] and not data[base + 7] & competing:
-            keys.add((data[base + 3] << 8) | data[base + 4])
-    return keys or None
+            candidates.append((i, data[base + offset],
+                               (data[base + 3] << 8) | data[base + 4]))
+    out["candidates"] = len(candidates)
+    if not candidates:
+        return out
+    if triangle:
+        from h2g.detect import TRIANGLE_VIBRATO_MAX_SHIFT
+        kept = [c for c in candidates if c[1] < TRIANGLE_VIBRATO_MAX_SHIFT]
+        out["shift_dropped"] = len(candidates) - len(kept)
+        reaching = triangle_gate_records(sid, det)
+        if reaching is not None:
+            # A walk that could not be made is no evidence about any record:
+            # the exclusion is skipped, never applied to everything.
+            still = [c for c in kept if c[0] in reaching]
+            out["gate_dropped"] = len(kept) - len(still)
+            kept = still
+        candidates = kept
+    out["keys"] = {key for _rec, _byte, key in candidates}
+    return out
+
+
+def triangle_gate_records(sid, det) -> set[int] | None:
+    """Record indices some played note reaches the triangle engine's gate on.
+
+    The player's test is on the note's own stored duration (`AND #$1F / CMP
+    #gate / BCC out`), so a record oscillates only on a note whose duration
+    is at least `det.triangle_gate` (TRIANGLE_VIBRATO_GATE where the file's
+    own CMP was not found). This walks every orderlist the file has, in play
+    order, under the player's own grammar -- `slides=True` and
+    `status_bit6=True` are each gated inside `decode_entry` on the detection
+    flag that says the player really makes that read, and the presets'
+    `always` block converts every file with both on, so this is the row
+    stream the conversion and the player agree on. Read under the fixture's
+    default grammar instead, a BIT/BVS player's `$C0-$FE` status bytes
+    consume three bytes where the player consumes one, and every duration
+    after the first such byte is fiction.
+
+    Mirrors `goatwriter._vibrato_command_pass`' block arithmetic: a note is its
+    row plus the `$BD` hold rows that follow it with no instrument named, and
+    `rows > gate` is `wait >= gate`. It differs from that walk in one
+    deliberate way -- the live instrument is carried ACROSS patterns along
+    the orderlist, and the orderlist is walked twice so the state a lap ends
+    in seeds the next, because the player's instrument register is sticky and
+    the emitter's per-pattern reset is a limitation of what it can command,
+    not a fact about what the player plays (`_entry_instruments` in
+    patterns.py carries the same state for the same reason).
+
+    Returns None when the walk cannot be made (a dialect `convert_tracks`
+    refuses, a decode error), so the caller skips the exclusion rather than
+    applying it to every record: a rescue may never disturb a file that
+    reads correctly.
+    """
+    from h2g.detect import TRIANGLE_VIBRATO_GATE
+    from h2g.patterns import (GT_FIRSTNOTE, GT_LASTNOTE, GT_NO_NOTE,
+                              command_floor, decode_entry)
+    from h2g.tracks import convert_tracks
+    gate = det.triangle_gate or TRIANGLE_VIBRATO_GATE
+    try:
+        tracks = convert_tracks(sid, det, lambda *a, **k: None, [], [])
+        floor = command_floor(det.read_track_version, det.track_fd_transpose)
+    except Exception:                                          # noqa: BLE001
+        return None
+    cache: dict[int, list | None] = {}
+    reaching: set[int] = set()
+    # `decode_entry`'s instrument column is `record + instr_base` with the
+    # default base of 2 (patterns.py: `(b2 & instr_mask) + instr_base`).
+    instr_base = 2
+    for track in tracks:
+        live = 0
+        for _lap in range(2):
+            operand = False
+            for b in track:
+                if operand:
+                    operand = False
+                    continue
+                if b == GT_ORDER_RESTART:
+                    operand = True
+                    continue
+                if b >= floor:
+                    continue
+                if b not in cache:
+                    try:
+                        cache[b] = decode_entry(sid, det, b, slides=True,
+                                                status_bit6=True)
+                    except Exception:                          # noqa: BLE001
+                        return None
+                pat = cache[b]
+                if not pat:
+                    continue
+                i = 0
+                while i + 3 < len(pat):
+                    note, instr = pat[i], pat[i + 1]
+                    if instr:
+                        live = instr
+                    if not GT_FIRSTNOTE <= note <= GT_LASTNOTE:
+                        i += 4
+                        continue
+                    end = i + 4
+                    while (end + 3 < len(pat) and pat[end] == GT_NO_NOTE
+                           and pat[end + 1] == 0):
+                        end += 4
+                    if live >= instr_base and (end - i) // 4 > gate:
+                        reaching.add(live - instr_base)
+                    i = end
+    return reaching
 
 
 def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
@@ -2048,13 +2229,23 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
     rather than ten. `tests/test_fidelity.py` pins the split so it cannot
     drift silently; a future ILV vibrato decode should move six rows out of
     the first group and will fail that test deliberately.
+
+    **A THIRD REFUSAL, `gated`, SINCE v0.5.489 -- and it moves one of the
+    three.** 5_Title_Tunes' six keys were six records whose byte the player
+    never acts on: record 7's shift is `$10`, past
+    `TRIANGLE_VIBRATO_MAX_SHIFT`, and no note the orderlists play on any of
+    the six is as long as the file's gate of 8 (`vibrato_population`,
+    `triangle_gate_records`). The original oscillates nothing, ours damps
+    every note (goatwriter's log: `0 note(s) vibrated, 839 damped by
+    length`), and an empty pair is the CORRECT result -- so it must not print
+    `-!`, which is the mark of a comparison that should have happened and did
+    not. `vibrato_records` returns an empty set (not None) for exactly this
+    case, and it renders as the honest `-`; `depth_gated` beside it carries
+    the counts. Commodore_64_Music_Examples stays in `no-shared-key`: its
+    records reach the gate on 8-row notes the orderlists play, so the
+    original vibrates and the conversion's `0 note(s) vibrated` is a defect
+    the dash is right to flag.
     """
-    if not keys:
-        # No population, no measurement. See vibrato_records. NOTE this is
-        # NOT the same as the `not pairs` refusal below -- see the docstring.
-        # Both refusals leave `depth_ratio` absent and so both print `-`;
-        # `depth_refusal` is what tells them apart, because the dash cannot.
-        return {"depth_refusal": "no-population"}
     return _depth_compare_sided(orig, ours, nframes, nframes, keys,
                                 skip_radius, skip_radius)
 
@@ -2062,7 +2253,26 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
 def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
                          skip_orig, skip_ours) -> dict:
     """`depth_compare` with each side on its own axis -- see
-    `vice_pitch_compare`, where ours is indexed by its own play calls."""
+    `vice_pitch_compare`, where ours is indexed by its own play calls.
+
+    The refusals live here rather than in `depth_compare` so the VICE path,
+    which calls this directly, makes the same three distinctions: an empty
+    key set under the old `if not keys` would have filtered every note and
+    then reported `no-shared-key` with `depth_keys` 0 -- the wrong refusal,
+    printed with the `!` that says there is work to do.
+    """
+    if keys is None:
+        # No population, no measurement. See vibrato_records. NOTE this is
+        # NOT the same as the `not pairs` refusal below -- see the docstring.
+        # Both refusals leave `depth_ratio` absent and so both print `-`;
+        # `depth_refusal` is what tells them apart, because the dash cannot.
+        return {"depth_refusal": "no-population"}
+    if not keys:
+        # Records carry the byte and the player's own gate or shift
+        # exclusions dropped every one: a population the player never opens.
+        # The original oscillates nothing on them, so an empty pair is the
+        # correct comparison and not a failed one. See vibrato_population.
+        return {"depth_refusal": "gated"}
     a = oscillation_depths(orig, n_orig, keys, skip_orig)
     b = oscillation_depths(ours, n_ours, keys, skip_ours)
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
@@ -2138,6 +2348,22 @@ def noise_runs(voices: list[Voice], nframes: int) -> dict:
     instruments). Gate-AND'd, see the measured split in this file's
     `noise_run_agreement` docstring -- both sides now produce comparable
     per-note runs instead of one edge-cut stretch.
+
+    **Gate-AND'd, two consecutive noise notes are NOT concatenated into one
+    run.** Hubbard's classic player releases the gate at the end of every
+    untied note (see `release_tails`), so the predicate's AND term drops to
+    zero between notes even when both are noise-selected -- a run's
+    boundaries track one attack, not a stretch of noise-select regardless of
+    how many notes it covers. Measured on Rasputin.sid (three ADSR pairs
+    carrying noise: decimal 1539/2569/2570, hex $0603/$0A09/$0A0A), -t 180,
+    -m1, subtune 0: 601 total runs across the three instruments, **0 with an
+    attack inside them** -- HEAD 04fdcb5 (v0.5.488, uncommitted),
+    `C:/t/nrun-dimension-states-whethe/rasputin_result.json`. This is a
+    separate question from the tick-length clause below: that one is about a
+    run's *length* being one frame short of a fetch; this one is about
+    whether two runs ever *merge* into a longer one that a length comparison
+    would then blame on the wrong note. They do not, on this file -- the
+    finding is the absence.
 
     Returns `{adsr: Counter({run_length: count})}`. The runs the first rule
     drops are counted by `noise_edge_runs`, from the same walk -- see there
@@ -4584,11 +4810,17 @@ DIMENSIONS = (
               "how far our vibrato swings, over the original's -- median over "
               "the instruments that carry a vibrato byte, **blind to whether "
               "an oscillation exists at all**, which is `vib`'s question. "
-              "Its two refusals are printed apart: **`-` means no record in "
-              "the original carries a vibrato byte** (nothing to compare, "
-              "nothing to fix), while **`-!` means the population exists and "
-              "no instrument key was shared** -- the comparison did not "
-              "happen, which is a candidate for work and not an honest gap. "
+              "Its three refusals are printed as two marks: **`-` means no "
+              "record in the original carries a vibrato byte** (nothing to "
+              "compare, nothing to fix), **`-` also means every record that "
+              "does is one the player's own gate never opens** (`gated`: "
+              "the triangle engine's shift past TRIANGLE_VIBRATO_MAX_SHIFT, "
+              "or no played note as long as its duration gate -- the "
+              "original oscillates nothing, so an empty pair is correct and "
+              "`depth_gated` in the JSON says which), while **`-!` means "
+              "the population exists and no instrument key was shared** -- "
+              "the comparison did not happen, which is a candidate for work "
+              "and not an honest gap. "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
               "understated; `--vice` reads it per play call"),
@@ -4628,7 +4860,14 @@ DIMENSIONS = (
               "(7542 frames) against ours' 485 (7533), 2 of 2 paired, "
               "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180. Declines (`-`) "
               "a file whose only noise is runs the window cut, and records "
-              "the cut runs and frames per side so the `-` says why"),
+              "the cut runs and frames per side so the `-` says why. "
+              "**Separately: gate-AND'd, two consecutive noise notes do "
+              "NOT concatenate into one run** -- the gate drops between "
+              "untied notes even when both select noise, so a run's length "
+              "is never inflated by a second attack landing inside it. "
+              "Measured on Rasputin.sid (three noise ADSR pairs, decimal "
+              "1539/2569/2570), -t 180, -m1: 601 total runs, 0 with an "
+              "attack inside them -- HEAD 04fdcb5 (v0.5.488, uncommitted)"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
     # this project's life. `nrun` compares noise runs and is silent about a
     # pitched note; `tail` reads the envelope after the gate closes, not how
@@ -5078,6 +5317,57 @@ def original_ended(orig, seconds: int) -> int | None:
     return ended if ended >= 5 else None
 
 
+def window_floor(orig_long, long_seconds: int, seconds: int) -> int | None:
+    """`-t` as a FLOOR: the window to trace the register columns over once the
+    length probe has placed the original's ending PAST it, or None to keep
+    `seconds`.
+
+    `orig_long` is the original traced over the probe's `long_seconds`. The
+    ending is read off it through `original_ended` -- the same function and
+    the same +1 s margin (`last // 50 + 2`) the shortening branch of
+    `_measure` uses in the other direction, so a row's window is one rule
+    applied both ways: down to the ending when it falls inside `-t`, up to it
+    when the probe finds it beyond. The 8 corpus originals that end between
+    180 s and 600 s (Confuzion, Flash_Gordon, Food_Feud, Knucklebusters,
+    Rock_Tells_the_Tale, Saboteur_II, Sanxion, Zoolook -- see
+    `LENGTH_PROBE_FACTOR`) were scored as prefixes of 47-92% at `-t 180`
+    with only the `cov` column admitting it; under the floor each is scored
+    whole and reads `cov` 100%.
+
+    Returns None -- nothing changes -- for an original the probe could not
+    place (`original_ended` None) and for one whose ending is inside `-t`
+    already, which the shortening branch handled before the probe ran. So
+    at `-t 180` a file whose `orig_ends_at` <= 180 s is untouched, and the
+    artefact's window stays what it was for every row it was right for.
+    Never *shortens*: the probe can only widen, the shortening branch can
+    only shorten, and `_measure` records which one moved a row
+    (`original_ends` / `window_widened_to`) beside the window it settled on
+    (`window_seconds`).
+    """
+    widened = original_ended(orig_long, long_seconds)
+    if widened is None or widened <= seconds:
+        return None
+    return widened
+
+
+def traced_window(row: dict) -> int | None:
+    """The window this row's register columns were traced over, in seconds.
+
+    `window_seconds` where the row records it; reconstructed for a row saved
+    before that key existed -- `original_ends` when the length rule shortened
+    it, else the run's own `seconds`. A pre-key row could never have been
+    WIDENED, so the reconstruction is exact rather than a guess, and it is
+    what lets `settings_mismatch` refuse across a widening against an old
+    baseline instead of silently comparing a prefix score to a whole-tune one.
+    """
+    w = row.get("window_seconds")
+    if w is not None:
+        return w
+    if row.get("original_ends") is not None:
+        return row["original_ends"]
+    return row.get("seconds")
+
+
 def shortening_fate(ended: list[dict]) -> str:
     """What became of the files whose comparison window the length rule cut.
 
@@ -5465,6 +5755,41 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # which. Left in terms of the factor rather than a literal
                 # 180s, which is what it said until the factor moved to 10.
                 row["length_probe_seconds"] = long_seconds
+                # **`-t` IS A FLOOR, NOT THE WINDOW, once the probe has placed
+                # the ending.** The probe just established where this original
+                # stops, and the whole register comparison below was about to
+                # score the first `seconds` of it anyway -- at `-t 180` that
+                # is 73% of Food_Feud and 47% of Rock_Tells_the_Tale, and the
+                # `cov` column was the only thing in the table admitting it.
+                # Widening to the tune's own ending is the same window rule
+                # the shortening branch above applies in the other direction,
+                # through the same function, so a row is either the whole tune
+                # or an honest prefix (`length_never_ends`), never a prefix of
+                # a tune whose length the run already measured. It changes
+                # nothing for a file that ends inside `-t` (shortened above)
+                # or never ends (the branch above), which is why it is a
+                # default rather than a flag: the artefact's 180 s stays what
+                # it is for every row it was ever right for. `--no-window-floor`
+                # pins the register window to `-t` again, and so does
+                # `--length-probe 1`, which never places the ending at all.
+                # Cost: one more trace of each side over the tune's length --
+                # about 7 s on Food_Feud (246 s, -m2), and only on the rows
+                # that widen.
+                widened = (None if getattr(args, "no_window_floor", False)
+                           else window_floor(a_long, long_seconds, seconds))
+                if widened is not None:
+                    row["window_widened_to"] = widened
+                    seconds = widened
+                    a = run_siddump(local_orig, seconds, sub, args.siddump, cal)
+    # The window the register columns are actually traced over, per row:
+    # `-t` unless the length rule moved it -- down to the original's ending
+    # (`original_ends`) or up to it (`window_widened_to`). `seconds` above is
+    # the RUN's setting and stays so; this is the file's. `settings_mismatch`
+    # reads it (through `traced_window`, which reconstructs it for a baseline
+    # older than the key) so `--baseline` refuses across a widening exactly
+    # as it refuses across a `-t` change: a prefix score and a whole-tune
+    # score are two quantities.
+    row["window_seconds"] = seconds
     # **What SHARE of the tune this window actually scored** -- so a reader can
     # tell a scored whole tune from a scored prefix without re-running the
     # census. Only 2 of 89 corpus files are fully contained at `-t 60`, and
@@ -5478,13 +5803,16 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     #   the original ENDED inside the window        -> 1.0, the whole tune
     #   it does not end even at `factor` x window   -> `seconds / long`, and
     #                                                  that is an UPPER BOUND
+    #   the probe found its ending and the window
+    #   was WIDENED to it (the floor above)       -> 1.0, the whole tune
     #   otherwise the probe found its ending        -> seconds / orig_ends_at
+    #                                                  (`--no-window-floor`)
     #
     # `row["seconds"]` rather than the local `seconds`, which the shortening
     # branch above reassigns: the numerator is the window the RUN asked for,
     # and a row the rule shortened has by definition covered its whole tune.
     asked = row.get("seconds") or seconds
-    if row.get("original_ends") is not None:
+    if row.get("original_ends") is not None or row.get("window_widened_to"):
         row["window_coverage"] = 1.0
     elif row.get("length_never_ends"):
         probe = row.get("length_never_ends_seconds")
@@ -5689,6 +6017,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # contributes no row rather than a reading over its portamentos.
             row.update(depth_compare(a, best_dump, nframes, vib_keys))
             row.update(filter_compare(a.filter, best_dump.filter, nframes))
+        if row.get("depth_refusal") == "gated":
+            # Which of the player's two exclusions emptied the population,
+            # and how big it was: `-` alone cannot say, and a reader of the
+            # JSON should not have to re-run the census to learn it.
+            pop = vibrato_population(sid)
+            row["depth_gated"] = {"candidates": pop["candidates"],
+                                  "shift": pop["shift_dropped"],
+                                  "gate": pop["gate_dropped"]}
     if row["our_attacks"] == 0:
         # A conversion that plays nothing is a defect; a *window* in which
         # neither side plays anything is not, and calling both "silent" put
@@ -5863,6 +6199,13 @@ def _fmt_depth(row: dict) -> str:
             (5_Title_Tunes 6 keys, Commodore_64_Music_Examples 9, BMX_Kidz
             2), and it is the same shape as Powerplay Hockey's `-` in
             onset/nrun/hold/tail, which turned out to be a real defect.
+      `-`   GATED (since v0.5.489). Records carry the byte and the
+            player's own gate or shift exclusions drop every one of them
+            (`vibrato_population`): the original oscillates nothing on
+            them, so an empty pair is the correct comparison. It shares
+            the honest dash deliberately -- there is nothing to fix -- and
+            the row's `depth_gated` counts say which exclusion. At
+            v0.5.488 this is 5_Title_Tunes alone, which used to print `-!`.
 
     Only the second is a candidate for work. Rows written before
     `depth_refusal` existed carry neither key and fall back to `-`, which
@@ -6002,6 +6345,27 @@ def _filter_section(rows: list[dict]) -> list[str]:
     return out
 
 
+def widened_rows(rows: list[dict]) -> list[dict]:
+    """The rows `window_floor` traced over their own length rather than `-t`,
+    by file name -- the set the report names, so a reader of the table can
+    tell a whole-tune score from a prefix without opening the JSON."""
+    return sorted((r for r in rows if r.get("window_widened_to")),
+                  key=lambda r: r["file"].lower())
+
+
+def _window_note(rows: list[dict], args) -> str:
+    """The header's account of the per-file window, appended to the `-t`
+    figure so the two cannot be read apart: `-t` is a floor, and this says
+    how many rows sit above it and how far."""
+    widened = widened_rows(rows)
+    if not widened:
+        return ""
+    top = max(r["window_widened_to"] for r in widened)
+    return (f" `-t` is a floor: {len(widened)} file(s) whose original the "
+            f"length probe found ending past it are traced over their own "
+            f"length instead, up to {top} s (named below).")
+
+
 def report(rows: list[dict], args) -> str:
     # A row whose traced subtune came back as an empty stub is a measurement
     # of gt2reloc, not of the converter. It stays in the table, marked, but
@@ -6019,7 +6383,8 @@ def report(rows: list[dict], args) -> str:
         f"{args.seconds} s of "
         + ("each file's default subtune (PSID `startSong`)"
            if args.subtune == "auto" else f"subtune {args.subtune}")
-        + f", {len(rows)} file(s).",
+        + f", {len(rows)} file(s)."
+        + _window_note(rows, args),
         "",
         "Each row converts the .sid with its preset options, packs the result "
         "back to a .sid with `gt2reloc`, traces both with `siddump`, and "
@@ -6448,6 +6813,25 @@ def report(rows: list[dict], args) -> str:
                 "tune whose data never says it ended). The `len` column "
                 f"carries the measured delta per file. ({names})")
 
+        widened = widened_rows(rows)
+        if widened:
+            names = ", ".join(
+                f"{r['file'].replace('.sid', '')} {r['window_widened_to']}s"
+                for r in widened)
+            out.append(
+                f"- {len(widened)} file(s) have their comparison WINDOW "
+                f"widened past the run's {args.seconds} s to their own "
+                "length: the length probe found the original ENDING beyond "
+                "the window, so `-t` acts as a floor and the register "
+                "columns score the whole tune rather than a prefix of it "
+                "(`cov` reads 100% for these). The same rule as the "
+                "shortening above, applied in the other direction through "
+                "the same function (`window_floor`); `--no-window-floor` "
+                "pins the window to `-t` again. Each row's `window_seconds` "
+                "carries the window it was actually traced over, and "
+                "`--baseline` refuses across a difference in it exactly as "
+                f"it does across `-t`. ({names})")
+
         failed = length_rule_failures(rows)
         if failed:
             fnames = ", ".join(
@@ -6632,7 +7016,9 @@ def report(rows: list[dict], args) -> str:
         "",
         "- Only **one subtune per file** -- the PSID header's own `startSong`, "
         "which is the subtune a player selects when the user selects none -- "
-        f"and only its first {args.seconds} seconds. A tune whose subtunes "
+        f"and only its first {args.seconds} seconds -- or its whole length "
+        "where the length rule moved the window, either way (see the notes "
+        "above; each row's `window_seconds` says which). A tune whose subtunes "
         "shift when one is dropped can still be compared against the wrong "
         "piece of music; `--search-subtunes N` tries a window of ours around "
         "it and keeps the best match. **A short window is its own hazard**: "
@@ -6746,10 +7132,19 @@ def settings_mismatch(base: dict, new: dict) -> list[str]:
         b, n = base[name], new.get(name)
         if n is None:
             continue
+        before = len(bad)
         for k in _FATAL_SETTINGS:
             bv, nv = b.get(k), n.get(k)
             if bv is not None and nv is not None and bv != nv:
                 bad.append(f"{name}: {k} {bv!r} -> {nv!r}")
+        # The window the register columns were actually traced over is a
+        # per-file setting since `window_floor`: two rows sharing `-t` can
+        # still be a 180 s prefix and the whole 247 s tune, and a delta
+        # between those is the same non-number as one across `-t`. Named
+        # only where `seconds` itself did not already refuse the file.
+        bw, nw = traced_window(b), traced_window(n)
+        if len(bad) == before and bw is not None and nw is not None and bw != nw:
+            bad.append(f"{name}: window {bw!r} -> {nw!r}")
     return bad
 
 
@@ -8235,14 +8630,17 @@ def main(argv=None) -> int:
                         "a per-file delta table, and states which dimensions "
                         "moved -- or that none of them can see the change, "
                         "which is a result rather than a flat table. Refuses "
-                        "if the two runs were traced at different seconds or "
-                        "subtunes; a difference in conversion options is "
+                        "if the two runs were traced at different seconds, "
+                        "subtunes or per-file windows (-t is a floor, see "
+                        "--no-window-floor); a difference in conversion options is "
                         "reported as the change under test, not refused")
     p.add_argument("--ab-output", metavar="PATH",
                    help="write the --baseline comparison here instead of "
                         "stdout (the report still goes to -o)")
-    p.add_argument("--presets", default=str(Path(__file__).resolve().parent.parent
-                                            / "presets.json"))
+    p.add_argument("--presets", default=None,
+                   help="path to presets.json (default: the repo's own "
+                        "presets.json; a named path that does not exist "
+                        "is an error)")
     p.add_argument("--length-probe", type=int, default=None, metavar="N",
                    help="when the original is still sounding at the window "
                         "edge, re-ask whether it ends over N x the window "
@@ -8255,6 +8653,16 @@ def main(argv=None) -> int:
                         "whose original outlasts N x the window still reads "
                         "`-`, which is the column declining rather than "
                         "passing it")
+    p.add_argument("--no-window-floor", action="store_true",
+                   help="trace the register columns over exactly -t even "
+                        "where the length probe placed the original's ending "
+                        "past it. By default -t is a FLOOR: a file the probe "
+                        "finds ending at, say, 245 s is traced over its "
+                        "whole 247 s rather than scored as a 180 s prefix, "
+                        "and the row records `window_widened_to`. Nothing "
+                        "changes for a file that ends inside -t or never "
+                        "ends. --baseline refuses across the difference, as "
+                        "it does across -t")
     p.add_argument("--census", metavar="PATH",
                    help="classify every onset disagreement by kind "
                         "and write the work list here")
@@ -8457,9 +8865,16 @@ def _run(p, args, workdir: Path) -> int:
         if not Path(args.gt2reloc).exists():
             print(f"error: gt2reloc not found: {args.gt2reloc}", file=sys.stderr)
             return 1
+        presets_named = args.presets is not None
+        presets_path = Path(args.presets) if presets_named else (
+            Path(__file__).resolve().parent.parent / "presets.json")
         try:
-            doc = json.loads(Path(args.presets).read_text(encoding="utf-8"))
+            doc = json.loads(presets_path.read_text(encoding="utf-8"))
         except OSError:
+            if presets_named:
+                print(f"error: --presets not found: {presets_path}",
+                      file=sys.stderr)
+                return 1
             doc = {}
         target = Path(args.target)
         sids = sorted(target.rglob("*.sid"), key=lambda q: q.name.lower()) \

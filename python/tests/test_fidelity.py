@@ -1127,6 +1127,84 @@ def test_noise_runs_reads_the_gate_bit_not_the_noise_select_bit_alone():
     # spanning the whole window would touch both edges and be dropped)
 
 
+# --- nrun clause (b): gate-AND'd, two consecutive noise notes do not merge -
+#
+# Re-measured on Rasputin.sid (three noise ADSR pairs, decimal 1539/2569/2570)
+# at -t 180, -m1, subtune 0, HEAD 04fdcb5 (v0.5.488, uncommitted):
+# `C:/t/nrun-dimension-states-whethe/rasputin_result.json` -- 601 total
+# gate-AND'd runs across the three instruments and 0 with an attack strictly
+# inside them. This is a different question from the tick-length clause
+# above (a run's *length*): this is whether a run's *extent* can span more
+# than one note at all, which would make a length comparison blame the wrong
+# note. Answer, on this file: it cannot -- Hubbard's classic player releases
+# the gate at the end of every untied note (`release_tails`), so the AND
+# term in the predicate drops between notes even when both select noise.
+
+
+def test_nrun_dimension_states_the_no_concatenation_finding():
+    """The registry entry is the one place a report reader sees this without
+    opening the source -- pin the fresh Rasputin number so clause (b) cannot
+    be quietly dropped from what the report prints."""
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "do NOT concatenate" in d.of
+    assert "601 total runs" in d.of
+    assert "0 with an attack inside them" in d.of
+    assert "1539/2569/2570" in d.of
+
+
+def _noise_run_bounds(voice, nframes):
+    """(start, end) for every gate-AND'd run, mirroring `_noise_run_walk`'s
+    predicate but returning bounds instead of a length, so a test can ask
+    whether an attack lands strictly inside one."""
+    wf = fidelity.register_timeline(voice.wf_events, nframes)
+    f = 0
+    out = []
+    while f < nframes:
+        if not (wf[f] & fidelity.WF_NOISE and wf[f] & fidelity.WF_GATE):
+            f += 1
+            continue
+        start = f
+        while f < nframes and (wf[f] & fidelity.WF_NOISE and wf[f] & fidelity.WF_GATE):
+            f += 1
+        out.append((start, f))
+    return out
+
+
+def test_noise_runs_never_lands_an_attack_inside_a_run_when_gate_ands_between_notes():
+    """Two noise notes, frames 5-8 and 14-18, gate released 9-13 between them
+    (the classic player's ordinary end-of-note behaviour) -- gate-AND'd this
+    is two runs, and neither run contains the OTHER note's attack. That is
+    the Rasputin finding reproduced on a synthetic timeline: the predicate
+    partitions runs at note boundaries, it does not merge across them.
+
+    SABOTAGE: a voice whose gate never releases between the same two attacks
+    (what a gate-blind predicate would also see, and what a mis-encoded tied
+    note would produce) collapses the two notes into ONE run spanning both --
+    attack 14 then lands strictly inside it. Mutating `wf_events` to drop the
+    frame-9 gate-release is exactly this mutation, applied on disk below."""
+    adsr = [(0, 0x0A0A)]
+    wf_events = [(0, 0x80), (5, 0x81), (9, 0x80), (14, 0x81), (19, 0x80)]
+    voice = _run_voice(wf_events, adsr, attacks=[5, 14])
+    nframes = 30
+
+    bounds = _noise_run_bounds(voice, nframes)
+    assert bounds == [(5, 9), (14, 19)]
+    for start, end in bounds:
+        assert [a for a in voice.attack_frames if start < a < end] == []
+
+    # Sabotage in-process: remove the frame-9 gate release (as if the gate
+    # never dropped between the two notes) and confirm the runs DO merge and
+    # DO trap the second attack -- proving the assertion above is not
+    # vacuously true for this shape of timeline.
+    sabotaged = _run_voice([(0, 0x80), (5, 0x81), (19, 0x80)], adsr,
+                           attacks=[5, 14])
+    sab_bounds = _noise_run_bounds(sabotaged, nframes)
+    assert sab_bounds == [(5, 19)]
+    trapped = [a for a in sabotaged.attack_frames
+               if sab_bounds[0][0] < a < sab_bounds[0][1]]
+    assert trapped == [14]
+
+
 # --- a `-` from `nrun` has two causes, and the row says which ---------------
 #
 # `noise_runs` drops a run touching frame 0 or the last frame -- right for a
@@ -2633,7 +2711,8 @@ def test_depth_declines_rather_than_measuring_the_wrong_population():
         got = fidelity.depth_compare(v, v, len(seg), keys)
         assert not any(k in got for k in MEASURED), (
             f"depth_compare(keys={keys!r}) measured something: {got}")
-        assert got.get("depth_refusal") in ("no-population", "no-shared-key")
+        assert got.get("depth_refusal") in ("no-population", "gated",
+                                            "no-shared-key")
 
 
 def test_a_release_rewritten_by_cut_release_still_joins():
@@ -3478,12 +3557,18 @@ def test_depths_ten_null_rows_are_two_different_findings():
     no_population = ["Radio_ACE", "Lion_Heart", "Lakers_vs_Celtics",
                      "Pacific_Coast", "Go_Go_Dash", "Sun_Never_Shines",
                      "Kings_of_the_Beach_ingame"]
-    has_population = ["5_Title_Tunes", "Commodore_64_Music_Examples", "BMX_Kidz"]
+    # Re-run at v0.5.488 with the player's own exclusions applied
+    # (`vibrato_population`): the three v0.5.467 no-shared-key files split
+    # 2 / 1. Commodore_64_Music_Examples (9 keys, 0 dropped) and BMX_Kidz
+    # (2 keys, `$78/$07` engine, no exclusion applies) keep a population;
+    # 5_Title_Tunes' six are all ones the player never opens and it is now
+    # the `gated` refusal -- pinned by its own test below.
+    has_population = ["Commodore_64_Music_Examples", "BMX_Kidz"]
     for stem in no_population:
         path = CORPUS / f"{stem}.sid"
         if not path.exists():
             continue
-        assert not fidelity.vibrato_records(path), (
+        assert fidelity.vibrato_records(path) is None, (
             f"{stem} gained a vibrato population; `depth` can measure it now "
             f"and its null row is no longer 'no population'")
     for stem in has_population:
@@ -3493,6 +3578,127 @@ def test_depths_ten_null_rows_are_two_different_findings():
         assert fidelity.vibrato_records(path), (
             f"{stem} lost its vibrato population; its null row is now the "
             f"other cause")
+
+
+@needs_corpus
+def test_5_title_tunes_population_is_one_the_player_never_opens():
+    """5_Title_Tunes carries six vibrato bytes the triangle engine never acts
+    on, so its `depth` refusal is `gated`, not `no-shared-key`.
+
+    The six split exactly as the player's two exclusions do: record 7 stores
+    a shift of `$10` (>= TRIANGLE_VIBRATO_MAX_SHIFT, the interval shifted to
+    nothing), and the other five -- records 1, 4, 5, 9 and 13 -- are never
+    played on a note as long as the file's gate of 8 (the longest is two
+    rows). goatwriter's own log for the file under its presets reads
+    `0 note(s) vibrated, 839 damped by length`, so the conversion agrees.
+    An empty pair is the correct comparison here, and `-!` -- "a comparison
+    that should have happened and did not" -- was the wrong mark for twenty
+    versions. Pinned on the counts, not just the emptiness, so a change to
+    either exclusion fails here by name.
+    """
+    path = CORPUS / "5_Title_Tunes.sid"
+    if not path.exists():
+        pytest.skip("5_Title_Tunes.sid not in the corpus")
+    pop = fidelity.vibrato_population(path)
+    assert pop["engine"] == "triangle"
+    assert pop["candidates"] == 6
+    assert pop["shift_dropped"] == 1, pop
+    assert pop["gate_dropped"] == 5, pop
+    assert pop["keys"] == set(), pop
+    # ...and the wrapper hands the same empty set on, not None: the two are
+    # different refusals downstream.
+    assert fidelity.vibrato_records(path) == set()
+    v = [fidelity.Voice(), fidelity.Voice(), fidelity.Voice()]
+    got = fidelity.depth_compare(v, v, 100, keys=fidelity.vibrato_records(path))
+    assert got.get("depth_refusal") == "gated", got
+    from fidelity import _fmt_depth
+    assert _fmt_depth(got) == "-"
+
+
+@needs_corpus
+def test_the_player_exclusions_leave_the_other_two_engines_alone():
+    """Only the triangle engine has a shift and a duration gate; the `$78/$07`
+    pair (BMX_Kidz) and the LFO table must come through with 0 dropped."""
+    path = CORPUS / "BMX_Kidz.sid"
+    if not path.exists():
+        pytest.skip("BMX_Kidz.sid not in the corpus")
+    pop = fidelity.vibrato_population(path)
+    assert pop["engine"] == "pair"
+    assert pop["shift_dropped"] == 0 and pop["gate_dropped"] == 0
+    assert pop["keys"] and len(pop["keys"]) == pop["candidates"] == 2
+    # And a triangle file whose records DO reach the gate loses nothing:
+    # Commodore_64_Music_Examples plays 8-row notes on every vibrato record
+    # against a gate of 5, so its no-shared-key is a real finding.
+    path = CORPUS / "Commodore_64_Music_Examples.sid"
+    if not path.exists():
+        pytest.skip("Commodore_64_Music_Examples.sid not in the corpus")
+    pop = fidelity.vibrato_population(path)
+    assert pop["engine"] == "triangle"
+    assert pop["candidates"] == 9 and pop["gate_dropped"] == 0
+    assert pop["shift_dropped"] == 0
+    assert len(pop["keys"]) == 9
+
+
+def test_triangle_gate_walk_carries_the_live_instrument_across_patterns(monkeypatch):
+    """The walk is keyed on the live instrument the ORDERLIST carries, so a
+    long note in a pattern that names no instrument is charged to the record
+    the previous pattern left live -- the player's sticky register, not
+    goatwriter's per-pattern reset. Built on a synthetic detection with two
+    patterns: A names record 0 and plays a 2-row note, B names nothing and
+    plays a 10-row one. Record 0 reaches the gate only through the carry."""
+    import fidelity as F
+
+    class Det:
+        triangle_gate = 8
+        read_track_version = 0
+        track_fd_transpose = False
+
+    calls = {}
+
+    def fake_tracks(sid, det, log, a, b):
+        return [[0, 1, 0xFF, 0]]
+
+    def fake_decode(sid, det, i, slides=False, status_bit6=False):
+        calls[i] = (slides, status_bit6)
+        if i == 0:
+            return [0x70, 2, 0, 0, 0xBD, 0, 0, 0]                 # rec 0, 2 rows
+        return [0x70, 0, 0, 0] + [0xBD, 0, 0, 0] * 9             # unnamed, 10 rows
+
+    import h2g.tracks
+    import h2g.patterns
+    monkeypatch.setattr(h2g.tracks, "convert_tracks", fake_tracks)
+    monkeypatch.setattr(h2g.patterns, "decode_entry", fake_decode)
+    got = F.triangle_gate_records(None, Det())
+    assert got == {0}, got
+    # ...under the player's grammar, not the fixture's default.
+    assert calls == {0: (True, True), 1: (True, True)}, calls
+
+
+def test_triangle_gate_walk_drops_a_record_played_only_short(monkeypatch):
+    """A record only ever played under the gate is not in the returned set;
+    one played exactly AT the gate (rows == gate, i.e. wait == gate - 1) is
+    not either, since the player's test is `wait >= gate`, `rows > gate`."""
+    import fidelity as F
+
+    class Det:
+        triangle_gate = 4
+        read_track_version = 0
+        track_fd_transpose = False
+
+    def fake_tracks(sid, det, log, a, b):
+        return [[0, 0xFF, 0]]
+
+    def fake_decode(sid, det, i, slides=False, status_bit6=False):
+        return ([0x70, 2, 0, 0] + [0xBD, 0, 0, 0] * 3      # rec 0: 4 rows == gate
+                + [0x70, 3, 0, 0] + [0xBD, 0, 0, 0] * 4    # rec 1: 5 rows  > gate
+                + [0x70, 4, 0, 0])                          # rec 2: 1 row
+
+    import h2g.tracks
+    import h2g.patterns
+    monkeypatch.setattr(h2g.tracks, "convert_tracks", fake_tracks)
+    monkeypatch.setattr(h2g.patterns, "decode_entry", fake_decode)
+    got = F.triangle_gate_records(None, Det())
+    assert got == {1}, got
 
 
 @needs_corpus
@@ -3530,6 +3736,9 @@ def test_no_population_and_no_shared_key_are_different_refusals():
 
     assert _fmt_depth({"depth_refusal": "no-population"}) == "-"
     assert _fmt_depth({"depth_refusal": "no-shared-key", "depth_keys": 6}) == "-!"
+    # The third refusal shares the honest dash on purpose: a population the
+    # player never opens is nothing to fix, and `!` is the mark of work.
+    assert _fmt_depth({"depth_refusal": "gated"}) == "-"
     # Not vacuous: the two must actually differ, or the column has gained a
     # field and kept the defect.
     assert (_fmt_depth({"depth_refusal": "no-population"})
@@ -3561,16 +3770,32 @@ def test_an_older_row_without_the_refusal_key_underclaims():
 def test_depth_agreement_reports_which_refusal_it_made():
     """The two exits carry their own cause, keyed structurally.
 
-    `keys` empty is the no-population exit; a non-empty `keys` whose
-    oscillation depths share no pair is the no-shared-key exit. Both leave
-    `depth_ratio` absent, which is what keeps the column's `-` semantics.
+    `keys` None is the no-population exit; `keys` EMPTY is the gated exit
+    (records carry the byte, the player's own exclusions dropped every one:
+    `vibrato_population`); a non-empty `keys` whose oscillation depths share
+    no pair is the no-shared-key exit. All three leave `depth_ratio` absent,
+    which is what keeps the column's `-` semantics. Until v0.5.489 `set()`
+    was the no-population exit too, which is why 5_Title_Tunes could only
+    ever print `-!` or the wrong dash.
     """
     import fidelity as F
 
     v = [F.Voice(), F.Voice(), F.Voice()]
-    empty = F.depth_compare(v, v, 100, keys=set())
+    empty = F.depth_compare(v, v, 100, keys=None)
     assert empty.get("depth_refusal") == "no-population"
     assert "depth_ratio" not in empty
+
+    gated = F.depth_compare(v, v, 100, keys=set())
+    assert gated.get("depth_refusal") == "gated"
+    assert "depth_ratio" not in gated
+    assert "depth_keys" not in gated
+    # The VICE path calls the sided form directly and must make the same
+    # three distinctions -- an empty set there used to filter every note and
+    # then report no-shared-key with depth_keys 0.
+    sided = F._depth_compare_sided(v, v, 100, 100, set(), 1, 1)
+    assert sided.get("depth_refusal") == "gated"
+    assert F._depth_compare_sided(v, v, 100, 100, None, 1, 1).get(
+        "depth_refusal") == "no-population"
 
     # A population that cannot pair: keys present, but no voice data at all,
     # so `oscillation_depths` finds no instrument with a positive depth.
@@ -3591,6 +3816,11 @@ def test_the_depth_dimension_declares_both_dashes():
     d = next(x for x in F.DIMENSIONS if x.key == "depth_ratio")
     assert "-!" in d.of, "the depth Dimension does not mention its second dash"
     assert "no instrument key was shared" in d.of
+    # ...and the third refusal, by name and by mechanism.
+    assert "gated" in d.of, "the depth Dimension does not name its third refusal"
+    assert "TRIANGLE_VIBRATO_MAX_SHIFT" in d.of
+    assert "duration gate" in d.of
+    assert "depth_gated" in d.of
 
 
 # ---- gate and hold are one frame counted twice ----------------------------
@@ -4006,3 +4236,162 @@ def test_the_vib_and_depth_dimensions_declare_the_frame_sampling_blindness():
         d = next(x for x in fidelity.DIMENSIONS if x.key == key)
         assert "--vice" in d.of, key
         assert "play call" in d.of, key
+
+
+def test_a_named_missing_presets_path_is_an_error_not_empty_options():
+    """CLAUDE.md: a --presets path the user named that does not exist must be
+    an error, not a silent fall-through to default-options measurement."""
+    import sys
+    sid = REPO_ROOT / "Commando.sid"
+    proc = subprocess.run(
+        [sys.executable, "fidelity.py", str(sid),
+         "--presets", str(REPO_ROOT / "python" / "does_not_exist_presets.json")],
+        cwd=REPO_ROOT / "python", capture_output=True, text=True,
+    )
+    assert proc.returncode != 0, proc.stdout + proc.stderr
+    assert "does_not_exist_presets.json" in (proc.stdout + proc.stderr)
+
+
+# --- `-t` is a FLOOR once the length probe has placed the ending --------------
+#
+# At `-t 180` the 8 corpus originals that end between 180 s and 600 s were
+# scored as prefixes (Food_Feud 73%, Rock_Tells_the_Tale 47%) with only `cov`
+# admitting it. `window_floor` widens the register window to the tune's own
+# ending, through the same `original_ended` the shortening branch uses in the
+# other direction. Pinned on SYNTHETIC length results, so the floor's arithmetic
+# is tested without a converter, a packer or a trace.
+
+class _V:
+    def __init__(self, frames):
+        self.attack_frames = list(frames)
+
+
+def _original_ending_at(last_second: float, probe_seconds: int):
+    """An original traced over `probe_seconds` whose attacks come every half
+    second and stop at `last_second`, then silence to the edge."""
+    frames = list(range(0, int(last_second * 50), 25))
+    return [_V(frames), _V([]), _V([])]
+
+
+def test_the_floor_widens_the_window_to_the_probed_ending():
+    """Food_Feud's shape: `-t 180`, last attack at 245.4 s inside an 1800 s
+    probe. The floor lands one second past the last attack, as the
+    shortening branch does (`original_ended`: `last // 50 + 2`), so the
+    note's own release is inside the window -- 247, not 246 or 245."""
+    orig = _original_ending_at(245.4, 1800)
+    assert fidelity.original_ended(orig, 1800) == 247, "the probe placed it"
+    assert fidelity.window_floor(orig, 1800, 180) == 247
+
+
+def test_the_floor_never_shortens_and_never_widens_past_the_ending():
+    """Two negatives the floor must hold. An ending INSIDE `-t` is the
+    shortening branch's business, not the floor's -- it returns None rather
+    than a smaller window (that row was already shortened before the probe
+    ran). And a widened window is the ending, never the probe's own length."""
+    inside = _original_ending_at(17.0, 1800)      # last attack at 16.5 s
+    assert fidelity.original_ended(inside, 1800) == 18
+    assert fidelity.window_floor(inside, 1800, 180) is None
+    # exactly at the floor: nothing to widen
+    at = _original_ending_at(178.2, 1800)
+    assert fidelity.original_ended(at, 1800) == 180
+    assert fidelity.window_floor(at, 1800, 180) is None
+    # past it: widened to the ending, not to 1800
+    past = _original_ending_at(380.84, 1800)
+    got = fidelity.window_floor(past, 1800, 180)
+    assert got == 382 and got < 1800
+
+
+def test_the_floor_leaves_an_original_the_probe_cannot_place_alone():
+    """A tune still sounding at the probe's edge has no ending to widen to;
+    the row stays an honest prefix (`length_never_ends`, `cov` `<`)."""
+    dense = [_V(range(0, 1800 * 50, 10)), _V([]), _V([])]
+    assert fidelity.original_ended(dense, 1800) is None
+    assert fidelity.window_floor(dense, 1800, 180) is None
+
+
+def test_measure_applies_the_floor_through_window_floor_and_records_it():
+    """The seam: `_measure` must reach the helper the tests above pin, on the
+    branch where the probe found an ending, assign the widened window to the
+    local `seconds` every later trace reads, record `window_widened_to`, and
+    honour `--no-window-floor`. Read from source, as the sibling
+    `length_never_ends` test does, because running `_measure` needs a
+    converter, a packer and siddump."""
+    src = pathlib.Path(fidelity.__file__).read_text(encoding="utf-8")
+    call = src.index("window_floor(a_long, long_seconds, seconds)")
+    probe = src.index('row["length_probe_seconds"] = long_seconds')
+    assert 0 < call - probe < 3000, "the floor is no longer on the probed branch"
+    region = src[call:call + 600]
+    assert 'row["window_widened_to"] = widened' in region
+    assert "seconds = widened" in region
+    assert 'getattr(args, "no_window_floor", False)' in src[call - 200:call]
+    assert 'row["window_seconds"] = seconds' in src[call:call + 2000], (
+        "the row no longer records the window it was traced over")
+
+
+def test_coverage_reads_whole_for_a_widened_row():
+    """`cov` 1.0 is the whole point of widening; the branch that sets it
+    must see `window_widened_to` as well as `original_ends`."""
+    src = pathlib.Path(fidelity.__file__).read_text(encoding="utf-8")
+    assert ('if row.get("original_ends") is not None or '
+            'row.get("window_widened_to"):' in src)
+
+
+def test_traced_window_reconstructs_a_pre_key_row_exactly():
+    """A baseline saved before `window_seconds` existed could never have been
+    widened, so its window is `original_ends` if shortened and `seconds`
+    otherwise -- and a new row says so itself."""
+    assert fidelity.traced_window({"seconds": 180}) == 180
+    assert fidelity.traced_window({"seconds": 180, "original_ends": 17}) == 17
+    assert fidelity.traced_window(
+        {"seconds": 180, "window_seconds": 247, "window_widened_to": 247}) == 247
+    assert fidelity.traced_window({"status": "not converted"}) is None
+
+
+def test_baseline_refuses_across_a_widened_window_as_it_does_across_t():
+    """A 180 s prefix score and a whole-tune score are two quantities. The
+    old artefact's rows carry no `window_seconds`, so the refusal has to
+    come through `traced_window`'s reconstruction."""
+    old = _ab("Food_Feud.sid", "same", seconds=180)
+    new = _ab("Food_Feud.sid", "same", seconds=180,
+              window_seconds=247, window_widened_to=247)
+    assert fidelity.settings_mismatch({"Food_Feud.sid": old},
+                                      {"Food_Feud.sid": new}) == [
+        "Food_Feud.sid: window 180 -> 247"]
+    text, code = fidelity.compare_runs([old], [new])
+    assert code == 2 and "## Refused" in text
+    assert "Food_Feud.sid: window 180 -> 247" in text
+    # a `-t` mismatch is named once, not twice
+    assert fidelity.settings_mismatch(
+        {"A.sid": _ab("A.sid", seconds=60)},
+        {"A.sid": _ab("A.sid", seconds=180, window_seconds=247)}) == [
+        "A.sid: seconds 60 -> 180"]
+    # and two widened runs agree
+    assert fidelity.settings_mismatch({"Food_Feud.sid": new},
+                                      {"Food_Feud.sid": dict(new)}) == []
+
+
+def test_the_report_header_records_the_per_file_window():
+    """The `-t` figure in the header must not be read alone once it is a
+    floor: the header says how many rows sit above it and how far, and the
+    notes name them with their windows."""
+    row = _row("Food_Feud.sid", "measured", 1.0, 3491, 3491)
+    row.update(window_seconds=247, window_widened_to=247, window_coverage=1.0)
+    plain = _row("A.sid", "measured", 1.0, 10, 10)
+    plain["window_seconds"] = 10
+    text = fidelity.report([row, plain], _Args())
+    head = next(l for l in text.splitlines() if l.startswith("Generated by"))
+    assert "10 s of" in head
+    assert "`-t` is a floor: 1 file(s)" in head and "up to 247 s" in head
+    assert "(Food_Feud 247s)" in text
+    assert "`--no-window-floor`" in text
+    # a run in which nothing widened says nothing about it
+    quiet = fidelity.report([plain], _Args())
+    assert "is a floor" not in quiet and "widened past" not in quiet
+
+
+def test_the_cli_offers_no_window_floor():
+    import sys
+    proc = subprocess.run([sys.executable, "fidelity.py", "--help"],
+                          cwd=REPO_ROOT / "python", capture_output=True,
+                          text=True)
+    assert "--no-window-floor" in proc.stdout

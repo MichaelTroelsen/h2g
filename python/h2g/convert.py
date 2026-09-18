@@ -739,9 +739,32 @@ def convert(sid_path: str, log: Logger = print,
             plan = collect_pulse_phases(
                 new_patterns, tracks, group_tempos, sims, log,
                 free_rows=free_rows,
-                # The bounds engine's sim runs on the original's frame
-                # clock; the triangle engine's stays on ours, as it was
-                # -- see collect_pulse_phases on `calls_per_frame`.
+                # The bounds engine's sim runs on the original's FRAME
+                # clock (Saboteur_II, -S3: $756 planned where the original
+                # held $2B0 before it did). The triangle engine's stays on
+                # OUR CALLS -- and that is now a MEASUREMENT, not the
+                # leftover it was taken for: on Game_Killer (-S9, the one
+                # multispeed triangle carrier whose first pass the trace
+                # covers) the walk's planned onset buckets agree with the
+                # original's, index-paired, 63% / 61% over the first 100 /
+                # 200 sweeping notes on the call clock and 19% / 21% on the
+                # frame clock (26% / 25% at the best shift; 30% and 32% at
+                # 2 and 3 calls a frame), on a 7-bucket alphabet whose
+                # chance level is ~14%. The original's own sequence
+                # (8 8 9 12 11 10 13 14 9 12 11 10 ...) jumps by up to five
+                # buckets a note, which a $E0 step at 2.2 frames a row
+                # cannot do. So the v0.5.460 "sweeps per frame" reading
+                # above holds for the ENTRY to the play routine, and the
+                # onsets place this engine's DEC/BPL counter inside the
+                # multispeed core that entry runs `multiplier` times (an
+                # inference from the trace, not yet read off the
+                # disassembly). Rasputin and
+                # One_Man_and_his_Droid are at chance on BOTH clocks under
+                # the same probe -- their originals open notes on buckets
+                # the free-running sim never plans (One_Man: every note at
+                # $8xx), a model defect, not a clock one. See
+                # collect_pulse_phases on `calls_per_frame` and
+                # tests/test_pulse_phase.py's clock test.
                 calls_per_frame=multiplier if bounds_sims else 1)
             table = None
             if plan:

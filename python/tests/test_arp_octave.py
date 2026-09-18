@@ -23,17 +23,34 @@ block, with four different masks and both branch senses:
              Human_Race, Phantoms_of_the_Asteroid
 
 so eight of the nine read as having no arpeggio at all. Widening the two bytes
-is a *detection* fix and deliberately not a rate fix: the mask is the
-alternation period and `goatwriter._wavetable_entries` does not read it -- it
-emits the one-call swing `AND #$01` gives. The A/B that shipped this says so
-plainly. Every sequence and register dimension (melody, seq, pitch, retrig,
-wave, noise, adsr, gate, nrun, hold, onset, tail, drift) is **exactly
-unchanged** on all nine files; `bend` moves toward 1 on five of them
-(Phantoms 5.83 -> 1.14, Zoids 4.79 -> 0.91) and `vib` -- the oscillation
-rate -- moves on seven, four toward the original and three past it
-(Game_Killer 0.19 -> 2.55, Master_of_Magic 0.59 -> 2.92). Mean log-distance
-from 1.00 falls 1.29 -> 0.89. The overshoot is the mask this emitter cannot
-express, and it is the next piece of work, not a defect in the reading.
+was a *detection* fix and deliberately not a rate fix: the mask is the
+alternation period and, until v0.5.489, `goatwriter._wavetable_entries` did
+not read it -- it emitted the one-call swing `AND #$01` gives. The A/B that
+shipped the widening says so plainly. Every sequence and register dimension
+(melody, seq, pitch, retrig, wave, noise, adsr, gate, nrun, hold, onset,
+tail, drift) was **exactly unchanged** on all nine files; `bend` moved toward
+1 on five of them (Phantoms 5.83 -> 1.14, Zoids 4.79 -> 0.91) and `vib` --
+the oscillation rate -- moved on seven, four toward the original and three
+past it (Game_Killer 0.19 -> 2.55, Master_of_Magic 0.59 -> 2.92). Mean
+log-distance from 1.00 fell 1.29 -> 0.89. The overshoot was the mask the
+emitter could not express.
+
+**Since v0.5.489 the mask IS read**, and it is a duty cycle in frames
+(`goatwriter.fixed_arp_period`, `fixed_arp_up`): `$02` two base and two up,
+`$04` four and four, `$07` one base and seven up. `fixed_arp_duty_entries`
+run-length codes one period onto wavetable delay entries from the record's
+phase (`fixed_arp_phases`, now the counter's residue on the attack frame
+rather than a 1-or-2 offset) and multiplies the runs out by the call rate.
+Two counters are GATED -- Game_Killer's `INC` sits behind an outer
+`DEC / BPL / LDA #$09 / STA / RTS` and Rasputin's behind `DEC / BPL / LDA
+$C539 / STA / JMP`, where `$C539` is the track's own `$FE nn` tempo -- so the
+counter is not the frame number, no phase can be walked, and those two take
+the reset residue 0. Rasputin's duty follows that tempo: three and three at
+the opening's reload 2, two and two at the 5..120 the rest of the tune
+runs (232 of 293 octave onsets in a 240 s trace); it gets the mask's own
+two-and-two. The tests below pin the readers, the shape against a
+transcription of the player's wavetable loop at -S1 and -S2, and the duty
+against a siddump of four originals.
 
 What makes the block unambiguous is that both paths converge: the `JMP` after
 the `ADC` lands exactly on the `ASL` of the fallthrough's own frequency
@@ -211,7 +228,10 @@ def test_no_other_corpus_file_claims_a_fixed_interval():
 import pytest                                                # noqa: E402
 
 from h2g.goatwriter import (fixed_arp_counter_base,          # noqa: E402
-                            fixed_arp_first_fetch, fixed_arp_phases)
+                            fixed_arp_counter_gated,
+                            fixed_arp_duty_entries, fixed_arp_first_fetch,
+                            fixed_arp_mask, fixed_arp_period, fixed_arp_phases,
+                            fixed_arp_up, BEQ, BNE)
 
 PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PYTHON_ROOT))
@@ -248,10 +268,21 @@ def test_counter_base_and_first_fetch_are_read_from_the_file():
     sid, det = _det(COMMANDO)
     assert fixed_arp_counter_base(sid, det) == 0
     assert fixed_arp_first_fetch(sid, det) == 1
-    # Another mask is not this phase: Zoids divides by $04.
+    # Another mask is the same counter and the same reset: Zoids divides by
+    # $04 and its base reads 0 like Commando's (until v0.5.489 it read None,
+    # the parity mask being the only one the emitter could use).
     sid, det = _det(CORPUS / "Zoids.sid")
     assert det.arp_fixed_up == OCTAVE
-    assert fixed_arp_counter_base(sid, det) is None
+    assert fixed_arp_counter_base(sid, det) == 0
+    assert fixed_arp_first_fetch(sid, det) == 1
+    # A GATED counter has no base: its `INC` is skipped one call in R+1.
+    for name in ("Game_Killer", "Rasputin"):
+        sid, det = _det(CORPUS / f"{name}.sid")
+        assert fixed_arp_counter_gated(sid, det), name
+        assert fixed_arp_counter_base(sid, det) is None, name
+    for name in ("Zoids", "Chimera", "Commando", "Hunter_Patrol"):
+        sid, det = _det(CORPUS / f"{name}.sid")
+        assert not fixed_arp_counter_gated(sid, det), name
 
 
 def _timeline(voice, n):
@@ -376,22 +407,340 @@ def test_ticked_records_carry_the_octave_on_the_tick():
 def test_the_vote_splits_hunter_patrol_by_instrument():
     """Row 3 frames, first fetch 1, base $1F. Instrument 12's notes all sit
     on rows 0, 18, 36, ... -- odd frames, and with the odd base the counter
-    is EVEN there, so the octave is the frame after: offset 1. Instrument
-    11's notes sit on both parities, 11 odd-frame to 6 even-frame in one lap
-    of voice 2, so it takes offset 1 too; instrument 4, the noise record
-    the voice's other 150 notes play, sits on even frames throughout and
-    takes offset 2. The walk names the frame of all 131 of voice 2's attacks
-    exactly (v0.5.485, siddump of the original), so the split is the
-    music's, and instrument 11's minority is the residue a per-note phase
-    would recover.
+    is EVEN there (residue 0), so the octave is the frame after: offset 1.
+    Instrument 11's notes sit on both parities, 11 odd-frame to 6 even-frame
+    in one lap of voice 2, so it takes residue 0 too; instrument 4, the
+    noise record the voice's other 150 notes play, sits on even frames
+    throughout and takes residue 1, offset 2. The walk names the frame of
+    all 131 of voice 2's attacks exactly (v0.5.485, siddump of the
+    original), so the split is the music's, and instrument 11's minority is
+    the residue a per-note phase would recover.
+
+    The values are the counter's residue since v0.5.489 (`0` and `1` where
+    they were the offsets `1` and `2`); `_wavetable_entries`' tick shape
+    turns a residue back into `1 + (residue & 1)`.
     """
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     sid, det = _det(CORPUS / "Hunter_Patrol.sid")
     _, tracks, patterns = _converted("Hunter_Patrol")
     phases = fixed_arp_phases(sid, det, tracks, patterns)
-    assert (phases.get(12), phases.get(11), phases.get(4)) == (1, 1, 2), phases
+    assert (phases.get(12), phases.get(11), phases.get(4)) == (0, 0, 1), phases
     sid, det = _det(CORPUS / "Commando.sid")
     _, tracks, patterns = _converted("Commando")
     phases = fixed_arp_phases(sid, det, tracks, patterns)
-    assert phases and set(phases.values()) == {1}, phases
+    assert phases and set(phases.values()) == {0}, phases
+
+
+# ---------------------------------------------------------------------------
+# The mask's duty cycle, v0.5.489.
+#
+# `fixed_arp_duty_entries` is checked three ways: the readers against the
+# files, the shape against a transcription of the player's wavetable loop
+# (`test_call_rate.wave_timeline`, gplay.c's WAVEEXEC) at -S1, -S2 and -S3,
+# and the duty against a siddump of the originals wherever siddump is on the
+# machine. Nothing here asserts a count of entries: the shape is whatever
+# the loop plays.
+# ---------------------------------------------------------------------------
+from test_call_rate import wave_timeline                     # noqa: E402
+
+# name -> counter residue on the attack frame for the profile the original
+# sounds most (measure_duty at v0.5.489, per-onset `b`/`u` from the attack):
+#   Zoids `buubbbbuuuubbbbuu` 78 of 108   One_Man `buuubbbb` 187 of 188
+#   Master_of_Magic `buuuuuubuuuuuuub` 174 of 244
+#   Phantoms `buuuuuuu` 319 of 340
+DUTY_PROFILES = {
+    "Zoids": (1, "buubbbbuuuubbbbuu"),
+    "One_Man_and_his_Droid": (0, "buuubbbb"),
+    "Master_of_Magic": (1, "buuuuuubuuuuuuub"),
+    "Phantoms_of_the_Asteroid": (0, "buuuuuuu"),
+}
+
+
+def test_the_period_is_the_masks_highest_bit_doubled():
+    assert fixed_arp_period(0x01) == 2
+    assert fixed_arp_period(0x02) == 4
+    assert fixed_arp_period(0x04) == 8
+    assert fixed_arp_period(0x07) == 8
+
+
+def test_the_branch_sense_swaps_the_paths():
+    # `BEQ base`: up where the masked counter is nonzero.
+    assert [fixed_arp_up(0x07, BEQ, c) for c in range(8)] == [False] + [True] * 7
+    assert [fixed_arp_up(0x02, BEQ, c) for c in range(4)] == [False, False, True, True]
+    # `BNE base`: Zoids' spelling, up where it is zero.
+    assert [fixed_arp_up(0x04, BNE, c) for c in range(8)] == [True] * 4 + [False] * 4
+    assert [fixed_arp_up(0x01, BEQ, c) for c in range(4)] == [False, True, False, True]
+
+
+@needs_corpus
+def test_the_mask_is_read_from_every_file():
+    for name, (mask, branch) in FIXED_ARP.items():
+        path = COMMANDO if name == "Commando" else CORPUS / f"{name}.sid"
+        sid, det = _det(path)
+        assert fixed_arp_mask(sid, det) == (mask, branch), name
+
+
+def _profile(left, right, up_note, calls, start=6):
+    """`b`/`u` per play call from the loop transcription, entry 0 on call 0."""
+    out = []
+    for _, _, note in wave_timeline(left, right, first=start, calls=calls):
+        out.append("u" if note == up_note else "b")
+    return "".join(out)
+
+
+def _expected(mask, branch, phase, frames, m):
+    """The original's profile, frame 0 base, each frame `m` calls."""
+    prof = "b" * m
+    for j in range(1, frames):
+        prof += ("u" if fixed_arp_up(mask, branch, phase + j) else "b") * m
+    return prof
+
+
+@pytest.mark.parametrize("m", [1, 2, 3])
+@pytest.mark.parametrize("mask,branch", [(0x02, BEQ), (0x04, BNE), (0x07, BEQ)])
+@pytest.mark.parametrize("phase", range(8))
+def test_the_shape_plays_the_masks_duty_at_every_rate(mask, branch, phase, m):
+    """One period of frames, run-length coded, at -S1, -S2 and -S3.
+
+    Every call of 40 frames is checked against `fixed_arp_up` on the
+    counter the frame would read, from every residue the counter can hold
+    on the attack frame. The loop transcription is what consumes delay
+    entries, so `value + 1` calls and the note on the last of them are
+    both exercised rather than assumed.
+    """
+    if phase >= fixed_arp_period(mask):
+        pytest.skip("residue past the period")
+    got = fixed_arp_duty_entries(0x41, 0x41, mask, branch, phase, 0x0C, m,
+                                 start=6, budget=255)
+    assert got is not None
+    left, right = got
+    assert left[0] == 0x41 and right[0] == 0x00      # frame 0: the record
+    assert left[-1] == 0xFF and 6 <= right[-1] < 6 + len(left) - 1
+    frames = 40
+    assert (_profile(left, right, 0x0C, frames * m)
+            == _expected(mask, branch, phase, frames, m))
+
+
+def test_the_written_shape_starts_on_frame_one():
+    """`written`: the firstwave owns frame 0, entry 0 is frame 1's call."""
+    left, right = fixed_arp_duty_entries(0x41, 0x41, 0x04, BNE, 0, 0x0C, 2,
+                                         start=6, budget=255, written=True)
+    # Frame 1 is up for residue 0 under `$04 BNE`, so the very first entry
+    # -- the tail -- carries the octave.
+    assert (left[0], right[0]) == (0x41, 0x0C)
+    prof = _profile(left, right, 0x0C, 39 * 2)
+    assert "b" * 2 + prof == _expected(0x04, BNE, 0, 40, 2)
+
+
+def test_the_tick_frames_carry_noise_and_the_octave():
+    """A both-bits record: the drum's opening noise, and the octave on it."""
+    left, right = fixed_arp_duty_entries(0x41, 0x40, 0x07, BEQ, 0, 0x0C, 1,
+                                         start=6, budget=255,
+                                         tick=(0x81, 2))
+    assert left[:4] == [0x41, 0x81, 0x81, 0x40]      # record, noise x2, tail
+    assert right[1] == 0x0C                          # frame 1 is up
+    tl = wave_timeline(left, right, first=6, calls=20)
+    waves = [w for _, w, _ in tl]
+    assert waves[:4] == [0x41, 0x81, 0x81, 0x40] and set(waves[4:]) == {0x40}
+    assert _profile(left, right, 0x0C, 20) == _expected(0x07, BEQ, 0, 20, 1)
+
+
+def test_a_run_longer_than_a_delay_is_split():
+    """`$07` at -S3: seven up frames are 21 calls, past WAVE_MAX_DELAY."""
+    left, right = fixed_arp_duty_entries(0x41, 0x41, 0x07, BEQ, 0, 0x0C, 3,
+                                         start=6, budget=255)
+    assert max(v for v in left if v < 0x10) == 0x0F
+    assert _profile(left, right, 0x0C, 30 * 3) == _expected(0x07, BEQ, 0, 30, 3)
+
+
+def test_the_shape_declines_a_budget_it_cannot_fit():
+    assert fixed_arp_duty_entries(0x41, 0x41, 0x04, BNE, 1, 0x0C, 1,
+                                  start=6, budget=3) is None
+
+
+@needs_corpus
+def test_the_duty_reaches_the_sng_and_the_parity_files_keep_theirs():
+    """Read back by songview: Zoids' loop is four and four, Commando's the
+    tick shape pinned above -- byte for byte what it was before the duty
+    existed, because `$01` never reaches `fixed_arp_duty_entries`."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sng, _, _ = _converted("Zoids")
+    wt = _wavetable_of(sng, 6)
+    # record, tail + octave, then the four-and-four loop: the profile the
+    # original sounds on 78 of its 108 octave onsets.
+    left = [l for l, _ in wt]
+    right = [r for _, r in wt]
+    assert left[0] == 0x41 and left[-1] == 0xFF
+    assert _profile(left, right, 0x0C, 17, start=34) == "buubbbbuuuubbbbuu"
+    sng, _, _ = _converted("Commando")
+    assert _wavetable_of(sng, 2) == [(0x41, 0x00), (0x81, 0x0C), (0x81, 0x00),
+                                     (0x41, 0x0C), (0x41, 0x00), (0xFF, 0x09)]
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name", sorted(DUTY_PROFILES))
+def test_the_duty_is_re_measured_against_the_original(name):
+    """Every octave frame of every onset against `fixed_arp_up(mask, branch,
+    frame)`: the counter is the frame number in these four (reset shape,
+    ungated `INC`), so the duty AND its phase are read off the trace."""
+    path = CORPUS / f"{name}.sid"
+    sid, det = _det(path)
+    mask, branch = fixed_arp_mask(sid, det)
+    assert fixed_arp_counter_base(sid, det) == 0
+    seconds = 30
+    trace = fidelity.run_siddump(path, seconds, 0, fidelity.SIDDUMP)
+    n = seconds * 50 + 2
+    agree = disagree = 0
+    for v in trace:
+        t = _timeline(v, n)
+        at = v.attack_frames
+        for i, f in enumerate(at):
+            end = at[i + 1] if i + 1 < len(at) else n
+            seg = t[f:min(end, f + 17)]
+            if not seg or not seg[0]:
+                continue
+            lo = min(x for x in seg if x)
+            if not any(x and abs(x / lo - 2) < 0.02 for x in seg):
+                continue
+            for k, x in enumerate(seg):
+                if k == 0 or not x:
+                    continue
+                is_up = abs(x / lo - 2) < 0.02
+                if not is_up and x != lo:
+                    continue
+                if is_up == fixed_arp_up(mask, branch, f + k):
+                    agree += 1
+                else:
+                    disagree += 1
+    assert agree >= 300, (name, agree, disagree)
+    assert disagree / (agree + disagree) < 0.02, (name, agree, disagree)
+
+
+# --- The ticked shape above -S1 (v0.5.489, `ticked_arp_entries`) ---------
+#
+# Until v0.5.489 a ticked arpeggio record above -S1 was forced onto the
+# per-call two-entry loop, so the octave toggled `m` times a frame: on the
+# packed Last_V8 at -S2, vsid at 312 samples a frame read the note and its
+# octave in the SAME frame on 75 of 399 frames, split 155-160 / 312
+# rasterlines -- a 100 Hz trill siddump cannot see, since it samples once a
+# frame and read a constant octave-up (`bbUUUUUb` on 421 of 503 onsets
+# where the original plays `bUbUbUbU` on 314 of 370). With the shape below
+# the same trace reads `bUbUbUbU` on 364 of 443 onsets and vsid reads 0
+# frames carrying both notes (C:/t/ticked-fixed-arp-at-s2-is-a-/
+# prof_Last_V8.txt, vice_ab.txt).
+
+from h2g.goatwriter import ticked_arp_entries                 # noqa: E402
+
+
+def _ticked(m, tick_frames=1, wave=0x41, tail=0x41, phase=None, budget=255,
+            written=False):
+    """A ticked record's lead and tick as `_wavetable_entries` builds them
+    at -S{m}: the record's waveform for one frame, then `tick_frames`
+    frames of noise -- a second noise entry at -S2, a delay above it."""
+    from h2g.goatwriter import _first_frame_lead
+    noise = 0x80 | (wave & 0x01)
+    frame0, frame0_r = _first_frame_lead(wave, m, force=True, written=written)
+    extra = tick_frames * m - 1
+    tl, tr = [noise], [0x00]
+    if extra == 1:
+        tl.append(noise)
+        tr.append(0x00)
+    elif extra > 1:
+        tl.append(min(extra - 1, 0x0F))
+        tr.append(0x80)
+    return ticked_arp_entries(frame0, frame0_r, tl, tr, noise, tail, 0x0C,
+                              m, 6, budget, arp_phase=phase)
+
+
+def _frames(left, right, m, frames, start=6):
+    """One `b`/`u`/`n` per FRAME: the note each frame's last call carries
+    (siddump's reading), `n` where the waveform is the noise tick."""
+    out = ""
+    calls = wave_timeline(left, right, first=start, calls=frames * m)
+    for j in range(frames):
+        _, wave, note = calls[j * m + m - 1]
+        out += "n" if wave in (0x80, 0x81) else "u" if note == 0x0C else "b"
+    return out
+
+
+@pytest.mark.parametrize("m", [2, 3, 4, 7])
+def test_the_ticked_shape_holds_each_half_for_m_calls(m):
+    """Every call of 20 frames from the loop transcription: the record's
+    waveform for frame 0, the noise tick for frame 1, then the note and
+    the octave alternating a whole frame each -- `m` calls a half, never
+    the per-call toggle -- and the loop target past the tick."""
+    left, right = _ticked(m)
+    assert left[-1] == 0xFF
+    assert right[-1] == 6 + len(left) - 5          # the entry after the tick
+    assert right[-1] > 6 + 1                       # never entry 0, never the lead
+    calls = wave_timeline(left, right, first=6, calls=20 * m)
+    notes = [note for _, _, note in calls]
+    waves = [wave for _, wave, _ in calls]
+    assert waves[:m] == [0x41] * m                     # frame 0: the record
+    assert waves[m:2 * m] == [0x81] * m                # frame 1: the tick
+    assert all(w == 0x41 for w in waves[2 * m:])       # the tick plays once
+    # from frame 2 on, runs of exactly m calls, alternating
+    body = notes[2 * m:]
+    runs = []
+    for x in body:
+        if runs and runs[-1][0] == x:
+            runs[-1][1] += 1
+        else:
+            runs.append([x, 1])
+    assert [r[1] for r in runs[:-1]] == [m] * (len(runs) - 1), runs
+    assert [r[0] for r in runs[:4]] == [0x00, 0x0C, 0x00, 0x0C]
+    assert _frames(left, right, m, 8) == "bnbububu"
+
+
+@pytest.mark.parametrize("m", [2, 3])
+@pytest.mark.parametrize("residue", [0, 1])
+def test_the_ticked_shape_carries_the_phase(m, residue):
+    """The parity residue read by `fixed_arp_phases`: 0 puts the first
+    octave on frame 1 -- the tick frame, carried on the noise entries'
+    right side -- and 1 on frame 2, at every rate. Per frame, the shape
+    is the original's `bUbU...` from the attack (Last_V8 and Monty read
+    `0 1 0 1 0 1` at v0.5.482, the first octave at offset 1)."""
+    left, right = _ticked(m, phase=residue)
+    first_up = 1 + residue
+    want = "".join("u" if (j - first_up) % 2 == 0 else "b" for j in range(1, 12))
+    got = _frames(left, right, m, 12)
+    assert got[0] == "b"
+    # frame 1 is the tick: its note is what the noise entries carry
+    tick_note = right[len(left) - 5 - m * 1:len(left) - 5]
+    assert set(tick_note) == ({0x0C} if residue == 0 else {0x00})
+    assert got[2:] == want[1:], (got, want)
+
+
+def test_the_ticked_shape_leaves_the_tick_alone_where_it_cannot_expand():
+    """A tick clamped by WAVE_MAX_DELAY is not a whole number of frames, so
+    the phase cannot be placed per frame: the tick keeps its delay entry
+    and the loop starts on the note, as it does with no phase at all."""
+    left, right = _ticked(9, tick_frames=2, phase=0)     # 17 calls -> $0F
+    assert 0x0F in left
+    assert right[-5] == 0x00 and right[-3] == 0x0C
+
+
+def test_the_ticked_shape_declines_a_budget_it_cannot_fit():
+    assert _ticked(2, budget=8) is None
+    assert _ticked(2, budget=9) is not None
+    assert ticked_arp_entries([0x41], [0], [0x81], [0], 0x81, 0x41, 0x0C, 1,
+                              6, 255) is None            # -S1 keeps its shape
+
+
+@needs_corpus
+def test_the_ticked_multispeed_records_reach_the_sng():
+    """Read back by songview: Last_V8's ticked octave record at -S2 holds
+    each half two calls and its loop returns to the entry after the tick,
+    while Monty's unticked record keeps the -S{m} shape it had."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sng, _, _ = _converted("Last_V8")
+    assert _wavetable_of(sng, 2) == [
+        (0x41, 0x00), (0x41, 0x00), (0x81, 0x0C), (0x81, 0x0C),
+        (0x40, 0x00), (0x40, 0x80), (0x40, 0x0C), (0x40, 0x80), (0xFF, 0x11)]
+    sng, _, _ = _converted("Monty_on_the_Run")
+    assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
+                                     (0x41, 0x80), (0xFF, 0x1A)]

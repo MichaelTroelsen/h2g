@@ -463,9 +463,13 @@ def test_the_two_clamp_cases_are_recorded_beside_the_clamp():
     start = src.index("COMMANDO IS NOT SPECIAL")
     end = src.index("if g_note >= 0x5C:", start)
     block = " ".join(src[start:end].replace("#", " ").split())
-    for probe in ("34 files clamp at all",
-                  "24 of the 34 clamp a byte PAST THEIR OWN TABLE",
-                  "9 clamp only bytes INSIDE it"):
+    # The emitted-only re-take (24b9f1d), and the retraction of the first
+    # census's 698 / 34 / 24 in its own words -- a grep for the old figures
+    # must land on the sentence that retracts them, never on a bare count.
+    for probe in ("26 files clamp in an emitted pattern, 207 clamp events",
+                  "16 of them clamp a byte PAST THEIR OWN TABLE",
+                  "34 files clamp in SOME phase",
+                  "RETRACTED -- 698 = 207 emitted + 491"):
         assert probe in block, f"the census no longer records {probe!r}"
     # ...and the lead it explicitly declines to call a result.
     assert "RECURS ACROSS SEVEN UNRELATED FILES" in block

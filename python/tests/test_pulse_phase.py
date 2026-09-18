@@ -112,6 +112,133 @@ def test_the_gate_is_lifted_and_the_budget_stands_in_its_place():
     assert gw.index(call) < gw.index("_write_instruments(out, sid, det, instr_used, pulse_starts,")
 
 
+def _corpus_and_presets():
+    presets = REPO_ROOT / "presets.json"
+    corpus = Path(r"C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob")
+    if not presets.exists() or not corpus.exists():
+        import pytest
+        pytest.skip("corpus or presets.json not available here")
+    sys.path.insert(0, str(PYTHON_ROOT))
+    return corpus, json.loads(presets.read_text(encoding="utf-8"))
+
+
+def _walk_calls_per_frame(name: str, force: int | None = None):
+    """Convert `name` with `pulse_phase` forced, capturing what convert.py
+    hands `collect_pulse_phases` as `calls_per_frame` (or overriding it
+    with `force`), and the plan it returned."""
+    import fidelity
+    from h2g import convert as C
+    corpus, doc = _corpus_and_presets()
+    path = corpus / name
+    if not path.exists():
+        import pytest
+        pytest.skip(f"{name} not in the corpus here")
+    kwargs = fidelity._preset_opts(doc, name)
+    kwargs["pulse_phase"] = True
+    seen: list = []
+    plans: list = []
+    real = C.collect_pulse_phases
+
+    def spy(*a, **kw):
+        seen.append(kw.get("calls_per_frame"))
+        if force is not None:
+            kw["calls_per_frame"] = force
+        r = real(*a, **kw)
+        plans.append(r)
+        return r
+    C.collect_pulse_phases = spy
+    try:
+        C.convert(str(path), log=lambda m: None, **kwargs)
+    finally:
+        C.collect_pulse_phases = real
+    assert seen, f"the walk was never entered on {name}"
+    return seen, plans, doc["songs"][name].get("multiplier", 1)
+
+
+def test_the_triangle_walk_stays_on_our_calls_and_the_bounds_walk_on_frames():
+    """`calls_per_frame` is the multiplier for the bounds engine and 1 for
+    the triangle engine, and the second half is MEASURED, not the leftover
+    it looked like. When the bounds walk landed (v0.5.488) the 1 was kept
+    so the moved set stayed confined to the bounds files, and a task then
+    read it as Saboteur_II's defect repeated on the triangle carriers.
+    Passing the multiplier for both was tried and measured: on Game_Killer
+    (`-S9`) the walk's planned onset buckets agree with the original's
+    index-paired 61% over the first 200 sweeping notes on the call clock
+    and 21% on the frame clock (chance ~14%); Rasputin and
+    One_Man_and_his_Droid read at chance on BOTH. The triangle sweep's
+    counter runs inside the multispeed core, `multiplier` ticks a frame;
+    the bounds engine's runs once a frame ($756 planned where Saboteur_II
+    held $2B0 before it did). Pinned as source at the seam and by capture
+    on a carrier of each engine: One_Man_and_his_Droid (`-S2`) gets 1 and
+    Saboteur_II (`-S3`) gets 3 -- never the multiplier for both, never 1
+    for both, never its square."""
+    seen_t, _, mult_t = _walk_calls_per_frame("One_Man_and_his_Droid.sid")
+    seen_b, _, mult_b = _walk_calls_per_frame("Saboteur_II.sid")
+    assert mult_t == 2 and mult_b == 3, (mult_t, mult_b)
+    assert seen_t == [1], ("triangle engine walked on the frame clock", seen_t)
+    assert seen_b == [mult_b], ("bounds engine off the frame clock", seen_b)
+    src = (PYTHON_ROOT / "h2g" / "convert.py").read_text(encoding="utf-8")
+    assert "calls_per_frame=multiplier if bounds_sims else 1)" in src, (
+        "the two engines' clocks are no longer the measured pair; read "
+        "this test's docstring before changing either")
+
+
+def test_game_killers_onsets_put_the_triangle_sweep_on_the_call_clock():
+    """The measurement behind the test above, re-taken every run: the
+    walk's planned onset buckets on Game_Killer subtune 0 voice 0, in play
+    order over the first pass, against the original's onset buckets in
+    the sweeping band ($800 and up) one frame after each attack,
+    index-paired over the first 200. The call clock reads 0.615 and the
+    frame clock 0.21 at this head; the bounds are wide enough to survive a
+    row moving and narrow enough that the two clocks cannot swap. Traced
+    at -m1 for 90 s (the first 200 sweeping onsets fall inside 70 s)."""
+    import shutil
+    import tempfile
+    import fidelity as F
+    corpus, doc = _corpus_and_presets()
+    name = "Game_Killer.sid"
+    sid = corpus / name
+    if not sid.exists() or not Path(F.SIDDUMP).exists():
+        import pytest
+        pytest.skip("Game_Killer or siddump not available here")
+    seconds = 90
+    wd = Path(tempfile.mkdtemp(prefix="gk_clock_"))
+    try:
+        local = wd / "o.sid"
+        shutil.copyfile(sid, local)
+        cal, _ = F.table_calibration(sid, F._preset_opts(doc, name))
+        sub = F.resolve_subtune(sid, "auto")
+        voices = F.run_siddump(local, seconds, sub, F.SIDDUMP, cal)
+    finally:
+        shutil.rmtree(wd, ignore_errors=True)
+    nframes = seconds * 50
+    t = F.register_timeline(voices[0].pulse_events, nframes)
+    orig = [t[f + 1] // F.PULSE_PHASE_BUCKET for f in voices[0].attack_frames
+            if f + 1 < nframes]
+    orig = [b for b in orig if b >= 8]
+    assert len(orig) >= 200, len(orig)
+
+    def planned(force: int) -> list[int]:
+        _, plans, _ = _walk_calls_per_frame(name, force=force)
+        plan = plans[0]
+        assert plan is not None
+        out = []
+        for ti, pos, rows in sorted(plan[1], key=lambda x: (x[0], x[1])):
+            if ti == 0:
+                out += [rows[r][1][0] // F.PULSE_PHASE_BUCKET for r in sorted(rows)]
+        return [b for b in out if b >= 8]
+
+    def agreement(plan: list[int]) -> float:
+        n = min(200, len(plan))
+        return sum(1 for i in range(n) if orig[i] == plan[i]) / n
+
+    on_calls = agreement(planned(1))
+    on_frames = agreement(planned(9))
+    assert on_calls >= 0.5, on_calls
+    assert on_frames <= 0.35, on_frames
+    assert on_calls > on_frames + 0.2, (on_calls, on_frames)
+
+
 def test_the_engine_population_and_its_multispeed_share():
     """The numbers the decision rests on, so a corpus change that moves them
     says so instead of leaving the docstring quietly stale.
@@ -268,6 +395,11 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     their phase entries and, of those, 3 are degraded all the way to pointer
     0 (the static pair does not fit either) -- and the file still converts
     and carries CMD_SETPULSEPTR on the instruments that kept their phase.
+    These figures are on the triangle walk's CALL clock; on a frame clock
+    (`calls_per_frame=multiplier`, measured and rejected -- see
+    `test_the_triangle_walk_stays_on_our_calls_and_the_bounds_walk_on_frames`)
+    this `-S2` file's instrument 8 opens on 14 phases instead of 4 and the
+    overflow cascades to 18 losing and 16 with no width at all.
     """
     lines = _forced_pulse_phase_logs("Last_V8.sid")
     full = [l for l in lines if "PULSE TABLE FULL UNDER --pulse-phase --" in l]

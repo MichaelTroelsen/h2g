@@ -390,3 +390,32 @@ def test_a_supplied_prior_is_used_not_searched_around():
               if lag and (sound.compare_features(a, b, lag).get("aud") or -1)
               > at_prior]
     assert better, "vacuous: no hop beat the prior, so nothing was removed here"
+
+
+def test_an_idle_floor_above_silence_db_scores_aud_as_music():
+    """The v0.5.401 Las_Vegas render (sound.py's module doc, measured at
+    v0.5.488): the music stops half-way and the packed player's resting
+    output -- DC plus a faint residual, -52 dB -- carries on. That is above
+    SILENCE_DB, so the tail frames count as `both` sounding, and once
+    peak-normalised the residual scores `aud` like music while `loud_ratio`
+    collapses. True digital silence in the same tail scores 0, which is what
+    makes this a blind spot rather than the rule the test above pins."""
+    music = _sine(seconds=4.0, hz=440.0, amp=0.15)
+    half = len(music) // 2
+    idle = (0.0019 + _sine(seconds=2.0, hz=469.0, amp=0.0022)).astype(np.float32)
+    ours = np.concatenate([music[:half], idle])
+    fo, fu = sound.features(music, RATE), sound.features(ours, RATE)
+    h = len(fo.rms_db) // 2 + 20          # past the 2048-sample window that straddles the join
+
+    def tail(f):
+        return sound.Features(f.logmel[h:], f.rms_db[h:], f.hop_s)
+
+    assert -53.0 < fu.rms_db[h:].max() < -51.0
+    assert (fu.rms_db[h:] > sound.SILENCE_DB).all(), "the idle floor is sounding"
+    got = sound.compare_features(tail(fo), tail(fu), 0)
+    assert got["sound_frames"] == len(fo.rms_db) - h
+    assert got["aud"] > 0.7, got                # the blindness: 0.744 measured
+    assert got["loud_ratio"] < 0.05, got        # what actually sees it: 0.023
+    zeros = np.concatenate([music[:half], np.zeros(len(idle), dtype=np.float32)])
+    silent = sound.compare_features(tail(fo), tail(sound.features(zeros, RATE)), 0)
+    assert silent["aud"] < 0.01, silent         # digital silence scores 0

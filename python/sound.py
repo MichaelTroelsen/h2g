@@ -39,6 +39,30 @@ time beyond the alignment window (`drift` and `len` do); and a change that
 removes events can raise it, the same trap as `wave` (section 7.eee), so it
 is read beside both sides' attack counts.
 
+**A stopped packed player is not silence to this instrument, and `aud`
+scores its idle floor as music.** Measured at v0.5.488 on the calibration's
+own renders (`build/audio/ours.f6930e8afa4c.s0.t60.wav`, the v0.5.401
+Las_Vegas_Video_Poker build, against `orig.31c0315e706a`): the tune's music
+ends around 25 s, and from there to 60 s the render sits at a flat
+-52.4 dB RMS (min -52.8, max -52.0), 78% of it DC offset (0.00187 of an
+RMS 0.00241, 149 distinct sample values) -- the SID's resting output under
+a gated-off player that never zeroes the volume nibble. The Hubbard
+original's own end reads -174 dB (digital zero), so the two sides stop
+differently. -52 dB is ABOVE `SILENCE_DB`, so every tail frame is `both`
+sounding; peak normalisation then lifts that residual to full scale and the
+tail alone scores `aud` 0.8749 -- as high as the music (head 0-20 s: 0.8701;
+whole 0.8727) -- while `loud_ratio` reads 0.0164 on the tail and 0.0743 over
+the whole. That is the "a thirteenth as loud while scoring aud 0.87" pair
+`sound_calibrate.comparable` records as an incomparable render: `aud`
+cannot see a tune that has stopped, only `loud`/`loud_ratio` can, and the
+docstring's "half the window scores our silence" is wrong in one word --
+the frames are not silent, they are the idle floor. Nothing here is changed
+on that evidence: raising `SILENCE_DB` above -52 dB or DC-filtering the RMS
+would move `aud`/`loud` for every file and the calibration's floors with
+them, which is a corpus re-measure, not a docstring.
+`tests/test_sound.py::test_an_idle_floor_above_silence_db_scores_aud_as_music`
+reproduces the mechanism synthetically.
+
 numpy is a HARNESS dependency only. `python/h2g/` stays stdlib.
 """
 from __future__ import annotations

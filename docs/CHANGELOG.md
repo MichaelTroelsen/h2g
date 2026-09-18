@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.489 — 2026-09-18
+
+- fixed-arp duty and ticked multispeed hold, the -t window floor, a named missing --presets errors, the gated depth refusal, the Las Vegas idle-floor finding, the ILV grammar test, and three LESSONS retractions
+
 ## 0.5.488 — 2026-09-15
 
 - tie dimension, classic filter clearing record, ILV signed transposes, bounds-engine pulse-phase walk, expanding vibrato, VB6 no_adsr row retired, region-slicing guards

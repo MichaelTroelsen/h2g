@@ -1142,6 +1142,33 @@ def test_the_bounds_walk_runs_on_the_originals_frame_clock():
     assert writes == [(0, 0, {2: (2, (0x080 + 4 * 0x54, +1))})]
 
 
+def test_the_triangle_walk_honours_calls_per_frame_too():
+    """The walk turns calls into frames the same way for either engine's
+    sim; which clock convert.py hands it is a fact about the ENGINE
+    (`multiplier` for the bounds engine, 1 for this one -- measured on
+    Game_Killer, tests/test_pulse_phase.py). 5_Title_Tunes' sim (step
+    $40, delay 2) on 8-call
+    rows: the 7-frame preroll leaves the counter at 1 and the opening note
+    at $A00 on either clock; the row's sweep is then 7 ticks at `-S1`
+    (3 steps, $AC0 -- the measured cycle's +$C0 stride) but 8 calls of a
+    `-S2` file are 4 frames, 3 ticks past the fetch (1 step, $A40)."""
+    from h2g.goatwriter import PulsePhaseSim
+    pat = _note_pattern([(0x70, 2, 0), (0x72, 0, 0), (None, 0, 0),
+                         (None, 0, 0)])
+    # voices 2 and 3 play an empty pattern: the owner scan reads every
+    # byte of a track, the restart operand included, so a `00` there would
+    # make pattern 0 "sound" on all three voices and decline the group
+    rest = _note_pattern([(None, 0, 0)] * 4)
+    tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x01], [1, 0xFF, 0x01]]
+    sim = lambda: PulsePhaseSim(0x900, 0x40, 2, 8, 0xE)
+    got1 = collect_pulse_phases([pat, rest], tracks, [8], {2: sim()})
+    got2 = collect_pulse_phases([pat, rest], [list(t) for t in tracks], [8],
+                                {2: sim()}, calls_per_frame=2)
+    assert got1 is not None and got2 is not None
+    assert got1[1] == [(0, 0, {0: (2, (0xA00, +1)), 1: (2, (0xAC0, +1))})]
+    assert got2[1] == [(0, 0, {0: (2, (0xA00, +1)), 1: (2, (0xA40, +1))})]
+
+
 def test_no_free_rows_means_every_note_reseeds():
     pat = _note_pattern([(0x70, 2, 0), (None, 0, 0), (0x72, 0, 0), (None, 0, 0)])
     tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]

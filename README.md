@@ -2764,6 +2764,16 @@ takes a few seconds.
 
 ### The window is a prefix, and that limits what a single run can settle
 
+**Since v0.5.489 `-t` is a floor.** When the length probe finds the original
+ending past `-t`, the register columns are traced over that length instead
+(the row records `window_seconds`, the header and a notes bullet name each
+widened file, and `--baseline` refuses across differing windows);
+`--no-window-floor` restores the fixed prefix. Measured on the eight
+prefix rows: every one reads `cov` 1.00 with its `output_sha` unchanged
+(Food_Feud 0.73 -> 1.00 over 247 s), for +22 s over the eight. Files whose
+original ends inside `-t`, or never ends, are unchanged, so the paragraph
+below still describes them.
+
 `-t 180` is the window every generated artefact uses since v0.5.459, and it
 is **still not long enough to contain the music** -- the census below is the
 60 s one that made the case for widening, and widening did not remove the

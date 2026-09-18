@@ -984,13 +984,22 @@ def _build_raw_pattern(data: bytes, addr: int,
             # it is 21 semitones out on 110 of voice 1's notes in the corpus
             # rip -- only as *unchanged*.
             #
-            # **COMMANDO IS NOT SPECIAL. CENSUS AT 5a2fa2d, preset options,
-            # over the 89 corpus songs in `presets.json`, by instrumenting
-            # THIS line and recording every byte it clamped:**
+            # **COMMANDO IS NOT SPECIAL. CENSUS RE-TAKEN AT 24b9f1d, preset
+            # options, over the 89 corpus songs in `presets.json`, by
+            # instrumenting THIS line and recording every byte it clamped
+            # AND WHICH PHASE clamped it** (`C:/t/trace-what-lies-past-the-
+            # tab/census_retake.json`, `n` emitted / `n_other_phase` phantom).
+            # The first census, at 5a2fa2d, read 698 events over 34 files with
+            # 24 past their table: RETRACTED -- 698 = 207 emitted + 491 from
+            # the `phantom_patterns` phase, which walks EVERY table entry,
+            # orderlist-named or not, so it double-counted each emitted
+            # pattern and counted unreferenced entries. Emitted-only:
             #
-            #   34 files clamp at all, 698 clamp events in total
-            #   24 of the 34 clamp a byte PAST THEIR OWN TABLE  (557 events)
-            #    9 clamp only bytes INSIDE it                   (140 events)
+            #   26 files clamp in an emitted pattern, 207 clamp events
+            #   16 of them clamp a byte PAST THEIR OWN TABLE that an
+            #      orderlist reaches                             (102 events)
+            #   34 files clamp in SOME phase and 24 past the table in some
+            #      phase -- the phantom walk's population, not the tune's
             #    1 clamps a MARKER, not a pitch                 (Action_Biker, $FF)
             #
             # The split is exact and it is the one that matters, because the
@@ -1012,15 +1021,19 @@ def _build_raw_pattern(data: bytes, addr: int,
             #    of a separate player and none of the other 23 files has been
             #    read the way Commando was.
             #
-            # WORST FIRST, by clamp count, with the past-the-table bytes:
-            #   Ricochet 71 ($60,$61,$68,$70,$7A,$7C,$7F)
-            #   Commando 58 ($68)          Last_V8 50 (18 distinct bytes to $F8)
-            #   BMX_Kidz 49 (8 bytes)      Proteus 40 ($60,$68)
-            #   Warhawk 40 ($60,$68)       Skate_or_Die_intro 33 ($64,$66,$7F)
-            #   Arcade_Classics 31 ($70,$78,$7F)
-            #   Geoff_Capes 30 ($63,$68)   Kings_of_the_Beach_ingame 10 (5 bytes)
-            # and Kentilla (60) and Spellbound (40) are the two largest files
-            # that clamp NOTHING past their table -- both are pure range limit.
+            # WORST FIRST, by REACHED past-the-table clamp count (the
+            # emitted phase, entries an orderlist names):
+            #   Commando 25 ($68)          Proteus 12 / Warhawk 12 /
+            #   Thing_on_a_Spring 12 ($60)  Gerry_the_Germ 11
+            #   Geoff_Capes 6              Sanxion 6 ($60)
+            #   W_A_R 5   Gremlins 4   Crazy_Comets 2   Mega_Apocalypse 2
+            #   Devils_Galop, Last_V8 x2, Monty_on_the_Run, Phantoms 1 each
+            # The first census's worst five -- Ricochet 71, BMX_Kidz 49,
+            # Skate_or_Die_intro 33, Arcade_Classics 31, Kings_of_the_Beach
+            # 10 -- are ALL in unreferenced entries the phantom walk counted
+            # and no orderlist plays; they are not in this list at all.
+            # Kentilla (30) and Spellbound are the largest files that clamp
+            # NOTHING past their table -- both are pure range limit.
             #
             # **$68 RECURS ACROSS SEVEN UNRELATED FILES** -- Commando,
             # Crazy_Comets, Devils_Galop, Monty_on_the_Run,
@@ -1031,11 +1044,15 @@ def _build_raw_pattern(data: bytes, addr: int,
             # one player is a constant about one player.
             #
             # NOTHING IS CHANGED BY THIS CENSUS. It bounds the Commando
-            # decision -- re-cutting the fixture would be about 1 of 24 files,
-            # not about a one-off -- and it names the other 23 so the next
-            # reading starts from a list instead of a file.
-            # (`C:/t/census-which-corpus-files-cl/clamp_classified.json`
-            # carries the per-file byte sets; re-derive rather than re-quote.)
+            # decision -- re-cutting the fixture would be about 1 of 16 files
+            # whose orderlist reaches a past-table byte (the v0.5.480 commit
+            # message's "1 of 24" counted the phantom walk's population, and
+            # is retracted in `docs/LESSONS.md`), not about a one-off -- and
+            # it names the other 15 so the next reading starts from a list
+            # instead of a file. (`census_retake.json` above carries the
+            # per-file byte sets and which phase reached them; the older
+            # `C:/t/census-which-corpus-files-cl/clamp_classified.json` is
+            # the retracted first take. Re-derive rather than re-quote.)
             #
             # **ONE OF THE 23 HAS NOW BEEN READ, AND IT IS THE OPPOSITE CASE
             # FROM COMMANDO.** Sanxion's `$60` lands on `$B50D`/`$B50E`, which
@@ -4305,11 +4322,22 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     steps once per frame; at 1 the two clocks are the same and nothing
     changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
     planned $756 where the original held $2B0, every free note three times
-    too far along its sweep. **Passed as 1 for the triangle engine still**
-    -- its sim has only ever been validated at `-S1` (5_Title_Tunes) and
-    its three multispeed carriers (Rasputin, Game_Killer,
-    One_Man_and_his_Droid) have not been re-measured on a frame clock, so
-    convert.py leaves their walk as it was; that is a lead, not a rule.
+    too far along its sweep. **Passed as 1 for the triangle engine, and
+    that is measured, not inherited**: its sim was validated at `-S1`
+    (5_Title_Tunes), where the two clocks coincide, and on Game_Killer
+    (`-S9`) the walk's planned onset buckets agree with the original's
+    61% over the first 200 sweeping notes on the CALL clock against 21%
+    on the frame clock (chance ~14% on the 7-bucket band) -- which places
+    the sweep's `DEC counter,X / BPL` inside the multispeed core that the
+    once-a-frame entry runs `multiplier` times (inferred from the onsets,
+    not yet read off the disassembly), so a row of `tempo` calls is
+    `tempo` sweep ticks. The two engines really do differ here: the
+    repo's rule that a rate read out of a player is per frame is a rule
+    about the ENTRY, and each engine's counter has to be placed against
+    the core by measurement (convert.py's gate comment has the figures;
+    tests/test_pulse_phase.py pins them). Rasputin and One_Man_and_his_Droid
+    read at chance on both clocks -- a model defect, not a clock one.
+    `PULSE_PHASE_PREROLL` is in sim steps.
     """
     groups = len(tracks) // 3
     if len(tempos) != groups:
