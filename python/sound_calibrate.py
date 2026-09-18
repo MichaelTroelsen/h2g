@@ -400,9 +400,14 @@ def comparable(bad: dict, good: dict) -> str | None:
     `loud_ratio` **0.063** and **0.074** -- and quartering the 60 s render shows
     why: RMS `[0.201, 0.101, 0.0023, 0.0023]` against the original's steady
     `[0.150, 0.163, 0.169, 0.169]`. The build's music ENDS around 30 s while
-    the original plays on, so half the window scores our silence against real
-    music. `aud` and `loud` both call that worse, correctly, and the check then
-    reported "the fix is worse than the bug".
+    the original plays on. RETRACTED: this used to say "half the window scores
+    our silence against real music" -- measured at v0.5.488 (recorded at
+    v0.5.489, see `sound.py`'s module doc, `A stopped packed player is not
+    silence`), a stopped packed player renders its IDLE FLOOR, not silence:
+    -52.4 dB RMS, 78% DC offset, well above `SILENCE_DB`. Half the window
+    scores our idle floor against real music. `aud` and `loud` both call that
+    worse, correctly, and the check then reported "the fix is worse than the
+    bug".
 
     That is a statement about the PAIR, not about the metric, and the two must
     not be conflated: a blind spot is something to fix in `aud`, an

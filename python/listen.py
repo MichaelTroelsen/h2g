@@ -43,7 +43,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from fidelity import (_preset_opts, _preset_multiplier, legalise_restarts,
                       make_workdir, pack_sid, resolve_subtune, run_siddump,
-                      GT2RELOC, SIDDUMP, WORKDIR)
+                      traced_window, GT2RELOC, SIDDUMP, WORKDIR)
 from h2g import __version__
 from h2g.convert import convert
 
@@ -606,6 +606,34 @@ def pair_subtunes(src: Path, row: dict, requested, matched=None) -> tuple[int, i
     return sub_orig, sub_orig
 
 
+def render_window(r: dict, requested: int) -> int:
+    """How long to render THIS tune: `requested` (the CLI `-t`), unless the
+    row says its own length rule moved the window it was measured over.
+
+    Deliberately narrower than `fidelity.traced_window(r)` on its own: that
+    reader's third fallback is a bare `seconds` key, which is only "the `-t`
+    fidelity.py happened to run at" -- not a signal that THIS window matters
+    more than the one just typed on this command line. Honouring that
+    fallback here would let a stale `build/fidelity.json` silently replace an
+    explicit `listen.py -t 15` with whatever `-t` produced the JSON. Only the
+    two genuine widen/shorten signals (`window_seconds`, `original_ends`)
+    override `requested`; a row missing both (staged via `--files`/`--all`
+    with no matching fidelity row, or one whose window never moved) renders
+    at `requested` exactly as before.
+
+    A widened window makes a materially longer WAV -- e.g. Rock_Tells_the_Tale
+    (`window_seconds` 382 against a 180 s `-t` run) -- which is the point:
+    the length rule (`docs/QUEUE.md` tier 2, `fidelity_queue.length_failures`)
+    can only be confirmed by ear over the window it was measured on, not over
+    an arbitrary short preview.
+    """
+    if r.get("window_seconds") is not None or r.get("original_ends") is not None:
+        w = traced_window(r)
+        if w is not None:
+            return w
+    return requested
+
+
 def document_header(args, engines, rendered_subtunes, shard=None) -> list[str]:
     """The preamble of `LISTENING.md`, written from what the run actually did.
 
@@ -900,7 +928,27 @@ def main(argv=None) -> int:
         # v0.5.486: ties 1631 against the original's 8046 and attacks 920
         # against 2566 with `calls` left at 1, 7386 and 2564 with it passed,
         # and a "No legato" note that exists only at the wrong rate.
+        # International_Karate (packed -S10, HEAD 74a0bb3) confirms what the
+        # counter actually counts: `_TIE` fires on a two-note ARPEGGIO
+        # toggle, not a vibrato crossing a note boundary or a slide re-read
+        # -- voice 2 alternates '(G#5 C4)' / '(C#6 C9)' every single PAL
+        # frame (9,10,11,12...) when traced with calls=multiplier(=10), the
+        # rate the CIA stub actually drives it at, but only once every ~10
+        # frames (99,109,119,129...) at calls=1, because siddump.c:309/325
+        # always calls the play routine 50x/s and calls=1 only spends 1 of
+        # the 10 player-calls the packed stub schedules per real frame. The
+        # direction is the same as Saboteur_II above: at the wrong rate
+        # attacks collapse (the fixed real-time window never reaches most of
+        # the song) while the few notes it does reach arpeggiate for the
+        # whole window, so ties swing the other way per note even as the
+        # total falls -- calls=1 both hides real notes and manufactures
+        # extra tied ones out of the notes it can still see.
         multiplier = _preset_multiplier(doc, name)
+        # -t (a policy value shared by the whole pass) unless THIS row's own
+        # length rule widened or shortened the window it was measured over --
+        # see render_window's docstring for why the plain `seconds` fallback
+        # is deliberately excluded.
+        seconds = render_window(r, args.seconds)
         packed = pack_sid(legalise_restarts(sng)[0], workdir, args.gt2reloc,
                           multiplier)
         if packed is None:
@@ -930,10 +978,10 @@ def main(argv=None) -> int:
         skip_renders = getattr(args, "traces_only", False)
         ok_a = skip_renders or render_pair(
             src, _outdir_path(outdir, f"{stem}.original.wav"),
-            args.seconds, sub_orig)
+            seconds, sub_orig)
         ok_b = skip_renders or render_pair(
             ours_sid, _outdir_path(outdir, f"{stem}.h2g.wav"),
-            args.seconds, sub_ours)
+            seconds, sub_ours)
 
         # Each voice alone, both sides. `-u` is 1-based, so soloing voice v
         # mutes the other two. The A/B page reads these when its voice
@@ -945,24 +993,24 @@ def main(argv=None) -> int:
                 others = tuple(x for x in (1, 2, 3) if x != v)
                 solo_ok += bool(render_pair(
                     src, _outdir_path(outdir, f"{stem}.v{v}.original.wav"),
-                    args.seconds, sub_orig, others))
+                    seconds, sub_orig, others))
                 solo_ok += bool(render_pair(
                     ours_sid, _outdir_path(outdir, f"{stem}.v{v}.h2g.wav"),
-                    args.seconds, sub_ours, others))
+                    seconds, sub_ours, others))
             if solo_ok < 6:
                 print(f"  {name:44} per-voice: {solo_ok}/6 rendered "
                       f"({choice.engine} cannot mute)", file=sys.stderr)
 
         # The original at one call per frame, ours at the rate it was packed
         # for -- the multiplier belongs to our side only.
-        orig = run_siddump(src, args.seconds, sub_orig, args.siddump)
-        ours = run_siddump(ours_sid, args.seconds, sub_ours, args.siddump,
+        orig = run_siddump(src, seconds, sub_orig, args.siddump)
+        ours = run_siddump(ours_sid, seconds, sub_ours, args.siddump,
                            calls=multiplier)
 
         # The register panel's data. Written beside the pair so `abpage.py`
         # can build the panel without re-tracing anything.
         _outdir_path(outdir, f"{stem}.trace.json").write_text(
-            json.dumps(trace_json(orig, ours, args.seconds, 1, multiplier,
+            json.dumps(trace_json(orig, ours, seconds, 1, multiplier,
                                   sub_orig, sub_ours),
                        separators=(",", ":")), encoding="utf-8")
 
@@ -970,6 +1018,14 @@ def main(argv=None) -> int:
         lines += [f"## {stem} — *{label}*", ""]
         if band:
             lines += [f"> {band[3]}", ""]
+        if seconds != args.seconds:
+            lines += [f"Rendered for **{seconds} s**, not the requested `-t "
+                      f"{args.seconds}`: the fidelity trace found this tune's "
+                      "own comparison window needs that long "
+                      "(`window_seconds`/`original_ends` in "
+                      "`build/fidelity.json`), and the length rule can only "
+                      "be confirmed by ear over the window it was measured "
+                      "on.", ""]
         if r.get("melody") is not None:
             lines.append(
                 f"Measured: melody **{100 * r['melody']:.0f}%**, retrigger "

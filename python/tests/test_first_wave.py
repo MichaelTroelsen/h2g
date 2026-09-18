@@ -145,3 +145,52 @@ def test_sanxion_shipped_preset_wavetable_carries_the_fixed_note():
               and i.name.startswith("02:"))
     wp = hit.wave_ptr
     assert song.tables["WTBL"][wp] == (0x81, 0xC7)
+
+
+# v0.5.486 read `det.wave_program` for the fixed-attack index (`-1` on every
+# one of these four -- none has a wave program), so all four sixteen-$40-record
+# files' fixed pitch was silently never emitted. v0.5.487's handler-operand fix
+# (`det.fixed_pitch_index`) reached them; this pins the shipped-preset output
+# for the other three -- Sanxion is pinned above. Each file's own record and
+# entry position differ (Sanxion's own two-stage wavetable puts the fixed note
+# straight at `wp`; these three's own duty/arp encoding puts a leading row
+# ahead of it), so each searches its own instrument's wavetable rows for the
+# `$81/$80+note` pair rather than assuming a fixed offset.
+_ATKPITCH_FAMILY = [
+    # (file stem, effect_byte, instrument-name prefix, absolute-note byte)
+    ("Knucklebusters", 0x64, "02:", 0xC3),
+    ("Deep_Strike", 0x44, "04:", 0xCA),
+    ("Food_Feud", 0x44, "02:", 0xBF),
+]
+
+
+def _corpus_sid(name):
+    return CORPUS / f"{name}.sid"
+
+
+@needs_corpus
+def test_knucklebusters_shipped_preset_wavetable_carries_the_fixed_note():
+    _assert_atkpitch_family_row(*_ATKPITCH_FAMILY[0])
+
+
+@needs_corpus
+def test_deep_strike_shipped_preset_wavetable_carries_the_fixed_note():
+    _assert_atkpitch_family_row(*_ATKPITCH_FAMILY[1])
+
+
+@needs_corpus
+def test_food_feud_shipped_preset_wavetable_carries_the_fixed_note():
+    _assert_atkpitch_family_row(*_ATKPITCH_FAMILY[2])
+
+
+def _assert_atkpitch_family_row(name, effect_byte, name_prefix, note):
+    doc = json.loads(PRESETS_JSON.read_text(encoding="utf-8"))
+    opts = fidelity._preset_opts(doc, f"{name}.sid")
+    sng = convert(str(_corpus_sid(name)), log=lambda m: None, **opts)
+    song = songview.parse_sng(sng)
+    hit = next(i for i in song.instruments if i.effect_byte == effect_byte
+              and i.name.startswith(name_prefix))
+    wp = hit.wave_ptr
+    window = song.tables["WTBL"][wp:wp + 4]
+    assert (0x81, note) in window, (
+        f"{name}: expected ($81, {note:#04x}) somewhere in {window}")

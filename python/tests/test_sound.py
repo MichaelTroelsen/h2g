@@ -6,6 +6,7 @@ a known level, an injected delay is recovered -- because the metric will later
 decide whether a human approval survives a change, and a metric that is not
 pinned on cases with a known answer cannot be trusted with that.
 """
+import json
 import math
 import struct
 import wave
@@ -419,3 +420,81 @@ def test_an_idle_floor_above_silence_db_scores_aud_as_music():
     zeros = np.concatenate([music[:half], np.zeros(len(idle), dtype=np.float32)])
     silent = sound.compare_features(tail(fo), tail(sound.features(zeros, RATE)), 0)
     assert silent["aud"] < 0.01, silent         # digital silence scores 0
+
+
+# ---- superseded `ours` renders --------------------------------------------
+
+def _cache(tmp_path, names):
+    d = tmp_path / "audio"
+    d.mkdir()
+    for n in names:
+        (d / n).write_bytes(b"RIFF" + bytes(64))
+    return d
+
+
+def test_render_key_of_reads_the_cache_name_and_nothing_else():
+    assert sound.render_key_of("ours.0ef54321942e.s0.t180.wav") == "0ef54321942e"
+    assert sound.render_key_of("orig.41aadd62f943.s3.t60.wav") == "41aadd62f943"
+    assert sound.render_key_of("repeat.41aadd62f943.s0.t60.1.wav") is None
+    assert sound.render_key_of("notes.txt") is None
+
+
+def test_superseded_renders_names_only_ours_files_with_a_dead_key(tmp_path):
+    """orig.* is keyed on the original and valid forever; repeat.* is per
+    original; a foreign name is left alone. Only an `ours` render whose key no
+    reader can produce is superseded."""
+    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.aaaaaaaaaaaa.s0.t60.wav",
+                          "ours.bbbbbbbbbbbb.s0.t180.wav", "orig.cccccccccccc.s0.t180.wav",
+                          "repeat.cccccccccccc.s0.t60.1.wav", "ours.weird.wav"])
+    got = [p.name for p in sound.superseded_renders(d, {"aaaaaaaaaaaa"})]
+    assert got == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+
+
+def test_live_keys_from_fidelity_reads_the_rows_sound_cache(tmp_path):
+    j = tmp_path / "fidelity.json"
+    j.write_text(json.dumps([
+        {"file": "a.sid", "sound_cache": ["orig.111111111111.s0.t180.wav",
+                                          "ours.222222222222.s0.t180.wav"]},
+        {"file": "b.sid", "status": "not converted"},
+    ]), encoding="utf-8")
+    assert sound.live_keys_from_fidelity(j) == {"222222222222"}
+
+
+def test_prune_superseded_moves_never_deletes_and_dry_run_moves_nothing(tmp_path):
+    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.bbbbbbbbbbbb.s0.t180.wav"])
+    q = tmp_path / "quarantine"
+    got = sound.prune_superseded(d, {"aaaaaaaaaaaa"}, q, dry_run=True)
+    assert [p.name for p in got] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+    assert sorted(p.name for p in d.iterdir()) == ["ours.aaaaaaaaaaaa.s0.t180.wav",
+                                                   "ours.bbbbbbbbbbbb.s0.t180.wav"]
+    got = sound.prune_superseded(d, {"aaaaaaaaaaaa"}, q, dry_run=False)
+    assert [p.name for p in got] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+    assert [p.name for p in d.iterdir()] == ["ours.aaaaaaaaaaaa.s0.t180.wav"]
+    assert [p.name for p in q.iterdir()] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+
+
+def test_prune_refuses_while_a_calibration_build_cannot_be_rebuilt(tmp_path, monkeypatch, capsys):
+    """An unreproducible calibration build's render cannot be told from a
+    superseded one, and the next calibration run would pay a cold re-render
+    for it -- so nothing moves. An unrecoverable APPROVED build is reported
+    and not protected: no reader can construct its key, so its render is
+    unreachable already."""
+    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.bbbbbbbbbbbb.s0.t180.wav"])
+    j = tmp_path / "fidelity.json"
+    j.write_text(json.dumps([{"file": "a.sid", "sound_cache": ["ours.aaaaaaaaaaaa.s0.t180.wav"]}]),
+                 encoding="utf-8")
+    (tmp_path / "presets.json").write_text('{"always": {}, "songs": {}}', encoding="utf-8")
+    monkeypatch.setattr(sound, "live_keys_from_history", lambda *a: (set(), ["X.sid 0.5.1"]))
+    monkeypatch.setattr(sound, "live_keys_from_approvals", lambda *a: (set(), []))
+    args = [str(tmp_path), "--fidelity-json", str(j), "--presets", str(tmp_path / "presets.json"),
+            "--cache", str(d), "--quarantine", str(tmp_path / "q"), "--workdir", str(tmp_path / "w"),
+            "--apply"]
+    assert sound._prune_main(args) == 2
+    assert "REFUSING" in capsys.readouterr().out
+    assert len(list(d.iterdir())) == 2
+    monkeypatch.setattr(sound, "live_keys_from_history", lambda *a: (set(), []))
+    monkeypatch.setattr(sound, "live_keys_from_approvals", lambda *a: (set(), ["Y 0.5.2"]))
+    assert sound._prune_main(args) == 0
+    out = capsys.readouterr().out
+    assert "NOT protected" in out and "moved 1 superseded" in out
+    assert [p.name for p in d.iterdir()] == ["ours.aaaaaaaaaaaa.s0.t180.wav"]

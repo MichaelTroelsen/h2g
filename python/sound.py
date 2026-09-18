@@ -68,6 +68,7 @@ numpy is a HARNESS dependency only. `python/h2g/` stays stdlib.
 from __future__ import annotations
 
 import hashlib
+import json
 import math
 import wave
 from dataclasses import dataclass
@@ -555,3 +556,195 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
     got = compare_wavs(a, b, prior_s=prior_s, window_s=window_s)
     got["sound_cache"] = [a.name, b.name]
     return got
+
+
+# --------------------------------------------------------------------------
+# Superseded renders. `render_cached` keys a WAV on the CONTENT of what it
+# renders, so an `orig.*` render is valid forever (the original .sid never
+# changes) while every converter change leaves the previous `ours.*` render
+# behind: measured at 4b5d7f0, 133 `ours` renders at t60 against 88 files
+# and 97 at t180 against 83 -- roughly 45 + 14 superseded, growing with every
+# commit that moves conversion bytes. A cleanup is a DELETION, and the wrong
+# premise for one cannot be walked back (a cold re-render of the t60 set was
+# 58 minutes), so this never guesses which renders are live: it takes the
+# keys that are still IN USE from the artefacts that name them and the
+# builds that reproduce them, and calls everything else under the `ours`
+# tag superseded. Three sources, each a different reader:
+#
+#   * `build/fidelity.json` -- every measured row's `sound_cache` names the
+#     CURRENT conversion's render (`compare_sids` writes it);
+#   * the calibration's historical builds -- `sound_calibrate.INAUDIBLE_PAIRS`
+#     and `KNOWN_BAD` are rebuilt through `convert_at` and packed, and their
+#     packed content keys are the renders the next calibration run reads
+#     (the calibration JSON records `sound_cache` only for the inaudible
+#     pair, so the rest have to be REPRODUCED rather than read);
+#   * `approved.json` -- an approved build recovered by
+#     `approvals.recover_approved_sng` and packed. A build that cannot be
+#     recovered keeps EVERY render, because nothing can then say which
+#     `ours` key was the listener's.
+#
+# `repeat.*` renders (`render_repeat`) are per-original, not per-conversion,
+# and are never touched. The CLI QUARANTINES (moves) rather than deletes, so a
+# wrong keep-set costs a move back and not a re-render.
+# --------------------------------------------------------------------------
+
+OURS_TAG, REPEAT_TAG_PREFIX = "ours", "repeat."
+
+
+def render_key_of(name: str) -> str | None:
+    """The 12-hex content key of a cache filename, or None for a foreign one."""
+    parts = name.split(".")
+    if len(parts) != 5 or parts[-1] != "wav" or len(parts[1]) != 12:
+        return None
+    return parts[1]
+
+
+def superseded_renders(cache: Path, live_keys: set[str]) -> list[Path]:
+    """Every `ours.*` render in `cache` whose content key is not live.
+
+    Pure: no rendering, no deletion. `orig.*` and `repeat.*` files are never
+    returned, and a file whose name does not parse as a cache key is left
+    alone rather than guessed at.
+    """
+    out = []
+    for p in sorted(Path(cache).iterdir()):
+        if not p.name.startswith(OURS_TAG + "."):
+            continue
+        key = render_key_of(p.name)
+        if key is not None and key not in live_keys:
+            out.append(p)
+    return out
+
+
+def live_keys_from_fidelity(fidelity_json: Path) -> set[str]:
+    """The `ours` keys the fidelity artefact's rows were scored against."""
+    keys = set()
+    for row in json.loads(Path(fidelity_json).read_text(encoding="utf-8")):
+        for name in row.get("sound_cache") or []:
+            key = render_key_of(name)
+            if name.startswith(OURS_TAG + ".") and key:
+                keys.add(key)
+    return keys
+
+
+def live_keys_from_history(sid_dir: Path, workdir: Path, gt2reloc: str,
+                           presets: dict) -> tuple[set[str], list[str]]:
+    """The packed content keys of every historical build the calibration
+    renders (INAUDIBLE_PAIRS and KNOWN_BAD, both versions of each), plus the
+    pairs that could NOT be rebuilt -- a caller must refuse to prune while
+    that list is non-empty, since an unreproducible build's render cannot be
+    told from a superseded one."""
+    import sound_calibrate as SC            # noqa: PLC0415 -- SC imports this module
+    import fidelity as F                    # noqa: PLC0415
+    keys, missing = set(), []
+    for name, *versions in SC.INAUDIBLE_PAIRS + SC.KNOWN_BAD:
+        sid = Path(sid_dir) / name
+        mult = F._preset_multiplier(presets, name)
+        for v in versions:
+            got = SC.convert_at(v, sid, Path(workdir), gt2reloc, mult)
+            if got is None:
+                missing.append(f"{name} {v}")
+            else:
+                keys.add(content_key(got.sid))
+    return keys, missing
+
+
+def live_keys_from_approvals(sid_dir: Path, workdir: Path, gt2reloc: str,
+                             presets: dict) -> tuple[set[str], list[str]]:
+    """The packed keys of every approved build `approvals.recover_approved_sng`
+    can rebuild, plus the tunes it cannot. Unlike the calibration's builds
+    these do NOT refuse a prune: a render whose key no reader can construct
+    is unreachable already (see `_prune_main`)."""
+    import approvals as A                   # noqa: PLC0415
+    import fidelity as F                    # noqa: PLC0415
+    keys, missing = set(), []
+    for stem, entry in A.approved_tunes().items():
+        sid = Path(sid_dir) / f"{stem}.sid"
+        if not sid.exists():
+            missing.append(f"{stem} (no .sid)")
+            continue
+        mult = F._preset_multiplier(presets, sid.name)
+        sng = A.recover_approved_sng(stem, sid, entry["version"], entry["sng_sha256"],
+                                     Path(workdir), gt2reloc, mult)
+        if sng is None:
+            missing.append(f"{stem} {entry['version']}")
+            continue
+        blob, _ = F.legalise_restarts(sng)
+        pack_dir = Path(workdir) / "approved" / stem
+        pack_dir.mkdir(parents=True, exist_ok=True)
+        packed = F.pack_sid(blob, pack_dir, gt2reloc, mult)
+        if packed is None:
+            missing.append(f"{stem} {entry['version']} (pack failed)")
+        else:
+            keys.add(content_key(packed))
+    return keys, missing
+
+
+def prune_superseded(cache: Path, live_keys: set[str], quarantine: Path,
+                     dry_run: bool = True) -> list[Path]:
+    """Move (never delete) every superseded `ours` render into `quarantine`.
+    Returns what was, or would be, moved."""
+    victims = superseded_renders(cache, live_keys)
+    if not dry_run and victims:
+        Path(quarantine).mkdir(parents=True, exist_ok=True)
+        for p in victims:
+            p.replace(Path(quarantine) / p.name)
+    return victims
+
+
+def _prune_main(argv=None) -> int:
+    import argparse                          # noqa: PLC0415
+    import fidelity as F                     # noqa: PLC0415
+    ap = argparse.ArgumentParser(prog="sound.py --prune",
+                                 description="Quarantine superseded `ours` renders in build/audio.")
+    ap.add_argument("sid_dir")
+    ap.add_argument("--fidelity-json", default=str(ROOT / "build" / "fidelity.json"))
+    ap.add_argument("--presets", default=str(ROOT / "presets.json"))
+    ap.add_argument("--gt2reloc", default=F.GT2RELOC)
+    ap.add_argument("--cache", default=str(AUDIO_DIR))
+    ap.add_argument("--quarantine", required=True,
+                    help="directory the superseded renders are MOVED to (never deleted)")
+    ap.add_argument("--workdir", default=None, help="scratch for the historical rebuilds")
+    ap.add_argument("--apply", action="store_true", help="move; the default only lists")
+    args = ap.parse_args(argv)
+    presets = json.loads(Path(args.presets).read_text(encoding="utf-8"))
+    workdir = Path(args.workdir) if args.workdir else Path(F.make_workdir(None)[0])
+    live = live_keys_from_fidelity(Path(args.fidelity_json))
+    n_fid = len(live)
+    hist, miss_h = live_keys_from_history(Path(args.sid_dir), workdir, args.gt2reloc, presets)
+    appr, miss_a = live_keys_from_approvals(Path(args.sid_dir), workdir, args.gt2reloc, presets)
+    live |= hist | appr
+    print(f"live keys: {n_fid} from {args.fidelity_json}, {len(hist)} historical "
+          f"(calibration), {len(appr)} approved -> {len(live)} distinct")
+    if miss_h:
+        print("REFUSING to prune: these calibration builds could not be reproduced, "
+              "so their renders cannot be told from superseded ones and the next "
+              "calibration run would pay a cold re-render:")
+        for m in miss_h:
+            print("  ", m)
+        return 2
+    if miss_a:
+        # An approved build that cannot be recovered has no reachable render:
+        # approvals.py needs the .sng before it can construct the key to look
+        # a render up, so whatever render it once had is orphaned already.
+        # Reported, not protected -- re-staging the .sng later costs one
+        # render, not the cold set the calibration case would.
+        print("approved builds that could not be recovered (their renders are "
+              "unreachable by any reader and are NOT protected):")
+        for m in miss_a:
+            print("  ", m)
+    victims = prune_superseded(Path(args.cache), live, Path(args.quarantine),
+                               dry_run=not args.apply)
+    size = sum(p.stat().st_size for p in victims) if not args.apply else None
+    verb = "moved" if args.apply else "would move"
+    print(f"{verb} {len(victims)} superseded `ours` render(s)"
+          + (f", {size / 1e6:.0f} MB" if size is not None else "")
+          + f" -> {args.quarantine}")
+    for p in victims:
+        print("  ", p.name)
+    return 0
+
+
+if __name__ == "__main__" and "--prune" in _sys.argv:
+    _sys.argv.remove("--prune")
+    raise SystemExit(_prune_main())

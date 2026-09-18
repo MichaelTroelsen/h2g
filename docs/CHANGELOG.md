@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.490 — 2026-09-18
+
+- the unticked -S1 fixed-arp shape carries the residue, the pulse-phase owner scan stops at the restart, a quarantining cleanup for superseded renders, listen.py renders for the traced window, and four atkpitch pins
+
 ## 0.5.489 — 2026-09-18
 
 - fixed-arp duty and ticked multispeed hold, the -t window floor, a named missing --presets errors, the gated depth refusal, the Las Vegas idle-floor finding, the ILV grammar test, and three LESSONS retractions

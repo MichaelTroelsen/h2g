@@ -545,6 +545,12 @@ dangerous one because it reads as current and gets cited as current.
 - **`FIDELITY.md` is not the last word on fidelity.** It cannot see tempo or the
   volume nibble, and none of its register columns is a listening test.
 - Stage material for a human with `listen.py` so the ask is a link, not a task.
+- **`build/audio` accumulates a superseded `ours` render per converter
+  change.** `python sound.py --prune <sid_dir> --quarantine DIR --apply`
+  quarantines them (never deletes); the live set is `build/fidelity.json`'s
+  rows plus the calibration's rebuilt historical builds plus recoverable
+  approvals, and it refuses while a calibration build cannot be rebuilt.
+  Since v0.5.490; README § Listening has the rule in full.
 
 ## Emitting
 

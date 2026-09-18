@@ -1098,6 +1098,22 @@ def test_a_record_on_two_voices_does_not_decline_the_bounds_engine():
                                 {2: tri}) is None
 
 
+def test_the_owner_scan_stops_at_the_restart_and_does_not_read_its_operand():
+    """Voice 1's orderlist is empty -- GT_ORDER_RESTART at position 0 -- with
+    a restart operand of 0x00. Before the scan stopped at GT_ORDER_RESTART,
+    that operand byte was read as pattern index 0 too, so voice 1 was
+    (wrongly) credited with sounding instrument 2, clashing with voice 0's
+    real ownership and declining a group that only ever sounds on one
+    voice. `PulseBoundsSim` never sets `clash` (`per_voice`), so this is
+    the triangle engine only -- the shape of Monty_on_the_Run subtune 2's
+    spurious decline (docs/QUEUE.md, owner-scan-restart)."""
+    pat = _note_pattern([(0x70, 2, 0), (None, 0, 0)])
+    tracks = [[0, 0xFF, 0x00], [0xFF, 0x00], [0xFF, 0x00]]
+    tri = PulsePhaseSim(0x900, 0x40, 2, 8, 0xE)
+    got = collect_pulse_phases([pat], tracks, [2], {2: tri})
+    assert got is not None
+
+
 def test_the_state_carries_across_an_instrument_change_on_one_voice():
     """A free note on record B after a note on record A inherits A's
     accumulator (per voice, not per record): planned under B at A's

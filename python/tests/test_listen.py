@@ -431,3 +431,82 @@ def test_a_single_speed_file_is_traced_at_one_call_per_frame(
         monkeypatch, tmp_path, {"Tune.sid": {}})
     assert orig_k.get("calls", 1) == 1
     assert ours_k["calls"] == 1
+
+
+# --- render_window: a row's own traced window can outrun `-t` --------------
+#
+# fidelity_queue_and_listen_read_window_seconds: fidelity.traced_window(row)
+# is the canonical reader; render_window only honours its two genuine
+# widen/shorten signals (window_seconds, original_ends), never its bare
+# `seconds` fallback -- see render_window's docstring for why. Pinned with a
+# real corpus shape: Rock_Tells_the_Tale (build/fidelity.json, v0.5.489)
+# carries window_seconds 382 against a 180 s run with no original_ends.
+
+
+def test_render_window_follows_a_widened_window():
+    row = {"file": "Rock_Tells_the_Tale.sid", "seconds": 180, "window_seconds": 382}
+    assert L.render_window(row, 30) == 382
+
+
+def test_render_window_follows_a_shortened_window():
+    row = {"file": "Action_Biker.sid", "seconds": 180, "window_seconds": 61,
+           "original_ends": 61}
+    assert L.render_window(row, 30) == 61
+
+
+def test_render_window_ignores_the_bare_seconds_fallback():
+    """A row with no widen/shorten signal at all -- just the run's own `-t`
+    echoed into `seconds` -- must not override an explicit `-t` on THIS
+    invocation of listen.py."""
+    row = {"file": "Ordinary.sid", "seconds": 180}
+    assert L.render_window(row, 30) == 30
+
+
+def test_render_window_falls_back_for_a_bare_row():
+    """`--files`/`--all` without a matching fidelity row stage `{"file": f}`
+    -- no seconds key at all -- and must render at the requested `-t`
+    exactly as before this change."""
+    assert L.render_window({"file": "Unknown.sid"}, 30) == 30
+
+
+def test_our_side_renders_for_the_traced_window_when_it_widened(
+        tmp_path, monkeypatch):
+    """End to end: main() must pass the row's traced window, not `-t`, to
+    both the renderer and the siddump trace, and note it in LISTENING.md."""
+    corpus = tmp_path / "corpus"
+    _make_sid(corpus / "Tune.sid")
+    outdir = tmp_path / "build" / "listen"
+    workdir = tmp_path / "work"
+    presets = _presets(tmp_path, {"Tune.sid": {}})
+    received_opts, written_wavs = _stage_stub_env(monkeypatch, tmp_path)
+    seconds_seen = []
+
+    def fake_render(src, out, seconds, sub, mute=()):
+        seconds_seen.append(seconds)
+        Path(out).write_bytes(b"RIFFWAVE")
+        return True
+    monkeypatch.setattr(
+        L, "pick_renderer",
+        lambda sid, args, probe_dir=None: L.Choice(fake_render, "", "fake"))
+
+    dump_calls = []
+    monkeypatch.setattr(
+        L, "run_siddump",
+        lambda *a, **k: dump_calls.append(a[1]) or [])
+
+    fidelity_json = tmp_path / "fidelity.json"
+    fidelity_json.write_text(json.dumps([
+        {"file": "Tune.sid", "seconds": 30, "window_seconds": 90}]),
+        encoding="utf-8")
+
+    rc = L.main([
+        str(corpus), "--from-json", str(fidelity_json),
+        "--files", "Tune.sid",
+        "-o", str(outdir), "--presets", presets,
+        "--workdir", str(workdir), "-t", "30",
+    ])
+    assert rc == 0
+    assert seconds_seen == [90, 90]           # original then ours
+    assert dump_calls == [90, 90]
+    text = (outdir / "LISTENING.md").read_text(encoding="utf-8")
+    assert "Rendered for **90 s**, not the requested `-t 30`" in text

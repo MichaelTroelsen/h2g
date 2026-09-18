@@ -5089,6 +5089,22 @@ def fixed_arp_duty_entries(wave: int, tail: int, mask: int, branch: int,
     return left, right
 
 
+def unticked_arp_octave_entry(arp_phase: int, written: bool = False) -> int:
+    """Which of the unticked -S1 shape's two loop entries carries the octave.
+
+    The shape is `wave/00, tail/00, tail/00, FF -> entry 1`: the loop runs
+    over entries 1 and 2, so entry 1 plays every odd frame after the attack
+    and entry 2 every even one -- where `written` (`--no-test-restart`) the
+    instrument's firstwave owns frame 0 and every entry lands one frame
+    later, the tick shape's empty `_first_frame_lead`. The first octave-up
+    frame is offset `1 + (residue & 1)` (`fixed_arp_phases`), so the octave
+    goes on the entry whose frames share that parity. Residue 1 unwritten
+    is entry 2, the offset the shape hard-coded until v0.5.490.
+    """
+    first_up = 1 + (arp_phase & 1)
+    return 1 if (1 + int(written) - first_up) % 2 == 0 else 2
+
+
 def ticked_arp_entries(frame0: List[int], frame0_r: List[int],
                        tl: List[int], tr: List[int], noise: int, tail: int,
                        arp_rel: int, multiplier: int, start: int,
@@ -5797,7 +5813,28 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
             # were always right; only the phase was late.
             if effects:
                 if not phased:
-                    right[2 + off] = _arp_relative(arp_fixed, arp_note)
+                    # **The unticked -S1 shape hard-coded offset 2 until
+                    # v0.5.490.** Entry k plays on frame k after the attack
+                    # (k + 1 where `written`: the firstwave owns frame 0, as
+                    # the tick shape's empty lead reads it), and the loop
+                    # over entries 1-2 keeps parity, so the octave goes on
+                    # whichever of the two shares the parity of the first
+                    # octave-up offset -- `1 + (residue & 1)`, exactly as the
+                    # tick shape above and `ticked_arp_entries` read the
+                    # residue. Parity mask only, the residue known, -S1 only
+                    # (above it the loop is per call and the phase is the
+                    # ticked shape's); everything else keeps entry 2. The
+                    # corpus byte-hash at v0.5.490 moved exactly the
+                    # residue-0 files: Geoff_Capes_Strongman_Challenge,
+                    # Gremlins and Hunter_Patrol.
+                    octave_entry = 2 + off
+                    if (not tick and multiplier == 1 and arp_fixed
+                            and arp_phase is not None
+                            and (arp_mask is None
+                                 or arp_mask[0] == FIXED_ARP_PARITY_MASK)):
+                        octave_entry = unticked_arp_octave_entry(
+                            arp_phase, written=no_test_restart)
+                    right[octave_entry] = _arp_relative(arp_fixed, arp_note)
                 right[3 + off] = second
             else:
                 # `effects` off means "reproduce the VB6 original", and the

@@ -4355,6 +4355,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
         for v in range(3):
             live = 0
             for b in tracks[3 * g + v]:
+                if b == GT_ORDER_RESTART:
+                    break
                 if b >= MAX_PATTERNS:
                     continue
                 if b >= len(patterns):

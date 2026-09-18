@@ -3434,6 +3434,18 @@ nothing; the first corpus pass renders both sides of every file. A failed
 render names its side in `sound_failed` rather than scoring a silent WAV
 against music.
 
+Because the key is the *content*, every converter change leaves the previous
+`ours.*` render behind for good (measured at v0.5.489: 256 superseded renders,
+2.9 GB, against 89 live ones). `python sound.py --prune <sid_dir> --quarantine
+DIR --apply` moves them out: a render is live when its key is in
+`build/fidelity.json`'s rows, is one of the calibration's historical builds
+(rebuilt through `convert_at` and packed, since the calibration JSON does not
+record most of them), or is a recoverable approved build. It **refuses** while
+a calibration build cannot be rebuilt (its render would cost a cold re-render)
+and only **reports** an unrecoverable approved build (no reader can construct
+its key, so its render was unreachable already). It never deletes -- without
+`--apply` it lists.
+
 A row can also say **not comparable**. `gt2reloc` exports only the subtunes
 whose three voices all have nonzero length, and a subtune that fails that test
 keeps its index and comes back as an entry that plays nothing — so comparing

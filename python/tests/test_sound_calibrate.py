@@ -417,10 +417,13 @@ def test_a_build_far_off_the_originals_loudness_is_excluded_not_scored():
 
     Quartered, its 60 s render is [0.201, 0.101, 0.0023, 0.0023] against the
     original's steady [0.150, 0.163, 0.169, 0.169]: the music ends around 30 s
-    while the original plays on, so half the window scores our silence against
-    real music. Both columns call that worse, correctly. Excluding it is the
-    difference between "the metric is blind" and "this pair cannot be built
-    comparably", which are different problems with different fixes.
+    while the original plays on. RETRACTED: this used to say "half the window
+    scores our silence against real music" -- measured at v0.5.488 (recorded
+    at v0.5.489), a stopped packed player renders its IDLE FLOOR (-52.4 dB
+    RMS, 78% DC offset), not silence. Half the window scores our idle floor
+    against real music. Both columns call that worse, correctly. Excluding it
+    is the difference between "the metric is blind" and "this pair cannot be
+    built comparably", which are different problems with different fixes.
     """
     why = C.comparable(_LV_BAD, _LV_GOOD)
     assert why is not None and "0.074" in why, why

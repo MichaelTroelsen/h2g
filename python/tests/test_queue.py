@@ -85,6 +85,20 @@ def test_first_and_last_seen_persist_and_closed_are_reported():
     assert [c["id"] for c in Q.closed_since(prior, entries)] == ["old"]
 
 
+def test_run_seconds_label_is_the_dash_t_not_a_widened_window():
+    """A row whose length rule widened its own window (`window_seconds` !=
+    `seconds`) must not move the header's `-t` label -- `run_seconds_label`
+    reads `seconds`, never `F.traced_window(r)`. This pins the site
+    fidelity_queue.py deliberately did NOT switch."""
+    rows = [_row("Rock_Tells_the_Tale.sid", seconds=180, window_seconds=382),
+            _row("Action_Biker.sid", seconds=180, window_seconds=61, original_ends=61)]
+    assert Q.run_seconds_label(rows) == 180
+
+
+def test_run_seconds_label_falls_back_when_no_row_has_seconds():
+    assert Q.run_seconds_label([{"file": "X.sid"}]) == 60
+
+
 def test_render_has_one_table_per_tier_and_a_provenance_line():
     entries = [{"id": "a", "tier": 2, "source": "length", "cause": "runs long", "files": ["A"],
                 "tag": "[main]", "evidence": {"length_delta": 7.5}, "verify": "ends within 5 s",

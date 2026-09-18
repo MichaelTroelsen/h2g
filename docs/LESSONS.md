@@ -1536,9 +1536,10 @@ test dependency).
   were SKIPPED by `tests/test_claude_md_figures.py`'s window guard, which is
   what a 60 s figure against a 180 s artefact should do -- and re-measuring is
   what turns the skip back into a check rather than papering over it.
-  * **The drift split at 180 s is **67 zero / 19 drifting of 86 rows** (89
-    measured, 3 without a fit), against 68 / 18 / 86 at 60 s.** One file
-    crossed. `drift_per_1000` is an INTEGRATED offset and so the most
+  * **The drift split at 180 s is **68 zero / 19 drifting of 87 rows** (89
+    measured, 2 without a fit; re-graded at v0.5.489, when one more row
+    gained a fit -- it read 67 / 19 / 86 from v0.5.459), against 68 / 18 / 86
+    at 60 s.** One file crossed. `drift_per_1000` is an INTEGRATED offset and so the most
     window-sensitive number the report carries, which is exactly why the two
     windows disagree here and not on `melody`.
   * **Skate or Die intro at 180 s is 3151 attacks against the original's
@@ -2683,3 +2684,18 @@ Rules:
   off. Rule in `CLAUDE.md` § Emitting, the global-counter bullet: read the
   counter's base and first fetch off the player, never off a trace of one
   file. Same family as "A fixture is not the corpus" under Preset search.
+
+## Citation fix: the gate-blind `noise_runs` finding is 011ccd7, not 24b9f1d
+
+A task brief cited `24b9f1d` as "the gate-blind nrun finding" behind CLAUDE.md
+§ Measurement discipline's `noise_run_agreement` bullet (the Confuzion
+8998-frame whole-window run dropped whole, `nrun` `-`). `24b9f1d` is
+"Regenerate SURVEY.md and presets.json at v0.5.480, and both move only their
+stamp" -- a SURVEY/presets regeneration with no `noise_runs` change in it.
+`git log -S"noise_runs" --oneline` and `git log --oneline 24b9f1d~1..50a6178`
+agree: the gate-blind reading is fixed at **011ccd7** (v0.5.483, "the
+pulse-phase budget lifts the multiplier gate, a past-table zero cell is a
+rest, `noise_runs` reads the gate bit, and the artefact guard learns the
+difference between an invocation and a mention"), landed the same day as
+50a6178 ("nrun moves on 30 byte-identical files because it can finally see
+the note"). Cite 011ccd7 for the mechanism, not 24b9f1d.

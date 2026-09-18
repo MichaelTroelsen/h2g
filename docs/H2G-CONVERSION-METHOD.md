@@ -11906,3 +11906,28 @@ in one word: the frames are the idle floor. Nothing is changed on that
 evidence -- raising `SILENCE_DB` or DC-filtering the RMS moves `aud`/`loud`
 for every file and the calibration's floors with them, a corpus re-measure.
 `tests/test_sound.py` reproduces the mechanism synthetically.
+
+### 7.jjjjjj The unticked -S1 shape reads the residue too, and the owner scan stops at the restart
+
+§7.bbbbbb derived the fixed-arp phase per instrument and §7.hhhhhh put it into
+the duty and ticked shapes; the one shape still hard-coding its octave was the
+UNTICKED mask-`$01` wavetable at `-S1` (`41:00 41:00 41:0C FF` looping to
+entry 1 -- the octave always on entry 2). `unticked_arp_octave_entry` now
+places it on the residue's entry: entry 1 for residue 0, entry 2 for residue
+1, flipped when the note is written on frame 0. Censused first, then hashed:
+the corpus records this reaches are 5_Title_Tunes (phase 1, unchanged),
+Crazy_Comets (phase 1, unchanged), Geoff_Capes_Strongman_Challenge,
+Gremlins and Hunter_Patrol (phase 0), so exactly those three files move and
+the Commando fixture (effects off) does not. Offset-1 up-fraction against the
+original, base -> edit: Geoff_Capes 0.74 -> 1.00 (original 0.90), Gremlins
+0.95 -> 1.00 (0.90), Hunter_Patrol 0.15 -> 0.32 (0.40 -- a file whose notes
+split 40:60 by parity, which a per-instrument shape cannot follow). No
+register column sees a parity swap; the profile is the measurement.
+
+Separately, `collect_pulse_phases`' two-voices owner scan walked every byte
+of an orderlist, including the operand after `GT_ORDER_RESTART`, and read
+that small integer as a pattern index -- so Monty_on_the_Run subtune 2's
+"record sounds on two voices" decline was entirely a phantom instrument-1
+clash. The scan now stops at the restart; under the forced `--pulse-phase`
+flag six files move (Action_Biker, Last_V8 x2, Monty_on_the_Run, Phantoms,
+Zoids), under shipped presets only Zoids, the one preset carrying the flag.

@@ -333,6 +333,20 @@ def _runs(path: Path) -> dict:
     return last
 
 
+def run_seconds_label(rows: list[dict]) -> int:
+    """The run's own `-t`, for the header ("generated from a N s run").
+
+    Deliberately `r.get("seconds")`, never `F.traced_window(r)`: a row whose
+    length rule widened or shortened its own comparison window
+    (`window_seconds`/`original_ends`) is a fact about THAT FILE, not about
+    what `-t` the whole corpus was measured at, and every row in one run
+    shares this `seconds` value by construction (`fidelity.py`'s
+    `row["seconds"] = args.seconds`). Pinned by `test_queue.py`: a row
+    carrying `window_seconds != seconds` must not move this label.
+    """
+    return next((r.get("seconds") for r in rows if r.get("seconds")), 60)
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(prog="fidelity_queue")
     p.add_argument("--from-json", default=str(ROOT / "build" / "fidelity.json"))
@@ -341,7 +355,7 @@ def main(argv=None) -> int:
     args = p.parse_args(argv)
     rows = _load_json(Path(args.from_json), [])
     rows = rows.get("rows", rows) if isinstance(rows, dict) else rows
-    seconds = next((r.get("seconds") for r in rows if r.get("seconds")), 60)
+    seconds = run_seconds_label(rows)
     approvals = _load_json(ROOT / "build" / "approvals.json", {}).get("tunes", {})
     refusals = _load_json(ROOT / "build" / "search_refusals.json", {}).get("refusals", [])
     prior = _load_json(Path(args.json), {})

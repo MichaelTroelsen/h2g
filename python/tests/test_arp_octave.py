@@ -744,3 +744,62 @@ def test_the_ticked_multispeed_records_reach_the_sng():
     sng, _, _ = _converted("Monty_on_the_Run")
     assert _wavetable_of(sng, 5) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
                                      (0x41, 0x80), (0xFF, 0x1A)]
+
+
+# ---------------------------------------------------------------------------
+# The UNTICKED -S1 parity shape, and the residue it read from v0.5.490:
+# `wave/00, tail/00, tail/00, FF -> entry 1` loops over entries 1 and 2, so
+# entry 1 plays every odd frame after the attack and entry 2 every even one.
+# Until v0.5.490 the octave was hard-coded on entry 2 -- offset 2 -- for
+# every record, while the tick shape beside it and `ticked_arp_entries`
+# already read `fixed_arp_phases`. The corpus byte-hash that shipped this
+# moved exactly the residue-0 files: Geoff_Capes_Strongman_Challenge,
+# Gremlins and Hunter_Patrol (its instrument 9; 14 and 15 are residue 1 and
+# kept their bytes). Per-offset up-fraction at offset 1, original / before /
+# after, 180 s: Gremlins 0.90 / 0.95 / 1.00, Hunter_Patrol 0.40 / 0.15 / 0.32;
+# Geoff_Capes at 60 s 0.90 / 0.74 / 1.00. `vib` cannot see a parity swap
+# (it counts reversals, and a shifted alternation has the same number), so
+# the profile is the measurement.
+
+from h2g.goatwriter import unticked_arp_octave_entry           # noqa: E402
+
+
+@pytest.mark.parametrize("residue, entry", [(0, 1), (1, 2)])
+def test_the_unticked_shape_puts_the_octave_on_the_residues_entry(residue, entry):
+    """Residue 0 is a first octave on offset 1 -- entry 1 of the loop;
+    residue 1 is offset 2 -- entry 2, the offset every record had before."""
+    assert unticked_arp_octave_entry(residue) == entry
+    # A higher residue is read by parity, as the tick shape reads it.
+    assert unticked_arp_octave_entry(residue + 2) == entry
+
+
+@pytest.mark.parametrize("residue", [0, 1])
+def test_the_written_unticked_shape_lands_a_frame_later(residue):
+    """`--no-test-restart`: the firstwave owns frame 0 and every entry
+    plays a frame later, so the octave swaps entries -- the empty
+    `_first_frame_lead` the tick shape reads as `k + 1`."""
+    assert (unticked_arp_octave_entry(residue, written=True)
+            != unticked_arp_octave_entry(residue, written=False))
+    assert unticked_arp_octave_entry(residue, written=True) in (1, 2)
+
+
+@needs_corpus
+def test_the_unticked_records_carry_the_residue_in_the_sng():
+    """Read back by songview (a second reader). Geoff_Capes attacks on even
+    frames (base 0, first fetch 0; residue 0): the octave is on entry 1.
+    Crazy_Comets attacks on odd frames (first fetch 1; residue 1): entry 2,
+    byte for byte the shape it had before v0.5.490. Hunter_Patrol has both
+    residues in one file, split by instrument (`fixed_arp_phases`' vote)."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sng, _, _ = _converted("Geoff_Capes_Strongman_Challenge")
+    assert _wavetable_of(sng, 8) == [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00),
+                                     (0xFF, 0x29)]
+    sng, _, _ = _converted("Crazy_Comets")
+    assert _wavetable_of(sng, 10) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
+                                      (0xFF, 0x3A)]
+    sng, _, _ = _converted("Hunter_Patrol")
+    assert _wavetable_of(sng, 9) == [(0x41, 0x00), (0x41, 0x0C), (0x41, 0x00),
+                                     (0xFF, 0x2E)]
+    assert _wavetable_of(sng, 14) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
+                                      (0xFF, 0x53)]
