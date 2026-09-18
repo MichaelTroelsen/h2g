@@ -4755,13 +4755,21 @@ FIXED_ARP_RESET_WINDOW = 24
 # Game_Killer's reload is the immediate 9; Rasputin's `$C539` is written by
 # the track's own `$FE nn` tempo command (tracks.py) and runs 2, 3, 5, 10,
 # 60, 120, 6 and 2 across one lap of subtune 0. With the step skipped one
-# call in R+1 the counter is no longer the frame number, so no phase can be
-# walked for these two -- and Rasputin's DUTY moves with the tempo: at the
+# call in R+1 the counter is not the FRAME number -- but the gate's `RTS`
+# skips the whole player, sequencer included, so the counter IS the number
+# of calls that passed the gate, and the sequencer's rows are counted in
+# the same calls. Through v0.5.490 this read "no phase can be walked for
+# these two" and both took residue 0; the walk in `fixed_arp_phases` is in
+# the player's own passing-call clock, where the gate is invisible, and
+# `fixed_arp_counter_base` reads the reset for a gated counter as for any
+# other. What the gate DOES change is the length of a counter step in
+# frames, (R + 1) / R -- `_gate_calls`, applied to the duty's call count in
+# `_wavetable_entries`. Rasputin's DUTY moves with the tempo: at the
 # opening's R = 2 its `$02` mask sounds three frames and three (12 onsets in
 # the trace), and at R >= 5 the two-and-two the mask names (232 of 293
 # octave onsets in a 240 s trace, `bbuu`). A wavetable cannot follow a
-# tempo command, so Rasputin gets the mask's own reading and the phase both
-# files get is the reset value, 0.
+# tempo command, so Rasputin gets the mask's own reading; its cell reload
+# is not a `SongSpeeds.skip` either, so its step stays one frame.
 FIXED_ARP_GATED_INC = (
     re.compile(rb"\xce..\x10\x06\xa9.\x8d..\x60$", re.DOTALL),
     re.compile(rb"\xce..\x10\x09\xad..\x8d..\x4c..$", re.DOTALL),
@@ -4806,13 +4814,28 @@ def fixed_arp_counter_base(sid: SidFile, det: Detection) -> Optional[int]:
 
     Any mask (since v0.5.489: the mask is the DUTY, `fixed_arp_period`, and
     the counter and its reset are the same bytes whatever it divides by).
-    None where the block or the counter's `INC` is not found -- or where an
-    outer gate skips that `INC` one call in R+1 (`fixed_arp_counter_gated`:
-    Game_Killer, Rasputin), since then the counter is not the frame number
-    and `frame + base` reads nothing.
+    None where the block or the counter's `INC` is not found.
+
+    **`k` is a call that passed the outer gate, where there is one.** A
+    gated `INC` (`fixed_arp_counter_gated`: Game_Killer, Rasputin) sits
+    behind an `RTS` that skips the whole play routine one call in R+1, so
+    the counter is not the frame number -- it is the count of PASSING calls,
+    which is the clock the sequencer's rows run on too, and the reset and
+    no-reset shapes read exactly as above in that clock. Through v0.5.490
+    this returned None for a gated counter and both files took residue 0.
+    **Measured** (v0.5.490, siddump of the originals, 60 s, every
+    octave-up and base frame after every octave onset against
+    `fixed_arp_up(mask, branch, c)`): Game_Killer with `c` = passing calls
+    since the reset -- the gate byte `$0C8C` is 4 in the file and reloads
+    9, so frames 4, 14, 24, ... are skipped -- agrees 2933 and disagrees 0
+    (7892/0 at 180 s), where `c` = frame reads 2149/784; Battle_of_Britain,
+    the no-reset shape with byte `$DC` at `$841F`, agrees 405/0 at this
+    function's 221 and 324/81 at 0. `tests/test_arp_octave.py::
+    test_the_gated_counter_is_re_measured_against_the_original` re-takes
+    all four whenever siddump is on the machine.
     """
     ctr = _fixed_arp_counter(sid, det)
-    if ctr is None or fixed_arp_counter_gated(sid, det):
+    if ctr is None:
         return None
     data = sid.data
     lo, hi = ctr & 0xFF, ctr >> 8
@@ -4901,12 +4924,24 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     instrument, and the instrument takes the majority -- exact wherever a
     row is an even number of frames or the instrument's notes all sit on
     rows of one parity, and a per-note split (two wavetables per record) is
-    what would make Hunter_Patrol's minority right. A group whose row is not
-    a whole number of frames (an outer gate) or whose numbering a split has
-    shifted casts no vote.
+    what would make Hunter_Patrol's minority right. A group whose numbering
+    a split has shifted casts no vote.
 
-    Empty for any file whose block is not found, whose counter is gated
-    (`fixed_arp_counter_gated`) or whose counters cannot be read.
+    **The walk is in the player's own clock: calls that pass the outer
+    gate.** Where the player has one (`SongSpeeds.skip`, Game_Killer's
+    reload 9) a row is not a whole number of FRAMES, and through v0.5.490
+    such a group cast no vote -- but the gate's `RTS` skips the counter's
+    `INC` and the sequencer alike, so in passing calls a row is exactly
+    `frames` calls and the counter steps exactly once a call: the residue
+    is `(base + first + row * frames) % period` whatever the gate skips.
+    Game_Killer's attacks, modelled that way over a 60 s trace, sit on
+    residues 1, 3, 5 and 7 -- `first` 1 plus rows of 2 -- about evenly on
+    every voice (`C:/t/gated-counter-phase/attack_residues.py`), so the
+    majority vote picks one of four for each record where residue 0, the
+    value both gated files took until then, occurs on no attack at all.
+
+    Empty for any file whose block is not found or whose counters cannot be
+    read.
     """
     base = fixed_arp_counter_base(sid, det)
     first = fixed_arp_first_fetch(sid, det)
@@ -4922,8 +4957,8 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
         return {}                        # a split subtune shifted the numbering
     votes: dict = {}
     for ti, track in enumerate(tracks):
-        frames = speeds.frames_for(ti // 3)
-        if frames is None or speeds.skip_for(ti // 3):
+        frames = speeds.frames_for(ti // 3)   # in passing calls; see above
+        if frames is None:
             continue
         row, current, repeat = 0, 0, 1
         operand = False
@@ -5006,9 +5041,12 @@ def fixed_arp_duty_entries(wave: int, tail: int, mask: int, branch: int,
       `== 0xff` test).
 
     **One frame is `multiplier` play calls.** Every run above is in frames
-    and is multiplied out here; the mask files all convert at -S1 today, so
-    the -S2 shape is pinned by `tests/test_arp_octave.py` rather than by any
-    corpus byte. Returns None where the entries would not fit `budget`.
+    and is multiplied out here -- and a "frame" of the counter is one call
+    that passed the outer gate, `(R + 1) / R` real frames where the player
+    has one, which the caller folds into `multiplier` (`_gate_calls`:
+    Game_Killer's 10 at -S9). The -S2 and -S3 shapes are pinned by
+    `tests/test_arp_octave.py` at every residue rather than by any corpus
+    byte. Returns None where the entries would not fit `budget`.
     """
     m = max(1, multiplier)
     period = fixed_arp_period(mask)
@@ -5759,12 +5797,20 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
         # and on the mask NOT being Commando's `$01`, whose files keep their
         # bytes exactly: the corpus byte-hash at v0.5.489 named the nine
         # mask != $01 files and nothing else.
+        # **The counter steps once a call that passes the outer gate**, and
+        # that call is (O + 1) / O of the original's frames where the player
+        # has one (`_gate_calls`, the rule `_voice_two_stage_entries` already
+        # obeys): Game_Killer's step is 10 of our calls at its -S9, not 9,
+        # or the duty runs a call a step ahead of the rows it was walked
+        # against. No other duty file has a `SongSpeeds.skip`, and at -S1
+        # the rounding leaves the step one call.
         if (effects and arp_fixed and arp_mask is not None
                 and arp_mask[0] != FIXED_ARP_PARITY_MASK):
             duty = fixed_arp_duty_entries(
                 wave, tail, arp_mask[0], arp_mask[1],
                 0 if arp_phase is None else arp_phase,
-                _arp_relative(arp_fixed, arp_note), multiplier, base_entry,
+                _arp_relative(arp_fixed, arp_note),
+                _gate_calls(multiplier, gate_skip), base_entry,
                 budget, written=no_test_restart,
                 tick=((WAVE_NOISE_GATEOFF | (wave & 0x01),
                        _noise_tick_frames(sid, det)) if tick else None))

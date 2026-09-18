@@ -7121,30 +7121,50 @@ _FATAL_SETTINGS = ("seconds", "subtune")
 
 
 def settings_mismatch(base: dict, new: dict) -> list[str]:
-    """Measurement settings that differ between two runs, per file.
+    """Measurement settings that differ between two runs, per file, that
+    refuse the WHOLE run (`_FATAL_SETTINGS`: `seconds`, `subtune`) -- two
+    windows requested with different `-t` or against different subtunes are
+    two quantities and a delta between them means nothing.
 
     A field absent on one side is not a mismatch: a baseline taken before the
     field was recorded is old, not wrong, and refusing it would make every
     saved run useless the first time a field is added.
+
+    The window a file was ACTUALLY traced over (`traced_window`, which can
+    differ from the requested `-t` once a row is floor-widened) is a
+    per-file question, not a whole-run one -- see `window_mismatches`, which
+    `compare_runs` uses to refuse only the affected rows.
     """
     bad = []
     for name in sorted(base):
         b, n = base[name], new.get(name)
         if n is None:
             continue
-        before = len(bad)
         for k in _FATAL_SETTINGS:
             bv, nv = b.get(k), n.get(k)
             if bv is not None and nv is not None and bv != nv:
                 bad.append(f"{name}: {k} {bv!r} -> {nv!r}")
-        # The window the register columns were actually traced over is a
-        # per-file setting since `window_floor`: two rows sharing `-t` can
-        # still be a 180 s prefix and the whole 247 s tune, and a delta
-        # between those is the same non-number as one across `-t`. Named
-        # only where `seconds` itself did not already refuse the file.
+    return bad
+
+
+def window_mismatches(base: dict, new: dict) -> list[tuple[str, int, int]]:
+    """Per-file rows whose ACTUALLY TRACED window (`traced_window`) differs
+    between two runs -- a 180 s prefix and the whole 247 s tune are two
+    quantities even when both runs share the same requested `-t`, since
+    `window_floor` widens a row independently of the other files in its run.
+
+    Unlike `settings_mismatch`, this is never whole-run fatal: it names the
+    individual files `compare_runs` must drop from the compared set, so one
+    floor-widened row does not refuse the other 94.
+    """
+    bad = []
+    for name in sorted(base):
+        b, n = base[name], new.get(name)
+        if n is None:
+            continue
         bw, nw = traced_window(b), traced_window(n)
-        if len(bad) == before and bw is not None and nw is not None and bw != nw:
-            bad.append(f"{name}: window {bw!r} -> {nw!r}")
+        if bw is not None and nw is not None and bw != nw:
+            bad.append((name, bw, nw))
     return bad
 
 
@@ -7336,6 +7356,31 @@ def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]
 
     if not both:
         return "\n".join(head + ["No file appears in both runs.", ""]), 2
+
+    # A per-file traced-window difference (window_floor widened one row but
+    # not its counterpart) is not a whole-run hazard the way `-t` itself is:
+    # it refuses only the rows it actually affects, and the rest of the A/B
+    # -- including the byte-identical/moved sets below -- is computed over
+    # what remains.
+    win_mismatch = window_mismatches({f: base[f] for f in both},
+                                      {f: new[f] for f in both})
+    refused_files = {f for f, _, _ in win_mismatch}
+    if refused_files:
+        both = [f for f in both if f not in refused_files]
+        shown = win_mismatch[:10]
+        head += [
+            "## Refused rows",
+            "",
+            f"{len(win_mismatch)} file(s) were traced over a different "
+            "window in each run (`window_floor` widened one side but not "
+            "the other) and are excluded from every comparison below:",
+            "",
+        ] + [f"- {f}: window {bw!r} -> {nw!r}" for f, bw, nw in shown] + (
+            [f"- ... and {len(win_mismatch) - len(shown)} more"]
+            if len(win_mismatch) > len(shown) else []) + [""]
+
+    if not both:
+        return "\n".join(head + ["No file remains after excluding refused rows.", ""]), 2
 
     # What differs before any number is compared: the options, and whether the
     # converter's output moved at all.

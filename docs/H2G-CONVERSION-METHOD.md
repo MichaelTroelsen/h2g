@@ -11820,7 +11820,10 @@ trace agrees 3524 / 0 on Zoids and 3190 / 1 on Master_of_Magic. Rasputin's
 counter is `INC`'d at `$C020` behind the `$FE nn` tempo gate, not at the play
 entry, so its `$02` reads two-and-two on 232 of 293 onsets and three-and-three
 only for the opening's reload of 2 -- it is encoded as the mask's own reading
-with residue 0, and Game_Killer's gated counter the same way.
+with residue 0, and Game_Killer's gated counter the same way. (RETRACTED
+at v0.5.491 in one respect: "the counter base is `None` for a gated counter,
+so no phase is walked there" held until v0.5.490 and is retired below in
+§7.kkkkkk -- a gated counter is walked in PASSING calls.)
 
 **Emitted as wavetable delay entries** (`goatwriter.fixed_arp_duty_entries`):
 frame 0 is the record's waveform, the tick frames noise, then one delay entry
@@ -11931,3 +11934,49 @@ that small integer as a pattern index -- so Monty_on_the_Run subtune 2's
 clash. The scan now stops at the restart; under the forced `--pulse-phase`
 flag six files move (Action_Biker, Last_V8 x2, Monty_on_the_Run, Phantoms,
 Zoids), under shipped presets only Zoids, the one preset carrying the flag.
+
+### 7.kkkkkk A gated counter is walked in passing calls, and the calibration's floor is the render's
+
+§7.hhhhhh left a gated fixed-arp counter unphased: `fixed_arp_counter_base`
+returned `None` where the `INC` sat behind the outer RTS gate, on the
+argument that a counter which skips calls cannot be placed on the row grid.
+The argument was wrong about the clock, not the gate: the gate skips the
+sequencer too, so in the clock the counter actually runs in -- PASSING calls
+-- a row is exactly `frames` calls and the residue is
+`(base + first + row * frames) % period` whatever the gate drops. Measured
+against the originals' siddumps at v0.5.490 (60 s, every octave frame after
+every onset against `fixed_arp_up`): Game_Killer agrees 2933 / 0 with the
+passing-call count and 2149 / 784 with the frame number; Battle_of_Britain's
+base is 221 from its own `$DC` byte and agrees 405 / 0 (the "324 / 81 at
+base 0" figure was a probe's hard-coded base, not the code's). Game_Killer
+and Rasputin now read base 0 (the reset shape); the duty step on Game_Killer
+is the gate-scaled call count (10 at `-S9`, tempo 20 = two passing calls a
+row), and the corpus byte-hash moves exactly Game_Killer. What the vote
+cannot do is the lead worth keeping: Game_Killer's one melodic instrument
+cycles residues 1 -> 7 -> 5 -> 3 across consecutive 7-frame notes, a
+four-way tie the per-instrument majority cannot represent, so its
+reversal_ratio stays at 0.23 until a per-note phase exists.
+
+**The calibration's floor is the render's, and it hides three of four pairs.**
+The known-bad table gained Rasputin and Spellbound at 0.5.329 -> 0.5.330 --
+the same tempo fix as Human_Race's (3b091c0), comparable for the reason
+W_A_R is, +0.0056 / +0.0028 on `aud` against a grid floor of 0.0018; five
+other candidates (Knucklebusters, Warhawk, Phantoms on that commit,
+Bangkok_Knights' twenty silenced notes, a Monty build that does not
+reproduce) were measured and rejected in the comment above `KNOWN_BAD`.
+Regenerating `SOUND-CALIBRATION.md` with them reads **FAIL**, and not
+because of them: since v0.5.486 check 4 adopts the largest of three floors,
+and the third -- a fresh sidplayfp render of the same original against the
+cached one, the emulator's random power-on delay, 16 repeat renders kept --
+reads 0.0183 at v0.5.490. Human_Race (+0.0136), the pair the v0.5.485 doc
+called seen, is inside it; so are both new pairs; only W_A_R (+0.167)
+clears it. The document's own remedy stands: pass `--delay=<n>` from
+`listen.render_sidplayfp` so a re-render reproduces the cached one, then
+recalibrate. Neither a wider floor nor a shorter table answers it.
+
+**`--baseline` refuses per row.** The eight floor-widened rows refused the
+whole v0.5.488 -> v0.5.489 comparison; `compare_runs` now refuses only the
+rows whose traced window differs (a `## Refused rows` section, `window A
+-> B` each) and compares the rest -- on that pair, eight refused and 87
+compared. A `-t` or subtune mismatch still refuses the run: two windows are
+two quantities.

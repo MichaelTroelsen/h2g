@@ -238,11 +238,49 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # is the pair worth rendering. `git show <sha>:presets.json` answers the
 # second without rendering anything, which is why it is the second question
 # and not the last.
+#
+# **TWO MORE PAIRS FROM THE v0.5.330 TEMPO FAMILY, ADDED v0.5.491**, found by
+# applying that rule to the changelog and scoring each candidate EXACTLY as
+# check 4 does (`convert_at` both versions, `score_pair` on the 60 s prefix of
+# the 180 s render, against the calibration's own noise floor, which the
+# v0.5.485 180 s artefact puts at 0.0018 -- not the 0.0069 the 60 s era
+# recorded, so a candidate judged against the old floor reads unseen when it
+# is seen). Probe: C:/t/known-bad-wants-two-more-ver/prefix_check.py.
+#
+#     Rasputin    0.5.329 -> 0.5.330  worse_by aud +0.0056 loud +0.0046  seen against the grid floor (both)
+#     Spellbound  0.5.329 -> 0.5.330  worse_by aud +0.0028 loud +0.0011  seen against the grid floor (aud)
+#
+# AND THE DOC REGENERATED WITH THEM READS **FAIL** -- NOT BECAUSE OF THEM.
+# Since e32242d (v0.5.486) the floor check 4 decides on is the LARGEST of
+# three, and the third -- a second render of the same original against the
+# cached one, sidplayfp's random power-on delay -- reads 0.0183 at v0.5.490
+# against the grid floor's 0.0018. Human_Race (+0.0136), the pair the
+# committed v0.5.485 doc called seen, is inside it too; only W_A_R (+0.167)
+# clears it. So at this head the calibration validates on ONE pair whatever
+# KNOWN_BAD carries, and the two rows added here read "inside the render
+# floor" beside Human_Race's. The remedy the doc itself names is the
+# renderer's `--delay=<n>` flag in listen.render_sidplayfp (a fixed power-on
+# delay makes a re-render reproduce the cached one), NOT a wider floor and
+# not dropping pairs; until it lands the three tempo-family rows are margins
+# inside the render's own noise, which is what the doc says of them.
+#
+# Both are the same STRUCTURAL fix as Human_Race's -- 3b091c0, "a subtune's
+# tempo no longer reaches another subtune's clock" -- on two of the seven
+# files that commit names, so the pair is comparable for the reason W_A_R is.
+# Tested and REJECTED at the same time, so nobody re-renders them:
+# Knucklebusters, Warhawk and Phantoms_of_the_Asteroid on the same commit
+# (worse_by 0.0000 / -0.0022 / +0.0001 -- the tempo fix does not reach their
+# traced subtune audibly), and Bangkok_Knights 0.5.434 -> 0.5.435 (the twenty
+# pre-instrument notes silenced: +0.0003, twenty notes in 180 s are under the
+# floor); Auf_Wiedersehen_Monty 0.5.393 -> 0.5.394 does not build on the bad
+# side (`convert_at` returns None for 0.5.393).
 # ===========================================================================
 KNOWN_BAD = [("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
              ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401"),
              ("Human_Race.sid", "0.5.329", "0.5.330"),
-             ("W_A_R.sid", "0.5.399", "0.5.400")]
+             ("W_A_R.sid", "0.5.399", "0.5.400"),
+             ("Rasputin.sid", "0.5.329", "0.5.330"),
+             ("Spellbound.sid", "0.5.329", "0.5.330")]
 
 
 # ---- pure reductions ------------------------------------------------------

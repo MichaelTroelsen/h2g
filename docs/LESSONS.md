@@ -2648,6 +2648,21 @@ Flash_Gordon 0.994 vs 0.989, Sanxion 0.979 vs 0.972, Knucklebusters 0.999 vs
 the old artefact cannot be `--baseline`d against the new on those eight --
 expected, not a defect.
 
+## `noise_run_agreement`: the gate-blind Confuzion citation
+
+A task brief cited `24b9f1d` as "the gate-blind nrun finding" behind CLAUDE.md
+§ Measurement discipline's `noise_run_agreement` bullet (the Confuzion
+8998-frame whole-window run dropped whole, `nrun` `-`). `24b9f1d` is
+"Regenerate SURVEY.md and presets.json at v0.5.480, and both move only their
+stamp" -- a SURVEY/presets regeneration with no `noise_runs` change in it.
+`git log -S"noise_runs" --oneline` and `git log --oneline 24b9f1d~1..50a6178`
+agree: the gate-blind reading is fixed at **011ccd7** (v0.5.483, "the
+pulse-phase budget lifts the multiplier gate, a past-table zero cell is a
+rest, `noise_runs` reads the gate bit, and the artefact guard learns the
+difference between an invocation and a mention"), landed the same day as
+50a6178 ("nrun moves on 30 byte-identical files because it can finally see
+the note"). Cite 011ccd7 for the mechanism, not 24b9f1d.
+
 ## graphify
 
 This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
@@ -2684,18 +2699,3 @@ Rules:
   off. Rule in `CLAUDE.md` § Emitting, the global-counter bullet: read the
   counter's base and first fetch off the player, never off a trace of one
   file. Same family as "A fixture is not the corpus" under Preset search.
-
-## Citation fix: the gate-blind `noise_runs` finding is 011ccd7, not 24b9f1d
-
-A task brief cited `24b9f1d` as "the gate-blind nrun finding" behind CLAUDE.md
-§ Measurement discipline's `noise_run_agreement` bullet (the Confuzion
-8998-frame whole-window run dropped whole, `nrun` `-`). `24b9f1d` is
-"Regenerate SURVEY.md and presets.json at v0.5.480, and both move only their
-stamp" -- a SURVEY/presets regeneration with no `noise_runs` change in it.
-`git log -S"noise_runs" --oneline` and `git log --oneline 24b9f1d~1..50a6178`
-agree: the gate-blind reading is fixed at **011ccd7** (v0.5.483, "the
-pulse-phase budget lifts the multiplier gate, a past-table zero cell is a
-rest, `noise_runs` reads the gate bit, and the artefact guard learns the
-difference between an invocation and a mention"), landed the same day as
-50a6178 ("nrun moves on 30 byte-identical files because it can finally see
-the note"). Cite 011ccd7 for the mechanism, not 24b9f1d.

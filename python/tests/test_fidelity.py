@@ -4347,27 +4347,52 @@ def test_traced_window_reconstructs_a_pre_key_row_exactly():
     assert fidelity.traced_window({"status": "not converted"}) is None
 
 
-def test_baseline_refuses_across_a_widened_window_as_it_does_across_t():
-    """A 180 s prefix score and a whole-tune score are two quantities. The
-    old artefact's rows carry no `window_seconds`, so the refusal has to
-    come through `traced_window`'s reconstruction."""
+def test_baseline_refuses_a_widened_window_per_row_not_per_run():
+    """A 180 s prefix score and a whole-tune score are two quantities, but
+    unlike a `-t` mismatch this is a per-FILE hazard: it refuses only the
+    row it affects (`window_mismatches`), not the whole A/B
+    (`settings_mismatch`, which no longer looks at the traced window at
+    all). The old artefact's rows carry no `window_seconds`, so the
+    refusal has to come through `traced_window`'s reconstruction."""
     old = _ab("Food_Feud.sid", "same", seconds=180)
     new = _ab("Food_Feud.sid", "same", seconds=180,
               window_seconds=247, window_widened_to=247)
     assert fidelity.settings_mismatch({"Food_Feud.sid": old},
+                                      {"Food_Feud.sid": new}) == []
+    assert fidelity.window_mismatches({"Food_Feud.sid": old},
                                       {"Food_Feud.sid": new}) == [
-        "Food_Feud.sid: window 180 -> 247"]
+        ("Food_Feud.sid", 180, 247)]
     text, code = fidelity.compare_runs([old], [new])
-    assert code == 2 and "## Refused" in text
+    assert code == 2 and "## Refused rows" in text
     assert "Food_Feud.sid: window 180 -> 247" in text
-    # a `-t` mismatch is named once, not twice
+    assert "No file remains after excluding refused rows." in text
+    # a `-t` mismatch still refuses the whole run
     assert fidelity.settings_mismatch(
         {"A.sid": _ab("A.sid", seconds=60)},
         {"A.sid": _ab("A.sid", seconds=180, window_seconds=247)}) == [
         "A.sid: seconds 60 -> 180"]
-    # and two widened runs agree
+    # and two widened runs agree, on both checks
     assert fidelity.settings_mismatch({"Food_Feud.sid": new},
                                       {"Food_Feud.sid": dict(new)}) == []
+    assert fidelity.window_mismatches({"Food_Feud.sid": new},
+                                      {"Food_Feud.sid": dict(new)}) == []
+
+
+def test_a_per_row_window_refusal_still_compares_the_other_rows():
+    """The mixed case: one file's traced window differs, another's does not
+    -- only the mismatched row is refused, the rest is compared and the
+    byte-identical/moved sets are computed over the compared rows only."""
+    old_a = _ab("A.sid", "same", seconds=180)
+    new_a = _ab("A.sid", "same", seconds=180,
+                window_seconds=247, window_widened_to=247)
+    old_b = _ab("B.sid", "same", seconds=180)
+    new_b = _ab("B.sid", "same", seconds=180)
+    text, code = fidelity.compare_runs([old_a, old_b], [new_a, new_b])
+    assert code == 0
+    assert "## Refused rows" in text
+    assert "A.sid: window 180 -> 247" in text
+    assert "B.sid" not in text.split("## Refused rows")[1].split("##")[0]
+    assert "identical on all 1 file(s)" in text
 
 
 def test_the_report_header_records_the_per_file_window():

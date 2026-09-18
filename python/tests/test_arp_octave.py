@@ -275,14 +275,22 @@ def test_counter_base_and_first_fetch_are_read_from_the_file():
     assert det.arp_fixed_up == OCTAVE
     assert fixed_arp_counter_base(sid, det) == 0
     assert fixed_arp_first_fetch(sid, det) == 1
-    # A GATED counter has no base: its `INC` is skipped one call in R+1.
+    # A GATED counter counts the calls that PASS the gate -- the gate's RTS
+    # skips the sequencer too -- and its reset reads like any other: base 0
+    # in both. Through v0.5.490 these two read None and took residue 0.
     for name in ("Game_Killer", "Rasputin"):
         sid, det = _det(CORPUS / f"{name}.sid")
         assert fixed_arp_counter_gated(sid, det), name
-        assert fixed_arp_counter_base(sid, det) is None, name
+        assert fixed_arp_counter_base(sid, det) == 0, name
     for name in ("Zoids", "Chimera", "Commando", "Hunter_Patrol"):
         sid, det = _det(CORPUS / f"{name}.sid")
         assert not fixed_arp_counter_gated(sid, det), name
+    # The no-reset shape under a duty mask: Battle_of_Britain's `$841F` byte
+    # is $DC and nothing stores it, so frame k reads $DD + k.
+    sid, det = _det(CORPUS / "Battle_of_Britain.sid")
+    assert not fixed_arp_counter_gated(sid, det)
+    assert fixed_arp_counter_base(sid, det) == 0xDD
+    assert fixed_arp_first_fetch(sid, det) == 0
 
 
 def _timeline(voice, n):
@@ -617,6 +625,157 @@ def test_the_duty_is_re_measured_against_the_original(name):
                     disagree += 1
     assert agree >= 300, (name, agree, disagree)
     assert disagree / (agree + disagree) < 0.02, (name, agree, disagree)
+
+
+# ---------------------------------------------------------------------------
+# A gated counter counts the calls that pass the gate (v0.5.491).
+#
+# Game_Killer's `$0826 DEC $0C8C / BPL / LDA #9 / STA $0C8C / RTS` skips the
+# whole player one call in ten, the octave block's `INC $0C8B` and the
+# sequencer alike, so the counter is the number of PASSING calls since the
+# new-song reset and a row is `frames` passing calls: the residue walk is
+# the ungated one in the player's own clock. Through v0.5.490
+# `fixed_arp_counter_base` returned None for a gated counter, no phase was
+# walked and Game_Killer and Rasputin took residue 0 -- a value that occurs
+# on none of Game_Killer's attacks (they sit on 1, 3, 5 and 7). What the gate
+# does change is the FRAME length of a counter step, (R + 1) / R, which is
+# `_gate_calls` applied to the duty's call count: 10 of our calls at -S9.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (_wavetable_entries, OUTER_GATE_RTS,  # noqa: E402
+                            find_song_speeds)
+
+
+def _gated_counter(sid, seconds):
+    """`(c[f], gate_skip)`: what a gated, reset counter reads on each frame
+    of a trace of `seconds`, the gate walked from the file's own byte."""
+    m = OUTER_GATE_RTS.search(sid.data)
+    assert m is not None
+    ctr = m.group(1)[0] | m.group(1)[1] << 8
+    reload = m.group(2)[0]
+    g = sid.data[sid.to_offset(ctr)]
+    n = seconds * 50 + 2
+    c, cnt, started = [0] * n, 0, False
+    for f in range(n):
+        g -= 1
+        if g < 0:                        # DEC underflows: reload, RTS
+            g = reload
+            c[f] = cnt
+            continue
+        if started:
+            cnt += 1
+        started = True                   # the new-song call reads 0
+        c[f] = cnt
+    return c, reload
+
+
+def _octave_frames(trace, n):
+    """(frame, is_up) for every octave-up or base frame after every octave
+    onset -- the frames `fixed_arp_up` is asked about."""
+    for v in trace:
+        t = _timeline(v, n)
+        at = v.attack_frames
+        for i, f in enumerate(at):
+            end = at[i + 1] if i + 1 < len(at) else n
+            seg = t[f:min(end, f + 17)]
+            if not seg or not seg[0]:
+                continue
+            lo = min(x for x in seg if x)
+            if not any(x and abs(x / lo - 2) < 0.02 for x in seg):
+                continue
+            for k, x in enumerate(seg):
+                if k == 0 or not x:
+                    continue
+                is_up = abs(x / lo - 2) < 0.02
+                if is_up or x == lo:
+                    yield f + k, is_up
+
+
+@needs_corpus
+@needs_siddump
+def test_the_gated_counter_is_re_measured_against_the_original():
+    """Game_Killer: every octave frame of every onset in 60 s against
+    `fixed_arp_up(mask, branch, c)` with `c` the passing-call count --
+    the gate byte `$0C8C` is 4 in the file and reloads 9, so frames 4, 14,
+    24, ... are skipped -- and against the frame number, which the walk
+    used to be refused for. The first must agree; the second must NOT,
+    or the walk is not load-bearing. Battle_of_Britain beside it: the
+    no-reset shape, base 221 off its `$841F` byte, ungated."""
+    path = CORPUS / "Game_Killer.sid"
+    sid, det = _det(path)
+    assert fixed_arp_counter_gated(sid, det)
+    assert fixed_arp_counter_base(sid, det) == 0
+    mask, branch = fixed_arp_mask(sid, det)
+    seconds = 60
+    n = seconds * 50 + 2
+    c, reload = _gated_counter(sid, seconds)
+    assert reload == find_song_speeds(sid, det).skip_for(0) == 9
+    trace = fidelity.run_siddump(path, seconds, 0, fidelity.SIDDUMP)
+    frames = list(_octave_frames(trace, n))
+    assert len(frames) >= 300, len(frames)
+    walked = sum(fixed_arp_up(mask, branch, c[f]) != up for f, up in frames)
+    as_frame = sum(fixed_arp_up(mask, branch, f) != up for f, up in frames)
+    assert walked / len(frames) < 0.02, (walked, len(frames))
+    assert as_frame / len(frames) > 0.2, (as_frame, len(frames))
+    # The no-reset shape under the same mask, at the base read off the byte.
+    path = CORPUS / "Battle_of_Britain.sid"
+    sid, det = _det(path)
+    base = fixed_arp_counter_base(sid, det)
+    assert base == 0xDD
+    trace = fidelity.run_siddump(path, seconds, 0, fidelity.SIDDUMP)
+    frames = list(_octave_frames(trace, n))
+    assert len(frames) >= 300, len(frames)
+    at_base = sum(fixed_arp_up(mask, branch, base + f) != up for f, up in frames)
+    at_zero = sum(fixed_arp_up(mask, branch, f) != up for f, up in frames)
+    assert at_base / len(frames) < 0.02, (at_base, len(frames))
+    assert at_zero / len(frames) > 0.1, (at_zero, len(frames))   # 81 of 405
+
+
+@needs_corpus
+def test_a_gated_counter_is_walked_in_passing_calls():
+    """Game_Killer's records vote from residues 1, 3, 5, 7 (first fetch 1,
+    rows of 2 passing calls), never 0; Rasputin's walk lands every record on
+    0, which is why the corpus byte-hash that shipped this named Game_Killer
+    alone; Battle_of_Britain's attacks all sit on rows a multiple of 4 and
+    read 221 + 8k, residue 5, as before."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sid, det = _det(CORPUS / "Game_Killer.sid")
+    _, tracks, patterns = _converted("Game_Killer")
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    assert phases and set(phases.values()) <= {1, 3, 5, 7}, phases
+    assert 0 not in phases.values()
+    sid, det = _det(CORPUS / "Rasputin.sid")
+    _, tracks, patterns = _converted("Rasputin")
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    assert phases and set(phases.values()) == {0}, phases
+    sid, det = _det(CORPUS / "Battle_of_Britain.sid")
+    _, tracks, patterns = _converted("Battle_of_Britain")
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    assert phases and set(phases.values()) == {5}, phases
+
+
+@needs_corpus
+def test_the_gated_duty_steps_once_a_passing_call():
+    """A duty record at -S9 under a reload-9 gate takes the -S10 shape --
+    the octave's first call is 10, `_gate_calls(9, 9)` -- and a record
+    without the arpeggio bit is not touched by the gate at all."""
+    sid, det = _det(CORPUS / "Game_Killer.sid")
+    mask = fixed_arp_mask(sid, det)
+    base = det.instr_start + 2 * det.instr_stride
+    assert sid.data[base + 7] & 0x04 and not sid.data[base + 7] & 0x01
+
+    def entries(i, multiplier, gate_skip):
+        return _wavetable_entries(sid, det, i, True, "gts5", [], multiplier,
+                                  budget=255, start=6, arp_phase=1,
+                                  arp_mask=mask, gate_skip=gate_skip)
+    gated = entries(2, 9, 9)
+    assert gated == entries(2, 10, None)
+    assert gated != entries(2, 9, None)
+    left, right = gated
+    tl = wave_timeline(left, right, first=6, calls=40)
+    first_up = next(k for k, (_, _, note) in enumerate(tl) if note == 0x0C)
+    assert first_up == 10, first_up
+    assert entries(0, 9, 9) == entries(0, 9, None)
 
 
 # --- The ticked shape above -S1 (v0.5.489, `ticked_arp_entries`) ---------

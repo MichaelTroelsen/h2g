@@ -1,15 +1,15 @@
 {
  "generated_from": {
-  "head": "74a0bb3",
+  "head": "e362bd6",
   "sources": [
-   ".claude/tasks/whattask.json (previous, at 04fdcb5)",
+   ".claude/tasks/whattask.json (previous, at 74a0bb3)",
    ".claude/tasks/runs.jsonl (whole file, last record per id)",
    ".claude/tasks/decisions.jsonl (whole file, last record per id)",
-   "git log 04fdcb5..74a0bb3 (0d9730e, 74a0bb3)",
-   "todo.md (unchanged since v0.5.452; reconciled done earlier)",
+   "git log 74a0bb3..e362bd6 (92ef5d7, b7a244d, e362bd6)",
+   "todo.md (spent)",
    "whats-next.md (spent)",
    "docs/BACKLOG.md",
-   "docs/QUEUE.md (at 04fdcb5, behind)",
+   "docs/QUEUE.md (regenerated at 92ef5d7)",
    "graphify-out/graph.json (refreshed with `graphify update .` this pass)",
    "gh issue list / gh pr list (both empty)"
   ],
@@ -60,7 +60,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -93,7 +93,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -126,7 +126,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -160,7 +160,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -194,7 +194,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -227,7 +227,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -262,7 +262,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -295,7 +295,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -328,7 +328,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -361,7 +361,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -394,7 +394,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -427,7 +427,7 @@
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_effort": "the work either side of the verdict is a staging command and an approval record",
    "why_mode": "no amount of work resolves it; the ear is the instrument",
-   "why_lane": "derived at 74a0bb3: overlaps 123 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 120 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -453,7 +453,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -481,7 +481,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -521,7 +521,7 @@
    "verify": "AT 922c782 `build_pulse_phase_table` ships partial tables instead of reverting, so the search's 'nothing survived' revert case is rarer; re-read the gate before re-measuring. || pulse_phase is in FIDELITY_TOGGLES and the eight-toggle search runs over 89 songs at -t 180, with the result DIFFED against the shipped presets before adoption. TIME the run rather than extrapolating: seven toggles is 25m21s at -t 60 and about 75 minutes serial at -t 180. || BLOCKED at 4b5d7f0: **NOT RUN, AND DELIBERATELY SO.** The verify is an eight-toggle `--fidelity` search over 89 songs at 180 s writing `presets.json`, `docs/FIDELITY.md` and `build/fidelity.json` -- ~2.5 hours serial by the v0.5.459 timings, against a tree whose `presets.json` is being rewritten by another process this minute and whose HEAD will move within the hour. CLAUDE.md: *'Regenerate AFTER the tree is coherent and the tests pass, never while another change is half-applied: a run taken mid-edit records a state that never existed.'* **NOTHING WAS WRITTEN.** No lock record was claimed -- the gate fired before || RE-CHECKED at 04fdcb5: the precondition the earlier BLOCKED clause named is now MET -- the pulse-phase budget lifted the multiplier gate at v0.5.483, and presets.json, docs/SURVEY.md, docs/FIDELITY.md and build/fidelity.json were all re-taken at v0.5.488 on a coherent tree. READ THE BLOCKED CLAUSE ABOVE AS HISTORY, NOT AS A CURRENT REFUSAL. What stands unchanged is the done-condition and the cost: pulse_phase is in FIDELITY_TOGGLES, the search runs over the whole corpus at the artefact's own window from a tree with no unrelated edits, and the result is DIFFED against the shipped presets before any adoption -- a search that fails is not a search that says no, so read stderr for a refusal rather than reading a missing entry as a measured no. TIME the run rather than extrapolating a per-song cost. ORDERED at 74a0bb3: the triangle sim reads at chance on Rasputin and One_Man on either clock (runs.jsonl, triangle-pulse-walk record at 04fdcb5), so a search over those carriers before the model is fixed measures a plan that does not reach the original; wait for triangle-sim-model-fails-on-rasputin-and-one-man.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "rewrites three generated artefacts and runs for hours",
-   "why_lane": "derived at 74a0bb3: overlaps 126 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 123 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -562,7 +562,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. NOTE the design document writes `H2G-CONVERSION-METHOD.md` WITHOUT its `docs/` prefix and no such file exists at the repo root; the grant names the real path, `docs/H2G-CONVERSION-METHOD.md`, so a literal string comparison against the document will flag it forever. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "derived at 74a0bb3: overlaps 128 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 125 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -598,7 +598,7 @@
    "verify": "The behaviour the AB design document specifies for this task, with its test green. RE-READ that document first: the previous plan generation templated all five AB tasks' touches and four of the five named a module the task does not write.  || GRANTS CORRECTED at fd286a5 from the design document's own **Files:** block; the previous grant named python/fidelity.py, which this task only READS. || GATE (design document line 2415): `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace` must read outcome done in runs.jsonl before a line is written, so the term is not selected on an instrument never checked against the one the regrid adoptions were made on. CHECKED AT d3775b4: it reads done. Satisfied, so it is not a depends_on edge. || GRADED at d3775b4: fd286a5 is 12 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. EDGE ADDED: the GATE above was recorded ONLY as prose, where /runtask's selector cannot see it -- it now also exists as a `depends_on` edge on `regrid-could-be-searchable-from-repeated-attack-run-length-without-a-trace`. That gate is currently SATISFIED (that id reads done in runs.jsonl), so nothing was blocked by its absence; what was wrong is that a runner obeying the selection rule literally had no way to know it existed.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "changes behaviour other tasks are measured against",
-   "why_lane": "derived at 74a0bb3: overlaps 57 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 58 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -629,7 +629,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -662,7 +662,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 125 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 122 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -693,41 +693,9 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
-   "fork": null,
-   "branch": null,
-   "reason": null
-  },
-  {
-   "id": "superseded-ours-renders-accumulate-and-a-safe-cleanup-must-resolve-approved-sng-shas-to-content-keys",
-   "title": "Superseded 'ours' renders accumulate and cleanup needs sha-to-content resolution",
-   "source": "runs.jsonl",
-   "model": "session",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "rw:build/audio",
-    "rw:host:C:/t/superseded-ours-renders-accu",
-    "rw:python/sound.py",
-    "rw:python/tests/test_sound.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it.",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 43 other task(s) on a written path",
-   "effort": "medium",
-   "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
    "branch": null,
    "reason": null
@@ -758,7 +726,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. PLAN FIX at 74a0bb3: the search renders candidate pairs through convert_at + sound.compare_sids, which writes build/audio; declared now. C:/t/known-bad-459/wr_candidate.py tests any (file, bad, good) triple in one command; shortlist by the rule in sound_calibrate.py's KNOWN_BAD comment (INERT? INCOMPARABLE? then render).",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 48 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 45 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -786,7 +754,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -814,7 +782,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -842,7 +810,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -870,7 +838,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -898,7 +866,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -926,7 +894,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -950,7 +918,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: no path overlaps any other task's written path",
+   "why_lane": "derived at e362bd6: no path overlaps any other task's written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -978,7 +946,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: no path overlaps any other task's written path",
+   "why_lane": "derived at e362bd6: no path overlaps any other task's written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -1011,7 +979,7 @@
    "verify": "presets.json carries the refreshed hard-restart decisions, or the candidate is discarded with the reason recorded.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "adopting it rewrites the artefact every other measurement is taken against",
-   "why_lane": "derived at 74a0bb3: overlaps 124 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 122 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1027,6 +995,7 @@
    "lane": "serial",
    "touches": [
     "r:build/approvals.json",
+    "r:build/listen",
     "r:build/listen/index.html",
     "r:python/abpage.py",
     "r:python/approvals.py",
@@ -1044,7 +1013,7 @@
    "verify": "build/listen/index.html shows at least one `inherited` span and it agrees with build/approvals.json per tune. C:/t/abpage-render-check/check_column.py already does the comparison and refuses a pass over an empty span set -- run it rather than eyeballing the HTML. At a4bf43d it read 4 spans, 4 tunes, 0 disagreements and ZERO `inherited`, which is correct while the two calibration tunes are uncalibrated. || GRADED at d3775b4: a4bf43d is 11 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. || PARTIAL at 5a2fa2d: The render check agrees with the assessment on all 4 tunes with 0 disagreements, re-measured at HEAD -- but 0 inherited spans, because build/approvals.json is stamped calibrated:false from v0.5.471, and the script exits PASS anyway, which is a gap in the check. || RE-CHECKED at 04fdcb5: the reason this stopped at PARTIAL is unchanged and is an ORDERING fact, not a defect in the check -- build/approvals.json was assessed before the calibration passed, and re-assessing writes build/approvals.json and build/audio, neither of which this task may write. It therefore DEPENDS on the approvals-json task re-stamping that file, and must not be re-attempted before it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "writes a hazard path and needs the calibration state in view",
-   "why_lane": "derived at 74a0bb3: overlaps 33 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 31 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -1072,7 +1041,7 @@
    "verify": "Each stash-shaped unreachable commit standing at the time the decision is taken is either recovered into a branch, or recorded as accepted loss with the reason -- and the count is re-measured at that moment rather than taken from this plan, because it has grown twice already. RECORDING HOME, granted rw:docs/LESSONS.md: the recording arm is reachable even though the decision is the user's, so the task can discharge its second arm without a second grant. The second arm is now reachable with the grant this task holds -- before this, it offered a choice whose second branch nothing let it take.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "an unrecoverable-either-way call about work the user may still want",
-   "why_lane": "derived at 74a0bb3: overlaps 5 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 6 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -1113,7 +1082,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a choice between two shipped-product routes, the cheaper of which silently re-converts 17 songs",
    "why_mode": "re-runs the preset search and rewrites two generated artefacts",
-   "why_lane": "derived at 74a0bb3: overlaps 127 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 124 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1146,7 +1115,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the previous pass produced a confidently wrong frame pairing that its own successor had to retract",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "derived at 74a0bb3: overlaps 109 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 106 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1178,7 +1147,7 @@
    "why_model": "writing down a limit already derived and quoted in a run record",
    "why_effort": "the derivation exists; the work is placing it in the archive with a grade",
    "why_mode": "a single doc edit with no measurement of its own",
-   "why_lane": "derived at 74a0bb3: overlaps 67 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 69 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1209,10 +1178,10 @@
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "Every tune in build/listen is the conversion build/fidelity.json measured -- for each, sha1 of <song>.h2g.sng truncated to 12 hex equals that file's output_sha -- AND every rendered pair is the same window, so a listener comparing two songs is comparing like with like. CHECK THE WAV HEADER, NOT THE FILE SIZE: these renders are MONO 16-bit 44.1 kHz, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and it chose the wrong window -- the set was read as 60/90 s when it was really 120/180 s, and 55 files were restaged at 90 s, shorter than everything else rather than matching it. Verify by sha and by wave.open(), never by exit code and never by st_size. || PARTIAL at 665939c: All 89 staged tunes are now the conversion their measurement describes -- 0 stale, verified by sha -- but the set is 66 at 180 s and 23 at 120 s, so the uniform-window half is unmet and named.",
+   "verify": "Every tune in build/listen is the conversion build/fidelity.json measured -- for each, sha1 of <song>.h2g.sng truncated to 12 hex equals that file's output_sha -- AND every rendered pair is the same window, so a listener comparing two songs is comparing like with like. CHECK THE WAV HEADER, NOT THE FILE SIZE: these renders are MONO 16-bit 44.1 kHz, so seconds is bytes/88200 and a stereo divisor reports exactly half. That error was made on 2026-09-07 and it chose the wrong window -- the set was read as 60/90 s when it was really 120/180 s, and 55 files were restaged at 90 s, shorter than everything else rather than matching it. Verify by sha and by wave.open(), never by exit code and never by st_size. || PARTIAL at 665939c: All 89 staged tunes are now the conversion their measurement describes -- 0 stale, verified by sha -- but the set is 66 at 180 s and 23 at 120 s, so the uniform-window half is unmet and named. RE-CHECKED at e362bd6: 'every rendered pair is the same window' no longer holds by design -- since b7a244d a tune whose original ends past -t is rendered for its own window (render_window); read 'uniform' as 'the window fidelity.json traced', i.e. each pair's length equals traced_window(row), and check the WAV header against that, not against -t.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the judgement is only which window; the work is a long render",
-   "why_lane": "derived at 74a0bb3: overlaps 101 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 99 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "why_mode": "renders both sides of dozens of tunes into build/listen, a documented hazard, and outlives a delegated agent",
    "fork": null,
    "branch": null,
@@ -1248,7 +1217,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the same frame is read by three columns, so a change that satisfies one and breaks another is the easy wrong answer",
    "why_mode": "an emitter change in the most-shared writer, judged over the corpus",
-   "why_lane": "derived at 74a0bb3: overlaps 109 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g', 'rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 106 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g', 'rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1283,7 +1252,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "two readings fit the same evidence and have opposite repairs, which is the definition of a max-effort question",
    "why_mode": "the diagnosis matters far more than the measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 109 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g', 'rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 106 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g', 'rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1317,7 +1286,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a new Dimension is shared-code work whose blindness has to be stated in the column itself",
    "why_mode": "changes the harness every other measurement runs through",
-   "why_lane": "derived at 74a0bb3: overlaps 102 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 100 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1352,7 +1321,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "an emitter change whose blast radius is every parked voice in the corpus",
    "why_mode": "a design decision about what the orderlist can express, not a measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 90 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 90 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1382,7 +1351,7 @@
    "verify": "The ILV tie flag (bit $20 of the duration byte) is either emitted with a corpus A/B over the six files, or refuted in writing. Recorded INCONCLUSIVE before, so the check itself is suspect: re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line. || INCONCLUSIVE at 8b7b218: VERIFY NOT MET AND ITS PREMISE IS UNSOUND, which is why this is `inconclusive` rather than `partial`: there is no durable progress toward the stated goal, because the stated goal ('the six ilv files' tie counts move toward the originals' and their attack surplus falls') couples two quantities that are not causally linked by anything measured. Adding a `tie` parameter to `_build_raw_pattern_ilv` would emit `CMD_TONEPORTA` on gate-hold events; it would NOT move a metric that counts pitch changes under a held note. **CHECKS ACTUALLY RUN:** the `attacks + ties` conservation test on four voices (no || REWRITTEN at 04fdcb5, because the premise the INCONCLUSIVE record refuted is still sitting in the sentence above: the old done-condition coupled the tie deficit to the ATTACK SURPLUS, and nothing measured links them -- emitting a tone-portamento on a gate-hold event does not move a metric that counts pitch changes under a held note. There is now a `tie` Dimension in the artefact, a direct our-over-theirs tie COUNT ratio, which is the instrument this question actually needed. Re-derive against THAT: state the six files' tie ratios as the artefact reads them, decide on that evidence whether the ILV duration byte's tie bit should be emitted, and either emit it with a per-file A/B over the six or REFUTE it in writing in the decoder's own docstring. Do not restate the attack-surplus coupling as a done-condition. The priority note below still holds: these six are not identified as Rob Hubbard and sit behind the Rob Hubbard files.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the diagnosis matters more than the measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 88 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1414,7 +1383,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1445,7 +1414,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1477,7 +1446,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 88 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1509,7 +1478,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 88 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1540,7 +1509,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1571,7 +1540,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 120 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 117 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "bounded work needing ordinary judgement against a harness that already exists",
    "fork": null,
@@ -1603,7 +1572,7 @@
    "verify": "The claim in the title is settled -- either fixed with a corpus byte-hash naming the exact file set it moves, or refuted in writing beside the code it concerns. Read the run record that opened this id for the measurement already taken; do not re-derive it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding context and a corpus measurement",
-   "why_lane": "derived at 74a0bb3: overlaps 87 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "effort": "xhigh",
    "why_effort": "a confident wrong answer here is expensive and hard to catch afterwards",
    "fork": null,
@@ -1632,7 +1601,7 @@
    "verify": "Either shipped with the corpus byte-hash naming the files it moves and the invisibility stated, or recorded as declined. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "small, but each touches a file other tasks read as ground truth",
-   "why_lane": "derived at 74a0bb3: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 102 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "effort": "low",
    "why_effort": "mechanical and cheap to redo if it comes out wrong",
    "fork": null,
@@ -1663,7 +1632,7 @@
    "verify": "The user has listened to the six interleaved files and a verdict for each is recorded by approvals.py against that file's CURRENT output sha. BEFORE asking, check the material: sha1 of build/listen/<song>.h2g.sng truncated to 12 hex must equal that file's output_sha in build/fidelity.json, and restage with listen.py --files <song>.sid -t 180 if it does not. These six are SIDId Jason_Page/RobTracker, not Rob_Hubbard, and the user has put them behind the RH files -- do not raise this ahead of an RH sign-off. || BLOCKED at 4b5d7f0: **NOT RUN -- a `requires-user` task has no verify this session can execute.** The command's mode gate is explicit: *'STOP. Print `blocked_on` verbatim and ask for exactly the thing it names. Do not attempt a workaround; the blocker is the answer.'* **NOTHING WAS WRITTEN.** All three `touches` are `r:` (`presets.json`, `build/listen`, `docs/FIDELITY.md`) and all three were read only; the task has no host scratch grant, so this record's scratch is the claim script alone. `git status -- build/fidelity.json` is unchanged from before this run bar the run log.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 55 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 56 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -1691,7 +1660,7 @@
    "verify": "The human answers the question in blocked_on and /runhuman records it. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "the blocker is a human judgement, not a measurement",
    "why_mode": "no amount of work resolves it",
-   "why_lane": "derived at 74a0bb3: overlaps 29 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 29 other task(s) on a written path",
    "effort": "medium",
    "why_effort": "the judgement is the human's; what follows the answer is a bounded adoption",
    "fork": null,
@@ -1725,7 +1694,7 @@
    "verify": "Radio_Ace's filtered-frame count lands near its original's, or the 1.7x is attributed to a named mechanism. The `filt` column reads it directly, so unlike most ILV work this one is measurable. Gated one-filtering-voice clear shipped at 846c4c4; this is the residual it did not close. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "needs the surrounding ILV context and a per-file trace",
-   "why_lane": "derived at 74a0bb3: overlaps 97 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 98 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed",
    "fork": null,
@@ -1759,7 +1728,7 @@
    "verify": "Either the gate admits Go_Go_Dash without regressing Pacific_Coast, or the trade is recorded per file with both numbers. The gate that shipped at 846c4c4 returns the empty set unless EXACTLY ONE voice filters, which is correct for Pacific_Coast and costs this file. || GRADED at d3775b4: 846c4c4 is 18 commit(s) behind d3775b4 -- every figure quoted above is HISTORICAL and must be re-measured, not re-quoted. SCOPE (2026-09-07): this file is NOT identified as Rob_Hubbard by SIDId -- the six so-called interleaved-classic files (Go_Go_Dash, Lakers_vs_Celtics, Lion_Heart, Pacific_Coast, Radio_ACE, Sun_Never_Shines) all match `Jason_Page/RobTracker` in sidid.cfg. The user has set these to LOW PRIORITY behind the 83 Rob_Hubbard files. Do not start this ahead of an RH task; re-confirm with h2g.sidid.find_database().identify() rather than trusting this line.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_mode": "the trade is per song and wants the surrounding ILV context",
-   "why_lane": "derived at 74a0bb3: overlaps 97 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 98 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "effort": "high",
    "why_effort": "the code has to be understood before it can be safely changed",
    "fork": null,
@@ -1793,7 +1762,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 38 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 38 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1822,7 +1791,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1853,46 +1822,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 88 other task(s) on a written path",
-   "fork": null,
-   "branch": null,
-   "reason": null
-  },
-  {
-   "id": "the-approvals-regeneration-task-does-not-grant-python-h2g-though-it-converts-the-corpus",
-   "title": "`approvals-json-is-eight-versions-stale-and-still-records-calibrated-false` grants r:python/approvals.py and r:python/sound_calibrate.py but NOT r:pyt",
-   "source": "runs.jsonl#tracks-py-length-figures-are-re-confirmed-on-a-clean-artefact-and-want-a-grading-note",
-   "model": "session",
-   "effort": "high",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/approvals.py",
-    "r:python/h2g",
-    "r:python/sound_calibrate.py",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/approvals.json",
-    "rw:host:C:/t/the-approvals-regeneration-t",
-    "rw:python/approvals.py",
-    "rw:python/h2g/tracks.py",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_approvals.py",
-    "rw:python/tests/test_sound_calibrate.py",
-    "rw:python/tests/test_tracks.py"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "regenerates or rebuilds a corpus-wide artefact in the invoking session",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED by `tracks-py-length-figures-are-re-confirmed-on-a-clean-artefact-and-want-a-grading-note` at 5a2fa2d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. `approvals-json-is-eight-versions-stale-and-still-records-calibrated-false` grants r:python/approvals.py and r:python/sound_calibrate.py but NOT r:python/h2g, while python/approvals.py:49 imports `from h2g.convert import convert` and calls it at line 201 -- so regenerating build/approvals.json converts every corpus file through the emitter. Measured at 5a2fa2d: this cycle claimed that task for the main lane alongside a fan-out writing python/h2g/tracks.py, lockctl saw NO conflict because the read was never declared, and running both would have produced an artefact recording a tree state that never existed. The task was dropped and its lock released rather than run. Add r:python/h2g to its touches. The same check is worth running across the plan: any task whose verify regenerates an artefact by CONVERTING needs the emitter in its read set, and a grant derived from the module a task imports directly will always miss the modules that module imports. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "code or a player that has to be understood before it can be safely changed",
-   "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 91 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1926,45 +1856,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 60 other task(s) on a written path",
-   "fork": null,
-   "branch": null,
-   "reason": null
-  },
-  {
-   "id": "the-approvals-task-touches-omit-python-h2g-though-the-run-converts-the-whole-corpus",
-   "title": "python/approvals.py:49 imports `from h2g.convert import convert` and calls it at line 201, so this regeneration converts every corpus file through the",
-   "source": "runs.jsonl#approvals-json-is-eight-versions-stale-and-still-records-calibrated-false",
-   "model": "session",
-   "effort": "high",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/approvals.py",
-    "r:python/h2g",
-    "r:python/sound_calibrate.py",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/the-approvals-task-touches-o",
-    "rw:python/approvals.py",
-    "rw:python/h2g/tracks.py",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_approvals.py",
-    "rw:python/tests/test_sound_calibrate.py",
-    "rw:python/tests/test_tracks.py"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "regenerates or rebuilds a corpus-wide artefact in the invoking session",
-   "depends_on": [],
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED by `approvals-json-is-eight-versions-stale-and-still-records-calibrated-false` at 5a2fa2d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. python/approvals.py:49 imports `from h2g.convert import convert` and calls it at line 201, so this regeneration converts every corpus file through the emitter -- yet the task grants only r:python/approvals.py and r:python/sound_calibrate.py. This cycle claimed it alongside a fan-out writing python/h2g/tracks.py; lockctl saw NO conflict because the read was never declared, and the task was dropped and re-run alone in the next cycle instead. Add r:python/h2g. Worth sweeping the plan for the general case: a touches list derived from the modules a task imports DIRECTLY will always miss what those modules import. (grep for the quoted text rather than trusting any line number here)",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "code or a player that has to be understood before it can be safely changed",
-   "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 91 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 57 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -1993,7 +1885,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2022,7 +1914,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2051,7 +1943,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "blocked on a human verdict",
-   "why_lane": "derived at 74a0bb3: overlaps 40 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 38 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2080,7 +1972,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2111,7 +2003,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2140,7 +2032,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2169,7 +2061,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 119 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 116 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2196,7 +2088,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "blocked on a human verdict",
-   "why_lane": "derived at 74a0bb3: overlaps 22 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 22 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2225,11 +2117,11 @@
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "DEPENDENCY LANDED at 922c782 (`listen-py-traces-our-side-without-the-multiplier`: listen.py passes calls=multiplier; Saboteur_II's and Lightforce's 'No legato' notes vanished in the agent's probe). Ready. Re-stage after the fidelity refresh so the staged notes read the same conversion the artefact scores. || OPENED by `no-column-scores-a-tie-and-two-files-disagree-about-how-many-there-are` at 5a2fa2d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. re-run listen.py once the -m fix lands and re-derive the 17 affected notes. LISTENING.md already carries tunes staged by an earlier run whose notes are not comparable, and this compounds it. Cannot be bundled with the fix, since staging writes build/listen/. [main]. NOTE FOR THE USER: the 13 pending sign-off tasks read these notes, so this should land before any further listening is asked for on a -S>1 tune.",
+   "verify": "DEPENDENCY LANDED at 922c782 (`listen-py-traces-our-side-without-the-multiplier`: listen.py passes calls=multiplier; Saboteur_II's and Lightforce's 'No legato' notes vanished in the agent's probe). Ready. Re-stage after the fidelity refresh so the staged notes read the same conversion the artefact scores. || OPENED by `no-column-scores-a-tie-and-two-files-disagree-about-how-many-there-are` at 5a2fa2d; every figure in this text is HISTORICAL at that head and must be re-measured, not re-quoted. re-run listen.py once the -m fix lands and re-derive the 17 affected notes. LISTENING.md already carries tunes staged by an earlier run whose notes are not comparable, and this compounds it. Cannot be bundled with the fix, since staging writes build/listen/. [main]. NOTE FOR THE USER: the 13 pending sign-off tasks read these notes, so this should land before any further listening is asked for on a -S>1 tune. RE-CHECKED at e362bd6: listen.py now renders and traces each tune for its traced window (render_window, b7a244d) -- Rock_Tells_the_Tale stages a 382 s pair; build/listen is behind both that and the tie-counter finding, so the restage is owed on two counts.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 55 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 53 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2260,7 +2152,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2276,8 +2168,11 @@
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:presets.json",
+    "r:python/h2g",
+    "r:python/sound.py",
     "r:python/tools/siddump-rt/siddump.exe",
     "rw:build/approvals.json",
+    "rw:build/audio",
     "rw:host:C:/t/approvals-json-says-calibrat",
     "rw:python/approvals.py",
     "rw:python/tests/test_approvals.py"
@@ -2286,15 +2181,15 @@
    "needs_main": true,
    "needs_main_reason": "regenerates or rebuilds a corpus-wide artefact in the invoking session",
    "depends_on": [
-    "refresh-the-fidelity-artefacts-at-v0-5-489"
+    "refresh-the-fidelity-artefacts-at-v0-5-490"
    ],
    "blocked_on": null,
    "decision": null,
-   "verify": "REWRITTEN at 74a0bb3: the premise inverted -- docs/SOUND-CALIBRATION.md and build/sound_calibration.json read PASS since d2160e0 (v0.5.485), so the two artefacts no longer disagree about `calibrated`; what remains is that build/approvals.json was generated by h2g 0.5.479 at 5a2fa2d-dirty and every per-tune verdict in it predates ten converter versions. Re-run approvals.py from a CLEAN tree after refresh-the-fidelity-artefacts-at-v0-5-489 so it reads the current fidelity.json and calibration; done when build/approvals.json's generator/head stamp is this head's, `calibrated` agrees with build/sound_calibration.json's `pass`, and the per-tune `cause` column is re-read against the -t 180 artefact (no `approved-build-absent` row survives without a named reason). [main]",
+   "verify": "REWRITTEN at 74a0bb3: the premise inverted -- docs/SOUND-CALIBRATION.md and build/sound_calibration.json read PASS since d2160e0 (v0.5.485), so the two artefacts no longer disagree about `calibrated`; what remains is that build/approvals.json was generated by h2g 0.5.479 at 5a2fa2d-dirty and every per-tune verdict in it predates ten converter versions. Re-run approvals.py from a CLEAN tree after refresh-the-fidelity-artefacts-at-v0-5-490 so it reads the current fidelity.json and calibration; done when build/approvals.json's generator/head stamp is this head's, `calibrated` agrees with build/sound_calibration.json's `pass`, and the per-tune `cause` column is re-read against the -t 180 artefact (no `approved-build-absent` row survives without a named reason). [main] TOUCHES WIDENED at e362bd6: approvals.py converts the corpus and renders through sound.render_cached, so r:python/h2g and rw:build/audio are declared (the plan's own approvals-touches tasks said so).",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 39 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 78 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2333,7 +2228,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 89 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 90 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2364,7 +2259,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2396,7 +2291,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2428,7 +2323,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "needs the surrounding context or writes a shared artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 121 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 119 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2459,7 +2354,7 @@
    "why_model": "bounded, mechanical work against an existing harness",
    "why_effort": "bounded work needing ordinary judgement",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 22 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 22 other task(s) on a written path",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2491,7 +2386,7 @@
    "why_model": "a plausible-but-wrong answer is cheap to produce here",
    "why_effort": "code or a player that has to be understood before it can be safely changed",
    "why_mode": "self-contained with a mechanical conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 108 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['rw:python/tests'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching",
    "fork": null,
    "branch": null,
    "reason": null
@@ -2528,7 +2423,7 @@
    "why_model": "a new convert option across three files plus an emitter, which has to be understood before it is changed",
    "why_effort": "the failure mode is an option that looks wired and is inert in one of three places",
    "why_mode": "self-contained emitter+option work verified by byte-hash and a targeted A/B",
-   "why_lane": "derived at 74a0bb3: overlaps 89 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 90 other task(s) on a written path",
    "reason": null
   },
   {
@@ -2560,7 +2455,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "an architectural design across the pattern walker and the emitter where a confident wrong model is expensive",
    "why_mode": "design and measurement needing the surrounding context, not a confined fix",
-   "why_lane": "derived at 74a0bb3: overlaps 68 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 69 other task(s) on a written path",
    "reason": null
   },
   {
@@ -2593,7 +2488,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a corpus re-measurement whose only judgement is reading which files moved",
    "why_mode": "whole-corpus pass on shared binaries",
-   "why_lane": "derived at 74a0bb3: overlaps 47 other task(s) on a written path",
+   "why_lane": "derived at e362bd6: overlaps 48 other task(s) on a written path",
    "reason": null
   },
   {
@@ -2627,7 +2522,7 @@
    "why_model": "a per-call arithmetic derivation where a plausible constant is the failure mode",
    "why_effort": "a real diagnosis against the player's own loop",
    "why_mode": "confined to goatwriter.py and its test",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "presets-search-pulse-phase-on-the-three-multispeed-carriers",
@@ -2662,7 +2557,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a measured adoption whose only judgement is reading the diff",
    "why_mode": "regenerates presets.json (a hazard) and serialises on the binaries",
-   "why_lane": "derived at 74a0bb3: overlaps 121 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 119 other task(s) on a written path"
   },
   {
    "id": "confuzion-style-permanent-noise-latch-is-invisible-to-nrun",
@@ -2692,7 +2587,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a shared-reduction rule change whose population must be censused first",
    "why_mode": "changes a column every row reads; needs the surrounding measurement context",
-   "why_lane": "derived at 74a0bb3: overlaps 63 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 62 other task(s) on a written path"
   },
   {
    "id": "delta-mix-and-chicken-song-play-differently-on-their-second-pass",
@@ -2719,7 +2614,7 @@
    "why_model": "the decision is what a tune should sound like",
    "why_effort": "a listening-shaped decision",
    "why_mode": "blocked on a decision about what the tune should sound like",
-   "why_lane": "derived at 74a0bb3: overlaps 22 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 22 other task(s) on a written path"
   },
   {
    "id": "vicetrace-freq-hi-byte-reads-ff",
@@ -2748,7 +2643,7 @@
    "why_model": "a tool-parsing defect with a clear repro",
    "why_effort": "bounded, the symptom is measured",
    "why_mode": "confined to vicetrace.py, its test and the Dimension text",
-   "why_lane": "derived at 74a0bb3: overlaps 48 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 47 other task(s) on a written path"
   },
   {
    "id": "multi-player-conversion",
@@ -2789,7 +2684,7 @@
    "why_model": "a change spanning five converter modules",
    "why_effort": "a wrong merge silently corrupts every subtune",
    "why_mode": "self-contained once detection exists, verified by byte-hash",
-   "why_lane": "derived at 74a0bb3: overlaps 90 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 90 other task(s) on a written path"
   },
   {
    "id": "wave-reduction-moved-1-to-9-pp-on-14-byte-identical-files-between-0-5-475-and-0-5-481",
@@ -2816,7 +2711,7 @@
    "why_model": "a git archaeology plus a docstring clause",
    "why_effort": "bounded",
    "why_mode": "confined to fidelity.py and its test",
-   "why_lane": "derived at 74a0bb3: overlaps 48 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 47 other task(s) on a written path"
   },
   {
    "id": "commodore-64-music-examples-depth-is-a-subtune-correspondence-row-not-an-emission-defect",
@@ -2848,7 +2743,7 @@
    "why_model": "a harness correspondence rule touching presets and resolve_subtune",
    "why_effort": "a wrong override silently rescores a file",
    "why_mode": "confined to fidelity/presets and their tests",
-   "why_lane": "derived at 74a0bb3: overlaps 66 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 65 other task(s) on a written path"
   },
   {
    "id": "depth-refusal-should-say-which-side-of-the-trace-is-empty",
@@ -2876,7 +2771,7 @@
    "why_model": "a bounded refusal-value split with a prototype",
    "why_effort": "ordinary judgement, the prototype exists",
    "why_mode": "confined to fidelity.py and its test",
-   "why_lane": "derived at 74a0bb3: overlaps 63 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 62 other task(s) on a written path"
   },
   {
    "id": "three-of-four-known-bad-pairs-are-clock-defects-aud-cannot-see",
@@ -2903,7 +2798,7 @@
    "why_model": "a coverage decision",
    "why_effort": "a decision",
    "why_mode": "blocked on a decision about the calibration's population",
-   "why_lane": "derived at 74a0bb3: overlaps 19 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 17 other task(s) on a written path"
   },
   {
    "id": "tempo-alignment-rounding-decision",
@@ -2934,7 +2829,7 @@
    "why_model": "a decision",
    "why_effort": "a judgement between two measured costs",
    "why_mode": "blocked on a decision about which error a listener prefers",
-   "why_lane": "derived at 74a0bb3: overlaps 22 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 22 other task(s) on a written path"
   },
   {
    "id": "implement-tempo-command-value-rounding",
@@ -2970,7 +2865,7 @@
    "why_model": "a bounded arithmetic change with the measurement already made",
    "why_effort": "ordinary judgement, the mechanism is named",
    "why_mode": "confined to goatwriter.py and its tempo tests",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "re-run-the-hold-census-after-the-tempo-rounding",
@@ -3004,38 +2899,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a corpus re-measurement whose only judgement is reading the split",
    "why_mode": "whole-corpus pass on the shared binary",
-   "why_lane": "derived at 74a0bb3: overlaps 35 other task(s) on a written path"
-  },
-  {
-   "id": "unticked-fixed-arp-phase",
-   "title": "Apply the derived fixed-arp phase to the UNTICKED -S1 shape, which hard-codes offset 2 where Commando/Geoff/Gremlins want offset 1",
-   "source": "runs.jsonl#fixed-arp-phase-under-the-noise-tick",
-   "model": "opus",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:Commando.sng",
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/unticked-fixed-arp-phase",
-    "rw:python/h2g/goatwriter.py",
-    "rw:python/tests/test_arp_octave.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "RE-CHECKED at 74a0bb3: still open, and narrower than written -- since 0d9730e a mask != $01 record goes through `fixed_arp_duty_entries` and a ticked record above -S1 through `ticked_arp_entries`, both carrying `fixed_arp_phases`' residue; what still hard-codes offset 2 is the UNTICKED mask-$01 shape at -S1 (wave 41 note 00, 41/00, 41/0C, FF looping to entry 1). Apply `fixed_arp_counter_base` / `fixed_arp_first_fetch`'s residue to that shape; A/B on the per-offset up-fraction profile (C:/t/ticked-fixed-arp-at-s2-is-a-/profile_ab.py is the working probe) and `vib`; the corpus byte-hash, base = a snapshot of python/ at this head, must move exactly the unticked mask-$01 -S1 fixed-arp files and the Commando fixture (effects off) must not. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "the same derivation applied to a second emitter shape",
-   "why_effort": "bounded, the derivation exists",
-   "why_mode": "self-contained, verified by byte-hash",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 36 other task(s) on a written path"
   },
   {
    "id": "extend-the-multi-flag-census-to-all-fourteen-remaining-always-flags",
@@ -3064,7 +2928,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a mechanical sweep with the harness written",
    "why_mode": "corpus-scale pass on the shared binaries",
-   "why_lane": "derived at 74a0bb3: overlaps 70 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 69 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "reject-phantoms-and-rest-instrument-are-live-on-zero-files",
@@ -3091,7 +2955,7 @@
    "why_model": "a decision",
    "why_effort": "a removal decision",
    "why_mode": "blocked on a decision about removing two options",
-   "why_lane": "derived at 74a0bb3: overlaps 27 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 27 other task(s) on a written path"
   },
   {
    "id": "keep-or-revert-the-tied-instrument-envelope-change-after-a-listen",
@@ -3118,7 +2982,7 @@
    "why_model": "a listening verdict is the human's",
    "why_effort": "the question is settled by ears, not reasoning",
    "why_mode": "a keep/revert decision about what a tune should sound like is [user] by CLAUDE.md",
-   "why_lane": "derived at 74a0bb3: overlaps 27 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 27 other task(s) on a written path"
   },
   {
    "id": "tied-instrument-change-on-a-row-zero-boundary-tie-takes-the-late-spelling",
@@ -3150,7 +3014,7 @@
    "why_model": "a per-orderlist-position spelling decision in the emitter with a measured trade-off",
    "why_effort": "a plausible spelling that quietly worsens the freeze is the failure mode",
    "why_mode": "confined to goatwriter.py and one test file, verified by byte-hash plus an A/B",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "adsr-column-cannot-credit-a-fix-under-cut-release",
@@ -3179,7 +3043,7 @@
    "why_model": "a bounded change to one compare and one Dimension string in an existing harness",
    "why_effort": "the mask is easy; the risk is scoring a genuine release defect as agreement, so the Dimension must say what it stopped seeing",
    "why_mode": "harness-only, confined to fidelity.py and its test file",
-   "why_lane": "derived at 74a0bb3: overlaps 65 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 64 other task(s) on a written path"
   },
   {
    "id": "nrun-cannot-see-noise-under-a-closed-gate",
@@ -3209,7 +3073,7 @@
    "why_model": "a classification decision about what a column measures, where a confident wrong answer would silently mis-score a whole class",
    "why_effort": "the diagnosis (is gate-off noise music or artefact?) matters more than the counter",
    "why_mode": "harness-only and self-contained once the decision is written into the Dimension",
-   "why_lane": "derived at 74a0bb3: overlaps 63 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 62 other task(s) on a written path"
   },
   {
    "id": "make-the-two-stage-attack-fold-the-default-and-drop-fold-note",
@@ -3239,7 +3103,7 @@
    "why_model": "a mechanical cleanup pinned by two existing test files and a zero-move byte-hash",
    "why_effort": "bounded; the byte-hash is the check",
    "why_mode": "confined to one source file and two tests",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "after-8s-fixed-pitch-is-still-not-emitted-under-its-pitch-seq-preset",
@@ -3270,7 +3134,7 @@
    "why_model": "an emitter change inside the two-stage/pitch-seq wavetable shape, where a wrong entry order is only visible in a trace",
    "why_effort": "the shape has three interacting mechanisms and a plausible wrong wiring traces cleanly on other files",
    "why_mode": "confined to goatwriter.py and two test files, verified by trace and byte-hash",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "listen-to-rock-tells-the-tale-gt16-against-gt9-after-the-usage-ordered-pulse-table",
@@ -3297,7 +3161,7 @@
    "why_model": "a listening verdict is the human's",
    "why_effort": "one A/B, one ear",
    "why_mode": "every listening verdict is [user] by CLAUDE.md",
-   "why_lane": "derived at 74a0bb3: overlaps 27 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 27 other task(s) on a written path"
   },
   {
    "id": "classic-vibrato-players-gate-the-oscillator-on-a-per-note-frame-counter-and-vibdelay-can-say-so",
@@ -3330,7 +3194,7 @@
    "why_model": "a per-player disassembly reading where a plausible-but-wrong operand silently regrades a whole family",
    "why_effort": "high",
    "why_mode": "confined to two converter modules and their topic tests, verified by a corpus byte-hash plus a named-file A/B",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "classic-vibrato-swing-is-two-thirds-of-the-players-bound-times-depth-on-food-feud",
@@ -3363,7 +3227,7 @@
    "why_model": "a derivation the repo has already got wrong once in a measured way, where the wrong answer is cheap to produce",
    "why_effort": "high",
    "why_mode": "one emitter function plus its two topic tests, verified by a named-file A/B",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "food-feud-voice-2-tie-deficit-survives-the-tied-envelope-fix",
@@ -3394,7 +3258,7 @@
    "why_model": "a per-voice root-cause trace where a plausible attribution is cheap and wrong",
    "why_effort": "high",
    "why_mode": "a read-only measurement and trace against an existing harness, returning a finding",
-   "why_lane": "derived at 74a0bb3: overlaps 86 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-artefact-claim",
@@ -3426,7 +3290,7 @@
    "why_model": "a falsification pass against an explanation that already fits the symptom, which is exactly where a confident wrong answer is cheapest",
    "why_effort": "xhigh",
    "why_mode": "one harness module and its test, with an A/B confined to one file plus a named corpus sweep",
-   "why_lane": "derived at 74a0bb3: overlaps 96 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 94 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "fidelity-depth-column-counts-silent-tail-cycles-adsr-zero",
@@ -3457,7 +3321,7 @@
    "why_model": "a measurement-blindness fix where the wrong gate silently re-scores a whole column",
    "why_effort": "high",
    "why_mode": "one harness module and its test, verified by a named-file A/B",
-   "why_lane": "derived at 74a0bb3: overlaps 96 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 94 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "count-preset-opts-misses-in-fidelity-py-for-its-own-callers",
@@ -3490,44 +3354,7 @@
    "why_model": "a bounded, mechanical instrumentation change against an existing warning path",
    "why_effort": "medium",
    "why_mode": "three harness modules and their three tests, verified by a deliberate-miss run",
-   "why_lane": "derived at 74a0bb3: overlaps 71 other task(s) on a written path"
-  },
-  {
-   "id": "refresh-the-fidelity-artefacts-at-v0-5-489",
-   "title": "build/fidelity.json, FIDELITY.md and QUEUE.md are behind 0d9730e: 19 converter-moved files, 8 windowed rows and the gated 5_Title_Tunes row",
-   "source": "runs.jsonl#fidelity-per-file-window-from-orig-ends-at, runs.jsonl#vibrato-records-should-drop-records, 0d9730e",
-   "model": "session",
-   "effort": "medium",
-   "mode": "main",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/h2g",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:build/audio",
-    "rw:build/fidelity.json",
-    "rw:build/hold_census.md",
-    "rw:build/onset_census.md",
-    "rw:build/queue.json",
-    "rw:docs/FIDELITY.md",
-    "rw:docs/QUEUE.md",
-    "rw:host:C:/t/refresh-fidelity-489"
-   ],
-   "mcp": [],
-   "needs_main": true,
-   "needs_main_reason": "regenerates corpus-wide artefacts (hazards) in the invoking session",
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "From a CLEAN tree at this head, the routine command from CLAUDE.md (`fidelity.py <sid_dir> -t 180 --presets ../presets.json --sound --census ../build/onset_census.md --hold-census ../build/hold_census.md --json ../build/fidelity.json -o ../docs/FIDELITY.md`, then `fidelity_queue.py --from-json ../build/fidelity.json -o ../docs/QUEUE.md --json ../build/queue.json`), with `--baseline` against the v0.5.488 build/fidelity.json read BEFORE adopting: it must name exactly the 19 files whose bytes moved at 74a0bb3 (the nine duty-mask files plus the eleven ticked-arp files, Last_V8 in both) and REFUSE the eight windowed rows (Confuzion, Flash_Gordon, Food_Feud, Knucklebusters, Rock_Tells_the_Tale, Saboteur_II, Sanxion, Zoolook: window 180 -> N), which is expected; 5_Title_Tunes' depth column must read `-` with depth_refusal gated; tests/test_output_sha.py must pass afterwards. Any other file whose sha moved is a finding to name. `--json` is not optional. [main]",
-   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
-   "why_effort": "one measured regeneration whose reading (which rows moved and why) is the whole value",
-   "why_mode": "regenerates every shared artefact; the repo forbids it from a dirty tree and the guard refuses it",
-   "why_lane": "derived at 74a0bb3: overlaps 104 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 68 other task(s) on a written path"
   },
   {
    "id": "rasputin-tempo-duty",
@@ -3557,7 +3384,7 @@
    "why_model": "reads a player's tempo-gated counter against a trace; a plausible encoding that is wrong is cheap to produce",
    "why_effort": "a real per-file diagnosis with a listen-shaped question behind it",
    "why_mode": "self-contained emitter change with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "gated-counter-phase",
@@ -3587,7 +3414,7 @@
    "why_model": "root-cause on two players' counters where a fitted base would look right on one file",
    "why_effort": "a wrong base is a plausible-looking answer",
    "why_mode": "emitter-local with a measured conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "pulse-phase-plan-does-not-reach-the-packed-output-on-game-killer",
@@ -3619,37 +3446,7 @@
    "why_model": "a trace-vs-table discrepancy in the packed player; the cheap answer is a wrong constant",
    "why_effort": "reading player.s beside the packer is the work, and a guess reads plausibly",
    "why_mode": "bounded to the pulse-phase emitter and its two tests",
-   "why_lane": "derived at 74a0bb3: overlaps 86 other task(s) on a written path"
-  },
-  {
-   "id": "owner-scan-reads-the-restart-operand-as-a-pattern",
-   "title": "collect_pulse_phases' two-voices owner scan does not stop at GT_ORDER_RESTART, so the restart operand is scanned as a pattern index",
-   "source": "runs.jsonl#triangle-pulse-walk-advances-on-our-calls-not-the-originals-frames",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/owner-scan-restart",
-    "rw:python/h2g/patterns.py",
-    "rw:python/tests/test_pulse.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 04fdcb5; figures HISTORICAL. C:/t/triangle-pulse-walk-calls/probe_owner.py: with the scan stopped at $FF, Monty_on_the_Run subtune 2's 'record sounds on two voices' decline is entirely spurious (clashes []) and subtune 0 of Monty / Thing_on_a_Spring / Devils_Galop keep their real clashes minus the phantom instrument-1 ones. Stop the scan at GT_ORDER_RESTART, pin it on a synthetic orderlist whose restart operand collides with an instrument, and byte-hash under the forced flag naming exactly the files whose decline lifts. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "a bounded off-by-one in a walk with a probe that already shows the answer",
-   "why_effort": "mechanical once the probe is reproduced",
-   "why_mode": "single-file fix with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 61 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "triangle-sim-model-fails-on-rasputin-and-one-man",
@@ -3682,7 +3479,7 @@
    "why_model": "two players read from disassembly against a trace; a curve fit would look right and be wrong",
    "why_effort": "root-cause where a confident wrong model is the expensive failure",
    "why_mode": "confined to the pulse-phase sim and its tests",
-   "why_lane": "derived at 74a0bb3: overlaps 86 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "retract-the-per-frame-reach-in-goatwriter-and-lessons",
@@ -3712,7 +3509,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a doc reconciliation whose wording must not re-state the retracted mechanism",
    "why_mode": "touches CLAUDE.md and LESSONS, the rule-and-evidence pair this repo keeps by hand",
-   "why_lane": "derived at 74a0bb3: overlaps 72 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 72 other task(s) on a written path"
   },
   {
    "id": "read-game-killers-sweep-off-the-disassembly",
@@ -3739,7 +3536,7 @@
    "why_model": "reading a player is where a plausible wrong answer costs a rule",
    "why_effort": "the answer sets a repo-wide rule",
    "why_mode": "the opener tagged it [user]: the user wants to read or sign off the disassembly themselves",
-   "why_lane": "derived at 74a0bb3: overlaps 45 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 47 other task(s) on a written path"
   },
   {
    "id": "silence-db-sits-below-the-packed-players-idle-floor",
@@ -3770,69 +3567,11 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 04fdcb5 (sound.py's module doc carries the measurement: the v0.5.401 Las_Vegas render's tail is -52.4 dB RMS, 78% DC, above SILENCE_DB, and scores aud 0.875 alone). Decide between raising SILENCE_DB above the packed player's idle floor (~-48 dB) and DC-filtering the RMS before the silence test, by measuring BOTH on the calibration's four identity pairs, its inaudible pair and the known-bad table AND on the corpus aud/loud columns (a --json run into scratch, compared row by row against the v0.5.488 artefact): the change must leave every identity row at 1.0, keep the calibration PASS, and make the Las_Vegas tail score aud 0 rather than 0.875. Then regenerate docs/SOUND-CALIBRATION.md. A corpus re-measure of the sound columns follows and is named, not run here. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "verify": "OPENED at 04fdcb5 (sound.py's module doc carries the measurement: the v0.5.401 Las_Vegas render's tail is -52.4 dB RMS, 78% DC, above SILENCE_DB, and scores aud 0.875 alone). Decide between raising SILENCE_DB above the packed player's idle floor (~-48 dB) and DC-filtering the RMS before the silence test, by measuring BOTH on the calibration's four identity pairs, its inaudible pair and the known-bad table AND on the corpus aud/loud columns (a --json run into scratch, compared row by row against the v0.5.488 artefact): the change must leave every identity row at 1.0, keep the calibration PASS, and make the Las_Vegas tail score aud 0 rather than 0.875. Then regenerate docs/SOUND-CALIBRATION.md. A corpus re-measure of the sound columns follows and is named, not run here. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk. NOTE at e362bd6: `sound.py --prune` (b7a244d) keys the live render set on build/fidelity.json's rows; a SILENCE_DB change re-scores without re-rendering, so the cache is untouched by it.",
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a calibration change moves every sound column; a confident wrong floor is expensive and quiet",
    "why_mode": "writes the calibration artefact and moves a repo-wide measurement, from the invoking session",
-   "why_lane": "derived at 74a0bb3: overlaps 48 other task(s) on a written path"
-  },
-  {
-   "id": "comparable-docstring-says-silence-where-the-frames-are-the-idle-floor",
-   "title": "sound_calibrate.comparable's docstring and the KNOWN_BAD comment say the good build's frames are silence; they are the -52 dB idle floor",
-   "source": "runs.jsonl#why-is-the-v0-5-401-las-vegas-build-a-thirteenth-as-loud-while-scoring-aud-0-87",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:host:C:/t/comparable-docstring",
-    "rw:python/sound_calibrate.py",
-    "rw:python/tests/test_sound_calibrate.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Doc/comment pass. sound.py's module doc (grep for `A stopped packed player is not silence`) carries the measured reading; reword `comparable`'s docstring and the KNOWN_BAD comment in python/sound_calibrate.py so 'half the window scores our silence' becomes the idle-floor reading with the -52.4 dB / 78% DC figures and the version, quoting the retracted phrase so a grep lands on the retraction; if tests/test_sound_calibrate.py pins the old wording, update that pin in the same change. No behaviour change: tests/test_sound_calibrate.py 0 failed.",
-   "why_model": "a wording sync against an already-measured source",
-   "why_effort": "cheap to redo",
-   "why_mode": "single-file comment change",
-   "why_lane": "derived at 74a0bb3: overlaps 18 other task(s) on a written path"
-  },
-  {
-   "id": "fidelity-queue-and-listen-read-window-seconds",
-   "title": "fidelity_queue.py and listen.py take a row's window from `seconds`; a row can now be traced over `window_seconds`",
-   "source": "runs.jsonl#fidelity-per-file-window-from-orig-ends-at-for-the-8-measured-prefix-rows",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:build/fidelity.json",
-    "r:python/fidelity.py",
-    "rw:host:C:/t/queue-listen-window",
-    "rw:python/fidelity_queue.py",
-    "rw:python/listen.py",
-    "rw:python/tests/test_listen.py",
-    "rw:python/tests/test_queue.py"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 04fdcb5. fidelity.traced_window(row) is the reader (window_seconds, else original_ends, else seconds); grep fidelity_queue.py and listen.py for `[\"seconds\"]` / `.get(\"seconds\")` on a row and decide per site whether the window it wants is the traced one (a render length, a per-second rate) or -t (a label); switch the sites that want the traced one, pin each with a row carrying window_seconds != seconds. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "bounded read of two callers against one new reader",
-   "why_effort": "each site needs a judgement but the set is small",
-   "why_mode": "two files, tests owned",
-   "why_lane": "derived at 74a0bb3: overlaps 48 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 45 other task(s) on a written path"
   },
   {
    "id": "international-karate-real-tie-deficit",
@@ -3863,37 +3602,7 @@
    "why_model": "a classification whose wrong answer sends an emitter task after the wrong mechanism",
    "why_effort": "diagnosis, not measurement",
    "why_mode": "read-only investigation returning findings",
-   "why_lane": "derived at 74a0bb3: overlaps 86 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
-  },
-  {
-   "id": "tie-counter-at-wrong-rate-reads-7924",
-   "title": "On identical bytes the packed International_Karate reads 2342 ties at -m10 and 7956 at -m1 (voice 1: 536 vs 7924, attacks 1322 vs 51)",
-   "source": "runs.jsonl#international-karate-reads-no-legato-only-on-heads-conversion",
-   "model": "sonnet",
-   "effort": "medium",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
-    "r:presets.json",
-    "r:python/fidelity.py",
-    "r:python/listen.py",
-    "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/tie-counter-rate"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "OPENED at 04fdcb5. Find what fidelity.parse_dump's tie counter counts when a -S10 conversion is traced at 1/10 speed (a vibrato crossing note boundaries? a slide re-read every frame?) so the DIRECTION of the -m1 artefact is understood -- it HID International_Karate's note and manufactured 18 others. Done when the counted event is named with a quoted frame run from the two dumps and the finding is written into listen.py's multiplier comment (grep for `siddump-rt's -m` rather than trusting a line number) -- comment only, no behaviour change.",
-   "why_model": "a bounded reading of one counter against two dumps",
-   "why_effort": "ordinary judgement, the dumps already exist",
-   "why_mode": "read-mostly with one comment edit",
-   "why_lane": "derived at 74a0bb3: overlaps 39 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "the-digi-decoder-has-no-tie-and-rikky-re-attacks-the-note-after-every-slide",
@@ -3924,7 +3633,7 @@
    "why_model": "a player read plus a grammar change in a decoder shared by nine files",
    "why_effort": "a plausible tie rule that is wrong moves nine files",
    "why_mode": "decoder-local with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 84 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 84 other task(s) on a written path"
   },
   {
    "id": "c64me-voice-2-bass-runs-play-with-no-gate-write-and-we-hard-restart-every-note",
@@ -3955,7 +3664,7 @@
    "why_model": "a player read where the same shape already has an open sibling",
    "why_effort": "diagnosis over disassembly",
    "why_mode": "read-only investigation returning a finding",
-   "why_lane": "derived at 74a0bb3: overlaps 70 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "why_lane": "derived at e362bd6: overlaps 69 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
   },
   {
    "id": "listen-notes-no-legato-should-say-what-shape-the-ties-are",
@@ -3986,7 +3695,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "the wording a listener acts on; a wrong threshold silences a real note",
    "why_mode": "changes what the human listening set says, which this repo keeps in the main session",
-   "why_lane": "derived at 74a0bb3: overlaps 52 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 51 other task(s) on a written path"
   },
   {
    "id": "re-walk-the-ilv-83-arpeggio-now-that-tie-is-a-column",
@@ -4017,7 +3726,7 @@
    "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
    "why_effort": "a measured preset re-walk with a diff to read",
    "why_mode": "writes presets.json, a generated artefact",
-   "why_lane": "derived at 74a0bb3: overlaps 121 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 119 other task(s) on a written path"
   },
   {
    "id": "ilv-instrument-level-per-frame-octave-and-drum-pitch-programs-are-not-read",
@@ -4050,7 +3759,7 @@
    "why_model": "a record-bit hunt in an engine three open tasks already circle",
    "why_effort": "an unverified candidate bit is the trap",
    "why_mode": "emitter-local with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "one-records-phase-set-costs-130-rows-and-could-share-its-ramps",
@@ -4080,7 +3789,7 @@
    "why_model": "a table-layout change under a hard bound, where a merge that packs but loses phases looks like a win",
    "why_effort": "a real trade-off to measure",
    "why_mode": "emitter-local with a byte-hash and pack conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "nibble-arp-alternation-period",
@@ -4111,7 +3820,7 @@
    "why_model": "a player read where the counter's stepper is the whole question",
    "why_effort": "diagnosis before encoding",
    "why_mode": "emitter-local with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "vice-arp-probe-as-column",
@@ -4142,7 +3851,7 @@
    "why_model": "a bounded port of an existing probe into the harness's Dimension shape",
    "why_effort": "the Dimension contract is documented",
    "why_mode": "harness-local",
-   "why_lane": "derived at 74a0bb3: overlaps 63 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 62 other task(s) on a written path"
   },
   {
    "id": "c64-music-examples-vibrates-nothing",
@@ -4172,7 +3881,7 @@
    "why_model": "an emitter walk with an already-located defect but a corpus-wide reach",
    "why_effort": "the reach is what needs care",
    "why_mode": "emitter-local with a byte-hash conclusion",
-   "why_lane": "derived at 74a0bb3: overlaps 85 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
   },
   {
    "id": "triangle-max-shift-boundary",
@@ -4200,41 +3909,15 @@
    "why_model": "a one-comparison boundary with the arithmetic already stated",
    "why_effort": "cheap to redo",
    "why_mode": "single-line fix with a unit test",
-   "why_lane": "derived at 74a0bb3: overlaps 77 other task(s) on a written path"
+   "why_lane": "derived at e362bd6: overlaps 79 other task(s) on a written path"
   },
   {
-   "id": "nrun-24b9f1d-citation",
-   "title": "A task brief cited 24b9f1d as 'the gate-blind nrun finding' but that commit is a SURVEY/presets regeneration",
-   "source": "runs.jsonl#nrun-dimension-states-whether-the-original-still-concatenates-consecutive-noise-notes",
-   "model": "sonnet",
-   "effort": "low",
-   "mode": "subtask",
-   "lane": "serial",
-   "touches": [
-    "rw:docs/LESSONS.md",
-    "rw:host:C:/t/nrun-citation"
-   ],
-   "mcp": [],
-   "needs_main": false,
-   "needs_main_reason": null,
-   "depends_on": [],
-   "fork": null,
-   "branch": null,
-   "blocked_on": null,
-   "decision": null,
-   "verify": "Plan hygiene. Find, in git log and docs/LESSONS.md, the commit that actually carried the gate-blind noise_runs finding (the 24b9f1d..50a6178 range; 011ccd7 says 'noise_runs reads the gate bit'), and record the correct sha beside the nrun clause in LESSONS (grep for `gate-AND` rather than trusting a line number). Comment/doc only.",
-   "why_model": "a citation lookup",
-   "why_effort": "cheap",
-   "why_mode": "doc-only",
-   "why_lane": "derived at 74a0bb3: overlaps 5 other task(s) on a written path"
-  },
-  {
-   "id": "verify-fixed-pitch-residual",
-   "title": "Sanxion's fixed-attack B-5 matches 1178 of the original's 1199 hits at -t 180: siddump naming artefact or a per-record gap?",
-   "source": "runs.jsonl#sanxion-voice-2-drum-noise-frame-sounds-an-absolute-b-5",
-   "model": "sonnet",
+   "id": "refresh-the-fidelity-artefacts-at-v0-5-490",
+   "title": "build/fidelity.json and FIDELITY.md are four shas behind b7a244d (Geoff_Capes, Gremlins, Hunter_Patrol, Zoids)",
+   "source": "b7a244d, runs.jsonl#unticked-fixed-arp-phase, runs.jsonl#owner-scan-reads-the-restart-operand-as-a-pattern",
+   "model": "session",
    "effort": "medium",
-   "mode": "subtask",
+   "mode": "main",
    "lane": "serial",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
@@ -4242,7 +3925,43 @@
     "r:python/fidelity.py",
     "r:python/h2g",
     "r:python/tools/siddump-rt/siddump.exe",
-    "rw:host:C:/t/sanxion-fixed-pitch-residual"
+    "rw:build/audio",
+    "rw:build/fidelity.json",
+    "rw:build/hold_census.md",
+    "rw:build/onset_census.md",
+    "rw:build/queue.json",
+    "rw:docs/FIDELITY.md",
+    "rw:docs/LESSONS.md",
+    "rw:docs/QUEUE.md",
+    "rw:host:C:/t/refresh-fidelity-490"
+   ],
+   "mcp": [],
+   "needs_main": true,
+   "needs_main_reason": "regenerates corpus-wide artefacts (hazards)",
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "From a CLEAN tree at this head, the routine command from CLAUDE.md with --json, then fidelity_queue.py; save the v0.5.489 build/fidelity.json first and diff the two by hand (fidelity.compare_runs refuses the whole A/B while any row's traced window differs -- baseline-should-refuse-per-row-not-per-run): output_sha must move on EXACTLY Geoff_Capes_Strongman_Challenge, Gremlins, Hunter_Patrol and Zoids, and no other file; read the four rows' columns beside the v0.5.489 ones (a parity swap should move no register column; Zoids' pulse-phase decline lift may move pphase). tests/test_output_sha.py passes afterwards; tests/test_claude_md_figures.py stays green (re-grade any live figure in docs/LESSONS.md it names, with the version). [main]",
+   "why_model": "main-mode: runs in the invoking session, not a model this command chooses",
+   "why_effort": "one regeneration whose reading is the value",
+   "why_mode": "regenerates every shared artefact from the invoking session",
+   "why_lane": "derived at e362bd6: overlaps 105 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+  },
+  {
+   "id": "baseline-should-refuse-per-row-not-per-run",
+   "title": "fidelity.compare_runs refuses the whole A/B when any row's traced window differs, so the eight floor-widened rows refused all 95 at v0.5.489",
+   "source": "runs.jsonl#refresh-the-fidelity-artefacts-at-v0-5-489",
+   "model": "sonnet",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "rw:host:C:/t/baseline-per-row",
+    "rw:python/fidelity.py",
+    "rw:python/tests/test_fidelity.py"
    ],
    "mcp": [],
    "needs_main": false,
@@ -4252,26 +3971,153 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "OPENED at 04fdcb5; figures HISTORICAL (C:/t/sanxion-voice-2-drum-noise-f/trace_ab.py). Attribute the 21 missing hits per record (0, 4, 12, 13 carry $44) from the two dumps: repeated identical attacks siddump does not re-name (the shape CLAUDE.md records for Bangkok's residual) or a real gap on one record. Done when the 21 are named by record and cause; read-only.",
-   "why_model": "a bounded attribution over an existing trace",
-   "why_effort": "ordinary judgement",
-   "why_mode": "read-only finding",
-   "why_lane": "derived at 74a0bb3: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "verify": "OPENED at 74a0bb3. settings_mismatch / compare_runs: a -t mismatch still refuses the run (two windows are two quantities), but a per-FILE window difference (window_seconds / original_ends) refuses only that row: the report gains a 'Refused rows' section naming each with 'window A -> B', compares the rest, and the byte-identical / moved sets are computed over the compared rows. Pin with two synthetic runs differing in one row's window_seconds: that row refused, the others compared. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "a bounded change to one comparison function with a clear spec",
+   "why_effort": "ordinary judgement; the refusal shape already exists",
+   "why_mode": "harness-local",
+   "why_lane": "derived at e362bd6: overlaps 61 other task(s) on a written path"
   },
   {
-   "id": "audit-atkpitch-family",
-   "title": "Re-check that Knucklebusters, Deep_Strike, Sanxion and Food_Feud all reach _fixed_attack_note under shipped presets after the v0.5.486 fixed_pitch_index correction",
-   "source": "runs.jsonl#sanxion-voice-2-drum-noise-frame-sounds-an-absolute-b-5",
+   "id": "formula-1-simulator-reversal-doubles-under-the-ticked-hold",
+   "title": "Formula_1_Simulator's reversal_ratio 0.74 -> 2.10 at v0.5.489 under ticked_arp_entries, the one nibble-dialect ticked file that moved noticeably",
+   "source": "runs.jsonl#refresh-the-fidelity-artefacts-at-v0-5-489",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/f1-ticked-reversal",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_arp_octave.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "nibble-arp-alternation-period"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at 74a0bb3; figures HISTORICAL. Measure with the per-offset up-fraction profile (C:/t/ticked-fixed-arp-at-s2-is-a-/profile_ab.py) whether the m-call hold is the wrong period on this file (nibble-arp-alternation-period is the mechanism task; this is its worst case) and whether the ticked shape should decline on the nibble dialect until that period is read; done when the cause is named from the profile and either the shape is corrected (byte-hash naming exactly the nibble files that move, reversal_ratio back toward 1 on F1 without moving Last_V8/Monty) or the decline is measured and recorded beside ticked_arp_entries. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "a regression in a shape three dialects share; the cheap fix (decline) may hide the mechanism",
+   "why_effort": "diagnosis before change",
+   "why_mode": "emitter-local with a byte-hash conclusion",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path"
+  },
+  {
+   "id": "chimera-and-game-killer-duty-reversals-fall-under-one",
+   "title": "Chimera 1.49 -> 0.48 and Game_Killer 1.47 -> 0.28 reversal_ratio under the duty emitter: the duty undershoots where the per-call loop overshot",
+   "source": "runs.jsonl#refresh-the-fidelity-artefacts-at-v0-5-489",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:build/fidelity.json",
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/chimera-gk-duty",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_arp_octave.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [
+    "gated-counter-phase"
+   ],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at 74a0bb3; figures HISTORICAL. Both are mask $07/$02 records with residue 0 and a gated or unverified counter base (gated-counter-phase is the mechanism task); measure the per-offset profile on both against the original before touching the base, name what the duty encoding loses (a missed period? a gate skipping calls?), and fix or record; byte-hash naming exactly the files that move. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "two players' counters where a fitted base looks right on one",
+   "why_effort": "a wrong base is plausible",
+   "why_mode": "emitter-local with a byte-hash conclusion",
+   "why_lane": "derived at e362bd6: overlaps 88 other task(s) on a written path"
+  },
+  {
+   "id": "per-note-split-unticked",
+   "title": "Hunter_Patrol's originals split 40:60 at offset 1 by note while the unticked shape is per instrument (edit reads 0.32/0.68)",
+   "source": "runs.jsonl#unticked-fixed-arp-phase",
+   "model": "opus",
+   "effort": "medium",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/per-note-split-unticked",
+    "rw:python/h2g/goatwriter.py",
+    "rw:python/tests/test_arp_octave.py"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at 74a0bb3. METHOD 7.bbbbbb names the shape: two wavetables per record chosen by attack parity (fixed_arp_phases' minority), at the cost of instrument budget. Cost it first (instruments per file that would split, against the 63-instrument bound), then build it behind the existing gates; done when Hunter_Patrol's offset-1 up-fraction reaches the original's 0.40 within 0.05, the corpus byte-hash names exactly the files whose minority is non-empty, and Commando (effects off) is unmoved. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
+   "why_model": "an instrument-budget trade in the emitter",
+   "why_effort": "bounded but with a budget interaction",
+   "why_mode": "emitter-local with a byte-hash conclusion",
+   "why_lane": "derived at e362bd6: overlaps 86 other task(s) on a written path"
+  },
+  {
+   "id": "sanxion-voice3-pattern-divergence",
+   "title": "Sanxion's voice 3 plays different content than the drum across frames 4043-4067 (six of the 79 dropped B-5 hits)",
+   "source": "runs.jsonl#verify-fixed-pitch-residual",
+   "model": "opus",
+   "effort": "high",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
+    "r:presets.json",
+    "r:python/fidelity.py",
+    "r:python/h2g",
+    "r:python/songview.py",
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/sanxion-v3-divergence"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "OPENED at 74a0bb3; figures HISTORICAL (C:/t/sanxion-fixed-pitch-residual/unmatched_report.txt: 79 dropped / 24 extra voice-3 hits by monotonic alignment). Walk the row/track (songview.parse_sng + the orderlist) to name which GT pattern voice 3 plays across the dense drop clusters (frame ~646, 4043-4067) against what the original's track plays there, and state the conversion defect behind the 79 -- a wrong subtune pairing, a pattern the decoder mis-slices, or a real emission gap; read-only, the fix is a follow-up.",
+   "why_model": "a track-level divergence read against two dumps; a plausible cause is easy to name and wrong",
+   "why_effort": "diagnosis",
+   "why_mode": "read-only finding",
+   "why_lane": "derived at e362bd6: overlaps 83 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+  },
+  {
+   "id": "sanxion-voice1-b5-inflation",
+   "title": "Our Sanxion voice 1 plays B-5 on 37 lines against the original's 14",
+   "source": "runs.jsonl#verify-fixed-pitch-residual",
    "model": "sonnet",
-   "effort": "low",
+   "effort": "medium",
    "mode": "subtask",
    "lane": "serial",
    "touches": [
     "r:corpus:C:/Users/mit/claude/c64server/SIDM2/SID/Hubbard_Rob",
     "r:presets.json",
     "r:python/h2g",
-    "rw:host:C:/t/atkpitch-family",
-    "rw:python/tests/test_first_wave.py"
+    "r:python/tools/siddump-rt/siddump.exe",
+    "rw:host:C:/t/sanxion-v1-b5"
    ],
    "mcp": [],
    "needs_main": false,
@@ -4281,11 +4127,38 @@
    "branch": null,
    "blocked_on": null,
    "decision": null,
-   "verify": "The Sanxion record pinned one of the four files the v0.5.486 correction named; pin the other three the same way (the shipped-preset wavetable row carries $80+note for the fixed-attack record), each a corpus-gated test; the `+ note` sabotage in _fixed_attack_note must fail all four. SABOTAGE-VERIFY: 0 failed, and each named mutation makes a named test fail, mutated region printed from disk.",
-   "why_model": "mechanical test coverage against a known mechanism",
-   "why_effort": "cheap to redo",
-   "why_mode": "test-only",
-   "why_lane": "derived at 74a0bb3: overlaps 70 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+   "verify": "OPENED at 74a0bb3. Surfaced while separating voice 1 from voice 3 in the fixed-attack count; attribute the 23 extra voice-1 B-5 lines from the two dumps (a transposed pattern? a fixed-attack row on the wrong voice?) and name the owner task or open one; read-only.",
+   "why_model": "a bounded attribution over existing dumps",
+   "why_effort": "ordinary judgement",
+   "why_mode": "read-only finding",
+   "why_lane": "derived at e362bd6: overlaps 69 other task(s) on a written path -- conflicts with more than half the plan through the bare directory grant(s) ['r:python/h2g'], the signature of an over-broad declaration; narrow to the files actually read or written when dispatching"
+  },
+  {
+   "id": "sync-claude-md-gate-blind-lessons",
+   "title": "CLAUDE.md's gate-blind noise_runs bullet has no LESSONS.md evidence entry of its own",
+   "source": "runs.jsonl#nrun-24b9f1d-citation",
+   "model": "sonnet",
+   "effort": "low",
+   "mode": "subtask",
+   "lane": "serial",
+   "touches": [
+    "r:CLAUDE.md",
+    "rw:docs/LESSONS.md",
+    "rw:host:C:/t/gate-blind-lessons"
+   ],
+   "mcp": [],
+   "needs_main": false,
+   "needs_main_reason": null,
+   "depends_on": [],
+   "fork": null,
+   "branch": null,
+   "blocked_on": null,
+   "decision": null,
+   "verify": "Doc pass. Fold the citation-fix entry at the end of docs/LESSONS.md (grep for `Citation fix: the gate-blind`) into a short evidence paragraph under a heading a grep for `noise_run_agreement` lands on, carrying 011ccd7 and the Confuzion 8998-frame figure with its version; move it before the `## graphify` section like the other entries. No CLAUDE.md change unless its bullet's wording needs the cross-link.",
+   "why_model": "a doc sync against a known source",
+   "why_effort": "cheap",
+   "why_mode": "doc-only",
+   "why_lane": "derived at e362bd6: overlaps 7 other task(s) on a written path"
   }
  ],
  "closed": [
@@ -7036,6 +6909,96 @@
    "title": "the 8 widened rows will refuse --baseline against the old artefact",
    "closed_by": "measured:2026-09-18",
    "reason": "folded into refresh-the-fidelity-artefacts-at-v0-5-489 (the id the window-floor agent named is already closed at 760f401; the owed regeneration is a new task)"
+  },
+  {
+   "id": "superseded-ours-renders-accumulate-and-a-safe-cleanup-must-resolve-approved-sng-shas-to-content-keys",
+   "title": "Superseded 'ours' renders accumulate and cleanup needs sha-to-content resolution",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "unticked-fixed-arp-phase",
+   "title": "Apply the derived fixed-arp phase to the UNTICKED -S1 shape, which hard-codes offset 2 where Commando/Geoff/Gremlins want offset 1",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "refresh-the-fidelity-artefacts-at-v0-5-489",
+   "title": "build/fidelity.json, FIDELITY.md and QUEUE.md are behind 0d9730e: 19 converter-moved files, 8 windowed rows and the gated 5_Title_Tunes row",
+   "closed_by": "92ef5d7",
+   "reason": null
+  },
+  {
+   "id": "owner-scan-reads-the-restart-operand-as-a-pattern",
+   "title": "collect_pulse_phases' two-voices owner scan does not stop at GT_ORDER_RESTART, so the restart operand is scanned as a pattern index",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "comparable-docstring-says-silence-where-the-frames-are-the-idle-floor",
+   "title": "sound_calibrate.comparable's docstring and the KNOWN_BAD comment say the good build's frames are silence; they are the -52 dB idle floor",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "fidelity-queue-and-listen-read-window-seconds",
+   "title": "fidelity_queue.py and listen.py take a row's window from `seconds`; a row can now be traced over `window_seconds`",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "nrun-24b9f1d-citation",
+   "title": "A task brief cited 24b9f1d as 'the gate-blind nrun finding' but that commit is a SURVEY/presets regeneration",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "audit-atkpitch-family",
+   "title": "Re-check that Knucklebusters, Deep_Strike, Sanxion and Food_Feud all reach _fixed_attack_note under shipped presets after the v0.5.486 fixed_pitch_index correction",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "tie-counter-at-wrong-rate-reads-7924",
+   "title": "On identical bytes the packed International_Karate reads 2342 ties at -m10 and 7956 at -m1 (voice 1: 536 vs 7924, attacks 1322 vs 51)",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "verify-fixed-pitch-residual",
+   "title": "Sanxion's fixed-attack B-5 matches 1178 of the original's 1199 hits at -t 180: siddump naming artefact or a per-record gap?",
+   "closed_by": "measured:2026-09-18",
+   "reason": "premise refuted at 74a0bb3 (runs.jsonl, outcome partial): the '21 missing hits' was a column-agnostic grep summing voice 1 and voice 3; the real voice-3 residual is 55 (79 dropped / 24 extra) and is a per-record divergence, not a siddump naming artefact -- the attribution the DoD asked for is re-opened as sanxion-voice3-pattern-divergence and sanxion-voice1-b5-inflation"
+  },
+  {
+   "id": "docs-sound-prune",
+   "title": "README/CLAUDE.md name `sound.py --prune` and its refusal rule",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "method-doc-unticked-phase",
+   "title": "METHOD 7.bbbbbb/7.hhhhhh say the unticked shape reads the residue",
+   "closed_by": "b7a244d",
+   "reason": null
+  },
+  {
+   "id": "fix-find-b5-counting",
+   "title": "the earlier probe's literal-substring find_b5() sums unrelated voices",
+   "closed_by": "measured:2026-09-18",
+   "reason": "the helper lives only in scratch (C:/t/sanxion-voice-2-drum-noise-f/trace_ab.py), never in the repo; the corrected per-column matcher is C:/t/sanxion-fixed-pitch-residual/trace_ab.py and the two sanxion follow-up tasks name it -- nothing in python/ carries the defect"
+  },
+  {
+   "id": "the-approvals-regeneration-task-does-not-grant-python-h2g-though-it-converts-the-corpus",
+   "title": "`approvals-json-is-eight-versions-stale-and-still-records-calibrated-false` grants r:python/approvals.py and r:python/sound_calibrate.py but NOT r:pyt",
+   "closed_by": "measured:2026-09-18",
+   "reason": "plan fix applied in this pass: approvals-json-says-calibrated-true-... now declares r:python/h2g and rw:build/audio; the two meta-tasks named the same defect and are closed by the widening rather than run"
+  },
+  {
+   "id": "the-approvals-task-touches-omit-python-h2g-though-the-run-converts-the-whole-corpus",
+   "title": "python/approvals.py:49 imports `from h2g.convert import convert` and calls it at line 201, so this regeneration converts every corpus file through the",
+   "closed_by": "measured:2026-09-18",
+   "reason": "plan fix applied in this pass: approvals-json-says-calibrated-true-... now declares r:python/h2g and rw:build/audio; the two meta-tasks named the same defect and are closed by the widening rather than run"
   }
  ]
 }
