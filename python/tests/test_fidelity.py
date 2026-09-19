@@ -2711,8 +2711,9 @@ def test_depth_declines_rather_than_measuring_the_wrong_population():
         got = fidelity.depth_compare(v, v, len(seg), keys)
         assert not any(k in got for k in MEASURED), (
             f"depth_compare(keys={keys!r}) measured something: {got}")
-        assert got.get("depth_refusal") in ("no-population", "gated",
-                                            "no-shared-key")
+        assert got.get("depth_refusal") in (
+            "no-population", "gated", "no-shared-key",
+            "neither-oscillates", "orig-silent", "ours-silent")
 
 
 def test_a_release_rewritten_by_cut_release_still_joins():
@@ -3628,7 +3629,10 @@ def test_the_player_exclusions_leave_the_other_two_engines_alone():
     assert pop["keys"] and len(pop["keys"]) == pop["candidates"] == 2
     # And a triangle file whose records DO reach the gate loses nothing:
     # Commodore_64_Music_Examples plays 8-row notes on every vibrato record
-    # against a gate of 5, so its no-shared-key is a real finding.
+    # against a gate of 5, so none of its 9 keys are dropped by the player's
+    # own exclusions -- but see the test below: reaching the gate does not
+    # mean the ORIGINAL measures a swing on any of them, which is why its
+    # depth row is `orig-silent`, not a genuine `no-shared-key` mismatch.
     path = CORPUS / "Commodore_64_Music_Examples.sid"
     if not path.exists():
         pytest.skip("Commodore_64_Music_Examples.sid not in the corpus")
@@ -3637,6 +3641,36 @@ def test_the_player_exclusions_leave_the_other_two_engines_alone():
     assert pop["candidates"] == 9 and pop["gate_dropped"] == 0
     assert pop["shift_dropped"] == 0
     assert len(pop["keys"]) == 9
+
+
+@needs_corpus
+@needs_siddump
+def test_commodore_64_music_examples_original_side_is_empty_not_mismatched():
+    """The one row still refusing `depth` as a pairing failure was censused
+    at HEAD 59fbe1b against `build/fidelity.json` (the only remaining
+    `no-shared-key` row corpus-wide) and turns out to have an EMPTY original
+    side: `oscillation_depths` finds no instrument with a positive median
+    swing among the 9 keys `vibrato_population` says pass the player's own
+    gate/shift exclusions -- reaching the gate is a statement about which
+    RECORDS the player acts on, not about whether this column measures a
+    swing once it does. That is what makes the row `orig-silent`
+    (`depth_orig_osc=0`) rather than a genuine `no-shared-key` mismatch,
+    where both sides would oscillate on disjoint keys. See
+    `C:/t/depth-refusal-should-say-whi/probe_census.py`, which additionally
+    found the CONVERTED side oscillates on exactly 1 of the same keys
+    (`depth_our_osc == 1`) -- too heavy a check (needs the packer) to re-run
+    every suite pass, so only the original-side half is pinned here."""
+    path = CORPUS / "Commodore_64_Music_Examples.sid"
+    if not path.exists():
+        pytest.skip("Commodore_64_Music_Examples.sid not in the corpus")
+    keys = fidelity.vibrato_records(path)
+    assert keys and len(keys) == 9
+    orig = fidelity.run_siddump(path, 180, 0, siddump)
+    a = fidelity.oscillation_depths(orig, 180 * 50, keys)
+    assert a == {}, (
+        f"the original now measures a swing on {a} -- "
+        "Commodore_64_Music_Examples's depth row is no longer orig-silent "
+        "and depth_compare's docstring needs re-checking: {a}")
 
 
 def test_triangle_gate_walk_carries_the_live_instrument_across_patterns(monkeypatch):
@@ -3798,11 +3832,41 @@ def test_depth_agreement_reports_which_refusal_it_made():
         "depth_refusal") == "no-population"
 
     # A population that cannot pair: keys present, but no voice data at all,
-    # so `oscillation_depths` finds no instrument with a positive depth.
+    # so `oscillation_depths` finds no instrument with a positive depth on
+    # EITHER side -- the sided refusal for that is `neither-oscillates`, not
+    # `no-shared-key`, which is reserved for the case where both sides
+    # oscillate on keys the other side does not share (see `depth_compare`'s
+    # v0.5.491 census: no corpus row currently makes that shape, since the
+    # only remaining pre-split `no-shared-key` row, Commodore_64_Music_Examples,
+    # turned out to have an empty ORIGINAL side, not a genuine mismatch).
     unpaired = F.depth_compare(v, v, 100, keys={0x0A09, 0x0603})
-    assert unpaired.get("depth_refusal") == "no-shared-key"
+    assert unpaired.get("depth_refusal") == "neither-oscillates"
     assert unpaired.get("depth_keys") == 2
+    assert unpaired.get("depth_orig_osc") == 0
+    assert unpaired.get("depth_our_osc") == 0
     assert "depth_ratio" not in unpaired
+
+    # A population that oscillates on exactly one side: `oscillation_depths`
+    # returns something for the CONVERSION and nothing for the ORIGINAL.
+    # `_fmt_depth` is unchanged, so this must NOT print `-!` -- there is
+    # nothing on the original's side for the column to hold ours to.
+    seg = _osc(10, 400)
+    silent_orig = [F.Voice(), F.Voice(), F.Voice()]
+    osc_ours = [_fq_voice([0], seg, 0x0A0A), F.Voice(), F.Voice()]
+    orig_silent = F.depth_compare(silent_orig, osc_ours, len(seg), {0x0A0A})
+    assert orig_silent.get("depth_refusal") == "orig-silent", orig_silent
+    assert orig_silent.get("depth_orig_osc") == 0
+    assert orig_silent.get("depth_our_osc") == 1
+    assert F._fmt_depth(orig_silent) == "-"
+
+    # And the mirror: the ORIGINAL oscillates, the conversion does not -- a
+    # real defect, still rendered `-` because `_fmt_depth` only marks the
+    # literal string `no-shared-key`; a future task widening that mark is
+    # what `depth_orig_osc > 0` here is FOR.
+    ours_silent = F.depth_compare(osc_ours, silent_orig, len(seg), {0x0A0A})
+    assert ours_silent.get("depth_refusal") == "ours-silent", ours_silent
+    assert ours_silent.get("depth_orig_osc") == 1
+    assert ours_silent.get("depth_our_osc") == 0
 
 
 def test_the_depth_dimension_declares_both_dashes():
@@ -4226,7 +4290,10 @@ def test_vice_depth_is_keyed_from_siddump_not_the_dumps_adsr():
     assert got.get("depth_instruments") == 1, got
     assert got["depth_ratio"] == pytest.approx(1.0)
     unkeyed = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF0})
-    assert unkeyed.get("depth_refusal") == "no-shared-key"
+    # Without `orig_keyed_by`/`our_keyed_by`, both sides key their voices from
+    # the sign-extended dump ADSR (`$FFF0`, not `$0BF0`), so neither side's
+    # `oscillation_depths` ever sees the requested key and both are empty.
+    assert unkeyed.get("depth_refusal") == "neither-oscillates"
 
 
 def test_the_vib_and_depth_dimensions_declare_the_frame_sampling_blindness():

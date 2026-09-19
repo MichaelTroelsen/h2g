@@ -130,6 +130,13 @@ immediately after, never before. Each run gets its own scratch directory since
 v0.5.66, so two can run at once; pass `--workdir` only to keep intermediates, and
 never the same one twice concurrently.
 
+**Take the refresh from a clean converter, and keep its A/B.** When another
+agent is editing the harness in the same checkout, run it from a detached
+worktree of HEAD with `build/` junctioned in (the stamp then reads the bare
+sha); and launch a run that outlives the shell tool's ceiling detached, with
+`--ab-output PATH`, because a detached launch can drop the stdout the
+`--baseline` table goes to. Measured at v0.5.491 (`docs/LESSONS.md`).
+
 `python listen.py <sid_dir> --from-json ../build/fidelity.json` stages WAV pairs
 for a human listening check into gitignored `build/listen/`.
 
@@ -545,6 +552,11 @@ dangerous one because it reads as current and gets cited as current.
 - **`FIDELITY.md` is not the last word on fidelity.** It cannot see tempo or the
   volume nibble, and none of its register columns is a listening test.
 - Stage material for a human with `listen.py` so the ask is a link, not a task.
+- **A render is reproducible only with a fixed power-on delay.** sidplayfp
+  draws one at random unless `--delay=<0..8191>` is passed;
+  `listen.render_sidplayfp` passes 0 since v0.5.492. The render cache is keyed
+  on the `.sid` bytes, so a cached WAV does not say which delay made it --
+  a calibration floor taken against pre-flag renders is the old floor.
 - **`build/audio` accumulates a superseded `ours` render per converter
   change.** `python sound.py --prune <sid_dir> --quarantine DIR --apply`
   quarantines them (never deletes); the live set is `build/fidelity.json`'s

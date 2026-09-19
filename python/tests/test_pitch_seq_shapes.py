@@ -274,3 +274,84 @@ def test_the_static_form_declines_a_table_it_cannot_read():
     det.pitch_seq = _static(table, 3)                   # all zero: no arpeggio
     assert _pitch_seq_notes(sid, det, 0) is None
 
+
+
+# --- the frames-per-step divider: Food_Feud's $955E --------------------------
+
+def _hex(*parts):
+    return bytes.fromhex(" ".join(parts))
+
+
+# Food_Feud $9405: `DEC $955D / BPL +5 / LDA #$01 / STA $955D`, the phase reload
+# the existing scan already finds.
+_PHASE_RELOAD = "CE 5D 95 10 05 A9 01 8D 5D 95"
+
+
+def test_the_divider_is_read_in_both_spellings():
+    """`DEC cell / BPL / LDA #n / STA cell` in front of the phase reload.
+
+    Absolute (Food_Feud $93FB, ten bytes) and zero-page (eight bytes) are two
+    instruction lengths, so each has its own start relative to the reload. A
+    block whose store names a *different* cell is some other countdown and
+    reads 1, as does the `DEX / BMI / JMP` the other 35 corpus files carry.
+    """
+    cases = (
+        ("CE 5E 95 10 0F A9 03 8D 5E 95", 4),    # Food_Feud, verbatim
+        ("C6 5E 10 0D A9 03 85 5E", 4),          # the same in zero page
+        ("CE 5E 95 10 0F A9 07 8D 5E 95", 8),    # the reload is read, not assumed
+        ("CE 5E 95 10 0F A9 03 8D 5F 95", 1),    # store names another cell
+        ("C6 5E 10 0D A9 03 85 5F", 1),
+        ("CA 30 03 4C 76 90", 1),                # the voice loop's exit
+    )
+    for before, want in cases:
+        data = _hex("EA EA", before, _PHASE_RELOAD, "60")
+        at = 2 + len(_hex(before))
+        assert data[at] == 0xCE
+        assert D._pitch_seq_divider(data, at) == want, before
+    # a reload with nothing in front of it reads 1, not an index error
+    assert D._pitch_seq_divider(_hex(_PHASE_RELOAD), 0) == 1
+
+
+@needs_corpus
+def test_food_feud_steps_its_phase_once_every_four_frames():
+    """$93FB: `DEC $955E / BPL / LDA #$03 / STA $955E` gates the phase `DEC`."""
+    sid = load_sid(str(CORPUS / "Food_Feud.sid"))
+    off = sid.to_offset(0x93FB)
+    assert sid.data[off:off + 10] == _hex("CE 5E 95 10 0F A9 03 8D 5E 95")
+    assert sid.data[off + 10:off + 20] == _hex(_PHASE_RELOAD)
+    seq = D._find_pitch_seq(sid)
+    assert seq is not None and seq.frames_per_step == 4
+    # ...and a file with the plain per-frame phase reads 1
+    assert _seq("Mega_Apocalypse").frames_per_step == 1
+    assert _seq("Trans-Atlantic_Balloon_Challenge").frames_per_step == 1
+
+
+@needs_corpus
+def test_food_feud_is_the_only_corpus_file_with_a_divider():
+    """Pinned as the set: exactly {Food_Feud} of the 36 detected files."""
+    slow = {p.stem: seq.frames_per_step for p in sorted(CORPUS.glob("*.sid"))
+            if (seq := D._find_pitch_seq(load_sid(str(p)))) is not None
+            and seq.frames_per_step != 1}
+    assert slow == {"Food_Feud": 4}
+
+
+@needs_corpus
+def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
+    """Food_Feud record 2 (`$34`, notes [124, 0]) through `_pitch_seq_entries`.
+
+    A step is `frames_per_step * multiplier` calls: 4 at -S1, 12 at -S3.
+    Held one frame it arpeggiated four times too fast -- voice 2 read 7837
+    ties against the original's 5139 with `pitch_seq` forced, 3907 with the
+    divider honoured (C:/t/pitch-seq-divider/ab_food_feud.txt, v0.5.491).
+    The rotation putting the zero step first is keyed on the multiplier
+    alone, exactly as before: at -S1 entry 0 still lands on frame 1.
+    """
+    from h2g import goatwriter as G
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Food_Feud.sid")),
+                              lambda *a, **k: None)
+    wave = sid.data[det.instr_start + 2 * det.instr_stride + 2]
+    assert wave == 0x11
+    left, right = G._pitch_seq_entries(sid, det, 2, wave, 1)
+    assert left == [0x11] * 8 and right == [124] * 4 + [0] * 4
+    left, right = G._pitch_seq_entries(sid, det, 2, wave, 3)
+    assert left == [0x11] * 24 and right == [0] * 12 + [124] * 12

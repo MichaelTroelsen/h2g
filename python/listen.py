@@ -52,6 +52,24 @@ SID2WAV = r"C:\Users\mit\claude\c64server\SIDM2\tools\SID2WAV.EXE"
 # this is the current one, and the only renderer here that reads the whole
 # corpus with one engine. Needs the C64 ROMs in sidplayfp.ini for RSIDs.
 SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
+# sidplayfp's power-on delay -- `--delay=<num> simulate c64 power on delay
+# (default: random)` in its --help-debug -- is the number of cycles the C64
+# waits before the tune starts, and a RANDOM one made every render of the
+# same bytes a different file: two 60 s renders of one original differed in
+# length by 0-220 samples, aligned 0-6 hops apart and read 0.0031-0.0202
+# apart on `aud`/`loud` (0.0186 on Devils_Galop the day this constant was
+# added), which was the 0.0183 re-render floor docs/SOUND-CALIBRATION.md
+# adopted at v0.5.491 and the floor three of its four comparable known-bad
+# pairs sat inside. Passed from `render_sidplayfp` on every render, a fixed
+# delay makes a re-render reproduce the cached one (0.0000 on the same
+# file, the grid floor's order). Zero is the value the earlier probe
+# measured under (sound_calibrate.py's note above CHECK 2); any fixed value
+# would do, and this one is also the smallest start-state the emulated
+# machine can have. NOTE: a render cached in build/audio before this
+# constant existed was made with a random delay -- the cache key is the
+# .sid's content, not the command line, so those files stay valid keys and
+# stay pre-flag until they are re-rendered.
+SIDPLAYFP_POWER_ON_DELAY = 0
 
 # The bands FIDELITY.md reports, and what a listener is being asked to decide
 # in each. Ordered worst-first: the interesting listening is at the bottom of
@@ -138,7 +156,9 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
 
     `-fo0` is the fade-off that sid2wav has no switch for; `-o<n>` is 1-based
     like sid2wav's; `-p16 -m -f44100` fixes the format the rest of the harness
-    assumes.
+    assumes; `--delay=<n>` pins the power-on delay sidplayfp otherwise draws
+    at random, so two renders of the same bytes are the same bytes (see
+    `SIDPLAYFP_POWER_ON_DELAY`).
 
     **RSID files need the C64 ROMs.** Without them libsidplayfp runs the tune
     with no KERNAL and dies on an illegal instruction, having written a 44-byte
@@ -155,6 +175,7 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
     mutes = [f"-u{v}" for v in mute]
     try:
         subprocess.run([exe, f"-t{seconds}", "-f44100", "-p16", "-m", "-fo0",
+                        f"--delay={SIDPLAYFP_POWER_ON_DELAY}",
                         f"-o{subtune + 1}", *mutes, f"-w{out}", str(sid)],
                        capture_output=True, timeout=seconds * 6 + 120,
                        stdin=subprocess.DEVNULL)

@@ -11894,6 +11894,11 @@ dropped counts beside it; 17 of the 25 triangle files lose one to three keys
 to the gate, 5_Title_Tunes is the only file emptied, and
 Commodore_64_Music_Examples keeps its nine records and its `-!`, which is a
 real conversion defect (goatwriter vibrates none of its 512 damped notes).
+(RETRACTED at v0.5.492, both halves: the `-!` was a fourth refusal wearing
+the third's dash -- see §7.llllll -- and on this file it is the ORIGINAL's
+side that has no oscillating instrument among the nine keys, so the row now
+reads `-` with `depth_refusal: orig-silent`, and "a real conversion defect"
+was a claim about the wrong side.)
 
 **`aud` cannot hear a tune that has stopped.** The v0.5.401 Las_Vegas build
 scores `aud` 0.873 while rendering at 0.074x the original's loudness, and
@@ -11980,3 +11985,64 @@ rows whose traced window differs (a `## Refused rows` section, `window A
 -> B` each) and compares the rest -- on that pair, eight refused and 87
 compared. A `-t` or subtune mismatch still refuses the run: two windows are
 two quantities.
+
+### 7.llllll The pitch-sequence divider, the depth refusal's four sides, and the render's fixed delay
+
+**The pitch-sequence phase can step slower than the frame.** Food Feud's
+player advances the bit-$10 arpeggio's global phase cell through a divider
+(`DEC $955E / BPL / LDA #$03 / STA $955E` immediately before the phase
+`DEC`), so the phase moves once every four frames where every other pitch-seq
+player moves it every frame -- and `_find_pitch_seq` never read it, so the
+emitter arpeggiated four times too fast. `detect.PitchSeq.frames_per_step`
+now carries the reload constant plus one, read by `_pitch_seq_divider` in
+both the absolute and the zero-page spelling and only where the divider's
+`STA` names the cell the `DEC` decrements; both pitch-seq emitters hold each
+step `frames_per_step` frames longer, attack frames unchanged. A corpus
+census at v0.5.491 finds exactly one divider (Food_Feud, `$955E`, four
+frames), and the two byte-hashes agree: under shipped presets nothing moves
+(Food_Feud's preset does not carry `pitch_seq`), under `pitch_seq` forced on
+every file exactly Food_Feud moves, its voice-2 tie count 7837 -> 3907
+against the original's 5139. Adopting the option for that file is a preset
+search, not this change.
+
+**`-!` now means a shared-key mismatch and nothing else.** The depth
+column's `no-shared-key` covered three situations §7.iiiiii could not tell
+apart: the original's side empty, ours empty, or neither oscillating. They
+are now four refusal values -- `orig-silent`, `ours-silent`,
+`neither-oscillates`, `no-shared-key` -- with `depth_orig_osc` and
+`depth_our_osc` counts beside them; `_fmt_depth` is unchanged, so only the
+true mismatch still prints `-!` and the three sided values print the honest
+`-`. At v0.5.491 one corpus row read `no-shared-key`, and it was the
+original's side that was empty (above).
+
+**The calibration's render floor was sidplayfp's random power-on delay, and
+it is now fixed.** §7.kkkkkk left the calibration reading FAIL on a 0.0183
+re-render floor. `listen.render_sidplayfp` passes `--delay=0`
+(`SIDPLAYFP_POWER_ON_DELAY`; sidplayfp documents 0..8191 as a fixed delay
+and anything above as random), and two renders of Devils_Galop's original
+now sit 0.0000 apart on the calibration's own movement measure where they
+sat 0.0186 -- below the 0.0018 grid floor, and not byte-identical (at most
+6 LSB of output dither). The cache does not know: renders are keyed on the
+`.sid` bytes, so every WAV under `build/audio` made before this version was
+rendered with a random delay and is still a cache hit, and the calibration's
+repeat renders are measured against those cached ones. The floor therefore
+still reads ~0.018 until the cached side is re-rendered, which is the
+recalibration's job, not this change's. Two consequences already visible:
+`build/approvals.json` reads `calibrated: false` at this version, because
+the calibration on disk is the FAIL one; and `approvals.py --recover`
+rebuilt Devils_Galop's approved build from 0.5.418 (sha exact, `aud` against
+the approved build 0.976, 2419 attacks on all three sides) but cannot rebuild
+ACE_II's -- every tree from 0.5.369 to 0.5.375 converts it, with its own
+`presets.json`, to the same bytes and never to the approved sha, so that
+build was staged with options its tree's presets did not carry and the
+verdict can only be renewed by listening again.
+
+**The fidelity refresh at v0.5.491** moved exactly Game_Killer, as the
+passing-call residue predicted: wave 91 -> 95%, gate 74 -> 71%, onset
+100 -> 91%, reversal_ratio unmoved at 0.28 (the per-instrument vote's
+four-way tie). Two lessons for the next refresh, both procedural: the run
+was taken from a detached worktree of HEAD with `build/` junctioned in, which
+is what "from a clean tree" costs when a sibling is editing the harness in
+the same checkout; and its `--baseline` table went to a stdout that a
+detached launch dropped, so pass `--ab-output PATH` and keep the A/B where
+the report is.

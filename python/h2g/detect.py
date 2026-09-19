@@ -3055,6 +3055,12 @@ class PitchSeq:
     pairs: int                  # offset of the pair table, indexed by 2 x index
     base: int                   # offset of seq[0]; seq[1..] follow it
     steps: int = 3
+    # Frames the phase holds each step. Food_Feud ($93FB) steps its phase
+    # cell through a divider -- `DEC $955E / BPL / LDA #$03 / STA $955E`
+    # immediately before the phase's own `DEC $955D` -- so the phase moves
+    # once every FOUR frames, not every frame; read as the reload plus one,
+    # 1 where there is no divider (the other 35 corpus files with the block).
+    frames_per_step: int = 1
 
 
 # Everything up to and including the `CLC` is the same in every file that has
@@ -3109,6 +3115,44 @@ PITCH_SEQ_SHAPE = PITCH_SEQ_SHAPES[0][0]        # the canonical spelling
 PITCH_SEQ_AT_BASE = PITCH_SEQ_SHAPES[0][1]
 
 
+def _pitch_seq_divider(data: bytes, reload_at: int) -> int:
+    """Frames per phase step: the divider's reload plus one, or 1 if none.
+
+    Food_Feud's play routine ($93FB-$940C) steps the phase cell through a
+    second countdown that sits IMMEDIATELY before the phase's own reload:
+
+        93FB  DEC $955E / BPL $940F        ; the divider
+        9400  LDA #$03  / STA $955E        ;   reloads to 3 -> 4 frames a step
+        9405  DEC $955D / BPL $940F        ; the phase, stepped once per reload
+        940A  LDA #$01  / STA $955D
+
+    so the phase moves once every four frames and an emitter holding each step
+    one frame arpeggiates four times too fast (voice 2: 7837 ties against the
+    original's 5139). The other 35 corpus files with the block have `DEX /
+    BMI / JMP` in front of the phase reload -- the voice loop's exit -- and
+    read 1 here; the census is in tests/test_pitch_seq_shapes.py.
+
+    Two spellings, because the cell's addressing mode sets the instruction
+    length and therefore where the block starts relative to the reload:
+    absolute `CE ll hh 10 rr A9 m 8D ll hh` is ten bytes, zero-page
+    `C6 zz 10 rr A9 m 85 zz` is eight. The store must name the cell the
+    `DEC` named -- a `DEC x / BPL / LDA # / STA y` is some other countdown.
+    Only Food_Feud's absolute form occurs in the corpus; the zero-page one is
+    carried for the same reason `PITCH_SEQ_NOTE_LOADS` carries `B5 ??`.
+    """
+    j = reload_at - 10
+    if (j >= 0 and data[j] == 0xCE and data[j + 3] == 0x10
+            and data[j + 5] == 0xA9 and data[j + 7] == 0x8D
+            and data[j + 8] == data[j + 1] and data[j + 9] == data[j + 2]):
+        return data[j + 6] + 1
+    j = reload_at - 8
+    if (j >= 0 and data[j] == 0xC6 and data[j + 2] == 0x10
+            and data[j + 4] == 0xA9 and data[j + 6] == 0x85
+            and data[j + 7] == data[j + 1]):
+        return data[j + 5] + 1
+    return 1
+
+
 def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
     """The bit-$10 arpeggio's three tables, or None."""
     data = sid.data
@@ -3127,17 +3171,20 @@ def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
     # the immediate is one less than the cycle length. Read rather than assumed;
     # the constant only stands in where the reload is not found.
     steps = PITCH_SEQ_STEPS
+    frames_per_step = 1
     lo, hi = phase & 0xFF, (phase >> 8) & 0xFF
     for i in range(len(data) - 9):
         if (data[i] == 0xCE and data[i + 1] == lo and data[i + 2] == hi
                 and data[i + 3] == 0x10 and data[i + 5] == 0xA9
                 and data[i + 7] == 0x8D and data[i + 8] == lo):
             steps = data[i + 6] + 1
+            frames_per_step = _pitch_seq_divider(data, i)
             break
     seq = PitchSeq(index=sid.to_offset(operand(PITCH_SEQ_AT_INDEX)),
                    pairs=sid.to_offset(operand(PITCH_SEQ_AT_PAIRS)),
                    base=sid.to_offset(operand(at_base)),
-                   steps=max(2, steps))
+                   steps=max(2, steps),
+                   frames_per_step=max(1, frames_per_step))
     if min(seq.index, seq.pairs, seq.base) < 0:
         return None
     return seq

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.492 — 2026-09-19
+
+- pitch-seq step divider, four-sided depth refusal, fixed sidplayfp power-on delay, Devils Galop approved build recovered
+
 ## 0.5.491 — 2026-09-18
 
 - gated fixed-arp counters walked in passing calls, per-row --baseline refusal, two more known-bad pairs and the render floor they expose

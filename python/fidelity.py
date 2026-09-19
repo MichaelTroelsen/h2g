@@ -2241,10 +2241,32 @@ def depth_compare(orig: list[Voice], ours: list[Voice], nframes: int,
     `-!`, which is the mark of a comparison that should have happened and did
     not. `vibrato_records` returns an empty set (not None) for exactly this
     case, and it renders as the honest `-`; `depth_gated` beside it carries
-    the counts. Commodore_64_Music_Examples stays in `no-shared-key`: its
-    records reach the gate on 8-row notes the orderlists play, so the
-    original vibrates and the conversion's `0 note(s) vibrated` is a defect
-    the dash is right to flag.
+    the counts.
+
+    **A FOURTH DISTINCTION, SINCE v0.5.491: the remaining `no-shared-key` row
+    had an empty oscillation side, not two populations that fail to overlap.**
+    Re-censused at HEAD 59fbe1b against `build/fidelity.json`:
+    Commodore_64_Music_Examples is the only row still refusing this way, and
+    `oscillation_depths` on its 9 keys returns **0 instruments for the
+    ORIGINAL and 1 for OURS** (`C:/t/depth-refusal-should-say-whi/probe_census.py`).
+    That is the opposite of what the pre-v0.5.491 docstring here claimed --
+    "the original vibrates and the conversion's `0 note(s) vibrated` is a
+    defect" -- which was never re-checked against the actual per-side
+    counts. The population passing the player's own gate/shift exclusions
+    (`vibrato_population`) is a statement about which RECORDS the player
+    acts on, not about whether `oscillation_depths` finds a measurable swing
+    on either side once it does; those are different questions, and this row
+    answers them differently. Reported now as `orig-silent`
+    (`depth_orig_osc=0`, `depth_our_osc=1`): the original's own trace
+    produces no paired half-cycle on any of the 9 records, so there is
+    nothing on the original's side for this column to hold ours to, and it
+    is not a candidate for work under `depth`'s "blind to whether an
+    oscillation exists at all" caveat -- `_fmt_depth` prints the honest `-`
+    for it, not `-!`. A genuine `no-shared-key` (both sides oscillate,
+    on disjoint keys) would need `depth_orig_osc > 0` and
+    `depth_our_osc > 0` together with an empty `paired_keys` result or an
+    all-zero original pairing; none of the corpus's measured rows are that
+    shape at this head.
     """
     return _depth_compare_sided(orig, ours, nframes, nframes, keys,
                                 skip_radius, skip_radius)
@@ -2277,11 +2299,32 @@ def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
     b = oscillation_depths(ours, n_ours, keys, skip_ours)
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
-        # The population EXISTS and the comparison failed -- the candidate-for-
-        # work half of the docstring's split, and the same shape as Powerplay
-        # Hockey's `-`, which was a real defect. `depth_keys` records how big
-        # the population was, so a reader can tell 2 keys from 9.
-        return {"depth_refusal": "no-shared-key", "depth_keys": len(keys)}
+        # Every no-shared-key row measured at v0.5.491 has an EMPTY
+        # oscillation side (Commodore_64_Music_Examples: `a` has 0 keys, `b`
+        # has 1 -- the original itself never oscillates on the 9 records that
+        # carry the byte). That is a different finding from two sides that
+        # both oscillate on instruments the other side does not: only the
+        # latter is "the population exists on both sides and the comparison
+        # failed", which is what `no-shared-key` used to claim for all three
+        # v0.5.467 files and is wrong for this shape -- there is nothing in
+        # the ORIGINAL to reproduce, so it is not a candidate for work.
+        # `_fmt_depth` is unchanged and only marks the literal string
+        # `no-shared-key` with `-!`; the three sided refusals below all keep
+        # the honest dash, which is the correct mark whenever `a` (the
+        # original's own oscillation) is empty.
+        # `depth_keys` is the population size; `depth_orig_osc` /
+        # `depth_our_osc` are how many instruments in it actually oscillate
+        # on each side, so a reader can tell 0-of-9 from 2-of-2.
+        if not a and not b:
+            refusal = "neither-oscillates"
+        elif not a:
+            refusal = "orig-silent"
+        elif not b:
+            refusal = "ours-silent"
+        else:
+            refusal = "no-shared-key"
+        return {"depth_refusal": refusal, "depth_keys": len(keys),
+                "depth_orig_osc": len(a), "depth_our_osc": len(b)}
     return {
         "depth_ratio": _median([b[u] / a[o] for o, u in pairs]),
         "orig_depth": _median([a[o] for o, _ in pairs]),
@@ -4810,17 +4853,27 @@ DIMENSIONS = (
               "how far our vibrato swings, over the original's -- median over "
               "the instruments that carry a vibrato byte, **blind to whether "
               "an oscillation exists at all**, which is `vib`'s question. "
-              "Its three refusals are printed as two marks: **`-` means no "
+              "It has one no-population refusal, one gated refusal and four "
+              "sided pairing refusals, printed as two marks: **`-` means no "
               "record in the original carries a vibrato byte** (nothing to "
               "compare, nothing to fix), **`-` also means every record that "
               "does is one the player's own gate never opens** (`gated`: "
               "the triangle engine's shift past TRIANGLE_VIBRATO_MAX_SHIFT, "
               "or no played note as long as its duration gate -- the "
               "original oscillates nothing, so an empty pair is correct and "
-              "`depth_gated` in the JSON says which), while **`-!` means "
-              "the population exists and no instrument key was shared** -- "
-              "the comparison did not happen, which is a candidate for work "
-              "and not an honest gap. "
+              "`depth_gated` in the JSON says which). Of the sided refusals, "
+              "**`neither-oscillates`, `orig-silent` and `ours-silent` all "
+              "print the honest `-`** whenever the ORIGINAL's own side has "
+              "nothing to reproduce -- `depth_orig_osc` is 0 -- because a "
+              "record the original never swings on is not a candidate for "
+              "work no matter what our side does; `depth_our_osc` says "
+              "whether ours swings on 0 or more of the same records. Only "
+              "**`-!` means the population exists and no instrument key was shared** "
+              "with the ORIGINAL itself oscillating on at least one "
+              "of them (`no-shared-key`, `depth_orig_osc` > 0) -- the "
+              "comparison did not happen, which is a candidate for work and "
+              "not an honest gap; `depth_keys` records the population size "
+              "behind either mark. "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
               "understated; `--vice` reads it per play call"),

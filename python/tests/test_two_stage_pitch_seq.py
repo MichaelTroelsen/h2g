@@ -202,3 +202,39 @@ def test_a_block_that_will_not_fit_falls_back():
                                  [(0, 0)] * 16, 1, start=1, budget=5,
                                  two_stage=True, pitch_seq=True)
     assert tight == G._two_stage_entries(0x00, attack, frames, 1)
+
+
+def test_the_divider_lengthens_the_step_and_not_the_attack():
+    """`frames_per_step` scales the arpeggio's hold; the attack keeps `frames`.
+
+    Bit $04's counter is a per-voice cell and the divider gates only the
+    global phase, so on Food_Feud's record 2 (`$34`: attack `$41` for two
+    frames, notes [124, 0], divider 4) at -S3 the attack is still six calls
+    and each step is twelve. The loop is two full steps, so the entry after
+    its last names the step its first names and the phase stays continuous
+    across the jump whatever the attack's length modulo the step.
+    """
+    notes = [0x00, 124]
+    # 34 entries: past the five-entry default, inside Food_Feud's real share
+    # of the 255-entry table (the A/B's bytes moved, so the block fits there).
+    one = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 3,
+                                         budget=200)
+    four = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 3,
+                                          budget=200, frames_per_step=4)
+    assert one is not None and four is not None
+    l1, r1 = one
+    l4, r4 = four
+    assert l1[:3] == l4[:3] == [0x11] * 3                  # the first frame
+    assert l1[3:9] == l4[3:9] == [0x41] * 6                # two frames of attack
+    assert l1[-1] == l4[-1] == 0xFF and r1[-1] == r4[-1] == 1 + 3 + 6
+    assert len(l1) == 3 + 6 + 2 * 3 + 1
+    assert len(l4) == 3 + 6 + 2 * 12 + 1
+    body = r4[3:-1]
+    assert body == [0] * 12 + [124] * 12 + [0] * 6
+    # continuity: the jump lands on body[6], step 0, which is also what the
+    # entry after the body's last would name (30 // 12 % 2 == 0)
+    assert body[6] == notes[(len(body) // 12) % 2] == 0
+    if CORPUS.is_dir():
+        sid, det = _det("Food_Feud")
+        assert det.pitch_seq.frames_per_step == 4
+        assert _block("Food_Feud", 2, 3) == four

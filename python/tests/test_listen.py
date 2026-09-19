@@ -510,3 +510,58 @@ def test_our_side_renders_for_the_traced_window_when_it_widened(
     assert dump_calls == [90, 90]
     text = (outdir / "LISTENING.md").read_text(encoding="utf-8")
     assert "Rendered for **90 s**, not the requested `-t 30`" in text
+
+
+# --- render_sidplayfp pins the power-on delay -----------------------------
+#
+# sidplayfp's `--delay=<num>` ("Simulate C64 power on delay as number of CPU
+# cycles. If greater than 8191 the delay will be random. This is the
+# default." -- sidplayfp.txt) was NOT passed through v0.5.491, so every render
+# of the same bytes started the C64 a random number of cycles into its own
+# timeline. Measured on Devils_Galop the day the flag landed: two flagless
+# 60 s renders differed by 88 bytes, aligned 4 hops apart and read 0.0186 on
+# `sound_calibrate.rerender_movements` (the 0.0183 re-render floor
+# docs/SOUND-CALIBRATION.md adopted at v0.5.491, which hid Human_Race,
+# Rasputin and Spellbound); the same two under `--delay=0` are the same
+# length and read 0.0000. The two tests below are what keeps the flag on the
+# command line: a renderer refactor that drops it changes no test's
+# behaviour and no cache key, only the floor under every score.
+
+
+def _captured_sidplayfp_argv(monkeypatch, tmp_path):
+    """Run `render_sidplayfp` with subprocess.run replaced and return argv."""
+    seen = []
+
+    def fake_run(argv, **kw):
+        seen.append(list(argv))
+        Path(argv[-2][2:]).write_bytes(b"\0" * (L.EMPTY_WAV + 1))
+        return types.SimpleNamespace(returncode=0)
+    monkeypatch.setattr(L.subprocess, "run", fake_run)
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID")
+    ok = L.render_sidplayfp(sid, tmp_path / "out.wav", 7, 2,
+                            exe=str(tmp_path / "sidplayfp.exe"))
+    assert ok and len(seen) == 1
+    return seen[0]
+
+
+def test_render_sidplayfp_passes_a_fixed_power_on_delay(monkeypatch, tmp_path):
+    """SABOTAGE TARGET: drop the `--delay=` element from the command line in
+    `render_sidplayfp` and this fails on the `delay` lookup."""
+    argv = _captured_sidplayfp_argv(monkeypatch, tmp_path)
+    delay = [a for a in argv if a.startswith("--delay=")]
+    assert delay == [f"--delay={L.SIDPLAYFP_POWER_ON_DELAY}"], argv
+    # the rest of the line is unchanged: format, fade-off, 1-based subtune
+    assert argv[1:6] == ["-t7", "-f44100", "-p16", "-m", "-fo0"]
+    assert "-o3" in argv and argv[-1].endswith("Tune.sid")
+
+
+def test_sidplayfp_power_on_delay_is_inside_the_fixed_range():
+    """SABOTAGE TARGET: set `SIDPLAYFP_POWER_ON_DELAY` to 8192 -- sidplayfp
+    documents any value above 8191 as "random", i.e. the flag's absence --
+    and this fails. Measured: `--delay=8191` renders twice to the same
+    samples (max 3 LSB of dither apart), `--delay=8192` to samples 21739
+    apart, on Devils_Galop's first 3 s."""
+    d = L.SIDPLAYFP_POWER_ON_DELAY
+    assert isinstance(d, int) and not isinstance(d, bool)
+    assert 0 <= d <= 8191, "above 8191 sidplayfp draws the delay at random"

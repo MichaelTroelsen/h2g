@@ -335,10 +335,15 @@ def past_table_rests(sid: SidFile, det: Detection) -> frozenset:
     then sounds is the value in that cell. Commando's `$68` lands on a
     per-voice stored-waveform cell and sounds B-5, which is a note. Sanxion's
     `$60` lands on `$B50D`/`$B50E` -- two of the three zero bytes between its
-    table and its next data -- and sounds frequency `$0000` with the gate on:
-    the oscillator does not advance, the pulse frames of the drum are DC, and
-    siddump shows `0000 C-0` on voice 2 at every one of them. Clamped to
-    index 92 that event is a G#7 pulse for two frames, and it is audible.
+    table and its next data -- and sounds frequency `$0000` with the gate on.
+    RETRACTED (found wrong at v0.5.491, e362bd6): this docstring previously
+    claimed the original "sounds as silence" and that "siddump shows
+    `0000 C-0` on voice 2 at every one of them." Measured instead: instrument
+    01's frame 1 is a noise burst at `41B8/81` on siddump's THIRD voice
+    (channel 3, not 2), and it is audible -- 41 hits in 100 s. The frequency
+    is `$0000` and the oscillator does not advance, but the noise waveform's
+    pulse frames are not DC silence. Clamped to index 92 that event is a
+    G#7 pulse for two frames, and it is audible.
 
     A byte qualifies as a rest on two conditions, both read statically:
 

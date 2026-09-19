@@ -115,7 +115,11 @@ N_FFT = 2048
 # earlier sample), because sidplayfp's power-on delay is random unless
 # `--delay=<n>` is passed -- see `render_repeat`. The floor under any score
 # taken against a cached render is the render's reproducibility, and the grid
-# only bounds it from below.
+# only bounds it from below. Since `listen.SIDPLAYFP_POWER_ON_DELAY` landed
+# (after v0.5.491) `render_sidplayfp` passes `--delay=<it>` and a fresh pair
+# reads 0.0000;
+# a render cached in build/audio BEFORE that is still a random-delay render
+# under a still-valid content key, until it is re-rendered.
 HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
@@ -490,17 +494,24 @@ def render_repeat(sid: Path, seconds: int, subtune: int, tag: str,
 
     `render_cached` answers "what does this .sid sound like" once per distinct
     set of bytes, so it can never measure how far two renders of the SAME
-    bytes sit apart -- and they do. sidplayfp's `--delay=<num>` ("simulate
-    c64 power on delay (default: random)", its --help-debug) is left at its
-    default by `listen.render_sidplayfp`, so every render starts the C64 a
-    different number of cycles into its own timeline: measured at d2160e0
-    (HISTORICAL; the live figure is check 2 of docs/SOUND-CALIBRATION.md),
-    three 60 s renders of each approved original differ in length by 0-220
-    samples, align 0-6 hops apart, and read `aud`/`loud` 0.0031-0.0202 off
-    each other, where the same three under `--delay=0` are the same length
-    every time and read 0.0000-0.0001. That movement is a property of the
-    RENDER, not of the feature grid, and it is the floor under every score
-    taken against a cached render until the renderer fixes its start state.
+    bytes sit apart -- and they did. sidplayfp's `--delay=<num>` ("simulate
+    c64 power on delay (default: random)", its --help-debug) was left at its
+    default by `listen.render_sidplayfp` until after v0.5.491 (see
+    `listen.SIDPLAYFP_POWER_ON_DELAY`), so every render
+    started the C64 a different number of cycles into its own timeline:
+    measured at d2160e0 (HISTORICAL; the live figure is check 2 of
+    docs/SOUND-CALIBRATION.md), three 60 s renders of each approved original
+    differ in length by 0-220 samples, align 0-6 hops apart, and read
+    `aud`/`loud` 0.0031-0.0202 off each other, where the same three under
+    `--delay=0` are the same length every time and read 0.0000-0.0001. That
+    movement is a property of the RENDER, not of the feature grid, and it
+    was the floor under every score taken against a cached render.
+    `listen.render_sidplayfp` now passes `--delay=<SIDPLAYFP_POWER_ON_DELAY>`
+    (0.0186 -> 0.0000 on Devils_Galop, the pair's samples at most 6 LSB of
+    dither apart); this function is still what MEASURES that, and the
+    content key does not see the flag, so a repeat render beside a cached
+    render made before it still reads the old floor until the cached one is
+    re-rendered.
 
     Each call renders again to `<tag>.<key>.s<sub>.t<seconds>.r<k>.wav`,
     numbered after the renders of these bytes already on disk, drops the

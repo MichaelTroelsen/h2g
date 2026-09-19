@@ -616,6 +616,16 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     # only on its last call (gplay.c:697-723), and the note this step names has
     # to be current from the first call of the frame it covers. The same reason
     # `_two_stage_pitch_seq_entries` spells every frame of its cycle out.
+    #
+    # **A step is `frames_per_step` frames, and a frame is `multiplier`
+    # calls.** The player's phase counter is stepped once per FRAME in 35
+    # corpus files and once per reload of a divider in Food_Feud
+    # (`detect._pitch_seq_divider`: `DEC $955E / BPL / LDA #$03 / STA $955E`
+    # in front of the phase's own `DEC`, so once every four frames). Holding
+    # each step one frame there arpeggiates four times too fast -- voice 2
+    # read 7837 ties against the original's 5139 with the option forced, and
+    # 3907 once the divider is honoured. The two factors are one quantity,
+    # calls per step, so they multiply here and nowhere else.
     hold = max(1, multiplier)
     if hold > 1:
         # **The attack frame's last write is entry 0 once a step is a frame
@@ -637,6 +647,11 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
         # **99.8%** scaled-and-rotated, which is its score with the option off,
         # at 1039 reversals against 772. See H2G-CONVERSION-METHOD.md 7.ttt.
         notes = notes[1:] + notes[:1]
+    # The rotation above is keyed on the MULTIPLIER alone, not on the calls a
+    # step holds: it asks whether entry 0 lands on frame 0, and a four-frame
+    # step at -S1 still starts on frame 1 (`hold == 1` above). The divider
+    # only lengthens each step, so it multiplies in after that question.
+    hold *= max(1, det.pitch_seq.frames_per_step)
     left = [wave] * (len(notes) * hold)
     right = [n for n in notes for _ in range(hold)]
     return left, right
@@ -1278,7 +1293,8 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
                                  notes: List[int], start: int,
                                  multiplier: int = 1,
                                  budget: int = WAVE_ENTRIES_PER_INSTR,
-                                 written: bool = False) -> Optional[tuple]:
+                                 written: bool = False,
+                                 frames_per_step: int = 1) -> Optional[tuple]:
     """One block carrying bit $04's attack waveform *and* bit $10's arpeggio.
 
     The two bits are **sequential, independent tests on the same effect byte**,
@@ -1333,6 +1349,12 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     identical 1308 reversals. The scaling is shipped because it is what the
     player says, not because a column moved.
 
+    `frames_per_step` is the player's divider (`detect.PitchSeq.frames_per_step`,
+    Food_Feud's 4, 1 everywhere else): each arpeggio step is held that many
+    frames, i.e. `frames_per_step * multiplier` calls, while the ATTACK keeps
+    its own `frames * multiplier` -- the divider gates the phase cell only,
+    and bit $04's counter is a separate per-voice cell (`$0FAA,X` above).
+
     Returns None where the block will not fit the record's budget, so the
     caller falls back to the plain two-stage shape rather than emitting a
     truncated arpeggio.
@@ -1362,13 +1384,15 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
         notes = notes[turn:] + notes[:turn]
     hold = max(1, multiplier)
     calls = max(1, frames) * hold
+    # Calls per arpeggio step: the attack's `calls` is NOT scaled by this.
+    step = hold * max(1, frames_per_step)
     # Same rule as `_two_stage_entries`, and this is the path that reaches the
     # record it was written for: a `+2` selecting no waveform is silence, not
     # the attack released. Trans-Atlantic's `$0AF8` carries `$14`, so with
     # `--pitch-seq` on -- which its preset has -- it comes here.
     second = _wave_byte(wave & 0xFE) if not wave & 0xF0 else wave & 0xFE
     tail = second | (wave & 0x01)
-    loop = len(notes) * hold
+    loop = len(notes) * step
     # The note's first frame is the record's own waveform (`_first_frame_entry`)
     # and the attack -- with the arpeggio that runs across it -- starts on the
     # second. Trans-Atlantic's GT 4, the one corpus record this path reaches, has
@@ -1384,12 +1408,13 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     right: List[int] = [WAVE_NOTE_BASE] * lead
     for c in range(calls + loop):
         left.append(attack if c < calls else tail)
-        right.append(notes[(c // hold) % len(notes)])
+        right.append(notes[(c // step) % len(notes)])
     # The jump targets the sustain stage, not the block: the attack runs once
     # per note, and so does the first-frame entry before it -- which is why the
-    # target carries `lead`. `calls` is an exact multiple of `hold`, so the phase
-    # the loop re-enters on is the phase it left; the cycle stays continuous
-    # across the jump, as the player's free-running counter does.
+    # target carries `lead`. `loop` is exactly `len(notes)` steps of `step`
+    # calls, so the entry after the loop's last would name the step the loop's
+    # first names, whatever `calls` is modulo `step`: the cycle stays
+    # continuous across the jump, as the player's free-running counter does.
     left.append(0xFF)
     right.append(start + lead + calls)
     return left, right
@@ -5387,7 +5412,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 if notes is not None:
                     both = _two_stage_pitch_seq_entries(
                         wave, data[at], frames, notes, start,
-                        multiplier, budget, written=no_test_restart)
+                        multiplier, budget, written=no_test_restart,
+                        frames_per_step=det.pitch_seq.frames_per_step)
                     if both is not None:
                         return both
             # Effect bit $40's fixed attack pitch, and the gate on it is bit

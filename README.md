@@ -1805,6 +1805,14 @@ options on the converter emits one block carrying both: the attack's frames,
 then the sustain stage, then a jump back to the sustain stage looping the cycle
 for as long as the note is held.
 
+Since v0.5.492 the emitter also honours a **frames-per-step divider** where
+the player has one: Food Feud steps its phase once every four frames through
+a `DEC/BPL/LDA/STA` cell in front of the phase reload, and the detector reads
+that reload constant into `frames_per_step` (1 on every other corpus file) so
+each step holds that many frames longer. With `--pitch-seq` forced on Food
+Feud its voice-2 tie count moves 7837 -> 3907 against the original's 5139;
+nothing else in the corpus carries a divider.
+
 Only Trans-Atlantic ships both options, and only its record 3 (`0AF8`) is
 reached: **0 pitch reversals in a 60 s trace before, 392 after, against the
 original's 411**, on unchanged note counts, moving `vib` 0.72x → 0.87x with
@@ -3432,7 +3440,11 @@ timing. Renders are cached under `build/audio/` keyed on the content of the
 `.sid` being rendered, so re-running an unchanged conversion re-renders
 nothing; the first corpus pass renders both sides of every file. A failed
 render names its side in `sound_failed` rather than scoring a silent WAV
-against music.
+against music. Since v0.5.492 every render passes sidplayfp `--delay=0`
+(`listen.SIDPLAYFP_POWER_ON_DELAY`), so two renders of the same bytes
+reproduce to the calibration's grid floor; a WAV cached before that version
+was rendered with a random power-on delay and is still served from the
+cache, because the key is the `.sid` bytes, not the command line.
 
 Because the key is the *content*, every converter change leaves the previous
 `ours.*` render behind for good (measured at v0.5.489: 256 superseded renders,

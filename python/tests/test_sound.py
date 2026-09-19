@@ -240,9 +240,11 @@ def test_render_cached_returns_none_when_the_renderer_fails(tmp_path):
 # --------------------------------------------------------------------------
 # `render_repeat`: a FRESH render every call, because the noise floor is the
 # render's reproducibility. sidplayfp's power-on delay is random by default
-# (`--delay=<n>` fixes it; listen.render_sidplayfp does not pass it), so two
-# renders of one .sid differ -- and `render_cached`, by design, can never
-# see that: its second ask for the same bytes is free.
+# (`--delay=<n>` fixes it; listen.render_sidplayfp did not pass it through
+# v0.5.491 -- `listen.SIDPLAYFP_POWER_ON_DELAY`, pinned in test_listen.py),
+# so two renders of one .sid differed -- and `render_cached`, by design, can
+# never see that: its second ask for the same bytes is free. The repeat
+# render is still the only thing that MEASURES the floor, flag or no flag.
 # --------------------------------------------------------------------------
 def test_render_repeat_renders_fresh_every_call_and_numbers_the_results(tmp_path):
     """SABOTAGE TARGET: make `render_repeat` return the existing renders
