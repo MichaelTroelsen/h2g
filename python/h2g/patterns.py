@@ -569,8 +569,12 @@ def _build_raw_pattern(data: bytes, addr: int,
     `rest_notes` is the set of raw note bytes that index past the player's
     frequency table onto a constant `$0000` cell -- see `past_table_rests`.
     Such a byte is emitted as a KEYOFF instead of being clamped to index 92,
-    because that is what the original sounds there: nothing. Empty by
-    default, which is the clamp's historical behaviour.
+    because the original sounds no PITCH there. The KEYOFF keeps the event's
+    instrument column: where that instrument's wave program has a frame at
+    an absolute pitch, the original sounds that frame anyway, and
+    `goatwriter._past_rest_variants` re-emits the row as a note on a
+    silent-pitch copy of the instrument. Empty by default, which is the
+    clamp's historical behaviour.
 
     `const_notes` maps a raw note byte that indexes past the table onto a
     constant NON-zero cell to the table entry nearest the pitch that cell
@@ -1071,6 +1075,20 @@ def _build_raw_pattern(data: bytes, addr: int,
             # and it is keyed on the raw byte because the raw byte is what
             # the player shifts. Commando's `$68` does not qualify (its cell
             # is written at `$515A`), so the fixture is untouched.
+            #
+            # **THE KEYOFF KEEPS ITS INSTRUMENT COLUMN, AND THAT IS A
+            # CONTRACT.** The pitch is `$0000` but the note-on path still
+            # runs the record's wave program, and a row of it at an ABSOLUTE
+            # pitch sounds whatever the note was: Sanxion's drum plays its
+            # `41B8/81` noise frame on every one of these rows, 41 times in
+            # 100 s (e362bd6). Whether the program HAS such a row is known
+            # only once goatwriter has built it under the options, so this
+            # decoder marks the row and `goatwriter._past_rest_variants`
+            # decides: a KEYOFF with a non-zero instrument is written by this
+            # branch and by nothing else in the classic decoder (the bit-6
+            # rest above clears the column), and that pass re-emits it as a
+            # note on a copy of the instrument whose pitched frames are the
+            # test bit. Clear the column here and the drum goes silent again.
             if g_note in rest_notes:
                 g_note = GT_KEYOFF
                 past_rest = True
@@ -4327,22 +4345,64 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     steps once per frame; at 1 the two clocks are the same and nothing
     changes. Measured before this existed: Saboteur_II (`-S3`, tempo 8)
     planned $756 where the original held $2B0, every free note three times
-    too far along its sweep. **Passed as 1 for the triangle engine, and
-    that is measured, not inherited**: its sim was validated at `-S1`
-    (5_Title_Tunes), where the two clocks coincide, and on Game_Killer
-    (`-S9`) the walk's planned onset buckets agree with the original's
-    61% over the first 200 sweeping notes on the CALL clock against 21%
-    on the frame clock (chance ~14% on the 7-bucket band) -- which places
-    the sweep's `DEC counter,X / BPL` inside the multispeed core that the
-    once-a-frame entry runs `multiplier` times (inferred from the onsets,
-    not yet read off the disassembly), so a row of `tempo` calls is
-    `tempo` sweep ticks. The two engines really do differ here: the
-    repo's rule that a rate read out of a player is per frame is a rule
-    about the ENTRY, and each engine's counter has to be placed against
-    the core by measurement (convert.py's gate comment has the figures;
-    tests/test_pulse_phase.py pins them). Rasputin and One_Man_and_his_Droid
-    read at chance on both clocks -- a model defect, not a clock one.
+    too far along its sweep. **Passed as 1 for the triangle engine -- and
+    the reason this docstring gave for it is RETRACTED.** It said: "that
+    is measured, not inherited ... on Game_Killer (`-S9`) the walk's
+    planned onset buckets agree with the original's 61% over the first 200
+    sweeping notes on the CALL clock against 21% on the frame clock ...
+    which places the sweep's `DEC counter,X / BPL` inside the multispeed
+    core that the once-a-frame entry runs `multiplier` times". The player
+    refutes it: Game_Killer has no multispeed core (PSID speed 0, play
+    entry $0826 an outer gate skipping one frame in ten), and the sweep
+    runs once per ENGINE tick, `frames_for` ticks a row
+    (goatwriter.PulsePhaseSim;
+    `test_game_killers_bucket_pairing_did_not_place_the_triangle_clock`).
+    The 61% compared the walk's FETCH widths against the original's
+    reading one frame AFTER the attack, which on Game_Killer is exactly
+    one $E0 step away from it on 199 of the first 200 sweeping notes --
+    two different quantities, which is why the per-voice, tick-clock walk
+    that plans every one of the emulated original's fetch widths scores
+    0.165 on it over the same 200.
+    The seam in convert.py is unchanged, so 1 is still what ships.
     `PULSE_PHASE_PREROLL` is in sim steps.
+
+    **What the packed file does with this plan (Game_Killer, measured
+    against HEAD 924e4bd, figures HISTORICAL).** The table, the budget and
+    the -S9 table step do NOT lose it. `build_pulse_phase_table`'s entry
+    opens on exactly the planned width, `budget_pulse_phase_commands`
+    drops none of the 489 CMD_SETPULSEPTR rows, and the packed player
+    (siddump -m1 on the -S9 file: one row per play call) sounds each
+    voice-0 note on the planned width on its attack call, 550 of the 564
+    orbit widths in 180 s (a note carrying no command opens on its
+    record's own entry, whose width is on the orbit too, and is not in
+    the plan's sequence) -- then ramps 25 a call from the next call
+    (tests/test_pulse_phase.py,
+    `test_game_killers_packed_notes_open_on_the_planned_width`). Paired
+    by FRAME, not by index (the -m9 trace has one extra voice-0 attack,
+    at frame 5468, with no original partner, and index pairing is off by
+    one from there on), the packed sweeping onsets agree with the
+    original's fetch widths 0.443 on this walk and 0.973 on the scratch
+    tick-clock/per-voice walk (C:/t/game-killer-plan-reach). The step
+    from 0.973 to the 0.615 that `pphase`'s f+1 reading scores for that
+    walk comes from READING the two players, not from the plan:
+    * The original fetches on a frame boundary and steps a whole $E0 one
+      tick later, so its f+1 is the fetch width plus or minus one step.
+      Our note starts mostly on call 2, 5 or 8 (0-based) of its 9-call
+      frame (20 calls a row) and the table ramps every call, so f+1 is 9 to 17 calls of
+      ramp: agreement 0.40 / 0.70 / 0.88 by start call, among notes whose
+      opening width is right.
+    * Bucket 14 cannot show at f+1 at all. The original turns on reaching
+      nibble $E and stores that value ($D40 + $E0 = $E20), holding it for
+      a tick; the table's legs ramp TO `hi_v` ($E00, floored:
+      $D40 up tops out at $DEF), and the ($E20, down) entry is out of
+      bucket 14 two calls after its SET. 55 original f+1 readings in
+      bucket 14, 0 packed.
+    What would move the second: legs bounded by the sim's orbit rather
+    than the routine's nibbles, and a table rate per engine tick (10
+    calls here) rather than per frame (9) -- 25 a call is 250 a tick
+    against the original's 224. Neither is shipped;
+    `test_the_triangle_table_holds_bucket_14_for_two_calls_at_most` pins
+    the table half as it stands.
     """
     groups = len(tracks) // 3
     if len(tempos) != groups:

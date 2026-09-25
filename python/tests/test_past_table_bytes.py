@@ -64,8 +64,58 @@ def test_sanxion_byte_60_lands_on_two_zero_bytes_nothing_names():
     assert patterns.past_table_rests(sid, det) == frozenset({96})
 
 
+def _sanxion_presets(monkeypatch=None, stand_down=False):
+    """Sanxion under its shipped presets, parsed -- optionally with the
+    variant pass stood down (the rows it would move stay KEYOFF)."""
+    import json
+    import fidelity as F
+    import songview
+    from h2g import goatwriter
+    from h2g.convert import convert
+    if stand_down:
+        monkeypatch.setattr(goatwriter, "_past_rest_variants",
+                            lambda sid, det, pats, *a, **k: (pats, []))
+    doc = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                      / "presets.json").read_text(encoding="utf-8"))
+    blob = convert(str(SANXION), log=lambda m: None,
+                   **F._preset_opts(doc, "Sanxion.sid"))
+    return songview.parse_sng(blob)
+
+
+def _rows(song, pred):
+    return [(p, k // 4) for p, pat in enumerate(song.patterns)
+            for k in range(0, len(pat) - 3, 4) if pred(pat[k:k + 4])]
+
+
+# The drum's program as the presets build it, and the variant's: every
+# pitched row the test bit with its gate ($E9 -> $09 on the chip), the
+# absolute B-5 noise row ($81 / $C7) byte for byte, the same stop.
+DRUM_PROGRAM = [(0x41, 0x00), (0x81, 0xC7), (0x41, 0x00), (0xFF, 0x00)]
+VARIANT_PROGRAM = [(0xE9, 0x00), (0x81, 0xC7), (0xE9, 0x00), (0xFF, 0x00)]
+B_5 = patterns.GT_FIRSTNOTE + 71
+
+
 @needs_corpus
-def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
+def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7(
+        monkeypatch):
+    """The six `$60` rows: a KEYOFF at decode, a noise hit in the file.
+
+    EXPECTATION CHANGED (sanxion-past-table-drum-keeps-its-noise-frame): this
+    test used to pin a KEYOFF in the conversion as well, on the reading that
+    the original "sounds nothing" there. It sounds a noise frame. The note
+    fetch writes frequency `$0000`, but the note-on path still runs
+    instrument 01's wave program -- `41 / 81 at absolute B-5 / 41 / stop` --
+    and an absolute pitch does not depend on the note: siddump -t 100 on the
+    original shows `0000 C-0 41` then `41B8 B-5 81` on voice 3 at frame
+    645, 41 times in 100 s, and the KEYOFF conversion 0 times
+    (C:/t/sanxion-v3-divergence/findings.txt, e362bd6). So the decoder
+    still emits the KEYOFF -- carrying its instrument column, the mark
+    `goatwriter._past_rest_variants` keys on -- and the conversion now
+    carries each of those rows as a B-5 on a copy of GT instrument 1 whose
+    pitched rows are the test bit: silent where the original's `$0000` is
+    silent, the noise frame where it is not. Same envelope, gatetimer and
+    pulse pointer, so the pulse reseeds as the original's does.
+    """
     sid, det = _sanxion()
     hits = {}
     for i in range(det.pattern_used):
@@ -76,7 +126,35 @@ def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
         if rows:
             assert len(rows) == 1, (i, rows)
             hits[i] = rows[0]
+            # The mark: the event's own instrument, record 0 (column 2
+            # under the default instr_base).
+            assert ev[4 * rows[0] + 1] == 2, (i, ev[4 * rows[0]:][:4])
     assert hits == SANXION_SIX
+    # In the conversion: no KEYOFF with an instrument survives, and each of
+    # the rows that the pass-less conversion kept as `BE 01` is now B-5 on
+    # the one variant, which is the instrument after the last record.
+    song = _sanxion_presets()
+    variant = len(song.instruments)
+    assert _rows(song, lambda r: r[0] == patterns.GT_KEYOFF and r[1]) == []
+    moved = _rows(song, lambda r: r[1] == variant)
+    assert len(moved) == 6 and all(row == 20 for _, row in moved), moved
+    for p, row in moved:
+        assert song.patterns[p][4 * row:4 * row + 4] == [B_5, variant, 0, 0]
+    src, var = song.instruments[0], song.instruments[variant - 1]
+    wtbl = song.tables["WTBL"]
+    assert wtbl[src.wave_ptr - 1:src.wave_ptr + 3] == DRUM_PROGRAM
+    assert wtbl[var.wave_ptr - 1:var.wave_ptr + 3] == VARIANT_PROGRAM
+    # The variant block is on the end of the table: no other start moved.
+    assert var.wave_ptr + 3 == len(wtbl)
+    for field in ("ad", "sr", "pulse_ptr", "filt_ptr", "vib_ptr",
+                  "vib_delay", "gatetimer", "firstwave", "name"):
+        assert getattr(var, field) == getattr(src, field), field
+    assert var.firstwave == 0x09
+    # ...and the same rows with the pass stood down are the old KEYOFF.
+    old = _sanxion_presets(monkeypatch, stand_down=True)
+    assert len(old.instruments) == variant - 1
+    assert (_rows(old, lambda r: r[0] == patterns.GT_KEYOFF and r[1] == 1)
+            == moved)
     # ...and on the same rows, the same decoder with the rule switched off
     # is the clamp: index 92, the screech. That is what the rule replaces.
     data = sid.data
@@ -92,6 +170,66 @@ def test_sanxion_six_entries_rest_where_the_clamp_sounded_g_sharp_7():
         ev = patterns._build_raw_pattern(data, addr,
                                          rest_notes=frozenset({96}), **kw)
         assert ev[4 * row] == patterns.GT_KEYOFF, (i, row)
+
+
+def _variants(pats, entries, starts=(1,), instr_used=1):
+    from h2g import goatwriter
+    sid, det = _sanxion()
+    entries = list(entries)
+    out, var = goatwriter._past_rest_variants(
+        sid, det, [list(p) for p in pats], entries, list(starts),
+        instr_used, 0)
+    return out, var, entries
+
+
+KEYOFF_1 = [patterns.GT_KEYOFF, 1, 0, 0]
+NOTE_1 = [patterns.GT_FIRSTNOTE + 12, 1, 0, 0]
+END = [0xFF, 0, 0, 0]
+
+
+@needs_corpus
+def test_the_variant_pass_declines_what_it_cannot_carry():
+    # Carried: the drum, and the next sounding row names its instrument.
+    out, var, entries = _variants([KEYOFF_1 + NOTE_1 + END], DRUM_PROGRAM)
+    assert var == [(1, 5)]
+    assert out[0][:4] == [B_5, 2, 0, 0]
+    assert entries[4:] == VARIANT_PROGRAM
+    # A following note WITHOUT an instrument would play the silent copy --
+    # Goattracker latches the column -- so the row stays KEYOFF.
+    bare = [patterns.GT_FIRSTNOTE + 12, 0, 0, 0]
+    out, var, _ = _variants([KEYOFF_1 + bare + END], DRUM_PROGRAM)
+    assert (out[0][:4], var) == (KEYOFF_1, [])
+    # ...and so does a pattern that ends latched on it.
+    out, var, _ = _variants([KEYOFF_1 + END], DRUM_PROGRAM)
+    assert (out[0][:4], var) == (KEYOFF_1, [])
+    # A tie skips the firstwave and the gate: nothing restarts the program.
+    tied = [patterns.GT_KEYOFF, 1, patterns.CMD_TONEPORTA, 0]
+    out, var, _ = _variants([tied + NOTE_1 + END], DRUM_PROGRAM)
+    assert (out[0][:4], var) == (tied, [])
+    # A program with no absolute row has nothing audible at `$0000`.
+    out, var, _ = _variants([KEYOFF_1 + NOTE_1 + END],
+                            [(0x41, 0x00), (0x41, 0x0C), (0xFF, 0x00)])
+    assert (out[0][:4], var) == (KEYOFF_1, [])
+    # A delay row carries state the copy would have to model: declined.
+    out, var, _ = _variants([KEYOFF_1 + NOTE_1 + END],
+                            [(0x41, 0x00), (0x02, 0x00), (0x81, 0xC7),
+                             (0xFF, 0x00)])
+    assert (out[0][:4], var) == (KEYOFF_1, [])
+    # A KEYOFF without an instrument is not the mark.
+    bare_off = [patterns.GT_KEYOFF, 0, 0, 0]
+    out, var, _ = _variants([bare_off + NOTE_1 + END], DRUM_PROGRAM)
+    assert (out[0][:4], var) == (bare_off, [])
+
+
+@needs_corpus
+def test_a_looping_variant_jumps_inside_its_own_block():
+    # Instrument 2's shape (`11 / 11 / 81 at F#4 / jump 2`), at row 1.
+    prog = [(0x11, 0x00), (0x11, 0x00), (0x81, 0xB6), (0xFF, 0x02)]
+    out, var, entries = _variants([KEYOFF_1 + NOTE_1 + END], prog)
+    assert var == [(1, 5)]
+    assert entries[4:] == [(0xE9, 0x00), (0xE9, 0x00), (0x81, 0xB6),
+                           (0xFF, 0x06)]
+    assert out[0][:2] == [patterns.GT_FIRSTNOTE + 0x36, 2]
 
 
 @needs_corpus

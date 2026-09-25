@@ -238,3 +238,89 @@ def test_the_divider_lengthens_the_step_and_not_the_attack():
         sid, det = _det("Food_Feud")
         assert det.pitch_seq.frames_per_step == 4
         assert _block("Food_Feud", 2, 3) == four
+
+
+# --- the arpeggio carried in the original's phase (`frame_notes`) ------------
+
+# Food_Feud record 2's cycle from residue 0: the cell reads 1 1 0 0 0 0 1 1
+# on calls 0..7 (tests/test_pitch_seq_shapes.py), so frame j sounds the pair
+# step 124 where that reads 1 and the note where it reads 0.
+_FF_R0 = [124, 124, 0, 0, 0, 0, 124, 124]
+
+
+def test_frame_notes_follow_the_frame_each_call_falls_in():
+    """-S3, the record's own first frame (3 calls), a 2-frame attack.
+
+    Call `lead + c` is in frame `(lead + c) // 3`, so body entry c names
+    `_FF_R0[(1 + c // 3) % 8]`: frame 1 is 124, frames 2-5 the note, 6-9
+    124, 10 the note -- NOT the rotation, which opens on four frames of the
+    note (residue 1, where no Food_Feud attack lands)."""
+    got = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, [0x00, 124], 1, 3,
+                                         budget=200, frames_per_step=4,
+                                         frame_notes=_FF_R0)
+    assert got is not None
+    left, right = got
+    assert left[:3] == [0x11] * 3 and right[:3] == [0] * 3    # frame 0
+    assert left[3:9] == [0x41] * 6                            # the attack
+    body = right[3:-1]
+    assert body == [124] * 3 + [0] * 12 + [124] * 12 + [0] * 3
+    assert left[-1] == 0xFF and right[-1] == 1 + 3 + 6
+    # continuity: the entry after the last (c = 30, frame 11) names what the
+    # jump target (c = 6, frame 3) names
+    assert _FF_R0[11 % 8] == body[6] == 0
+    # the waveform column is the unphased block's, entry for entry
+    plain = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, [0x00, 124], 1, 3,
+                                           budget=200, frames_per_step=4)
+    assert left == plain[0] and right != plain[1]
+
+
+def test_frame_zero_is_the_pattern_note_whatever_the_phase_says():
+    """No first-frame entry (`+2` $00): entry 0 is frame 0 and stays the
+    note even where the residue's frame 0 reads the pair step."""
+    left, right = G._two_stage_pitch_seq_entries(0x00, 0x41, 2, [0x00, 124],
+                                                 1, 3, budget=200,
+                                                 frames_per_step=4,
+                                                 frame_notes=_FF_R0)
+    assert _FF_R0[0] == 124
+    assert right[:3] == [0, 0, 0]                            # frame 0
+    assert right[3:6] == [124] * 3                           # frame 1
+
+
+def test_frame_notes_of_the_wrong_length_fall_back_to_the_rotation():
+    """A cycle that is not one loop long cannot keep the jump continuous;
+    the block is then exactly the unphased one."""
+    plain = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, [0x00, 124], 1, 3,
+                                           budget=200, frames_per_step=4)
+    short = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, [0x00, 124], 1, 3,
+                                           budget=200, frames_per_step=4,
+                                           frame_notes=_FF_R0[:4])
+    assert short == plain
+
+
+def test_build_sng_hands_each_34_record_its_majority_residue(monkeypatch):
+    """Preset + pitch_seq on Food_Feud: records 2 and 3 (GT 3 and 4) are
+    phased at residues 0 and 6 (`pitch_seq_phases`), nothing else is asked,
+    and with pitch_seq off nothing is asked at all."""
+    if not CORPUS.is_dir():
+        return
+    import json
+    import fidelity
+    from h2g.convert import convert
+    presets = json.loads((pathlib.Path(__file__).resolve().parents[2]
+                          / "presets.json").read_text())
+    opts = dict(fidelity._preset_opts(presets, "Food_Feud.sid"))
+    asked = []
+    real = G.pitch_seq_frame_notes
+
+    def spy(sid, det, i, residue):
+        asked.append((i, residue))
+        return real(sid, det, i, residue)
+
+    monkeypatch.setattr(G, "pitch_seq_frame_notes", spy)
+    convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None,
+            **{**opts, "pitch_seq": True})
+    assert sorted(asked) == [(2, 0), (3, 6)]
+    asked.clear()
+    convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None,
+            **{**opts, "pitch_seq": False})
+    assert asked == []

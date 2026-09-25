@@ -962,3 +962,92 @@ def test_the_unticked_records_carry_the_residue_in_the_sng():
                                      (0xFF, 0x2E)]
     assert _wavetable_of(sng, 14) == [(0x41, 0x00), (0x41, 0x00), (0x41, 0x0C),
                                       (0xFF, 0x53)]
+
+
+# ---------------------------------------------------------------------------
+# A duty record's residue is the one that agrees on the most FRAMES.
+#
+# One wavetable per instrument has to stand for a residue that is per note,
+# and for a duty mask the mode is the wrong reduction: over an L-frame note
+# two residues sound the same wherever both their base frames fall past the
+# note's end. Chimera subtune 1's instrument 15 plays six-frame notes on
+# residues 0, 2, 4 and 6; the mode took 4 and put a base frame on offset 4
+# of every note, which the next note's first-frame lead then held a frame
+# more -- `bUUUbb` on 895 onsets in a 180 s trace, where the original
+# sounds `bUUUUU` on 361, `bUbUUU` on 269 and `bUUUbU` on 267.
+# `_duty_residue` takes 0: `bUUUUU` on 896, the up-fraction at offsets 4
+# and 5 from 0.43 to 0.99 (original 0.80 and 0.96), and subtune 1 voice 1's
+# frequency agreeing with the original's on 7987 frames of 8880 where it
+# agreed on 6841 (C:/t/chimera-gk-duty/profile_180.txt and agree.py,
+# measured at 924e4bd plus the working tree's uncommitted h2g/). A track's
+# last note is not counted: its span is the orderlist loop's, and a
+# placeholder span there once decided three Game_Killer records on one note
+# each -- a byte moved, the 180 s dump identical on both sides.
+#
+# Two populations keep the mode. The parity mask: a residue there is all or
+# nothing. And any record a toneporta row names: under `3 00` the packed
+# player rewrites the pattern's note on every call on which the wavetable
+# fires nothing (player.s `mt_wavedone` -> `mt_effect_3_found`), so a duty
+# held by a delay entry is base from its second call -- Chimera subtune 0's
+# `$0060` tie runs, where the original's octave sounds on every frame but
+# the row's and the counter's own base frame. That is the reversal deficit
+# (5944 -> 2853, subtune 0, the fidelity row's) and no residue reaches it:
+# letting the frame count choose for those records moved voice 1's
+# agreement 4406 -> 4143 frames, and firing a note on every
+# call instead of holding it 4406 -> 3651.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import _duty_residue, _majority_residues  # noqa: E402
+
+# Chimera instrument 15, one lap of subtune 1: {(residue, frames): notes}.
+CHIMERA_15 = {(0, 6): 120, (2, 6): 120, (4, 6): 180, (6, 6): 180}
+
+
+def test_a_duty_residue_is_counted_in_frames_not_notes():
+    """The mode of Chimera's instrument 15 is 4 (180 notes, the lower of a
+    tie with 6); counted in frames it is 0, which sounds the original's own
+    `bUUUUU` on residues 0 and 2 and misses one frame on each of 4 and 6."""
+    counts = [0] * 8
+    for (r, _), n in CHIMERA_15.items():
+        counts[r] += n
+    assert _majority_residues({15: counts}, 8) == {15: 4}
+    assert _duty_residue(CHIMERA_15, 0x07, BEQ, 4) == 0
+
+
+def test_a_frame_count_tie_keeps_the_mode():
+    """Six-frame notes all on residue 2: residues 0, 1 and 2 sound the same
+    `bUUUUU`, and the record keeps the residue it had -- which is what keeps
+    every duty file but these two byte for byte."""
+    assert _duty_residue({(2, 6): 10}, 0x07, BEQ, 2) == 2
+    assert _duty_residue({(2, 6): 10}, 0x07, BEQ, 1) == 1
+    assert _duty_residue({(5, 12): 3}, 0x07, BEQ, 5) == 5
+
+
+@needs_corpus
+def test_the_chimera_vote_counts_frames_except_under_a_tie():
+    """`fixed_arp_phases` on the file: instrument 15 takes the frame
+    count's 0; instruments 5 and 9, which toneporta rows name, keep the
+    mode (0 and 7) where the frame count would say 4 and 0."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    sid, det = _det(CORPUS / "Chimera.sid")
+    _, tracks, patterns = _converted("Chimera")
+    phases = fixed_arp_phases(sid, det, tracks, patterns)
+    assert (phases.get(15), phases.get(5), phases.get(9)) == (0, 0, 7), phases
+
+
+@needs_corpus
+def test_the_chimera_duty_reaches_the_sng():
+    """Read back by songview and played through the loop transcription:
+    instrument 15's first base frame after the attack is offset 8, so a
+    six-frame note sounds `buuuuu`."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sng, _, _ = _converted("Chimera")
+    ins = next(i for i in songview.parse_sng(sng).instruments
+               if i.number == 15)
+    wt = _wavetable_of(sng, 15)
+    left = [l for l, _ in wt]
+    right = [r for _, r in wt]
+    assert _profile(left, right, 0x0C, 12,
+                    start=ins.wave_ptr) == "buuuuuuubuuu"

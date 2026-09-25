@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.493 — 2026-09-25
+
+- Food_Feud pitch-seq phases walked from the player image; Sanxion past-table drum rows sound through a test-bit variant instrument; duty residue chosen by frame agreement (Chimera); triangle/pulse-phase docstrings retract the multispeed-core claim
+
 ## 0.5.492 — 2026-09-19
 
 - pitch-seq step divider, four-sided depth refusal, fixed sidplayfp power-on delay, Devils Galop approved build recovered

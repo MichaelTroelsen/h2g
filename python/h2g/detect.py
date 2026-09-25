@@ -4229,6 +4229,15 @@ def _find_pulse_lo(sid: SidFile, det: Detection) -> int:
 # at note start, so the sweep free-runs across notes. Goattracker restarts a
 # pulse program whenever its instrument is triggered (gplay.c:375-379), so the
 # free running is the one part of this that cannot be carried over.
+#
+# The DIRECTION and the delay COUNTER are not in the record: `dir,X` and
+# `counter,X` are indexed by the voice, the width by `record,Y`. So a voice
+# carries one direction across every sweeping record it plays, and the
+# image's bytes are the tune's opening state (Game_Killer $0C78 = 1: voice 0
+# opens descending). The block runs once per ENGINE TICK -- a pass of the
+# player's voice loop, which an outer gate at the play entry may skip -- and
+# never on a voice's fetch tick. goatwriter.PulsePhaseSim has the readings
+# and the measurements.
 PULSE_TRI_SHAPE = (
     "29 1F DE ?? ?? 10 ?? 9D ?? ?? AD ?? ?? 29 E0 8D ?? ?? "
     "BD ?? ?? D0 ?? AD ?? ?? 18 79 ?? ?? 48 B9 ?? ?? 69 00 29 0F 48 C9 ?? "

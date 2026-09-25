@@ -355,3 +355,189 @@ def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
     assert left == [0x11] * 8 and right == [124] * 4 + [0] * 4
     left, right = G._pitch_seq_entries(sid, det, 2, wave, 3)
     assert left == [0x11] * 24 and right == [0] * 12 + [124] * 12
+
+
+# --- the global phase, carried per instrument (goatwriter.pitch_seq_phases) --
+#
+# The bit-$10 cell is ONE counter stepped at the end of every play call and
+# never restarted at a note, so a note's arpeggio is fixed by its attack's
+# call number modulo the cycle. These pin the three readers the per-
+# instrument majority is built from -- the cycle, the row clock and the walk
+# -- and re-measure the first two against a trace of the original.
+
+import dataclasses                                             # noqa: E402
+
+import pytest                                                  # noqa: E402
+
+from h2g import goatwriter as G                                # noqa: E402
+
+PYTHON_ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(PYTHON_ROOT))
+import fidelity                                                # noqa: E402
+
+needs_siddump = pytest.mark.skipif(
+    not pathlib.Path(fidelity.SIDDUMP).exists(),
+    reason="no siddump on this machine (tools/siddump-rt, see its README)")
+
+# $93FB-$940E: the divider `$955E` reloads 3, the phase `$955D` reloads 1,
+# and both hold 1 in the image -- so the cell reads 1 on calls 0 and 1,
+# then 0 for four calls, then 1 for four, and repeats every 8.
+FOOD_FEUD_CYCLE = [1, 1, 0, 0, 0, 0, 1, 1]
+
+
+def _food_feud():
+    return _detect_tables(load_sid(str(CORPUS / "Food_Feud.sid")),
+                          lambda *a, **k: None)
+
+
+def _with_byte(sid, addr, value):
+    data = bytearray(sid.data)
+    data[sid.to_offset(addr)] = value
+    return dataclasses.replace(sid, data=bytes(data))
+
+
+@needs_corpus
+def test_food_feud_phase_cycle_is_simulated_from_the_image():
+    """The cycle is the two cells' image bytes run through their reloads."""
+    sid, det = _food_feud()
+    assert G._pitch_seq_phase_cell(sid) == 0x955D
+    assert (sid.data[sid.to_offset(0x955D)],
+            sid.data[sid.to_offset(0x955E)]) == (1, 1)
+    assert G.pitch_seq_phase_cycle(sid, det) == FOOD_FEUD_CYCLE
+    # it is the image that sets the phase: move either byte and the cycle
+    # turns by exactly that many calls
+    assert G.pitch_seq_phase_cycle(_with_byte(sid, 0x955E, 3), det) == \
+        FOOD_FEUD_CYCLE[-2:] + FOOD_FEUD_CYCLE[:-2]
+    assert G.pitch_seq_phase_cycle(_with_byte(sid, 0x955D, 0), det) == \
+        FOOD_FEUD_CYCLE[4:] + FOOD_FEUD_CYCLE[:4]
+    # a byte outside its reload's range is not the repeating cycle: declined
+    assert G.pitch_seq_phase_cycle(_with_byte(sid, 0x955E, 4), det) is None
+    assert G.pitch_seq_phase_cycle(_with_byte(sid, 0x955D, 2), det) is None
+
+
+@needs_corpus
+def test_food_feud_frame_notes_are_the_cycle_read_from_the_residue():
+    """Record 2's steps are (0, $7C): the cell's 1 is the pair's first byte."""
+    sid, det = _food_feud()
+    assert G._pitch_seq_steps(sid, det, 2)[0] == 0
+    step = G._pitch_seq_byte(G._pitch_seq_steps(sid, det, 2)[1])
+    assert step == 124
+    for r in range(8):
+        want = [step if FOOD_FEUD_CYCLE[(r + m) % 8] else 0 for m in range(8)]
+        assert G.pitch_seq_frame_notes(sid, det, 2, r) == want, r
+    # a record without bit $10 has no frame notes
+    assert G.pitch_seq_frame_notes(sid, det, 0, 0) is None
+
+
+def _fetch_calls_by_voice(sid, det, tracks, patterns):
+    out = []
+    for track in tracks:
+        rows = list(G._note_rows(track, patterns))
+        calls = G.pitch_seq_fetch_calls(sid, det, 0, rows[-1][0] + 1)
+        out.append([(calls[row], instr) for row, instr in rows])
+    return out
+
+
+def _food_feud_walk():
+    """(sid, det, tracks, patterns) as build_sng receives them, preset +
+    pitch_seq -- the walk reads the FINISHED orderlists."""
+    import json
+    import h2g.convert as cv
+    presets = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    opts = dict(fidelity._preset_opts(presets, "Food_Feud.sid"))
+    opts["pitch_seq"] = True
+    got = {}
+    real = cv.build_sng
+
+    def spy(sid, det, tracks, patterns, *a, **k):
+        got.update(sid=sid, det=det, tracks=[list(t) for t in tracks],
+                   patterns=[list(p) for p in patterns])
+        return real(sid, det, tracks, patterns, *a, **k)
+
+    cv.build_sng = spy
+    try:
+        cv.convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None, **opts)
+    finally:
+        cv.build_sng = real
+    return got["sid"], got["det"], got["tracks"], got["patterns"]
+
+
+@needs_corpus
+def test_food_feuds_rows_land_on_calls_0_3_and_6_and_the_majority_follows():
+    """Three 8/3-frame rows are one cycle, so every instrument's attacks
+    split near-evenly over residues 0, 3 and 6 -- the majority is right on
+    about a third of them, and it names a residue attacks actually land on
+    (v0.5.492, 247 s: GT 3 88/80/78 -> 0, GT 4 183/187/189 -> 6)."""
+    sid, det, tracks, patterns = _food_feud_walk()
+    ticks = G.pitch_seq_fetch_calls(sid, det, 0, 6)
+    assert ticks == [3, 6, 8, 11, 14, 16]
+    walk = _fetch_calls_by_voice(sid, det, tracks, patterns)
+    residues = {c % 8 for voice in walk for c, _ in voice}
+    assert residues == {0, 3, 6}
+    phases = G.pitch_seq_phases(sid, det, tracks, patterns)
+    assert phases[3] == 0 and phases[4] == 6
+    # GT 3 and 4 are records 2 and 3, the two `$34` records (lead 0)
+    for gt, rec in ((3, 2), (4, 3)):
+        assert sid.data[det.instr_start + rec * det.instr_stride + 7] == 0x34
+
+
+@needs_corpus
+def test_only_food_feud_asks_for_phases():
+    """`build_sng` walks the phase only where the player divides its step;
+    `PITCH_SEQ_NEW_SONG_CALLS` is Food_Feud's init and nobody else's."""
+    asked = set()
+    for p in sorted(CORPUS.glob("*.sid")):
+        seq = D._find_pitch_seq(load_sid(str(p)))
+        if seq is not None and seq.frames_per_step > 1:
+            asked.add(p.stem)
+    assert asked == {"Food_Feud"}
+
+
+@needs_corpus
+@needs_siddump
+def test_the_clock_and_the_cycle_are_re_measured_against_the_original():
+    """Two endpoints, from a siddump of the ORIGINAL (15 s):
+
+    * every attack of every voice falls on a call the walk names;
+    * on every in-note frame of the two `$34` instruments the pitch sits off
+      the attack's exactly where the cycle reads 1 (the attack frame itself
+      always sounds the pattern note) -- except on a fetch frame, below.
+    """
+    import math
+    sid, det, tracks, patterns = _food_feud_walk()
+    seconds = 15
+    cal, _ = fidelity.table_calibration(CORPUS / "Food_Feud.sid", {})
+    trace = fidelity.run_siddump(CORPUS / "Food_Feud.sid", seconds, 0,
+                                 fidelity.SIDDUMP, calibrate=cal)
+    n = seconds * 50
+    walk = _fetch_calls_by_voice(sid, det, tracks, patterns)
+    ticks = set(G.pitch_seq_fetch_calls(sid, det, 0, n))
+    checked, missed = 0, []
+    for v, voice in enumerate(trace):
+        named = {c: instr for c, instr in walk[v] if c < n}
+        # a subset, not equal: a tied row (no gate retrigger) is walked
+        # but siddump prints it as a tie, not an attack
+        assert set(voice.attack_frames) <= set(named), v
+        assert len(voice.attack_frames) > 0.9 * len(named), v
+        freq, cur, k = [], None, 0
+        ev = sorted(voice.freq_events)
+        for f in range(n):
+            while k < len(ev) and ev[k][0] <= f:
+                cur = ev[k][1]
+                k += 1
+            freq.append(cur)
+        rows = sorted(named)
+        for i, a in enumerate(rows[:-1]):
+            if named[a] not in (3, 4) or a not in voice.attack_frames:
+                continue
+            for f in range(a + 1, rows[i + 1]):
+                off = round(12 * math.log2(freq[f] / freq[a])) != 0
+                checked += 1
+                if off != (FOOD_FEUD_CYCLE[f % 8] == 1):
+                    missed.append((v, a, f))
+    # The fetch path skips the effect block ($9195 `JMP $93DA`), so a row
+    # with no note -- a rest inside the held note -- holds the pitch for
+    # its one fetch frame: voice 2's 302 in the note from 296. Every miss
+    # must be such a frame, and they are rare.
+    assert all(f in ticks for _, _, f in missed), missed
+    assert checked > 200 and len(missed) * 100 <= checked, (checked, missed)
