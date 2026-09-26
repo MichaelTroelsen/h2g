@@ -495,3 +495,65 @@ def test_every_cal_none_exit_declares_its_own_cause():
         f"expected at least two cause-declaring inherit() exits in "
         f"approvals.py, found {sites} -- either they were removed or this "
         f"check is now looking at the wrong function")
+
+
+# --- approvals.py wires fidelity's shared _preset_opts miss counter -------
+#
+# `assess()` calls `F._preset_opts(doc, name)` directly (the one real caller
+# besides fidelity.py itself), so `main`'s per-tune loop is exactly the
+# corpus loop `PRESET_OPTS_MISSES` was added for: a name keyed wrong in
+# `approved.json` (e.g. missing the .sid extension) used to silently hand
+# that tune the always-block-only options with, at most, one deduplicated
+# warning for the whole run.
+
+def test_approvals_py_resets_and_reports_the_shared_miss_counter_source():
+    """Structural check: `main`'s per-tune loop must reset the counter
+    before it starts and report it after. Exercising this behaviourally
+    would need a real corpus, approved.json and gt2reloc/siddump binaries
+    this test does not have -- see the behavioural tests below for the
+    counting mechanism itself, which is the part a mutation would break."""
+    src = (AP.ROOT / "python" / "approvals.py").read_text(encoding="utf-8")
+    assert "F.reset_preset_opts_misses()" in src
+    assert "F.report_preset_opts_misses(" in src
+
+
+def test_preset_opts_misses_count_and_names_match_a_known_removal():
+    """The behaviour approvals.py's `assess()` relies on through
+    `F._preset_opts`, exercised directly against `fidelity` (the same
+    module object `approvals.py`'s `import fidelity as F` resolves to): a
+    presets.json with a known set of names removed from `songs` reports a
+    miss count equal to the number removed, naming each one."""
+    import io
+    import warnings
+
+    import fidelity as F
+
+    doc = {"always": {}, "songs": {"Commando.sid": {}}}
+    removed = ["Kentilla.sid", "Warhawk.sid"]
+    F.reset_preset_opts_misses()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for name in ("Commando.sid", *removed):
+            F._preset_opts(doc, name)
+    assert F.PRESET_OPTS_MISSES == removed
+    buf = io.StringIO()
+    n = F.report_preset_opts_misses("approvals.py", file=buf)
+    assert n == len(removed)
+    for name in removed:
+        assert name in buf.getvalue()
+    F.reset_preset_opts_misses()
+
+
+def test_preset_opts_misses_is_zero_over_the_shipped_presets_songs():
+    import io
+
+    import fidelity as F
+
+    doc = json.loads((AP.ROOT / "presets.json").read_text(encoding="utf-8"))
+    F.reset_preset_opts_misses()
+    for name in doc.get("songs", {}):
+        F._preset_opts(doc, name)
+    buf = io.StringIO()
+    n = F.report_preset_opts_misses("approvals.py", file=buf)
+    assert n == 0
+    F.reset_preset_opts_misses()

@@ -1559,7 +1559,8 @@ GATE_BIT = 0x01
 
 
 def adsr_compare(orig: list[Voice], ours: list[Voice],
-                 nframes: int, lag: int = 0) -> dict:
+                 nframes: int, lag: int = 0,
+                 cut_release: bool = False) -> dict:
     """Per-frame, per-voice agreement of the envelope registers $D405/$D406.
 
     Built exactly like wave_compare: the ADSR pair is sparse, so each side's
@@ -1567,6 +1568,21 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     compared value for value. The whole 16-bit pair is compared -- attack,
     decay, sustain and release are one envelope and a conversion that gets
     three of the four right is not playing the same sound.
+
+    **`cut_release` (goatwriter's option, on in `presets.json`'s `always`
+    block -- every preset file carries it) zeroes $D406's low nibble on OUR
+    side on purpose.** Comparing the pair raw against an original whose
+    release nibble is whatever the instrument actually recorded would then
+    fail forever on that nibble alone, no matter how well the rest of the
+    envelope converts -- exactly what happened to Samantha Fox, Warhawk and
+    Kentilla after 922c782 corrected their AD and sustain nibbles and `adsr`
+    did not move (OPENED at 01389ae). When `cut_release` is set, the release
+    nibble is masked out of BOTH sides before the value-for-value compare, so
+    the column reads AD and sustain agreement only; `adsr_release_masked` in
+    the row says whether this run did that. This is a narrower blindness than
+    dropping gate-off frames outright (the proposal refuted below): AD and
+    sustain still get charged for every frame, and only the one nibble the
+    converter *never* attempts to reproduce is excused.
 
     Frames where *both* sides read $0000 are left out of the denominator, the
     same rule wave_compare uses for class 0: a voice no player has ever given
@@ -1633,8 +1649,14 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
     # Disagreeing frames where BOTH sides are gated off, and how many of those
     # differ in the release nibble. Counted rather than acted on -- see the
     # census above. The gate is $D404 bit 0, the bit gate_compare owns and
-    # every other column here ignores.
+    # every other column here ignores. Computed from the RAW (unmasked)
+    # nibble regardless of `cut_release`, so the census always tells the
+    # truth about what the two sides actually wrote, even on the frames the
+    # score itself no longer charges for that nibble.
     off = off_audible = 0
+    # Under cut_release, our side's release nibble is always $0 by design --
+    # excluding it from the compare, not from the trace.
+    cmp_mask = 0xFFF0 if cut_release else 0xFFFF
     per_voice = []
     for a, b in zip(orig, ours):
         ta, tb = _aligned(register_timeline(a.adsr_events, nframes),
@@ -1646,7 +1668,7 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
             if x == 0 and y == 0:
                 continue
             vt += 1
-            if x == y:
+            if (x & cmp_mask) == (y & cmp_mask):
                 va += 1
             elif not ((ga or 0) & GATE_BIT) and not ((gb or 0) & GATE_BIT):
                 off += 1
@@ -1661,6 +1683,7 @@ def adsr_compare(orig: list[Voice], ours: list[Voice],
         "adsr_voices": per_voice,
         "adsr_gated_off": off,
         "adsr_gated_off_audible": off_audible,
+        "adsr_release_masked": cut_release,
     }
 
 
@@ -2467,6 +2490,80 @@ def noise_edge_runs(voices: list[Voice], nframes: int) -> dict:
         if cut:
             runs += 1
             frames += length
+    return {"runs": runs, "frames": frames}
+
+
+def noise_gate_off_runs(voices: list[Voice], nframes: int) -> dict:
+    """Noise the player SELECTED under a closed gate, which `noise_runs` cannot see.
+
+    `noise_runs` reads NOISE AND GATE (the v0.5.483 rule, for Confuzion's
+    latched select), so a voice that switches to noise only once its gate
+    has dropped contributes no run at all, and `noise_run_agreement` reads
+    `nrun` `-` exactly as it does for a file with no noise. That is a third
+    cause of the `-`, beside "no noise" and "the window cut it"
+    (`noise_edge_runs`), and this records it so the row can say which.
+
+    **What the frames show** (OPENED at 01389ae; HISTORICAL, v0.5.492 tree
+    at HEAD 924e4bd plus uncommitted edits, `-t 180`, subtune 0, original at
+    `-m1`; `C:/t/nrun-gate-off-noise/frames_probe.json` and
+    `ours_probe.json`): Kentilla, Proteus and Warhawk sound EVERY
+    noise-select frame of the original under a closed gate -- 430, 1647 and
+    1468 frames in 196, 1441 and 1285 runs, 0 of them gate-AND'd. The shape
+    is one drum: the note gates on a pulse or triangle (`$41`, `$15`) for one
+    frame (Proteus 1235 of 1441 runs, Warhawk 1102 of 1285, Kentilla 153 of
+    196) or two (the rest bar Kentilla's 3 entered with the gate already
+    down), the next frame writes `$80` -- noise, gate off, on the very frame
+    the gate drops -- for 1-2 frames (Proteus, Warhawk) or 2-3 (Kentilla),
+    then `$40`/`$14`. The envelope has just peaked (attack 0) and is releasing, so
+    the noise is the audible body of the hit, not silence. Ours sounds the
+    same hits with the gate OPEN (`$81`), under the same ADSR keys and in
+    near-equal numbers (Proteus voice index 1: 886 gate-off runs original,
+    885 gated ours), which is why the row reads `ours_only` 4/12/11.
+
+    **Why this is a documented blindness and not a scored class.** A gate-off
+    noise run's length is in general a fact about the REST, not the
+    instrument: Confuzion's lead keeps noise selected under a closed gate
+    from each note's release to the next attack, and scoring that stretch is
+    exactly the mistake the gate-AND removed. Only the subclass counted here
+    -- runs whose noise select was *entered* with the gate closed -- is a
+    timbre, and pairing it with ours would pair a gate-off run against a
+    gated one, which is `gate`'s question, not a length. It also sits at a
+    modal 1-2 frames on all three files, the regime `nrun` is already
+    structurally immune to a one-frame loss in.
+
+    Hence the ENTERED rule: a gate-off noise run counts only when the frame
+    before it did not select noise (or it starts at frame 0). A run that
+    continues a gated noise run (`$81` -> `$80`, Confuzion's release) is the
+    tail of a note `noise_runs` already scored, and is not counted again.
+
+    **The three files are the visible end of a corpus-wide blindness, not
+    the population.** Same census over all 95 originals (resolved subtune,
+    `-m1`, `-t 180`, `C:/t/nrun-gate-off-noise/corpus_probe.json`): 76 enter
+    noise under a closed gate somewhere, 73 of them beside gated noise
+    `nrun` does score, and in 27 the entered gate-off runs outnumber the
+    gated ones (Commando 1418 against 166). Only the three above have NO
+    gated noise, so only they read `-`; on the other 73 `nrun` is a score
+    over the gated fraction alone, and these keys are what says how large
+    the unscored remainder is. Action_Biker's 3 entered runs covering 17781
+    frames are the rest-length case the paragraph above refuses to score.
+
+    Returns `{"runs": n, "frames": f}` over all three voices.
+    """
+    runs = frames = 0
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        f = 0
+        while f < nframes:
+            if not wf[f] & WF_NOISE or wf[f] & WF_GATE:
+                f += 1
+                continue
+            entered = f == 0 or not wf[f - 1] & WF_NOISE
+            start = f
+            while f < nframes and wf[f] & WF_NOISE and not wf[f] & WF_GATE:
+                f += 1
+            if entered:
+                runs += 1
+                frames += f - start
     return {"runs": runs, "frames": frames}
 
 
@@ -3538,12 +3635,17 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     is for. This answers the narrower question the count cannot: given that we
     sound it, do we sound it for as long?
 
-    **A `-` here has two causes and the row names which.** `noise_runs` drops
-    a run touching the window edge, so a side whose ONLY noise is runs the
-    window cut contributes no instrument and the column declines. The
+    **A `-` here has three causes and the row names which.** `noise_runs`
+    drops a run touching the window edge, so a side whose ONLY noise is runs
+    the window cut contributes no instrument and the column declines. The
     `noise_run_*_edge_runs` / `_edge_frames` keys record what was dropped per
     side; `noise_run_instruments` 0 beside `noise_run_orig_edge_runs` > 0 is
     "the window could not measure it", not "no noise" (see `noise_edge_runs`).
+    The third: a side whose noise is all selected under a CLOSED gate has no
+    noise-AND-gate run to key at all -- `noise_run_*_gate_off_runs` /
+    `_gate_off_frames` record it per side, and `noise_run_orig_gate_off_runs`
+    > 0 beside 0 instruments is "noise this column does not score", not "no
+    noise" (Kentilla, Proteus, Warhawk -- see `noise_gate_off_runs`).
 
     **Blind to a loss the MODAL comparison cannot move.** This asks only
     whether the single most common run length agrees, the same reduction
@@ -3614,6 +3716,9 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     # 0 instruments with edge runs on the original side is a file whose noise
     # the window could not measure, not a file without noise.
     ea, eb = noise_edge_runs(orig, nframes), noise_edge_runs(ours, nframes)
+    # ...and what the noise-AND-gate predicate never saw: noise selected
+    # under a closed gate, the third cause of a `-`.
+    ga, gb = noise_gate_off_runs(orig, nframes), noise_gate_off_runs(ours, nframes)
     return {
         "noise_run_instruments": len(shared),
         "noise_run_matched": matched,
@@ -3624,6 +3729,10 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
         "noise_run_orig_edge_frames": ea["frames"],
         "noise_run_ours_edge_runs": eb["runs"],
         "noise_run_ours_edge_frames": eb["frames"],
+        "noise_run_orig_gate_off_runs": ga["runs"],
+        "noise_run_orig_gate_off_frames": ga["frames"],
+        "noise_run_ours_gate_off_runs": gb["runs"],
+        "noise_run_ours_gate_off_frames": gb["frames"],
     }
 
 
@@ -4006,6 +4115,16 @@ def vice_register_compare(orig_samples: list, our_samples: list,
                            if o["cutoff_travel"] else None)
     out["vice_frames"] = nframes
     out["vice_reduce"] = mode
+
+    # --- octave_split_frames: a sub-frame check, not a FrameCell reduction --
+    # This one reads the raw per-rasterline samples directly rather than the
+    # `frame_cells` histograms above -- any frame-level reduction collapses
+    # the very split it exists to see. See its Dimension entry for why.
+    o_split, o_split_voices = vicetrace.octave_split_frames(orig_samples)
+    u_split, u_split_voices = vicetrace.octave_split_frames(our_samples)
+    out["orig_octave_split_frames"] = o_split
+    out["our_octave_split_frames"] = u_split
+    out["octave_split_voices"] = {"orig": o_split_voices, "our": u_split_voices}
     return out
 
 
@@ -4125,9 +4244,7 @@ def vice_freq_repair(raw: list[int], attacks: list[int],
     stats = {"repaired": 0, "by_oracle": 0, "ambiguous": 0, "unanchored": 0}
     atk = sorted(set(attacks))
     lines = vicetrace.PAL_LINES_PER_FRAME
-
-    def corrupt(v: int) -> bool:
-        return (v >> 8) == 0xFF and bool(v & 0x80)
+    corrupt = vicetrace.freq_is_corrupt
 
     if oracle:
         raw = list(raw)
@@ -4698,11 +4815,30 @@ DIMENSIONS = (
               "per-frame agreement of the waveform-select nibble; a waveform "
               "we hold latched under a closed gate after its release has run "
               "out, where the original selects none, is not charged "
-              "(`wave_tail_frames`)"),
+              "(`wave_tail_frames`, v0.5.480/ccd06ad). A `wave` figure either "
+              "side of v0.5.481 is not comparable: the release-tail exclusion "
+              "moves the score on byte-identical output, 1-9pp on 14 corpus "
+              "files (ACE_II, Arcade_Classics, Auf_Wiedersehen_Monty, "
+              "BMX_Kidz, Bangkok_Knights, IK_plus, I_Ball, "
+              "Las_Vegas_Video_Poker, Shockway_Rider, Thundercats, "
+              "Skate_or_Die_intro, Mega_Apocalypse, Pandora, Star_Paws) "
+              "between v0.5.475 and v0.5.481, because it changes what counts "
+              "as a disagreeing frame, not what the converter emits"),
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
-              "per-frame agreement of the envelope pair"),
+              "per-frame agreement of the envelope pair's attack, decay and "
+              "sustain nibbles. **Blind to the release nibble on every row "
+              "converted with `cut_release`** (on in `presets.json`'s "
+              "`always` block, so every preset file): that option zeroes "
+              "$D406's low nibble on our side on purpose, so `adsr_compare` "
+              "masks the release nibble out of the compare rather than "
+              "scoring a disagreement it can never close (`adsr_release_masked` "
+              "in the row). Under `--vice`: VICE's dump sign-extends this "
+              "16-bit field's low byte into the high one (see "
+              "`vicetrace.freq_is_corrupt`), and unlike `$D400/$D401` nothing "
+              "here repairs it -- a value of `$80` or more reads back as "
+              "`$FFxx`"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
     # read. That exclusion is right for a timbre column and it made a whole
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
@@ -4814,7 +4950,10 @@ DIMENSIONS = (
               "STEP function of the rate on short notes, not proportional, "
               "and at one sample a frame blind to every turning point "
               "between two of a multiplier-m conversion's m writes: "
-              "`--vice` reads it per play call"),
+              "`--vice` reads it per play call. VICE's dump sign-extends "
+              "this 16-bit field (`vicetrace.freq_is_corrupt`); unlike "
+              "`adsr`/`pul`/`cut` it IS repaired here against siddump's own "
+              "reading before use (`fidelity.vice_freq_repair`)"),
     # The other half of `vib`, and the half a count is structurally incapable
     # of answering -- the same pairing as `cut` beside `filt` and `bend`
     # beside `slides`, and the last mechanism here that had only a count.
@@ -4876,7 +5015,34 @@ DIMENSIONS = (
               "behind either mark. "
               "Sampled once a frame like `vib`, so a swing that turns "
               "between two of a multiplier-m conversion's writes is "
-              "understated; `--vice` reads it per play call"),
+              "understated; `--vice` reads it per play call. Same "
+              "sign-extension caveat as `vib`: repaired against siddump "
+              "before use, not read raw off the dump"),
+    # A sub-frame check neither `vib` nor `depth` can make: both reduce a
+    # frame to ONE representative frequency before comparing anything, so a
+    # per-CALL arpeggio toggle that a fast (`-S2` or quicker) conversion
+    # writes -- an octave flip landing and reversing inside one frame -- is
+    # invisible to them however finely `--vice` samples, because the
+    # reduction itself throws the second value away. This reads the raw
+    # per-rasterline trace directly (`vicetrace.octave_split_frames`), so it
+    # sees the split `depth`'s median-of-instruments and `vib`'s reversal
+    # count both average over.
+    Dimension("octave_split_frames", "arposc", ("$D400/$D401",), "count",
+              "whole frames whose FREQ low byte holds two values an OCTAVE "
+              "apart, split near the half-frame line count (>= 120 of 312 "
+              "lines the minority) -- the shape a per-CALL arpeggio toggle "
+              "leaves under a fast conversion. **--vice ONLY**: siddump's "
+              "one-sample-a-frame trace, and every frame-level `--vice` "
+              "reduction here, collapses the frame to one value before this "
+              "could ever see the split, so the column reads 0 on a plain "
+              "run -- 0 here means \"not traced this way\", not \"absent\". "
+              "Reads the FREQ LOW byte only, which VICE's dump "
+              "sign-extension defect never touches (it forces the HIGH byte "
+              "to `$FF`, never the low byte -- see `vicetrace.freq_is_corrupt`), "
+              "so unlike `vib`/`depth` this does NOT need "
+              "`vice_freq_repair`; `tests/test_vicetrace.py` pins that a "
+              "corrupt-flagged frame classifies identically to the clean one",
+              source="our_octave_split_frames"),
     # See noise_run_agreement's own docstring for the measured population
     # behind the claims in `of` below (Zoolook's 100%-while-losing-199-
     # frames case, the 28-of-28 / 0-of-76 hold-minus-1 split, and the
@@ -4914,6 +5080,23 @@ DIMENSIONS = (
               "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180. Declines (`-`) "
               "a file whose only noise is runs the window cut, and records "
               "the cut runs and frames per side so the `-` says why. "
+              "**Also blind to noise selected under a CLOSED gate** -- a "
+              "third cause of `-`, recorded per side as "
+              "`noise_run_*_gate_off_runs` / `_gate_off_frames` (runs whose "
+              "noise select was ENTERED with the gate down; a gated run's "
+              "latched tail is not counted): Kentilla, Proteus and Warhawk "
+              "gate each drum for one or two frames and select `$80` on the "
+              "gate-drop frame, so all 430/1647/1468 of their original "
+              "noise frames sound under a releasing envelope and 0 are "
+              "gate-AND'd, while ours sounds the same hits gated "
+              "(`ours_only` 4/12/11) -- HISTORICAL, v0.5.492 + uncommitted "
+              "edits, HEAD 924e4bd, -t 180. Left unscored on purpose: a "
+              "gate-off run's length is in general the rest's, and pairing "
+              "it with a gated run is `gate`'s question. Those three are "
+              "only the files with NO gated noise: 76 of 95 originals enter "
+              "noise under a closed gate somewhere, so on the other 73 `nrun` "
+              "scores the gated fraction alone and the gate-off keys size "
+              "the rest. "
               "**Separately: gate-AND'd, two consecutive noise notes do "
               "NOT concatenate into one run** -- the gate drops between "
               "untied notes even when both select noise, so a run's length "
@@ -4982,7 +5165,8 @@ DIMENSIONS = (
     Dimension("release_tail_agreement", "tail", ("$D405/$D406",), "fraction",
               "instruments whose notes end with the original's release"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
-              "frames on which the duty cycle moved",
+              "frames on which the duty cycle moved. Under `--vice`: the "
+              "same unrepaired sign-extension as `adsr` -- see its entry",
               source="our_pulse_changes"),
     # `pspan` is to `pul` what `cut` is to `filt`, and for the identical
     # reason. A count says whether the duty cycle moves at all; it cannot say
@@ -4992,7 +5176,9 @@ DIMENSIONS = (
     # and `pul` went from 3/236 to 338/236 on 5_Title_Tunes for a sweep that
     # covers slightly *less* of the band than the original's.
     Dimension("pulse_span", "pspan", ("$D402/$D403",), "ratio",
-              "how wide a band the duty cycle covers, over the original's"),
+              "how wide a band the duty cycle covers, over the original's. "
+              "Under `--vice`: the same unrepaired sign-extension as "
+              "`adsr` -- see its entry"),
     # `pphase` is to `pspan` what `pspan` is to `pul`, one question further
     # out: a count says whether the duty cycle moves, a span says how far it
     # gets, and NEITHER says where in the band a note opens. The player's
@@ -5016,7 +5202,9 @@ DIMENSIONS = (
               "frames with a voice routed into the filter and a passband "
               "selected", source="our_filtered_frames"),
     Dimension("cutoff_sweep", "cut", ("$D415/$D416",), "ratio",
-              "how far the cutoff travels, over the original's travel"),
+              "how far the cutoff travels, over the original's travel. "
+              "Under `--vice`: the same unrepaired sign-extension as "
+              "`adsr` -- see its entry"),
     # **The first column here that measures *when* rather than *what*.** Every
     # dimension above compares content at aligned frames; none of them can see
     # two copies of the right music parting company, and this report said so
@@ -5471,6 +5659,50 @@ def length_rule_failures(rows: list[dict]) -> list[dict]:
             and abs(r["length_delta"]) > LENGTH_TOLERANCE]
 
 
+# `_preset_opts`'s "name not a key in a populated `songs` block" case used to
+# be visible only as a `warnings.warn` per call site -- and Python's default
+# warning filter shows each (message, category, module, lineno) combination
+# ONCE per process, so a corpus loop calling `_preset_opts` once per file
+# prints the SAME single warning no matter how many files miss, and a probe
+# keying every corpus name wrongly (a bare stem instead of `name.sid`) sees
+# one warning where it should see one per file. `PRESET_OPTS_MISSES`
+# accumulates every miss, independent of the warnings filter, so a caller can
+# report a TOTAL with the offending names. It is a plain module-level list
+# (not deduplicated -- a name that misses twice in one run, e.g. from two
+# separate corpus loops, is counted twice, because each call really did
+# return the wrong options that time) that `reset_preset_opts_misses` clears
+# and `report_preset_opts_misses` reads. Every corpus-loop caller
+# (fidelity.py's own `main`, presets.py's `--fidelity` search, approvals.py's
+# `main`) resets it before its sweep and reports it after, so a stale count
+# from an earlier sweep in the same process never leaks into the next one's
+# total.
+PRESET_OPTS_MISSES: list[str] = []
+
+
+def reset_preset_opts_misses() -> None:
+    """Clear `PRESET_OPTS_MISSES` before a corpus sweep begins."""
+    PRESET_OPTS_MISSES.clear()
+
+
+def report_preset_opts_misses(label: str, file=None) -> int:
+    """Print the accumulated `_preset_opts` misses as one TOTAL with names.
+
+    Returns the count, so a caller can also assert/exit on it if it wants to.
+    Call after a corpus sweep, once per sweep -- calling it mid-sweep just
+    reports a partial total, which is fine but not what the label implies.
+    """
+    if file is None:
+        file = sys.stderr
+    n = len(PRESET_OPTS_MISSES)
+    if n:
+        print(f"{label}: {n} _preset_opts miss(es) -- name(s) not a key in "
+              f"presets.json's `songs` block: {', '.join(PRESET_OPTS_MISSES)}",
+              file=file)
+    else:
+        print(f"{label}: 0 _preset_opts misses", file=file)
+    return n
+
+
 def _preset_opts(doc: dict, name: str) -> dict:
     songs = doc.get("songs") or {}
     if songs and name not in songs:
@@ -5495,6 +5727,7 @@ def _preset_opts(doc: dict, name: str) -> dict:
             "overrides. presets.json keys songs WITH the .sid extension; "
             "check the name isn't a bare stem.",
             stacklevel=2)
+        PRESET_OPTS_MISSES.append(name)
     entry = songs.get(name, {})
     always = doc.get("always", {})
     opts: dict = {
@@ -5597,7 +5830,36 @@ def git_label(root: Path | None = None) -> str | None:
         return None
 
 
-def resolve_subtune(sid: Path, requested) -> int:
+def _preset_traced_subtune(doc: dict, name: str) -> tuple[int, int] | None:
+    """The song's pinned `(original, ours)` subtune pair, or None.
+
+    presets.json's per-song `traced_subtune` key, written by presets.py from
+    its hand-recorded `TRACED_SUBTUNES` table. It exists for files whose
+    subtune correspondence is known -- read off `--diagnose`'s matrix and,
+    where there is one, the init routine (`SUBTUNE_REMAP`) -- and which
+    neither the PSID `startSong` nor the `--search-subtunes` window reaches:
+    Commodore_64_Music_Examples (the original's s1 is our o0, and `startSong`
+    names s0, a different piece) and Dragons_Lair_Part_II (init $AF00 maps
+    PSID 0 to song 9, so s0 is our o9, eight outside the window).
+
+    A MALFORMED PIN RAISES rather than falling back to None: a pin that
+    silently reads as absent scores the file at the wrong pair again, which is
+    the defect it exists to remove, and prints a plausible number doing it.
+    """
+    entry = (doc.get("songs") or {}).get(name, {})
+    raw = entry.get("traced_subtune")
+    if raw is None:
+        return None
+    if (not isinstance(raw, (list, tuple)) or len(raw) != 2
+            or not all(isinstance(x, int) and not isinstance(x, bool)
+                       and x >= 0 for x in raw)):
+        raise ValueError(f"{name}: presets.json traced_subtune must be "
+                         f"[original, ours], two ints >= 0, not {raw!r}")
+    return int(raw[0]), int(raw[1])
+
+
+def resolve_subtune(sid: Path, requested,
+                    pinned: tuple[int, int] | None = None) -> int:
     """Which subtune of the original to trace.
 
     `requested` is an int to force one, or "auto" (the default) to take the
@@ -5607,15 +5869,37 @@ def resolve_subtune(sid: Path, requested) -> int:
     Samantha Fox Strip Poker's subtune 0 is a one-note stub against which a
     correct conversion scored 5%, and at its real startSong it scores 89%.
 
+    `pinned` is the song's `(original, ours)` pair from presets.json
+    (`_preset_traced_subtune`); under "auto" it wins over `startSong`. An
+    explicit `requested` still wins over both -- `-a N` means "trace N on
+    both sides", as it always has. See `resolve_ours_subtune` for our side.
+
     Falls back to 0 for anything unreadable -- a header this harness cannot
     parse is not a reason to skip the file.
     """
     if requested != "auto":
         return int(requested)
+    if pinned is not None:
+        return pinned[0]
     try:
         return max(0, load_sid(str(sid)).start_song - 1)
     except Exception:  # noqa: BLE001 -- an unparseable header is not fatal here
         return 0
+
+
+def resolve_ours_subtune(orig_sub: int, requested,
+                         pinned: tuple[int, int] | None = None) -> int:
+    """Which subtune of OUR packed conversion to trace against `orig_sub`.
+
+    The identity, exactly as before this existed, unless the song carries a
+    pin and the subtune was not forced: then the pin's second half. Kept a
+    separate function from `resolve_subtune` so every caller that traces the
+    packed side has to name which index it means -- the defect this closes
+    was one variable, `sub`, serving both sides of a pair that differ.
+    """
+    if requested == "auto" and pinned is not None:
+        return pinned[1]
+    return orig_sub
 
 
 def _drift_gate_skip_declined(sid: Path, subtune: int) -> bool:
@@ -5648,7 +5932,8 @@ def _drift_gate_skip_declined(sid: Path, subtune: int) -> bool:
 
 
 def measure(sid: Path, workdir: Path, opts: dict, args,
-            multiplier: int = 1) -> dict:
+            multiplier: int = 1,
+            pinned: tuple[int, int] | None = None) -> dict:
     """One file, end to end, plus the record of which dimensions it compared.
 
     The dimension list is stamped here rather than inside `_measure` because
@@ -5657,27 +5942,39 @@ def measure(sid: Path, workdir: Path, opts: dict, args,
     whose voices never select a waveform -- and a row that claims a dimension
     it did not compute is exactly the misreading this is here to stop.
     """
-    row = _measure(sid, workdir, opts, args, multiplier)
+    row = _measure(sid, workdir, opts, args, multiplier, pinned)
     row["dimensions"] = dimensions_present(row)
     return row
 
 
 def _measure(sid: Path, workdir: Path, opts: dict, args,
-             multiplier: int = 1) -> dict:
+             multiplier: int = 1,
+             pinned: tuple[int, int] | None = None) -> dict:
     """One file, end to end: convert -> pack -> trace both -> compare.
 
     `multiplier` is the song's gt2reloc -S value, a property of its player
     rather than a conversion option, so it rides beside `opts` instead of in
     it -- convert() takes no such keyword. It reaches the packing step only;
     siddump cannot honour it (see pack_sid).
+
+    `pinned` is the song's presets.json `traced_subtune` pair
+    (`_preset_traced_subtune`). `sub` is the ORIGINAL's subtune and `ours` is
+    the packed side's; every trace below names one or the other. Unpinned,
+    `ours == sub` and nothing differs from before the pin existed.
     """
-    sub = resolve_subtune(sid, args.subtune)
+    sub = resolve_subtune(sid, args.subtune, pinned)
+    ours = resolve_ours_subtune(sub, args.subtune, pinned)
     # Every row carries the settings it was taken at, so a saved run is
     # self-describing: --baseline refuses to compare two runs traced at
     # different seconds or subtunes, and it can only do that if the file says.
     row: dict = {"file": sid.name, "options": opts, "multiplier": multiplier,
                  "subtune": sub, "seconds": args.seconds,
                  "version": __version__, "label": getattr(args, "label", None)}
+    if pinned is not None and args.subtune == "auto":
+        # Only on a pinned row, so every other row's JSON is byte-for-byte
+        # what it was. `traced_pair` and `pin_mismatches` read these.
+        row["subtune_pinned"] = True
+        row["ours_subtune"] = ours
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:  # noqa: BLE001 -- a file that will not convert is a result
@@ -5718,7 +6015,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         exp = None
     if exp and (exp["stub"] or exp["lost"]):
         row["export"] = exp
-        if sub in exp["stub"]:
+        # `stub` names OUR subtunes gt2reloc empties, so it is asked of ours.
+        if ours in exp["stub"]:
             row["traced_subtune_dropped"] = True
 
     packed = pack_sid(sng, workdir, args.gt2reloc, multiplier)
@@ -5757,7 +6055,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         # the cost falls where the finding is.
         row.update(length_compare(
             a,
-            run_siddump(packed, seconds, sub, args.siddump,
+            run_siddump(packed, seconds, ours, args.siddump,
                         calls=getattr(args, "calls_per_frame", None) or multiplier),
             seconds))
         row["original_ends"] = seconds = ended
@@ -5798,7 +6096,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             else:
                 row.update(length_compare(
                     a_long,
-                    run_siddump(packed, long_seconds, sub, args.siddump,
+                    run_siddump(packed, long_seconds, ours, args.siddump,
                                 calls=getattr(args, "calls_per_frame", None)
                                 or multiplier),
                     long_seconds))
@@ -5889,11 +6187,11 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
     # sampling. Only the sequence dimensions survive it -- see below.
     equal = bool(getattr(args, "equal_calls", False)) and multiplier > 1
     if equal:
-        b = run_siddump(packed, seconds * multiplier, sub, args.siddump,
+        b = run_siddump(packed, seconds * multiplier, ours, args.siddump,
                         calls=1)
         row["equal_calls"] = multiplier
     else:
-        b = run_siddump(packed, seconds, sub, args.siddump,
+        b = run_siddump(packed, seconds, ours, args.siddump,
                         calls=getattr(args, "calls_per_frame", None) or multiplier)
     if multiplier > 1:
         calls = getattr(args, "calls_per_frame", None) or multiplier
@@ -5905,7 +6203,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             # lets the summary say which rate a file actually plays right at
             # instead of asserting that the packed one must be it.
             row["melody_at_1x"] = compare(a, run_siddump(
-                packed, seconds, sub, args.siddump, calls=1))["melody"]
+                packed, seconds, ours, args.siddump, calls=1))["melody"]
     row["status"] = "measured"
     row.update(compare(a, b))
     if row.get("equal_calls"):
@@ -5917,7 +6215,14 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         for k in ("bend_ratio", "slides_ratio", "our_slides", "orig_slides"):
             row.pop(k, None)
     best_dump = b
-    if args.search_subtunes > 1:
+    if row.get("subtune_pinned"):
+        # A pinned pair is a measured correspondence, not a starting point: a
+        # window searched around it could only trade it for whichever
+        # neighbour scores higher, which is the shift-chosen-to-maximise-
+        # agreement hazard. Recorded as the match so every consumer of
+        # `matched_subtune` (vice, sound, listen.py) traces the pinned side.
+        row["matched_subtune"] = ours
+    elif args.search_subtunes > 1:
         # Our subtune numbering does not have to line up with the original's:
         # a subtune whose orderlist exceeds Goattracker's limit costs itself,
         # and every later one shifts down. Trying each of ours against the
@@ -5958,7 +6263,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                exe=args.vice_exe,
                                out=workdir / "vice_orig.txt")
             vu = vicetrace.run(packed, seconds,
-                               row.get("matched_subtune", sub),
+                               row.get("matched_subtune", ours),
                                exe=args.vice_exe,
                                out=workdir / "vice_ours.txt")
             if vo and vu:
@@ -5990,7 +6295,8 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             if raw != lag:
                 row["startup_lag_raw"] = raw
             row.update(wave_compare(a, best_dump, nframes=nframes, lag=lag))
-            row.update(adsr_compare(a, best_dump, nframes, lag=lag))
+            row.update(adsr_compare(a, best_dump, nframes, lag=lag,
+                                     cut_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
             row.update(pulse_compare(a, best_dump, nframes))
             row.update(noise_run_agreement(a, best_dump, nframes))
@@ -6038,7 +6344,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                 # skip correction -- see _drift_gate_skip_declined. Computed
                 # only where a drift figure was actually reported, since it
                 # is only meaningful next to one.
-                row["drift_gate_skip"] = _drift_gate_skip_declined(sid, sub)
+                # `find_song_speeds` is indexed by the converter's songs, i.e.
+                # by OUR subtune numbering -- so it is asked of `ours`.
+                row["drift_gate_skip"] = _drift_gate_skip_declined(sid, ours)
             if getattr(args, "census", None):
                 # The same two traces and the same modal reduction the column
                 # just scored -- a second pipeline would risk resolving a
@@ -6102,7 +6410,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
         prior = 0.02 * row.get("startup_lag", 0)
         row.update(sound.compare_sids(
             local_orig, packed, seconds, sub,
-            row.get("matched_subtune", sub), prior_s=prior))
+            row.get("matched_subtune", ours), prior_s=prior))
     if args.register:
         row["register"] = sidm2_register(local_orig, packed, seconds)
     if args.audio:
@@ -6559,8 +6867,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | arposc | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -6588,6 +6896,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('tie_ratio') is None else f'{r["tie_ratio"]:.2f}x'} | "
             f"{'-' if r.get('reversal_ratio') is None else f'{r["reversal_ratio"]:.2f}x'} | "
             f"{_fmt_depth(r)} | "
+            f"{_one_sided(r, 'octave_split_frames')} | "
             f"{_fmt_drift(r)} | "
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "
@@ -6653,6 +6962,34 @@ def report(rows: list[dict], args) -> str:
                         f"{r['noise_run_ours_edge_runs']} edge run(s), "
                         f"{r['noise_run_ours_edge_frames']} frame(s))"
                         for r in sorted(edge_declined,
+                                        key=lambda r: r["file"].lower())))
+            # The third cause: an original that selects noise only under a
+            # closed gate has no noise-AND-gate run to key, cut or uncut.
+            # A file can sit in both lists; each names its own cause.
+            gate_off_declined = [
+                r for r in waved
+                if not r.get("noise_run_instruments")
+                and r.get("noise_run_orig_gate_off_runs")
+                and not r.get("noise_run_orig_only")]
+            if gate_off_declined:
+                out.append(
+                    f"  - `nrun` declined **{len(gate_off_declined)}** "
+                    "file(s) whose original selects noise ONLY under a "
+                    "closed gate, which the noise-AND-gate predicate does not "
+                    "score -- a documented blindness, not \"no noise\" (see "
+                    "`noise_gate_off_runs`): "
+                    + "; ".join(
+                        f"{r['file']} (original "
+                        f"{r['noise_run_orig_gate_off_runs']} gate-off run(s), "
+                        f"{r.get('noise_run_orig_gate_off_frames', 0)} of "
+                        f"{r.get('orig_noise_frames', 0)} noise frames; ours "
+                        f"{r.get('noise_run_ours_only', 0)} gated "
+                        f"instrument(s), "
+                        f"{r.get('noise_run_ours_gate_off_runs', 0)} gate-off "
+                        f"run(s), "
+                        f"{r.get('noise_run_ours_gate_off_frames', 0)} "
+                        f"frame(s))"
+                        for r in sorted(gate_off_declined,
                                         key=lambda r: r["file"].lower())))
         gated = [r for r in measured if r.get("gate") is not None]
         if gated:
@@ -6781,7 +7118,19 @@ def report(rows: list[dict], args) -> str:
                     "What those files really carry is a *row length* error of "
                     "10-33%, which is a different defect in a different place "
                     "(see `--pace`).")
-        off0 = sorted(r["file"] for r in rows if r.get("subtune"))
+        pinned_rows = sorted(
+            f"{r['file']} (s{r['subtune']}->o{r.get('ours_subtune')})"
+            for r in rows if r.get("subtune_pinned"))
+        if pinned_rows:
+            out.append(
+                f"- {len(pinned_rows)} file(s) are scored at a subtune pair "
+                "presets.json pins (`traced_subtune`), because neither the PSID "
+                "`startSong` nor the `--search-subtunes` window reaches their "
+                "counterpart: the pair is read off `--diagnose`'s matrix and "
+                "recorded per song in presets.py's `TRACED_SUBTUNES`. "
+                f"({', '.join(pinned_rows)})")
+        off0 = sorted(r["file"] for r in rows
+                      if r.get("subtune") and not r.get("subtune_pinned"))
         if off0:
             out.append(
                 f"- {len(off0)} file(s) are traced at a subtune other than 0, "
@@ -6794,6 +7143,7 @@ def report(rows: list[dict], args) -> str:
             f"{r['file']} ({r['subtune']}->{r['matched_subtune']})"
             for r in rows
             if r.get("matched_subtune") is not None
+            and not r.get("subtune_pinned")
             and r["matched_subtune"] != r.get("subtune"))
         if shifted:
             out.append(
@@ -7194,9 +7544,49 @@ def settings_mismatch(base: dict, new: dict) -> list[str]:
         if n is None:
             continue
         for k in _FATAL_SETTINGS:
+            if k == "subtune" and (b.get("subtune_pinned")
+                                   or n.get("subtune_pinned")):
+                # A presets.json pin moves ONE file's traced pair on purpose;
+                # `pin_mismatches` refuses that row alone rather than the run.
+                continue
             bv, nv = b.get(k), n.get(k)
             if bv is not None and nv is not None and bv != nv:
                 bad.append(f"{name}: {k} {bv!r} -> {nv!r}")
+    return bad
+
+
+def traced_pair(row: dict) -> tuple[int, int] | None:
+    """(the original's subtune, ours) this row was scored at, or None.
+
+    `ours_subtune` is written only on a pinned row (`_measure`); elsewhere the
+    two sides were traced at one index, so ours is `subtune`. The search
+    window's `matched_subtune` is deliberately not read: it is what the row
+    FOUND, not what it was asked to compare, and `settings_mismatch` has
+    never refused across it.
+    """
+    sub = row.get("subtune")
+    if sub is None:
+        return None
+    return sub, row.get("ours_subtune", sub)
+
+
+def pin_mismatches(base: dict, new: dict) -> list[tuple[str, tuple, tuple]]:
+    """Per-file rows whose traced subtune PAIR differs between two runs where
+    at least one side carries a presets.json pin (`subtune_pinned`).
+
+    Two pairs are two pieces of music, so the row is refused -- but only the
+    row: a pin is a per-song decision, and a baseline taken before it must
+    still A/B every other file. An unpinned subtune difference (a different
+    `-a`) stays whole-run fatal in `settings_mismatch`.
+    """
+    bad = []
+    for name in sorted(base):
+        b, n = base[name], new.get(name)
+        if n is None or not (b.get("subtune_pinned") or n.get("subtune_pinned")):
+            continue
+        bp, np_ = traced_pair(b), traced_pair(n)
+        if bp is not None and np_ is not None and bp != np_:
+            bad.append((name, bp, np_))
     return bad
 
 
@@ -7417,9 +7807,24 @@ def compare_runs(base_rows: list[dict], new_rows: list[dict]) -> tuple[str, int]
     # what remains.
     win_mismatch = window_mismatches({f: base[f] for f in both},
                                       {f: new[f] for f in both})
-    refused_files = {f for f, _, _ in win_mismatch}
+    pin_mismatch = pin_mismatches({f: base[f] for f in both},
+                                  {f: new[f] for f in both})
+    if pin_mismatch:
+        head += [
+            "## Refused rows (traced subtune pair)",
+            "",
+            f"{len(pin_mismatch)} file(s) were scored at a different "
+            "(original, ours) subtune pair in each run -- a presets.json "
+            "`traced_subtune` pin on one side -- and are excluded from every "
+            "comparison below:",
+            "",
+        ] + [f"- {f}: s{bp[0]}/o{bp[1]} -> s{np_[0]}/o{np_[1]}"
+             for f, bp, np_ in pin_mismatch] + [""]
+    refused_files = ({f for f, _, _ in win_mismatch}
+                     | {f for f, _, _ in pin_mismatch})
     if refused_files:
         both = [f for f in both if f not in refused_files]
+    if win_mismatch:
         shown = win_mismatch[:10]
         head += [
             "## Refused rows",
@@ -8355,7 +8760,8 @@ def _skip_gate_multiplier(sid: Path) -> int | None:
 
 
 def pace_report(sid: Path, workdir: Path, opts: dict, args,
-                multiplier: int = 1) -> str:
+                multiplier: int = 1,
+                pinned: tuple[int, int] | None = None) -> str:
     """What `--pace` prints for one file.
 
     The question it exists for: `melody` is a sequence ratio, and reading one
@@ -8366,7 +8772,10 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     out" when the real error was between 10% and 50%.
     """
     out: list[str] = []
-    traced = resolve_subtune(sid, args.subtune)
+    traced = resolve_subtune(sid, args.subtune, pinned)
+    # Our side, and the converter's song-speed table, are indexed by OUR
+    # subtune numbering; the original's trace alone takes `traced`.
+    ours_traced = resolve_ours_subtune(traced, args.subtune, pinned)
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:                                  # noqa: BLE001
@@ -8383,9 +8792,11 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     speeds = find_song_speeds(load_sid(str(sid)))
     # The row the conversion was actually written for, which is not the raw
     # gate when --skip-gate corrected it.
-    read = effective_frames(speeds, traced, bool(opts.get("skip_gate")))
+    read = effective_frames(speeds, ours_traced, bool(opts.get("skip_gate")))
     tempo = None
-    out.append(f"{sid.name}: subtune {traced}, {args.seconds}s, "
+    out.append(f"{sid.name}: subtune {traced}"
+               + (f" against our {ours_traced}" if ours_traced != traced
+                  else "") + f", {args.seconds}s, "
                f"packed -S{multiplier}; speed gate reads "
                f"{read if read is not None else 'nothing'} frame(s) per "
                f"duration unit")
@@ -8394,7 +8805,8 @@ def pace_report(sid: Path, workdir: Path, opts: dict, args,
     rates = sorted({1, multiplier})
     seen = []
     for m in rates:
-        b = run_siddump(packed, args.seconds, traced, args.siddump, calls=m)
+        b = run_siddump(packed, args.seconds, ours_traced, args.siddump,
+                        calls=m)
         got = pace(a, b)
         if got.get("slope") is None:
             out.append(f"  -m{m}: only {got['n']} matched gap(s) -- the two "
@@ -8599,11 +9011,14 @@ def subtune_matrix(orig: Path, packed: Path, args, cal: int,
 
 
 def diagnose(sid: Path, workdir: Path, opts: dict, args,
-             multiplier: int = 1) -> str:
+             multiplier: int = 1,
+             pinned: tuple[int, int] | None = None) -> str:
     """What `--diagnose` prints for one file: correspondence, then cause."""
     out: list[str] = []
     hdr = load_sid(str(sid))
-    traced = resolve_subtune(sid, args.subtune)
+    traced = resolve_subtune(sid, args.subtune, pinned)
+    ours_traced = resolve_ours_subtune(traced, args.subtune, pinned)
+    pin_live = pinned is not None and args.subtune == "auto"
     try:
         sng = convert(str(sid), log=lambda m: None, **opts)
     except Exception as exc:                       # noqa: BLE001
@@ -8627,6 +9042,9 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     remap = SUBTUNE_REMAP.get(sid.name)
     if remap:
         out.append(f"  known subtune remap: {remap}")
+    if pin_live:
+        out.append(f"  presets.json pins the traced pair: s{traced} against "
+                   f"o{ours_traced} (traced_subtune)")
     out.append("")
 
     grid, ni, nj = subtune_matrix(local, packed, args, cal,
@@ -8671,7 +9089,17 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
         window = (range(max(0, traced - half), traced + search - half)
                   if search > 1 else [traced])
         counterpart = best_j[traced] if traced < len(best_j) else traced
-        if counterpart != traced and counterpart in window:
+        if pin_live:
+            # The pin decides what the row compares, not the window -- say
+            # which pair that is, and whether the matrix still agrees with it.
+            out.append(
+                f"     Every other number for this .sid is taken at s{traced}"
+                f" against o{ours_traced}: presets.json pins that pair."
+                + ("" if counterpart == ours_traced else
+                   f" ** The matrix's best counterpart for s{traced} is"
+                   f" o{counterpart}, not the pinned o{ours_traced}: re-read"
+                   " the pin."))
+        elif counterpart != traced and counterpart in window:
             out.append(
                 f"     Every other number for this .sid is taken at s{traced}"
                 f" against o{counterpart}, not o{traced}:"
@@ -8692,8 +9120,8 @@ def diagnose(sid: Path, workdir: Path, opts: dict, args,
     out.append("")
 
     # Per-voice cause, at the traced subtune and again at its real counterpart.
-    pairs = [("as measured", traced, traced)]
-    if traced < len(best_j) and best_j[traced] != traced:
+    pairs = [("as measured", traced, ours_traced)]
+    if traced < len(best_j) and best_j[traced] != ours_traced:
         pairs.append(("at the best counterpart", traced, best_j[traced]))
     for label, i, j in pairs:
         if i >= ni or j >= nj:
@@ -8983,6 +9411,7 @@ def _run(p, args, workdir: Path) -> int:
                 print(ticks_report(sid, args))
             return 0
         if args.pace:
+            reset_preset_opts_misses()
             for sid in sids:
                 opts = _preset_opts(doc, sid.name)
                 mult = _preset_multiplier(doc, sid.name)
@@ -8992,13 +9421,16 @@ def _run(p, args, workdir: Path) -> int:
                     # row can change the multiplier (Tarzan 2 -> 1), and
                     # presets.json was generated without the option.
                     mult = _skip_gate_multiplier(sid) or mult
-                print(pace_report(sid, workdir, opts, args, mult))
+                print(pace_report(sid, workdir, opts, args, mult,
+                                  _preset_traced_subtune(doc, sid.name)))
+            report_preset_opts_misses("fidelity.py --pace")
             return 0
         if args.diagnose:
             # Deliberately not a row: the output is an argument about one
             # file, and folding it into the report would put a paragraph in a
             # table cell. --baseline, -o and --json are all about the corpus
             # sweep and do not apply.
+            reset_preset_opts_misses()
             for sid in sids:
                 opts = _preset_opts(doc, sid.name)
                 if args.slides:
@@ -9010,7 +9442,9 @@ def _run(p, args, workdir: Path) -> int:
                 if args.regrid:
                     opts["regrid"] = True
                 print(diagnose(sid, workdir, opts, args,
-                               _preset_multiplier(doc, sid.name)))
+                               _preset_multiplier(doc, sid.name),
+                               _preset_traced_subtune(doc, sid.name)))
+            report_preset_opts_misses("fidelity.py --diagnose")
             return 0
 
         if args.naming_census:
@@ -9026,6 +9460,7 @@ def _run(p, args, workdir: Path) -> int:
                       "conversion and every delta is zero", file=sys.stderr)
                 return 2
             recs = []
+            reset_preset_opts_misses()
             for sid in sids:
                 base = _preset_opts(doc, sid.name)
                 forced_opts = dict(base)
@@ -9053,12 +9488,14 @@ def _run(p, args, workdir: Path) -> int:
                 except Exception as exc:            # noqa: BLE001
                     rec["error"] = f"{type(exc).__name__}: {exc}"
                 recs.append(rec)
+            report_preset_opts_misses("fidelity.py --naming-census")
             Path(args.naming_census).write_text(
                 naming_census_report(recs), encoding="utf-8")
             print(f"wrote {args.naming_census} "
                   f"(forced: {', '.join(forced)})", file=sys.stderr)
             return 0
         rows = []
+        reset_preset_opts_misses()
         for sid in sids:
             opts = _preset_opts(doc, sid.name)
             if args.slides:
@@ -9083,13 +9520,15 @@ def _run(p, args, workdir: Path) -> int:
                 # which is exactly what made --skip-gate look like a
                 # regression in v0.5.119.
                 mult = _skip_gate_multiplier(sid) or mult
-            row = measure(sid, workdir, opts, args, mult)
+            row = measure(sid, workdir, opts, args, mult,
+                          _preset_traced_subtune(doc, sid.name))
             rows.append(row)
             note = (f"melody {_fmt_pct(row['melody'])} retrig "
                     f"{row['retrigger_ratio']:.2f} wave {_fmt_pct(row.get('wave'))}"
                     if row["status"] in ("measured", "silent")
                     and row["retrigger_ratio"] else row["status"])
             print(f"  {sid.name:44} {note}", file=sys.stderr)
+        report_preset_opts_misses("fidelity.py")
 
     text = report(rows, args)
     if args.output:

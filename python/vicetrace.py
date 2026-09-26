@@ -27,6 +27,34 @@ block's index divided by 312 is its frame. That also makes the resolution
 exactly one rasterline, which is finer than any play call.
 
 `-limitcycles` is in CPU cycles: 985248 a second on PAL, 19656 a frame.
+
+ROOT CAUSE, FOUND -- VICE 3.9's `dump` sound device, not this module. Every
+16-bit field it prints (`FREQ`, `PULSE`, `ADSR`) is computed as
+`(hi << 8) | (signed char) lo` in its own C, so whenever the true low byte has
+bit 7 set, sign extension turns the printed high byte into `ff` regardless of
+what the true high byte was: a real `$2BA9`, `$57A9` and `$03A9` (three
+different true high bytes, one shared low byte `$A9`) all print `FREQ: ffa9`,
+on both an original `.sid` and one this converter packed -- it is a property
+of the dump driver, not of either side's output. Measured directly off a
+Commando.sid trace at v0.5.492: 27767 of 31200 `FREQ` blocks contain at least
+one `ff` word. `parse()` below is a faithful transcription of what VICE
+printed and must stay one -- it does NOT repair this, on purpose, so the
+corruption stays visible to whatever reads `.freq` next rather than being
+silently absorbed here. `freq_is_corrupt` names the same test VICE's own bug
+applies, so a repair can be written against a shared predicate instead of a
+second copy of the arithmetic. `fidelity.vice_freq_repair` is that repair, for
+the `$D400/$D401` frequency stream only (what `vib` and `depth` read); nothing
+in this repo repairs `PULSE` or `ADSR`, so `.pulse` and `.adsr` on a
+`VoiceLine`, like `.freq` before repair, read `$FFxx` whenever the true low
+byte was `$80` or higher -- `tests/test_vicetrace.py` pins the `FREQ` case.
+`CTRL` is a per-voice 8-bit field VICE prints as two hex digits, never four, so
+it is never subject to this sign extension and `.ctrl` is trustworthy straight
+off the dump; so are `FILTER`'s `RES` and `MODE/VOL` bytes, also two hex
+digits. `FILTER`'s cutoff word (`$D415/$D416`) IS a 16-bit field and carries
+the same defect as `.pulse` and `.adsr`, unrepaired. See
+`fidelity.vice_freq_repair`'s docstring for the full derivation and
+`fidelity.NOT_MEASURED` for which `--vice` dimensions currently read the
+unrepaired fields.
 """
 from __future__ import annotations
 
@@ -87,6 +115,17 @@ def run(sid: Path, seconds: float, subtune: int = 0, exe: str = VSID,
         if out.exists() else []
 
 
+def freq_is_corrupt(v: int) -> bool:
+    """True iff a 16-bit field VICE's `dump` device printed is sign-extension
+    corrupt: high byte `$FF` with the low byte's own bit 7 set. See the
+    ROOT CAUSE note above. `v` is the raw value as `parse()` returns it
+    (i.e. NOT yet repaired), for `.freq`, `.pulse`, `.adsr` or a filter
+    cutoff word alike -- the predicate is the same for all four, only the
+    repair (frequency only, `fidelity.vice_freq_repair`) differs.
+    """
+    return (v >> 8) == 0xFF and bool(v & 0x80)
+
+
 def parse(text: str) -> list[Sample]:
     samples: list[Sample] = []
     cur = None
@@ -141,6 +180,57 @@ def gate_edges(samples: list[Sample], voice: int) -> list[int]:
 
 def frame_of(index: int) -> int:
     return index // PAL_LINES_PER_FRAME
+
+
+SPLIT_MINORITY_LINES = 120  # of PAL_LINES_PER_FRAME -- the -S2 call boundary
+
+
+def octave_split_frames(samples: list, voices: int = 3) -> tuple[int, list[int]]:
+    """Per voice and summed, whole frames whose FREQ LOW byte takes exactly
+    two values across the frame, related by an octave (`hi == (lo*2) & 0xFF`
+    or the reverse), with the minority holding at least `SPLIT_MINORITY_LINES`
+    of the frame's `PAL_LINES_PER_FRAME` rasterlines.
+
+    This is the shape a per-CALL arpeggio toggle leaves under an `-S2` (or
+    faster) conversion that writes the octave once a play call rather than
+    once a frame: siddump's once-a-frame sample cannot see it at all, and
+    every frame-level `--vice` reduction here (`FrameCell.representative`,
+    `agreement`) collapses a frame to ONE value and would read a fixed note or
+    a wrong one depending on which write landed last -- neither says a toggle
+    happened inside the frame. `frame_cells`' histogram carries the
+    information but nothing before this read it as a two-valued split.
+
+    **Reads only the LOW byte** (`freq & 0xFF`). VICE's dump sign-extension
+    defect (see `freq_is_corrupt` and the ROOT CAUSE note above) forces the
+    HIGH byte to `$FF` whenever the low byte's own bit 7 is set -- the low
+    byte it prints is the true one either way, in the corrupt case and the
+    clean one. This classifier therefore does NOT need
+    `fidelity.vice_freq_repair` (unlike `vib`/`depth`, which read the whole
+    16-bit word): `tests/test_vicetrace.py` pins that a frame built entirely
+    from samples `freq_is_corrupt` calls corrupt still classifies the same as
+    the same frame built from the true, uncorrupted words.
+
+    A trailing partial frame is dropped, as `frame_cells` does.
+    """
+    per_voice = [0] * voices
+    nframes = len(samples) // PAL_LINES_PER_FRAME
+    for f in range(nframes):
+        block = samples[f * PAL_LINES_PER_FRAME:(f + 1) * PAL_LINES_PER_FRAME]
+        for vi in range(voices):
+            lows = [s.voices[vi].freq & 0xFF for s in block if vi < len(s.voices)]
+            if len(lows) < PAL_LINES_PER_FRAME:
+                continue
+            distinct = sorted(set(lows))
+            if len(distinct) != 2:
+                continue
+            lo, hi = distinct
+            if not ((hi == (lo * 2) & 0xFF) or (lo == (hi * 2) & 0xFF)):
+                continue
+            n_hi = sum(1 for x in lows if x == hi)
+            minority = min(n_hi, len(lows) - n_hi)
+            if minority >= SPLIT_MINORITY_LINES:
+                per_voice[vi] += 1
+    return sum(per_voice), per_voice
 
 
 # --- Per-frame reduction ----------------------------------------------------

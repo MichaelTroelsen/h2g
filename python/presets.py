@@ -499,6 +499,8 @@ FIDELITY_VETOED: dict[str, set[str]] = {
     # way through, so neither the veto here nor a future re-run of the search
     # (which will reproduce the same wrong pairing) can be trusted for this
     # file until `resolve_subtune`/`tune_by_fidelity` account for the remap.
+    # They do now, through TRACED_SUBTUNES below (s0 against o9); the veto
+    # stays until a --fidelity run at that pair re-decides `pitch_seq`.
 
     # Empty otherwise, and the entry that was here is worth keeping as a record.
     # Trans-Atlantic's --sfx-drum was vetoed in v0.5.1xx as "a beep and not a
@@ -574,6 +576,35 @@ FIDELITY_CONFIRMED: dict[str, set[str]] = {
     # it up on its own (see the `finds_noise`/per-instrument gap above, which
     # applies to it too), so it remains a hand-recorded measurement.
     "Trans-Atlantic_Balloon_Challenge.sid": {"wave_program"},
+}
+
+# The (original, ours) subtune pair `fidelity.py` scores a song at, where
+# neither the PSID `startSong` nor `--search-subtunes`' window around it finds
+# the counterpart. Written into the song's presets.json entry as
+# `traced_subtune` on every regeneration -- a property of the file read off
+# `fidelity.py --diagnose`'s matrix, like `multiplier` a property of the
+# player, so it is DERIVED from this table each run and never carried.
+# `fidelity._preset_traced_subtune` reads it; `resolve_subtune` /
+# `resolve_ours_subtune` apply it under `-a auto`; `tune_by_fidelity` below
+# scores the same pair, so the --fidelity search and the report agree.
+#
+# Add a file here only with its --diagnose line quoted: a pin is a claim
+# that two indices are one piece of music, and a wrong one scores the file
+# against different music exactly as the defect it replaces did.
+TRACED_SUBTUNES: dict[str, tuple[int, int]] = {
+    # The converter log says 'track table runs into another table after $1',
+    # so our .sng carries ONE subtune -- the original's s1. startSong names
+    # s0, a different piece: build/fidelity.json at v0.5.492 reads melody
+    # 6.6% at s0/o0 and `--diagnose -a 1` reads `s1->o0 96%` (180 s, both
+    # measured on the v0.5.492 tree). The original's s1 oscillates (depth
+    # over 9 instruments, ratio 1.35) where s0 read `orig-silent`: that
+    # refusal was the harness tracing the wrong subtune, not our emission.
+    "Commodore_64_Music_Examples.sid": (1, 0),
+    # Init $AF00 maps PSID 0 to song 9 (fidelity.SUBTUNE_REMAP), and
+    # `--diagnose` reads `s0->o9 95%` (180 s, v0.5.492 tree). o9 is eight
+    # outside the search window around s0, so every DL2 row was s0 against
+    # o0 (melody 9% at v0.5.492).
+    "Dragons_Lair_Part_II.sid": (0, 9),
 }
 
 
@@ -1337,7 +1368,10 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     workdir = Path(workdir)
     local = workdir / "o.sid"
     shutil.copyfile(sid_path, local)
-    sub = F.resolve_subtune(sid_path, "auto")
+    # The same pinned pair `fidelity._measure` scores (TRACED_SUBTUNES), so
+    # the search and the report compare the same two pieces of music.
+    pinned = TRACED_SUBTUNES.get(sid_path.name)
+    sub = F.resolve_subtune(sid_path, "auto", pinned)
     # **The original's own tuning, as `fidelity._measure` traces it.** Four
     # corpus files carry a frequency table tuned off the semitone grid, and
     # siddump names their notes against its own table unless told otherwise --
@@ -1359,7 +1393,7 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     # one, and the toggles this searches change no orderlist length. That is
     # an assumption, and it is the reason the window is re-derived per file
     # rather than cached across the corpus.
-    ours_sub = sub
+    ours_sub = F.resolve_ours_subtune(sub, "auto", pinned)
 
     def _dump(packed, st):
         return F.run_siddump(packed, seconds, st, siddump, calls=multiplier)
@@ -1428,7 +1462,7 @@ def tune_by_fidelity(sid_path: Path, base: dict, multiplier: int,
     probe = convert(str(sid_path), log=lambda m: None, **base, **FIXED)
     probe, _ = F.legalise_restarts(probe)
     packed = F.pack_sid(probe, workdir, gt2reloc, multiplier)
-    if packed is not None:
+    if packed is not None and pinned is None:
         best = None
         for st in (sub, sub - 1, sub + 1):
             if st < 0:
@@ -1712,6 +1746,16 @@ def main(argv=None) -> int:
               file=sys.stderr)
         return 2
 
+    if args.fidelity:
+        # `tune_by_fidelity` does not itself call `fidelity._preset_opts`
+        # (it builds options from the structural search plus FIXED, not from
+        # a presets.json `songs` lookup) -- but this sweep shares the same
+        # `fidelity` import and process as any other caller of `_preset_opts`
+        # (e.g. one triggered indirectly via a helper this loop calls), so it
+        # resets and reports the same counter every other corpus loop does,
+        # rather than assuming its own call graph can never reach it.
+        F.reset_preset_opts_misses()
+
     songs: dict[str, dict] = {}
     paths = sorted(sid_dir.rglob("*.sid"), key=lambda p: p.name.lower())
     if args.shard:
@@ -1727,6 +1771,8 @@ def main(argv=None) -> int:
         found = best_options(path)
         if found:
             found["multiplier"] = pack_multiplier(path)
+            if path.name in TRACED_SUBTUNES:
+                found["traced_subtune"] = list(TRACED_SUBTUNES[path.name])
             if args.fidelity:
                 base = {k: found[k] for k in ("max_rows", *TOGGLES)}
                 try:
@@ -1790,6 +1836,8 @@ def main(argv=None) -> int:
             songs[path.name] = found
         print(f"  {path.name:44} {'-' if not found else found['max_rows']}",
               file=sys.stderr)
+    if args.fidelity:
+        F.report_preset_opts_misses("presets.py --fidelity")
 
     doc = {
         "generator": f"h2g {__version__} presets.py",

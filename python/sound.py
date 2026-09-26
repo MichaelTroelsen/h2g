@@ -118,8 +118,9 @@ N_FFT = 2048
 # only bounds it from below. Since `listen.SIDPLAYFP_POWER_ON_DELAY` landed
 # (after v0.5.491) `render_sidplayfp` passes `--delay=<it>` and a fresh pair
 # reads 0.0000;
-# a render cached in build/audio BEFORE that is still a random-delay render
-# under a still-valid content key, until it is re-rendered.
+# a render cached in build/audio BEFORE that was a random-delay render under a
+# still-valid content key until the render name gained `settings_tag` (see
+# `render_settings`): a pre-flag name is now a miss, never a hit.
 HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
@@ -444,16 +445,91 @@ def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
 
 
 def content_key(path: Path) -> str:
-    """sha1[:12] of a file's bytes -- the cache key for a render of it."""
+    """sha1[:12] of a file's bytes -- WHICH BYTES a render is of.
+
+    Deliberately the bytes alone: `live_keys_from_history` and
+    `live_keys_from_approvals` reproduce it from a rebuilt `.sid`, and
+    `approved.json` keys its verdicts on the `.sng`'s sha256, never on this.
+    HOW the bytes were rendered is the second half of a render's name,
+    `settings_tag`, so a renderer change moves the filename and not this key
+    -- and so cannot invalidate an approval or a live key."""
     return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:12]
 
 
+import functools as _functools  # noqa: E402
 import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 import listen  # noqa: E402  -- the renderer, so both sides use one engine
 
 ROOT = Path(__file__).resolve().parent.parent
 AUDIO_DIR = ROOT / "build" / "audio"
+
+
+# --------------------------------------------------------------------------
+# Renderer settings in the render's name. Until this existed a cached WAV was
+# named by the .sid's bytes alone, so every render made before
+# `listen.SIDPLAYFP_POWER_ON_DELAY` landed (76486d7) -- a RANDOM power-on
+# delay, 0.0186 of repeat movement on Devils_Galop against 0.0000 with the
+# flag -- stayed a valid cache hit, and a score taken against it still carried
+# the old floor. Every render is now named
+#     <tag>.<content_key>.<settings_tag>.s<sub>.t<seconds>.wav
+# where `settings_tag` hashes what the RENDERER was told: for sidplayfp the
+# power-on delay and the executable's own bytes (it has no `--version`; the
+# exe's hash is the version and survives a re-install at the same path). A
+# render made under one delay is therefore never served for a request under
+# another, and a pre-flag name (no settings segment) is never served at all.
+# --------------------------------------------------------------------------
+
+@_functools.lru_cache(maxsize=8)
+def _exe_identity(path: str, size: int, mtime_ns: int) -> str:
+    return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:12]
+
+
+def exe_identity(path: str) -> str:
+    """sha1[:12] of an executable's bytes, or 'absent'."""
+    try:
+        st = Path(path).stat()
+    except OSError:
+        return "absent"
+    return _exe_identity(str(path), st.st_size, st.st_mtime_ns)
+
+
+def _sidplayfp_settings() -> str:
+    return (f"sidplayfp delay={listen.SIDPLAYFP_POWER_ON_DELAY} "
+            f"exe={exe_identity(listen.SIDPLAYFP)}")
+
+
+# Renderers whose settings are known, by identity. Looked up at CALL time, so
+# a changed `listen.SIDPLAYFP_POWER_ON_DELAY` changes the tag of the very
+# next request.
+_KNOWN_SETTINGS = {listen.render_sidplayfp: _sidplayfp_settings}
+
+
+def render_settings(renderer) -> str:
+    """What `renderer` would render with, as a readable string.
+
+    Known renderers report their settings; a renderer carrying a
+    `render_settings` callable (a test's fake, a future engine) reports its
+    own; anything else is named by module and qualname, which at least keeps
+    a vsid render and a sidplayfp render of the same bytes apart."""
+    try:
+        fn = _KNOWN_SETTINGS.get(renderer)
+    except TypeError:                        # an unhashable callable object
+        fn = None
+    fn = fn or getattr(renderer, "render_settings", None)
+    if callable(fn):
+        return str(fn())
+    return (f"{getattr(renderer, '__module__', '?')}."
+            f"{getattr(renderer, '__qualname__', type(renderer).__name__)}")
+
+
+def settings_tag(renderer) -> str:
+    """sha1[:8] of `render_settings(renderer)` -- the render name's settings segment."""
+    return hashlib.sha1(render_settings(renderer).encode()).hexdigest()[:8]
+
+
+def _is_hex(s: str, n: int) -> bool:
+    return len(s) == n and all(c in "0123456789abcdef" for c in s)
 
 
 def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
@@ -464,11 +540,14 @@ def render_cached(sid: Path, seconds: int, subtune: int, tag: str,
     Keyed on CONTENT, never on a version or a path: a `.sng` that converts
     identically on two commits is one render, and one that changed is a new
     one however it is named. That is the same rule `approved.json` keys its
-    verdicts by, and for the same reason.
+    verdicts by, and for the same reason. The name also carries
+    `settings_tag(renderer)`, so the same bytes rendered under another
+    power-on delay (or another engine) are a miss, never a hit.
     """
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
-    out = cache / f"{tag}.{content_key(sid)}.s{subtune}.t{seconds}.wav"
+    out = cache / (f"{tag}.{content_key(sid)}.{settings_tag(renderer)}"
+                   f".s{subtune}.t{seconds}.wav")
     if out.exists() and out.stat().st_size > listen.EMPTY_WAV:
         return out
     ok = renderer(Path(sid), out, seconds, subtune)
@@ -508,19 +587,20 @@ def render_repeat(sid: Path, seconds: int, subtune: int, tag: str,
     was the floor under every score taken against a cached render.
     `listen.render_sidplayfp` now passes `--delay=<SIDPLAYFP_POWER_ON_DELAY>`
     (0.0186 -> 0.0000 on Devils_Galop, the pair's samples at most 6 LSB of
-    dither apart); this function is still what MEASURES that, and the
-    content key does not see the flag, so a repeat render beside a cached
-    render made before it still reads the old floor until the cached one is
-    re-rendered.
+    dither apart); this function is still what MEASURES that. The name now
+    carries `settings_tag(renderer)` as `render_cached`'s does, so repeats
+    made under one delay are never numbered beside, or pruned with, repeats
+    made under another, and a pre-flag cached render is never the one they
+    are compared against.
 
-    Each call renders again to `<tag>.<key>.s<sub>.t<seconds>.r<k>.wav`,
+    Each call renders again to `<tag>.<key>.<settings>.s<sub>.t<seconds>.r<k>.wav`,
     numbered after the renders of these bytes already on disk, drops the
     oldest beyond `keep`, and returns every one still there, oldest first.
     A failed render adds nothing and returns what was already there.
     """
     cache = Path(cache)
     cache.mkdir(parents=True, exist_ok=True)
-    stem = f"{tag}.{content_key(sid)}.s{subtune}.t{seconds}"
+    stem = f"{tag}.{content_key(sid)}.{settings_tag(renderer)}.s{subtune}.t{seconds}"
 
     def _have() -> list[Path]:
         got = []
@@ -597,32 +677,80 @@ def compare_sids(orig: Path, ours: Path, seconds: int, sub_orig: int,
 # `repeat.*` renders (`render_repeat`) are per-original, not per-conversion,
 # and are never touched. The CLI QUARANTINES (moves) rather than deletes, so a
 # wrong keep-set costs a move back and not a re-render.
+#
+# A live KEY is not a live RENDER: an `ours` render whose name carries other
+# renderer settings (or none -- the pre-flag names) cannot be served by
+# `render_cached` whatever its key, so it is superseded too. `orig.*` and
+# `repeat.*` renders under other settings are equally unreachable; the CLI
+# names them (`stale_settings_renders`) and does not move them.
 # --------------------------------------------------------------------------
 
 OURS_TAG, REPEAT_TAG_PREFIX = "ours", "repeat."
 
 
+def _parse_render_name(name: str) -> tuple[str, str | None] | None:
+    """(content key, settings tag or None) of a `render_cached` filename,
+    or None for anything else. Two shapes parse: the current
+    `<tag>.<key>.<settings>.s<n>.t<n>.wav` and the pre-settings
+    `<tag>.<key>.s<n>.t<n>.wav` (settings None)."""
+    parts = name.split(".")
+    if parts[-1] != "wav" or len(parts) not in (5, 6) or not _is_hex(parts[1], 12):
+        return None
+    if len(parts) == 6:
+        if not _is_hex(parts[2], 8):
+            return None
+        return parts[1], parts[2]
+    return parts[1], None
+
+
 def render_key_of(name: str) -> str | None:
     """The 12-hex content key of a cache filename, or None for a foreign one."""
+    got = _parse_render_name(name)
+    return got[0] if got else None
+
+
+def render_settings_of(name: str) -> str | None:
+    """The settings tag of a cache or repeat filename; None for a pre-settings
+    name or a foreign one."""
     parts = name.split(".")
-    if len(parts) != 5 or parts[-1] != "wav" or len(parts[1]) != 12:
+    if parts[-1] != "wav" or len(parts) < 6 or not _is_hex(parts[1], 12):
         return None
-    return parts[1]
+    return parts[2] if _is_hex(parts[2], 8) else None
 
 
-def superseded_renders(cache: Path, live_keys: set[str]) -> list[Path]:
-    """Every `ours.*` render in `cache` whose content key is not live.
+def stale_settings_renders(cache: Path, settings: str | None = None) -> list[Path]:
+    """Every render-shaped file in `cache` (orig, ours or repeat) whose name
+    does not carry `settings` -- the current `settings_tag` of
+    `listen.render_sidplayfp` by default. Pure: no rendering, no moving.
+    These are the files no reader can be served any more."""
+    settings = settings or settings_tag(listen.render_sidplayfp)
+    out = []
+    for p in sorted(Path(cache).iterdir()):
+        parts = p.name.split(".")
+        if parts[-1] != "wav" or len(parts) < 5 or not _is_hex(parts[1], 12):
+            continue
+        if render_settings_of(p.name) != settings:
+            out.append(p)
+    return out
+
+
+def superseded_renders(cache: Path, live_keys: set[str],
+                       settings: str | None = None) -> list[Path]:
+    """Every `ours.*` render in `cache` whose content key is not live, or
+    whose name does not carry the current renderer `settings` (see the
+    section note: such a render is unreachable whatever its key).
 
     Pure: no rendering, no deletion. `orig.*` and `repeat.*` files are never
     returned, and a file whose name does not parse as a cache key is left
     alone rather than guessed at.
     """
+    settings = settings or settings_tag(listen.render_sidplayfp)
     out = []
     for p in sorted(Path(cache).iterdir()):
         if not p.name.startswith(OURS_TAG + "."):
             continue
-        key = render_key_of(p.name)
-        if key is not None and key not in live_keys:
+        got = _parse_render_name(p.name)
+        if got is not None and (got[0] not in live_keys or got[1] != settings):
             out.append(p)
     return out
 
@@ -753,6 +881,12 @@ def _prune_main(argv=None) -> int:
           + f" -> {args.quarantine}")
     for p in victims:
         print("  ", p.name)
+    stale = [p for p in stale_settings_renders(Path(args.cache))
+             if not p.name.startswith(OURS_TAG + ".")]
+    if stale:
+        print(f"{len(stale)} orig/repeat render(s) carry other renderer settings "
+              f"than {render_settings(listen.render_sidplayfp)!r}: no reader is "
+              "served them any more; NOT moved")
     return 0
 
 

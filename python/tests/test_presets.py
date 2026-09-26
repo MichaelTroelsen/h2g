@@ -662,3 +662,141 @@ def test_every_boolean_always_flag_has_a_live_file_count():
         assert v is None or (isinstance(v, int) and 0 <= v <= 95), (k, v)
     assert P.LIVE_ON["reject_phantoms"] == 0 and P.LIVE_ON["compact_instruments"] == 89,         "the two anchoring facts the comment states must match the table"
 
+
+
+
+def test_a_regeneration_writes_each_pinned_traced_subtune(tmp_path, monkeypatch):
+    """`traced_subtune` is derived from presets.TRACED_SUBTUNES on every run,
+    like `multiplier` -- and what the generator writes is what the harness
+    reads."""
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import fidelity
+    import presets as P
+    names = (*P.TRACED_SUBTUNES, "Unpinned.sid")
+    for name in names:
+        (tmp_path / name).write_bytes(b"")
+    monkeypatch.setattr(P, "best_options", lambda p: {
+        "max_rows": 94, **{t: False for t in P.TOGGLES},
+        "bytes": 1, "subtunes": 1, "rows": 1})
+    monkeypatch.setattr(P, "pack_multiplier", lambda p: 1)
+    out = tmp_path / "out.json"
+    P.main([str(tmp_path), "-o", str(out), "--no-carry"])
+    doc = json.loads(out.read_text(encoding="utf-8"))
+    assert P.TRACED_SUBTUNES == {"Commodore_64_Music_Examples.sid": (1, 0),
+                                 "Dragons_Lair_Part_II.sid": (0, 9)}
+    for name, pin in P.TRACED_SUBTUNES.items():
+        assert doc["songs"][name]["traced_subtune"] == list(pin)
+        assert fidelity._preset_traced_subtune(doc, name) == pin
+    assert "traced_subtune" not in doc["songs"]["Unpinned.sid"]
+    assert fidelity._preset_traced_subtune(doc, "Unpinned.sid") is None
+
+
+class _StopTrace(Exception):
+    pass
+
+
+def _tune_traces(tmp_path, monkeypatch, name):
+    """Which (file, subtune) `tune_by_fidelity` traces before it scores."""
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import fidelity as F
+    import presets as P
+    sid = tmp_path / name
+    sid.write_bytes(b"")
+    seen = []
+    monkeypatch.setattr(P, "convert", lambda *a, **k: b"sng")
+    monkeypatch.setattr(P, "find_freq_table", lambda s: None)
+    monkeypatch.setattr(P, "load_sid", lambda p: None)
+    monkeypatch.setattr(F, "legalise_restarts", lambda b: (b, 0))
+    monkeypatch.setattr(F, "pack_sid", lambda *a, **k: tmp_path / "b.sid")
+
+    def trace(path, seconds, sub, *a, **k):
+        seen.append((pathlib.Path(path).name, sub))
+        return object()
+
+    def stop(*a, **k):
+        raise _StopTrace
+    monkeypatch.setattr(F, "run_siddump", trace)
+    monkeypatch.setattr(F, "compare", stop)
+    try:
+        P.tune_by_fidelity(sid, {"max_rows": 94}, 1, "siddump", "gt2reloc",
+                           10, log=lambda m: None)
+    except _StopTrace:
+        pass
+    return seen
+
+
+def test_the_fidelity_search_scores_the_pinned_pair(tmp_path, monkeypatch):
+    """The --fidelity walk and the report must compare the same music: DL2's
+    original at s0 against our o9, with no window search around it."""
+    seen = _tune_traces(tmp_path, monkeypatch, "Dragons_Lair_Part_II.sid")
+    assert seen == [("o.sid", 0), ("b.sid", 9)], seen
+    seen = _tune_traces(tmp_path, monkeypatch,
+                        "Commodore_64_Music_Examples.sid")
+    assert seen == [("o.sid", 1), ("b.sid", 0)], seen
+    # unpinned: the original at startSong (0 for an unreadable header) and
+    # the window search starting at the same index
+    seen = _tune_traces(tmp_path, monkeypatch, "Unpinned.sid")
+    assert seen == [("o.sid", 0), ("b.sid", 0)], seen
+
+
+# --- presets.py wires fidelity's shared _preset_opts miss counter ---------
+#
+# `_preset_opts` used to only warn on a name missing from a populated
+# `songs` block, deduplicated per call site by Python's warnings filter, so
+# a corpus loop could not COUNT how many files got the wrong (always-block-
+# only) options. `fidelity.PRESET_OPTS_MISSES` accumulates every miss and
+# `reset_preset_opts_misses` / `report_preset_opts_misses` bracket a sweep;
+# every corpus-loop caller -- including presets.py's own `--fidelity`
+# search -- resets before its sweep and reports the total (with names)
+# after, so a stale count from an earlier sweep in the same process never
+# leaks into the next one's total.
+
+def test_presets_py_resets_and_reports_the_shared_miss_counter_source():
+    """A structural check, not a behavioural one: `main`'s `--fidelity`
+    corpus sweep must reset the counter before it starts and report it
+    after, so a future edit that deletes the reset (accumulating misses
+    across unrelated runs of the same process) or the report (silencing the
+    total again) is caught even though the sweep itself needs a real corpus
+    and gt2reloc/siddump binaries this test does not have."""
+    src = (REPO_ROOT / "python" / "presets.py").read_text(encoding="utf-8")
+    assert "F.reset_preset_opts_misses()" in src
+    assert "F.report_preset_opts_misses(" in src
+
+
+def test_preset_opts_misses_count_and_names_match_a_known_removal():
+    """The behaviour presets.py's sweep relies on, exercised directly against
+    `fidelity` (the same module object `import fidelity as F` inside
+    presets.py's `main` resolves to): a presets.json with a known set of
+    names removed from `songs` reports a miss count equal to the number
+    removed, naming each one."""
+    import warnings
+
+    import fidelity as F
+
+    doc = {"always": {}, "songs": {"Commando.sid": {}}}
+    removed = ["Rob_Hubbard_1.sid", "Rob_Hubbard_2.sid", "Rob_Hubbard_3.sid"]
+    F.reset_preset_opts_misses()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for name in ("Commando.sid", *removed):
+            F._preset_opts(doc, name)
+    assert F.PRESET_OPTS_MISSES == removed
+    buf = __import__("io").StringIO()
+    n = F.report_preset_opts_misses("presets.py --fidelity", file=buf)
+    assert n == len(removed)
+    for name in removed:
+        assert name in buf.getvalue()
+    F.reset_preset_opts_misses()
+
+
+def test_preset_opts_misses_is_zero_over_the_shipped_presets_songs():
+    import fidelity as F
+
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    F.reset_preset_opts_misses()
+    for name in doc.get("songs", {}):
+        F._preset_opts(doc, name)
+    buf = __import__("io").StringIO()
+    n = F.report_preset_opts_misses("presets.py --fidelity", file=buf)
+    assert n == 0
+    F.reset_preset_opts_misses()

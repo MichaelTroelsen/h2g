@@ -15,6 +15,8 @@ all three as "notes" -- which a `grep -oE "[A-G]#?-[0-9]"` over the dump does
 -- conflates a re-struck note with a vibrato cycle, and that conflation is
 what made an early measurement read as a 7x re-trigger defect.
 """
+import io
+import json
 import os
 import pathlib
 import shutil
@@ -365,6 +367,14 @@ def test_the_wave_dimension_declares_the_tail_rule():
     assert "release has run out" in d.of and "wave_tail_frames" in d.of
 
 
+def test_the_wave_dimension_declares_the_0_5_481_comparability_break():
+    """The tail exclusion moved `wave` on 14 byte-identical corpus files
+    between v0.5.475 and v0.5.481 (ccd06ad); the Dimension text must say a
+    figure either side of that version is not comparable."""
+    d = [d for d in fidelity.DIMENSIONS if d.key == "wave"][0]
+    assert "v0.5.481" in d.of and "not comparable" in d.of
+
+
 def test_wave_is_none_when_no_frames_are_counted():
     got = fidelity.wave_compare(_wf_voices(), _wf_voices(), nframes=5)
     assert got["wave"] is None
@@ -431,6 +441,48 @@ def test_a_voice_with_no_envelope_on_either_side_is_not_counted():
 
 def test_adsr_is_none_when_neither_side_ever_set_an_envelope():
     assert fidelity.adsr_compare(_adsr_voices(), _adsr_voices(), 50)["adsr"] is None
+
+
+def test_cut_release_masks_only_the_release_nibble():
+    """adsr-column-cannot-credit-a-fix-under-cut-release: `cut_release`
+    (goatwriter's option, on for every preset file) always writes a $0
+    release nibble on our side. Without masking, a release-only difference
+    against the original scores 0.0 forever and cannot move even when the
+    AD/sustain nibbles are corrected -- Samantha Fox/Warhawk/Kentilla after
+    922c782. With `cut_release=True` the release nibble is excluded from the
+    compare; the AD and sustain nibbles are still charged in full."""
+    orig = _adsr_voices([(0, 0x0F0F)])   # AD=$0F, sustain=$0, release=$F
+    ours = _adsr_voices([(0, 0x0F00)])   # same AD/sustain, release cut to $0
+    # Unmasked (the old, default behaviour): the release-only diff still
+    # fails the whole 16-bit compare.
+    assert fidelity.adsr_compare(orig, ours, 10)["adsr"] == 0.0
+    # Masked: AD and sustain agree, so the column reads perfect agreement.
+    masked = fidelity.adsr_compare(orig, ours, 10, cut_release=True)
+    assert masked["adsr"] == 1.0
+    assert masked["adsr_release_masked"] is True
+    # A genuine AD/sustain disagreement must still be caught under masking --
+    # this is not a blanket exemption for the whole envelope.
+    bad_sustain = _adsr_voices([(0, 0x0F10)])   # sustain differs, release $0
+    still_wrong = fidelity.adsr_compare(orig, bad_sustain, 10, cut_release=True)
+    assert still_wrong["adsr"] == 0.0
+    # Default is unmasked, so existing callers (the --pair CLI path) are
+    # unaffected unless they opt in.
+    assert fidelity.adsr_compare(orig, ours, 10)["adsr_release_masked"] is False
+
+
+def test_adsr_dimension_declares_the_cut_release_blindness():
+    """The Dimension's own prose is what `blindness_section` prints under
+    '## What this run compared', so the blindness must live there, not only
+    in a docstring or comment nobody reads from the report."""
+    d = next(d for d in fidelity.DIMENSIONS if d.key == "adsr")
+    assert "cut_release" in d.of
+    assert "release" in d.of
+
+
+def test_report_states_the_cut_release_blindness():
+    text = fidelity.report([_row("A.sid", "measured", 1.0, 50, 50)], _Args())
+    assert "## What this run compared" in text
+    assert "cut_release" in text
 
 
 def _wf_at(*event_lists):
@@ -1295,6 +1347,113 @@ def test_the_report_names_an_edge_declined_file_and_not_a_noiseless_one():
     assert "records the cut runs and frames per side" in d.of
 
 
+# --- the third cause: noise selected under a CLOSED gate ---------------------
+#
+# Kentilla, Proteus and Warhawk (HISTORICAL, v0.5.492 + uncommitted edits,
+# HEAD 924e4bd, -t 180; C:/t/nrun-gate-off-noise/frames_probe.json): every
+# original noise frame (430/1647/1468) is `$80` written on the frame the gate
+# drops after a one- or two-frame `$41`/`$15`, so no noise-AND-gate run
+# exists, `nrun` reads `-`, and neither edge counter is non-zero. Ours plays
+# the same hits gated (`$81`), hence `ours_only` 4/12/11.
+
+
+def test_noise_selected_under_a_closed_gate_is_recorded_per_side():
+    """Proteus's drum in miniature: `$41` for one frame, then `$80` with the
+    gate down, then `$40`. The original has no gated noise, so `nrun`
+    declines -- and the gate-off keys are what says the `-` is that, not "no
+    noise" and not "the window cut it"."""
+    adsr = [(0, 0x0F08)]
+    orig = _run_side([(1, 0x41), (2, 0x80), (3, 0x40),
+                      (10, 0x41), (11, 0x80), (13, 0x40)], adsr)
+    ours = _run_side([(1, 0x81), (2, 0x40), (10, 0x81), (11, 0x40)], adsr)
+    got = fidelity.noise_run_agreement(orig, ours, 20)
+    assert got["noise_run_instruments"] == 0
+    assert got["noise_run_agreement"] is None
+    assert got["noise_run_orig_only"] == 0
+    assert got["noise_run_ours_only"] == 1
+    assert got["noise_run_orig_edge_runs"] == 0            # not the window
+    assert got["noise_run_orig_gate_off_runs"] == 2        # frames 2, 11-12
+    assert got["noise_run_orig_gate_off_frames"] == 3
+    assert got["noise_run_ours_gate_off_runs"] == 0        # ours is gated
+    assert got["noise_run_ours_gate_off_frames"] == 0
+
+
+def test_a_gated_runs_latched_tail_is_not_counted_as_gate_off_noise():
+    """Confuzion's release: `$81` -> `$80` keeps noise selected with the gate
+    down until the next note. That stretch is the tail of a run `noise_runs`
+    already scored, and its length is the rest's -- the ENTERED rule must
+    not count it. A select changed to noise with the gate already down
+    (`$40` -> `$80`) IS entered, and counts."""
+    adsr = [(0, 0x0A99)]
+    latched = _run_side([(2, 0x81), (5, 0x80)], adsr)
+    assert fidelity.noise_gate_off_runs(latched, 12) == {"runs": 0, "frames": 0}
+    entered = _run_side([(2, 0x40), (5, 0x80), (8, 0x40)], adsr)
+    assert fidelity.noise_gate_off_runs(entered, 12) == {"runs": 1, "frames": 3}
+    # A noiseless side reads 0/0.
+    assert fidelity.noise_gate_off_runs(_run_side([(1, 0x41)], adsr), 12) == \
+        {"runs": 0, "frames": 0}
+
+
+def test_gate_off_run_ends_where_the_gate_opens():
+    """`$80` for two frames then `$81`: the gate-off run is 2 frames; the
+    gated frames after it are `noise_runs`' business, not this counter's."""
+    side = _run_side([(2, 0x40), (5, 0x80), (7, 0x81), (9, 0x40)],
+                     [(0, 0x0A99)])
+    assert fidelity.noise_gate_off_runs(side, 12) == {"runs": 1, "frames": 2}
+    assert fidelity.noise_runs(side, 12) == {0x0A99: Counter({2: 1})}
+
+
+def test_the_report_names_a_gate_off_declined_file_in_its_own_sentence():
+    """Three `-` rows: one whose original noise is all under a closed gate,
+    one the window cut, one with no noise. The gate-off sentence names the
+    first alone; the edge sentence does not name it."""
+    closed = _row("Closed.sid", "measured", 1.0, 50, 50)
+    closed.update(wave=0.9, wave_frames=100, orig_noise_frames=1647,
+                  our_noise_frames=1435, noise_run_instruments=0,
+                  noise_run_orig_only=0, noise_run_ours_only=12,
+                  noise_run_orig_edge_runs=0, noise_run_orig_edge_frames=0,
+                  noise_run_ours_edge_runs=0, noise_run_ours_edge_frames=0,
+                  noise_run_orig_gate_off_runs=1441,
+                  noise_run_orig_gate_off_frames=1647,
+                  noise_run_ours_gate_off_runs=0,
+                  noise_run_ours_gate_off_frames=0)
+    cut = _row("Cut.sid", "measured", 1.0, 50, 50)
+    cut.update(wave=0.9, wave_frames=100, orig_noise_frames=90,
+               our_noise_frames=80, noise_run_instruments=0,
+               noise_run_orig_only=0, noise_run_ours_only=2,
+               noise_run_orig_edge_runs=1, noise_run_orig_edge_frames=90,
+               noise_run_ours_edge_runs=1, noise_run_ours_edge_frames=4,
+               noise_run_orig_gate_off_runs=0,
+               noise_run_orig_gate_off_frames=0)
+    quiet = _row("Quiet.sid", "measured", 1.0, 50, 50)
+    quiet.update(wave=0.9, wave_frames=100, orig_noise_frames=0,
+                 our_noise_frames=0, noise_run_instruments=0,
+                 noise_run_orig_only=0, noise_run_ours_only=0,
+                 noise_run_orig_edge_runs=0, noise_run_orig_edge_frames=0,
+                 noise_run_orig_gate_off_runs=0,
+                 noise_run_orig_gate_off_frames=0)
+    text = fidelity.report([closed, cut, quiet], _Args())
+    line = next(l for l in text.splitlines()
+                if "`nrun` declined" in l and "closed gate" in l)
+    assert "**1** file(s)" in line
+    assert "Closed.sid (original 1441 gate-off run(s), 1647 of 1647 noise " \
+           "frames; ours 12 gated instrument(s), 0 gate-off run(s), " \
+           "0 frame(s))" in line
+    assert "Cut.sid" not in line and "Quiet.sid" not in line
+    edge = next(l for l in text.splitlines()
+                if "`nrun` declined" in l and "window" in l)
+    assert "Closed.sid" not in edge
+
+
+def test_nrun_dimension_names_the_closed_gate_cause_and_the_three_files():
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "noise selected under a CLOSED gate" in d.of
+    assert "`noise_run_*_gate_off_runs`" in d.of
+    for name in ("Kentilla", "Proteus", "Warhawk"):
+        assert name in d.of
+    assert "430/1647/1468" in d.of
+
+
 # --- how the three reach the report ----------------------------------------
 
 
@@ -1308,7 +1467,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | depth | arposc | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
             in text)
     # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1488,6 +1647,12 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  orig_oscillation=0.9, our_oscillation=0.9,
                  depth_ratio=1.0, orig_depth=0.05, our_depth=0.05,
                  depth_instruments=2,
+                 # `arposc` is --vice-only and has no siddump equivalent, but
+                 # a full synthetic row still carries it -- 0 is the honest
+                 # reading for a file with no per-call arpeggio toggle --
+                 # or test_a_row_records_only_the_dimensions_it_actually_
+                 # compared reads it as not-compared.
+                 orig_octave_split_frames=0, our_octave_split_frames=0,
                  noise_run_agreement=melody, noise_run_matched=1,
                  noise_run_instruments=1, noise_run_orig_only=0,
                  noise_run_ours_only=0,
@@ -2937,6 +3102,82 @@ def test_a_name_present_in_songs_does_not_warn():
         fidelity._preset_opts(doc, "a.sid")  # must not raise/warn
 
 
+# --- PRESET_OPTS_MISSES: a countable total, not just a per-site warning ----
+#
+# `warnings.warn`'s default filter shows one (message, category, module,
+# lineno) combination once per process -- so a corpus loop calling
+# `_preset_opts` once per file prints the SAME single warning regardless of
+# how many files miss, and a probe keying every corpus name wrongly sees one
+# warning where it should see one per file. `PRESET_OPTS_MISSES` accumulates
+# every miss so a caller can report a TOTAL with the offending names.
+
+def test_misses_accumulate_across_calls_and_name_each_song():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}}}
+    for name in ("b.sid", "c.sid", "b.sid"):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            fidelity._preset_opts(doc, name)
+    # Three calls missed, including a repeated name -- each call that
+    # returned the wrong options is counted, not deduplicated by name.
+    assert fidelity.PRESET_OPTS_MISSES == ["b.sid", "c.sid", "b.sid"]
+    n = fidelity.report_preset_opts_misses("test", file=io.StringIO())
+    assert n == 3
+    fidelity.reset_preset_opts_misses()
+
+
+def test_reset_preset_opts_misses_clears_between_sweeps():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fidelity._preset_opts(doc, "missing.sid")
+    assert fidelity.PRESET_OPTS_MISSES == ["missing.sid"]
+    fidelity.reset_preset_opts_misses()
+    assert fidelity.PRESET_OPTS_MISSES == []
+
+
+def test_a_present_key_is_never_counted_as_a_miss():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}, "b.sid": {}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fidelity._preset_opts(doc, "a.sid")
+        fidelity._preset_opts(doc, "b.sid")
+    assert fidelity.PRESET_OPTS_MISSES == []
+
+
+def test_report_preset_opts_misses_prints_the_total_and_each_name():
+    fidelity.reset_preset_opts_misses()
+    doc = {"always": {}, "songs": {"a.sid": {}}}
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        fidelity._preset_opts(doc, "x.sid")
+        fidelity._preset_opts(doc, "y.sid")
+    buf = io.StringIO()
+    n = fidelity.report_preset_opts_misses("mysweep", file=buf)
+    out = buf.getvalue()
+    assert n == 2
+    assert "mysweep" in out and "2" in out
+    assert "x.sid" in out and "y.sid" in out
+    fidelity.reset_preset_opts_misses()
+
+
+def test_report_preset_opts_misses_is_zero_against_the_shipped_presets():
+    # A run over the shipped presets file must report zero: every corpus
+    # name it is measured against is keyed correctly.
+    fidelity.reset_preset_opts_misses()
+    presets_path = REPO_ROOT / "presets.json"
+    doc = json.loads(presets_path.read_text(encoding="utf-8"))
+    for name in doc.get("songs", {}):
+        fidelity._preset_opts(doc, name)
+    buf = io.StringIO()
+    n = fidelity.report_preset_opts_misses("shipped presets.json", file=buf)
+    assert n == 0
+    assert "0" in buf.getvalue()
+    fidelity.reset_preset_opts_misses()
+
+
 # --- gate census, split by voice --------------------------------------------
 
 def test_gate_census_tags_each_record_with_its_voice():
@@ -3492,6 +3733,7 @@ def test_a_count_column_reads_its_SOURCE_key_not_the_one_it_is_named_for():
         "noise": ("noise", "our_noise_frames"),
         "pul": ("pulse", "our_pulse_changes"),
         "filt": ("filtered", "our_filtered_frames"),
+        "arposc": ("octave_split_frames", "our_octave_split_frames"),
     }, aliased
     full = _row("A.sid", "measured", 0.5)
     for column, (key, source) in aliased.items():
@@ -4487,3 +4729,138 @@ def test_the_cli_offers_no_window_floor():
                           cwd=REPO_ROOT / "python", capture_output=True,
                           text=True)
     assert "--no-window-floor" in proc.stdout
+
+
+# --- a pinned (original, ours) subtune pair ---------------------------------
+# presets.json's per-song `traced_subtune`, for files whose counterpart neither
+# the PSID startSong nor the --search-subtunes window reaches.
+
+
+def test_a_traced_subtune_pin_is_read_and_a_malformed_one_raises():
+    doc = {"songs": {"A.sid": {"traced_subtune": [1, 0]},
+                     "B.sid": {"multiplier": 2}}}
+    assert fidelity._preset_traced_subtune(doc, "A.sid") == (1, 0)
+    assert fidelity._preset_traced_subtune(doc, "B.sid") is None
+    assert fidelity._preset_traced_subtune(doc, "Absent.sid") is None
+    assert fidelity._preset_traced_subtune({}, "A.sid") is None
+    # A pin that silently read as absent would score the wrong pair again.
+    for bad in ([1], [1, 0, 2], ["1", 0], [True, 0], [-1, 0], 3, {"o": 1}):
+        with pytest.raises(ValueError):
+            fidelity._preset_traced_subtune(
+                {"songs": {"A.sid": {"traced_subtune": bad}}}, "A.sid")
+
+
+def test_the_pin_wins_under_auto_and_an_explicit_subtune_wins_over_it():
+    sid = REPO_ROOT / "Commando.sid"
+    assert fidelity.resolve_subtune(sid, "auto") == 0
+    assert fidelity.resolve_subtune(sid, "auto", (1, 0)) == 1
+    assert fidelity.resolve_ours_subtune(1, "auto", (1, 0)) == 0
+    assert fidelity.resolve_subtune(sid, "auto", (0, 9)) == 0
+    assert fidelity.resolve_ours_subtune(0, "auto", (0, 9)) == 9
+    # -a N traces N on both sides, pin or no pin
+    assert fidelity.resolve_subtune(sid, 2, (1, 0)) == 2
+    assert fidelity.resolve_ours_subtune(2, 2, (1, 0)) == 2
+    # unpinned, ours is the identity
+    assert fidelity.resolve_ours_subtune(3, "auto", None) == 3
+
+
+def test_a_pinned_pair_change_refuses_that_row_not_the_run():
+    """Adopting a pin moves ONE file's traced pair on purpose; a baseline
+    taken before it must still A/B every other file. An unpinned subtune
+    difference (a different `-a`) is still whole-run fatal."""
+    old_c = _ab("C.sid", "same", seconds=180)
+    new_c = _ab("C.sid", "same", seconds=180, subtune=1, ours_subtune=0,
+                subtune_pinned=True)
+    old_d = _ab("D.sid", "same", seconds=180)
+    new_d = _ab("D.sid", "same", seconds=180, subtune=0, ours_subtune=9,
+                subtune_pinned=True)
+    old_b = _ab("B.sid", "same", seconds=180)
+    new_b = _ab("B.sid", "same", seconds=180)
+    base = {"C.sid": old_c, "D.sid": old_d, "B.sid": old_b}
+    new = {"C.sid": new_c, "D.sid": new_d, "B.sid": new_b}
+    assert fidelity.settings_mismatch(base, new) == []
+    assert fidelity.pin_mismatches(base, new) == [
+        ("C.sid", (0, 0), (1, 0)), ("D.sid", (0, 0), (0, 9))]
+    text, code = fidelity.compare_runs([old_c, old_d, old_b],
+                                       [new_c, new_d, new_b])
+    assert code == 0, text
+    refused = text.split("## Refused rows (traced subtune pair)")[1] \
+        .split("##")[0]
+    assert "C.sid: s0/o0 -> s1/o0" in refused
+    assert "D.sid: s0/o0 -> s0/o9" in refused
+    assert "B.sid" not in refused
+    assert "identical on all 1 file(s)" in text
+    # the same pinned pair on both sides compares normally
+    assert fidelity.pin_mismatches({"C.sid": new_c},
+                                   {"C.sid": dict(new_c)}) == []
+    # an unpinned subtune change still refuses the whole run
+    assert fidelity.settings_mismatch(
+        {"A.sid": _ab("A.sid")}, {"A.sid": _ab("A.sid", subtune=1)}) == [
+        "A.sid: subtune 0 -> 1"]
+
+
+def test_the_report_names_pinned_rows_apart_from_searched_ones():
+    pinned = _row("Commodore_64_Music_Examples.sid", "measured", 0.96, 10, 10)
+    pinned.update(subtune=1, ours_subtune=0, subtune_pinned=True,
+                  matched_subtune=0)
+    searched = _row("Action_Biker.sid", "measured", 1.0, 10, 10)
+    searched.update(subtune=1, matched_subtune=0)
+    text = fidelity.report([pinned, searched], _Args())
+    pin_line = next(l for l in text.splitlines() if "`traced_subtune`" in l)
+    assert "Commodore_64_Music_Examples.sid (s1->o0)" in pin_line
+    assert "Action_Biker" not in pin_line
+    shift_line = next(l for l in text.splitlines()
+                      if "scored against a subtune of" in l)
+    assert "Action_Biker.sid (1->0)" in shift_line
+    assert "Commodore_64" not in shift_line
+    off0_line = next(l for l in text.splitlines()
+                     if "traced at a subtune other than 0" in l)
+    assert "Commodore_64" not in off0_line
+
+
+_gt2reloc_ok = pathlib.Path(os.environ.get("H2G_GT2RELOC",
+                                           fidelity.GT2RELOC)).exists()
+
+
+def _pinned_row(tmp_path, name, pin):
+    """One real harness row through `main`, with or without a pin."""
+    import json
+    doc = json.loads((REPO_ROOT / "presets.json").read_text(encoding="utf-8"))
+    entry = dict(doc["songs"][name])
+    entry.pop("traced_subtune", None)
+    if pin is not None:
+        entry["traced_subtune"] = list(pin)
+    doc["songs"][name] = entry
+    presets = tmp_path / f"p_{pin is not None}.json"
+    presets.write_text(json.dumps(doc), encoding="utf-8")
+    out = tmp_path / f"r_{pin is not None}.json"
+    assert fidelity.main([str(CORPUS / name), "-t", "30", "--length-probe", "1",
+                          "--presets", str(presets), "--json", str(out),
+                          "-o", str(tmp_path / "r.md"), "--label", "t"]) == 0
+    (row,) = json.loads(out.read_text(encoding="utf-8"))
+    return row
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.skipif(not _gt2reloc_ok, reason="gt2reloc not available")
+@pytest.mark.parametrize("name,pin", [
+    ("Commodore_64_Music_Examples.sid", (1, 0)),
+    ("Dragons_Lair_Part_II.sid", (0, 9)),
+])
+def test_a_pinned_row_is_scored_at_its_counterpart(tmp_path, name, pin):
+    """The two files `--diagnose` shows are scored against different music:
+    C64ME's s1 is our o0 (startSong names s0) and DL2's s0 is our o9 (init
+    $AF00's remap, eight outside the search window). Through `main`, so the
+    presets.json key -> `_preset_traced_subtune` -> `measure` wiring is what
+    is pinned, and the unpinned control shows the pin is what moves it."""
+    if not (CORPUS / name).exists():
+        pytest.skip(f"{name} not in the corpus")
+    row = _pinned_row(tmp_path, name, pin)
+    assert (row["subtune"], row["ours_subtune"]) == pin
+    assert row["subtune_pinned"] is True
+    assert row["matched_subtune"] == pin[1]
+    assert row["melody"] >= 0.8, row["melody"]
+    control = _pinned_row(tmp_path, name, None)
+    assert "ours_subtune" not in control and "subtune_pinned" not in control
+    assert control["melody"] < 0.3, control["melody"]

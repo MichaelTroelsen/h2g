@@ -237,6 +237,89 @@ def test_render_cached_returns_none_when_the_renderer_fails(tmp_path):
                                renderer=lambda *a, **k: False) is None
 
 
+def _stamping_sidplayfp(monkeypatch):
+    """Drive the REAL `listen.render_sidplayfp` with `subprocess.run` faked:
+    the WAV it writes is a sine whose frequency is 200 Hz plus the `--delay=`
+    the argv carried, so a served file says which delay rendered it."""
+    import listen
+    calls = []
+
+    def run(argv, **kw):
+        delay = int(next(a for a in argv if a.startswith("--delay="))[8:])
+        out = Path(next(a for a in argv if a.startswith("-w"))[2:])
+        calls.append(delay)
+        _write(out, _sine(0.2, hz=200.0 + delay))
+        return None
+    monkeypatch.setattr(listen.subprocess, "run", run)
+    return listen, calls
+
+
+def _delay_of(wav: Path) -> int:
+    x, rate = sound.read_wav_mono(wav)
+    spec = np.abs(np.fft.rfft(x))
+    return int(round(np.argmax(spec) * rate / len(x) - 200.0))
+
+
+def test_a_render_under_one_delay_is_never_served_for_a_request_under_another(
+        tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop `settings_tag(renderer)` from `render_cached`'s
+    filename (the pre-v0.5.493 name) and the delay-40 request is served the
+    delay-0 WAV -- the pre-flag hazard, a random-delay render under a still
+    valid content key. A pre-settings name on disk is never served either."""
+    listen, calls = _stamping_sidplayfp(monkeypatch)
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    cache = tmp_path / "c"
+    cache.mkdir()
+    key = sound.content_key(sid)
+    # a pre-flag render of the SAME bytes, left by the old naming: a trap
+    _write(cache / f"orig.{key}.s0.t1.wav", _sine(0.2, hz=200.0 + 999))
+
+    monkeypatch.setattr(listen, "SIDPLAYFP_POWER_ON_DELAY", 0)
+    a = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert calls == [0] and _delay_of(a) == 0, "the pre-flag file was served"
+
+    monkeypatch.setattr(listen, "SIDPLAYFP_POWER_ON_DELAY", 40)
+    b = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert calls == [0, 40], "a delay-0 render was served for a delay-40 request"
+    assert b != a and _delay_of(b) == 40
+
+    # and each is still a hit under its own settings
+    monkeypatch.setattr(listen, "SIDPLAYFP_POWER_ON_DELAY", 0)
+    assert sound.render_cached(sid, 1, 0, "orig", cache=cache) == a
+    assert calls == [0, 40] and _delay_of(a) == 0
+    # the content key -- what approvals and the live-key readers reproduce --
+    # did not move with the settings
+    assert key in a.name and key in b.name and sound.content_key(sid) == key
+
+
+def test_render_repeat_numbers_each_delay_separately(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop `settings_tag(renderer)` from `render_repeat`'s
+    stem and the delay-40 repeat is numbered r2 beside the delay-0 one, so
+    the calibration's re-render floor mixes two start states again."""
+    listen, calls = _stamping_sidplayfp(monkeypatch)
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    monkeypatch.setattr(listen, "SIDPLAYFP_POWER_ON_DELAY", 0)
+    first = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c")
+    monkeypatch.setattr(listen, "SIDPLAYFP_POWER_ON_DELAY", 40)
+    second = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c")
+    assert calls == [0, 40]
+    assert len(first) == 1 and len(second) == 1 and first != second
+    assert second[0].name.endswith(".r1.wav") and _delay_of(second[0]) == 40
+
+
+def test_the_settings_tag_names_the_delay_and_the_engine():
+    """What the tag hashes, read back: the delay and the executable's bytes.
+    A renderer with no known settings is named, so two engines never share
+    a render of the same bytes."""
+    import listen
+    s = sound.render_settings(listen.render_sidplayfp)
+    assert f"delay={listen.SIDPLAYFP_POWER_ON_DELAY}" in s and "exe=" in s
+    assert sound.settings_tag(listen.render_vsid) != sound.settings_tag(listen.render_sidplayfp)
+    assert len(sound.settings_tag(listen.render_sidplayfp)) == 8
+
+
 # --------------------------------------------------------------------------
 # `render_repeat`: a FRESH render every call, because the noise floor is the
 # render's reproducibility. sidplayfp's power-on delay is random by default
@@ -255,14 +338,14 @@ def test_render_repeat_renders_fresh_every_call_and_numbers_the_results(tmp_path
     first = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
     second = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c", renderer=r)
     assert r.calls == ["Tune.sid", "Tune.sid"], "every call renders again"
-    key = sound.content_key(sid)
-    assert [p.name for p in first] == [f"repeat.{key}.s0.t1.r1.wav"]
-    assert [p.name for p in second] == [f"repeat.{key}.s0.t1.r1.wav",
-                                        f"repeat.{key}.s0.t1.r2.wav"]
+    key, st = sound.content_key(sid), sound.settings_tag(r)
+    assert [p.name for p in first] == [f"repeat.{key}.{st}.s0.t1.r1.wav"]
+    assert [p.name for p in second] == [f"repeat.{key}.{st}.s0.t1.r1.wav",
+                                        f"repeat.{key}.{st}.s0.t1.r2.wav"]
     assert all(p.exists() for p in second)
     # and the cached render of the same bytes is a different file, untouched
     c = sound.render_cached(sid, 1, 0, "orig", cache=tmp_path / "c", renderer=r)
-    assert c.name == f"orig.{key}.s0.t1.wav" and c not in second
+    assert c.name == f"orig.{key}.{st}.s0.t1.wav" and c not in second
 
 
 def test_render_repeat_keeps_only_the_newest_and_a_failed_render_adds_nothing(tmp_path):
@@ -273,10 +356,15 @@ def test_render_repeat_keeps_only_the_newest_and_a_failed_render_adds_nothing(tm
         have = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
                                    renderer=r, keep=3)
     assert [p.name.rsplit(".", 2)[1] for p in have] == ["r2", "r3", "r4"]
-    assert not (tmp_path / "c" / f"repeat.{sound.content_key(sid)}.s0.t1.r1.wav").exists()
-    # a failed render: what was there is returned, nothing is added or removed
+    stem = f"repeat.{sound.content_key(sid)}.{sound.settings_tag(r)}.s0.t1"
+    assert not (tmp_path / "c" / f"{stem}.r1.wav").exists()
+    # a failed render: what was there is returned, nothing is added or removed.
+    # The failing stand-in reports r's settings -- it is r failing, not
+    # another engine, whose renders would be named apart.
+    fail = lambda *a, **k: False  # noqa: E731
+    fail.render_settings = lambda: sound.render_settings(r)
     got = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
-                              renderer=lambda *a, **k: False, keep=3)
+                              renderer=fail, keep=3)
     assert got == have
     # numbering continues from the highest on disk, not from the count
     have = sound.render_repeat(sid, 1, 0, "repeat", cache=tmp_path / "c",
@@ -434,45 +522,74 @@ def _cache(tmp_path, names):
     return d
 
 
+# The settings segment the real renderer's renders carry today; every
+# current-format name below uses it, so `superseded_renders`' default
+# settings see them as reachable.
+_ST = sound.settings_tag(sound.listen.render_sidplayfp)
+
+
 def test_render_key_of_reads_the_cache_name_and_nothing_else():
-    assert sound.render_key_of("ours.0ef54321942e.s0.t180.wav") == "0ef54321942e"
+    assert sound.render_key_of(f"ours.0ef54321942e.{_ST}.s0.t180.wav") == "0ef54321942e"
+    # the pre-settings shape still parses: prune must be able to NAME it
     assert sound.render_key_of("orig.41aadd62f943.s3.t60.wav") == "41aadd62f943"
+    assert sound.render_settings_of("orig.41aadd62f943.s3.t60.wav") is None
+    assert sound.render_settings_of(f"ours.0ef54321942e.{_ST}.s0.t180.wav") == _ST
     assert sound.render_key_of("repeat.41aadd62f943.s0.t60.1.wav") is None
+    assert sound.render_key_of(f"repeat.41aadd62f943.{_ST}.s0.t60.r1.wav") is None
+    assert sound.render_key_of("ours.0ef54321942e.nothex!!.s0.t180.wav") is None
     assert sound.render_key_of("notes.txt") is None
+
+
+def test_a_live_key_under_other_renderer_settings_is_superseded(tmp_path):
+    """SABOTAGE TARGET: drop the `got[1] != settings` half of
+    `superseded_renders` and the pre-flag render of a LIVE key is kept --
+    a file `render_cached` can never serve again, held forever because its
+    key is still in use. Its current-settings sibling is kept."""
+    d = _cache(tmp_path, [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav",
+                          "ours.aaaaaaaaaaaa.s0.t180.wav",           # pre-flag
+                          "ours.aaaaaaaaaaaa.0123abcd.s0.t180.wav",  # other delay
+                          "orig.cccccccccccc.s0.t180.wav"])
+    got = [p.name for p in sound.superseded_renders(d, {"aaaaaaaaaaaa"})]
+    assert sorted(got) == ["ours.aaaaaaaaaaaa.0123abcd.s0.t180.wav",
+                           "ours.aaaaaaaaaaaa.s0.t180.wav"]
+    # orig is never moved, only NAMED as unreachable
+    stale = [p.name for p in sound.stale_settings_renders(d)]
+    assert "orig.cccccccccccc.s0.t180.wav" in stale
+    assert f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav" not in stale
 
 
 def test_superseded_renders_names_only_ours_files_with_a_dead_key(tmp_path):
     """orig.* is keyed on the original and valid forever; repeat.* is per
     original; a foreign name is left alone. Only an `ours` render whose key no
     reader can produce is superseded."""
-    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.aaaaaaaaaaaa.s0.t60.wav",
-                          "ours.bbbbbbbbbbbb.s0.t180.wav", "orig.cccccccccccc.s0.t180.wav",
+    d = _cache(tmp_path, [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav", f"ours.aaaaaaaaaaaa.{_ST}.s0.t60.wav",
+                          f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav", f"orig.cccccccccccc.{_ST}.s0.t180.wav",
                           "repeat.cccccccccccc.s0.t60.1.wav", "ours.weird.wav"])
     got = [p.name for p in sound.superseded_renders(d, {"aaaaaaaaaaaa"})]
-    assert got == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+    assert got == [f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"]
 
 
 def test_live_keys_from_fidelity_reads_the_rows_sound_cache(tmp_path):
     j = tmp_path / "fidelity.json"
     j.write_text(json.dumps([
-        {"file": "a.sid", "sound_cache": ["orig.111111111111.s0.t180.wav",
-                                          "ours.222222222222.s0.t180.wav"]},
+        {"file": "a.sid", "sound_cache": [f"orig.111111111111.{_ST}.s0.t180.wav",
+                                          f"ours.222222222222.{_ST}.s0.t180.wav"]},
         {"file": "b.sid", "status": "not converted"},
     ]), encoding="utf-8")
     assert sound.live_keys_from_fidelity(j) == {"222222222222"}
 
 
 def test_prune_superseded_moves_never_deletes_and_dry_run_moves_nothing(tmp_path):
-    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.bbbbbbbbbbbb.s0.t180.wav"])
+    d = _cache(tmp_path, [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav", f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"])
     q = tmp_path / "quarantine"
     got = sound.prune_superseded(d, {"aaaaaaaaaaaa"}, q, dry_run=True)
-    assert [p.name for p in got] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
-    assert sorted(p.name for p in d.iterdir()) == ["ours.aaaaaaaaaaaa.s0.t180.wav",
-                                                   "ours.bbbbbbbbbbbb.s0.t180.wav"]
+    assert [p.name for p in got] == [f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"]
+    assert sorted(p.name for p in d.iterdir()) == [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav",
+                                                   f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"]
     got = sound.prune_superseded(d, {"aaaaaaaaaaaa"}, q, dry_run=False)
-    assert [p.name for p in got] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
-    assert [p.name for p in d.iterdir()] == ["ours.aaaaaaaaaaaa.s0.t180.wav"]
-    assert [p.name for p in q.iterdir()] == ["ours.bbbbbbbbbbbb.s0.t180.wav"]
+    assert [p.name for p in got] == [f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"]
+    assert [p.name for p in d.iterdir()] == [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav"]
+    assert [p.name for p in q.iterdir()] == [f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"]
 
 
 def test_prune_refuses_while_a_calibration_build_cannot_be_rebuilt(tmp_path, monkeypatch, capsys):
@@ -481,9 +598,9 @@ def test_prune_refuses_while_a_calibration_build_cannot_be_rebuilt(tmp_path, mon
     for it -- so nothing moves. An unrecoverable APPROVED build is reported
     and not protected: no reader can construct its key, so its render is
     unreachable already."""
-    d = _cache(tmp_path, ["ours.aaaaaaaaaaaa.s0.t180.wav", "ours.bbbbbbbbbbbb.s0.t180.wav"])
+    d = _cache(tmp_path, [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav", f"ours.bbbbbbbbbbbb.{_ST}.s0.t180.wav"])
     j = tmp_path / "fidelity.json"
-    j.write_text(json.dumps([{"file": "a.sid", "sound_cache": ["ours.aaaaaaaaaaaa.s0.t180.wav"]}]),
+    j.write_text(json.dumps([{"file": "a.sid", "sound_cache": [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav"]}]),
                  encoding="utf-8")
     (tmp_path / "presets.json").write_text('{"always": {}, "songs": {}}', encoding="utf-8")
     monkeypatch.setattr(sound, "live_keys_from_history", lambda *a: (set(), ["X.sid 0.5.1"]))
@@ -499,4 +616,4 @@ def test_prune_refuses_while_a_calibration_build_cannot_be_rebuilt(tmp_path, mon
     assert sound._prune_main(args) == 0
     out = capsys.readouterr().out
     assert "NOT protected" in out and "moved 1 superseded" in out
-    assert [p.name for p in d.iterdir()] == ["ours.aaaaaaaaaaaa.s0.t180.wav"]
+    assert [p.name for p in d.iterdir()] == [f"ours.aaaaaaaaaaaa.{_ST}.s0.t180.wav"]

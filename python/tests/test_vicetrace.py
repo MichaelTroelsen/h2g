@@ -15,6 +15,22 @@ VICE's `dump` sound device writes the whole SID state on every rasterline,
 87 is also what `--equal-calls` predicted from a different direction, so two
 methods that share nothing agree. The parsing tests below need no emulator;
 the live one is skipped when VICE is absent.
+
+**ROOT CAUSE, FOUND (not worked around by parsing differently): VICE 3.9's
+`dump` sound device itself sign-extends the low byte of every 16-bit field it
+prints** -- `(hi << 8) | (signed char) lo` in its own C, so whenever the true
+low byte has bit 7 set, the printed high byte reads back as `ff` no matter
+what the true high byte was. Confirmed directly off a live trace: running
+`vicetrace.run` on `Commando.sid` (v0.5.492 corpus) for 2 seconds gives 31200
+`FREQ` blocks, of which 27767 carry at least one `ff` word, e.g.
+`FREQ:   0116 2141 ffa9` -- a real `$xxA9` printing with hi `ff` regardless of
+what `xx` was. This is a property of the dump driver, present on both an
+original `.sid` and one this converter packed; `vicetrace.parse` does not
+introduce it. `parse()` is deliberately a FAITHFUL reader of the dump text --
+it must not repair the corruption, only report it, so the corruption stays
+visible to whatever reads `.freq`/`.pulse`/`.adsr` next
+(`fidelity.vice_freq_repair`, for `.freq` only). The `freq_is_corrupt`-named
+tests below pin that.
 """
 import pathlib
 import sys
@@ -181,3 +197,192 @@ def test_the_counting_dimensions_take_the_majority_not_the_edge():
 def test_a_global_register_reduces_the_same_way():
     frames = V.frame_cells_global(_samples([(0x40, 312)]), lambda s: s.cutoff)
     assert len(frames) == 1 and frames[0].hist == {0: 312}
+
+
+# --- the sign-extended FREQ/PULSE/ADSR hi byte ------------------------------
+#
+# vicetrace-freq-hi-byte-reads-ff: VICE 3.9's dump driver prints the wrong
+# high byte for any 16-bit field whose true low byte is >= $80 -- see the
+# module docstring's ROOT CAUSE note. These pin that `parse()` reports the
+# corruption verbatim (never repairs it) and that `freq_is_corrupt` names
+# the exact predicate the driver's own bug obeys.
+
+# One rasterline's worth of the seven-line block `vicetrace.parse` reads,
+# corrupted exactly as VICE 3.9 corrupts it: three real voice-0 frequencies
+# used by the task that pinned this ($2BA9, $57A9, $03A9 -- three different
+# true high bytes sharing low byte $A9) all print as `FREQ: ffa9 ...`.
+CORRUPT_BLOCK = """FREQ:   ffa9 0800 0000
+PULSE:  0800 0000 0000
+CTRL:     41   00   00
+ADSR:   0f00 0000 0000
+FILTER: 0000 RES: 00 MODE/VOL: 0f
+ADC: ff ff
+OSC3: 00 ENV3: a4
+"""
+
+
+def test_parse_reports_the_corrupted_freq_hi_byte_verbatim():
+    """`parse()` must not repair the sign extension -- it hands back exactly
+    the corrupted `0xFFA9`, three real high bytes ($2B, $57, $03) all
+    printing the same way and none of them recoverable from this block
+    alone. A parse that "helpfully" reconstructed a high byte here would be
+    guessing, and would hide the defect from `fidelity.vice_freq_repair`,
+    which needs to know a value IS corrupt before it can fix it."""
+    s = V.parse(CORRUPT_BLOCK)
+    assert len(s) == 1
+    assert s[0].voices[0].freq == 0xFFA9
+    assert V.freq_is_corrupt(s[0].voices[0].freq)
+
+
+def test_parse_leaves_an_uncorrupted_freq_alone():
+    """The negative case: `BLOCK`'s own `$1168` has low byte $68, bit 7
+    clear, so VICE never sign-extends it and `freq_is_corrupt` must not
+    flag it."""
+    s = V.parse(BLOCK)
+    assert s[0].voices[0].freq == 0x1168
+    assert not V.freq_is_corrupt(s[0].voices[0].freq)
+
+
+def test_freq_is_corrupt_is_hi_ff_and_lo_bit7_set():
+    """Pin the exact predicate VICE's own bug applies, over every low byte --
+    not just the sampled cases above -- so a change to this function is
+    caught even where no fixture happens to exercise it."""
+    for lo in range(0x100):
+        assert V.freq_is_corrupt(0xFF00 | lo) == bool(lo & 0x80), hex(lo)
+    # the predicate must key off the low byte, not merely "hi == 0xff"
+    assert V.freq_is_corrupt(0xFF80)
+    assert not V.freq_is_corrupt(0xFF7F)
+
+
+def test_freq_is_corrupt_matches_the_documented_zoolook_measurements():
+    """`fidelity.vice_freq_repair`'s docstring records specific values
+    measured frame-by-frame against siddump on Zoolook's original at
+    v0.5.485: `$0D6D` prints `0d6d` (not corrupt), `$0E33` prints `0e33`
+    (not corrupt), and `$0DD0` prints `ffd0`, `$1BA1` prints `ffa1`, `$52BC`
+    prints `ffbc` (all corrupt). Pin those exact values so a change to the
+    predicate is checked against the same evidence the docstring cites."""
+    for v in (0x0D6D, 0x0E33):
+        assert not V.freq_is_corrupt(v), hex(v)
+    for lo in (0xD0, 0xA1, 0xBC):              # the shared low byte in each pair
+        assert V.freq_is_corrupt(0xFF00 | lo), hex(lo)
+
+
+def test_pulse_and_adsr_fields_are_equally_unrepaired_by_parse():
+    """The same corruption reaches `.pulse` and `.adsr` (16-bit fields too),
+    and nothing downstream repairs those the way `fidelity.vice_freq_repair`
+    repairs `.freq` -- `parse()` must not treat them any differently."""
+    block = """FREQ:   0000 0000 0000
+PULSE:  ffd0 0000 0000
+CTRL:     41   00   00
+ADSR:   ffbc 0000 0000
+FILTER: 0000 RES: 00 MODE/VOL: 0f
+"""
+    s = V.parse(block)[0]
+    assert s.voices[0].pulse == 0xFFD0
+    assert s.voices[0].adsr == 0xFFBC
+    assert V.freq_is_corrupt(s.voices[0].pulse)
+    assert V.freq_is_corrupt(s.voices[0].adsr)
+
+
+def test_ctrl_is_an_8_bit_field_never_subject_to_this():
+    """`CTRL` prints two hex digits (`_HEX` matches 2-4), so it cannot carry
+    the 16-bit sign-extension defect; this is the field the module docstring
+    names as trustworthy straight off the dump."""
+    s = V.parse(CORRUPT_BLOCK)[0]
+    assert s.voices[0].ctrl == 0x41
+
+
+# --- octave_split_frames -----------------------------------------------------
+#
+# The sub-frame check of a per-CALL arpeggio toggle under `-S2`: does a frame
+# carry two FREQ low bytes an octave apart, split near the half-frame line
+# count rather than lopsidedly? Adapted from
+# `C:/t/ticked-fixed-arp-at-s2-is-a-/vice_probe.py`.
+
+def _voice_samples(voice0_lows: list[int]) -> list:
+    """One `Sample` per rasterline, voice 0's FREQ low byte set from
+    `voice0_lows` (hi byte 0, so nothing here is `freq_is_corrupt`),
+    voices 1-2 silent at 0."""
+    out = []
+    for lo in voice0_lows:
+        out.append(V.Sample(voices=[V.VoiceLine(freq=lo),
+                                     V.VoiceLine(freq=0),
+                                     V.VoiceLine(freq=0)]))
+    return out
+
+
+def test_octave_split_frames_is_zero_for_a_steady_note():
+    """One value all frame long is not a split of anything."""
+    samples = _voice_samples([0x40] * V.PAL_LINES_PER_FRAME)
+    total, per_voice = V.octave_split_frames(samples)
+    assert total == 0 and per_voice == [0, 0, 0]
+
+
+def test_octave_split_frames_counts_an_even_octave_split_near_half_frame():
+    """156/156 lines, exactly at the call boundary this task is about, and
+    the two values are an octave apart (0x80 == 2*0x40 mod 256)."""
+    half = V.PAL_LINES_PER_FRAME // 2
+    lows = [0x40] * half + [0x80] * (V.PAL_LINES_PER_FRAME - half)
+    samples = _voice_samples(lows)
+    total, per_voice = V.octave_split_frames(samples)
+    assert total == 1 and per_voice == [1, 0, 0]
+
+
+def test_octave_split_frames_counts_the_wrap_around_octave_direction():
+    """The octave relation is checked both ways on purpose: sorting the two
+    distinct values ascending does not put the one that is `2*other mod 256`
+    on a fixed side when the doubling wraps past $FF. Here 0x81*2 & 0xFF ==
+    0x02 -- the SMALLER sorted value is double the LARGER's wraparound, the
+    opposite pairing from the plain case above -- so a predicate checking only
+    `hi == (lo*2) & 0xFF` misses it."""
+    half = V.PAL_LINES_PER_FRAME // 2
+    lows = [0x02] * half + [0x81] * (V.PAL_LINES_PER_FRAME - half)
+    samples = _voice_samples(lows)
+    total, per_voice = V.octave_split_frames(samples)
+    assert total == 1 and per_voice == [1, 0, 0]
+
+
+def test_octave_split_frames_ignores_a_lopsided_split():
+    """A minority under SPLIT_MINORITY_LINES is an ordinary one-line-early
+    register write settling, not a per-call toggle -- must not count."""
+    lows = [0x40] * (V.PAL_LINES_PER_FRAME - 10) + [0x80] * 10
+    samples = _voice_samples(lows)
+    total, per_voice = V.octave_split_frames(samples)
+    assert total == 0 and per_voice == [0, 0, 0]
+
+
+def test_octave_split_frames_ignores_a_non_octave_two_value_split():
+    """Two values split evenly but not an octave apart (a slide, not an
+    arpeggio) must not count."""
+    half = V.PAL_LINES_PER_FRAME // 2
+    lows = [0x40] * half + [0x41] * (V.PAL_LINES_PER_FRAME - half)
+    samples = _voice_samples(lows)
+    total, per_voice = V.octave_split_frames(samples)
+    assert total == 0 and per_voice == [0, 0, 0]
+
+
+def test_octave_split_frames_reads_the_low_byte_even_when_corrupt():
+    """The classifier reads only `freq & 0xFF`, which VICE's sign-extension
+    defect never touches -- it only forces the HIGH byte to `$FF` when the
+    low byte's own bit 7 is set (`freq_is_corrupt`). A frame built entirely
+    from raw words `freq_is_corrupt` calls corrupt (hi forced to `$FF` for
+    both values here, since both low bytes have bit 7 set) must classify
+    identically to the same low bytes with a clean high byte -- proof this
+    needs no `fidelity.vice_freq_repair`."""
+    lo, hi = 0xC0, 0x80                     # 0x80 == (0xC0 * 2) & 0xFF
+    half = V.PAL_LINES_PER_FRAME // 2
+    lows = [lo] * half + [hi] * (V.PAL_LINES_PER_FRAME - half)
+    clean = _voice_samples(lows)
+    corrupt = [V.Sample(voices=[V.VoiceLine(freq=0xFF00 | v),
+                                 V.VoiceLine(freq=0), V.VoiceLine(freq=0)])
+               for v in lows]
+    assert all(V.freq_is_corrupt(s.voices[0].freq) for s in corrupt)
+    assert V.octave_split_frames(clean) == V.octave_split_frames(corrupt)
+
+
+def test_octave_split_frames_drops_a_trailing_partial_frame():
+    lows = ([0x40] * (V.PAL_LINES_PER_FRAME // 2)
+            + [0x80] * (V.PAL_LINES_PER_FRAME - V.PAL_LINES_PER_FRAME // 2))
+    samples = _voice_samples(lows + lows[:10])   # ten extra rasterlines
+    total, _ = V.octave_split_frames(samples)
+    assert total == 1

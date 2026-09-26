@@ -365,6 +365,7 @@ def main(argv=None) -> int:
     workdir, _ = F.make_workdir(args.workdir)
     previous = load_approvals_json()
     tunes = {}
+    F.reset_preset_opts_misses()
     for stem, a in approved_tunes().items():
         sid = Path(args.sid_dir) / f"{stem}.sid"
         if not sid.exists():
@@ -394,6 +395,7 @@ def main(argv=None) -> int:
         print(f"  {stem:32} {tunes[stem]['status']}"
               + (f"  ({', '.join(verdict['failed'])})" if verdict["failed"] else ""),
               file=sys.stderr)
+    F.report_preset_opts_misses("approvals.py")
     out = {"generator": f"h2g {__version__} approvals.py", "head": F.git_label(ROOT),
            "seconds": args.seconds, "calibrated": cal is not None, "tunes": tunes}
     Path(args.output).parent.mkdir(parents=True, exist_ok=True)
