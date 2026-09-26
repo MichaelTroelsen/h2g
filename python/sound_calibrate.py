@@ -141,8 +141,9 @@ CHECK_WINDOW_S = 60
 # in line with the 0.0069 sound.py's own HOP table recorded at v0.5.453.
 #
 # Larger still is a SECOND RENDER of the same bytes. sidplayfp's power-on
-# delay is random by default (`--delay=<num>` in its --help-debug fixes it,
-# and `listen.render_sidplayfp` does not pass it), so three 60 s renders of
+# delay is random by default (`--delay=<num>` in its --help-debug fixes it;
+# `listen.render_sidplayfp` did not pass it before v0.5.492 and passes
+# `--delay=0` since 76486d7), so three 60 s renders of
 # each approved original differed in length by 0-220 samples, aligned 0-6
 # hops apart and read 0.0031-0.0202 off each other (0.0134/0.0031 ACE_II,
 # 0.0034/0.0090 Action_Biker, 0.0089/0.0069 5_Title_Tunes, 0.0202/0.0109
@@ -260,7 +261,8 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # KNOWN_BAD carries, and the two rows added here read "inside the render
 # floor" beside Human_Race's. The remedy the doc itself names is the
 # renderer's `--delay=<n>` flag in listen.render_sidplayfp (a fixed power-on
-# delay makes a re-render reproduce the cached one), NOT a wider floor and
+# delay makes a re-render reproduce the cached one -- landed at v0.5.492,
+# 76486d7, as SIDPLAYFP_POWER_ON_DELAY = 0), NOT a wider floor and
 # not dropping pairs; until it lands the three tempo-family rows are margins
 # inside the render's own noise, which is what the doc says of them.
 #
@@ -800,7 +802,7 @@ def render_doc(out: dict) -> str:
                       f"over {rer.get('renders', '?')} repeat renders of {rer.get('seconds', '?')} s)**. "
                       "The last is the render's own reproducibility -- sidplayfp's "
                       "power-on delay is random unless `--delay=<n>` is passed, and "
-                      "`listen.render_sidplayfp` does not pass it -- and it is the floor "
+                      "`listen.render_sidplayfp` passes `--delay=0` since v0.5.492 -- and it is the floor "
                       "under every score taken against a cached render. It is a maximum "
                       "over samples of a random start state, so it is a lower bound that "
                       "rises as runs accumulate (`sound.REPEAT_KEEP` renders per tune are "
