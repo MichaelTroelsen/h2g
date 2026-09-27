@@ -1142,8 +1142,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
-                       written: bool = False,
-                       fold_note: bool = False) -> tuple:
+                       written: bool = False) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 44 corpus files: effect bit
@@ -1248,17 +1247,12 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         # final call re-asserts the same byte. What the fold gives up is the
         # robustness above, not the pitch.
         #
-        # Behind `fold_note` rather than unconditional because
-        # `tests/test_effect_bit80.py` pins the spelled-out form at this
-        # function's DEFAULT budget of five for a four-call attack -- six
-        # entries, i.e. the overrun itself, recorded as the expected shape
-        # before anything measured it against the reservation.
-        # `_wavetable_entries` -- the caller whose budget is the layout's --
-        # passes True, and `tests/test_instrument_bound.py` holds the
-        # guarantee across both. Making the fold the default and moving
-        # that test to an explicit budget (as `test_call_rate` already
-        # does) is the cleaner shape; it was not this change's file.
-        if not fold_note or 1 + extra + 2 <= budget or extra <= 1:
+        # Folding is unconditional on the budget: a caller who wants the
+        # spelled-out form regardless of layout passes a `budget` roomy
+        # enough for it (as `test_call_rate` and the timing tests in
+        # `tests/test_effect_bit80.py` do), the same way every other
+        # caller here expresses "give this the room it needs".
+        if 1 + extra + 2 <= budget or extra <= 1:
             left += [attack] * extra
             right += [attack_note] * extra
         else:
@@ -1353,7 +1347,8 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
                                  frames_per_step: int = 1,
                                  frame_notes: Optional[List[int]] = None,
                                  log=None,
-                                 record: Optional[int] = None
+                                 record: Optional[int] = None,
+                                 attack_note: Optional[int] = None
                                  ) -> Optional[tuple]:
     """One block carrying bit $04's attack waveform *and* bit $10's arpeggio.
 
@@ -1426,6 +1421,24 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     still exactly one cycle, so the jump stays continuous. Without it the
     block is byte for byte what it was.
 
+    `attack_note` is bit $40's fixed pitch (`_fixed_attack_note`), and given
+    it the attack's calls carry that absolute note in place of the arpeggio's
+    step. **Read off After_8's player, not inferred from the other shape**:
+    its $40 handler runs *after* bit $10's (`$13DD AND #$10` writes the
+    arpeggio's frequency into `$1670,X`/`$166D,X`, then `$1427 BIT $1682 /
+    BVC` reloads the same two cells from `$1704,Y` = record +12), and it
+    decrements the SAME `$168C,X` counter bit $04's `$13CB DEC` does -- which
+    is the 6502 reading behind `_two_stage_frames`' halving, measured there
+    and only implied until now. So on every frame the attack waveform sounds,
+    the fixed note overwrites the arpeggio; once the counter is out,
+    `$143A LDA $16FD,Y / BNE` (record +5, `$2A` on all four `$54` records)
+    skips the handler's plain-note write and the arpeggio stands. The loop
+    is untouched: `step` and the jump target do not depend on the attack's
+    right column, so the cycle stays continuous across the jump exactly as
+    before. After_8 voice 2, `-t 180`: the original sounds `$22A0` (C-5) on
+    frames 1 and 2 of 283 of its 301 attacks, and this path emitted it on
+    none (C:/t/after-8-fixed-pitch-pitch-seq).
+
     Returns None where the block will not fit the record's budget, so the
     caller falls back to the plain two-stage shape rather than emitting a
     truncated arpeggio. `log`, when given, is told which record lost its
@@ -1491,7 +1504,9 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     right: List[int] = [WAVE_NOTE_BASE] * lead
     for c in range(calls + loop):
         left.append(attack if c < calls else tail)
-        if frame_notes is None:
+        if attack_note is not None and c < calls:
+            right.append(attack_note)    # bit $40 overwrites the step
+        elif frame_notes is None:
             right.append(notes[(c // step) % len(notes)])
         else:
             j = (lead + c) // hold       # the note's frame this call is in
@@ -6353,7 +6368,13 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         multiplier, budget, written=no_test_restart,
                         frames_per_step=det.pitch_seq.frames_per_step,
                         frame_notes=frame_notes, log=log,
-                        record=i + lead + 1)
+                        record=i + lead + 1,
+                        # Bit $40 as well (After_8's four `$54` records):
+                        # the same gate as the plain shape below -- a record
+                        # carrying $80 cedes frame 1 to the drum (§ 7.qqq).
+                        attack_note=(
+                            None if arp_style & EFFECT_SFX_DRUM_MASK
+                            else _fixed_attack_note(sid, det, i)))
                     if both is not None:
                         return both
             # Effect bit $40's fixed attack pitch, and the gate on it is bit
@@ -6410,8 +6431,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                          None if arp_style & EFFECT_SFX_DRUM_MASK
                                          else _fixed_attack_note(sid, det, i)),
                                      budget=budget,
-                                     written=no_test_restart,
-                                     fold_note=True)
+                                     written=no_test_restart)
             if two is not None:
                 return two
 

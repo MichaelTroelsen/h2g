@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.496 — 2026-09-27
+
+- After_8's composed two-stage pitch-seq block carries the $40 fixed pitch; the two-stage budget fold is the default and fold_note is gone
+
 ## 0.5.495 — 2026-09-27
 
 - runqueue drain: triangle walk on engine ticks with per-voice seeds and orbit-bounded table, pitch-seq reader/rotation/play order, legato duty ties, per-note arp split, depth envelope gate, ntick column, onset pairing by frame, subtune pin consumers, settings-tag argv

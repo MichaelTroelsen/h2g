@@ -263,7 +263,7 @@ def test_a_long_fixed_pitch_attack_folds_into_the_budget():
     spelled = _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
                                  budget=64)
     folded = _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
-                                budget=5, fold_note=True)
+                                budget=5)
     assert len(spelled[0]) == 13           # the frame-0 lead, ten calls, tail
     assert len(folded[0]) <= 5
     for left, right in (spelled, folded):
@@ -273,7 +273,7 @@ def test_a_long_fixed_pitch_attack_folds_into_the_budget():
             left, right)
     # Wherever the budget allows it, the spelled-out form is unchanged.
     assert _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
-                              budget=13, fold_note=True) == spelled
+                              budget=13) == spelled
 
 
 def test_the_fixture_has_no_such_handler():
@@ -309,3 +309,81 @@ def test_detects_own_freq_table_call_is_anchored_on_the_selected_engine():
     # Neither table carries a shift, so this file's own conversion bytes do
     # not move -- the corpus byte-hash covers every other file.
     assert det0.note_base == 0 and det1.note_base == 0
+
+
+def _after_8_block(sid, det, i):
+    from h2g import goatwriter as G
+    return G._wavetable_entries(sid, det, i, True, G.FORMAT_GTS5,
+                                [(0, 0)] * 16, 1, start=1, budget=200,
+                                two_stage=True, pitch_seq=True)
+
+
+@needs_corpus
+def test_after_8s_composed_block_sounds_c5_on_its_attack():
+    """After_8's four `$54` records take the two-stage + pitch-seq shape,
+    which through v0.5.495 never consulted `_fixed_attack_note` -- so the
+    handler-operand reading above left the file's bytes unchanged. The
+    player's `$1427` bit-$40 handler runs after bit $10's `$13DD` and
+    rewrites the same frequency cells from `$1704,Y` while the `$168C,X`
+    counter bit $04 shares is live: the attack's frames sound C-5, which the
+    original does on frames 1 and 2 of 283 of voice 2's 301 attacks at
+    `-t 180` (C:/t/after-8-fixed-pitch-pitch-seq, v0.5.495).
+    """
+    sid, det = _load("After_8")
+    blind = dataclasses.replace(det, effect_bit40=False)
+    c5 = WAVE_NOTE_ABS + 60
+    for i in (0, 12, 13, 14):
+        assert sid.data[det.instr_start + i * det.instr_stride + 7] == 0x54
+        left, right = _after_8_block(sid, det, i)
+        bleft, bright = _after_8_block(sid, blind, i)
+        # The composed branch fired (a loop, not the plain two-stage shape).
+        assert left[-1] == 0xFF and len(left) > 5, (i, left)
+        assert left == bleft, i
+        # +2 is $41, so a one-entry frame-0 lead; then the halved attack.
+        assert left[1:3] == [0x81, 0x81], (i, left)
+        assert right[1:3] == [c5, c5], (i, right)
+        moved = [k for k in range(len(right)) if right[k] != bright[k]]
+        assert moved == [1, 2], (i, moved)
+
+
+@needs_corpus
+def test_a_drum_bit_record_cedes_the_attack_to_the_drum():
+    """The composed shape takes the same `$80` gate as the plain one
+    (section 7.qqq): patch After_8's record 0 to `$D4` and the attack's
+    calls carry the arpeggio, exactly as with the bit-$40 reading off."""
+    sid, det = _load("After_8")
+    at = det.instr_start + 7
+    patched = dataclasses.replace(
+        sid, data=sid.data[:at] + bytes([0xD4]) + sid.data[at + 1:])
+    blind = dataclasses.replace(det, effect_bit40=False)
+    assert _after_8_block(patched, det, 0) == _after_8_block(patched, blind, 0)
+    assert _after_8_block(patched, det, 0) != _after_8_block(sid, det, 0)
+
+
+@needs_corpus
+def test_after_8s_preset_conversion_hands_every_composed_block_c5(
+        monkeypatch):
+    """End to end under the shipped preset: every call into the composed
+    shape is an After_8 `$54` record, each is handed C-5, and each returns a
+    block rather than falling back to the plain shape."""
+    import json
+
+    import fidelity
+    from h2g import goatwriter as G
+    from h2g.convert import convert
+
+    presets = json.loads((REPO_ROOT / "presets.json").read_text())
+    opts = fidelity._preset_opts(presets, "After_8.sid")
+    assert opts.get("two_stage") and opts.get("pitch_seq")
+    seen = []
+    real = G._two_stage_pitch_seq_entries
+
+    def spy(*a, **k):
+        got = real(*a, **k)
+        seen.append((k.get("attack_note"), got is not None))
+        return got
+
+    monkeypatch.setattr(G, "_two_stage_pitch_seq_entries", spy)
+    convert(str(CORPUS / "After_8.sid"), log=lambda m: None, **opts)
+    assert seen, "the composed shape was never reached"
+    assert all(s == (WAVE_NOTE_ABS + 60, True) for s in seen), seen

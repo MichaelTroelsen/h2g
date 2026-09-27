@@ -525,3 +525,63 @@ def test_ricochet_emits_its_attacks_and_never_the_pointer_byte():
     assert 0x99 not in left
     assert 0x17 in left and 0x81 in left
 
+
+
+def _composed(**kw):
+    """After_8 record 0's composed block, synthetically: `+2` $41, attack
+    $81 for 2 frames (the counter byte 4, halved by `$40`), arpeggio steps
+    [5, 0, 9], block at row 1."""
+    from h2g.goatwriter import _two_stage_pitch_seq_entries
+    args = dict(budget=200, written=False)
+    args.update(kw)
+    mult = args.pop("multiplier", 1)
+    return _two_stage_pitch_seq_entries(0x41, 0x81, 2, [5, 0, 9], 1, mult,
+                                        **args)
+
+
+def test_a_fixed_pitch_rides_the_attack_calls_of_the_composed_block():
+    """Bit $40's fixed pitch (After_8's `$54` records) replaces the
+    arpeggio's step on exactly the attack's calls, and nowhere else.
+
+    After_8's `$1427` handler runs after bit $10's (`$13DD`) and reloads the
+    same frequency cells from record +12 while the shared `$168C,X` counter
+    is live, so on every call the attack waveform sounds the note is the
+    fixed one; the sustain loop and the jump are the arpeggio's, unchanged.
+    """
+    from h2g.goatwriter import WAVE_NOTE_ABS
+    c5 = WAVE_NOTE_ABS + 60
+    for mult in (1, 3):
+        plain = _composed(multiplier=mult)
+        fixed = _composed(multiplier=mult, attack_note=c5)
+        assert plain is not None and fixed is not None
+        lead = mult                           # `+2` $41 takes a frame-0 lead
+        calls = 2 * mult
+        # The waveform column and the jump are the same bytes.
+        assert fixed[0] == plain[0]
+        assert fixed[1][-1] == plain[1][-1] == 1 + lead + calls
+        # The attack's calls, and only those, carry the fixed note.
+        moved = [k for k in range(len(plain[1])) if fixed[1][k] != plain[1][k]]
+        assert set(moved) <= set(range(lead, lead + calls)), (mult, moved)
+        assert fixed[1][lead:lead + calls] == [c5] * calls, (mult, fixed)
+        assert all(w == 0x81 for w in fixed[0][lead:lead + calls])
+        # Frame 0 still sounds the pattern's own note.
+        assert fixed[1][:lead] == [0x00] * lead
+
+
+def test_a_fixed_pitch_rides_the_phased_form_too():
+    """With `frame_notes` (the original's global phase) the same rule: the
+    attack's calls carry the fixed note, the loop keeps the phase."""
+    from h2g.goatwriter import WAVE_NOTE_ABS
+    c5 = WAVE_NOTE_ABS + 60
+    phase = [9, 5, 0]
+    plain = _composed(frame_notes=phase)
+    fixed = _composed(frame_notes=phase, attack_note=c5)
+    assert fixed[0] == plain[0]
+    assert fixed[1][1:3] == [c5, c5]
+    assert fixed[1][:1] + fixed[1][3:] == plain[1][:1] + plain[1][3:]
+
+
+def test_no_fixed_pitch_leaves_the_composed_block_byte_for_byte():
+    """`attack_note=None` is the pre-change block: every file that reaches
+    this path without a `$40` record is untouched."""
+    assert _composed(attack_note=None) == _composed()
