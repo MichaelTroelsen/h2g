@@ -478,10 +478,17 @@ def aligned_dump(o_text: str, u_text: str, lag: int, nframes: int,
 
 
 def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
-           gt2reloc: str, siddump: str, dump: bool = True) -> tuple:
-    """(markdown lines, summary dict) for one song."""
+           gt2reloc: str, siddump: str, dump: bool = True,
+           pinned: tuple[int, int] | None = None) -> tuple:
+    """(markdown lines, summary dict) for one song.
+
+    `pinned` is the song's presets.json `traced_subtune` pair
+    (`fidelity._preset_traced_subtune`): the original is traced at its first
+    half and OUR packed side at its second, the pair `fidelity._measure`
+    scores -- Dragons_Lair_Part_II's s0 is our o9."""
     nframes = seconds * 50
-    sub = F.resolve_subtune(path, "auto")
+    sub = F.resolve_subtune(path, "auto", pinned)
+    ours_sub = F.resolve_ours_subtune(sub, "auto", pinned)
     workdir.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, workdir / "o.sid")
 
@@ -492,7 +499,7 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
     sng, _ = F.legalise_restarts(sng)
     packed = F.pack_sid(sng, workdir, gt2reloc, mult)
     u_raw: list = []
-    ours = (F.run_siddump(packed, seconds, sub, siddump, calls=mult,
+    ours = (F.run_siddump(packed, seconds, ours_sub, siddump, calls=mult,
                           capture=u_raw)
             if packed is not None else None)
 
@@ -554,7 +561,8 @@ def report(path: Path, opts: dict, mult: int, seconds: int, workdir: Path,
     o_by, u_by = by_adsr(o_on), by_adsr(u_on)
 
     lines = [f"# {path.name} — instrument map", "",
-             f"Subtune {sub}, {seconds}s, packed at `-S{mult}`. Signatures are "
+             f"Subtune {sub}" + (f" (ours {ours_sub})" if ours_sub != sub else "")
+             + f", {seconds}s, packed at `-S{mult}`. Signatures are "
              "the registers on the frame after each note onset, joined on ADSR "
              "— a verbatim per-instrument copy, and so the one field that "
              "identifies an instrument on both sides.", ""]
@@ -889,7 +897,8 @@ def main(argv=None) -> int:
         try:
             lines, s = report(path, opts, mult, args.seconds,
                               work / path.stem, args.gt2reloc, args.siddump,
-                              dump=not args.no_dump)
+                              dump=not args.no_dump,
+                              pinned=F._preset_traced_subtune(doc, path.name))
         except Exception as exc:                      # noqa: BLE001
             print(f"  {path.name}: {type(exc).__name__}: {exc}")
             continue

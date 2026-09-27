@@ -252,6 +252,16 @@ def pack_into(blob: bytes, workdir: Path, tag: str, gt2reloc: str,
     return F.pack_sid(b, workdir / tag, gt2reloc, multiplier)
 
 
+def traced_pair(doc: dict, sid: Path) -> tuple[int, int]:
+    """(original's subtune, packed side's subtune) -- the pair
+    `fidelity._measure` scores, pin included. The packed side is traced at
+    the pin's SECOND half: Dragons_Lair_Part_II's s0 is our o9, and tracing
+    both sides at one index compares two different pieces of music."""
+    pinned = F._preset_traced_subtune(doc, sid.name)
+    sub = F.resolve_subtune(sid, "auto", pinned)
+    return sub, F.resolve_ours_subtune(sub, "auto", pinned)
+
+
 def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
            cal: dict | None, gt2reloc: str, siddump: str, workdir: Path,
            current_sng: bytes | None = None,
@@ -274,7 +284,7 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
         v = inherit({}, {}, {}, {}, None, cause="approved-build-absent")
         v["failed"] = ["approved .sng not on disk -- re-stage it with listen.py"]
         return v, cur_sha
-    sub = F.resolve_subtune(sid, "auto")
+    sub, ours = traced_pair(doc, sid)
     orig_trace = F.run_siddump(sid, seconds, sub, siddump)
 
     p_cur = pack_into(cur, workdir, "cur", gt2reloc, mult)
@@ -283,15 +293,15 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
         v = inherit({}, {}, {}, {}, None, cause="pack-refused")
         v["failed"] = ["gt2reloc refused a side"]
         return v, cur_sha
-    t_cur = F.run_siddump(p_cur, seconds, sub, siddump, calls=mult)
-    t_app = F.run_siddump(p_app, seconds, sub, siddump, calls=mult)
+    t_cur = F.run_siddump(p_cur, seconds, ours, siddump, calls=mult)
+    t_app = F.run_siddump(p_app, seconds, ours, siddump, calls=mult)
     s_cur, s_app = _structure_of(orig_trace, t_cur, seconds), _structure_of(orig_trace, t_app, seconds)
     structure = dict(s_cur, approved_attacks=s_app["attacks"],
                      approved_melody=s_app["melody"], approved_sequence=s_app["sequence"])
     lag = 0.02 * F.startup_lag(orig_trace, t_cur)[0]
-    app_vs_orig = sound.compare_sids(sid, p_app, seconds, sub, sub, prior_s=lag)
-    cur_vs_orig = sound.compare_sids(sid, p_cur, seconds, sub, sub, prior_s=lag)
-    cur_vs_app = sound.compare_sids(p_app, p_cur, seconds, sub, sub)
+    app_vs_orig = sound.compare_sids(sid, p_app, seconds, sub, ours, prior_s=lag)
+    cur_vs_orig = sound.compare_sids(sid, p_cur, seconds, sub, ours, prior_s=lag)
+    cur_vs_app = sound.compare_sids(p_app, p_cur, seconds, ours, ours)
     return inherit(app_vs_orig, cur_vs_orig, cur_vs_app, structure, cal), cur_sha
 
 

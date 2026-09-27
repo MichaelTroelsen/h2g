@@ -48,7 +48,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from h2g.goatwriter import (  # noqa: E402
     FIELD_LEN, GT_FIRST_NOTE, GT_LAST_NOTE, GT_REST, HEADER_LEN,
-    WAVE_MAX_DELAY, WAVECMD_PORTADOWN, WAVECMD_PORTAUP,
+    WAVE_MAX_DELAY, WAVE_SILENT_BASE, WAVE_TEST_BIT, WAVECMD_PORTADOWN,
+    WAVECMD_PORTAUP,
 )
 from h2g.patterns import (  # noqa: E402
     GT_END_PATTERN, GT_ORDER_RESTART, GT_REPEAT, GT_TRANSPOSE_DOWN,
@@ -274,6 +275,31 @@ def decode_wave_entry(left: int, right: int) -> Tuple[str, str, int]:
         return ("command", f"pitch down, speed-table entry {right}", 1)
     if 0xF0 <= left <= 0xFD:
         return ("command", f"command ${left:02X}, operand ${right:02X}", 1)
+    if right == 0x00:
+        pitch = "the pattern's note"
+    elif right < 0x60:
+        pitch = f"note {right:+d} semitones"
+    elif right < 0x80:
+        pitch = f"note {right - 0x80:+d} semitones"
+    else:
+        pitch = f"absolute {note_name(right - 0x80 + GT_FIRST_NOTE)}"
+    if WAVE_SILENT_BASE <= left <= WAVE_SILENT_BASE + 0x0F:
+        # readme.txt 3.4.1 / gplay.c:527: $E0-$EF writes only its low nibble
+        # to $D404 -- gate, sync, ring and test -- with no waveform-select
+        # bits, so the oscillator selects nothing and stays inaudible
+        # regardless of what the nibble looks like as a $80/$40/$20/$10 mask.
+        nibble = left & 0x0F
+        extra = []
+        if nibble & 0x02:
+            extra.append("sync")
+        if nibble & 0x04:
+            extra.append("ring")
+        gate = "gate on" if nibble & 0x01 else "gate off"
+        if nibble & WAVE_TEST_BIT:
+            gate += ", testbit"
+        extras = ("+" + "+".join(extra)) if extra else ""
+        return ("wave", f"inaudible (no waveform selected{extras}), {gate}"
+                         f" - {pitch}", 1)
     bits = []
     for bit, nm in ((0x80, "noise"), (0x40, "pulse"), (0x20, "saw"),
                     (0x10, "tri")):
@@ -283,14 +309,6 @@ def decode_wave_entry(left: int, right: int) -> Tuple[str, str, int]:
     gate = "gate on" if left & 0x01 else "gate off"
     if left & 0x08:
         gate += ", testbit"
-    if right == 0x00:
-        pitch = "the pattern's note"
-    elif right < 0x60:
-        pitch = f"note {right:+d} semitones"
-    elif right < 0x80:
-        pitch = f"note {right - 0x80:+d} semitones"
-    else:
-        pitch = f"absolute {note_name(right - 0x80 + GT_FIRST_NOTE)}"
     return ("wave", f"{wave}, {gate} - {pitch}", 1)
 
 

@@ -373,17 +373,30 @@ def lost_to_floor(rows: list[dict]) -> list[str]:
             and r.get("seen_under_grid_floor") and not r.get("seen")]
 
 
-def score_pair(orig: Path, ours: Path, seconds: int, sub: int) -> tuple[dict, dict]:
+def traced_pair(doc: dict, sid: Path) -> tuple[int, int]:
+    """(original's subtune, packed side's subtune): the pair
+    `fidelity._measure` scores, presets.json's `traced_subtune` pin included.
+    Checks 1-2 render the original at the first; a packed build is rendered
+    at the SECOND -- Dragons_Lair_Part_II's s0 is our o9, and one index for
+    both sides would score two different pieces of music."""
+    pinned = F._preset_traced_subtune(doc, sid.name)
+    sub = F.resolve_subtune(sid, "auto", pinned)
+    return sub, F.resolve_ours_subtune(sub, "auto", pinned)
+
+
+def score_pair(orig: Path, ours: Path, seconds: int, sub: int,
+               sub_ours: int | None = None) -> tuple[dict, dict]:
     """`sound.compare_sids` on the prefix AND on the whole from one feature
     pass: (prefix, whole). The prefix is what checks 3 and 4 decide on; the
     whole is recorded beside it. Two `compare_sids` calls would featurise
     each 180 s render twice, and the features are the cost once the renders
     are cached. A failed render names its side on both, as `compare_sids`
-    does."""
+    does. `sub_ours` is the second side's subtune, `sub` when None."""
     a = sound.render_cached(orig, seconds, sub, "orig")
     if a is None:
         return {"sound_failed": "orig"}, {"sound_failed": "orig"}
-    b = sound.render_cached(ours, seconds, sub, "ours")
+    b = sound.render_cached(ours, seconds, sub if sub_ours is None else sub_ours,
+                            "ours")
     if b is None:
         return {"sound_failed": "ours"}, {"sound_failed": "ours"}
     xa, ra = sound.read_wav_mono(a)
@@ -615,7 +628,7 @@ def main(argv=None) -> int:
     repeats, repeats_whole = {}, {}
     for n in names:
         sid = sid_dir / f"{n}.sid"
-        sub = F.resolve_subtune(sid, "auto")
+        sub, _ = traced_pair(doc, sid)
         wav = sound.render_cached(sid, args.seconds, sub, "orig")
         if wav is None:
             continue
@@ -659,8 +672,9 @@ def main(argv=None) -> int:
         a = convert_at(v_old, sid, workdir, args.gt2reloc, mult)
         b = convert_at(v_new, sid, workdir, args.gt2reloc, mult)
         if a and b:
-            sub = F.resolve_subtune(sid, "auto")
-            got, whole = score_pair(a.sid, b.sid, args.seconds, sub)
+            # Both sides are packed builds, so both are OUR numbering.
+            _, ours = traced_pair(doc, sid)
+            got, whole = score_pair(a.sid, b.sid, args.seconds, ours)
             got.update(file=name, versions=[v_old, v_new],
                        whole={k: whole.get(k) for k in ("aud", "loud", "loud_ratio")})
             pairs.append(got)
@@ -672,14 +686,14 @@ def main(argv=None) -> int:
     for name, v_bad, v_good in KNOWN_BAD:
         sid = sid_dir / name
         mult = F._preset_multiplier(doc, name)
-        sub = F.resolve_subtune(sid, "auto")
+        sub, ours = traced_pair(doc, sid)
         pb = convert_at(v_bad, sid, workdir, args.gt2reloc, mult)
         pg = convert_at(v_good, sid, workdir, args.gt2reloc, mult)
         if not (pb and pg):
             bad.append({"file": name, "error": "could not build both versions"})
             continue
-        gb, wb = score_pair(sid, pb.sid, args.seconds, sub)
-        gg, wg = score_pair(sid, pg.sid, args.seconds, sub)
+        gb, wb = score_pair(sid, pb.sid, args.seconds, sub, ours)
+        gg, wg = score_pair(sid, pg.sid, args.seconds, sub, ours)
         floor = checks["shift"]["noise_floor"]
         grid_floor = checks["shift"]["grid_floor"]
         why = comparable(gb, gg)

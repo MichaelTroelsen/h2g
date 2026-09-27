@@ -345,3 +345,98 @@ def test_fixed_pitch_index_census_matches_pinned_population():
 #   test_fixed_pitch_index_census_matches_pinned_population (every AGREE
 #   file's offset stops equalling wave_program) AND tests/
 #   test_fixed_pitch_index.py's Food Feud pin ($95EB -> 63 -> D#5).
+
+
+# --- the triangle sweep's per-VOICE cells (task triangle-direction-per-voice-
+# from-the-image). `_find_pulse_tri_cells` reads the direction and counter
+# arrays off the sweep's own `DEC cnt,X` / `STA cnt,X` / `LDA dir,X` /
+# `INC dir,X` and requires each pair to agree. Pinned per file, with the
+# image's opening bytes, because the walk seeds every voice from them: a
+# signature edit that moves a cell moves every triangle plan. The three
+# addresses read off the disassembly independently (C:/t/triangle-sim-model/
+# MECHANISM.txt) are the second reader.
+_TRI_CELLS = {   # name: (dir address, its 3 bytes, counter address, its 3 bytes)
+    "5_Title_Tunes.sid": (0x1052, "000001", 0x104F, "000001"),
+    "Action_Biker.sid": (0xC3E4, "000000", 0xC3E1, "000000"),
+    "Battle_of_Britain.sid": (0x840E, "010000", 0x840B, "000001"),
+    "Chimera.sid": (0xC64F, "000000", 0xC64C, "000000"),
+    "Commando.sid": (0x5510, "000000", 0x550D, "000000"),
+    "Confuzion.sid": (0x0BE5, "000000", 0x0BE2, "000000"),
+    "Crazy_Comets.sid": (0x54F7, "000001", 0x54F4, "000000"),
+    "Devils_Galop.sid": (0x177C, "000000", 0x1779, "000000"),
+    "Game_Killer.sid": (0x0C78, "010000", 0x0C75, "000000"),
+    "Geoff_Capes_Strongman_Challenge.sid": (0x1510, "000001", 0x150D, "001000"),
+    "Gerry_the_Germ.sid": (0xE510, "010000", 0xE50D, "000000"),
+    "Gremlins.sid": (0x16E8, "010001", 0x16E5, "010101"),
+    "Human_Race.sid": (0x0DCB, "000000", 0x0DC8, "000000"),
+    "Hunter_Patrol.sid": (0xA415, "000000", 0xA412, "000000"),
+    "Last_V8.sid": (0x8523, "010000", 0x8520, "001201"),
+    "Last_V8_C128_version.sid": (0x8523, "010100", 0x8520, "001900"),
+    "Master_of_Magic.sid": (0xC417, "010001", 0xC414, "010000"),
+    "Monty_on_the_Run.sid": (0x84E8, "010000", 0x84E5, "00011d"),
+    "Ninja.sid": (0xCC43, "000000", 0xCC40, "000000"),
+    "One_Man_and_his_Droid.sid": (0x150A, "000000", 0x1507, "000000"),
+    "Phantoms_of_the_Asteroid.sid": (0xE448, "000000", 0xE445, "000000"),
+    "Rasputin.sid": (0xC530, "000000", 0xC52D, "000000"),
+    "Thing_on_a_Spring.sid": (0xC491, "000001", 0xC48E, "010100"),
+    "Zoids.sid": (0x146B, "000000", 0x1468, "000000"),
+}
+assert len(_TRI_CELLS) == 24
+
+
+@corpus.needs_corpus
+def test_the_triangle_voice_cells_census():
+    from corpus import CORPUS
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+    assert (_TRI_CELLS["One_Man_and_his_Droid.sid"][::2],
+            _TRI_CELLS["Rasputin.sid"][::2],
+            _TRI_CELLS["Game_Killer.sid"][::2]) == (
+        (0x150A, 0x1507), (0xC530, 0xC52D), (0x0C78, 0x0C75))
+    found = {}
+    for p in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid = load_sid(str(p))
+            det = detect(sid, lambda *a, **k: None)
+        except Exception:
+            continue
+        if det.pulse_tri_hi < 0:
+            assert (det.pulse_tri_dir, det.pulse_tri_cnt) == (-1, -1), p.name
+            continue
+        d = sid.data
+        addr = lambda off: sid.to_address(off)
+        found[p.name] = (addr(det.pulse_tri_dir),
+                         bytes(d[det.pulse_tri_dir:det.pulse_tri_dir + 3]).hex(),
+                         addr(det.pulse_tri_cnt),
+                         bytes(d[det.pulse_tri_cnt:det.pulse_tri_cnt + 3]).hex())
+    assert found == _TRI_CELLS, {k: (found.get(k), _TRI_CELLS.get(k))
+                                 for k in set(found) | set(_TRI_CELLS)
+                                 if found.get(k) != _TRI_CELLS.get(k)}
+
+
+def test_the_triangle_cells_need_both_operand_pairs_to_agree():
+    """A STA or INC naming a different cell from its DEC or LDA reads
+    nothing: the shape matched, the operands say it is not this sweep."""
+    from h2g.detect import (PULSE_TRI_SHAPE, _TRI_CNT_DEC, _TRI_CNT_STA,
+                            _TRI_DIR_INC, _TRI_DIR_LDA, _find_pulse_tri_cells)
+    from h2g.sidfile import HLEN, SidFile
+    shape = bytes(0 if t == "??" else int(t, 16) for t in PULSE_TRI_SHAPE.split())
+    body = bytearray(shape) + bytes(16)
+    for k, a in ((_TRI_CNT_DEC, 0x1100), (_TRI_CNT_STA, 0x1100),
+                 (_TRI_DIR_LDA, 0x1103), (_TRI_DIR_INC, 0x1103)):
+        body[k], body[k + 1] = a & 0xFF, a >> 8
+    load = 0x1000
+
+    def cells(b: bytes):
+        # loaded at $1000 behind $100 of padding: the shape sits at $1100,
+        # so its own first bytes are the cells it names
+        data = bytes(HLEN - 1) + bytes(0x100) + b
+        sid = SidFile.__new__(SidFile)
+        sid.data, sid.load_addr, sid.relocation = data, load, None
+        return _find_pulse_tri_cells(sid)
+    d, c = cells(bytes(body))
+    assert (d, c) == (HLEN - 1 + 0x103, HLEN - 1 + 0x100), (d, c)
+    for k in (_TRI_CNT_STA, _TRI_DIR_INC):
+        bad = bytearray(body)
+        bad[k] ^= 0x01
+        assert cells(bytes(bad)) == (-1, -1), k

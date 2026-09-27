@@ -1,8 +1,10 @@
 """The calibration's pure reductions, and `render_doc`, the document builder.
 
-Nothing here calls `sound.render_cached` or `main` -- the five checks' own
-audio rendering is exercised only by running `sound_calibrate.py` for real,
-still by hand. `convert_at` WAS in that list and no longer is: the last test
+Nothing here calls `sound.render_cached` -- the five checks' own audio
+rendering is exercised only by running `sound_calibrate.py` for real, still by
+hand. `main` WAS in that list too and no longer is: the `traced_subtune` pin
+test drives it with every render and build faked, to pin WHICH subtune each
+check renders each side at, and nothing about the audio. `convert_at` WAS in that list and no longer is: the last test
 in this file calls it for real with only its two OS boundaries faked, and the
 sentence that excluded it survived the test that contradicted it for as long
 as it took to read the file. What this file pins is: each
@@ -788,3 +790,73 @@ def test_the_header_docstrings_exclusion_list_is_true_of_the_code_below_it():
     assert not lies, (
         f"the header docstring says nothing here calls {lies}, but the code below "
         f"it does -- fix the sentence, not the test")
+
+
+# --- the presets.json `traced_subtune` pin ---------------------------------
+
+PINS = {"Commodore_64_Music_Examples.sid": (1, 0),
+        "Dragons_Lair_Part_II.sid": (0, 9)}
+
+
+class _Stop(Exception):
+    pass
+
+
+def test_every_check_renders_each_side_at_the_pinned_pair(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: any of checks 1-4 resolving 'auto' without the pin, or
+    rendering a packed build at the ORIGINAL's index. Checks 1-2 render the
+    original (first half of the pin); check 3's two sides are both packed
+    (second half); check 4 is original against packed (first, second)."""
+    import json
+    import types
+    c64, dl2 = PINS
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    for name in PINS:
+        (corpus / name).write_bytes(b"PSID" + b"\x00" * 200)   # startSong 0
+    (tmp_path / "approved.json").write_text(json.dumps(
+        {"tunes": {n[:-4]: {} for n in PINS}}), encoding="utf-8")
+    presets = tmp_path / "presets.json"
+    presets.write_text(json.dumps({"always": {}, "songs": {
+        n: {"traced_subtune": list(p)} for n, p in PINS.items()}}),
+        encoding="utf-8")
+    monkeypatch.setattr(C, "ROOT", tmp_path)
+    monkeypatch.setattr(C, "INAUDIBLE_PAIRS", [(c64, "0.5.1", "0.5.2")])
+    monkeypatch.setattr(C, "KNOWN_BAD", [(dl2, "0.5.3", "0.5.4")])
+    rendered, scored = [], []
+    monkeypatch.setattr(sound, "render_cached",
+                        lambda sid, s, sub, tag, **k: rendered.append(
+                            (pathlib.Path(sid).name, sub)))
+    monkeypatch.setattr(C, "convert_at", lambda v, sid, *a: types.SimpleNamespace(
+        sid=tmp_path / f"{v}.sid"))
+
+    def fake_score(a, b, seconds, sub, sub_ours=None):
+        scored.append((a.name, b.name, sub, sub if sub_ours is None else sub_ours))
+        if len(scored) == 3:
+            raise _Stop
+        return {"aud": 1.0, "loud": 1.0}, {}
+
+    monkeypatch.setattr(C, "score_pair", fake_score)
+    with pytest.raises(_Stop):
+        C.main([str(corpus), "--presets", str(presets),
+                "--workdir", str(tmp_path / "w"), "-t", "1"])
+    assert sorted(rendered) == sorted((n, p[0]) for n, p in PINS.items())
+    assert scored == [("0.5.1.sid", "0.5.2.sid", 0, 0),       # C64ME: o0, o0
+                      (dl2, "0.5.3.sid", 0, 9),               # DL2: s0 vs o9
+                      (dl2, "0.5.4.sid", 0, 9)]
+    for name, pin in PINS.items():
+        assert C.traced_pair(json.loads(presets.read_text()), corpus / name) == pin
+
+
+def test_score_pair_renders_the_second_side_at_sub_ours(monkeypatch):
+    seen = []
+    monkeypatch.setattr(sound, "render_cached",
+                        lambda sid, s, sub, tag, **k: seen.append((tag, sub)))
+    C.score_pair(pathlib.Path("O.sid"), pathlib.Path("U.sid"), 1, 0, 9)
+    assert seen == [("orig", 0)]            # orig failed: ours never rendered
+    seen.clear()
+    monkeypatch.setattr(sound, "render_cached",
+                        lambda sid, s, sub, tag, **k: seen.append((tag, sub))
+                        or (pathlib.Path("x.wav") if tag == "orig" else None))
+    C.score_pair(pathlib.Path("O.sid"), pathlib.Path("U.sid"), 1, 0, 9)
+    assert seen == [("orig", 0), ("ours", 9)]

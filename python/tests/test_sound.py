@@ -320,6 +320,122 @@ def test_the_settings_tag_names_the_delay_and_the_engine():
     assert len(sound.settings_tag(listen.render_sidplayfp)) == 8
 
 
+# --- the whole fixed argv and the ROM set are in the tag -------------------
+# `listen.sidplayfp_fixed_argv()` is both what `render_sidplayfp` puts on the
+# command line and what `render_settings` hashes; the ini and the ROMs it
+# names are what sidplayfp reads beside the command line.
+
+def _argv_stamping_sidplayfp(monkeypatch):
+    """The REAL `render_sidplayfp` with `subprocess.run` faked: the WAV is a
+    sine at 200 Hz for `-f44100` and 240 Hz for any other `-f<rate>`, so a
+    served file says which rate flag rendered it. Records every argv."""
+    import listen
+    seen = []
+
+    def run(argv, **kw):
+        rate = int(next(a for a in argv if a.startswith("-f") and a[2:].isdigit())[2:])
+        out = Path(next(a for a in argv if a.startswith("-w"))[2:])
+        seen.append(list(argv))
+        _write(out, _sine(0.2, hz=200.0 + (0 if rate == 44100 else 40)))
+        return None
+    monkeypatch.setattr(listen.subprocess, "run", run)
+    return listen, seen
+
+
+def _isolated_config(monkeypatch, tmp_path, kernal: bytes = b"K" * 8192):
+    """Point sidplayfp's config dir at `tmp_path/cfg`, with an ini naming a
+    kernal ROM there; returns (listen, cfg dir, kernal path)."""
+    import listen
+    cfg = tmp_path / "cfg"
+    cfg.mkdir(exist_ok=True)
+    rom = cfg / "my-kernal.bin"
+    rom.write_bytes(kernal)
+    (cfg / "sidplayfp.ini").write_text(
+        f"[SIDPlayfp]\nKernal Rom = {rom}\nBasic Rom = \n", encoding="latin-1")
+    monkeypatch.setattr(listen, "sidplayfp_config_dir", lambda: cfg)
+    return listen, cfg, rom
+
+
+def test_a_render_under_one_argv_is_never_served_for_a_request_under_another(
+        tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop `argv=` from `sound._sidplayfp_settings` (the
+    v0.5.494 settings, which named only the delay) and the -f48000 request is
+    served the -f44100 WAV. Drop `*sidplayfp_fixed_argv()` from
+    `render_sidplayfp`'s command line for inline flags and the renderer no
+    longer carries the constant the tag hashes -- the argv assertion fails."""
+    listen, seen = _argv_stamping_sidplayfp(monkeypatch)
+    _isolated_config(monkeypatch, tmp_path)
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    cache = tmp_path / "c"
+
+    monkeypatch.setattr(listen, "SIDPLAYFP_FIXED_ARGV",
+                        ("-f44100", "-p16", "-m", "-fo0"))
+    a = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert len(seen) == 1 and _delay_of(a) == 0
+    # the renderer's line IS the constant the tag hashes
+    assert seen[0][2:2 + len(listen.sidplayfp_fixed_argv())] == \
+        list(listen.sidplayfp_fixed_argv()), seen[0]
+
+    monkeypatch.setattr(listen, "SIDPLAYFP_FIXED_ARGV",
+                        ("-f48000", "-p16", "-m", "-fo0"))
+    b = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert len(seen) == 2, "a -f44100 render was served for a -f48000 request"
+    assert b != a and _delay_of(b) == 40 and "-f48000" in seen[1]
+
+    # any ONE fixed flag moves the tag, not just the rate
+    base = sound.settings_tag(listen.render_sidplayfp)
+    for i in range(len(listen.SIDPLAYFP_FIXED_ARGV)):
+        argv = list(listen.SIDPLAYFP_FIXED_ARGV)
+        argv[i] = argv[i] + "x"
+        monkeypatch.setattr(listen, "SIDPLAYFP_FIXED_ARGV", tuple(argv))
+        assert sound.settings_tag(listen.render_sidplayfp) != base, argv
+
+    # and the old line is still a hit under its own settings
+    monkeypatch.setattr(listen, "SIDPLAYFP_FIXED_ARGV",
+                        ("-f44100", "-p16", "-m", "-fo0"))
+    assert sound.render_cached(sid, 1, 0, "orig", cache=cache) == a
+    assert len(seen) == 2
+
+
+def test_a_render_under_one_rom_set_is_never_served_under_another(
+        tmp_path, monkeypatch):
+    """SABOTAGE TARGET: drop the ROM identities (or `ini=`) from
+    `sound._sidplayfp_settings` and a render made under one KERNAL is served
+    for a request under another -- a swapped ROM at the same path, or an ini
+    whose [Emulation] keys changed, renders different music under the same
+    argv."""
+    import os
+    listen, seen = _argv_stamping_sidplayfp(monkeypatch)
+    listen, cfg, rom = _isolated_config(monkeypatch, tmp_path)
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    cache = tmp_path / "c"
+
+    t0 = sound.settings_tag(listen.render_sidplayfp)
+    a = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert len(seen) == 1
+
+    # same path, same size, other bytes (a re-dumped ROM); mtime moved
+    rom.write_bytes(b"Q" * 8192)
+    st = rom.stat()
+    os.utime(rom, ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+    t1 = sound.settings_tag(listen.render_sidplayfp)
+    assert t1 != t0, "a swapped KERNAL did not move the settings tag"
+    b = sound.render_cached(sid, 1, 0, "orig", cache=cache)
+    assert len(seen) == 2 and b != a, "a render under the old KERNAL was served"
+
+    # an emulation override in the ini moves it too
+    ini = cfg / "sidplayfp.ini"
+    ini.write_text(ini.read_text(encoding="latin-1")
+                   + "\n[Emulation]\nSidModel = 8580\n", encoding="latin-1")
+    assert sound.settings_tag(listen.render_sidplayfp) != t1
+
+    s = sound.render_settings(listen.render_sidplayfp)
+    # the unset Basic Rom falls back to `basic` beside the ini, absent here
+    assert "basic=absent" in s and "kernal=absent" not in s, s
+
+
 # --------------------------------------------------------------------------
 # `render_repeat`: a FRESH render every call, because the noise floor is the
 # render's reproducibility. sidplayfp's power-on delay is random by default

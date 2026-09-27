@@ -172,3 +172,67 @@ def test_the_map_joins_through_paired_keys_not_through_equality():
     assert "ins[_their] = ins[_our]" in src, (
         "the ORIGINAL's siddump is no longer labelled through the same join, "
         "so the dump and the table above it can disagree")
+
+
+# --- the presets.json `traced_subtune` pin ---------------------------------
+
+import json  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import pytest  # noqa: E402
+
+PINS = {"Commodore_64_Music_Examples.sid": (1, 0),
+        "Dragons_Lair_Part_II.sid": (0, 9)}
+
+
+class _Traced(Exception):
+    pass
+
+
+def test_report_traces_the_original_and_ours_at_the_pinned_pair(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: `report` resolving 'auto' without the pin, or tracing
+    the packed side at the original's index -- Dragons_Lair_Part_II's s0 is
+    our o9, so one index for both compares two different pieces."""
+    for name, pin in PINS.items():
+        sid = tmp_path / name
+        sid.write_bytes(b"PSID" + b"\x00" * 200)       # startSong 0: not the pin
+        traced = []
+
+        def fake_dump(p, s, sub, *a, **k):
+            traced.append((Path(p).name, sub))
+            if len(traced) == 2:
+                raise _Traced
+            return []
+
+        monkeypatch.setattr(F, "run_siddump", fake_dump)
+        monkeypatch.setattr(F, "convert", lambda *a, **k: b"SNG")
+        monkeypatch.setattr(F, "legalise_restarts", lambda b: (b, 0))
+        monkeypatch.setattr(F, "pack_sid", lambda *a, **k: tmp_path / "packed.sid")
+        with pytest.raises(_Traced):
+            M.report(sid, {}, 1, 1, tmp_path / "w", "gt2reloc", "siddump",
+                     pinned=pin)
+        assert traced == [("o.sid", pin[0]), ("packed.sid", pin[1])], name
+
+
+def test_main_hands_report_the_pin_presets_json_records(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: `main` not passing `_preset_traced_subtune(doc, name)`
+    to `report`."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    for name in PINS:
+        (corpus / name).write_bytes(b"PSID" + b"\x00" * 200)
+    (corpus / "Tune.sid").write_bytes(b"PSID" + b"\x00" * 200)
+    presets = tmp_path / "presets.json"
+    presets.write_text(json.dumps({"always": {}, "songs": {
+        **{n: {"traced_subtune": list(p)} for n, p in PINS.items()},
+        "Tune.sid": {}}}),
+        encoding="utf-8")
+    got = {}
+
+    def fake_report(path, *a, pinned=None, **k):
+        got[path.name] = pinned
+        raise _Traced             # main reports and skips a raising song
+
+    monkeypatch.setattr(M, "report", fake_report)
+    M.main([str(corpus), "-o", str(tmp_path / "out"), "--presets", str(presets)])
+    assert got == {**PINS, "Tune.sid": None}

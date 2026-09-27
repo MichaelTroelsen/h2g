@@ -869,6 +869,83 @@ def test_the_travel_can_be_right_while_the_phase_is_wrong():
     assert got["our_pulse_changes"] == got["orig_pulse_changes"] == 7
 
 
+# --- per-onset phase pairing: by FRAME within the lag, never by index ------
+#
+# Game_Killer's voice 0 packs 986 attacks against the original's 985 (one
+# extra re-attack at frame 5468), and an index-paired probe read 0.118 of its
+# sweeping onsets agreeing where frame pairing reads 0.285 on the same traces
+# (C:/t/pphase-pairing/p1_reproduce.py). The fixture below is that shape in
+# miniature: ten notes each opening on its own bucket, ours five frames late,
+# plus one extra attack of ours between notes 5 and 6.
+
+_PAIR_LAG = 5
+_PAIR_ORIG_ATK = [i * 10 for i in range(10)]
+_PAIR_ORIG = [(f + 1, 0x100 * (i + 1)) for i, f in enumerate(_PAIR_ORIG_ATK)]
+_PAIR_OUR_ATK = sorted([f + _PAIR_LAG for f in _PAIR_ORIG_ATK] + [47])
+_PAIR_OURS = sorted([(f + _PAIR_LAG, w) for f, w in _PAIR_ORIG] + [(48, 0xF00)])
+
+
+def _paired_voices():
+    return (_phase_voices((_PAIR_ORIG, _PAIR_ORIG_ATK)),
+            _phase_voices((_PAIR_OURS, _PAIR_OUR_ATK)))
+
+
+def test_one_extra_attack_desynchronises_index_pairing_but_not_frame_pairing():
+    """The defect this pairing rule exists for. Index pairing compares every
+    note after the extra attack with its neighbour and halves the score; frame
+    pairing leaves the extra attack unpaired and scores the other ten."""
+    orig, ours = _paired_voices()
+    n = 120
+    ta = fidelity.register_timeline(orig[0].pulse_events, n)
+    tb = fidelity.register_timeline(ours[0].pulse_events, n)
+    by_index = [ta[f + 1] >> 8 == tb[g + 1] >> 8
+                for f, g in zip(orig[0].attack_frames, ours[0].attack_frames)]
+    assert sum(by_index) / len(by_index) == 0.5, "the fixture must discriminate"
+    got = fidelity.pulse_compare(orig, ours, n, lag=_PAIR_LAG)
+    assert got["pulse_phase_paired_onsets"] == 10
+    assert got["pulse_phase_onset_agreement"] == 1.0
+    pairs = fidelity.pair_onsets_by_frame(_PAIR_ORIG_ATK, _PAIR_OUR_ATK,
+                                          _PAIR_LAG)
+    assert 47 not in {g for _, g in pairs}, "the extra attack stays unpaired"
+
+
+def test_frame_pairing_takes_its_partner_from_the_lag():
+    """The lag CHOOSES the partner: without it our attacks, five frames late,
+    sit outside the slack and nothing pairs -- so a call site that forgot to
+    pass the lag would read None rather than a plausible number."""
+    orig, ours = _paired_voices()
+    got = fidelity.pulse_compare(orig, ours, 120)
+    assert got["pulse_phase_paired_onsets"] == 0
+    assert got["pulse_phase_onset_agreement"] is None
+
+
+def test_frame_pairing_is_nearest_one_to_one_and_monotone():
+    assert fidelity.pair_onsets_by_frame([0], [3, 5, 7], 5) == [(0, 5)]
+    # a tie goes to the earlier attack
+    assert fidelity.pair_onsets_by_frame([0], [4, 6], 5) == [(0, 4)]
+    # one of ours is never the partner of two of theirs
+    assert fidelity.pair_onsets_by_frame([0, 1], [5], 5) == [(0, 5)]
+    # a missing note of ours costs only itself
+    assert fidelity.pair_onsets_by_frame([0, 10, 20], [5, 25], 5) == [
+        (0, 5), (20, 25)]
+    # outside the slack is no partner at all
+    assert fidelity.pair_onsets_by_frame(
+        [0], [5 + fidelity.ONSET_PAIR_SLACK + 1], 5) == []
+
+
+def test_pphase_dimension_states_the_pairing_rule():
+    dim = next(d for d in fidelity.DIMENSIONS if d.key == "pulse_phase")
+    assert "BY FRAME within the startup lag" in dim.of
+    assert "never by index" in dim.of
+
+
+def test_the_report_passes_the_startup_lag_to_pulse_compare():
+    """The per-onset pairing is inert without the lag (the test above), so
+    the one call that has it must hand it over."""
+    src = pathlib.Path(fidelity.__file__).read_text(encoding="utf-8")
+    assert "row.update(pulse_compare(a, best_dump, nframes, lag=lag))" in src
+
+
 def test_pspan_is_reported_per_voice_as_well_as_for_the_file():
     """The file-level ratio said 0.47x on 5_Title_Tunes and could not say
     which instrument was at fault -- the gap `gate_census_by_voice` closed
@@ -1403,6 +1480,131 @@ def test_gate_off_run_ends_where_the_gate_opens():
     assert fidelity.noise_runs(side, 12) == {0x0A99: Counter({2: 1})}
 
 
+# --- `ntick`: the gate-off drum tick `nrun` cannot see ---------------------
+#
+# The original's `$41 | $80 $80 | $40` (Commando, Kentilla, Proteus, Warhawk):
+# noise entered on the frame the gate drops, ended by the player. Scored as a
+# LENGTH, with our side read gate-blind so the `$81` bit stays `gate`'s.
+
+
+def test_ntick_pairs_the_originals_gate_off_tick_with_our_gated_one():
+    """Commando's shape: the original ticks `$80 $80` with the gate down,
+    ours `$81 $81` with it up. Same length -> matched, and the key is
+    counted across the gate rather than charged."""
+    adsr = [(0, 0x064B)]
+    orig = _run_side([(1, 0x41), (2, 0x80), (4, 0x40),
+                      (10, 0x41), (11, 0x80), (13, 0x40)], adsr)
+    ours = _run_side([(1, 0x41), (2, 0x81), (4, 0x40),
+                      (10, 0x41), (11, 0x81), (13, 0x40)], adsr)
+    got = fidelity.noise_tick_agreement(orig, ours, 20)
+    assert got["noise_tick_instruments"] == 1
+    assert got["noise_tick_agreement"] == 1.0
+    assert got["noise_tick_cross_gate"] == 1
+    assert got["noise_tick_orig_runs"] == 2
+    assert got["noise_tick_ours_runs"] == 2
+    assert got["noise_tick_length_ratio"] == 1.0
+    # ... and `nrun` cannot score it at all: the original has no gated run.
+    assert fidelity.noise_run_agreement(orig, ours, 20)["noise_run_agreement"] is None
+
+
+def test_ntick_scores_a_tick_one_frame_short():
+    """Kentilla's `0F0B`: the original ticks 2 frames, ours 1 -- the
+    length defect no other column scores. The same-length gate-off
+    rendering (the drum fix's `$80`) is not across the gate."""
+    adsr = [(0, 0x0F0B)]
+    orig = _run_side([(1, 0x41), (2, 0x80), (4, 0x40),
+                      (10, 0x41), (11, 0x80), (13, 0x40)], adsr)
+    short = _run_side([(1, 0x41), (2, 0x80), (3, 0x40),
+                       (10, 0x41), (11, 0x80), (12, 0x40)], adsr)
+    got = fidelity.noise_tick_agreement(orig, short, 20)
+    assert got["noise_tick_agreement"] == 0.0
+    assert got["noise_tick_cross_gate"] == 0
+    assert got["noise_tick_length_ratio"] == 0.5
+
+
+def test_ntick_mean_ratio_sees_the_loss_the_mode_cannot():
+    """Warhawk's `0F08`: `{1: 187, 2: 28}` against `{1: 215}`. The mode is 1
+    on both sides, so `ntick` reads matched; the mean-length ratio is what
+    says the 2-frame ticks came back one frame short."""
+    adsr = [(0, 0x0F08)]
+    o_ev, u_ev = [], []
+    for i, n in enumerate((2, 1, 1, 1)):
+        base = 1 + 6 * i
+        o_ev += [(base, 0x41), (base + 1, 0x80), (base + 1 + n, 0x40)]
+        u_ev += [(base, 0x41), (base + 1, 0x81), (base + 2, 0x40)]
+    got = fidelity.noise_tick_agreement(_run_side(o_ev, adsr),
+                                        _run_side(u_ev, adsr), 40)
+    assert got["noise_tick_agreement"] == 1.0
+    assert got["noise_tick_length_ratio"] == 1 / 1.25
+
+
+def test_ntick_leaves_out_the_gated_blips_both_sides_play():
+    """Ricochet's `07E7`: hundreds of 1-frame `$41 $81 $41` blips on BOTH
+    sides beside the 4-frame gate-off tick. Read gate-blind, ours' blips
+    outvote its own tick and the key mismatches on a population the
+    original's side excluded; subtracting what the original plays gated
+    leaves tick against tick."""
+    adsr = [(0, 0x07E7)]
+    blips = []
+    for i in range(5):
+        b = 1 + 4 * i
+        blips += [(b, 0x41), (b + 1, 0x81), (b + 2, 0x41)]
+    tick = [(30, 0x41), (31, 0x80), (35, 0x40)]
+    orig = _run_side(blips + tick, adsr)
+    ours = _run_side(blips + tick, adsr)
+    assert fidelity.noise_ticks(ours, 50)["gated"] == {0x07E7: Counter({1: 5})}
+    got = fidelity.noise_tick_agreement(orig, ours, 50)
+    assert got["noise_tick_agreement"] == 1.0
+    assert got["noise_tick_ours_runs"] == 1
+    assert got["noise_tick_cross_gate"] == 0
+    # ...and a side that plays ONLY the shared blips pairs nothing.
+    only = _run_side(blips, adsr)
+    got = fidelity.noise_tick_agreement(orig, only, 50)
+    assert got["noise_tick_agreement"] is None
+    assert got["noise_tick_orig_only"] == 1
+
+
+def test_ntick_excludes_gate_off_noise_the_next_attack_ends():
+    """Pacific Coast's `$41 | $80 x N | $11 $81`: ended by the next note's
+    gate rise, so its length is the rest's -- not a tick."""
+    side = _run_side([(1, 0x41), (2, 0x80), (11, 0x11)], [(0, 0x04F9)])
+    assert fidelity.noise_ticks(side, 20) == {"gate_off": {}, "gated": {}}
+    # ... nor when the rise lands on noise itself (`$80` -> `$81`).
+    side = _run_side([(1, 0x41), (2, 0x80), (5, 0x81), (7, 0x40)],
+                     [(0, 0x04F9)])
+    assert fidelity.noise_ticks(side, 20) == {"gate_off": {}, "gated": {}}
+
+
+def test_ntick_excludes_noise_entered_in_a_rest_or_latched_from_a_note():
+    """Knucklebusters' `$10 | $80 | $10` alternation (entered with the gate
+    already down) and Confuzion's `$81` -> `$80` latched tail are not
+    ticks: neither was entered from a gated non-noise frame."""
+    adsr = [(0, 0x0F09)]
+    rest = _run_side([(1, 0x11), (2, 0x10), (3, 0x80), (4, 0x10),
+                      (5, 0x80), (6, 0x10)], adsr)
+    assert fidelity.noise_ticks(rest, 12) == {"gate_off": {}, "gated": {}}
+    latched = _run_side([(2, 0x81), (5, 0x80), (8, 0x40)], adsr)
+    assert fidelity.noise_ticks(latched, 12) == {"gate_off": {}, "gated": {}}
+    # The drum tick itself is one, keyed on the ADSR at its midpoint.
+    tick = _run_side([(1, 0x11), (2, 0x80), (3, 0x10)], adsr)
+    assert fidelity.noise_ticks(tick, 12) ==         {"gate_off": {0x0F09: Counter({1: 1})}, "gated": {}}
+
+
+def test_ntick_drops_a_tick_the_window_cut():
+    side = _run_side([(1, 0x41), (2, 0x80)], [(0, 0x064B)])
+    assert fidelity.noise_ticks(side, 4) == {"gate_off": {}, "gated": {}}
+
+
+def test_ntick_is_registered_reading_d404_and_nrun_points_to_it():
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_tick_agreement")
+    assert d.column == "ntick" and d.reads == ("$D404",) and d.kind == "fraction"
+    assert "gate-blind" in d.of and "`gate`'s question" in d.of
+    n = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "scored, by `ntick`, not here" in n.of
+    # the retired wording: nrun no longer calls the whole class unscored
+    assert "Left unscored on purpose" not in n.of
+
+
 def test_the_report_names_a_gate_off_declined_file_in_its_own_sentence():
     """Three `-` rows: one whose original noise is all under a closed gate,
     one the window cut, one with no noise. The gate-off sentence names the
@@ -1467,7 +1669,7 @@ def test_the_new_columns_are_in_the_table_and_the_summary():
                    cutoff_sweep=2.0,
                    orig_pulse_span=400, our_pulse_span=300, pulse_span=0.75)
     text = fidelity.report(rows, _Args())
-    assert ("| vib | depth | arposc | drift | wave | onset | noise | nrun | hold | gate | tail | adsr |"
+    assert ("| vib | depth | arposc | drift | wave | onset | noise | nrun | ntick | hold | gate | tail | adsr |"
             in text)
     # adsr | pul | pspan | pphase | filt | cut -- `pphase` sits between the
     # span and the filter, so this fragment moves when it is added and the
@@ -1616,6 +1818,29 @@ def test_confuzions_original_noise_is_no_longer_one_edge_cut_run_and_the_counter
     assert (noisy[0], noisy[-1], len(noisy)) == (2, n - 1, 8998)
 
 
+def test_an_edge_right_noise_run_is_counted_and_never_scored():
+    """confuzion-style-permanent-noise-latch-is-invisible-to-nrun decided to
+    KEEP the edge rule: a noise-AND-gate run still open at the window's last
+    frame is a fact about the window, so noise_runs drops it and
+    noise_edge_runs counts it -- including one that STARTED inside the window,
+    the lower-bound case the task weighed and refused."""
+    n = 40
+    v = fidelity.Voice(freq_events=[(0, 0x1000)],
+                       wf_events=[(0, 0x40), (5, 0x81), (9, 0x80), (20, 0x81)],
+                       adsr_events=[(0, 0x0900)], pulse_events=[],
+                       attack_frames=[5, 20])
+    runs = fidelity.noise_runs([v], n)
+    assert runs == {0x0900: {4: 1}}, "the interior run 5-8 is scored, the open one is not"
+    assert fidelity.noise_edge_runs([v], n) == {"runs": 1, "frames": n - 20}
+
+
+def test_nrun_dimension_states_the_edge_rule_decision():
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "stays EXCLUDED, by design" in d.of
+    assert "never-closes-again" in d.of
+    assert "7 files" in d.of
+
+
 # --- what a row's status means ---------------------------------------------
 # Three ways a row can carry no melody score, and only two of them are the
 # converter's fault. Conflating the third with "silent" is what put BMX_Kidz
@@ -1656,6 +1881,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  noise_run_agreement=melody, noise_run_matched=1,
                  noise_run_instruments=1, noise_run_orig_only=0,
                  noise_run_ours_only=0,
+                 noise_tick_agreement=melody, noise_tick_matched=1,
+                 noise_tick_instruments=1,
                  sound_run_agreement=melody, sound_run_matched=1,
                  sound_run_instruments=1, sound_run_delta=0,
                  release_tail_agreement=melody, release_tail_matched=1,
@@ -2238,7 +2465,12 @@ def test_the_registers_no_dimension_reads_are_named():
     assert "$D400/$D401" in dict(fidelity.registers_unread({"wave", "noise"}))
     # `adsr` and `tail` both read the envelope pair -- one while the note
     # plays, one after it ends -- so dropping either alone leaves it read.
+    # `depth` reads it too since its envelope gate: a zeroed pair drops the
+    # cycles on those frames, so an envelope change can move `depth`.
     assert "$D405/$D406" in dict(fidelity.registers_unread(
+        {d.key for d in fidelity.DIMENSIONS
+         if d.key not in ("adsr", "release_tail_agreement", "depth_ratio")}))
+    assert "$D405/$D406" not in dict(fidelity.registers_unread(
         {d.key for d in fidelity.DIMENSIONS
          if d.key not in ("adsr", "release_tail_agreement")}))
     assert len(fidelity.registers_unread(set())) == len(fidelity.SID_REGISTERS)
@@ -2896,7 +3128,80 @@ def test_a_release_rewritten_by_cut_release_still_joins():
 def test_depth_is_a_declared_dimension_reading_the_frequency_registers():
     d = next(d for d in fidelity.DIMENSIONS if d.key == "depth_ratio")
     assert d.column == "depth" and d.kind == "ratio"
-    assert d.reads == ("$D400/$D401",)
+    # The frequency is what it measures; $D404 and $D405/$D406 are what the
+    # envelope gate reads to drop cycles the ear cannot hear.
+    assert d.reads == ("$D400/$D401", "$D404", "$D405/$D406")
+
+
+# --- depth reads only the cycles the ear can hear ---------------------------
+# BMX_Kidz's rest record zeroes $D405/$D406 partway through every note while
+# the player keeps sweeping the frequency. Before the envelope gate, most of
+# the cycles `depth` measured on that file were on those silent frames.
+
+def _silenced_voice(audible, silent, adsr_on, adsr_off=0, wf_on=None,
+                wf_off=None):
+    """One note: `audible` frames under `adsr_on`, then `silent` frames under
+    `adsr_off`, the frequency sweeping straight through the switch."""
+    v = _fq_voice([0], audible + silent, adsr_on)
+    v.adsr_events = [(0, adsr_on), (len(audible), adsr_off)]
+    if wf_on is not None:
+        v.wf_events = [(0, wf_on), (len(audible), wf_off)]
+    return v
+
+
+def test_depth_drops_cycles_after_the_envelope_is_zeroed():
+    """A shallow vibrato while the note sounds, then $D405/$D406 written to
+    zero and a deep sweep that goes on under the silence. The deep part is
+    three times as long, so a column reading every cycle reports the deep
+    swing; the ear hears only the shallow one."""
+    heard, unheard = _osc(10, 300), _osc(30, 900)
+    v = _silenced_voice(heard, unheard, 0x0A0A)
+    tally: dict = {}
+    got = fidelity.oscillation_depths([v, fidelity.Voice(), fidelity.Voice()],
+                                      len(heard) + len(unheard), {0x0A0A},
+                                      tally=tally)
+    assert 0x0A0A in got, got
+    assert 0.06 < got[0x0A0A] < 0.09, got     # 300 / ~0x1000, not 900
+    assert tally["cycles"] > 0 and tally["silent_cycles"] > tally["cycles"]
+
+
+def test_a_gate_off_with_release_zero_is_silent_and_with_release_is_not():
+    """The two gate-off readings of one sweep. Release 0 ends the envelope
+    within a frame, so the tail is inaudible and dropped; a release of $A
+    is still sounding, so the tail is read and the deep swing wins."""
+    heard, tail = _osc(10, 300), _osc(30, 900)
+    n = len(heard) + len(tail)
+    blank = [fidelity.Voice(), fidelity.Voice()]
+    cut = _silenced_voice(heard, tail, 0x0A00, 0x0A00, wf_on=0x41, wf_off=0x40)
+    rel = _silenced_voice(heard, tail, 0x0A0A, 0x0A0A, wf_on=0x41, wf_off=0x40)
+    got_cut = fidelity.oscillation_depths([cut, *blank], n, {0x0A00})
+    got_rel = fidelity.oscillation_depths([rel, *blank], n, {0x0A0A})
+    assert 0.06 < got_cut.get(0x0A00, 0) < 0.09, got_cut
+    assert got_rel.get(0x0A0A, 0) > 0.18, got_rel    # 900 / ~0x1000
+
+
+def test_depth_compare_reports_what_the_envelope_gate_dropped():
+    heard, unheard = _osc(10, 300), _osc(30, 900)
+    n = len(heard) + len(unheard)
+    orig = [_silenced_voice(heard, unheard, 0x0A0A), fidelity.Voice(),
+            fidelity.Voice()]
+    got = fidelity.depth_compare(orig, orig, n, {0x0A0A})
+    assert abs(got["depth_ratio"] - 1.0) < 1e-9
+    sc, c = got["depth_silent_cycles"], got["depth_cycles"]
+    assert sc["orig"] == sc["ours"] > c["orig"] == c["ours"] > 0
+    # 30 cycles of 8 frames under the zeroed envelope, less the attack skip.
+    assert got["depth_silent_frames"] == {"orig": len(unheard),
+                                          "ours": len(unheard)}
+
+
+def test_envelope_silent_reads_only_the_states_the_registers_settle():
+    es = fidelity.envelope_silent
+    assert es(0x0000, None) and es(0x0000, 0x41) and es(0x0000, 0x40)
+    assert not es(0x0A0A, None)             # no $D404: only the both-zero rule
+    assert es(0x0A00, 0x40)                 # gate off, release 0
+    assert not es(0x0A0A, 0x40)             # gate off, release still running
+    assert es(0x000A, 0x41)                 # gate on, A=D=S=0
+    assert not es(0x00F0, 0x41)             # gate on, sustain held
     # Present in a row only when it was actually computed -- a file whose
     # player has no vibrato routine must not claim the column.
     row = _row("A.sid", "measured", 1.0)

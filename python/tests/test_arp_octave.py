@@ -994,7 +994,8 @@ def test_the_unticked_records_carry_the_residue_in_the_sng():
 # (5944 -> 2853, subtune 0, the fidelity row's) and no residue reaches it:
 # letting the frame count choose for those records moved voice 1's
 # agreement 4406 -> 4143 frames, and firing a note on every
-# call instead of holding it 4406 -> 3651.
+# call instead of holding it 4406 -> 3651. What does reach it is re-spelling
+# the tie itself: see the last section of this file.
 # ---------------------------------------------------------------------------
 from h2g.goatwriter import _duty_residue, _majority_residues  # noqa: E402
 
@@ -1051,3 +1052,424 @@ def test_the_chimera_duty_reaches_the_sng():
     right = [r for _, r in wt]
     assert _profile(left, right, 0x0C, 12,
                     start=ins.wave_ptr) == "buuuuuuubuuu"
+
+
+# ---------------------------------------------------------------------------
+# The tie itself, re-spelled (`goatwriter._legato_duty_ties`).
+#
+# No residue reaches the tie runs above because the `3 00` is what drops the
+# octave, so the tie goes: each tied row on a duty record names a LEGATO
+# variant of it -- gatetimer bit $40 (no gate-off, no hard restart at the
+# fetch), firstwave $00 (no waveform, gate untouched), no pulse or filter
+# pointer -- whose wave pointer restarts a duty block unrolled from the
+# row's own counter residue, entered through a prefix writing the record's
+# waveform with the gate on. The row after it latches the source again.
+# Chimera subtune 0 at 180 s against the working tree it was cut from:
+# reversals 2853 -> 4433 of the original's 5944 (the `$0060` tie runs 1143
+# -> 2030 of 2763), voice 1's frequency agreeing on 6419 frames of 8880
+# where it agreed on 4406, `gate` 0.655 -> 0.752, melody, attacks and
+# `wave` unmoved (C:/t/chimera-gk-duty/lg/). -S1 only: gt2reloc's multispeed
+# build misclassifies the first legato record (see the goatwriter comment).
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import _duty_tie_sites                    # noqa: E402
+
+
+def _pitch_from(wt, ptr, calls):
+    """(waveform, note) per call from 1-based row `ptr` of a whole
+    wavetable: `test_call_rate.wave_timeline`'s loop with a start pointer,
+    which a block entered through a jump needs (its rows lie before it)."""
+    wavetime, cur_wave, cur_note, out = 0, None, None, []
+    for _ in range(calls):
+        left, right = wt[ptr - 1]
+        if left > 0x0F:
+            if left < 0xE0:
+                cur_wave = left
+        elif wavetime != left:
+            wavetime += 1
+            out.append((cur_wave, cur_note))
+            continue
+        wavetime = 0
+        ptr += 1
+        if wt[ptr - 1][0] == 0xFF:
+            ptr = wt[ptr - 1][1]
+        if right != 0x80:
+            cur_note = right
+        out.append((cur_wave, cur_note))
+    return out
+
+
+def _legato(song):
+    return {i.number: i for i in song.instruments if i.gatetimer & 0x40}
+
+
+@needs_corpus
+def test_a_chimera_tie_restarts_on_a_legato_variant():
+    """Every legato record is its source's envelope with the legato fields,
+    and no row naming one carries a command -- the `3 00` is gone."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sng, _, _ = _converted("Chimera")
+    song = songview.parse_sng(sng)
+    legato = _legato(song)
+    assert legato
+    for ins in legato.values():
+        assert (ins.firstwave, ins.pulse_ptr, ins.filt_ptr) == (0, 0, 0)
+        assert any((src.ad, src.sr, src.gatetimer | 0x40)
+                   == (ins.ad, ins.sr, ins.gatetimer)
+                   for src in song.instruments if src.number not in legato)
+    named = [p[k:k + 4] for p in song.patterns for k in range(0, len(p), 4)
+             if p[k + 1] in legato]
+    assert len(named) > 500, len(named)          # 526 at the measurement
+    assert all(row[2] == 0 and row[3] == 0 for row in named)
+
+
+@needs_corpus
+def test_every_legato_row_plays_its_own_residue():
+    """Each re-spelled row's program, played from its variant's pointer:
+    frame 0 writes the record's waveform with the gate and sounds the base,
+    and every frame after it is the octave the counter names on the row's
+    own residue -- the profile an attacked note on that residue sounds."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sid, det = _det(CORPUS / "Chimera.sid")
+    sng, tracks, patterns = _converted("Chimera")
+    song = songview.parse_sng(sng)
+    legato = _legato(song)
+    wt = song.tables["WTBL"]
+    checked = 0
+    for (b, r), plays in _duty_tie_sites(sid, det, tracks, patterns).items():
+        variant = song.patterns[b][r + 1]
+        if variant not in legato:
+            continue
+        residues = [res for _, res in plays]
+        residue = max(range(8), key=lambda c: (residues.count(c), -c))
+        got = _pitch_from(wt, legato[variant].wave_ptr, 16)
+        assert got[0][0] & 0x01 and got[0][0] & 0xF0, (b, r, got[0])
+        prof = "".join("u" if note == 0x0C else "b" for _, note in got)
+        assert prof == _expected(0x07, BEQ, residue, 16, 1), (b, r, residue)
+        checked += 1
+    assert checked > 500, checked
+
+
+@needs_corpus
+def test_no_attacked_note_plays_a_legato_variant():
+    """The instrument column is sticky, so a variant left latched would turn
+    the next attacked note legato. Walked over every orderlist in play
+    order: a note whose own column is empty never finds one latched, and no
+    pattern ends on one."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sng, _, _ = _converted("Chimera")
+    song = songview.parse_sng(sng)
+    legato = _legato(song)
+    assert legato
+    for track in song.tracks:
+        current, operand = 0, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if b >= 0xD0 or b >= len(song.patterns):
+                continue
+            pat = song.patterns[b]
+            for k in range(0, len(pat), 4):
+                if pat[k] == 0xFF:
+                    break
+                if pat[k + 1]:
+                    current = pat[k + 1]
+                elif 0x60 <= pat[k] <= 0xBC:
+                    assert current not in legato, (b, k // 4, current)
+            assert current not in legato, (b, "pattern ends latched")
+
+
+@needs_corpus
+def test_the_legato_ties_stay_ties_above_s1():
+    """One_Man_and_his_Droid packs at -S2 and has a duty tie row: it keeps
+    its `3 00`, and the song carries no legato record."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import songview
+    sng, _, _ = _converted("One_Man_and_his_Droid")
+    song = songview.parse_sng(sng)
+    assert not _legato(song)
+    assert any(p[k + 2] == 0x03 and p[k + 3] == 0 and 0x60 <= p[k] <= 0xBC
+               for p in song.patterns for k in range(0, len(p), 4))
+
+
+# ---------------------------------------------------------------------------
+# The per-note split (METHOD 7.bbbbbb).
+#
+# One wavetable per instrument has to stand for a residue that is per note.
+# Where a record's notes land on several residues about equally (each within
+# `ARP_SPLIT_RATIO` of its commonest) the record gets a copy per residue --
+# everything but the wave pointer -- and every non-tie note names the copy
+# its own attack selects, per pattern PLAY (a pattern played at two offsets
+# is two renditions). Measured at 26111a5 (v0.5.494) plus the working
+# tree's uncommitted h2g/ (C:/t/per-note-split-unticked): Hunter_Patrol's
+# offset-1 up-fraction 0.32 -> 0.40 against the original's 0.40 (180 s, 561
+# octave onsets, prof2_HP_180.txt), every one of its 697 arp notes on the
+# octave entry its residue names where 463 were; Game_Killer's
+# reversal_ratio at -t 60 0.234 -> 0.527, melody 1.00 both sides
+# (fid2_GK_*.json); Chimera subtune 1 voice 3 bUbUUUUUUUbb -> the
+# original's bUUUUUbUUUUU on 187 of 187 onsets (prof2_Chimera_voice.txt).
+# The corpus byte-hash moves exactly the six files the split fires on
+# (hash2.txt).
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (_arp_lap_walk, _share_loop_tail,  # noqa: E402
+                            _split_arp_orderlists, _fixed_arp_clock,
+                            ARP_SPLIT_RATIO, GT_FIRST_NOTE, GT_LAST_NOTE,
+                            CMD_TONEPORTA)
+
+SPLIT_FILES = {"Chimera", "Game_Killer", "Human_Race", "Hunter_Patrol",
+               "One_Man_and_his_Droid", "Zoids"}
+
+
+class _Speeds:
+    def __init__(self, frames):
+        self.frames = frames
+
+    def frames_for(self, subtune):
+        return self.frames
+
+
+def _pattern(*rows):
+    out = []
+    for note, instr in rows:
+        out += [note, instr, 0, 0]
+    return out + [0xFF, 0, 0, 0]
+
+
+def test_a_loop_off_the_cycle_is_walked_until_it_returns():
+    """Game_Killer's voice 3 is one 18-row pattern looping at two calls a
+    row: 36 counter steps, 4 off a multiple of 8, so the loop is walked
+    twice. A 16-row loop is a whole cycle and is walked once; a prefix
+    before the restart position is played once."""
+    eighteen = [0x60, 1, 0, 0] * 18 + [0xFF, 0, 0, 0]
+    walk = _arp_lap_walk([0, 0xFF, 0], [eighteen], 2, 8)
+    assert [(p, lap) for p, lap, _, _ in walk] == [(0, 0), (0, 1)]
+    sixteen = [0x60, 1, 0, 0] * 16 + [0xFF, 0, 0, 0]
+    assert len(_arp_lap_walk([0, 0xFF, 0], [sixteen], 2, 8)) == 1
+    three = [0x60, 1, 0, 0] * 3 + [0xFF, 0, 0, 0]
+    walk = _arp_lap_walk([0, 1, 0xFF, 1], [three, three], 1, 2)
+    assert [(p, lap) for p, lap, _, _ in walk] == [(0, 0), (1, 0), (1, 1)]
+
+
+def test_the_split_renames_each_play_for_its_own_residue():
+    """Parity mask, one frame a row, base and first fetch 0. Pattern 0 is
+    one row: a note on instrument 1. Played at rows 0 and 1 it sounds on
+    residues 0 and 1, so the second play needs the copy (instrument 5) and
+    becomes a new pattern; the `D1` repeat is unrolled around the
+    transpose, and the restart operand follows its entry."""
+    clock = (0, 0, (0x01, BEQ), 2, _Speeds(1))
+    pat = _pattern((0x60, 1))
+    track = [0xE0, 0xD1, 0, 0xFF, 1]
+    out = _split_arp_orderlists([track], [pat], clock, {1: {1: 5}})
+    assert out is not None
+    new_tracks, new_patterns, renamed = out
+    assert renamed == 1
+    assert new_patterns[0] == pat
+    assert new_patterns[1][:4] == [0x60, 5, 0, 0]
+    assert new_tracks[0] == [0xE0, 0, 1, 0xFF, 1]
+    # a residue with no copy is left alone
+    assert _split_arp_orderlists([track], [pat], clock, {1: {}}) is None
+    # a tie keeps its column: the wavetable it would restart does not
+    tie = [0x60, 1, CMD_TONEPORTA, 0, 0xFF, 0, 0, 0]
+    assert _split_arp_orderlists([[0xD1, 0, 0xFF, 0]], [tie], clock,
+                                 {1: {1: 5}}) is None
+
+
+def test_the_restart_follows_its_entry():
+    """A restart pointing past an unrolled repeat lands on the same
+    pattern entry in the rewritten orderlist: `D2 00` (rows 0, 1, 2 on
+    residues 0, 1, 0) is three entries where it was two, so the restart
+    that named position 2 names position 3."""
+    clock = (0, 0, (0x01, BEQ), 2, _Speeds(1))
+    pat = _pattern((0x60, 1))
+    two = _pattern((0x60, 2), (0x60, 2))
+    out = _split_arp_orderlists([[0xD2, 0, 1, 0xFF, 2]], [pat, two], clock,
+                                {1: {1: 5}})
+    assert out[0][0] == [0, 2, 0, 1, 0xFF, 3]
+
+
+def test_the_split_follows_the_latch_not_the_column():
+    """A note with no instrument inherits the voice's latch, so a copy
+    named on one row carries to the next: that row is renamed back only
+    where its own residue needs the record."""
+    clock = (0, 0, (0x01, BEQ), 2, _Speeds(1))
+    pat = _pattern((0x60, 1), (0x60, 0), (0x60, 0), (0x60, 0))
+    out = _split_arp_orderlists([[0, 0xFF, 0]], [pat], clock, {1: {1: 5}})
+    _, patterns, renamed = out
+    assert [patterns[0][k] for k in (1, 5, 9, 13)] == [1, 5, 1, 5]
+    assert renamed == 3
+
+
+def test_a_copy_jumps_into_an_identical_loop():
+    """Game_Killer's duty residues differ before the cycle settles and
+    share the loop after it: the copy keeps its own lead and jumps into the
+    loop already in the table (a jump costs no call, gplay.c:707-711)."""
+    loop = [(0x09, 0x0C), (0x0F, 0x80), (0x05, 0x00)]
+    table = [(0x41, 0x00), (0x0F, 0x80)] + loop + [(0xFF, 3)]
+    start = 10                             # the copy's loop starts at 12
+    left = [0x41, 0x0D] + [l for l, _ in loop] + [0xFF]
+    right = [0x00, 0x00] + [r for _, r in loop] + [12]
+    got = _share_loop_tail((left, right), start, table)
+    assert got == ([0x41, 0x0D, 0xFF], [0x00, 0x00, 3])
+    # no identical loop in the table: unchanged
+    assert _share_loop_tail((left, right), start, table[:2]) == (left, right)
+    # a loop that is the whole block is never shared
+    whole = ([l for l, _ in loop] + [0xFF], [r for _, r in loop] + [start])
+    assert _share_loop_tail(whole, start, table) == whole
+
+
+def _split_notes(name):
+    """(song, [(record name, residue, instrument)]) for every non-tie note
+    of the finished .sng's own orderlists and patterns (songview, a second
+    reader), loops unrolled."""
+    import songview
+    sng, _, _ = _converted(name)
+    s = songview.parse_sng(sng)
+    sid, det = _det(CORPUS / f"{name}.sid")
+    base, first, _, period, speeds = _fixed_arp_clock(sid, det, s.tracks)
+    named = {i.number: i.name for i in s.instruments}
+    notes = []
+    for ti, track in enumerate(s.tracks):
+        frames = speeds.frames_for(ti // 3)
+        row, latched = 0, 0
+        for _, _, b, plays in _arp_lap_walk(track, s.patterns, frames,
+                                            period):
+            pat = s.patterns[b]
+            for _ in range(plays):
+                for r in range(0, len(pat) - len(pat) % 4, 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        latched = pat[r + 1]
+                    if (latched and GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE
+                            and pat[r + 2] != CMD_TONEPORTA):
+                        res = (base + first + row * frames) % period
+                        notes.append((named[latched], res, latched))
+                    row += 1
+    return s, notes
+
+
+@needs_corpus
+def test_hunter_patrol_notes_sit_on_their_residues_octave():
+    """Every non-tie note on a fixed-arp record plays the entry its own
+    residue names (`unticked_arp_octave_entry`): 697 of 697, where the
+    per-instrument vote had 463."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    s, notes = _split_notes("Hunter_Patrol")
+    wt = s.tables["WTBL"]
+    ptr = {i.number: i.wave_ptr for i in s.instruments}
+
+    def octave(n):
+        for j in range(3):
+            left, right = wt[ptr[n] - 1 + j]
+            if left == 0xFF:
+                return None
+            if right == OCTAVE:
+                return j
+        return None
+    agree = miss = 0
+    for _, res, instr in notes:
+        if octave(instr) is None:
+            continue
+        if octave(instr) == unticked_arp_octave_entry(res):
+            agree += 1
+        else:
+            miss += 1
+    assert (agree, miss) == (697, 0)
+
+
+@needs_corpus
+def test_game_killer_names_one_copy_per_residue():
+    """The melodic records 3 and 7 and voice 3's record 6 play one
+    instrument per residue, a different one on each of 1, 3, 5 and 7, and
+    voice 3's one-pattern loop is unrolled to two laps in the orderlist."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    s, notes = _split_notes("Game_Killer")
+    by_record = {}
+    for name, res, instr in notes:
+        by_record.setdefault(name, {}).setdefault(res, set()).add(instr)
+    for name, m in by_record.items():
+        for res, instrs in m.items():
+            assert len(instrs) == 1, (name, res, instrs)
+    split = {n: m for n, m in by_record.items()
+             if len(set().union(*m.values())) > 1}
+    assert len(split) == 3, by_record
+    for m in split.values():
+        assert sorted(m) == [1, 3, 5, 7], m
+        assert len(set().union(*m.values())) == 4, m
+    body = [b for b in s.tracks[2][:-2] if b < 0xD0]
+    assert len(body) == 2 and body[0] != body[1], s.tracks[2]
+
+
+@needs_corpus
+def test_the_split_fires_on_exactly_the_split_files():
+    """The census the corpus byte-hash was checked against: of the fixed
+    arp files, exactly these six log a split under their presets."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import json
+    import h2g.convert as C
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    fired = set()
+    for p in sorted(CORPUS.glob("*.sid")):
+        if p.name not in doc["songs"] or not _det(p)[1].arp_fixed_up:
+            continue
+        lines = []
+        C.convert(str(p), log=lines.append,
+                  **fidelity._preset_opts(doc, p.name))
+        if any("Per-note arp split" in m for m in lines):
+            fired.add(p.stem)
+    assert fired == SPLIT_FILES
+    assert ARP_SPLIT_RATIO == 2
+
+
+@needs_corpus
+def test_chimera_copies_are_their_source_but_the_wave_pointer():
+    """Chimera also carries legato variants (numbered after the rest
+    variants), so the copies are numbered after both: each copy the log
+    names is its source's record with only the wave pointer changed. And
+    record 4 -- residue 6 in subtune 0, residue 2 in subtune 1, where
+    voice 3 sounded bUbUUUUUUUbb against the original's bUUUUUbUUUUU on
+    187 onsets before the split -- names one instrument per residue."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import dataclasses
+    import json
+    import re
+    import songview
+    import h2g.convert as C
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    lines = []
+    sng = C.convert(str(CORPUS / "Chimera.sid"), log=lines.append,
+                    **fidelity._preset_opts(doc, "Chimera.sid"))
+    s = songview.parse_sng(sng)
+    split = [m for m in lines if "Per-note arp split" in m]
+    assert len(split) == 1, lines
+    pairs = [(int(c, 16), int(src, 16)) for c, src in
+             re.findall(r"\$([0-9A-F]+) \(of \$([0-9A-F]+)\)", split[0])]
+    assert pairs and (0x28, 0x4) in pairs, split
+    by = {i.number: i for i in s.instruments}
+    for copy, src in pairs:
+        a = dataclasses.replace(by[copy], number=0, wave_ptr=0)
+        b = dataclasses.replace(by[src], number=0, wave_ptr=0)
+        assert a == b, (copy, src)
+        assert by[copy].wave_ptr != by[src].wave_ptr, (copy, src)
+    _, notes = _split_notes("Chimera")
+    four = {}
+    for name, res, instr in notes:
+        if name == by[4].name:
+            four.setdefault(res, set()).add(instr)
+    assert set(four) == {2, 6}, four
+    assert all(len(v) == 1 for v in four.values()), four
+    assert four[2] != four[6], four

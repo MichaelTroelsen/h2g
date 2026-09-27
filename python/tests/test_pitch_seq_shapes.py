@@ -109,12 +109,14 @@ def test_the_two_new_files_decode_to_real_arpeggios():
 
     Mega Apocalypse's four bit-$10 records give thirds over fifths/sixths;
     Food Feud's two give a small drop and back. Both are intervals a tune could
-    contain, which a mis-anchored pairs table would not be.
+    contain, which a mis-anchored pairs table would not be. Mega Apocalypse's
+    are in PLAY order -- its phase counts down, so (0, 5, 8) plays 0, 8, 5
+    and rotates to [5, 0, 8] (was pinned [8, 0, 5], the table's order).
     """
     from h2g import goatwriter as G
     want = {
-        "Mega_Apocalypse": {4: [8, 0, 5], 5: [8, 0, 3],
-                            7: [9, 0, 5], 8: [9, 0, 4]},
+        "Mega_Apocalypse": {4: [5, 0, 8], 5: [3, 0, 8],
+                            7: [5, 0, 9], 8: [4, 0, 9]},
         "Food_Feud": {2: [124, 0], 3: [125, 0]},
     }
     for name, records in want.items():
@@ -343,8 +345,12 @@ def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
     Held one frame it arpeggiated four times too fast -- voice 2 read 7837
     ties against the original's 5139 with `pitch_seq` forced, 3907 with the
     divider honoured (C:/t/pitch-seq-divider/ab_food_feud.txt, v0.5.491).
-    The rotation putting the zero step first is keyed on the multiplier
-    alone, exactly as before: at -S1 entry 0 still lands on frame 1.
+    The rotation putting the zero step first is keyed on the CALLS a step
+    holds, so it applies at -S1 too: entry 0 is the note's first frequency
+    write (the new-note call ends `jmp mt_loadregswaveonly`, player.s), and
+    keyed on the multiplier alone the -4 step was what every attack read --
+    Food_Feud forced to -S1, melody 81.52% against 93.87% calls-keyed and
+    93.87% with the option off (C:/t/pitch-seq-s1-rotation/sd_result.txt).
     """
     from h2g import goatwriter as G
     sid, det = _detect_tables(load_sid(str(CORPUS / "Food_Feud.sid")),
@@ -352,7 +358,32 @@ def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
     wave = sid.data[det.instr_start + 2 * det.instr_stride + 2]
     assert wave == 0x11
     left, right = G._pitch_seq_entries(sid, det, 2, wave, 1)
-    assert left == [0x11] * 8 and right == [124] * 4 + [0] * 4
+    assert left == [0x11] * 8 and right == [0] * 4 + [124] * 4
+
+
+@needs_corpus
+def test_the_rotation_is_keyed_on_calls_per_step_not_on_the_multiplier():
+    """One call a step is the only unrotated case, whichever factor makes it.
+
+    The same record with its divider taken away: at -S1 a step is one call
+    and the modal step stays at index 1 (unchanged for the 35 divider-less
+    files); at -S2 it is two calls and rotates, as a divider of 2 at -S1
+    does -- the two are one quantity (C:/t/pitch-seq-s1-rotation).
+    """
+    import dataclasses as dc
+    from h2g import goatwriter as G
+    sid, det = _detect_tables(load_sid(str(CORPUS / "Food_Feud.sid")),
+                              lambda *a, **k: None)
+    wave = sid.data[det.instr_start + 2 * det.instr_stride + 2]
+
+    def with_divider(n):
+        return dc.replace(det, pitch_seq=dc.replace(det.pitch_seq,
+                                                    frames_per_step=n))
+    assert G._pitch_seq_entries(sid, with_divider(1), 2, wave, 1)[1] == [124, 0]
+    assert G._pitch_seq_entries(sid, with_divider(1), 2, wave, 2)[1] == \
+        [0, 0, 124, 124]
+    assert G._pitch_seq_entries(sid, with_divider(2), 2, wave, 1)[1] == \
+        [0, 0, 124, 124]
     left, right = G._pitch_seq_entries(sid, det, 2, wave, 3)
     assert left == [0x11] * 24 and right == [0] * 12 + [124] * 12
 
@@ -482,15 +513,248 @@ def test_food_feuds_rows_land_on_calls_0_3_and_6_and_the_majority_follows():
 
 
 @needs_corpus
-def test_only_food_feud_asks_for_phases():
-    """`build_sng` walks the phase only where the player divides its step;
-    `PITCH_SEQ_NEW_SONG_CALLS` is Food_Feud's init and nobody else's."""
+def test_food_feud_is_still_the_only_divider_file():
+    """`frames_per_step > 1` was the old gate on the walk; it is Food_Feud
+    alone, and the walk no longer asks it (see the reader below)."""
     asked = set()
     for p in sorted(CORPUS.glob("*.sid")):
         seq = D._find_pitch_seq(load_sid(str(p)))
         if seq is not None and seq.frames_per_step > 1:
             asked.add(p.stem)
     assert asked == {"Food_Feud"}
+
+
+# --- where the row clock starts: read from the init, then re-measured -------
+#
+# `PITCH_SEQ_CLOCK` reads on 43 files; what differs between them is how many
+# play calls the init lets pass before the gate first steps.
+# `pitch_seq_new_song_calls` reads that count only where the init returns
+# straight after `LDA #$4x / STA flag` on every path and calls nothing, the
+# new-song path jumps into the phase step, and the PSID play address enters
+# the player once per call. These are the 13 files it reads (v0.5.494).
+
+NEW_SONG_READS = {
+    "Bangkok_Knights", "Chain_Reaction", "Flash_Gordon", "Food_Feud",
+    "Lightforce", "Nineteen", "Pandora", "Shockway_Rider", "Star_Paws",
+    "Trans-Atlantic_Balloon_Challenge", "W_A_R", "W_A_R_Preview", "Zoolook",
+}
+# Where the row ticks from call 1 carry attacks a trace does not put on a
+# tick: one instrument each, a late gate or a drum retriggering inside its
+# row (voice 2 GT 9 / voice 2 GT 5 / voice 1 GT 4 at subtune 0).
+NEW_SONG_REMAINDER = {"Bangkok_Knights", "Nineteen",
+                      "Trans-Atlantic_Balloon_Challenge"}
+
+
+def test_opcode_lengths_are_dis6502s():
+    """The reader's instruction lengths are the disassembler's 151 opcodes."""
+    import dis6502
+    for op in range(256):
+        want = (1 + dis6502.MODES[dis6502.OPCODES[op][1]]
+                if op in dis6502.OPCODES else 0)
+        assert int(G._OPCODE_LENGTHS[op]) == want, hex(op)
+
+
+def _clock_files():
+    for p in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(p))
+        if G.PITCH_SEQ_CLOCK.search(sid.data) is not None:
+            yield p, _detect_tables(sid, lambda *a, **k: None)
+
+
+@needs_corpus
+def test_the_new_song_count_is_read_on_exactly_these_inits():
+    """Read on 13 of the clock files, and each reading is the constant.
+    Delta_Mix-E-Load_loader's init calls the player itself (`JSR $C012`),
+    and Mr_Meaner's arms a CIA 2 NMI before its `RTS`: both decline."""
+    got = {}
+    for p, (sid, det) in _clock_files():
+        k = G.pitch_seq_new_song_calls(sid)
+        if k is not None:
+            got[p.stem] = k
+    assert set(got) == NEW_SONG_READS
+    assert set(got.values()) == {G.PITCH_SEQ_NEW_SONG_CALLS}
+
+
+def _patched(sid, patches, **fields):
+    data = bytearray(sid.data)
+    for addr, raw in patches:
+        o = sid.to_offset(addr)
+        data[o:o + len(raw)] = raw
+    return dataclasses.replace(sid, data=bytes(data), **fields)
+
+
+@needs_corpus
+def test_the_reader_declines_an_init_or_play_it_cannot_count():
+    """On Food_Feud's own image, one edit at a time: an init that calls the
+    player before arming the flag has spent the new-song call itself
+    (Delta_Mix-E-Load_loader's shape), and a play wrapper entering the
+    player twice, or behind a branch, is not one call per call. The nine
+    zero bytes at $9000 hold the wrappers; `JMP $9CEE` at $9009 is the
+    PSID init, `LDA #$00 / STA $D417 / LDA #$40 / STA $953D / RTS` there."""
+    sid, _ = _food_feud()
+    assert G.pitch_seq_new_song_calls(sid) == 1
+    jsr_play = bytes.fromhex("200F90" "A9408D3D95" "60")
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9CEE, jsr_play)])) is None
+    once, twice = bytes.fromhex("201490" "60"), bytes.fromhex("201490201490" "60")
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9000, once)], play_addr=0x9000)) == 1
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9000, twice)], play_addr=0x9000)) is None
+    branch = bytes.fromhex("D001" "60" "201490" "60")
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9000, branch)], play_addr=0x9000)) is None
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [], play_addr=0)) is None
+    # an init leaving the stop bit set, or returning before the flag
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9CF4, b"\xc0")])) is None
+    assert G.pitch_seq_new_song_calls(
+        _patched(sid, [(0x9CEE, b"\x60")])) is None
+
+
+def _attack_misses(sid, det, trace, n, k):
+    ticks = set(G.pitch_seq_fetch_calls(sid, det, 0, n, new_song_calls=k))
+    return sum(1 for v in trace for a in v.attack_frames
+               if a < n and a not in ticks)
+
+
+@needs_corpus
+@needs_siddump
+def test_the_new_song_count_is_re_measured_against_each_original():
+    """20 s of subtune 0 of every file the reader reads: the row ticks
+    started `PITCH_SEQ_NEW_SONG_CALLS` in carry every attack, or -- on the
+    three `NEW_SONG_REMAINDER` files -- strictly more attacks than a start
+    one call either side. And the declined Delta_Mix-E-Load_loader really
+    measures 0: the reader's refusal is not caution about nothing."""
+    seconds = 20
+    n = seconds * 50
+    k = G.PITCH_SEQ_NEW_SONG_CALLS
+    for p, (sid, det) in _clock_files():
+        if p.stem not in NEW_SONG_READS | {"Delta_Mix-E-Load_loader"}:
+            continue
+        trace = fidelity.run_siddump(p, seconds, 0, fidelity.SIDDUMP)
+        assert sum(len(v.attack_frames) for v in trace) > 10, p.stem
+        miss = {j: _attack_misses(sid, det, trace, n, j)
+                for j in (k - 1, k, k + 1)}
+        if p.stem == "Delta_Mix-E-Load_loader":
+            assert miss[k - 1] == 0 < miss[k], miss
+        elif p.stem in NEW_SONG_REMAINDER:
+            assert 0 < miss[k] < min(miss[k - 1], miss[k + 1]), (p.stem, miss)
+        else:
+            assert miss[k] == 0 < min(miss[k - 1], miss[k + 1]), (p.stem, miss)
+
+
+def _walk(name, subtune=0):
+    """(sid, det, tracks, patterns, lead) as build_sng receives them."""
+    import json
+    import h2g.convert as cv
+    presets = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    opts = dict(fidelity._preset_opts(presets, f"{name}.sid"))
+    opts["pitch_seq"] = True
+    got = {}
+    real_b, real_l = cv.build_sng, G._wavetable_layout
+
+    def spy(sid, det, tracks, patterns, *a, **k):
+        got.update(sid=sid, det=det, tracks=[list(t) for t in tracks],
+                   patterns=[list(q) for q in patterns])
+        return real_b(sid, det, tracks, patterns, *a, **k)
+
+    def spy_layout(*a, **k):
+        got["lead"] = a[8]
+        return real_l(*a, **k)
+    cv.build_sng, G._wavetable_layout = spy, spy_layout
+    try:
+        cv.convert(CORPUS / f"{name}.sid", log=lambda *a, **k: None, **opts)
+    finally:
+        cv.build_sng, G._wavetable_layout = real_b, real_l
+    return got
+
+
+# (file, subtune): every file the widened walk moves, at a subtune whose
+# first 60 s play a bit-$10 note (W_A_R's first five do not).
+PHASE_RETRACED = [("Flash_Gordon", 0), ("Trans-Atlantic_Balloon_Challenge", 0),
+                  ("W_A_R_Preview", 0), ("W_A_R", 5)]
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name,subtune", PHASE_RETRACED)
+def test_the_widened_files_phase_is_re_measured_against_the_original(
+        name, subtune):
+    """On every in-note frame of a bit-$10 record's note that the walk and
+    the trace both attack on, the semitone offset from the attack frame is
+    the step the cycle names for that call -- at shift 0 on every frame,
+    and on under half of them at either other shift. Fetch frames are left
+    out, as on Food_Feud: the fetch path skips the effect block."""
+    import math
+    g = _walk(name)
+    sid, det = g["sid"], g["det"]
+    cycle = G.pitch_seq_phase_cycle(sid, det)
+    period = len(cycle)
+    seconds = 60
+    n = seconds * 50
+    trace = fidelity.run_siddump(CORPUS / f"{name}.sid", seconds, subtune,
+                                 fidelity.SIDDUMP)
+    ticks = set(G.pitch_seq_fetch_calls(sid, det, subtune, n))
+    agree, total = [0] * period, 0
+    for v in range(3):
+        rows = list(G._note_rows(g["tracks"][3 * subtune + v], g["patterns"]))
+        if not rows:
+            continue
+        calls = G.pitch_seq_fetch_calls(sid, det, subtune, rows[-1][0] + 1)
+        named = {calls[r]: ins for r, ins in rows if calls[r] < n}
+        attacks = set(trace[v].attack_frames)
+        freq, cur, k = [], None, 0
+        ev = sorted(trace[v].freq_events)
+        for f in range(n):
+            while k < len(ev) and ev[k][0] <= f:
+                cur = ev[k][1]
+                k += 1
+            freq.append(cur)
+        at = sorted(named)
+        for i, a in enumerate(at[:-1]):
+            steps = G._pitch_seq_steps(sid, det, named[a] - g["lead"] - 1)
+            if steps is None or a not in attacks or not freq[a]:
+                continue
+            for f in range(a + 1, at[i + 1]):
+                if f in ticks or not freq[f]:
+                    continue
+                off = round(12 * math.log2(freq[f] / freq[a]))
+                total += 1
+                for s in range(period):
+                    b = steps[cycle[(f + s) % period]]
+                    agree[s] += off == (b - 0x100 if b >= 0x80 else b)
+    assert total >= 40, (name, total)
+    assert agree[0] == total, (name, agree, total)
+    assert all(2 * x < total for x in agree[1:]), (name, agree, total)
+
+
+@needs_corpus
+def test_build_sng_asks_for_phases_where_the_count_is_read():
+    """Preset + pitch_seq over the files the reader reads: frame notes are
+    asked on exactly these -- the others phase no two-stage bit-$10 record.
+    Nineteen's residue 2 builds the block its rotation already did, so its
+    bytes do not move; the corpus byte-hash moves the other four new ones."""
+    import json
+    from h2g.convert import convert
+    presets = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    real = G.pitch_seq_frame_notes
+    asked = set()
+    try:
+        for name in sorted(NEW_SONG_READS):
+            def spy(sid, det, i, residue, name=name):
+                asked.add(name)
+                return real(sid, det, i, residue)
+            G.pitch_seq_frame_notes = spy
+            opts = dict(fidelity._preset_opts(presets, f"{name}.sid"))
+            convert(CORPUS / f"{name}.sid", log=lambda *a, **k: None,
+                    **{**opts, "pitch_seq": True})
+    finally:
+        G.pitch_seq_frame_notes = real
+    assert asked == {"Food_Feud", "Flash_Gordon", "Nineteen",
+                     "Trans-Atlantic_Balloon_Challenge", "W_A_R",
+                     "W_A_R_Preview"}
 
 
 @needs_corpus
@@ -541,3 +805,99 @@ def test_the_clock_and_the_cycle_are_re_measured_against_the_original():
     # must be such a frame, and they are rare.
     assert all(f in ticks for _, _, f in missed), missed
     assert checked > 200 and len(missed) * 100 <= checked, (checked, missed)
+
+
+# --- the pair form's play order: the phase counts DOWN ----------------------
+#
+# `DEC phase / BPL / LDA #2 / STA phase` gives the cell 2, 1, 0, 2, ..., so
+# `ADC base,Y` adds b, a, 0: the cycle is 0, b, a, not the table's 0, a, b.
+# Only a record with distinct nonzero a and b can tell the two apart.
+
+def _fake_pair(a, b, dec=True):
+    """A pair-form player: the canonical shape at $1010, phase cell $1100,
+    index $1180, pairs $1190, base $11A0 (holding 0), one bit-$10 record at
+    $1140 whose index is 0 and pair is (a, b). `dec` adds the phase's
+    `DEC / BPL / LDA #2 / STA` reload; without it nothing writes the cell."""
+    data = bytearray(0x200)
+    shape = _hex("29 10 F0 20 B9 80 11 0A A8 B9 90 11 8D A1 11",
+                 "B9 91 11 8D A2 11 AC 00 11 18 BD 00 10 79 A0 11 0A A8")
+    data[0x10:0x10 + len(shape)] = shape      # search_file reads 0 as a miss
+    if dec:
+        data[0x60:0x6A] = _hex("CE 00 11 10 05 A9 02 8D 00 11")
+    data[0x140 + 2] = 0x41
+    data[0x140 + 7] = 0x10
+    data[0x180] = 0
+    data[0x190:0x192] = bytes((a, b))
+    sid = SidFile(path="fake.sid", data=bytes(data), name="n", author="a",
+                  released="r", load_addr=0x1000, subtunes=1)
+    det = Detection(instr_start=0x140, instr_used=1, instr_stride=8,
+                    track_lo=1, track_hi=2, pattern_lo=3, pattern_hi=4,
+                    pattern_used=0, read_track_version=0)
+    det.pitch_seq = D.PitchSeq(index=0x180, pairs=0x190, base=0x1A0, steps=3)
+    return sid, det
+
+
+def test_the_pair_forms_play_order_is_the_table_read_downwards():
+    sid, det = _fake_pair(4, 7)
+    assert G._pitch_seq_phase_cell(sid) == 0x1100
+    assert G._pitch_seq_phase_step(sid) == 0x60
+    notes = _pitch_seq_notes(sid, det, 0)
+    assert notes in _rotations((0, 7, 4)), notes
+    assert notes not in _rotations((0, 4, 7)), "direction is the mechanism"
+    assert notes == [_arp_relative(1, s) for s in (4, 0, 7)]
+    # the same order `pitch_seq_frame_notes` reads off the simulated cell
+    cycle = [G._pitch_seq_steps(sid, det, 0)[p] for p in (2, 1, 0)]
+    assert [_arp_relative(1, s) for s in cycle] in _rotations((0, 7, 4))
+
+
+def test_a_phase_nothing_steps_keeps_the_table_order():
+    """No `DEC` reload: the direction is unread, so nothing is reversed."""
+    sid, det = _fake_pair(4, 7, dec=False)
+    assert G._pitch_seq_phase_step(sid) is None
+    assert _pitch_seq_notes(sid, det, 0) in _rotations((0, 4, 7))
+
+
+def test_orders_only_distinct_nonzero_pairs_can_tell_apart_are_unchanged():
+    """(0,x,x) and (0,x,0) read the same either way: one rotation apart,
+    and the modal rotation lands them on the same bytes."""
+    for a, b in ((12, 12), (24, 0), (0, 5)):
+        got = _pitch_seq_notes(*_fake_pair(a, b), 0)
+        assert got == _pitch_seq_notes(*_fake_pair(a, b, dec=False), 0), (a, b)
+
+
+@needs_corpus
+@needs_siddump
+def test_after_8s_arpeggio_plays_zero_b_a_in_the_original():
+    """After_8 record 0 is (0, 5, 9). A siddump of the original (30 s) shows
+    3-frame cycles of three distinct notes a fifth-plus-fourth apart, and
+    every one runs lowest, +9, +5 -- never +5, +9. The emitter's play order
+    must be the same cycle."""
+    import collections
+    import math
+    path = CORPUS / "After_8.sid"
+    sid, det = _detect_tables(load_sid(str(path)), lambda *a, **k: None)
+    assert G._pitch_seq_steps(sid, det, 0) == [0, 5, 9]
+    assert _pitch_seq_notes(sid, det, 0) in _rotations((0, 9, 5))
+    seconds = 30
+    trace = fidelity.run_siddump(path, seconds, 0, fidelity.SIDDUMP)
+    seen = collections.Counter()
+    for voice in trace:
+        ev, cur, k, freq = sorted(voice.freq_events), None, 0, []
+        for f in range(seconds * 50):
+            while k < len(ev) and ev[k][0] <= f:
+                cur = ev[k][1]
+                k += 1
+            freq.append(cur)
+        f = 0
+        while f + 9 <= len(freq):
+            w = freq[f:f + 9]
+            if (all(w) and len(set(w[:3])) == 3
+                    and all(w[j] == w[j + 3] for j in range(6))):
+                lo = w.index(min(w[:3]))
+                r = w[lo:lo + 3]
+                seen[tuple(round(12 * math.log2(x / r[0])) for x in r[1:])] += 1
+                f += 9
+            else:
+                f += 1
+    assert seen[(9, 5)] >= 50, seen
+    assert seen[(5, 9)] == 0, seen

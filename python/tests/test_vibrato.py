@@ -282,6 +282,22 @@ def test_the_store_variants_are_a_closed_set():
     assert hits == [], f"a fourth dialect exists: {hits}"
 
 
+def test_the_triangle_entry_declines_at_fifteen_not_only_past_it():
+    """16 shifts of a 16-bit interval (`n + 1` shifts for byte `n`) is
+    already zero at byte 15 -- the DEC/BPL loop's own boundary
+    (TRIANGLE_VIBRATO_MAX_SHIFT == 15) -- so the emitter must decline there
+    too, agreeing with fidelity.vibrato_population's
+    `c[1] < TRIANGLE_VIBRATO_MAX_SHIFT` census. No corpus record stores 15
+    (measured dropped bytes are $10 and $17), so this never moved a file.
+    """
+    from h2g.detect import TRIANGLE_VIBRATO_MAX_SHIFT
+    from h2g.goatwriter import _triangle_vibrato_entry
+    assert TRIANGLE_VIBRATO_MAX_SHIFT == 15
+    assert _triangle_vibrato_entry(14, 1) is not None
+    assert _triangle_vibrato_entry(15, 1) is None
+    assert _triangle_vibrato_entry(16, 1) is None
+
+
 def test_the_triangle_gate_becomes_a_vibdelay():
     """The player's gate is a note-length threshold, not a countdown.
 

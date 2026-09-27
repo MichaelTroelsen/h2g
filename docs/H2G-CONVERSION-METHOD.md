@@ -12046,3 +12046,77 @@ is what "from a clean tree" costs when a sibling is editing the harness in
 the same checkout; and its `--baseline` table went to a stdout that a
 detached launch dropped, so pass `--ab-output PATH` and keep the A/B where
 the report is.
+
+### 7.mmmmmm Three v0.5.493 emitter changes: a past-table drum variant, a phase walked from the image, and a duty residue by frame agreement
+
+Three converter changes landed together at v0.5.493 (`c24fdc9`), each
+verified with a corpus byte-hash comparing a working-tree snapshot against
+the same snapshot plus only that change.
+
+**A past-table rest that is a drum keeps its noise frame.**
+`patterns.past_table_rests` (§ above) reads a note byte that indexes past
+the player's frequency table onto a constant `$0000` cell and the classic
+decoder emits it as a KEYOFF — right about the pitch, wrong wherever the
+instrument's own wave program has an absolute-pitch frame that is audible
+at frequency `$0000` regardless of note. `goatwriter._past_rest_variants`
+now re-emits such a KEYOFF as a note on an appended VARIANT instrument
+(`_past_rest_variant_block`) built from the source record's own wave
+program: every row whose pitch is relative becomes the test bit held with
+the row's own gate bit (`$E9` for a noise-and-gate row, via `_wave_byte`'s
+`$E0`-`$EF` encoding — Goattracker's way to hold an oscillator silent),
+and every row whose pitch is absolute is copied byte for byte, since that
+pitch does not depend on the note and is the reason the original's frame
+is audible in the first place. A row declines the rewrite (stays the plain
+KEYOFF) where its command is `CMD_TONEPORTA` (a tie, which skips the
+firstwave and the gate the variant depends on), where a later sounding row
+in the same pattern would relatch onto the silent variant without naming
+its own instrument (Goattracker latches a non-zero instrument column,
+gplay.c:912-914), or where the instrument or wavetable has no room left
+(logged). The measured case is Sanxion's drum (GT instrument 1, `41 / 81
+at B-5 / 41 / stop`): six pattern entries hold `01 60` at row 20, and the
+original sounds the `41B8/81` noise frame — 41 hits in 100 s on voice 3 —
+on every one of them, which the plain KEYOFF sounded as nothing. Under
+shipped presets this moves exactly Sanxion, 17061 -> 17094 bytes.
+
+**A pitch-seq phase, walked from the player image instead of assumed
+per-record.** § 7.llllll gave `PitchSeq.frames_per_step` its divider; this
+change gives the *phase* a real per-attack value instead of every `$34`
+record sharing one hand-picked residue. `goatwriter.pitch_seq_phase_cycle`
+simulates the phase cell's `DEC / BPL / LDA #n / STA` (and, where
+`frames_per_step > 1`, the divider in front of it) directly from the
+image's own bytes to produce the phase's value on each play call of one
+cycle (`steps * frames_per_step` calls long), declining where the cells
+cannot be found or an image byte lies outside its reload's range.
+`pitch_seq_phases` then walks the finished orderlists exactly as
+`fixed_arp_phases` does, taking each attack's call number from
+`pitch_seq_fetch_calls` and giving every instrument the majority residue
+of its own attacks (`_majority_residues`), and `pitch_seq_frame_notes`
+reads the record's per-frame byte off that residue instead of off frame 0
+of the raw table. Applies only where `frames_per_step > 1`, which the
+corpus census still finds only on Food_Feud (`$955D`/`$955E`, an 8-call
+cycle). Forcing `pitch_seq` on now moves Food_Feud's voice-2 tie count
+3907 -> 5239 against the original's 5139 (was 3907 before this change);
+shipped presets move no file, since Food_Feud's preset does not carry
+`pitch_seq`.
+
+**A duty record's residue is chosen by frame agreement, not by the mode.**
+`fixed_arp_phases`' existing majority vote (above) still picks each
+record's residue by count of attacks — sound for the parity mask, where a
+residue is all-or-nothing and the mode already answers the frame count's
+question. For any OTHER mask a duty record no toneporta row names now
+takes `goatwriter._duty_residue`'s answer instead of the plain mode: the
+residue whose octave agrees with the original on the most FRAMES its notes
+play, each note counted out to the next one on its track — because over a
+note of `L` frames two residues can sound identical wherever both their
+base frames fall past the note's end, which makes the mode the wrong
+reduction (a residue can be modal and still wrong on more frames than a
+less-frequent one). A tie goes to the mode, then the lower residue, so a
+record whose notes already sit on one residue keeps its bytes unchanged.
+The measured case is Chimera's instrument 15, which plays six-frame notes
+on residues 0, 2, 4 and 6: the old mode (4, from `bUUUbU` runs) got 360
+frames wrong per lap against 600; the new answer is 0 (`bUUUUU`, which the
+original also plays on residue 2). Two populations still never reach
+`_duty_residue`: the parity mask, and a record some toneporta row names
+(the tie rewrites the pattern's note whenever the wavetable fires nothing,
+so the undisturbed-wavetable frame count does not apply there). Under
+shipped presets this moves exactly Chimera.

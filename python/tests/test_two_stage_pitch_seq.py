@@ -204,6 +204,74 @@ def test_a_block_that_will_not_fit_falls_back():
     assert tight == G._two_stage_entries(0x00, attack, frames, 1)
 
 
+def test_a_budget_refusal_logs_which_record_and_why():
+    """A synthetic record whose composed block exceeds its share is named.
+
+    `_two_stage_pitch_seq_entries` used to fall back silently -- the record
+    lost its arpeggio and nothing said so. A divider makes the block
+    `frames_per_step` times longer (34 entries on Food_Feud), so a file with
+    more instruments than Food_Feud can push a record's share below what its
+    own block needs; the fallback must then log the record, the block length
+    it needed and the share it was given, not just fall back quietly.
+    """
+    notes = [0x00, 124]
+    # frames_per_step=4, 2 notes -> loop = 2*4 = 8 entries; frames=2 -> attack
+    # 2 entries; lead 1 (0x11 sets a real waveform, so _first_frame_entry is
+    # true); +1 for the trailing jump. Needed = 1 + 2 + 8 + 1 = 12.
+    logged = []
+    got = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 1,
+                                         budget=11, frames_per_step=4,
+                                         log=logged.append, record=0x2A)
+    assert got is None
+    assert len(logged) == 1
+    msg = logged[0]
+    assert "$2A" in msg
+    assert "NEEDS 12" in msg
+    assert "ONLY 11" in msg
+    # One more entry of budget and the same block fits -- and logs nothing.
+    logged.clear()
+    fits = G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 1,
+                                          budget=12, frames_per_step=4,
+                                          log=logged.append, record=0x2A)
+    assert fits is not None
+    assert logged == []
+    # With no `record`, the message still names the block length vs share.
+    logged.clear()
+    G._two_stage_pitch_seq_entries(0x11, 0x41, 2, notes, 1, 1,
+                                   budget=11, frames_per_step=4,
+                                   log=logged.append)
+    assert logged and "NEEDS 12" in logged[0] and "ONLY 11" in logged[0]
+
+
+def test_no_corpus_record_falls_back_at_this_head():
+    """Corpus-wide, with pitch_seq and two_stage forced on, count how many
+    records reach `_two_stage_pitch_seq_entries` and lose their arpeggio to a
+    budget refusal. Food_Feud's own composed block (34 entries,
+    `frames_per_step=4`) fits comfortably in that file's real wavetable share
+    because it has few instruments -- the corpus check is what tells us
+    whether some *other* file's instrument count pushes a record's share
+    below what its own block needs. Expect 0: state the number rather than
+    assume it, per CLAUDE.md's probe discipline."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import convert
+    hits = []
+
+    def log(msg):
+        if "PITCH-SEQ ARPEGGIO ON INSTRUMENT" in msg and "DROPPED" in msg:
+            hits.append(msg)
+
+    converted = 0
+    for path in sorted(CORPUS.glob("*.sid")):
+        try:
+            convert(path, log=log, two_stage=True, pitch_seq=True)
+            converted += 1
+        except Exception:
+            continue
+    assert converted > 50, converted   # sanity: most of the corpus converts
+    assert hits == [], (len(hits), hits[:3])
+
+
 def test_the_divider_lengthens_the_step_and_not_the_attack():
     """`frames_per_step` scales the arpeggio's hold; the attack keeps `frames`.
 

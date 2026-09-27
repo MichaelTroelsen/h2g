@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -41,8 +42,9 @@ from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from fidelity import (_preset_opts, _preset_multiplier, legalise_restarts,
-                      make_workdir, pack_sid, resolve_subtune, run_siddump,
+from fidelity import (_preset_opts, _preset_multiplier, _preset_traced_subtune,
+                      legalise_restarts, make_workdir, pack_sid,
+                      resolve_ours_subtune, resolve_subtune, run_siddump,
                       traced_window, GT2RELOC, SIDDUMP, WORKDIR)
 from h2g import __version__
 from h2g.convert import convert
@@ -65,11 +67,60 @@ SIDPLAYFP = r"C:\Users\mit\Downloads\sidplayfp-2.15.2-32bit-mmx\sidplayfp.exe"
 # file, the grid floor's order). Zero is the value the earlier probe
 # measured under (sound_calibrate.py's note above CHECK 2); any fixed value
 # would do, and this one is also the smallest start-state the emulated
-# machine can have. NOTE: a render cached in build/audio before this
-# constant existed was made with a random delay -- the cache key is the
-# .sid's content, not the command line, so those files stay valid keys and
-# stay pre-flag until they are re-rendered.
+# machine can have. A render cached in build/audio before this constant
+# existed was made with a random delay; since v0.5.493 the render name carries
+# `sound.settings_tag`, which hashes `sidplayfp_fixed_argv()` (this delay
+# included), so such a render is a miss, never a hit.
 SIDPLAYFP_POWER_ON_DELAY = 0
+
+# The rest of `render_sidplayfp`'s command line that does not vary per call:
+# 44.1 kHz, 16-bit, mono, no fade-out -- the format every reader of a render
+# assumes. `sidplayfp_fixed_argv()` appends the power-on delay (read at CALL
+# time, so a changed delay is a changed line) and is what the renderer puts
+# on the command line AND what `sound.render_settings` hashes into the render
+# name, so a render made under one fixed line is never served for a request
+# under another. Change a flag here, never inline in the renderer.
+SIDPLAYFP_FIXED_ARGV = ("-f44100", "-p16", "-m", "-fo0")
+
+
+def sidplayfp_fixed_argv() -> tuple[str, ...]:
+    """Every argv element `render_sidplayfp` passes whatever the request."""
+    return (*SIDPLAYFP_FIXED_ARGV, f"--delay={SIDPLAYFP_POWER_ON_DELAY}")
+
+
+# sidplayfp takes its ROMs (and any [Audio]/[Emulation] override) from
+# sidplayfp.ini, which on Windows lives in %APPDATA%\sidplayfp\ -- the
+# directory sidplayfp.ini(5) names as the ROMs' default location, and where
+# this machine's file is. The ini is not on the command line, so it is part
+# of what a render was made under without being part of the argv.
+SIDPLAYFP_ROM_KEYS = (("Kernal Rom", "kernal"), ("Basic Rom", "basic"),
+                      ("Chargen Rom", "chargen"))
+
+
+def sidplayfp_config_dir() -> Path:
+    base = os.environ.get("APPDATA")
+    if base:
+        return Path(base) / "sidplayfp"
+    home = Path(os.environ.get("USERPROFILE", "~")).expanduser()
+    return home / "Application Data" / "sidplayfp"
+
+
+def sidplayfp_rom_paths(ini: Path | None = None) -> dict[str, Path]:
+    """The three ROM files sidplayfp would load: the ini's `<Name> Rom=`
+    entry in [SIDPlayfp] when set, else the default `kernal`/`basic`/
+    `chargen` beside the ini (sidplayfp.ini(5)). Last duplicate wins, as the
+    man page says sidplayfp's own reader does."""
+    import configparser
+    ini = Path(ini) if ini is not None else sidplayfp_config_dir() / "sidplayfp.ini"
+    cp = configparser.ConfigParser(strict=False, interpolation=None)
+    try:
+        cp.read_string(ini.read_text(encoding="latin-1"))
+    except (OSError, configparser.Error):
+        pass
+    sec = cp["SIDPlayfp"] if cp.has_section("SIDPlayfp") else {}
+    return {name: (Path(sec.get(key, "").strip()) if sec.get(key, "").strip()
+                   else ini.parent / name)
+            for key, name in SIDPLAYFP_ROM_KEYS}
 
 # The bands FIDELITY.md reports, and what a listener is being asked to decide
 # in each. Ordered worst-first: the interesting listening is at the bottom of
@@ -174,8 +225,7 @@ def render_sidplayfp(sid: Path, out: Path, seconds: int, subtune: int,
     # sum check in tests and the --voices note in main().
     mutes = [f"-u{v}" for v in mute]
     try:
-        subprocess.run([exe, f"-t{seconds}", "-f44100", "-p16", "-m", "-fo0",
-                        f"--delay={SIDPLAYFP_POWER_ON_DELAY}",
+        subprocess.run([exe, f"-t{seconds}", *sidplayfp_fixed_argv(),
                         f"-o{subtune + 1}", *mutes, f"-w{out}", str(sid)],
                        capture_output=True, timeout=seconds * 6 + 120,
                        stdin=subprocess.DEVNULL)
@@ -590,7 +640,8 @@ def resolve_matched_subtunes(rows: list[dict], from_json_given: bool,
             if "matched_subtune" in r}
 
 
-def pair_subtunes(src: Path, row: dict, requested, matched=None) -> tuple[int, int]:
+def pair_subtunes(src: Path, row: dict, requested, matched=None,
+                  pinned: tuple[int, int] | None = None) -> tuple[int, int]:
     """Which subtune to render, per side of the pair.
 
     The original's is its own `startSong`, the same rule `fidelity.py` traces
@@ -618,7 +669,18 @@ def pair_subtunes(src: Path, row: dict, requested, matched=None) -> tuple[int, i
     case apart from a genuine identity pairing. `main` counts how often this
     branch is taken and says so, because a listener who hears a mismatch
     should not have to re-derive that this is where it would come from.
+
+    `pinned` is the song's presets.json `traced_subtune` pair
+    (`fidelity._preset_traced_subtune`) and, under "auto", WINS over both
+    `matched_subtune` sources: it is the pair `fidelity._measure` scores, so
+    staging anything else stages music the row was never compared against --
+    Commodore_64_Music_Examples at s1/o0 and Dragons_Lair_Part_II at s0/o9,
+    neither of which `startSong` or the subtune search reaches. An explicit
+    `-a N` still wins over the pin, as it does in `resolve_subtune`.
     """
+    if requested == "auto" and pinned is not None:
+        sub_orig = resolve_subtune(src, requested, pinned)
+        return sub_orig, resolve_ours_subtune(sub_orig, requested, pinned)
     sub_orig = resolve_subtune(src, requested)
     if "matched_subtune" in row:
         return sub_orig, int(row["matched_subtune"])
@@ -908,9 +970,11 @@ def main(argv=None) -> int:
             print(f"  {name:44} refused: {exc}", file=sys.stderr)
             continue
 
+        pinned = _preset_traced_subtune(doc, name)
         sub_orig, sub_ours = pair_subtunes(src, r, args.subtune,
-                                          matched_subtunes.get(name))
-        if "matched_subtune" not in r and name not in matched_subtunes:
+                                          matched_subtunes.get(name), pinned)
+        if ("matched_subtune" not in r and name not in matched_subtunes
+                and not (pinned is not None and args.subtune == "auto")):
             paired_by_identity.append(name)
         rendered_subtunes.append((stem, sub_orig, sub_ours))
 

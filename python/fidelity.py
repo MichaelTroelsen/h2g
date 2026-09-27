@@ -2149,9 +2149,36 @@ def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
     return out
 
 
+def envelope_silent(adsr: int, ctrl: int | None) -> bool:
+    """Whether the envelope is already zero on a frame, read off the registers.
+
+    Only the states the registers settle within a frame: $D405/$D406 both
+    zero (whatever the gate, the envelope reaches 0 in a few milliseconds --
+    the rest record of the silencing players, BMX_Kidz's among them, writes
+    exactly this and keeps sweeping the frequency), a gate that is off with
+    a release nibble of 0, and a gate that is on with attack, decay and
+    sustain all 0. `ctrl` is $D404, or None when the trace carries no
+    waveform events (the `--vice` voices, which key on ADSR alone), and then
+    only the both-zero rule can fire.
+
+    **Blind to an envelope that reaches zero at its own rate**: a long
+    release left running past its end, or a decay to a sustain of 0, still
+    reads as sounding here, because telling when it gets there needs an
+    envelope model and not a register read.
+    """
+    if adsr == 0:
+        return True
+    if ctrl is None:
+        return False
+    if ctrl & 1:
+        return adsr & 0xFFF0 == 0
+    return adsr & 0x000F == 0
+
+
 def oscillation_depths(voices: list[Voice], nframes: int,
                        keys: set[int] | None = None,
-                       skip_radius: int | tuple[int, int] = 1) -> dict:
+                       skip_radius: int | tuple[int, int] = 1,
+                       tally: dict | None = None) -> dict:
     """`{ADSR: median cycle swing, as a fraction of the pitch}`.
 
     **Segmented on gate rising edges** -- `Voice.attack_frames`, the frames
@@ -2180,13 +2207,31 @@ def oscillation_depths(voices: list[Voice], nframes: int,
 
     `skip_radius` as in `pitch_motion`: 1 frame-sample for siddump,
     `vice_skip_span(m)` calls for a VICE trace.
+
+    **Only cycles the ear can hear are read** (added after v0.5.494): a note is
+    split at every frame whose envelope is already zero (`envelope_silent`)
+    and each audible stretch is read on its own, so a cycle cut by the
+    silence is dropped by the same interior-cycle rule as one cut by the note
+    boundary. BMX_Kidz's rest record zeroes $D405/$D406 partway through every
+    note while the player keeps sweeping the frequency, and before this gate
+    most of its measured cycles were on those silent frames. `tally`, when
+    given, receives `cycles` (read), `silent_cycles` (interior cycles on
+    the envelope-zero stretches, NOT read) and `silent_frames` (the frames
+    the gate removed), so the report can say what the gate removed rather
+    than a probe re-deriving it. Read the frames, not only the cycles: a
+    silent stretch too short to hold a cycle of its own still ends the
+    audible run in front of it, and the cycle it cuts is dropped with it --
+    Delta and Kentilla move with 0 silent cycles on either side.
     """
     before, after = _skip_span(skip_radius)
     masked = {instrument_key(k) for k in keys} if keys is not None else None
     pooled: dict = {}
+    counted = silent_cycles = silent_frames = 0
     for v in voices:
         fq = register_timeline(v.freq_events, nframes)
         adsr = register_timeline(v.adsr_events, nframes)
+        ctrl = (register_timeline(v.wf_events, nframes) if v.wf_events
+                else None)
         skip = set()
         for a in v.attack_frames:
             skip |= set(range(a - before, a + after + 1))
@@ -2197,10 +2242,33 @@ def oscillation_depths(voices: list[Voice], nframes: int,
                     and instrument_key(key) not in masked:
                 continue
             nxt = atk[j + 1] if j + 1 < len(atk) else nframes
-            seg = [fq[f] for f in range(a, min(nxt, nframes)) if f not in skip]
-            for swing, centre in vibrato_swings(seg):
-                if centre > 0:
-                    pooled.setdefault(key, []).append(swing / centre)
+            # Maximal runs of one audibility, in frame order; the attack
+            # skip still removes frames without ending a run, as before.
+            runs: list[tuple[bool, list[int]]] = []
+            for f in range(a, min(nxt, nframes)):
+                if f in skip:
+                    continue
+                quiet = envelope_silent(adsr[f],
+                                        ctrl[f] if ctrl is not None else None)
+                silent_frames += quiet
+                if not runs or runs[-1][0] != quiet:
+                    runs.append((quiet, []))
+                runs[-1][1].append(fq[f])
+            for quiet, seg in runs:
+                swings = vibrato_swings(seg)
+                if quiet:
+                    silent_cycles += len(swings)
+                    continue
+                for swing, centre in swings:
+                    if centre > 0:
+                        counted += 1
+                        pooled.setdefault(key, []).append(swing / centre)
+    if tally is not None:
+        tally["cycles"] = tally.get("cycles", 0) + counted
+        tally["silent_cycles"] = (tally.get("silent_cycles", 0)
+                                  + silent_cycles)
+        tally["silent_frames"] = (tally.get("silent_frames", 0)
+                                  + silent_frames)
     return {k: m for k, vals in pooled.items()
             if (m := _median(vals)) is not None}
 
@@ -2318,8 +2386,19 @@ def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
         # The original oscillates nothing on them, so an empty pair is the
         # correct comparison and not a failed one. See vibrato_population.
         return {"depth_refusal": "gated"}
-    a = oscillation_depths(orig, n_orig, keys, skip_orig)
-    b = oscillation_depths(ours, n_ours, keys, skip_ours)
+    ta: dict = {}
+    tb: dict = {}
+    a = oscillation_depths(orig, n_orig, keys, skip_orig, tally=ta)
+    b = oscillation_depths(ours, n_ours, keys, skip_ours, tally=tb)
+    # What the envelope gate removed, per side: interior cycles on frames
+    # whose envelope is already zero (see `envelope_silent`). Carried on
+    # every row that measured, measured or refused, so a reader can see a
+    # population the gate emptied rather than one that never swung.
+    silent = {"depth_cycles": {"orig": ta["cycles"], "ours": tb["cycles"]},
+              "depth_silent_cycles": {"orig": ta["silent_cycles"],
+                                      "ours": tb["silent_cycles"]},
+              "depth_silent_frames": {"orig": ta["silent_frames"],
+                                      "ours": tb["silent_frames"]}}
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
         # Every no-shared-key row measured at v0.5.491 has an EMPTY
@@ -2347,12 +2426,13 @@ def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
         else:
             refusal = "no-shared-key"
         return {"depth_refusal": refusal, "depth_keys": len(keys),
-                "depth_orig_osc": len(a), "depth_our_osc": len(b)}
+                "depth_orig_osc": len(a), "depth_our_osc": len(b), **silent}
     return {
         "depth_ratio": _median([b[u] / a[o] for o, u in pairs]),
         "orig_depth": _median([a[o] for o, _ in pairs]),
         "our_depth": _median([b[u] for _, u in pairs]),
         "depth_instruments": len(pairs),
+        **silent,
     }
 
 
@@ -2565,6 +2645,56 @@ def noise_gate_off_runs(voices: list[Voice], nframes: int) -> dict:
                 runs += 1
                 frames += f - start
     return {"runs": runs, "frames": frames}
+
+
+def noise_ticks(voices: list[Voice], nframes: int) -> dict:
+    """The drum tick: noise entered from a note's GATED first waveform and
+    left again by the player itself, keyed by the ADSR at its midpoint.
+
+    A tick is a maximal run of NOISE-select frames such that
+
+    * the frame before it is GATED and selects no noise -- the note's first
+      waveform (`$41`, `$15`, `$13`), so the noise is the next step of the
+      note's own waveform sequence, not a select latched from an earlier
+      note (Confuzion) and not a noise step entered in a rest;
+    * the frame after it selects no noise, and no gate RISES inside it or on
+      that frame -- a rise is the next note's attack, and a run the next
+      attack ends is as long as the rest (Pacific Coast's `$80` x 9 and x 21
+      under one key, I Ball's x 2 and x 5), a clock and not a timbre;
+    * it does not touch the window's last frame.
+
+    Split by gate: `gate_off` holds ticks with the gate DOWN on every frame
+    -- the original's `$41 | $80 $80 | $40` (Commando), which `noise_runs`
+    cannot see -- and `gated` those with the gate up on any frame, our
+    `$41 | $81 | $40` rendering of the same hit and the wavetable noise
+    blips (`$41 $81 $41`) both sides play inside a held note.
+
+    Returns `{"gate_off": {adsr: Counter({length: n})}, "gated": {...}}`.
+    """
+    out: dict = {"gate_off": {}, "gated": {}}
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        f = 1
+        while f < nframes:
+            p = wf[f - 1]
+            if not (wf[f] & WF_NOISE and p & WF_GATE and not p & WF_NOISE):
+                f += 1
+                continue
+            start, rose, gated = f, False, False
+            while f < nframes and wf[f] & WF_NOISE:
+                if wf[f] & WF_GATE:
+                    gated = True
+                    if not wf[f - 1] & WF_GATE:
+                        rose = True
+                f += 1
+            if f >= nframes or rose:
+                continue
+            if wf[f] & WF_GATE and not wf[f - 1] & WF_GATE:
+                continue                          # the next note's attack
+            side = out["gated" if gated else "gate_off"]
+            side.setdefault(adsr[(start + f - 1) // 2], Counter())[f - start] += 1
+    return out
 
 
 def release_tails(voices: list[Voice], nframes: int) -> dict:
@@ -3736,6 +3866,81 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     }
 
 
+def noise_tick_agreement(orig: list[Voice], ours: list[Voice],
+                         nframes: int) -> dict:
+    """Instruments whose gate-off drum tick is as long as the original's.
+
+    The original's side is its GATE-OFF ticks (`noise_ticks`): the
+    `$41 | $80 $80 | $40` hit that `noise_runs` cannot see because its noise
+    never sounds with the gate up. Ours is read across the gate, so our
+    `$81` rendering of the same hit pairs with it: the tick's LENGTH is the
+    question, and whether its gate is open is `gate`'s, which scores that
+    bit frame by frame. Same footing as `noise_run_agreement`: per ADSR key
+    through `paired_keys`, modal length against modal length, and only
+    where both sides tick at all.
+
+    **Our side is our gate-off ticks plus only the gated ticks the original
+    does not also play gated** (Counter subtraction under the paired key).
+    Reading ours gate-blind outright manufactured three mismatches: Ricochet
+    `07E7`, Skate or Die `09F9`/`08E7` and Chain Reaction `08F8` carry
+    hundreds of 1-frame `$41 $81 $41` wavetable blips on BOTH sides
+    (Ricochet: 698 original, 703 ours) beside the gate-off tick, and the
+    blips outvoted it on our side only, because the original's side leaves
+    gated ticks out. Subtracting what the original plays gated leaves the
+    ticks ours plays gated INSTEAD of gate-off -- Commando's whole drum,
+    `{2: 1392}` -- and nothing of the blips both sides share.
+
+    **Why a column and not only the per-side counts `nrun` records** (the
+    frames, v0.5.494 + uncommitted drain edits, `-t 180`, original `-m1`;
+    `C:/t/nrun-gate-off-score/census2.json`): 44 of 95 originals play this
+    tick, 24608 runs, 24540 of them 1-4 frames long and none longer than 6
+    -- a timbre with a length of its own, unlike the gate-off noise the
+    next attack ends (Pacific Coast, I Ball: 2-27 frames, the rest's
+    length). Its length can be wrong independently of its gate, and nothing
+    else scores it: `nrun` has no original run under these keys, and `gate`
+    sees only the `$81` -> `$80` bit. See `ntick`'s Dimension text for
+    what the column read over the corpus.
+
+    **The modal comparison has `nrun`'s blindness, so the mean rides
+    beside it.** Warhawk's `0F08` ticks `{1: 187, 2: 28}` in the original
+    and `{1: 215}` in ours: every 2-frame tick (`$41 $80 $80 $40`,
+    `C:/t/drum-released-envelope/frames_cited.txt`) is one frame short in
+    ours, and the mode cannot move. `noise_tick_length_ratio` is the median
+    over paired keys of our mean tick length over the original's -- a
+    travel measure.
+
+    `noise_tick_cross_gate` counts the paired keys most of whose ticks ours
+    plays with the gate open -- the drum-under-released-envelope defect,
+    named here and scored by `gate`, never charged to this column.
+    """
+    a, b = noise_ticks(orig, nframes), noise_ticks(ours, nframes)
+    a_off, a_on, b_off, b_on = a["gate_off"], a["gated"], b["gate_off"], b["gated"]
+    pops, cross = {}, 0
+    for ka, kb in paired_keys(a_off, dict.fromkeys(set(b_off) | set(b_on))):
+        off = b_off.get(kb, Counter())
+        instead = b_on.get(kb, Counter()) - a_on.get(ka, Counter())
+        if not off and not instead:
+            continue                      # ours plays only what theirs gates
+        pops[ka] = off + instead
+        cross += sum(instead.values()) > sum(off.values())
+    matched = sum(1 for ka, c in pops.items()
+                  if a_off[ka].most_common(1)[0][0] == c.most_common(1)[0][0])
+
+    def mean(c: Counter) -> float:
+        return sum(k * n for k, n in c.items()) / sum(c.values())
+    return {
+        "noise_tick_agreement": (matched / len(pops)) if pops else None,
+        "noise_tick_length_ratio": _median([mean(c) / mean(a_off[ka])
+                                            for ka, c in pops.items()]),
+        "noise_tick_instruments": len(pops),
+        "noise_tick_matched": matched,
+        "noise_tick_orig_only": len(set(a_off) - set(pops)),
+        "noise_tick_cross_gate": cross,
+        "noise_tick_orig_runs": sum(sum(c.values()) for c in a_off.values()),
+        "noise_tick_ours_runs": sum(sum(c.values()) for c in pops.values()),
+    }
+
+
 def _changes(timeline: list[int]) -> int:
     """How many times a register's value moved across a per-frame timeline.
 
@@ -3809,7 +4014,78 @@ def _onset_phases(v: Voice, timeline: list, nframes: int) -> set:
     return out
 
 
-def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
+# How far our attack may sit from `F + lag` and still be the partner of the
+# original's attack at F. The packed player's per-note latency is not one
+# constant: on Game_Killer (lag 5) our partner lands at F+4 on 546 notes and
+# F+5 on 319, while the NEXT original note can be as close as 4 frames. Two
+# frames either side covers the first and cannot reach the second's partner,
+# which sits at least 4 + 4 frames out.
+ONSET_PAIR_SLACK = 2
+
+
+def pair_onsets_by_frame(orig_frames: list[int], our_frames: list[int],
+                         lag: int, slack: int = ONSET_PAIR_SLACK
+                         ) -> list[tuple[int, int]]:
+    """(their attack, our attack) pairs, matched by FRAME within the lag.
+
+    **Never by index.** `zip(orig.attack_frames, ours.attack_frames)` is right
+    only while both sides play exactly the same number of attacks, and one
+    extra attack anywhere shifts every later pair by a note. Game_Killer's
+    voice 0 is the measured case: the packed trace has 986 attacks against the
+    original's 985, the extra one a re-attack at frame 5468 (a tie the slide
+    row refused), and index pairing from there on compares each note with its
+    neighbour -- 0.118 of the sweeping onsets agree by index where 0.285 agree
+    paired by frame, on the same two traces.
+
+    Each original attack F takes the nearest unused attack of ours to
+    `F + lag` that lies within `slack` frames of it (the earlier on a tie);
+    pairs are one-to-one and monotone, so a partner is never taken out of
+    order. An attack either side with no partner is simply unpaired -- which
+    is the point: an extra or missing note costs itself, not every note after
+    it.
+    """
+    pairs = []
+    j = 0
+    for f in orig_frames:
+        target = f + lag
+        while j < len(our_frames) and our_frames[j] < target - slack:
+            j += 1
+        best = None
+        k = j
+        while k < len(our_frames) and our_frames[k] <= target + slack:
+            if best is None or abs(our_frames[k] - target) < abs(
+                    our_frames[best] - target):
+                best = k
+            k += 1
+        if best is not None:
+            pairs.append((f, our_frames[best]))
+            j = best + 1
+    return pairs
+
+
+def onset_phase_pairs(a: Voice, b: Voice, ta: list, tb: list, nframes: int,
+                      lag: int) -> tuple[int, int]:
+    """(paired onsets, onsets whose bucket agrees), one voice.
+
+    The per-onset companion to `_onset_phases`: that is a SET per side and
+    cannot say which note opened where, so a sweep entered at the right
+    buckets in the wrong ORDER reads perfect. This pairs each of our notes
+    with the original's by `pair_onsets_by_frame` and reads both one frame
+    after their OWN attack, `_onset_phases`' rule -- the lag chooses the
+    partner and is never subtracted from the reading.
+    """
+    paired = agree = 0
+    for f, g in pair_onsets_by_frame(a.attack_frames, b.attack_frames, lag):
+        if not (0 <= f + 1 < nframes and 0 <= g + 1 < nframes):
+            continue
+        paired += 1
+        if ta[f + 1] // PULSE_PHASE_BUCKET == tb[g + 1] // PULSE_PHASE_BUCKET:
+            agree += 1
+    return paired, agree
+
+
+def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int,
+                  lag: int = 0) -> dict:
     """How often each side moves the duty cycle, and how far it travels.
 
     Not an agreement percentage, and deliberately. Two players sweeping the
@@ -3831,6 +4107,7 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
     o_ch = u_ch = 0
     o_sp = u_sp = 0
     o_phases = u_phases = 0
+    ph_paired = ph_agree = 0
     per_voice = []
     for a, b in zip(orig, ours):
         ta = register_timeline(a.pulse_events, nframes)
@@ -3861,6 +4138,11 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
         if len(o_ph) > 1:
             o_phases += len(o_ph)
             u_phases += len(u_ph)
+            # Same population, per onset: paired by frame within `lag`,
+            # never by index -- see pair_onsets_by_frame.
+            n_p, n_a = onset_phase_pairs(a, b, ta, tb, nframes, lag)
+            ph_paired += n_p
+            ph_agree += n_a
     return {
         "orig_pulse_changes": o_ch,
         "our_pulse_changes": u_ch,
@@ -3870,6 +4152,9 @@ def pulse_compare(orig: list[Voice], ours: list[Voice], nframes: int) -> dict:
         "orig_pulse_phases": o_phases,
         "our_pulse_phases": u_phases,
         "pulse_phase": (u_phases / o_phases) if o_phases else None,
+        "pulse_phase_paired_onsets": ph_paired,
+        "pulse_phase_onset_agreement": (ph_agree / ph_paired)
+        if ph_paired else None,
         "pulse_voices": per_voice,
     }
 
@@ -4988,10 +5273,24 @@ DIMENSIONS = (
     #   so an emitter that shortens `cmp` shortens the swing with it -- a
     #   change to the rate moves this column too, and the two must be read
     #   side by side before either is called a fix.
-    Dimension("depth_ratio", "depth", ("$D400/$D401",), "ratio",
+    Dimension("depth_ratio", "depth", ("$D400/$D401", "$D404", "$D405/$D406"),
+              "ratio",
               "how far our vibrato swings, over the original's -- median over "
               "the instruments that carry a vibrato byte, **blind to whether "
               "an oscillation exists at all**, which is `vib`'s question. "
+              "**Only cycles on frames whose envelope is not already zero "
+              "are read** (`envelope_silent`: $D405/$D406 both zero, or a "
+              "gate off with release 0, or a gate on with attack, decay and "
+              "sustain 0) -- BMX_Kidz's rest record zeroes the envelope "
+              "partway through every note while the player keeps sweeping, "
+              "and those inaudible cycles were most of what this column "
+              "read there; `depth_silent_frames` and `depth_silent_cycles` "
+              "in the JSON count what the gate dropped per side. **Still "
+              "blind to an envelope "
+              "that reaches zero at its own rate** (a long release run out, "
+              "a decay to sustain 0): those cycles are read as sounding. "
+              "Under `--vice` the voices carry no $D404 and ADSR only at "
+              "the attack, so the gate is inert there. "
               "It has one no-population refusal, one gated refusal and four "
               "sided pairing refusals, printed as two marks: **`-` means no "
               "record in the original carries a vibrato byte** (nothing to "
@@ -5090,20 +5389,76 @@ DIMENSIONS = (
               "noise frames sound under a releasing envelope and 0 are "
               "gate-AND'd, while ours sounds the same hits gated "
               "(`ours_only` 4/12/11) -- HISTORICAL, v0.5.492 + uncommitted "
-              "edits, HEAD 924e4bd, -t 180. Left unscored on purpose: a "
-              "gate-off run's length is in general the rest's, and pairing "
-              "it with a gated run is `gate`'s question. Those three are "
-              "only the files with NO gated noise: 76 of 95 originals enter "
-              "noise under a closed gate somewhere, so on the other 73 `nrun` "
-              "scores the gated fraction alone and the gate-off keys size "
-              "the rest. "
+              "edits, HEAD 924e4bd, -t 180. Those three are only the files "
+              "with NO gated noise: 76 of 95 originals enter noise under a "
+              "closed gate somewhere, so `nrun` scores the gated fraction "
+              "alone and the gate-off keys size the rest. **The drum-tick "
+              "part of that rest is scored, by `ntick`, not here**: a "
+              "gate-off run the next attack ends is the rest's length and "
+              "stays unscored, but one the player itself ends within 1-6 "
+              "frames of the gate drop is a timbre (24540 of 24608 such "
+              "original runs are 1-4 frames, 44 files) -- see "
+              "`noise_tick_agreement`. `nrun` keeps its gate-AND and does "
+              "not pair across the gate: that pairing is `ntick`'s, read "
+              "gate-blind on our side so `gate` alone scores the bit. "
               "**Separately: gate-AND'd, two consecutive noise notes do "
               "NOT concatenate into one run** -- the gate drops between "
               "untied notes even when both select noise, so a run's length "
               "is never inflated by a second attack landing inside it. "
               "Measured on Rasputin.sid (three noise ADSR pairs, decimal "
               "1539/2569/2570), -t 180, -m1: 601 total runs, 0 with an "
-              "attack inside them -- HEAD 04fdcb5 (v0.5.488, uncommitted)"),
+              "attack inside them -- HEAD 04fdcb5 (v0.5.488, uncommitted). "
+              "**A run touching the window edge stays EXCLUDED, by design, "
+              "and is counted, not scored** (`noise_run_*_edge_runs`/"
+              "`_edge_frames`): its length is a fact about the window. The "
+              "case that once argued for counting an edge-right run as a "
+              "lower bound -- Confuzion's permanent noise latch -- was a "
+              "gate-blind artefact the gate-AND removed; at v0.5.493 "
+              "Confuzion reads 0 edge runs on either side, and across the "
+              "corpus every ORIGINAL run the rule drops is 1-2 frames "
+              "(7 files: IK_plus, Lion_Heart, Nineteen, Rasputin, "
+              "Thundercats, Trans-Atlantic_Balloon_Challenge, "
+              "W_A_R_Preview), so no file has a never-closes-again run for "
+              "a lower bound to rescue (build/fidelity.json at 5476012)"),
+    # The gate-off drum tick `nrun` cannot see -- see `noise_tick_agreement`
+    # and `noise_ticks` for the frames behind the class boundary, and
+    # C:/t/nrun-gate-off-score/ for the census and both sides' ticks.
+    Dimension("noise_tick_agreement", "ntick", ("$D404",), "fraction",
+              "instruments whose DRUM TICK -- noise entered from the note's "
+              "gated first waveform and ended by the player within the "
+              "note, gate DOWN in the original (`$41 | $80 $80 | $40`) -- "
+              "is as long as the original's, modal against modal per ADSR "
+              "key. **Our side is read gate-blind**, so our `$81` rendering "
+              "of the same hit pairs with it: this is the tick's LENGTH, "
+              "and whether its gate is open is `gate`'s question -- "
+              "`noise_tick_cross_gate` names the paired keys we play gated "
+              "and is never charged here. Our gated ticks count only beyond "
+              "what the original ALSO plays gated under the key (Counter "
+              "subtraction), or the 1-frame `$41 $81 $41` blips both sides "
+              "share outvote the tick (Ricochet, Skate or Die, Chain "
+              "Reaction read mismatched gate-blind). Not scored: gate-off noise the "
+              "next attack ends (its length is the rest's -- Pacific "
+              "Coast's `$80` x 9 and x 21 under one key) and gate-off noise "
+              "entered in a rest (the per-frame `$10`/`$80` alternations of "
+              "Knucklebusters and Lightforce, `wave`'s question). Declines "
+              "(`-`) where either side ticks under no shared key; "
+              "`noise_tick_orig_only` counts the original's unpaired keys. "
+              "A modal tick of 1 frame is immune to a one-frame loss the "
+              "way `nrun`'s is, so `noise_tick_length_ratio` (median over "
+              "keys of our mean tick over theirs) rides beside it. "
+              "Original census: 44 of 95 files tick, 24608 runs, 24540 of "
+              "1-4 frames, none over 6. Both sides, 89 files converted under "
+              "presets: 41 tick, 37 scored, 34 at 100%; Ricochet 0/1 "
+              "(`07E7` {4: 128, 5: 12} against ours' gate-off {5: 141}, a "
+              "frame long), Skate or Die 1/2 (`09F9` 6 against 8), Kentilla "
+              "3/4; 118 of 127 paired keys, on 32 files, ours plays gated "
+              "(the drum-under-released-envelope population); the ratio is "
+              "below 0.95 on 8 files, every one a multispeed conversion "
+              "(Kentilla 0.72, IK 0.73, Proteus 0.87, Warhawk 0.88) whose "
+              "2-3-frame ticks come back a frame short while the mode holds. "
+              "HISTORICAL, v0.5.494 + uncommitted drain edits, -t 180 floor, "
+              "C:/t/nrun-gate-off-score/census2.json and "
+              "ours/ours_ticks_all.json"),
     # Note *length*, which CLAUDE.md has recorded as unmeasured for most of
     # this project's life. `nrun` compares noise runs and is silent about a
     # pitched note; `tail` reads the envelope after the gate closes, not how
@@ -5192,7 +5547,12 @@ DIMENSIONS = (
     # see pulse_compare -- because a voice with a fixed width has no phase to
     # reproduce and would score a free 1.00.
     Dimension("pulse_phase", "pphase", ("$D402/$D403",), "ratio",
-              "distinct duty cycles a note opens on, over the original's"),
+              "distinct duty cycles a note opens on, over the original's. "
+              "A set per voice, so no onset is paired; its per-onset "
+              "companion `pulse_phase_onset_agreement` pairs our onset with "
+              "the original's BY FRAME within the startup lag "
+              "(`pair_onsets_by_frame`), never by index, because one extra "
+              "attack shifts every later index pair"),
     # The filter is two dimensions because it is two questions, and one of
     # them is not a count: `filt` is whether we filter at all, `cut` is
     # whether the cutoff then moves as far as the original's. A count reads
@@ -6298,8 +6658,9 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
             row.update(adsr_compare(a, best_dump, nframes, lag=lag,
                                      cut_release=bool(opts.get("cut_release"))))
             row.update(gate_compare(a, best_dump, nframes, lag=lag))
-            row.update(pulse_compare(a, best_dump, nframes))
+            row.update(pulse_compare(a, best_dump, nframes, lag=lag))
             row.update(noise_run_agreement(a, best_dump, nframes))
+            row.update(noise_tick_agreement(a, best_dump, nframes))
             row.update(sound_run_agreement(a, best_dump, nframes))
             row.update(release_tail_agreement(a, best_dump, nframes))
             # No `lag`: each side is read at its *own* attack frames, so the
@@ -6834,7 +7195,14 @@ def report(rows: list[dict], args) -> str:
         "rising edges, never at siddump's printed note *name*, which flickers "
         "while a vibrato runs; each reading spans three consecutive turning "
         "points rather than two, so any slide underneath the oscillation "
-        "cancels instead of being counted as depth. Measured **only on the "
+        "cancels instead of being counted as depth. A note is also cut "
+        "wherever its envelope is already zero -- $D405/$D406 both zero, a "
+        "gate off with release 0, or a gate on with attack, decay and "
+        "sustain 0 -- and only the sounding stretches are read, because a "
+        "player that zeroes the envelope mid-note and keeps sweeping "
+        "(BMX_Kidz's rest record) otherwise has most of its cycles measured "
+        "where nobody can hear them; an envelope that decays to zero at its "
+        "own rate is still read as sounding. Measured **only on the "
         "records that carry a non-zero vibrato byte and no competing "
         "pitch-moving effect bit** in the player's own instrument table: over "
         "every oscillating note instead, the statistic picks up portamento "
@@ -6867,8 +7235,8 @@ def report(rows: list[dict], args) -> str:
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | arposc | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | arposc | drift | wave | onset | noise | nrun | ntick | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -6901,6 +7269,7 @@ def report(rows: list[dict], args) -> str:
             f"{_fmt_pct(r.get('wave'))} | {_fmt_pct(r.get('onset_agreement'))} | "
             f"{noise} | "
             f"{_fmt_pct(r.get('noise_run_agreement'))} | "
+            f"{_fmt_pct(r.get('noise_tick_agreement'))} | "
             f"{_fmt_pct(r.get('sound_run_agreement'))} | "
             f"{_fmt_pct(r.get('gate'))} | "
             f"{_fmt_pct(r.get('release_tail_agreement'))} | "

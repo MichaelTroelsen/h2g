@@ -1,12 +1,14 @@
 """End-to-end .sid -> .sng conversion (port of loadfile()'s FindEnd block)."""
 from __future__ import annotations
 
-from typing import Callable, List
+from fractions import Fraction
+from typing import Callable, List, Optional
 
 from .detect import Detection, detect
 from .goatwriter import (DEFAULT_FORMAT, FORMAT_GTS2, FORMATS, GT_MIN_TEMPO,
                          build_sng, derived_group_tempos, orderlist_tempo_values,
                          outer_gate_skip, pulse_phase_sims,
+                         pulse_tri_voice_seeds, fixed_arp_first_fetch,
                          pulse_bounds_sims, pulse_reseed_gated,
                          build_pulse_phase_table, _instruments_used, find_song_speeds, effective_frames,
                          pack_subtune, recommended_multiplier)
@@ -137,6 +139,83 @@ def _derived_multiplier(sid: SidFile, det: Detection, skip_gate: bool) -> int:
             speeds, pack_subtune(speeds, sid.start_song), skip_gate)
     except Exception:                                          # noqa: BLE001
         return 1
+
+
+def _triangle_ticks_per_row(sid, det, groups: int, subtunes_before: int,
+                            log=None) -> Optional[List[int]]:
+    """Engine ticks per row, per output group, for the triangle pulse walk.
+
+    The three multispeed triangle players (One_Man_and_his_Droid $1242,
+    Rasputin $C270, Game_Killer $0A48) sweep once per ENGINE tick, inside
+    the voice loop, and jump past the sweep on a voice's fetch tick; an
+    OUTER gate at the play entry skips whole ticks and never changes how
+    many ticks a row holds. So a row is `find_song_speeds(...).frames_for(k)`
+    ticks -- the inner gate's reload + 1, 2 on all three -- whatever the
+    tempo we pack at (20 calls at -S9, 6 and 4 at -S2). Per group only where
+    the numbering still matches the header's subtunes (the same rule the
+    tempo derivation uses: a split inserts groups and shifts it); otherwise
+    every group gets subtune 0's. None where the player yields no reload,
+    and the walk then keeps its call clock.
+    """
+    speeds = find_song_speeds(sid, det)
+    base = speeds.frames_for(0) if speeds is not None else None
+    if not base:
+        return None
+    if groups == subtunes_before:
+        ticks = [speeds.frames_for(k) or base for k in range(groups)]
+    else:
+        ticks = [base] * groups
+    if log:
+        log(f"Pulse phase.............: triangle sweep on {sorted(set(ticks))} "
+            "engine tick(s) a row")
+    return ticks
+
+
+def _triangle_calls_per_tick(tempos, ticks, multiplier: int):
+    """Our calls per ENGINE tick for the triangle phase table's rate, or None
+    where that is the multiplier (the table then divides per frame, as the
+    static program does).
+
+    A group's row is `tempos[g]` of our calls and `ticks[g]` engine ticks
+    (`_triangle_ticks_per_row`, the walk's clock), so a tick is their ratio.
+    That equals the multiplier wherever every frame runs a tick; it differs
+    where an OUTER gate skips frames -- Game_Killer 20 / 2 = 10 at -S9 (one
+    frame in ten skipped), Rasputin 6 / 2 = 3 at -S2 under its `$FE 02`
+    opening (5 / 2 in its second group), Ninja 4 / 3 at -S1. The table is
+    global and its records shared, so the ratio most groups agree on is
+    taken, the first group's on a tie. An exact Fraction: 4/3 is not 1.
+    """
+    if not tempos or not ticks or len(tempos) != len(ticks):
+        return None
+    ratios = [Fraction(t, k) for t, k in zip(tempos, ticks) if t and k]
+    if not ratios:
+        return None
+    best = max(ratios, key=lambda r: (ratios.count(r), -ratios.index(r)))
+    return None if best == multiplier else best
+
+
+def _triangle_start(sid, det, log=None) -> tuple:
+    """(voice_seeds, preroll) for the triangle walk: the player's opening state.
+
+    `voice_seeds` is each voice's (direction, delay counter) as the image
+    holds them (goatwriter.pulse_tri_voice_seeds -- the sweep keeps both per
+    VOICE, and init writes neither); `preroll` is the engine ticks before the
+    first fetch, the speed gate's byte in the image
+    (goatwriter.fixed_arp_first_fetch: the call on which the gate first
+    underflows, every voice fetching on it). Either is None where the player
+    does not yield it, and the walk then keeps its old default for that half:
+    each record's (+1, 0) start, `patterns.PULSE_PHASE_PREROLL`.
+    """
+    seeds = pulse_tri_voice_seeds(sid, det)
+    preroll = fixed_arp_first_fetch(sid, det)
+    if log:
+        log("Pulse phase.............: triangle start "
+            + ("per voice " + " ".join(f"({'+' if d > 0 else '-'},{c})"
+                                      for d, c in seeds) if seeds
+               else "per record (cells unread)")
+            + (f", {preroll} tick(s) before the first fetch"
+               if preroll is not None else ", preroll unread"))
+    return seeds, preroll
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -736,42 +815,53 @@ def convert(sid_path: str, log: Logger = print,
             snapshot = [list(t) for t in tracks]
             free_rows = (inherit_free_rows(new_patterns, track_index.free_rows, log)
                          if bounds_sims else None)
+            # THE TRIANGLE ENGINE'S START: direction and delay counter per
+            # VOICE from the image, and the ticks before the first fetch
+            # from the speed gate -- see _triangle_start. The bounds engine
+            # (per voice, reseeding) takes neither.
+            tri_seeds, tri_preroll = (
+                _triangle_start(sid, det, log) if det.pulse_tri_hi >= 0
+                and not bounds_sims else (None, None))
+            tri_ticks = _triangle_ticks_per_row(
+                sid, det, len(tracks) // 3, subtunes_before, log)
             plan = collect_pulse_phases(
                 new_patterns, tracks, group_tempos, sims, log,
                 free_rows=free_rows,
+                voice_seeds=tri_seeds, preroll=tri_preroll,
+                # THE TRIANGLE ENGINE'S CLOCK: a row is the player's inner
+                # reload + 1 ENGINE ticks, whatever our calls or its frames
+                # -- see _triangle_ticks_per_row. The walk reads it only for
+                # a per-record (triangle) sim; the bounds walk below stays
+                # on `calls_per_frame`.
+                ticks_per_row=tri_ticks,
                 # The bounds engine's sim runs on the original's FRAME
                 # clock (Saboteur_II, -S3: $756 planned where the original
-                # held $2B0 before it did). The triangle engine's stays on
-                # OUR CALLS -- and that is now a MEASUREMENT, not the
-                # leftover it was taken for: on Game_Killer (-S9, the one
-                # multispeed triangle carrier whose first pass the trace
-                # covers) the walk's planned onset buckets agree with the
-                # original's, index-paired, 63% / 61% over the first 100 /
-                # 200 sweeping notes on the call clock and 19% / 21% on the
-                # frame clock (26% / 25% at the best shift; 30% and 32% at
-                # 2 and 3 calls a frame), on a 7-bucket alphabet whose
-                # chance level is ~14%. The original's own sequence
-                # (8 8 9 12 11 10 13 14 9 12 11 10 ...) jumps by up to five
-                # buckets a note, which a $E0 step at 2.2 frames a row
-                # cannot do. So the v0.5.460 "sweeps per frame" reading
-                # above holds for the ENTRY to the play routine, and the
-                # onsets place this engine's DEC/BPL counter inside the
-                # multispeed core that entry runs `multiplier` times (an
-                # inference from the trace, not yet read off the
-                # disassembly). Rasputin and
-                # One_Man_and_his_Droid are at chance on BOTH clocks under
-                # the same probe -- their originals open notes on buckets
-                # the free-running sim never plans (One_Man: every note at
-                # $8xx), a model defect, not a clock one. See
-                # collect_pulse_phases on `calls_per_frame` and
-                # tests/test_pulse_phase.py's clock test.
+                # held $2B0 before it did). The triangle engine's used to
+                # stay on OUR CALLS here (`1`), defended as measured on
+                # Game_Killer's bucket-paired onsets; the players refute
+                # that (goatwriter.PulsePhaseSim) and its clock is now
+                # `ticks_per_row` above, which the walk prefers over this
+                # value for a triangle sim. `1` is what a triangle file
+                # whose player yields no inner reload still gets.
+                # RETRACTED: this comment used to place the sweep's DEC/BPL
+                # counter "inside the multispeed core that entry runs
+                # `multiplier` times" -- refuted (Game_Killer's PSID speed
+                # is 0, one call a frame, and it has no core loop). See the
+                # full retraction in goatwriter.PulsePhaseSim's docstring
+                # and patterns.collect_pulse_phases (both landed in c24fdc9).
                 calls_per_frame=multiplier if bounds_sims else 1)
             table = None
             if plan:
                 phases, writes = plan
+                # The table's triangle legs step per ENGINE tick, on the
+                # walk's own clock -- see _triangle_calls_per_tick.
                 table = build_pulse_phase_table(
                     sid, det, _instruments_used(det, None, lead), pulse,
-                    multiplier, phases, log, lead)
+                    multiplier, phases, log, lead,
+                    calls_per_tick=(_triangle_calls_per_tick(
+                        group_tempos, tri_ticks, multiplier)
+                        if det.pulse_tri_hi >= 0 and not bounds_sims
+                        else None))
             if plan and table:
                 entries, starts, index = table
                 apply_pulse_phase(new_patterns, tracks, writes, index, log)

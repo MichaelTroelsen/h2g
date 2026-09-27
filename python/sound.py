@@ -473,11 +473,13 @@ AUDIO_DIR = ROOT / "build" / "audio"
 # flag -- stayed a valid cache hit, and a score taken against it still carried
 # the old floor. Every render is now named
 #     <tag>.<content_key>.<settings_tag>.s<sub>.t<seconds>.wav
-# where `settings_tag` hashes what the RENDERER was told: for sidplayfp the
-# power-on delay and the executable's own bytes (it has no `--version`; the
-# exe's hash is the version and survives a re-install at the same path). A
-# render made under one delay is therefore never served for a request under
-# another, and a pre-flag name (no settings segment) is never served at all.
+# where `settings_tag` hashes what the RENDERER was told: for sidplayfp its
+# whole fixed argv (`listen.sidplayfp_fixed_argv()`: format flags and the
+# power-on delay), the executable's own bytes (it has no `--version`; the
+# exe's hash is the version and survives a re-install at the same path), and
+# the bytes of sidplayfp.ini and the three ROMs it names. A render made under
+# one argv or ROM set is therefore never served for a request under another,
+# and a pre-flag name (no settings segment) is never served at all.
 # --------------------------------------------------------------------------
 
 @_functools.lru_cache(maxsize=8)
@@ -495,8 +497,18 @@ def exe_identity(path: str) -> str:
 
 
 def _sidplayfp_settings() -> str:
-    return (f"sidplayfp delay={listen.SIDPLAYFP_POWER_ON_DELAY} "
-            f"exe={exe_identity(listen.SIDPLAYFP)}")
+    # `argv=` is the renderer's own fixed command line (listen.
+    # sidplayfp_fixed_argv, the delay included), read at call time, so no
+    # flag can change without the tag changing. `ini=` and the ROMs are what
+    # sidplayfp reads beside the command line: the ini's bytes (its [Audio]/
+    # [Emulation] keys override defaults) and each ROM's bytes, so a ROM
+    # swapped at the same path is a new tag. A missing file reads 'absent'.
+    ini = listen.sidplayfp_config_dir() / "sidplayfp.ini"
+    roms = " ".join(f"{name}={exe_identity(str(path))}" for name, path
+                    in listen.sidplayfp_rom_paths(ini).items())
+    return (f"sidplayfp argv={' '.join(listen.sidplayfp_fixed_argv())} "
+            f"exe={exe_identity(listen.SIDPLAYFP)} "
+            f"ini={exe_identity(str(ini))} {roms}")
 
 
 # Renderers whose settings are known, by identity. Looked up at CALL time, so

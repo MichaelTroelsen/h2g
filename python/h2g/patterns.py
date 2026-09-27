@@ -142,8 +142,12 @@ GT_SPEEDTABLE_COMMANDS = (1, 2, 3)
 # tie block in _build_raw_pattern and _apply_boundary_ties.
 CMD_TONEPORTA = 3
 CMD_SETPULSEPTR = 9
-# Startup calls the classic engine's sweep has already run by the first
-# fetch -- see collect_pulse_phases. Measured, not derived.
+# Startup ticks the classic engine's sweep has already run by the first
+# fetch, for a caller that cannot read them -- see collect_pulse_phases'
+# `preroll`. FITTED, not derived: 7 reproduced 5_Title_Tunes voice 2 from a
+# (+1, 0) start, which is not the player's start; convert.py passes the
+# player's own count (`fixed_arp_first_fetch`, 3 there) and this is only the
+# default a unit caller without a player falls back to.
 PULSE_PHASE_PREROLL = 7
 
 # Lowest byte value that is a *command* rather than a pattern number, used to
@@ -4298,7 +4302,10 @@ def _phase_note_rows(pattern: List[int], live_instr: int, sims: dict):
 def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                          tempos: List[int], sims: dict, log=None,
                          free_rows: Optional[Dict[int, frozenset]] = None,
-                         calls_per_frame: int = 1):
+                         calls_per_frame: int = 1,
+                         ticks_per_row: Optional[List[int]] = None,
+                         voice_seeds: Optional[list] = None,
+                         preroll: Optional[int] = None):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
@@ -4363,8 +4370,38 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     two different quantities, which is why the per-voice, tick-clock walk
     that plans every one of the emulated original's fetch widths scores
     0.165 on it over the same 200.
-    The seam in convert.py is unchanged, so 1 is still what ships.
-    `PULSE_PHASE_PREROLL` is in sim steps.
+
+    **`ticks_per_row` is the triangle engine's clock, and it SHIPS.** One
+    entry per group: the player's inner reload + 1
+    (`find_song_speeds(...).frames_for(g)`, convert.py
+    `_triangle_ticks_per_row`), the number of ENGINE ticks a row holds
+    whatever our tempo in calls or the original's frames (an outer gate
+    skips whole ticks and changes neither). Where it is given, a triangle
+    (per-record) sim advances exactly `ticks_per_row[g]` ticks a row, the
+    first of them skipped on a note row -- the fetch tick, on which the
+    player jumps past the sweep -- and `calls_per_frame` and its carry are
+    not consulted. The bounds engine (per voice) ignores it and stays on
+    `calls_per_frame`. None keeps the old call clock, which is what a
+    triangle file whose player yields no reload still gets. Measured on
+    the first pass against the py65-emulated originals' fetch widths
+    (C:/t/triangle-sim-model/probe_fixwalk.py; re-taken at 26111a5 in
+    C:/t/triangle-walk-ticks): Rasputin 48/269 -> 269/269 and
+    One_Man_and_his_Droid 364/758 -> 758/758 (60000 frames); Game_Killer
+    249/570 -> 393/570, the rest being its per-VOICE direction.
+
+    **`voice_seeds` carries the triangle's direction and delay counter per
+    VOICE** (`LDA dir,X` / `DEC cnt,X`, X the voice; only the width is per
+    record, `ADC record,Y`). One (direction, counter) per voice, read from
+    the player image (convert.py `_triangle_start`); the voice's first
+    triangle sim takes it, and every later sim the voice sweeps under takes
+    the previous one's, BEFORE its first note's phase is read. None keeps
+    each record's own (+1, 0). The bounds engine ignores it. **`preroll`**
+    is the engine ticks before the voice's first fetch, swept on the
+    opening record (convert.py passes `fixed_arp_first_fetch`); None falls
+    back to the fitted `PULSE_PHASE_PREROLL`. Together, on the tick clock,
+    against the py65-emulated originals' first-pass fetch widths
+    (C:/t/triangle-voice-seeds/fixwalk_first.txt): Game_Killer 393/570 ->
+    570/570, 5_Title_Tunes voice 2 96/192 -> 192/192.
 
     **What the packed file does with this plan (Game_Killer, measured
     against HEAD 924e4bd, figures HISTORICAL).** The table, the budget and
@@ -4407,6 +4444,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     groups = len(tracks) // 3
     if len(tempos) != groups:
         raise ValueError(f"{groups} group(s), {len(tempos)} tempo(s)")
+    if ticks_per_row is not None and len(ticks_per_row) != groups:
+        raise ValueError(f"{groups} group(s), {len(ticks_per_row)} tick count(s)")
     per_voice = bool(sims) and all(getattr(s, "PER_VOICE", False)
                                    for s in sims.values())
     free_rows = free_rows or {}
@@ -4458,17 +4497,21 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                           if per_voice or owner.get(num) == v}
             if not voice_sims:
                 continue
-            # THE STARTUP PREROLL, measured rather than derived: the record
-            # that is current when the tune starts has already swept for a
-            # few calls by the time its first note fetches -- init plus the
-            # player's warm-up. Seven calls reproduces every one of
-            # 5_Title_Tunes voice 3's 188 measured onsets exactly (0..8 were
-            # swept; 7 alone scores 188/188, its neighbours 94). A record
-            # that is NOT the voice's opening instrument is frozen until its
-            # first note and needs none -- voices 1 and 2's first onsets
-            # measure exactly the record width, which is the zero-preroll
-            # prediction. A wrong value here costs a fixed orbit offset,
-            # never the band or the travel.
+            # THE STARTUP PREROLL: the record that is current when the tune
+            # starts sweeps on every engine tick before the voice's first
+            # fetch. `preroll` is that count read off the player (convert.py
+            # passes goatwriter.fixed_arp_first_fetch, the speed gate's byte
+            # in the image: 5_Title_Tunes 3, Game_Killer 1, Rasputin and
+            # One_Man_and_his_Droid 0 -- each the first-fetch tick of the
+            # py65-emulated original). It USED to be the constant 7, fitted
+            # to 5_Title_Tunes voice 3's onsets from a (+1, 0) start; from
+            # the image's (-1, 1) start the player's own 3 plans all 192 of
+            # them. RETRACTED: "Seven calls reproduces every one of
+            # 5_Title_Tunes voice 3's 188 measured onsets exactly" -- it
+            # compensated for the wrong direction and counter. A record that
+            # is NOT the voice's opening instrument is frozen until its
+            # first note and needs none. A wrong value here costs a fixed
+            # orbit offset, never the band or the travel.
             first_instr = 0
             live_scan = 0
             for b in track:
@@ -4485,8 +4528,26 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                         break
                 if first_instr:
                     break
+            # THE TRIANGLE ENGINE'S DIRECTION AND DELAY COUNTER ARE PER
+            # VOICE (`voice_seeds`): `hold` is the sim this voice last swept
+            # under, whose direction and counter the next one takes over; the
+            # first takes the image's.
+            tri_voice = not per_voice and voice_seeds is not None
+            hold: list = [None]
+
+            def handover(sim) -> None:
+                if not tri_voice or hold[0] is sim:
+                    return
+                if hold[0] is None:
+                    sim.direction, sim._dcnt = voice_seeds[v]
+                else:
+                    sim.direction, sim._dcnt = hold[0].direction, hold[0]._dcnt
+                hold[0] = sim
+
             if first_instr in voice_sims:
-                voice_sims[first_instr].advance(PULSE_PHASE_PREROLL)
+                handover(voice_sims[first_instr])
+                voice_sims[first_instr].advance(
+                    PULSE_PHASE_PREROLL if preroll is None else preroll)
 
             def one_pass(start: int, live: int):
                 out: dict = {}
@@ -4502,6 +4563,12 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
 
                 def run(sim, calls: int, skip_first: bool = False) -> None:
                     nonlocal carry
+                    handover(sim)
+                    if ticks_per_row is not None and not per_voice:
+                        # One row = the player's inner reload + 1 ENGINE
+                        # ticks, whatever our calls -- see `ticks_per_row`.
+                        sim.advance(ticks_per_row[g], skip_first=skip_first)
+                        return
                     total = carry + calls
                     carry = total % calls_per_frame
                     sim.advance(total // calls_per_frame, skip_first=skip_first)
@@ -4522,6 +4589,9 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                             continue
                         if per_voice and cur is not None and cur is not sim:
                             sim.width, sim.direction = cur.width, cur.direction
+                        # before the phase is read: a note that opens a new
+                        # record opens on the direction the voice carries
+                        handover(sim)
                         known = cur is not None
                         cur = sim
                         if kind == "note":

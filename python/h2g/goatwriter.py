@@ -505,8 +505,29 @@ def _pitch_seq_notes(sid: SidFile, det: Detection,
     steps = _pitch_seq_steps(sid, det, i)
     if steps is None:
         return None
-    if det.pitch_seq.pairs < 0 and det.pitch_seq.steps < 0:
-        steps.reverse()                  # the static form's play order; below
+    if det.pitch_seq.pairs < 0:
+        if det.pitch_seq.steps < 0:
+            steps.reverse()              # the static form's play order; below
+    elif _pitch_seq_phase_step(sid) is not None:
+        # **The pair form's phase cell counts DOWN too**, so its play order is
+        # the table read backwards: `DEC phase / BPL / LDA #n / STA phase`
+        # gives the cell 2, 1, 0, 2, ... and `ADC base,Y` adds b, a, 0 -- the
+        # cycle 0, b, a, not the 0, a, b the table is written in. Traced on
+        # the originals (siddump -t60, 3-frame cycles with three distinct
+        # notes, keyed by the intervals above the lowest): After_8's (0,5,9)
+        # plays (+9,+5) 258 times and (+5,+9) never; Star_Paws (6,3)/(7,4)/
+        # (9,5) 22/8/4; Mr_Meaner (9,6) 46; Chain_Reaction's (0,-4,-7) plays
+        # (3,7) 36 times, which is 0, -7, -4. Every corpus file whose cycle
+        # `pitch_seq_phase_cycle` simulates descends. Only a record with
+        # distinct nonzero a and b can tell the two orders apart -- on
+        # (0,x,x), (0,x,0) and any two-step cycle they are one rotation.
+        # Where no `DEC` step is found the cell is never written (the six
+        # `LDY`-only files), so the direction is unknown and the table order
+        # is kept. Reversed whole, not as `0` + the pair reversed: the two are
+        # the same cycle, but only the whole reversal leaves the modal
+        # rotation below landing (0,x,0) and (0,x,x) on the bytes they had.
+        # C:/t/pitch-seq-pair-order/probe/cyc.py.
+        steps.reverse()
     # **Rotated so the most common step follows the attack.** The player's phase
     # is global, so which step a note begins on is unknowable here; a wavetable
     # always starts at its first entry. Emitting the sequence as written puts
@@ -650,7 +671,7 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     # read 7837 ties against the original's 5139 with the option forced, and
     # 3907 once the divider is honoured. The two factors are one quantity,
     # calls per step, so they multiply here and nowhere else.
-    hold = max(1, multiplier)
+    hold = max(1, multiplier) * max(1, det.pitch_seq.frames_per_step)
     if hold > 1:
         # **The attack frame's last write is entry 0 once a step is a frame
         # long, so the step that leaves the note alone has to move there.**
@@ -671,11 +692,22 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
         # **99.8%** scaled-and-rotated, which is its score with the option off,
         # at 1039 reversals against 772. See H2G-CONVERSION-METHOD.md 7.ttt.
         notes = notes[1:] + notes[:1]
-    # The rotation above is keyed on the MULTIPLIER alone, not on the calls a
-    # step holds: it asks whether entry 0 lands on frame 0, and a four-frame
-    # step at -S1 still starts on frame 1 (`hold == 1` above). The divider
-    # only lengthens each step, so it multiplies in after that question.
-    hold *= max(1, det.pitch_seq.frames_per_step)
+    #
+    # **The rotation is keyed on the CALLS a step holds, divider included.**
+    # Until this was measured it was keyed on the multiplier alone ("a
+    # four-frame step at -S1 still starts on frame 1"), which is true and
+    # beside the point: the new-note call ends `jmp mt_loadregswaveonly`
+    # (player.s:905-911), writing $D404 and neither the frequency nor the
+    # wavetable, so entry 0 is the note's FIRST FREQUENCY WRITE at every
+    # multiplier -- and a step that outlives that call is what the attack is
+    # read as. Food_Feud forced to -S1 with `pitch_seq` on and `two_stage`
+    # off (so records 2/3 reach this path), -t 180: melody 93.87% with the
+    # option off, 81.52% multiplier-keyed (voice 2 92.0% -> 62.1%), 93.87%
+    # calls-keyed, ties 2416 in both keyed arms. A VICE trace of the same
+    # arms adds nothing at -S1 (one call a frame): per-frame frequency
+    # agreement reads within 0.0001 of siddump's on all three voices. At -S3
+    # the two keyings coincide and score identically (100.0%).
+    # C:/t/pitch-seq-s1-rotation/sd_result.txt, ab/result.json (v0.5.494).
     left = [wave] * (len(notes) * hold)
     right = [n for n in notes for _ in range(hold)]
     return left, right
@@ -1319,7 +1351,9 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
                                  budget: int = WAVE_ENTRIES_PER_INSTR,
                                  written: bool = False,
                                  frames_per_step: int = 1,
-                                 frame_notes: Optional[List[int]] = None
+                                 frame_notes: Optional[List[int]] = None,
+                                 log=None,
+                                 record: Optional[int] = None
                                  ) -> Optional[tuple]:
     """One block carrying bit $04's attack waveform *and* bit $10's arpeggio.
 
@@ -1394,7 +1428,11 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
 
     Returns None where the block will not fit the record's budget, so the
     caller falls back to the plain two-stage shape rather than emitting a
-    truncated arpeggio.
+    truncated arpeggio. `log`, when given, is told which record lost its
+    arpeggio and why (the block's length against its share of the table) --
+    the fallback used to say nothing, so a record run out of budget by a
+    file with enough instruments looked byte-identical to one that never
+    reached this path at all.
     """
     if attack == 0 or frames <= 0 or not notes:
         return None
@@ -1439,7 +1477,13 @@ def _two_stage_pitch_seq_entries(wave: int, attack: int, frames: int,
     # other frame out for the same reason (a delay entry's right side is read
     # only on its last call, and the note base has to be current from the first).
     lead = hold if _first_frame_entry(wave, written) else 0
-    if lead + calls + loop + 1 > budget:
+    need = lead + calls + loop + 1
+    if need > budget:
+        if log is not None:
+            who = f"${record:X} " if record is not None else ""
+            log(f"*** PITCH-SEQ ARPEGGIO ON INSTRUMENT {who}DROPPED -- "
+                f"COMPOSED TWO-STAGE BLOCK NEEDS {need} WAVETABLE ENTRIES, "
+                f"ONLY {budget} IN ITS SHARE ***")
         return None
     if frame_notes is not None and len(frame_notes) * hold != loop:
         frame_notes = None               # not one cycle of this step: unphased
@@ -3815,10 +3859,14 @@ def _triangle_vibrato_entry(byte: int, multiplier: int) -> Optional[tuple]:
     would need the absolute speed form, which does not track pitch the way
     this player does, so the depth is traded for the pitch-tracking.
     """
-    if not byte or byte > TRIANGLE_VIBRATO_MAX_SHIFT:
+    if not byte or byte >= TRIANGLE_VIBRATO_MAX_SHIFT:
         # The player's own `BEQ past`, and its own way of switching a record
-        # off: a shift this large leaves nothing of the 16-bit interval. No
-        # player in the family masks the byte -- Last_V8 stores 81.
+        # off: the byte is shifted `n + 1` times (detect.py's
+        # TRIANGLE_VIBRATO_SHAPE: LSR/ROR/DEC/BPL), so a byte of
+        # TRIANGLE_VIBRATO_MAX_SHIFT (15) already shifts the 16-bit interval
+        # 16 times, which is zero -- the same boundary fidelity.py's
+        # vibrato_population census drops at (`c[1] < TRIANGLE_VIBRATO_MAX_SHIFT`
+        # keeps). No player in the family masks the byte -- Last_V8 stores 81.
         return None
     half = TRIANGLE_VIBRATO_PERIOD // 2
     cmp_value = min(0x7F, max(0, half * multiplier - VIBRATO_CMP_BIAS))
@@ -4992,8 +5040,9 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     sticky (`instr 00` keeps the current one); each note votes for its
     instrument, and the instrument takes the majority -- exact wherever a
     row is an even number of frames or the instrument's notes all sit on
-    rows of one parity, and a per-note split (two wavetables per record) is
-    what would make Hunter_Patrol's minority right. A group whose numbering
+    rows of one parity; the per-note split (`fixed_arp_splits`, a copy of
+    the record per minority residue) is what makes Hunter_Patrol's minority
+    right. A group whose numbering
     a split has shifted casts no vote.
 
     **The walk is in the player's own clock: calls that pass the outer
@@ -5018,18 +5067,50 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
     Empty for any file whose block is not found or whose counters cannot be
     read.
     """
+    walk = _fixed_arp_walk(sid, det, tracks, patterns)
+    if walk is None:
+        return {}
+    clock, votes, heard, tied = walk
+    mask, period = clock[2], clock[3]
+    chosen = _majority_residues(votes, period)
+    if mask[0] == FIXED_ARP_PARITY_MASK:
+        return chosen
+    return {instr: (res if instr in tied else
+                    _duty_residue(heard[instr], mask[0], mask[1], res))
+            for instr, res in chosen.items()}
+
+
+def _fixed_arp_clock(sid: SidFile, det: Detection,
+                     tracks: List[List[int]]) -> Optional[tuple]:
+    """(base, first, mask, period, speeds): what `fixed_arp_phases`' walk
+    needs to name a note's residue, `(base + first + row * frames) % period`
+    -- or None where any of it cannot be read, or a split subtune has
+    shifted the group numbering."""
     base = fixed_arp_counter_base(sid, det)
     first = fixed_arp_first_fetch(sid, det)
     mask = fixed_arp_mask(sid, det)
     if base is None or first is None or mask is None:
-        return {}
-    period = fixed_arp_period(mask[0])
+        return None
     speeds = find_song_speeds(sid, det)
     if speeds is None:
-        return {}
-    groups = len(tracks) // 3
-    if groups > max(sid.subtunes, 1):
-        return {}                        # a split subtune shifted the numbering
+        return None
+    if len(tracks) // 3 > max(sid.subtunes, 1):
+        return None                      # a split subtune shifted the numbering
+    return base, first, mask, fixed_arp_period(mask[0]), speeds
+
+
+def _fixed_arp_walk(sid: SidFile, det: Detection, tracks: List[List[int]],
+                    patterns: List[List[int]]) -> Optional[tuple]:
+    """(clock, votes, heard, tied) -- `fixed_arp_phases`' walk, unreduced.
+
+    `votes` is `{instrument: notes per residue}`, `heard` `{instrument:
+    {(residue, frames to the next note): notes}}` and `tied` the instruments
+    some toneporta row names.
+    """
+    clock = _fixed_arp_clock(sid, det, tracks)
+    if clock is None:
+        return None
+    base, first, _, period, speeds = clock
     votes: dict = {}
     heard: dict = {}                     # instrument -> {(residue, span): n}
     tied: set = set()                    # instruments a toneporta row names
@@ -5047,12 +5128,280 @@ def fixed_arp_phases(sid: SidFile, det: Detection, tracks: List[List[int]],
                 cell[residue, span] = cell.get((residue, span), 0) + 1
             if command == CMD_TONEPORTA:
                 tied.add(current)
-    chosen = _majority_residues(votes, period)
-    if mask[0] == FIXED_ARP_PARITY_MASK:
-        return chosen
-    return {instr: (res if instr in tied else
-                    _duty_residue(heard[instr], mask[0], mask[1], res))
-            for instr, res in chosen.items()}
+    return clock, votes, heard, tied
+
+
+# ---------------------------------------------------------------------------
+# The per-note split (METHOD 7.bbbbbb): one wavetable per residue.
+#
+# `fixed_arp_phases` gives each instrument ONE residue, and where its notes
+# land on several about equally that is right on a fraction of them:
+# Hunter_Patrol's parity mask votes 159:145, 376:192 ... on eleven records
+# (the octave on the wrong offset for the minority), and Game_Killer's `$07`
+# duty at -S9 cycles 1 -> 7 -> 5 -> 3 across consecutive notes, a four-way
+# tie whose winner's base frame falls where no note sounds it. What a
+# wavetable cannot carry per note an INSTRUMENT can: each residue whose
+# vote is within a factor of two of the record's largest
+# (`ARP_SPLIT_RATIO`) gets a copy of the record -- envelope, pulse, filter,
+# vibrato, everything but the wave pointer -- whose wavetable is the one
+# `_wavetable_entries` builds for THAT residue, and every note of the record
+# names the copy its own attack's residue selects.
+#
+# The residue is per NOTE, and Goattracker's patterns are global: one
+# pattern played at two row offsets has two residues on the same row. So
+# the rewrite is per pattern OCCURRENCE (`_split_arp_orderlists`): each
+# occurrence's rows are rewritten for its own residues, occurrences that
+# come out byte-identical share a pattern, the commonest keeps the
+# pattern's number and the rest are appended -- and a repeat (`$D0+n`)
+# whose repeats differ is unrolled in the orderlist, with the restart
+# operand re-pointed. Declined whole, and logged, where the patterns would
+# pass `MAX_PATT`, an orderlist `MAX_SONGLEN`, a pattern the packer's 256
+# bytes, or the instruments `PAST_REST_VARIANT_LAST`.
+#
+# Two populations never split. A residue whose block comes out
+# byte-identical to the record's own (a record with no fixed arp, or a duty
+# whose residues sound alike) needs no copy. And for a DUTY mask a record a
+# toneporta row names keeps its one residue, for `_duty_residue`'s reason:
+# under `3 00` the wavetable does not run undisturbed from the attack.
+# ---------------------------------------------------------------------------
+ARP_SPLIT_RATIO = 2
+
+
+def _pattern_row_count(pat: List[int]) -> int:
+    """Rows up to the ENDPATT, as `_note_rows` counts them."""
+    n = 0
+    for r in range(0, len(pat) - len(pat) % 4, 4):
+        if pat[r] == 0xFF:
+            break
+        n += 1
+    return n
+
+
+def _arp_lap_walk(track: List[int], patterns: List[List[int]],
+                  frames: Optional[int], period: int) -> List[tuple]:
+    """[(position, lap, pattern, plays)] in play order, the loop unrolled.
+
+    `_note_rows` walks one lap from position 0, and that is the whole song
+    only where the loop -- restart position to `$FF` -- is a whole number
+    of counter cycles. Where it is not, every pass round the loop meets the
+    counter on another residue: Game_Killer's voice 3 is one 18-row
+    pattern looping at two calls a row, 36 steps, 4 short of a multiple
+    of 8, so its notes swap residues every lap. The loop is walked
+    `period / gcd(shift, period)` times, which returns it to the residue it
+    started on.
+    """
+    seq = []
+    restart = None
+    repeat, operand = 1, False
+    for pos, b in enumerate(track):
+        if operand:
+            operand = False
+            restart = b
+            continue
+        if b == 0xFF:
+            operand = True
+            continue
+        if 0xD0 <= b < 0xE0:
+            repeat = b - 0xD0 + 1
+            continue
+        if b >= 0xE0 or b >= len(patterns):
+            continue
+        seq.append((pos, 0, b, repeat))
+        repeat = 1
+    laps = 1
+    if restart is not None and frames:
+        loop_rows = sum(n * _pattern_row_count(patterns[b])
+                        for pos, _, b, n in seq if pos >= restart)
+        shift = loop_rows * frames % period
+        if loop_rows and shift:
+            laps = period // math.gcd(shift, period)
+    body = [e for e in seq if e[0] >= (restart or 0)]
+    for lap in range(1, laps):
+        seq += [(pos, lap, b, n) for pos, _, b, n in body]
+    return seq
+
+
+def _arp_split_occurrences(tracks: List[List[int]], patterns: List[List[int]],
+                           clock: tuple, variant_of: dict,
+                           votes: Optional[dict] = None) -> tuple:
+    """(per track {(position, lap): (pattern, [rendition per play])},
+    rows renamed).
+
+    Each play of a pattern rewritten for its own residues: a non-tie note
+    of a record in `variant_of` names the copy its residue selects (the
+    record itself for a residue with none), and only where the voice's
+    latched instrument at that point -- in the REWRITTEN stream -- is not
+    already that one. With `votes` every note also counts toward
+    `{instrument: notes per residue}` over the unrolled laps.
+    """
+    base, first, _, period, speeds = clock
+    plan = []
+    renamed = 0
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        entries: dict = {}
+        row, current, latched = 0, 0, 0
+        for pos, lap, b, plays in _arp_lap_walk(track, patterns, frames,
+                                                period):
+            pat = patterns[b]
+            got = []
+            for _ in range(plays):
+                rows = list(pat)
+                for r in range(0, len(pat) - len(pat) % 4, 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = latched = pat[r + 1]
+                    if (frames is not None and current
+                            and GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE):
+                        res = (base + first + row * frames) % period
+                        if votes is not None:
+                            votes.setdefault(current, [0] * period)[res] += 1
+                        if (current in variant_of
+                                and pat[r + 2] != CMD_TONEPORTA):
+                            want = variant_of[current].get(res, current)
+                            if want != latched or (pat[r + 1]
+                                                   and want != pat[r + 1]):
+                                rows[r + 1] = want
+                                latched = want
+                                renamed += 1
+                    row += 1
+                got.append(tuple(rows))
+            entries.setdefault((pos, lap), (b, got))
+        plan.append(entries)
+    return plan, renamed
+
+
+def fixed_arp_splits(sid: SidFile, det: Detection, tracks: List[List[int]],
+                     patterns: List[List[int]], phases: dict) -> dict:
+    """{GT instrument: [minority residues]}, the records with the most
+    minority notes first -- every residue other than the record's own
+    (`phases`) whose notes, counted over the loop-unrolled walk
+    (`_arp_lap_walk`), number at least 1/`ARP_SPLIT_RATIO` of its
+    commonest residue's. Only candidates: `_arp_variant_blocks` drops a
+    residue whose wavetable is the record's, and takes them in this order
+    while the wavetable and the instrument slots last."""
+    walk = _fixed_arp_walk(sid, det, tracks, patterns)
+    if walk is None:
+        return {}
+    clock, _, _, tied = walk
+    votes: dict = {}
+    _arp_split_occurrences(tracks, patterns, clock, {}, votes)
+    duty = clock[2][0] != FIXED_ARP_PARITY_MASK
+    ranked = []
+    for instr, counts in votes.items():
+        own = phases.get(instr)
+        if own is None or (duty and instr in tied):
+            continue
+        top = max(counts)
+        minor = sorted((r for r, n in enumerate(counts)
+                        if r != own and n and n * ARP_SPLIT_RATIO >= top),
+                       key=lambda r: (-counts[r], r))
+        if minor:
+            ranked.append((-sum(counts[r] for r in minor), instr, minor))
+    return {instr: minor for _, instr, minor in sorted(ranked)}
+
+
+def _split_arp_orderlists(tracks: List[List[int]], patterns: List[List[int]],
+                          clock: tuple, variant_of: dict) -> Optional[tuple]:
+    """(tracks, patterns, rows renamed) with every non-tie note of a split
+    record naming the copy its attack's residue selects
+    (`_arp_split_occurrences`), or None where nothing is renamed or the
+    result would not fit Goattracker (see the block above).
+
+    Plays that come out byte-identical share a pattern; the commonest keeps
+    the pattern's number, a tie to the first played, and the rest are
+    appended. A repeat whose plays differ is unrolled into runs, and a loop
+    the walk had to unroll is appended once per extra lap before the `$FF`
+    -- only where some lap differs from the first -- so the restart lands
+    back on the residue it left.
+    """
+    from .patterns import MAX_PATTERNS   # patterns imports this module
+    plan, renamed = _arp_split_occurrences(tracks, patterns, clock,
+                                           variant_of)
+    if not renamed:
+        return None
+    uses: dict = {}                      # pattern -> {rendition: plays}
+    order: dict = {}                     # pattern -> renditions, first seen
+    for entries in plan:
+        for b, got in entries.values():
+            for key in got:
+                uses.setdefault(b, {})
+                uses[b][key] = uses[b].get(key, 0) + 1
+                seen = order.setdefault(b, [])
+                if key not in seen:
+                    seen.append(key)
+    out_patterns = [list(p) for p in patterns]
+    number: dict = {}
+    for b, seen in order.items():
+        ranked = sorted(seen, key=lambda k: (-uses[b][k], seen.index(k)))
+        for n, key in enumerate(ranked):
+            if n == 0:
+                number[b, key] = b
+                out_patterns[b] = list(key)
+            else:
+                number[b, key] = len(out_patterns)
+                out_patterns.append(list(key))
+            if (list(key) != patterns[b] and packed_pattern_size(
+                    pattern_rows(list(key))) >= PACKED_PATTERN_LIMIT):
+                return None
+    if len(out_patterns) > MAX_PATTERNS:
+        return None
+
+    def emit(new: List[int], b: int, got: list) -> None:
+        runs: List[list] = []
+        for key in got:
+            idx = number[b, key]
+            if runs and runs[-1][0] == idx and runs[-1][1] < 16:
+                runs[-1][1] += 1
+            else:
+                runs.append([idx, 1])
+        for idx, n in runs:
+            if n > 1:
+                new.append(0xD0 + n - 1)
+            new.append(idx)
+
+    def render(track: List[int], entries: dict, lap: int, start: int,
+               end: int, where: Optional[dict] = None) -> List[int]:
+        new: List[int] = []
+        pos = start
+        while pos < end:
+            b = track[pos]
+            if where is not None:
+                where[pos] = len(new)
+            if 0xD0 <= b < 0xE0 and (pos + 1, lap) in entries:
+                pos += 1
+                if where is not None:
+                    where[pos] = len(new)
+            if (pos, lap) in entries:
+                emit(new, *entries[pos, lap])
+            else:
+                new.append(track[pos])
+            pos += 1
+        return new
+
+    out_tracks = []
+    for track, entries in zip(tracks, plan):
+        end = track.index(0xFF) if 0xFF in track else len(track)
+        where: dict = {}                 # old position -> new position
+        new = render(track, entries, 0, 0, end, where)
+        restart = track[end + 1] if end + 1 < len(track) else 0
+        laps = sorted({lap for _, lap in entries if lap})
+        if laps:
+            extra: List[int] = []
+            for lap in laps:
+                extra += render(track, entries, lap, restart, end)
+            if extra != render(track, entries, 0, restart, end) * len(laps):
+                new += extra
+        if len(new) > GT_MAX_SONGLEN:
+            return None
+        if end < len(track):
+            new += [0xFF, where.get(restart, restart)] + track[end + 2:]
+        out_tracks.append(new)
+    return out_tracks, out_patterns, renamed
+
+
+GT_MAX_SONGLEN = 254   # gcommon.h MAX_SONGLEN: orderlist entries before $FF
 
 
 def _duty_residue(heard: dict, mask: int, branch: int, modal: int) -> int:
@@ -5081,7 +5430,9 @@ def _duty_residue(heard: dict, mask: int, branch: int, modal: int) -> int:
     rewrites the pattern's note on every call the wavetable fires nothing
     (player.s `mt_wavedone` -> `mt_effect_3_found`), so a duty held by a
     delay entry sounds base after its first call (Chimera subtune 0's
-    `$0060` runs; see `tests/test_arp_octave.py`).
+    `$0060` runs; see `tests/test_arp_octave.py`). At -S1 those rows are no
+    longer ties by the time the table is written: `_legato_duty_ties`
+    re-spells them as legato restarts, after this vote has been taken.
     """
     def agree(cand: int) -> int:
         return sum(n * sum(1 for j in range(1, span)
@@ -5193,11 +5544,11 @@ def _note_rows(track: List[int], patterns: List[List[int]],
 # runs the voices and the phase step at $93FB, so the phase counts CALLS
 # and the rows have to be simulated onto them rather than counted.
 #
-# The spelling is common -- it reads on 43 corpus files at v0.5.492 -- but
-# PITCH_SEQ_NEW_SONG_CALLS below is measured on Food_Feud's init alone, so
-# `build_sng` asks for phases only where the player has a divider, and
-# that is Food_Feud (`tests/test_pitch_seq_shapes.py` pins the set).
-# Widening it to the per-frame files is a measurement per init, not a flag.
+# The spelling is common -- it reads on 43 corpus files at v0.5.492 -- and
+# what varies between them is the INIT, which decides how many play calls
+# pass before the gate first steps. So the walk starts only where
+# `pitch_seq_new_song_calls` reads that count out of the file's own init
+# and play entry; everywhere else it declines, whatever the divider.
 PITCH_SEQ_CLOCK = re.compile(
     rb"\xce(..)\x10\x08\xa9(.)\x8d\1\x4c(..)\xce(..)\x10\x06\xad(..)\x8d\4",
     re.DOTALL)
@@ -5209,11 +5560,224 @@ PITCH_SEQ_CLOCK_WINDOW = 24
 # phase and not the gate. Measured: with the gate simulated from call 1,
 # every attack of all three voices in a 247 s trace of the original lands
 # on the call its row names (990, 1460 and 1041 of as many).
+#
+# It is a count about the PLAYER'S new-song path, so it holds exactly where
+# the init leaves the flag at `$4x` and the PSID play call enters that path
+# once -- `pitch_seq_new_song_calls` reads both. Re-measured at v0.5.494
+# against a 30 s siddump of subtune 0 of every clock file: on all 13 files
+# the reader reads, the row ticks simulated from call 1 carry every attack
+# on 10 and strictly the most attacks (against 0 and 2) on the other three,
+# whose remainder is one instrument each -- a late gate or a drum's own
+# retrigger inside a row (Bangkok_Knights, Nineteen, Trans-Atlantic).
+# Delta_Mix-E-Load_loader and Skate_or_Die_intro measure 0 -- their inits
+# call the player themselves -- and the reader declines both.
 PITCH_SEQ_NEW_SONG_CALLS = 1
 
 # A walk that has not seen `count` rows in this many calls per row is not
 # a clock; it declines rather than spinning.
 PITCH_SEQ_MAX_CALLS_PER_ROW = 64
+
+# The play entry's new-song test, `BIT flag / BMI stop / BVC play` (absolute
+# or zero-page), lies within this many bytes in front of the clock: bit 6 is
+# the new-song path, bit 7 the stop path. Food_Feud's sits 74 bytes before
+# ($9014); the corpus's widest is Delta's 79.
+PITCH_SEQ_PREAMBLE_WINDOW = 96
+PITCH_SEQ_NEW_SONG_PATH = 64     # BVC fall-through to its `STA flag / JMP`
+PITCH_SEQ_INIT_LIMIT = 600       # instructions an init may reach
+
+# Instruction length by opcode, "0" where it is not one of the 151 legal
+# opcodes (`python/dis6502.py`'s table; `tests/test_pitch_seq_shapes.py`
+# checks the two agree).
+_OPCODE_LENGTHS = (
+    "1200022012100330220002201300033032002220121033302200022013000330"
+    "1200022012103330220002201300033012000220121033302200022013000330"
+    "0200222010103330220022201310030022202220121033302200222013103330"
+    "2200222012103330220002201300033022002220121033302200022013000330")
+_BRANCH_OPS = frozenset((0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0))
+_STORE_ABS_OPS = frozenset((0x8D, 0x8E, 0x8C))      # STA / STX / STY abs
+_STORE_ZP_OPS = frozenset((0x85, 0x86, 0x84))       # STA / STX / STY zp
+
+
+def _image_offset(sid: SidFile, addr: int) -> Optional[int]:
+    o = sid.to_offset(addr)
+    return o if 0 <= o < len(sid.data) else None
+
+
+def _routine_closure(sid: SidFile, entry: int,
+                     limit: int = PITCH_SEQ_INIT_LIMIT) -> Optional[tuple]:
+    """({address: instruction bytes}, [RTS addresses]) reachable from `entry`.
+
+    Both arms of every branch, every `JMP abs` followed. None on anything
+    that could run code this reading cannot see -- a `JSR` (an init that
+    calls the player itself, as Delta_Mix-E-Load_loader's does), `JMP (ind)`,
+    `RTI`, `BRK`, an illegal opcode -- or on leaving the image or passing
+    `limit` instructions.
+    """
+    data = sid.data
+    out: dict = {}
+    exits: List[int] = []
+    todo = [entry]
+    while todo:
+        a = todo.pop()
+        while a not in out:
+            o = _image_offset(sid, a)
+            if o is None:
+                return None
+            op = data[o]
+            n = int(_OPCODE_LENGTHS[op])
+            if not n or op in (0x20, 0x6C, 0x40, 0x00) or o + n > len(data):
+                return None
+            raw = bytes(data[o:o + n])
+            out[a] = raw
+            if len(out) > limit:
+                return None
+            if op == 0x60:
+                exits.append(a)
+                break
+            if op == 0x4C:
+                a = raw[1] | raw[2] << 8
+                continue
+            if op in _BRANCH_OPS:
+                todo.append((a + 2 + (raw[1] ^ 0x80) - 0x80) & 0xFFFF)
+            a += n
+    return out, exits
+
+
+def _stores_to(code: dict, addr: int) -> List[int]:
+    """Addresses of the `STA`/`STX`/`STY` in `code` naming `addr` directly."""
+    lo, hi = addr & 0xFF, addr >> 8
+    return [a for a, raw in code.items()
+            if (raw[0] in _STORE_ABS_OPS and raw[1] == lo and raw[2] == hi)
+            or (addr < 0x100 and raw[0] in _STORE_ZP_OPS and raw[1] == lo)]
+
+
+def _pitch_seq_phase_step(sid: SidFile) -> Optional[int]:
+    """Offset of the phase cell's `DEC phase / BPL / LDA #n / STA phase`."""
+    phase = _pitch_seq_phase_cell(sid)
+    if phase is None:
+        return None
+    data = sid.data
+    lo, hi = phase & 0xFF, phase >> 8
+    at = data.find(bytes([0xCE, lo, hi, 0x10]))
+    while at >= 0 and not (at + 9 < len(data) and data[at + 5] == 0xA9
+                           and data[at + 7] == 0x8D and data[at + 8] == lo
+                           and data[at + 9] == hi):
+        at = data.find(bytes([0xCE, lo, hi, 0x10]), at + 1)
+    return at if at >= 0 else None
+
+
+def pitch_seq_new_song_calls(sid: SidFile) -> Optional[int]:
+    """Play calls before `PITCH_SEQ_CLOCK`'s gate first steps, or None.
+
+    Read, not assumed, in three parts, all from the image:
+
+    * the play entry's new-song path -- the fall-through of `BIT flag /
+      BMI / BVC` in front of the clock -- ends `STA flag / JMP` into the
+      phase step (or the divider in front of it), stores a value clearing
+      bits 6 and 7, and writes none of the clock's or the phase's cells:
+      so a call taking it steps the phase and not the gate, once;
+    * the init, every path of it (`_routine_closure`), calls nothing,
+      writes none of those cells, stores the flag only from `LDA #$4x`, and
+      returns only straight after such a store -- so the first play call
+      finds bit 6 set whatever subtune it was given;
+    * the PSID play address reaches the `BIT` exactly once per call through
+      nothing but `JMP`/`JSR` and straight-line code (a play address of 0,
+      or a wrapper with its own branch or counter, declines).
+
+    Then the count is PITCH_SEQ_NEW_SONG_CALLS. Mr_Meaner's and After_8's
+    inits end `STA flag / CLI / RTS` after arming a CIA 2 NMI the trace
+    does not run; they decline with every other shape.
+    """
+    data = sid.data
+    m = PITCH_SEQ_CLOCK.search(data)
+    step = _pitch_seq_phase_step(sid)
+    if m is None or step is None:
+        return None
+    word = lambda g: m.group(g)[0] | m.group(g)[1] << 8   # noqa: E731
+    cells = {word(1), word(4), _pitch_seq_phase_cell(sid)}
+    if step >= 10 and data[step - 10] == 0xCE:            # the divider
+        cells.add(data[step - 9] | data[step - 8] << 8)
+    bit = None
+    for o in range(max(0, m.start() - PITCH_SEQ_PREAMBLE_WINDOW), m.start()):
+        if data[o] == 0x2C and data[o + 3] == 0x30 and data[o + 5] == 0x50:
+            bit, width = o, 3
+        elif data[o] == 0x24 and data[o + 2] == 0x30 and data[o + 4] == 0x50:
+            bit, width = o, 2
+    if bit is None:
+        return None
+    flag = data[bit + 1] | (data[bit + 2] << 8 if width == 3 else 0)
+    sta = bytes([0x8D if width == 3 else 0x85]) + data[bit + 1:bit + width]
+    # The new-song path, straight-line from the BVC's fall-through (its
+    # voice loop branches back) to `STA flag / JMP`.
+    o, last_imm, path = bit + width + 4, None, {}
+    while o < bit + width + 4 + PITCH_SEQ_NEW_SONG_PATH:
+        n = int(_OPCODE_LENGTHS[data[o]])
+        if not n or data[o] in (0x20, 0x60, 0x6C, 0x40, 0x00, 0x4C):
+            return None
+        raw = bytes(data[o:o + n])
+        path[o] = raw
+        if raw == sta:
+            break
+        if data[o] == 0xA9:
+            last_imm = data[o + 1]
+        o += n
+    else:
+        return None
+    j = o + width
+    if data[j] != 0x4C or last_imm is None or last_imm & 0xC0:
+        return None
+    t = _image_offset(sid, data[j + 1] | data[j + 2] << 8)
+    if t not in (step, step - 10) or data[t] != 0xCE:
+        return None
+    if any(_stores_to(path, c) for c in cells if c is not None):
+        return None
+    # The init: every path returns straight after `LDA #$4x / STA flag`.
+    closure = _routine_closure(sid, sid.init_addr)
+    if closure is None:
+        return None
+    code, exits = closure
+    writes = _stores_to(code, flag)
+    if not exits or any(not (code.get(a - 2, b"")[:1] == b"\xa9"
+                             and code[a - 2][1] & 0xC0 == 0x40)
+                        for a in writes):
+        return None
+    if any(e - width not in writes for e in exits):
+        return None
+    if any(_stores_to(code, c) for c in cells if c is not None):
+        return None
+    # The play call: the preamble's `BIT`, once.
+    preamble = sid.to_address(bit)
+    a, arrivals, stack = sid.play_addr, 0, []
+    for _ in range(256):
+        if a == preamble:
+            arrivals += 1
+            if not stack:
+                break
+            a = stack.pop()
+            continue
+        o = _image_offset(sid, a) if a else None
+        if o is None:
+            return None
+        op = data[o]
+        n = int(_OPCODE_LENGTHS[op])
+        if not n or op in _BRANCH_OPS or op in (0x6C, 0x40, 0x00):
+            return None
+        if op == 0x60:
+            if not stack:
+                break
+            a = stack.pop()
+        elif op == 0x4C:
+            a = data[o + 1] | data[o + 2] << 8
+            if _image_offset(sid, a) is None:          # JMP $EA31: done
+                break
+        elif op == 0x20:
+            stack.append(a + 3)
+            a = data[o + 1] | data[o + 2] << 8
+        else:
+            a += n
+    else:
+        return None
+    return PITCH_SEQ_NEW_SONG_CALLS if arrivals == 1 else None
 
 
 def _pitch_seq_phase_cell(sid: SidFile) -> Optional[int]:
@@ -5242,17 +5806,10 @@ def pitch_seq_phase_cycle(sid: SidFile, det: Detection) -> Optional[List[int]]:
     if seq is None or seq.pairs < 0:
         return None
     phase = _pitch_seq_phase_cell(sid)
-    if phase is None:
+    at = _pitch_seq_phase_step(sid)
+    if phase is None or at is None:
         return None
     data = sid.data
-    lo, hi = phase & 0xFF, phase >> 8
-    at = data.find(bytes([0xCE, lo, hi, 0x10]))
-    while at >= 0 and not (at + 9 < len(data) and data[at + 5] == 0xA9
-                           and data[at + 7] == 0x8D and data[at + 8] == lo
-                           and data[at + 9] == hi):
-        at = data.find(bytes([0xCE, lo, hi, 0x10]), at + 1)
-    if at < 0:
-        return None
     steps = data[at + 6] + 1
     div = div_reload = None
     if seq.frames_per_step > 1:
@@ -5283,20 +5840,27 @@ def pitch_seq_phase_cycle(sid: SidFile, det: Detection) -> Optional[List[int]]:
 
 
 def pitch_seq_fetch_calls(sid: SidFile, det: Detection, subtune: int,
-                          count: int) -> Optional[List[int]]:
+                          count: int, new_song_calls: Optional[int] = None
+                          ) -> Optional[List[int]]:
     """The play call each of the first `count` rows is fetched on, or None.
 
     Only the clock `PITCH_SEQ_CLOCK` spells, simulated byte for byte from
     the image's two counters -- a row is fetched on a call where the outer
     counter is non-zero and the gate reads its reload -- starting
-    `PITCH_SEQ_NEW_SONG_CALLS` in. The reload is `find_song_speeds`' for
-    the subtune and must be read at the same address the gate names; the
-    outer counter's is its `skip`, or the immediate where it has none.
+    `new_song_calls` in: by default the count `pitch_seq_new_song_calls`
+    reads out of the init, and None where it reads none (a measurement
+    passes its own). The reload is `find_song_speeds`' for the subtune and
+    must be read at the same address the gate names; the outer counter's
+    is its `skip`, or the immediate where it has none.
     """
     data = sid.data
     m = PITCH_SEQ_CLOCK.search(data)
     if m is None:
         return None
+    if new_song_calls is None:
+        new_song_calls = pitch_seq_new_song_calls(sid)
+        if new_song_calls is None:
+            return None
     word = lambda g: m.group(g)[0] | m.group(g)[1] << 8   # noqa: E731
     outer, target, gate, reload_addr = word(1), word(3), word(4), word(5)
     if target != sid.to_address(m.end()):
@@ -5318,7 +5882,7 @@ def pitch_seq_fetch_calls(sid: SidFile, det: Detection, subtune: int,
     o = data[sid.to_offset(outer)]
     g = data[sid.to_offset(gate)]
     calls: List[int] = []
-    k = PITCH_SEQ_NEW_SONG_CALLS
+    k = new_song_calls
     limit = k + PITCH_SEQ_MAX_CALLS_PER_ROW * max(1, count)
     while len(calls) < count:
         if k > limit:
@@ -5631,7 +6195,9 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        gate_skip: Optional[int] = None,
                        arp_phase: Optional[int] = None,
                        arp_mask: Optional[tuple] = None,
-                       pitch_phase: Optional[int] = None) -> tuple:
+                       pitch_phase: Optional[int] = None,
+                       duty_records: Optional[dict] = None,
+                       log=None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -5786,7 +6352,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         wave, data[at], frames, notes, start,
                         multiplier, budget, written=no_test_restart,
                         frames_per_step=det.pitch_seq.frames_per_step,
-                        frame_notes=frame_notes)
+                        frame_notes=frame_notes, log=log,
+                        record=i + lead + 1)
                     if both is not None:
                         return both
             # Effect bit $40's fixed attack pitch, and the gate on it is bit
@@ -6214,6 +6781,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                 tick=((WAVE_NOISE_GATEOFF | (wave & 0x01),
                        _noise_tick_frames(sid, det)) if tick else None))
             if duty is not None:
+                if duty_records is not None:
+                    duty_records[i] = tail  # `_legato_duty_ties` reads it
                 return duty
         # $13CD: alternate between the note and the note minus the high
         # nibble, one frame each. Readme p.794: right side $60-$7F is a
@@ -6799,7 +7368,9 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       real_firstwave_instruments: tuple = (),
                       arps: Optional[List[tuple]] = None,
                       arp_phases: Optional[dict] = None,
-                      pitch_phases: Optional[dict] = None) -> tuple:
+                      pitch_phases: Optional[dict] = None,
+                      duty_records: Optional[dict] = None,
+                      log=None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -6853,26 +7424,16 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         # byte writes the real waveform on frame 0 AND the wavetable's entry 0
         # still assumed a testbit lead-in and wrote its own, one frame later.
         gt_number = i + lead + 1
-        instrument_written = no_test_restart or gt_number in real_firstwave_instruments
-        left, right = _wavetable_entries(sid, det, i, effects, fmt, speed_table,
-                                         multiplier, min_notes, lead,
-                                         start=start, budget=budget,
-                                         two_stage=two_stage,
-                                         sfx_drum=sfx_drum,
-                                         wave_program=wave_program,
-                                         pitch_seq=pitch_seq,
-                                         note_rows=note_rows,
-                                         row_calls=row_calls,
-                                         no_test_restart=instrument_written,
-                                         voice_two_stage=voice_two_stage,
-                                         voice=_record_voice(instr_voices,
-                                                             gt_number),
-                                         gate_skip=gate_skip,
-                                         arp_phase=(None if arp_phases is None
-                                                    else arp_phases.get(gt_number)),
-                                         arp_mask=arp_mask,
-                                         pitch_phase=(None if pitch_phases is None
-                                                      else pitch_phases.get(gt_number)))
+        left, right = _record_wave_entries(
+            sid, det, i, effects, fmt, speed_table, multiplier, min_notes,
+            lead, start, budget, two_stage, sfx_drum, wave_program,
+            pitch_seq, note_rows, row_calls, no_test_restart,
+            voice_two_stage, instr_voices, gate_skip,
+            real_firstwave_instruments,
+            None if arp_phases is None else arp_phases.get(gt_number),
+            arp_mask,
+            None if pitch_phases is None else pitch_phases.get(gt_number),
+            duty_records=duty_records, log=log)
         starts.append(start)
         entries += list(zip(left, right))
 
@@ -6890,6 +7451,135 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
         arp_starts.append(start)
         entries += list(zip(*block))
     return entries, starts, arp_starts
+
+
+def _record_wave_entries(sid: SidFile, det: Detection, i: int, effects: bool,
+                         fmt: str, speed_table: List[tuple], multiplier: int,
+                         min_notes: Optional[dict], lead: int, start: int,
+                         budget: int, two_stage: bool, sfx_drum: bool,
+                         wave_program: bool, pitch_seq: bool,
+                         note_rows: Optional[dict], row_calls: int,
+                         no_test_restart: bool, voice_two_stage: bool,
+                         instr_voices: Optional[dict],
+                         gate_skip: Optional[int],
+                         real_firstwave_instruments: tuple,
+                         arp_phase: Optional[int], arp_mask: Optional[tuple],
+                         pitch_phase: Optional[int],
+                         duty_records: Optional[dict] = None,
+                         log=None) -> tuple:
+    """One record's (left, right) as `_wavetable_layout` lays it at `start`
+    -- shared with `_arp_variant_blocks`, so a split record's copy is built
+    by the very call its own block was."""
+    gt_number = i + lead + 1
+    # Must agree with _write_instruments' own per-instrument decision, or
+    # the wavetable's own first entry and the instrument record's firstwave
+    # byte disagree about who writes frame 0 (see `_wavetable_layout`).
+    instrument_written = (no_test_restart
+                          or gt_number in real_firstwave_instruments)
+    return _wavetable_entries(sid, det, i, effects, fmt, speed_table,
+                              multiplier, min_notes, lead,
+                              start=start, budget=budget,
+                              two_stage=two_stage,
+                              sfx_drum=sfx_drum,
+                              wave_program=wave_program,
+                              pitch_seq=pitch_seq,
+                              note_rows=note_rows,
+                              row_calls=row_calls,
+                              no_test_restart=instrument_written,
+                              voice_two_stage=voice_two_stage,
+                              voice=_record_voice(instr_voices, gt_number),
+                              gate_skip=gate_skip,
+                              arp_phase=arp_phase,
+                              arp_mask=arp_mask,
+                              pitch_phase=pitch_phase,
+                              duty_records=duty_records,
+                              log=log)
+
+
+def _arp_variant_blocks(sid: SidFile, det: Detection, entries: List[tuple],
+                        speed_table: List[tuple], splits: dict, phases: dict,
+                        lead: int, first_number: int,
+                        pitch_phases: Optional[dict],
+                        record_args: dict) -> dict:
+    """{GT instrument: {residue: copy's GT instrument}} for the per-note
+    split, appending each copy's wavetable to `entries` and returning the
+    copies' `(source, wave row)` in number order under key None.
+
+    A residue gets a copy only where `_record_wave_entries` builds it a
+    block that differs from the record's own residue built at the same
+    start; one byte-identical to an earlier copy of the same record shares
+    that copy. A block that would grow the speed table, or not fit the
+    wavetable, or a copy past `PAST_REST_VARIANT_LAST`, is not made -- the
+    residue plays the record itself, as every note did before.
+    """
+    variant_of: dict = {}
+    made: List[tuple] = []
+    for gt, residues in splits.items():
+        i = gt - lead - 1
+        own = phases[gt]
+        copies: List[tuple] = []          # (residue, number, wave row)
+        for res in residues:
+            start = len(entries) + 1
+            budget = GT_MAX_TABLELEN - len(entries)
+            if budget < WAVE_ENTRIES_PER_INSTR:
+                break
+            def build(r: int) -> Optional[tuple]:
+                table = list(speed_table)
+                block = _record_wave_entries(
+                    sid, det, i, start=start, budget=budget, arp_phase=r,
+                    speed_table=table,
+                    pitch_phase=(None if pitch_phases is None
+                                 else pitch_phases.get(gt)),
+                    **record_args)
+                return None if table != speed_table else block
+            cand = build(res)
+            if cand is None or cand == build(own):
+                continue
+            same = [c for c in copies if build(c[0]) == cand]
+            if same:
+                variant_of.setdefault(gt, {})[res] = same[0][1]
+                continue
+            number = first_number + len(made)
+            if number > PAST_REST_VARIANT_LAST:
+                break
+            cand = _share_loop_tail(cand, start, entries)
+            if len(entries) + len(cand[0]) > GT_MAX_TABLELEN:
+                continue
+            entries += list(zip(cand[0], cand[1]))
+            made.append((gt, start))
+            copies.append((res, number, start))
+            variant_of.setdefault(gt, {})[res] = number
+    variant_of[None] = made
+    return variant_of
+
+
+def _share_loop_tail(block: tuple, start: int, entries: List[tuple]) -> tuple:
+    """`block` (laid at 1-based `start`) with its closing loop replaced by a
+    jump into an identical closed loop already in `entries`, where there is
+    one; otherwise `block` unchanged.
+
+    A duty copy differs from its record only in the frames before the
+    cycle settles -- Game_Killer's residues 1, 3, 5 and 7 all end on the
+    same `09/0c 0f/80 x4 05/00 FF` loop -- and the table is 255 rows. A
+    wavetable jump costs no call (gplay.c:707-711: the `$FF` is resolved
+    in the same step that advanced onto it), so jumping into the other
+    loop is the same program. The loop must not be the whole block: a
+    block's first row is executed before any jump is.
+    """
+    left, right = block
+    if not left or left[-1] != 0xFF:
+        return block
+    j = right[-1] - start
+    if not 1 <= j < len(left) - 1:
+        return block
+    body = list(zip(left[j:-1], right[j:-1]))
+    if any(l == 0xFF for l, _ in body):
+        return block
+    n = len(body)
+    for q in range(len(entries) - n):
+        if entries[q:q + n] == body and entries[q + n] == (0xFF, q + 1):
+            return list(left[:j]) + [0xFF], list(right[:j]) + [q + 1]
+    return block
 
 
 def _write_wavetable(out: bytearray, sid: SidFile, det: Detection,
@@ -7519,13 +8209,16 @@ class PulsePhaseSim:
     (Game_Killer voice 0: GT 3 and GT 8), and the player image's cells are
     the tune's opening state, which init does not clear (Game_Killer $0C78 =
     1, voice 0 opens descending; 5_Title_Tunes voice 2 opens descending with
-    its counter at 1). This sim keeps both per record from (+1, 0), which
-    is what holds Game_Killer at 393/570 on the right clock; carried per
-    voice from the image it reaches 570/570, and 5_Title_Tunes voice 2
-    192/192 once PULSE_PHASE_PREROLL is the 3 ticks before its first fetch
-    rather than the 7 that were fitted to the (+1, 0) start. Those two
-    changes live in the walk (patterns.collect_pulse_phases) and its seam
-    in convert.py, not here.
+    its counter at 1). A fresh sim starts at (+1, 0); the WALK carries
+    `direction` and `_dcnt` per voice from sim to sim and seeds the first
+    from the image (patterns.collect_pulse_phases `voice_seeds`, convert.py
+    `_triangle_start`, `pulse_tri_voice_seeds`), and prerolls the ticks
+    before the first fetch (`preroll`, `fixed_arp_first_fetch`). Measured
+    against the py65-emulated originals' first-pass fetch widths
+    (C:/t/triangle-voice-seeds/fixwalk_first.txt, 9000 frames): Game_Killer
+    393/570 per record -> 570/570 per voice; 5_Title_Tunes voice 2 96/192
+    -> 192/192 (all three voices 352/448 -> 448/448); Rasputin 269/269 and
+    One_Man_and_his_Droid 758/758 (60000 frames) unchanged.
     """
 
     # What `patterns.collect_pulse_phases` asks a sim about itself: whether
@@ -7756,8 +8449,66 @@ def pulse_phase_sims(sid: SidFile, det: Detection,
     return out
 
 
+def pulse_tri_counter_seed(cell: int) -> int:
+    """The sim's `_dcnt` for a counter cell holding `cell`.
+
+    The player's test is `DEC cnt,X / BPL skip`: a cell of 1..$80 counts that
+    many ticks before the step (the DEC leaves 0..$7F, BPL taken), and 0 or
+    $81..$FF steps on the very next tick (the DEC leaves $FF..$80). The sim
+    decrements then steps on a negative value, so the first maps to itself
+    and the second to 0 -- not to `cell - 256`, which would call $80 an
+    immediate step where the player waits 128 ticks.
+    """
+    return cell if 0 < cell <= 0x80 else 0
+
+
+def pulse_tri_voice_seeds(sid: SidFile, det: Detection) -> list | None:
+    """[(direction, counter)] per voice, the triangle sweep's opening state.
+
+    Read from the player image's per-voice cells (`detect.
+    _find_pulse_tri_cells`), which neither init nor any code outside the
+    sweep writes: a direction byte of 0 is ascending (`LDA dir,X / BNE
+    down`), anything else descending; the counter through
+    `pulse_tri_counter_seed`. None where the cells were not read, and the
+    walk then keeps each record's own (+1, 0) start.
+    """
+    if det.pulse_tri_dir < 0 or det.pulse_tri_cnt < 0:
+        return None
+    d = sid.data
+    return [(-1 if d[det.pulse_tri_dir + v] else +1,
+             pulse_tri_counter_seed(d[det.pulse_tri_cnt + v]))
+            for v in range(3)]
+
+
+def _tri_orbit_bounds(width: int, step: int, lo: int, hi: int) -> tuple:
+    """(bottom, top): the lowest and highest widths the triangle sweep STORES
+    once it is turning, for a record seeded at `width` -- read off
+    `PulsePhaseSim` itself, so the table's legs and the walk's phases cannot
+    disagree about where the sweep turns.
+
+    Not the routine's nibbles. The player turns on the first width whose
+    high nibble reaches the bound and stores it (`CMP #$0E` / `CMP #$08`,
+    the at-bound value kept), so the top is the first lattice point at or
+    past `hi << 8` and the bottom the first at or below `(lo << 8) + $FF`:
+    Game_Killer's GT 3/GT 8 (step $E0, bounds 8/E) orbit $8E0..$E20, where
+    `hi_v` = $E00 and `lo_v` = $800; 5_Title_Tunes' step $40 turns at $8C0.
+    The delay only spaces the steps and cannot move the orbit, so the sim
+    runs at delay 1 for enough ticks to finish its first leg, and the next
+    stretch -- longer than a whole cycle -- is read.
+    """
+    sim = PulsePhaseSim(width, step, 1, lo, hi)
+    n = 2 * (0x1000 // max(1, step) + 2)
+    sim.advance(n)
+    seen = []
+    for _ in range(n):
+        sim.advance(1)
+        seen.append(sim.width)
+    return min(seen), max(seen)
+
+
 def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
-                        multiplier: int) -> tuple | None:
+                        multiplier: int,
+                        calls_per_tick=None) -> tuple | None:
     """(width, GT speed, lo_v, hi_v, wrap) of record `i`'s sweep for the
     phase table, whichever engine the file carries, or None where it does not
     sweep. `wrap` says whether distances cross $FFF (the bounds engine) or
@@ -7767,9 +8518,25 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
     the triangle's step and delay are packed into +6 and its bounds are the
     routine's constants; the bounds engine's rate is the whole
     `pulse_rate_field` byte and its bounds are the record's own nibbles.
-    Each speed is the one that engine's static program already emits
-    (`_pulse_tri_program`, `_pulse_program`), so a note that gets no command
-    sweeps at the same rate as one that does.
+
+    **The triangle engine's `lo_v`/`hi_v` are its ORBIT, not its nibbles**
+    (`_tri_orbit_bounds`): the legs ramp to where the sweep actually turns
+    and stores ($E20 on Game_Killer, where `hi_v` = $E00 left a leg from
+    $D40 topping out at $DEF and bucket 14 never sounding one frame after
+    an attack), and so does the shared loop.
+
+    **And its speed divides per ENGINE TICK** where `calls_per_tick` is
+    given: the sweep steps `step` every `delay` engine ticks (PulsePhaseSim),
+    and a tick is `calls_per_tick` of our calls -- convert.py's
+    `_triangle_calls_per_tick`, `tempo / ticks_per_row`, the walk's own
+    clock. That differs from `multiplier` only where an outer gate skips
+    frames: Game_Killer 10 calls a tick at -S9 (its play entry skips one
+    frame in ten), so $E0 a tick is 22 a call, not the 25 dividing per frame
+    gave; Rasputin 3 at -S2 under its `$FE 02` opening. None keeps the
+    per-frame division, which is the static program's
+    (`_pulse_tri_program`) -- so on those files a note that gets no command
+    still sweeps at the static program's rate. The bounds engine's speed is
+    `_pulse_program`'s and ignores `calls_per_tick`.
     """
     d = sid.data
     if det.pulse_tri_hi >= 0:
@@ -7779,9 +8546,14 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
         step = d[rec + 6] & 0xE0
         delay = (d[rec + 6] & 0x1F) + 1
         width = ((d[rec + 1] & 0x0F) << 8) | d[rec]
+        per_tick = calls_per_tick if calls_per_tick else max(1, multiplier)
         speed = min(GT_MAX_PULSE_SPEED,
-                    max(1, round(step / (delay * max(1, multiplier)))))
-        return width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8, False
+                    max(1, round(step / (delay * per_tick))))
+        if step == 0:
+            return width, speed, det.pulse_tri_lo << 8, det.pulse_tri_hi << 8, False
+        bottom, top = _tri_orbit_bounds(width, step, det.pulse_tri_lo,
+                                        det.pulse_tri_hi)
+        return width, speed, bottom, top, False
     rec = _bounds_record(sid, det, i)
     if rec is None:
         return None
@@ -7793,7 +8565,8 @@ def _phase_sweep_params(sid: SidFile, det: Detection, i: int,
 def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
                             pulse: bool, multiplier: int,
                             phases: dict, log=None,
-                            lead: int = 1) -> tuple | None:
+                            lead: int = 1,
+                            calls_per_tick=None) -> tuple | None:
     """The whole pulse table with phase entry points, or None if NOTHING
     survives the table budget.
 
@@ -7822,12 +8595,16 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
 
     What the packed player makes of these entries, walked with player.s
     (`mt_pulseexec`): the SET sounds on the note's attack call, the ramp
-    starts on the next call, and the triangle legs stop at `hi_v`/`lo_v`
-    -- where the original turns on the first width whose nibble reaches
-    the bound ($E20 on Game_Killer, past `hi_v` = $E00) and holds it for
-    a tick. On Game_Killer the plan arrives intact and bucket 14
-    never shows one frame after an attack; `patterns.collect_pulse_phases`
-    has the measurement.
+    starts on the next call, and the triangle legs stop at the sweep's
+    ORBIT (`_phase_sweep_params`: the first width whose nibble reaches the
+    bound, $E20 on Game_Killer) at a speed divided per engine tick
+    (`calls_per_tick`). Until task triangle-table-rate-and-first-step-under-
+    an-outer-gate the legs stopped at `hi_v`/`lo_v` ($E00/$800) at 25 a
+    call, a leg from $D40 topped out at $DEF, and Game_Killer's packed
+    trace never read bucket 14 one frame after an attack where the
+    original reads it 55 times in 180 s; `tests/test_pulse_phase.py`'s
+    `test_the_triangle_table_legs_reach_the_orbit_top_at_the_tick_rate`
+    has the re-measurement.
     """
     entries: List[tuple] = [(0x80, 0x00), (0xFF, 0x00)]
     starts = [1] * lead
@@ -7837,7 +8614,8 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
     for i in range(max(instr_used - lead, 0)):
         num = i + 1 + lead
         want = phases.get(num)
-        params = _phase_sweep_params(sid, det, i, multiplier) if want else None
+        params = (_phase_sweep_params(sid, det, i, multiplier, calls_per_tick)
+                  if want else None)
         if not want or params is None:
             # Not phase-tracked (no plan, or a record that does not sweep
             # under either engine): the ordinary --pulse-phase block.
@@ -7861,8 +8639,8 @@ def build_pulse_phase_table(sid: SidFile, det: Detection, instr_used: int,
         attempted += 1
         width, speed, lo_v, hi_v, wrap = params
         # The triangle engine's distances are clamped at zero, as they always
-        # were here (its sim stores an at-bound value a step PAST the bound,
-        # and a clamp is what keeps that phase's ramp empty). The bounds
+        # were here; its lo_v/hi_v are the orbit's own turning widths, so a
+        # phase stored at the bound has an empty ramp and joins the loop. The bounds
         # engine's are taken modulo $1000, because its sweep crosses $FFF
         # rather than clamping (`_pulse_triangle_wrapped`).
         def dist(a: int, b: int) -> int:
@@ -8885,6 +9663,217 @@ def _past_rest_variants(sid: SidFile, det: Detection,
     return out, variants
 
 
+# Legato restarts for tied rows on a DUTY record (Chimera subtune 0).
+#
+# A tie is `CMD_TONEPORTA 0` (patterns._build_raw_pattern), and under it the
+# packed player rewrites the pattern's note on every call the wavetable fires
+# no note: player.s `mt_waveexec` -> a delay entry -> `mt_wavedone` ->
+# `mt_effect_3` -> `mt_effect_3_found` -> `mt_wavenoteabs` (gplay.c's tone
+# portamento case likewise sets `freq = targetfreq` whenever the wavetable
+# leaves the frequency alone). `fixed_arp_duty_entries` holds each octave
+# state on DELAY entries, so under a tie the octave sounds on the one call
+# that fires it and the base on every other: Chimera's `$07` duty, up seven
+# frames of eight in the original, sounded up one in eight on voice 1's
+# `$0060` tie runs (2763 -> 1143 reversals at 180 s, subtune 0).
+#
+# Goattracker's own legato is the other spelling of "a new pitch and no
+# attack": HR/gatetimer bit `$40` skips the gate-off and the hard restart at
+# the fetch (player.s `mt_normalnote` -> `mt_nohr_legato` -> `mt_rest`), and
+# a firstwave of `$00` writes no waveform and leaves the gate alone
+# (`mt_newnoteinit` `beq mt_skipwave`); a pulse or filter pointer of `$00`
+# leaves those programs running (readme.txt 3.3, "Instrument legato"). The
+# wave pointer IS reloaded -- which is the point: the tied note gets a duty
+# program of its own, unrolled from ITS row's counter residue by the same
+# `fixed_arp_duty_entries` the attacked notes use. The residue is per note
+# and the variant is per (record, residue), so each tied row names the
+# variant its own residue calls for. The residue's block is shared across
+# records, with every waveform byte turned into `$00` ("no wave change");
+# each variant enters it through a two-entry prefix that writes its record's
+# sustained waveform (`tail`) WITH THE GATE BIT on frame 0 and jumps past
+# the block's own frame-0 entry (a jump costs no call). The waveform is
+# owed: a tied row can follow an attack too short for the record's program
+# to have reached it -- Chimera's `$0060` notes are one 3-frame row, so a
+# tie run restarted from a waveform-less block held the attack's noise tick
+# throughout (`wave` 0.923 -> 0.716 on the row). The gate is owed too: a
+# tie is a note whose gate the original never closed, and a drum record's
+# tail releases it -- One_Man_and_his_Droid's voice 0 went silent for 64
+# frames of a tie run the original sounds `$41` across.
+#
+# A GTS2 file needs no flag for it: gsong.c's pre-GTS5 import sets bit `$40`
+# on every record whose firstwave is `$00`.
+#
+# **-S1 only.** gt2reloc classifies a record by the instrument ORDER it
+# packs -- with HR, no HR, legato (player.s `mt_normalnote`, `cmp
+# #FIRSTLEGATOINSTR`) -- and maps the records at greloc.c:366 BEFORE its
+# multispeed block bumps the counts (`if (multiplier > 1) { ... numlegato++;
+# numnohr++; }`), so FIRSTLEGATOINSTR (greloc.c:1134) lands one past the
+# first legato record, and that record gets the no-HR gate-off. Measured
+# before this guard: One_Man_and_his_Droid at -S2, its one variant gated off
+# 64 frames of a tie run the original sounds `$41` across (`gate` 0.411 ->
+# 0.409), and Master_of_Magic the same 64.
+LEGATO_FIRSTWAVE = 0x00
+LEGATO_GATETIMER_BIT = 0x40
+
+
+def _duty_tie_sites(sid: SidFile, det: Detection, tracks: List[List[int]],
+                    patterns: List[List[int]]) -> Optional[dict]:
+    """{(pattern, row offset): [(instrument, residue), ...]} for every play of
+    every tied row (`CMD_TONEPORTA 0` on a note), walked as `_note_rows`
+    walks -- the instrument column sticky, `row` the orderlist's row index --
+    with the counter residue `fixed_arp_phases` gives the row. None where the
+    counter, the first fetch or the row clock cannot be read."""
+    base = fixed_arp_counter_base(sid, det)
+    first = fixed_arp_first_fetch(sid, det)
+    mask = fixed_arp_mask(sid, det)
+    speeds = find_song_speeds(sid, det)
+    if base is None or first is None or mask is None or speeds is None:
+        return None
+    period = fixed_arp_period(mask[0])
+    sites: dict = {}
+    for ti, track in enumerate(tracks):
+        frames = speeds.frames_for(ti // 3)
+        if frames is None:
+            continue
+        row, current, repeat, operand = 0, 0, 1, False
+        for b in track:
+            if operand:
+                operand = False
+                continue
+            if b == 0xFF:
+                operand = True
+                continue
+            if 0xE0 <= b < 0xFF:
+                continue
+            if 0xD0 <= b < 0xE0:
+                repeat = b - 0xD0 + 1
+                continue
+            if b >= len(patterns):
+                continue
+            pat = patterns[b]
+            for _ in range(repeat):
+                for r in range(0, len(pat) - len(pat) % 4, 4):
+                    if pat[r] == 0xFF:
+                        break
+                    if pat[r + 1]:
+                        current = pat[r + 1]
+                    if (current and GT_FIRST_NOTE <= pat[r] <= GT_LAST_NOTE
+                            and pat[r + 2] == CMD_TONEPORTA
+                            and pat[r + 3] == 0):
+                        sites.setdefault((b, r), []).append(
+                            (current, (base + first + row * frames) % period))
+                    row += 1
+            repeat = 1
+    return sites
+
+
+def _legato_duty_ties(sid: SidFile, det: Detection, tracks: List[List[int]],
+                      patterns: List[List[int]], entries: List[tuple],
+                      duty: dict, first_free: int, multiplier: int = 1,
+                      gate_skip: Optional[int] = None,
+                      written: Set[int] = frozenset(), log=None) -> tuple:
+    """Re-spell each tied row on a duty record as a legato restart.
+
+    Returns `(patterns, variants)`, `variants` a list of `(source GT
+    instrument, wave row)` in variant-number order from `first_free`;
+    `duty` is `{GT instrument: its sustained waveform}` for every record
+    `fixed_arp_duty_entries` laid out; `entries` grows in place by one
+    pitch-only block per residue and one prefix per (waveform, residue). See the
+    comment above `LEGATO_FIRSTWAVE` for the mechanism, and for why nothing
+    moves above -S1. A row keeps its tie where:
+
+    * its instrument differs between the plays of its pattern (a column-less
+      row inherits the previous pattern's), or is not a duty record;
+    * it is its pattern's last row -- the row after it is where the source
+      is latched again (its own column, or the source written into an empty
+      one: the instrument it already had, so the rest of the pattern plays
+      as before), and a pattern cannot say what follows it;
+    * the instrument slots or the table have no room (logged).
+
+    The residue of a row several plays reach differently is the most
+    frequent, the lower on a tie.
+    """
+    if not duty or multiplier != 1:
+        return patterns, []
+    sites = _duty_tie_sites(sid, det, tracks, patterns)
+    mask = fixed_arp_mask(sid, det)
+    if not sites or mask is None:
+        return patterns, []
+    period = fixed_arp_period(mask[0])
+    chosen: dict = {}                    # (pattern, row) -> (source, residue)
+    weight: Counter = Counter()
+    for (b, r), plays in sites.items():
+        sources = {s for s, _ in plays}
+        if len(sources) != 1:
+            continue
+        src = sources.pop()
+        pat = patterns[b]
+        nxt = r + 4
+        if (src not in duty or nxt + 4 > len(pat) - len(pat) % 4
+                or pat[nxt] == 0xFF):
+            continue
+        counts = Counter(res for _, res in plays)
+        residue = max(range(period), key=lambda c: (counts[c], -c))
+        chosen[b, r] = (src, residue)
+        weight[src, residue] += len(plays)
+    number: dict = {}
+    blocks: dict = {}
+    prefixes: dict = {}
+    variants: List[tuple] = []
+    short: Counter = Counter()
+    arp_rel = _arp_relative(det.arp_fixed_up, det.arp_fixed_up)
+    calls = _gate_calls(multiplier, gate_skip)
+    for (src, residue), _ in sorted(weight.items(),
+                                    key=lambda kv: (-kv[1], kv[0])):
+        if first_free + len(variants) > PAST_REST_VARIANT_LAST:
+            short["no instrument slot"] += 1
+            continue
+        key = (residue, src in written)
+        if key not in blocks:
+            start = len(entries) + 1
+            made = fixed_arp_duty_entries(
+                0x41, 0x41, mask[0], mask[1], residue, arp_rel, calls, start,
+                GT_MAX_TABLELEN - len(entries) - 2, written=key[1])
+            if made is None:
+                short["no wavetable room"] += 1
+                continue
+            left = [0x00 if 0x10 <= x < WAVE_JUMP else x for x in made[0]]
+            entries += list(zip(left, made[1]))
+            blocks[key] = start
+        pkey = (duty[src],) + key
+        if pkey not in prefixes:
+            if len(entries) + 2 > GT_MAX_TABLELEN:
+                short["no wavetable room"] += 1
+                continue
+            prefixes[pkey] = len(entries) + 1
+            entries += [(duty[src] | WAVE_GATE_BIT,
+                         entries[blocks[key] - 1][1]),
+                        (WAVE_JUMP, (blocks[key] + 1) & 0xFF)]
+        number[src, residue] = first_free + len(variants)
+        variants.append((src, prefixes[pkey]))
+    out = []
+    moved = 0
+    for b, pattern in enumerate(patterns):
+        rows = None
+        for r in range(0, len(pattern) - len(pattern) % 4, 4):
+            pick = chosen.get((b, r))
+            if pick is None or pick not in number:
+                continue
+            if rows is None:
+                rows = list(pattern)
+            rows[r + 1] = number[pick]
+            rows[r + 2] = rows[r + 3] = 0
+            if not rows[r + 5] and (b, r + 4) not in chosen:
+                rows[r + 5] = pick[0]    # latch the source again
+            moved += 1
+        out.append(pattern if rows is None else rows)
+    if log is not None and (moved or short):
+        log(f"Legato duty ties........: {moved} tied row(s) restarted on "
+            f"{len(variants)} legato variant(s), {len(blocks)} duty "
+            f"block(s)" + "".join(f"; {n} (record, residue) pair(s) kept "
+                                  f"tied: {why}" for why, n in short.items()))
+    return out, variants
+
+
 def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
               patterns: List[List[int]], log=None,
               fmt: str = DEFAULT_FORMAT,
@@ -8928,10 +9917,9 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # with the number of tracks that follow or the file is unreadable. Identical
     # to sid.subtunes whenever nothing was trimmed.
     out.append((len(tracks) // 3) & 0xFF)
-
-    for track in tracks:
-        out.append((len(track) - 1) & 0xFF)
-        out += bytes(track)
+    # The orderlists are written below, once the per-note split
+    # (`_split_arp_orderlists`) has had its chance to rewrite them; nothing
+    # between here and there writes to `out`.
 
     lead = 0 if compact_instruments else 1
     instr_used = _instruments_used(det, log, lead)
@@ -9006,16 +9994,18 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
     # shape and `ticked_arp_entries` above it read the same residue.
     arp_phases = (fixed_arp_phases(sid, det, tracks, patterns)
                   if effects and det.arp_fixed_up else None)
-    # Effect bit $10's global phase per instrument, the same walk -- only
-    # where the player divides its phase step (`frames_per_step > 1`,
-    # Food_Feud alone in the corpus), which is the one population it was
-    # measured on; see the block above `PITCH_SEQ_CLOCK`.
+    phase_patterns = patterns
+    # Effect bit $10's global phase per instrument, the same walk -- where
+    # the row clock's start can be read out of the init
+    # (`pitch_seq_new_song_calls`; the walk is empty elsewhere), divider or
+    # not. Until v0.5.494 this asked `frames_per_step > 1`, i.e. Food_Feud
+    # alone, because the start had been measured on its init only.
     pitch_phases = (pitch_seq_phases(sid, det, tracks, patterns)
                     if (pitch_seq and fmt == FORMAT_GTS5
-                        and det.pitch_seq is not None
-                        and det.pitch_seq.frames_per_step > 1) else None)
+                        and det.pitch_seq is not None) else None)
     # Before the records, because each one carries the wavetable step it
     # starts on -- and those starts are no longer a stride.
+    duty_records: dict = {}
     wave_entries, wave_starts, arp_starts = _wavetable_layout(
         sid, det, instr_used, effects,
         fmt, table, multiplier,
@@ -9027,16 +10017,68 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         voice_two_stage,
         instr_voices, gate_skip,
         real_firstwave_instruments, arps,
-        arp_phases=arp_phases, pitch_phases=pitch_phases)
+        arp_phases=arp_phases, pitch_phases=pitch_phases,
+        duty_records=duty_records, log=log)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     # After the layout, because the question is about the programs it built;
     # the variants' blocks go on the end of the table so no start moves.
     patterns, rest_variants = _past_rest_variants(
         sid, det, patterns, wave_entries, wave_starts, instr_used, lead, log)
+    # After the rest variants, whose numbers it follows; its blocks go on the
+    # end of the table too. Tracks, not patterns, are what the residue walks.
+    patterns, legato_variants = _legato_duty_ties(
+        sid, det, tracks, patterns, wave_entries,
+        {i + lead + 1: tail for i, tail in duty_records.items()},
+        instr_used + len(rest_variants) + 1, multiplier, gate_skip,
+        {g for g in range(1, instr_used + 1)
+         if no_test_restart or g in real_firstwave_instruments}, log)
+    # The per-note split (METHOD 7.bbbbbb, the block above
+    # `ARP_SPLIT_RATIO`): a copy of each record per minority residue, its
+    # wavetable on the end of the table so no start moves, and the notes
+    # renamed per occurrence. Behind the same gate as `arp_phases`; numbered
+    # after the rest and legato variants.
+    arp_variants: List[tuple] = []
+    if arp_phases:
+        splits = fixed_arp_splits(sid, det, tracks, phase_patterns, arp_phases)
+        clock = _fixed_arp_clock(sid, det, tracks)
+        if splits and clock is not None:
+            arp_first = instr_used + len(rest_variants) + len(legato_variants) + 1
+            mark = len(wave_entries)
+            variant_of = _arp_variant_blocks(
+                sid, det, wave_entries, table, splits, arp_phases, lead,
+                arp_first, pitch_phases,
+                dict(effects=effects, fmt=fmt, multiplier=multiplier,
+                     min_notes=min_notes, lead=lead, two_stage=two_stage,
+                     sfx_drum=sfx_drum, wave_program=wave_program,
+                     pitch_seq=pitch_seq, note_rows=note_rows,
+                     row_calls=row_calls, no_test_restart=no_test_restart,
+                     voice_two_stage=voice_two_stage,
+                     instr_voices=instr_voices, gate_skip=gate_skip,
+                     real_firstwave_instruments=real_firstwave_instruments,
+                     arp_mask=clock[2]))
+            made = variant_of.pop(None)
+            split = (_split_arp_orderlists(tracks, patterns, clock, variant_of)
+                     if made else None)
+            if split is None:
+                del wave_entries[mark:]
+                if made and log:
+                    log(f"*** PER-NOTE ARP SPLIT DECLINED: {len(made)} "
+                        f"cop(y/ies) would not fit ***")
+            else:
+                tracks, patterns, renamed = split
+                arp_variants = made
+                if log:
+                    log(f"Per-note arp split......: {renamed} row(s) on "
+                        f"{len(made)} instrument cop(y/ies) "
+                        + ", ".join(f"${arp_first + k:X} (of ${s:X})"
+                                    for k, (s, _) in enumerate(made)))
     if pulse_plan is not None:
         # Last, after every pass that writes a command column: the packed
         # size is a property of the finished rows and nothing else.
         patterns = budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)
+    for track in tracks:
+        out.append((len(track) - 1) & 0xFF)
+        out += bytes(track)
     records_at = len(out)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
@@ -9062,6 +10104,31 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
             rec[8] = FIRSTWAVE_TESTBIT
             out += rec
         instr_used += len(rest_variants)
+        out[records_at] = instr_used
+    if legato_variants:
+        # The source's record with the legato fields (`LEGATO_FIRSTWAVE`):
+        # its own wave pointer, gatetimer bit $40, firstwave $00, and no
+        # pulse or filter pointer, so neither program restarts.
+        for src, wave_ptr in legato_variants:
+            at = records_at + 1 + (src - 1) * 25
+            rec = bytearray(out[at:at + 25])
+            rec[2] = wave_ptr & 0xFF
+            rec[3] = rec[4] = 0
+            rec[7] |= LEGATO_GATETIMER_BIT
+            rec[8] = LEGATO_FIRSTWAVE
+            out += rec
+        instr_used += len(legato_variants)
+        out[records_at] = instr_used
+    if arp_variants:
+        # Each copy is its source's record as written, with its own wave
+        # pointer and nothing else changed -- the firstwave included: the
+        # copy's block was built under the same `written` decision.
+        for src, wave_ptr in arp_variants:
+            at = records_at + 1 + (src - 1) * 25
+            rec = bytearray(out[at:at + 25])
+            rec[2] = wave_ptr & 0xFF
+            out += rec
+        instr_used += len(arp_variants)
         out[records_at] = instr_used
     _write_wavetable(out, sid, det, instr_used, effects, fmt, table, multiplier,
                      min_notes, lead=lead, entries=wave_entries)

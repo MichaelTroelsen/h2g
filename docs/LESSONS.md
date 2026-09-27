@@ -2435,6 +2435,31 @@ collision" and keyed on either count would report a different verdict
 depending only on which regex it used, on the same file, unchanged. See
 CLAUDE.md's "Documenting a naming collision creates one" bullet for the rule.
 
+## A retraction that deletes its own words un-retracts on the next grep
+
+**HISTORICAL, measured on branch `runqueue-h2g-2026-09-25` (working tree,
+uncommitted), 2026-09-27:** `convert.py`'s `collect_pulse_phases` call carried
+a comment placing the triangle sweep's DEC/BPL counter "inside the multispeed
+core that entry runs `multiplier` times" — the same claim `goatwriter.py`'s
+`PulsePhaseSim` docstring and `patterns.py`'s `collect_pulse_phases` retract by
+name, quoting it, at c24fdc9. A concurrent edit in the same drain
+(`triangle-walk-on-engine-ticks`) rewrote that block of `convert.py` to state
+the corrected mechanism (`ticks_per_row`, the player's inner-gate reload), but
+did so by *deleting* the old wording rather than quoting and retracting it —
+so `grep -i "multispeed core" python/h2g/convert.py` read 0 lines, same as a
+file that had never carried the wrong claim. Per CLAUDE.md's "grep returning 0
+is evidence about the counter, not about the file" and "a grep for a retracted
+sentence is the structural case": this repo's retraction convention requires
+the wrong wording to be quoted at the point it is corrected, precisely so a
+grep for it lands on the retraction — a silent deletion produces the same
+zero-hit reading as the defect never having existed, which is indistinguishable
+from having fixed the *documentation* (as opposed to having also fixed the
+mechanism, which this drain had, in goatwriter.py and patterns.py, since
+c24fdc9). The repair added a comment to `convert.py` quoting the retracted
+phrase verbatim and pointing at `goatwriter.PulsePhaseSim` and
+`patterns.collect_pulse_phases` as the landed retraction. See CLAUDE.md's "A
+grep for a retracted sentence is the structural case" bullet for the rule.
+
 ## The player sources are not in the repo
 
 **HISTORICAL, measured at 5a2fa2d (v0.5.479) and again this session at

@@ -261,6 +261,14 @@ class Detection:
     pulse_tri_lo: int = -1
     pulse_tri_hi: int = -1
     pulse_tri_gated: bool = False
+    # The triangle sweep's per-VOICE state -- see _find_pulse_tri_cells():
+    # file offsets of the three-byte direction array (`LDA dir,X` /
+    # `INC dir,X`, 0 ascending) and delay-counter array (`DEC cnt,X` /
+    # `STA cnt,X`), X the voice. -1 where the triangle is not found or its
+    # operands disagree. The width is per RECORD (`ADC record,Y`); these two
+    # are not, and their bytes in the image are the tune's opening state.
+    pulse_tri_dir: int = -1
+    pulse_tri_cnt: int = -1
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -1842,6 +1850,8 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     if det.pulse_bounds < 0:
         (det.pulse_tri_lo, det.pulse_tri_hi,
          det.pulse_tri_gated) = _find_pulse_tri(sid, det)
+        if det.pulse_tri_hi >= 0:
+            det.pulse_tri_dir, det.pulse_tri_cnt = _find_pulse_tri_cells(sid)
         if det.pulse_tri_hi >= 0:
             log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
                 f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
@@ -4280,6 +4290,51 @@ def _find_pulse_tri(sid: SidFile, det: Detection) -> tuple[int, int, bool]:
                 and k + 4 + d[k + 3] == entry
                 for k in range(max(0, off - 64), entry))
     return lo, hi, gated
+
+
+# Operand positions inside PULSE_TRI_SHAPE of the four instructions that name
+# the per-voice cells: `DEC cnt,X` (+2), `STA cnt,X` (+7), `LDA dir,X` (+18),
+# `INC dir,X` (+43). Each operand is the opcode's offset + 1.
+_TRI_CNT_DEC, _TRI_CNT_STA = 3, 8
+_TRI_DIR_LDA, _TRI_DIR_INC = 19, 44
+
+
+def _find_pulse_tri_cells(sid: SidFile) -> tuple[int, int]:
+    """(direction array, counter array) file offsets, or (-1, -1).
+
+    The sweep's own operands, read where the routine names them
+    (One_Man_and_his_Droid $124C `DEC $1507,X` / $1251 `STA $1507,X` /
+    $125C `LDA $150A,X` / $1275 `INC $150A,X`; Rasputin $C52D / $C530;
+    Game_Killer $0C75 / $0C78), and required to agree pairwise -- the
+    counter the DEC names is the one the reload stores, the direction the
+    LDA tests is the one the INC turns -- so a match on something else
+    reads nothing. Both arrays are indexed by X, the VOICE; the width
+    (`ADC record,Y`) is indexed by the record.
+
+    **Init does not write them, and neither does anything but the sweep.**
+    Measured under py65 (C:/t/triangle-voice-seeds/probe_cells.py): every
+    subtune's init plus 300 play calls, a write watch on all six cells, on
+    the 24 corpus files carrying the triangle -- no write from outside the
+    sweep block in 21 of them; Chimera, Last_V8 and Last_V8_C128_version
+    run away under py65 and are unmeasured. So the image's bytes are the
+    tune's opening direction and counter (Game_Killer voice 0 `$0C78` = 1,
+    opening DOWNWARD; 5_Title_Tunes voice 2 direction 1, counter 1).
+    """
+    off = search_file(sid.data, PULSE_TRI_SHAPE)
+    if off < 0:
+        return -1, -1
+    d = sid.data
+
+    def word(k: int) -> int:
+        return d[off + k] | (d[off + k + 1] << 8)
+
+    cnt, dirs = word(_TRI_CNT_DEC), word(_TRI_DIR_LDA)
+    if word(_TRI_CNT_STA) != cnt or word(_TRI_DIR_INC) != dirs:
+        return -1, -1
+    co, do = sid.to_offset(cnt), sid.to_offset(dirs)
+    if not (0 <= co and co + 3 <= len(d) and 0 <= do and do + 3 <= len(d)):
+        return -1, -1
+    return do, co
 
 
 # A per-instrument BYTE-CODE WAVE PROGRAM, and the most widespread instrument

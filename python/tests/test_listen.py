@@ -565,3 +565,88 @@ def test_sidplayfp_power_on_delay_is_inside_the_fixed_range():
     d = L.SIDPLAYFP_POWER_ON_DELAY
     assert isinstance(d, int) and not isinstance(d, bool)
     assert 0 <= d <= 8191, "above 8191 sidplayfp draws the delay at random"
+
+
+def test_sidplayfp_rom_paths_follow_the_ini_then_the_default_names(tmp_path):
+    """SABOTAGE TARGET: make `sidplayfp_rom_paths` ignore the ini's
+    `<Name> Rom=` entries (or its empty-value fallback) and the ROM identity
+    `sound.render_settings` folds in hashes files sidplayfp never loads.
+    sidplayfp.ini(5): an unset entry means `kernal`/`basic`/`chargen` in the
+    config dir; a key given twice takes the last."""
+    rom = tmp_path / "k.bin"
+    ini = tmp_path / "sidplayfp.ini"
+    ini.write_text(f"[SIDPlayfp]\nKernal Rom = nowhere\nKernal Rom = {rom}\n"
+                   "Basic Rom = \n[Emulation]\nChargen Rom = ignored\n",
+                   encoding="latin-1")
+    got = L.sidplayfp_rom_paths(ini)
+    assert got == {"kernal": rom, "basic": tmp_path / "basic",
+                   "chargen": tmp_path / "chargen"}, got
+    # no ini at all: every ROM at its default name beside where it would be
+    assert L.sidplayfp_rom_paths(tmp_path / "none" / "sidplayfp.ini") == {
+        n: tmp_path / "none" / n for n in ("kernal", "basic", "chargen")}
+
+
+def test_sidplayfp_fixed_argv_is_the_format_line_plus_the_delay(monkeypatch):
+    """The constant `render_sidplayfp` and `sound.render_settings` share; the
+    delay is read at call time so a changed delay is a changed line."""
+    assert L.SIDPLAYFP_FIXED_ARGV == ("-f44100", "-p16", "-m", "-fo0")
+    monkeypatch.setattr(L, "SIDPLAYFP_POWER_ON_DELAY", 17)
+    assert L.sidplayfp_fixed_argv() == (*L.SIDPLAYFP_FIXED_ARGV, "--delay=17")
+
+
+# --- the presets.json `traced_subtune` pin ---------------------------------
+#
+# The two pinned corpus files, with the pair `fidelity._measure` scores them
+# at. Neither `startSong` nor the subtune search reaches either pair, so a
+# listening pass that ignores the pin stages music no row was compared on.
+PINS = {"Commodore_64_Music_Examples.sid": (1, 0),
+        "Dragons_Lair_Part_II.sid": (0, 9)}
+
+
+def test_pair_subtunes_stages_the_pinned_pair_over_every_matched_source(tmp_path):
+    """SABOTAGE TARGET: drop the pin branch in `pair_subtunes` (or pass
+    `pinned` to neither resolver) and the pair falls back to startSong /
+    matched_subtune -- s0/o5 here, not the pinned pair."""
+    sid = tmp_path / "x.sid"
+    _make_sid(sid)
+    for pin in PINS.values():
+        assert L.pair_subtunes(sid, {"matched_subtune": 5}, "auto", 7,
+                               pinned=pin) == pin
+        assert L.pair_subtunes(sid, {}, "auto", pinned=pin) == pin
+    # an explicit -a N still wins over the pin, as in fidelity.resolve_subtune
+    assert L.pair_subtunes(sid, {}, 2, pinned=(0, 9)) == (2, 2)
+
+
+def test_main_renders_each_side_at_the_pin_presets_json_records(
+        tmp_path, monkeypatch, capsys):
+    """SABOTAGE TARGET: `main` not passing `_preset_traced_subtune(doc, name)`
+    to `pair_subtunes`. A --from-json row carrying a different
+    matched_subtune is present too, so the pin must beat it end to end."""
+    corpus = tmp_path / "corpus"
+    for name in PINS:
+        _make_sid(corpus / name)
+    songs = {n: {"traced_subtune": list(p)} for n, p in PINS.items()}
+    presets = _presets(tmp_path, songs)
+    rows = tmp_path / "fidelity.json"
+    rows.write_text(json.dumps([{"file": n, "matched_subtune": 5}
+                                for n in PINS]), encoding="utf-8")
+    _stage_stub_env(monkeypatch, tmp_path)
+    seen = {}
+
+    def fake_render(src, out, seconds, sub, mute=()):
+        Path(out).write_bytes(b"RIFFWAVE")
+        seen[Path(out).name] = sub
+        return True
+
+    monkeypatch.setattr(
+        L, "pick_renderer",
+        lambda sid, args, probe_dir=None: L.Choice(fake_render, "", "fake"))
+    outdir = tmp_path / "out"
+    rc = L.main([str(corpus), "--files", *PINS, "--from-json", str(rows),
+                 "-o", str(outdir), "--presets", presets,
+                 "--workdir", str(tmp_path / "work"), "-t", "1"])
+    assert rc == 0
+    for name, (orig, ours) in PINS.items():
+        stem = name[:-4]
+        assert seen[f"{stem}.original.wav"] == orig, (name, seen)
+        assert seen[f"{stem}.h2g.wav"] == ours, (name, seen)

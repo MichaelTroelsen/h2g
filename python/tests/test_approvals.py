@@ -557,3 +557,48 @@ def test_preset_opts_misses_is_zero_over_the_shipped_presets_songs():
     n = F.report_preset_opts_misses("approvals.py", file=buf)
     assert n == 0
     F.reset_preset_opts_misses()
+
+
+# --- the presets.json `traced_subtune` pin ---------------------------------
+
+PINS = {"Commodore_64_Music_Examples": (1, 0), "Dragons_Lair_Part_II": (0, 9)}
+
+
+def test_assess_traces_and_renders_each_side_at_the_pinned_pair(tmp_path, monkeypatch):
+    """SABOTAGE TARGET: `assess` resolving 'auto' without the pin, or tracing
+    the packed builds at the original's index. Dragons_Lair_Part_II's s0 is
+    our o9: one index for both sides compares two different pieces."""
+    from pathlib import Path
+    import fidelity as F
+    import sound
+    for stem, (orig, ours) in PINS.items():
+        sid = tmp_path / f"{stem}.sid"
+        sid.write_bytes(b"PSID" + b"\x00" * 200)       # startSong 0: not the pin
+        app = tmp_path / f"{stem}.app.sng"
+        app.write_bytes(b"APPROVED")
+        doc = {"always": {}, "songs": {f"{stem}.sid": {"traced_subtune": [orig, ours]}}}
+        traced, rendered = [], []
+        monkeypatch.setattr(F, "run_siddump",
+                            lambda p, s, sub, *a, **k: traced.append((Path(p).name, sub)) or [])
+        monkeypatch.setattr(AP, "pack_into",
+                            lambda blob, wd, tag, *a: tmp_path / f"{tag}.sid")
+        monkeypatch.setattr(AP, "_structure_of",
+                            lambda *a: {"attacks": 1, "melody": 1, "sequence": 1})
+        monkeypatch.setattr(F, "startup_lag", lambda *a: (0,))
+        monkeypatch.setattr(sound, "compare_sids",
+                            lambda a, b, s, so, su, **k: rendered.append(
+                                (Path(a).name, Path(b).name, so, su)) or {})
+        monkeypatch.setattr(AP, "inherit", lambda *a, **k: {})
+        AP.assess(stem, sid, "0" * 64, doc, 1, CAL, "gt2reloc", "siddump",
+                  tmp_path, current_sng=b"CURRENT", approved_sng=app)
+        assert traced == [(sid.name, orig), ("cur.sid", ours), ("app.sid", ours)]
+        assert rendered == [(sid.name, "app.sid", orig, ours),
+                            (sid.name, "cur.sid", orig, ours),
+                            ("app.sid", "cur.sid", ours, ours)]
+        assert AP.traced_pair(doc, sid) == (orig, ours)
+
+
+def test_traced_pair_without_a_pin_is_startsong_on_both_sides(tmp_path):
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID" + b"\x00" * 200)
+    assert AP.traced_pair({"songs": {}}, sid) == (0, 0)

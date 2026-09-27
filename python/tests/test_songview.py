@@ -95,6 +95,21 @@ def test_wave_entry_kinds():
     assert "noise" in songview.decode_wave_entry(0x81, 0x00)[1]
 
 
+def test_e0_ef_range_is_inaudible_not_a_literal_waveform_mask():
+    """readme.txt 3.4.1 / gplay.c:527: $E0-$EF writes only its low nibble to
+    $D404 (gate/sync/ring/test), selecting no waveform -- it is not the
+    noise+pulse+saw+tri mask its high bits would spell as an ordinary byte."""
+    kind, meaning, calls = songview.decode_wave_entry(0xE9, 0x00)
+    assert kind == "wave"
+    assert calls == 1
+    assert "inaudible" in meaning
+    assert "testbit" in meaning
+    assert "gate on" in meaning
+    assert "noise" not in meaning
+    assert "pulse" not in meaning
+    assert "saw" not in meaning
+
+
 def test_wave_program_walk_terminates_on_a_self_referential_jump():
     """A malformed table must not hang the viewer."""
     song = songview.Song(fmt="GTS5", name="", author="", released="",
