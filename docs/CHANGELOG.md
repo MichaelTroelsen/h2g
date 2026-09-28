@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.497 — 2026-09-28
+
+- the v0.5.495/496 doc pass, the pinned-subtune renderer probe, and snapshot-safe git tests
+
 ## 0.5.496 — 2026-09-27
 
 - After_8's composed two-stage pitch-seq block carries the $40 fixed pitch; the two-stage budget fold is the default and fold_note is gone

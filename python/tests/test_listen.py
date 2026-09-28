@@ -130,7 +130,7 @@ def _stage_stub_env(monkeypatch, tmp_path, sng_bytes=b"SNGBYTES"):
 
     monkeypatch.setattr(
         L, "pick_renderer",
-        lambda sid, args, probe_dir=None: L.Choice(fake_render, "", "fake"))
+        lambda sid, args, probe_dir=None, pinned=None: L.Choice(fake_render, "", "fake"))
     monkeypatch.setattr(L, "run_siddump", lambda *a, **k: [])
     monkeypatch.setattr(L, "trace_json", lambda *a, **k: {})
     monkeypatch.setattr(L, "listen_notes", lambda *a, **k: ["stub"])
@@ -307,7 +307,7 @@ def test_a_restage_rewrites_the_sng_with_new_options(tmp_path, monkeypatch, caps
     monkeypatch.setattr(L, "pack_sid", lambda *a, **k: packed)
     monkeypatch.setattr(
         L, "pick_renderer",
-        lambda sid, args, probe_dir=None: L.Choice(
+        lambda sid, args, probe_dir=None, pinned=None: L.Choice(
             lambda s, o, sec, sub, mute=(): Path(o).write_bytes(b"WAV1") or True,
             "", "fake"))
     monkeypatch.setattr(L, "run_siddump", lambda *a, **k: [])
@@ -330,7 +330,7 @@ def test_a_restage_rewrites_the_sng_with_new_options(tmp_path, monkeypatch, caps
     monkeypatch.setattr(L, "convert", convert_v2)
     monkeypatch.setattr(
         L, "pick_renderer",
-        lambda sid, args, probe_dir=None: L.Choice(
+        lambda sid, args, probe_dir=None, pinned=None: L.Choice(
             lambda s, o, sec, sub, mute=(): Path(o).write_bytes(b"WAV2") or True,
             "", "fake"))
 
@@ -487,7 +487,7 @@ def test_our_side_renders_for_the_traced_window_when_it_widened(
         return True
     monkeypatch.setattr(
         L, "pick_renderer",
-        lambda sid, args, probe_dir=None: L.Choice(fake_render, "", "fake"))
+        lambda sid, args, probe_dir=None, pinned=None: L.Choice(fake_render, "", "fake"))
 
     dump_calls = []
     monkeypatch.setattr(
@@ -640,7 +640,7 @@ def test_main_renders_each_side_at_the_pin_presets_json_records(
 
     monkeypatch.setattr(
         L, "pick_renderer",
-        lambda sid, args, probe_dir=None: L.Choice(fake_render, "", "fake"))
+        lambda sid, args, probe_dir=None, pinned=None: L.Choice(fake_render, "", "fake"))
     outdir = tmp_path / "out"
     rc = L.main([str(corpus), "--files", *PINS, "--from-json", str(rows),
                  "-o", str(outdir), "--presets", presets,

@@ -250,7 +250,8 @@ class Choice(NamedTuple):
     engine: str
 
 
-def pick_renderer(sid: Path, args, probe_dir: Path | None = None) -> Choice:
+def pick_renderer(sid: Path, args, probe_dir: Path | None = None,
+                  pinned: tuple[int, int] | None = None) -> Choice:
     """One renderer for both sides of a pair, and the reason for it.
 
     Chosen by trying the preferred engine on the *original* -- the harder of
@@ -263,10 +264,18 @@ def pick_renderer(sid: Path, args, probe_dir: Path | None = None) -> Choice:
     passes share, so they raced on it and one shard silently staged nothing.
     That is the same defect `make_workdir` was added for in v0.5.66, reached
     by a different route.
+
+    **`pinned` must be the same pin `pair_subtunes` resolved `sub_orig` from.**
+    Without it this probed `startSong` (or subtune 0) while the actual render
+    used the pin's subtune -- so a renderer could be chosen that reads the
+    file fine at the untraced subtune and refuses the pinned one, or the
+    reverse: a real refusal at the pinned subtune going undetected because the
+    probe subtune happened to read. Same class of defect `resolve_subtune`'s
+    own docstring warns about: `-a N` still wins over the pin.
     """
     # `--subtune auto` is per file, so the probe resolves it here rather than
     # reading a raw "auto" out of args and handing it to a `-o` switch.
-    sub = resolve_subtune(sid, getattr(args, "subtune", 0))
+    sub = resolve_subtune(sid, getattr(args, "subtune", 0), pinned)
     if Path(args.sidplayfp).exists():
         out = (probe_dir or Path(args.outdir)) / "_probe.wav"
         if render_sidplayfp(sid, out, 1, sub, args.sidplayfp):
@@ -1055,7 +1064,7 @@ def main(argv=None) -> int:
             # render, which is exactly the cost this mode exists to avoid.
             render_pair, why = (lambda *a, **k: True), ""
         else:
-            choice = pick_renderer(src, args, workdir)
+            choice = pick_renderer(src, args, workdir, pinned)
             render_pair, why = choice.render, choice.why
             engines[choice.engine] += 1
             if why:

@@ -211,12 +211,37 @@ def test_the_probe_resolves_auto_rather_than_passing_it_on(tmp_path, monkeypatch
     second to choose an engine, so it has to resolve the same way the real
     render will."""
     Path(tmp_path / "sidplayfp.exe").write_text("x")
-    monkeypatch.setattr(L, "resolve_subtune", lambda sid, req: 4)
+    monkeypatch.setattr(L, "resolve_subtune", lambda sid, req, pinned=None: 4)
     seen = []
     monkeypatch.setattr(L, "render_sidplayfp",
                         lambda s, o, sec, sub, exe=None: seen.append(sub) or True)
     L.pick_renderer(_psid(tmp_path), _args(tmp_path, subtune="auto"))
     assert seen == [4]
+
+
+def test_the_probe_reads_the_pin_not_startsong(tmp_path, monkeypatch):
+    """The probe used to resolve `--subtune auto` via `resolve_subtune`'s
+    `startSong` fallback, ignoring the pin `pair_subtunes` honours for the
+    real render -- so a renderer could be chosen against music other than
+    what the pair actually plays: `startSong` reads fine while the pinned
+    subtune refuses, or the reverse, a real refusal at the pinned subtune
+    going undetected because the probe subtune happened to read."""
+    Path(tmp_path / "sidplayfp.exe").write_text("x")
+    seen_pinned = []
+
+    def fake_resolve(sid, req, pinned=None):
+        seen_pinned.append(pinned)
+        return pinned[0] if pinned is not None else 9  # startSong stand-in
+
+    monkeypatch.setattr(L, "resolve_subtune", fake_resolve)
+    seen_sub = []
+    monkeypatch.setattr(L, "render_sidplayfp",
+                        lambda s, o, sec, sub, exe=None: seen_sub.append(sub) or True)
+    pin = (1, 0)
+    L.pick_renderer(_psid(tmp_path), _args(tmp_path, subtune="auto"),
+                    pinned=pin)
+    assert seen_pinned == [pin]
+    assert seen_sub == [1]
 
 
 def test_a_shard_states_the_policy_and_counts_nothing():

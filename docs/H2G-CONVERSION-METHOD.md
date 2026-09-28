@@ -12092,12 +12092,21 @@ cannot be found or an image byte lies outside its reload's range.
 `pitch_seq_fetch_calls` and giving every instrument the majority residue
 of its own attacks (`_majority_residues`), and `pitch_seq_frame_notes`
 reads the record's per-frame byte off that residue instead of off frame 0
-of the raw table. Applies only where `frames_per_step > 1`, which the
-corpus census still finds only on Food_Feud (`$955D`/`$955E`, an 8-call
-cycle). Forcing `pitch_seq` on now moves Food_Feud's voice-2 tie count
+of the raw table.
+
+**RETRACTED (v0.5.495, `7671ba2`, task `pitch-seq-phase-per-frame-files`):**
+this paragraph originally read "Applies only where `frames_per_step > 1`,
+which the corpus census still finds only on Food_Feud (`$955D`/`$955E`, an
+8-call cycle). Forcing `pitch_seq` on now moves Food_Feud's voice-2 tie count
 3907 -> 5239 against the original's 5139 (was 3907 before this change);
 shipped presets move no file, since Food_Feud's preset does not carry
-`pitch_seq`.
+`pitch_seq`." That was wrong about the gate: the phase walk does not need
+`frames_per_step > 1`, only `pitch_seq_new_song_calls` to read a value at
+all. `goatwriter.pitch_seq_new_song_calls` (§ below) reads the init's
+new-song count straight off the image instead of assuming it, and the phase
+now runs on every file where that count is read, `frames_per_step == 1`
+included. Under shipped presets this moves Flash_Gordon,
+Trans-Atlantic_Balloon_Challenge, W_A_R and W_A_R_Preview.
 
 **A duty record's residue is chosen by frame agreement, not by the mode.**
 `fixed_arp_phases`' existing majority vote (above) still picks each
@@ -12120,3 +12129,166 @@ original also plays on residue 2). Two populations still never reach
 (the tie rewrites the pattern's note whenever the wavetable fires nothing,
 so the undisturbed-wavetable frame count does not apply there). Under
 shipped presets this moves exactly Chimera.
+
+### 7.nnnnnn The v0.5.495/496 /runqueue drain: the triangle walk, pitch-seq's own new-song count, legato duty ties, per-note arp split, and After_8's composed fixed pitch
+
+Two commits, each a /runqueue drain verified by a corpus byte-hash of a
+working-tree snapshot against the same snapshot plus only that change, and
+again by the orchestrator's joined test runs (task ids in
+`.claude/tasks/runs.jsonl`).
+
+**The triangle pulse walk steps engine ticks, not play calls, and seeds
+direction per voice from the image (v0.5.495, `7671ba2`).** `PulsePhaseSim`
+(§ 7.eeeeee gave it its bounds) originally assumed "the original steps its
+sweep once per play call whatever the call rate" — refuted once the three
+multispeed carriers' players (One_Man_and_his_Droid, Rasputin, Game_Killer)
+were read and emulated under py65 against siddump at 1.0000 agreement: the
+sweep sits in the per-voice loop that runs once per player ENGINE tick, and
+an outer gate at the play entry skips whole ticks, so a ROW is
+`find_song_speeds(...).frames_for(subtune)` ticks, not one. The walk now
+hands the sim `frames_for(g)` ticks per row and `skip_first` on the tick
+that fetches a note (convert.py passes `calls_per_frame=1` for this engine).
+Measured against the fetch-time widths of the emulated originals: Game_Killer
+249/570 (call clock) -> 393/570 (tick clock) -> 570/570 once direction is
+also seeded (below); Rasputin 269/269 and One_Man_and_his_Droid 758/758
+unchanged. **Direction and the delay counter are carried per VOICE, seeded
+from the player image**, not fresh per record: `LDA dir,X` / `INC dir,X` /
+`DEC counter,X` index by voice, and the image's cells are the tune's opening
+state (init does not clear them) — a voice playing two sweeping records
+carries ONE direction across both. The walk now carries `direction` and the
+delay counter per voice from sim to sim and seeds the first from the image
+(`patterns.collect_pulse_phases` `voice_seeds`, `convert._triangle_start`,
+`goatwriter.pulse_tri_voice_seeds`), and prerolls the ticks before the first
+fetch (`fixed_arp_first_fetch`). Moves 5_Title_Tunes and Gerry_the_Germ
+(direction seeding), then also Commando and Zoids once the per-tick rate and
+first-step-under-an-outer-gate fix landed in the same commit (Commando.sng,
+the effects-off fixture, stays byte-exact). A companion fix
+(`triangle-max-shift-boundary`) makes the emitter decline at shift byte
+>= 15, matching the harness; moves Last_V8 and Last_V8_C128_version. Full
+mechanism and every constant: `PulsePhaseSim`'s docstring in
+`goatwriter.py`, immediately above `class PulsePhaseSim`.
+
+Retraction landed in the same commit, not by deletion: `convert.py`'s
+`collect_pulse_phases` call had carried the refuted claim that the counter
+"runs inside the multispeed core that entry runs `multiplier` times" — see
+`docs/LESSONS.md`, "A retraction that deletes its own words un-retracts on
+the next grep", for why the fix quotes the old wording at the point it
+corrects it rather than silently removing it.
+
+**Pitch-seq gets its own new-song call count read off the image, and the
+pair form's play order is the phase cell counted down (v0.5.495,
+`7671ba2`).** `goatwriter.pitch_seq_new_song_calls` reads, straight off the
+image in three parts (the play entry's new-song path, every path of init,
+and the PSID play address reaching the gate exactly once per call), the play
+calls before `PITCH_SEQ_CLOCK`'s gate first steps — see its docstring for
+the exact byte shapes it requires and the two files (Mr_Meaner, After_8)
+that decline because their inits arm a CIA 2 NMI the trace does not run.
+The phase-per-frame machinery of § 7.mmmmmm above now runs wherever this
+count is read, not only where `frames_per_step > 1` (retraction above).
+Separately, **the pair form's phase cell counts DOWN**, so its two-note
+cycle plays `0, b, a` — the table read backwards — not the `0, a, b` the
+table is written in: `DEC phase / BPL / LDA #n / STA phase` gives the cell
+2, 1, 0, 2, ... and `ADC base,Y` adds b, a, 0. Traced on the originals
+(siddump -t60): After_8's (0,5,9) plays (+9,+5) 258 times and (+5,+9)
+never; Chain_Reaction's (0,-4,-7) plays (3,7) — i.e. 0,-7,-4 — 36 times.
+The steps list is reversed whole (not `0` plus the pair swapped) so the
+modal-rotation reduction still lands on the bytes it had for (0,x,0) and
+(0,x,x) cycles. Moves 12 files: After_8, Chain_Reaction, Lightforce,
+Mr_Meaner, Nineteen, Pandora, Rock_Tells_the_Tale, Saboteur_II,
+Shockway_Rider, Star_Paws, W_A_R_Preview and Zoolook (no fidelity A/B taken
+yet as of this commit). A third, `pitch-seq-divider-s1-rotation`, keys the
+`-S1` rotation on calls-per-step rather than a hand-picked constant; no
+shipped file moves. Code: `goatwriter.pitch_seq_new_song_calls`,
+`goatwriter._pitch_seq_phase_step`, and the reversal at the pair-form branch
+in `goatwriter.py` (the `_pitch_seq_phase_step(sid) is not None` arm, just
+above `steps.reverse()`).
+
+**A legato tie's duty program is unrolled from its OWN row's counter
+residue, and gt2reloc's FIRSTLEGATOINSTR only classifies at -S1 (v0.5.495,
+`7671ba2`).** § 7.hhhhhh's fixed-arp duty mechanism reloads the wave pointer
+on a tied note (`CMD_TONEPORTA` on a note) — the tied note gets a duty
+program of its own, unrolled by the same `fixed_arp_duty_entries` the
+attacked notes use, from a variant block shared across records with every
+waveform byte turned into `$00` and entered through a two-entry prefix that
+writes the record's sustained waveform WITH THE GATE BIT on frame 0.
+Constants: `LEGATO_FIRSTWAVE = 0x00`, `LEGATO_GATETIMER_BIT = 0x40`. Chimera's
+`$0060` notes are one 3-frame row, so a tie run restarted from a
+waveform-less block held the attack's noise tick throughout (`wave` 0.923 ->
+0.716 on the row); One_Man_and_his_Droid's voice 0 went silent for 64 frames
+of a tie run the original sounds `$41` across, because the block owed the
+gate too. **This is -S1 only**: gt2reloc classifies a record by the
+instrument order it packs (HR / no-HR / legato, player.s `mt_normalnote`,
+`cmp #FIRSTLEGATOINSTR`) BEFORE its multispeed block bumps the counts (`if
+(multiplier > 1) { ... numlegato++; numnohr++; }`), so `FIRSTLEGATOINSTR`
+(greloc.c:1134) lands one past the first legato record only at `-S1`, and
+that record gets the no-HR gate-off at any other speed. Site enumeration:
+`goatwriter._duty_tie_sites`. The companion task,
+`chimera-and-game-killer-duty-reversals-fall-under-one`, restarts Chimera's
+duty tie rows on legato variants at -S1 only; moves Chimera and Zoids.
+
+**A duty record whose residue vote is split gets a per-note wavetable copy
+(v0.5.495, `7671ba2`).** Where `fixed_arp_phases`' majority vote (§
+7.bbbbbb) is not decisive — the record's attacks split across residues
+without one commanding a majority — `_majority_residues` now gives such a
+record a per-note wavetable entry instead of forcing one residue on every
+note, gated by `ARP_SPLIT_RATIO = 2`: a residue not the majority still gets
+its own copy when its count is at least `1/ARP_SPLIT_RATIO` of the top
+residue's count (`goatwriter.py`, the `_arp_lap_walk` call site and the
+comment above `ARP_SPLIT_RATIO`). Moves Chimera, Game_Killer, Human_Race,
+Hunter_Patrol, One_Man_and_his_Droid and Zoids.
+
+**After_8's composed two-stage block now carries bit $40's fixed pitch, read
+off the player rather than inferred from the other effect shapes (v0.5.496,
+`911a3e6`).** `_two_stage_pitch_seq_entries` (the block that already carries
+bit $04's attack waveform and bit $10's arpeggio, § 7.qqq /
+`_two_stage_pitch_seq_entries`'s own docstring) gains an `attack_note`
+parameter; the caller (`_wavetable_entries`) passes `_fixed_attack_note(sid,
+det, i)`, gated to `None` when the record also carries the bit $80 SFX-drum
+mask (same gate the plain two-stage shape already used). Read off After_8's
+own player, not inferred: its $40 handler runs AFTER bit $10's write
+(`$13DD AND #$10` writes the arpeggio's frequency; `$1427 BIT $1682 / BVC`
+then reloads the same two cells from `$1704,Y` = record +12) and decrements
+the SAME `$168C,X` counter bit $04's `$13CB DEC` does — the 6502 reading
+behind `_two_stage_frames`'s halving, only implied until this change. So on
+every frame the attack waveform sounds, the fixed note overwrites the
+arpeggio; once the counter is out, `$143A LDA $16FD,Y / BNE` (record +5)
+skips the plain-note write and the arpeggio stands untouched — the cycle
+stays continuous across the jump exactly as before, because `step` and the
+jump target never depended on the attack's right column. Result on After_8
+voice 2 at `-t 180 -m1`: C-5 (`$22A0`) now sounds at attack offsets 1-2 on
+291 of 309 attacks, against 0 before this change and the original's 283 of
+301; attacks themselves are unchanged. The corpus byte-hash moves exactly
+After_8; Trans-Atlantic_Balloon_Challenge is excluded by its own bit $80.
+
+**The two-stage attack fold is now unconditional, and `fold_note` is gone
+(v0.5.496, `911a3e6`).** `_two_stage_entries`' budget fold (spelling a short
+attack's overrun as a single re-asserted final call instead of every frame)
+was previously gated behind a `fold_note: bool` kwarg because
+`tests/test_effect_bit80.py` pinned the spelled-out, unfolded form at the
+function's default budget before anything had measured the fold against the
+reservation; only `_wavetable_entries` (whose budget IS the layout's) passed
+`fold_note=True`. The fold is now the caller-budget's business alone: `if 1
++ extra + 2 <= budget or extra <= 1` folds regardless of caller, and a
+caller wanting the spelled-out form passes a budget roomy enough for it (as
+`test_call_rate` and the timing tests in `test_effect_bit80.py` now do). The
+`fold_note` kwarg and its one call-site argument are gone from
+`_two_stage_entries`; the held-pitch tests in `test_effect_bit80.py` take
+explicit budgets instead. Corpus byte-hash: 0 of 95 files move, Commando.sng
+stays byte-exact — this task changed which code path chose the fold, not
+its outcome on any shipped file.
+
+**The render settings tag hashes the fixed argv, sidplayfp.ini and the ROMs
+(v0.5.495, `7671ba2`).** Harness, not converter: `sound.py`'s render cache
+key gained a second segment, `settings_tag(renderer)`, alongside the
+existing content key. For sidplayfp, `sound._sidplayfp_settings()` hashes
+`listen.sidplayfp_fixed_argv()` (format flags and the power-on delay, read
+at call time), the sidplayfp executable's own bytes (it has no `--version`,
+so its hash IS the version and survives a same-path reinstall,
+`sound.exe_identity`), the bytes of `sidplayfp.ini`, and the bytes of the
+three ROM files it names (`sound._sidplayfp_settings`, `sound.settings_tag`,
+`sound.render_settings`). A render made under one argv, ini or ROM set is
+therefore never served for a request under another, and a pre-settings-tag
+cache filename (no settings segment) is never served at all — see
+`docs/LESSONS.md`'s power-on-delay lesson for the render this closes the gap
+on. README's Listening section and `CLAUDE.md`'s render-reproducibility
+bullet both now name this.

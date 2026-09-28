@@ -182,9 +182,16 @@ def test_recover_reads_the_returned_sng_and_not_a_rebuilt_path(tmp_path):
     """SABOTAGE-SHAPED: the fake writes its `.sng` to a name the old
     reconstruction would NOT have produced. Under the old code -- which built
     `workdir / f"{stem}.{sha}.sng"` itself -- this recovers nothing; under the
-    returned pair it recovers the bytes."""
+    returned pair it recovers the bytes.
+
+    `recover_approved_sng` always resolves `version` via `git log` first
+    (`sound_calibrate.resolve_version_sha`), even though `convert_at` is
+    injected here -- so this needs a real `.git` to reach the fake at all."""
     import hashlib
     import sound_calibrate as SC
+    if not (SC.ROOT / ".git").exists():
+        pytest.skip("no .git -- recover_approved_sng resolves the version via "
+                     "git log before ever calling the injected convert_at")
     sng = b"the approved bytes"
     odd = tmp_path / "not-the-conventional-name.sng"
 

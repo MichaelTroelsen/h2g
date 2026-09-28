@@ -3442,9 +3442,17 @@ nothing; the first corpus pass renders both sides of every file. A failed
 render names its side in `sound_failed` rather than scoring a silent WAV
 against music. Since v0.5.492 every render passes sidplayfp `--delay=0`
 (`listen.SIDPLAYFP_POWER_ON_DELAY`), so two renders of the same bytes
-reproduce to the calibration's grid floor; a WAV cached before that version
-was rendered with a random power-on delay and is still served from the
-cache, because the key is the `.sid` bytes, not the command line.
+reproduce to the calibration's grid floor. Since v0.5.495 the render cache's
+filename carries a second key, `settings_tag(renderer)`, alongside the
+content key: for sidplayfp it hashes the whole fixed argv
+(`listen.sidplayfp_fixed_argv()`, the delay included), the sidplayfp
+executable's own bytes (it has no `--version`, so its hash stands in for
+one), the bytes of `sidplayfp.ini`, and the bytes of the three ROM files it
+names. A render made under one argv, ini or ROM set is never served for a
+request under another, and a pre-settings-tag cache filename (from before
+v0.5.495, no settings segment) is never served at all — before this, the
+key was the `.sid` bytes alone, so a WAV cached before v0.5.492 with a
+random power-on delay would have kept being served from the cache.
 
 Because the key is the *content*, every converter change leaves the previous
 `ours.*` render behind for good (measured at v0.5.489: 256 superseded renders,

@@ -555,8 +555,12 @@ dangerous one because it reads as current and gets cited as current.
 - **A render is reproducible only with a fixed power-on delay.** sidplayfp
   draws one at random unless `--delay=<0..8191>` is passed;
   `listen.render_sidplayfp` passes 0 since v0.5.492. The render cache is keyed
-  on the `.sid` bytes, so a cached WAV does not say which delay made it --
-  a calibration floor taken against pre-flag renders is the old floor.
+  on the `.sid` bytes plus, since v0.5.495, `sound.settings_tag(renderer)` --
+  for sidplayfp a hash of the fixed argv (the delay included), `sidplayfp.ini`
+  and the three named ROM files -- so a render made under one argv/ini/ROM
+  set is never served for a request under another. Before v0.5.495 the key
+  was the `.sid` bytes alone, so a cached WAV did not say which delay made
+  it -- a calibration floor taken against pre-flag renders is the old floor.
 - **`build/audio` accumulates a superseded `ours` render per converter
   change.** `python sound.py --prune <sid_dir> --quarantine DIR --apply`
   quarantines them (never deletes); the live set is `build/fidelity.json`'s

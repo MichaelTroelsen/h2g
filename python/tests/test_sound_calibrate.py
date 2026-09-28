@@ -299,6 +299,9 @@ def test_rank_in_corpus_places_a_name_among_the_rows():
 
 def test_resolve_version_sha_matches_the_commit_subject_convention():
     """Every commit here is `vX.Y.Z: ...`; the resolver greps that prefix."""
+    if not (C.ROOT / ".git").exists():
+        pytest.skip("no .git -- resolve_version_sha shells out to git log, "
+                     "which a git-archive snapshot has nothing for")
     assert C.resolve_version_sha("0.5.446") == "be759f0"
     assert C.resolve_version_sha("9.9.999") == ""
 
