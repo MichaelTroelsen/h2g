@@ -800,3 +800,20 @@ def test_preset_opts_misses_is_zero_over_the_shipped_presets_songs():
     n = F.report_preset_opts_misses("presets.py --fidelity", file=buf)
     assert n == 0
     F.reset_preset_opts_misses()
+
+
+def test_wave_alternate_is_carried_per_song_but_not_searched():
+    """`--wave-alternate` (goatwriter, beside `det.wave_alternate_noise`) is
+    per song and default off, so it must be carried and never in `always`.
+    Out of `FIDELITY_TOGGLES` because `tune_by_fidelity`, walked over that
+    one option at -t 180 on the v0.5.497 drain tree, refused it on both files
+    it reaches -- Hollywood_or_Bust on `keeps_notes`, Chicken_Song on the
+    onset veto -- so a toggle would be a walk that can only say no. See the
+    entry in `presets.EXCLUDED_FROM_ALWAYS`.
+    """
+    sys.path.insert(0, str(PYTHON_ROOT))
+    import presets
+    assert "wave_alternate" not in presets.FIDELITY_TOGGLES
+    assert "wave_alternate" in presets.EXCLUDED_FROM_ALWAYS
+    assert "wave_alternate" in presets.CARRIED_PER_SONG
+    assert "wave_alternate" not in presets.FIXED

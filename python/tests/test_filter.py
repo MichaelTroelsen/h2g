@@ -14,8 +14,9 @@ import pytest
 from h2g.convert import convert
 from h2g.detect import detect, FILTER_ENABLE_BIT, _burst_cutoff_start
 from h2g.goatwriter import (GT_MAX_FILT, MAX_INSTRUMENTS, FILT_SET_PARAMS,
-                            FILT_SET_CUTOFF, FILT_STOP, _filter_entries,
-                            _classic_clearing_instruments)
+                            FILT_SET_CUTOFF, FILT_STOP, FILT_HOLD,
+                            _filter_entries, _classic_clearing_instruments,
+                            _classic_holding_instruments)
 from h2g.sidfile import load_sid
 
 CORPUS = _CORPUS
@@ -294,3 +295,74 @@ def test_a_clearing_record_gets_a_block_that_routes_nothing(stem, monkeypatch):
         left, right = entries[with_[i] - 1]
         assert left & FILT_SET_PARAMS and not right & 0x0F
         assert entries[with_[i]][0] in (FILT_SET_CUTOFF, FILT_STOP)
+
+
+# The classic player's OTHER way of ending a sweep: an unfiltered record
+# (status bit $20 clear) skips the filter block, so $D416 and $D417 stand
+# where the last filtered record left them. Gated as the clear is -- one
+# routing voice, record played on no other. Measured over the 26 files whose
+# conversion carries a modulate row (v0.5.497 working tree, `-t 180` floor,
+# presets): `cut` Sanxion 1.909 -> 1.272 and Nemesis_the_Warlock 1.942 ->
+# 1.799 against the originals, filtered frames unchanged; Saboteur_II and Wiz
+# carry a hold and read the same. See FILT_MODULATE for why no horizon
+# constant could say this instead.
+CLASSIC_HOLDS = {
+    "Sanxion": {3, 10},
+    "Nemesis_the_Warlock": {6, 13},
+    "Saboteur_II": {9},
+    "Wiz": {1, 6, 9},
+    # Routed records on two or three voices: the one-routing-voice gate.
+    "Knucklebusters": set(),
+    "Lightforce": set(),
+    # No unfiltered record played only on the routing voice.
+    "I_Ball": set(),
+}
+
+
+@pytest.mark.parametrize("stem", sorted(CLASSIC_HOLDS))
+def test_the_classic_hold_fires_on_exactly_the_measured_records(stem, monkeypatch):
+    sid, det, tracks, patterns, instr_base = _emitter_inputs(stem, monkeypatch)
+    got = _classic_holding_instruments(sid, det, tracks, patterns, instr_base)
+    assert got == CLASSIC_HOLDS[stem], (stem, got)
+    # Every holding record is one whose filter block the PLAYER skips.
+    for i in got:
+        status = sid.data[det.filter.status + i * det.instr_stride]
+        assert not status & FILTER_ENABLE_BIT
+    # Disjoint from the clear, which is an ENABLED record.
+    assert not got & _classic_clearing_instruments(sid, det, tracks,
+                                                   patterns, instr_base)
+
+
+@pytest.mark.parametrize("stem", [s for s in CLASSIC_HOLDS if CLASSIC_HOLDS[s]])
+def test_a_holding_record_points_at_a_program_that_only_stops_the_sweep(
+        stem, monkeypatch):
+    """Without the set the record has no pointer (its note leaves the running
+    program alone); with it, the pointer lands on FILT_HOLD, appended after
+    every other block so no filtered record's pointer moves."""
+    sid, det, tracks, patterns, instr_base = _emitter_inputs(stem, monkeypatch)
+    n = min(det.instr_used + 1, MAX_INSTRUMENTS)
+    base, without = _filter_entries(sid, det, n)
+    entries, with_ = _filter_entries(sid, det, n,
+                                     holding_instruments=CLASSIC_HOLDS[stem])
+    assert entries[:len(base)] == base
+    for i, ptr in without.items():
+        assert with_[i] == ptr
+    for i in CLASSIC_HOLDS[stem]:
+        assert i not in without
+        start = with_[i] - 1
+        assert entries[start:start + len(FILT_HOLD)] == FILT_HOLD
+
+
+def test_filt_hold_freezes_the_cutoff_and_nothing_else():
+    """player.s `mt_filtstep`, transcribed for the rows FILT_HOLD uses: a
+    time/speed row (left $01-$7F) adds `speed` once per call for `time` calls,
+    then a $FF row with right side 0 stops the program. Neither row writes the
+    passband or the routing, so the only state it can move is the cutoff --
+    by zero."""
+    (t0, s0), (t1, s1) = FILT_HOLD
+    assert 0x01 <= t0 <= 0x7F and s0 == 0      # modulate, by nothing
+    assert (t1, s1) == (FILT_STOP, 0x00)       # then stop, not jump
+    cutoff = 0x5A
+    for _ in range(t0):
+        cutoff = (cutoff + s0) & 0xFF
+    assert cutoff == 0x5A

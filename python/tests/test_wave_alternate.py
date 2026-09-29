@@ -110,3 +110,63 @@ def test_the_block_is_anchored_on_this_instrument_tables_own_plus_two():
     # the aux record's fields line up: +0 attack, +1 alternate, +2 frames.
     assert det.wave_alternate == det.two_stage_wave + 1
     assert _find_wave_alternate(sid, det) == det.wave_alternate
+
+
+# --- the DERIVED dialect, behind the per-song `wave_alternate` option -------
+#
+# Chicken Song and Hollywood or Bust do not table the alternate: their player
+# derives it as `AND #$07 / ORA #$80` (detect.WAVE_ALT_NOISE_SHAPE), noise at
+# the voice's own control bits. Emitting it trades `wave` for noise on one file
+# and melody for noise on the other, so it is an option, off by default -- see
+# the comment beside `det.wave_alternate_noise` in goatwriter.
+
+def _chicken_song():
+    from h2g.convert import _detect_tables
+    from h2g.sidfile import load_sid
+    path = CORPUS / "Chicken_Song.sid"
+    if not path.is_file():
+        pytest.skip("corpus not present")
+    return _detect_tables(load_sid(str(path)), lambda m: None, 0)
+
+
+def test_the_derived_alternate_is_noise_at_the_records_own_control_bits():
+    """Pinned on Chicken_Song record 17 (GT instrument $12): `+2` is $15,
+    `+7` sets bit $02, so the derived alternate is ($15 & $07) | $80 = $85.
+    $15 is the pin because its low bits are not just the gate: dropping the
+    `| 0x80` leaves $05, a delay entry, which `_wave_alternate_entries`
+    declines -- and the block goes back to the record's own waveform."""
+    sid, det = _chicken_song()
+    assert det.wave_alternate_noise and det.wave_alternate < 0
+    i = 17
+    rec = sid.data[det.instr_start + i * det.instr_stride:][:det.instr_stride]
+    assert rec[2] == 0x15 and rec[7] & 0x02
+    on, on_r = _wavetable_entries(sid, det, i, True, "gts5", [], 1,
+                                  start=10, budget=32, wave_alternate=True)
+    assert on == [0x15, 0x15, 0x85, 0xFF]
+    assert on_r == [0x00, 0x00, 0x00, 11], "loops to the pair, not the lead"
+
+
+def test_the_derived_alternate_is_off_by_default():
+    sid, det = _chicken_song()
+    left, _ = _wavetable_entries(sid, det, 17, True, "gts5", [], 1,
+                                 start=10, budget=32)
+    assert 0x85 not in left
+
+
+def test_the_option_reaches_the_derived_dialect_and_nothing_else():
+    """Byte level: it moves Chicken_Song, and is inert on a file whose
+    player has no derived dialect (Commando) and on W_A_R, whose TABLED
+    dialect is emitted with or without it."""
+    from h2g.convert import convert
+    for name, moves in (("Chicken_Song.sid", True), ("Commando.sid", False),
+                        ("W_A_R.sid", False)):
+        path = CORPUS / name
+        if not path.is_file():
+            pytest.skip("corpus not present")
+        # 128 rows and packing: at the default 94 W_A_R's conversion
+        # raises ConversionAbort.
+        opts = dict(fmt="gts5", effects=True, max_rows=128, pack=True,
+                    log=lambda m: None)
+        off = convert(str(path), **opts)
+        on = convert(str(path), wave_alternate=True, **opts)
+        assert (off != on) is moves, name

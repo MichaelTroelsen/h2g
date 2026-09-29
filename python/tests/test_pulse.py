@@ -461,6 +461,62 @@ def test_a_record_that_sounds_nothing_is_the_one_that_goes_without():
         assert st and entries[st - 1:st - 1 + len(program)] == program
 
 
+# --- the Clear Voice's two entries, which nothing points at without one ------
+#
+# Knucklebusters (compact_instruments, lead 0) kept every played record's width
+# under the usage pass, and GT26 (8 notes) lost its sweep by ONE entry while
+# entries 1-2 -- the Clear Voice's pair -- were pointed at by nothing.
+
+def _six_big_and_a_width():
+    """Six 42-entry sweeps and one static pair: 2 + 252 + 2 = 256 with the
+    preamble, one over the cap, and 254 without it."""
+    recs = [_record(pulse_lo=i, rate=BIG) for i in range(6)]
+    recs.append(_record(pulse_lo=0x10, rate=0))
+    n = len(recs)
+    sid, det = _sid(recs, [0xF0] * n), _det(n)
+    assert sum(_cost(sid, det, i) for i in range(n)) == GT_MAX_TABLELEN - 1
+    return sid, det, n, [10] * 6 + [1]
+
+
+def _sweeps_kept(sid, det, entries, starts, lead, n):
+    kept = 0
+    for i in range(n):
+        program, loop = _pulse_program(sid, det, i, True, 1)
+        st = starts[lead + i]
+        kept += loop is not None and entries[st - 1:st - 1 + len(program)] == program
+    return kept
+
+
+def test_without_a_clear_voice_the_usage_pass_reclaims_its_two_entries():
+    sid, det, n, usage = _six_big_and_a_width()
+    entries, starts = _pulse_layout(sid, det, n, True, 1, lead=0, usage=usage)
+    assert len(starts) == n and 0 not in starts
+    assert len(entries) == GT_MAX_TABLELEN - 1 <= GT_MAX_TABLELEN
+    assert _sweeps_kept(sid, det, entries, starts, 0, n) == 6, \
+        "the two reclaimed entries pay for the sixth sweep"
+    assert min(starts) == 1, "entry 1 belongs to a record now"
+
+
+def test_with_a_clear_voice_its_entries_stay_and_a_sweep_still_yields():
+    """The control: lead 1's Clear Voice points at entry 1, so the same
+    records overflow by one and the least-played sweep falls to its width."""
+    sid, det, n, usage = _six_big_and_a_width()
+    entries, starts = _pulse_layout(sid, det, n + 1, True, 1, lead=1,
+                                    usage=usage)
+    assert starts[0] == 1 and entries[:2] == [(0x80, 0x00), (0xFF, 0x00)]
+    assert 0 not in starts
+    assert _sweeps_kept(sid, det, entries, starts, 1, n) == 5
+
+
+def test_a_table_that_fits_keeps_its_preamble_without_a_clear_voice():
+    """Only the usage pass reclaims: a table that fitted keeps its bytes."""
+    sid = _sid([_record(rate=0x40)] * 3, [0x82] * 3)
+    entries, starts = _pulse_layout(sid, _det(3), 3, True, 1, lead=0,
+                                    usage=[1, 1, 1])
+    assert entries[:2] == [(0x80, 0x00), (0xFF, 0x00)]
+    assert starts == [3, 7, 11]
+
+
 # --- pulse_usage: notes SOUNDED per record, in play order -------------------
 
 def _row(note=GT_FIRST_NOTE, instr=0):
@@ -665,6 +721,7 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
     if not sids:
         pytest.skip("corpus not present")
     found = gated = 0
+    zp = set()
     for path in sids:
         try:
             sid = load_sid(str(path))
@@ -675,10 +732,95 @@ def test_the_triangle_is_found_in_the_corpus_with_the_bounds_it_reads():
             continue
         found += 1
         gated += det.pulse_tri_gated
+        if det.pulse_tri_reseeds:
+            zp.add(path.name)
         assert (det.pulse_tri_lo, det.pulse_tri_hi) == (8, 0x0E), path.name
         # anchored on the instrument table this detection already found
         assert sid.data[det.instr_start:det.instr_start + 1]
-    assert (found, gated) == (24, 19), "the triangle's reach changed"
+    # 24 absolute-address files (19 gated) plus the zero-page dialect's two,
+    # both gated -- see test_the_zero_page_triangle_dialect_below.
+    assert (found, gated) == (26, 21), "the triangle's reach changed"
+    assert zp == set(ZP_TRI_FILES), zp
+
+
+# --- the triangle's zero-page dialect ---------------------------------------
+#
+# Samantha Fox and Spellbound carry the same triangle with every cell per
+# voice in zero page, reseeded from the record at each note fetch, and the
+# rate split $F0 step / $0F delay (detect._find_pulse_tri_zp).
+
+ZP_TRI_FILES = ("Samantha_Fox_Strip_Poker.sid", "Spellbound.sid")
+
+
+def _zp_tri(rate, mult=1):
+    det = _tri_det(1)
+    det.pulse_tri_step_mask, det.pulse_tri_reseeds = 0xF0, True
+    rec = [0xC0, 0x0A, 0x41, 0x00, 0x00, 0x00, rate, 0x00]
+    return _pulse_program(_sid([rec], []), det, 0, True, mult)
+
+
+def test_the_zero_page_dialect_splits_the_rate_by_nibble():
+    """$10 is a step of 16 every frame under `AND #$F0 / AND #$0F`, and a
+    delay-only no-op under the absolute dialect's $E0/$1F; $53 is $50 every
+    4 frames, where the old mask reads $40 every 20."""
+    assert _tri(0x10)[1] is None, "the absolute dialect's reading"
+    entries, loop = _zp_tri(0x10)
+    assert loop is not None and entries[1][1] == 0x10
+    assert _zp_tri(0x53)[0][1][1] == round(0x50 / 4)
+    assert _zp_tri(0x53, mult=4)[0][1][1] == round(0x50 / 16)
+    assert _zp_tri(0x0F)[1] is None, "a delay-only rate still does not sweep"
+
+
+def test_the_zero_page_dialect_has_no_phase_to_walk():
+    """It reseeds width, direction and counter at every note fetch, so the
+    per-note program restart is exact and the phase walk must not run."""
+    from h2g.goatwriter import pulse_phase_sims
+    rec = [0xC0, 0x0A, 0x41, 0x00, 0x00, 0x00, 0x20, 0x00]
+    sid = _sid([rec], [])
+    det = _tri_det(1)
+    assert pulse_phase_sims(sid, det), "the absolute dialect has a sim"
+    det.pulse_tri_step_mask, det.pulse_tri_reseeds = 0xF0, True
+    assert pulse_phase_sims(sid, det) == {}
+
+
+@needs_corpus
+def test_the_zero_page_triangle_dialect_is_read_off_both_players():
+    """The fallback spelling, consulted only where the absolute one found
+    nothing, anchored through the note fetch's `LDA instr+0,X` (Samantha
+    Fox $7110 `LDA $7407,X`, Spellbound $E13C `LDA $E548,X`); every cell
+    is reseeded there, so the image's dir/counter/record cells are not
+    read."""
+    import dataclasses
+    from h2g.detect import PULSE_TRI_SHAPE, _find_pulse_tri_zp
+    from h2g.search import search_file
+    instr = {"Samantha_Fox_Strip_Poker.sid": 0x7407, "Spellbound.sid": 0xE548}
+    for name in ZP_TRI_FILES:
+        sid = load_sid(str(CORPUS / name))
+        det = detect(sid, log=lambda m: None)
+        assert search_file(sid.data, PULSE_TRI_SHAPE) < 0, name
+        assert sid.to_address(det.instr_start) == instr[name], name
+        assert (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
+                det.pulse_tri_step_mask, det.pulse_tri_reseeds) == (
+                    8, 0x0E, True, 0xF0, True), name
+        assert (det.pulse_tri_dir, det.pulse_tri_cnt, det.pulse_tri_rec) == (
+            -1, -1, -1), name
+        # the anchor: point the reseed's two loads one record along (still
+        # instr+0 / instr+1 of each other) and the dialect reads nothing,
+        # because the record they name is no longer the instrument table
+        at = sid.data.find(bytes([0xBD, instr[name] & 0xFF, instr[name] >> 8,
+                                  0x99, 0x02, 0xD4, 0x48]))
+        assert at > 0, name
+        assert _find_pulse_tri_zp(sid, det) is not None, name
+        bad = bytearray(sid.data)
+        bad[at + 1] += 8
+        bad[at + 8] += 8
+        moved = dataclasses.replace(sid, data=bytes(bad))
+        assert _find_pulse_tri_zp(moved, det) is None, name
+        # ...and a record with a $10 rate, a no-op under the old mask, sweeps
+        rates = [sid.data[det.instr_start + i * 8 + 6] for i in range(det.instr_used)]
+        i = next(i for i, r in enumerate(rates) if r & 0xF0 and not r & 0xE0
+                 and not sid.data[det.instr_start + i * 8 + 7] & 0x08)
+        assert _pulse_program(sid, det, i, True, 1)[1] is not None, (name, i)
 
 
 # --- packing: gt2reloc's pulse skipping ------------------------------------

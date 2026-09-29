@@ -3210,6 +3210,189 @@ def test_envelope_silent_reads_only_the_states_the_registers_settle():
         dict(row, depth_ratio=None))
 
 
+# --- the blindness `envelope_silent` states, modelled and counted ------------
+# A release left to run out, or a decay to sustain 0, reads as sounding off
+# the registers. `envelope_run_out` models it (reSID's rates); `depth` counts
+# the read cycles it places at zero and does not drop them.
+
+def _gated_voice(n, adsr, gate_off=None, freqs=None):
+    """One note gated on at frame 0 (and off at `gate_off`) under `adsr`."""
+    v = _fq_voice([0], freqs if freqs is not None else [0x1000] * n, adsr)
+    v.wf_events = [(0, 0x41)] + ([(gate_off, 0x40)] if gate_off else [])
+    return v
+
+
+def test_envelope_model_runs_a_release_out_at_its_own_rate():
+    """Release $A from full level is 756 steps at 1954 cycles each
+    (the exponential counter's 162x1 + 39x2 + 28x4 + 12x8 + 8x16 + 6x30),
+    about 75 PAL frames: still sounding 70 frames after the gate drops,
+    run out by 80. `envelope_silent` reads every one of them as sounding."""
+    off = 20
+    v = _gated_voice(200, 0x00FA, gate_off=off)
+    got = fidelity.envelope_run_out(v, 200)
+    assert not any(got[:off + 70]), got.index(True)
+    assert all(got[off + 80:])
+    assert not fidelity.envelope_silent(0x00FA, 0x40)
+    # A release of 0 runs out inside the frame the gate drops.
+    fast = fidelity.envelope_run_out(_gated_voice(60, 0x00F0, gate_off=off), 60)
+    assert not fast[off] and all(fast[off + 1:])
+    # No $D404 (the --vice voices): no model.
+    assert fidelity.envelope_run_out(_fq_voice([0], [0x1000] * 10, 0x00FA),
+                                     10) is None
+
+
+def test_envelope_model_decays_to_a_sustain_of_zero_with_the_gate_held():
+    """Decay 8 to sustain 0 with the gate on: 756 x 392 cycles, about 15
+    frames. A sustain above 0 never runs out."""
+    to_zero = fidelity.envelope_run_out(_gated_voice(60, 0x0800), 60)
+    assert not any(to_zero[:14]) and all(to_zero[17:])
+    held = fidelity.envelope_run_out(_gated_voice(60, 0x0810), 60)
+    assert not any(held)
+
+
+def test_depth_counts_run_out_cycles_and_still_reads_them():
+    """A vibrato under a decay to sustain 0: the cycles past frame ~15 are
+    inaudible, `envelope_silent` passes them, and `depth` counts them in
+    `depth_env_zero_cycles` WITHOUT dropping them -- the decision recorded
+    in the Dimension, which dropping them would silently reverse."""
+    seg = _osc(20, 400)
+    v = _gated_voice(len(seg), 0x0800, freqs=seg)
+    voices = [v, fidelity.Voice(), fidelity.Voice()]
+    tally: dict = {}
+    fidelity.oscillation_depths(voices, len(seg), {0x0800}, tally=tally)
+    assert tally["silent_cycles"] == 0
+    assert 0 < tally["env_zero_cycles"] < tally["cycles"]
+    # Every read cycle is still read: the model counts, it does not gate.
+    assert tally["cycles"] == len(fidelity.vibrato_swings(seg[2:]))
+    got = fidelity.depth_compare(voices, voices, len(seg), {0x0800})
+    assert got["depth_env_zero_cycles"] == {
+        "orig": tally["env_zero_cycles"], "ours": tally["env_zero_cycles"]}
+    # A sustain held above 0 is never counted.
+    held = _gated_voice(len(seg), 0x0810, freqs=seg)
+    t2: dict = {}
+    fidelity.oscillation_depths([held, fidelity.Voice(), fidelity.Voice()],
+                                len(seg), {0x0810}, tally=t2)
+    assert t2["env_zero_cycles"] == 0 and t2["cycles"] == tally["cycles"]
+
+
+def test_depth_dimension_records_the_measured_size_of_the_envelope_blindness():
+    """The decision not to gate on the model rests on a measurement; the
+    figure lives in the depth Dimension's own text, asserted there (the
+    slice), never in the file at large."""
+    d = next(d for d in fidelity.DIMENSIONS if d.key == "depth_ratio")
+    text = " ".join(d.of.split())
+    for frag in ("depth_env_zero_cycles", "envelope_run_out",
+                 "Measured at v0.5.497",
+                 "3763 of 94350 read cycles in the original (4.0%)",
+                 "2661 of 80423 in ours (3.3%), on 39 files",
+                 "at most 0.073 in log space",
+                 "(Arcade_Classics 0.464 -> 0.499)"):
+        assert frag in text, frag
+
+
+# --- the envelope gate under --vice ------------------------------------------
+# The VICE voices keyed ADSR at attacks only and carried no $D404, so
+# `envelope_silent` never fired there. They now carry both, per call, off the
+# dump (`Voice.env_adsr_events` / `env_ctrl_events`); a synthetic trace of the
+# siddump voices above must drop exactly the cycles the siddump path drops.
+
+def _vice_of(sd: "fidelity.Voice", n: int, ctrl_default=0x41, write_line=20,
+             calls=1):
+    """The dump a siddump voice implies: each frame's registers written
+    `write_line` lines into the frame (by each of `calls` play calls, all
+    writing the frame's value), printed with the dump's sign extension."""
+    import vicetrace as V
+    lines = V.PAL_LINES_PER_FRAME
+    fq = fidelity.register_timeline(sd.freq_events, n)
+    ad = fidelity.register_timeline(sd.adsr_events, n)
+    ct = (fidelity.register_timeline(sd.wf_events, n) if sd.wf_events
+          else [ctrl_default] * n)
+    period = lines / calls
+    out = []
+    for i in range(n * lines):
+        k = int((i - write_line) // period) if i >= write_line else -1
+        f = min(k // calls, n - 1) if k >= 0 else -1
+        vl = (V.VoiceLine(freq=_signext(fq[f]), ctrl=ct[f],
+                          adsr=_signext(ad[f])) if f >= 0 else V.VoiceLine())
+        out.append(V.Sample(voices=[vl, V.VoiceLine(), V.VoiceLine()]))
+    return out
+
+
+def _gate_cases():
+    heard, rest = _osc(10, 300), _osc(30, 900)
+    n = len(heard) + len(rest)
+    # $D405/$D406 zeroed mid-note (no $D404 on the siddump side), and a gate
+    # dropped with release 0 (only $D404 says it is silent). Both keys have
+    # sustain/release >= $80, so the dump prints their ADSR as $FFxx.
+    return n, [(_silenced_voice(heard, rest, 0x0A8A), 0x0A8A),
+               (_silenced_voice(heard, rest, 0x0A80, 0x0A80, wf_on=0x41,
+                                wf_off=0x40), 0x0A80)]
+
+
+def _depth_tally(voices, n, key, skip):
+    t: dict = {}
+    got = fidelity.oscillation_depths(voices, n, {key}, skip, tally=t)
+    return got, {k: t[k] for k in ("cycles", "silent_cycles",
+                                   "silent_frames")}
+
+
+def test_vice_voices_drop_silent_cycles_exactly_as_siddump_does():
+    n, cases = _gate_cases()
+    blank = [fidelity.Voice(), fidelity.Voice()]
+    for sd, key in cases:
+        want, want_t = _depth_tally([sd, *blank], n, key, 1)
+        assert want_t["silent_cycles"] > want_t["cycles"] > 0, want_t
+        samples = _vice_of(sd, n)
+        for reduce, skip in (("last", 1), (None, fidelity.vice_skip_span(1))):
+            vv = fidelity.vice_pitch_voices(samples, reduce,
+                                            keyed_by=[sd, *blank])
+            assert vv[0].env_adsr_events and vv[0].env_ctrl_events
+            assert not vv[0].wf_events          # run-out model stays off
+            got, got_t = _depth_tally(vv, n, key, skip)
+            assert (got, got_t) == (want, want_t), (hex(key), reduce, got_t)
+
+
+def test_vice_voices_gate_on_their_own_calls_at_S3():
+    """At -S3 the voice is call-indexed: call k's registers are the ones
+    standing at the end of call k, so the gate lands on the same calls as a
+    siddump-shaped voice laid out on the call axis."""
+    n, cases = _gate_cases()
+    m = 3
+    blank = [fidelity.Voice(), fidelity.Voice()]
+    for sd, key in cases:
+        ref = fidelity.Voice(
+            attack_frames=[0],
+            freq_events=[(f * m, v) for f, v in sd.freq_events],
+            adsr_events=[(f * m, v) for f, v in sd.adsr_events],
+            wf_events=[(f * m, v) for f, v in sd.wf_events])
+        skip = fidelity.vice_skip_span(m)
+        want, want_t = _depth_tally([ref, *blank], n * m, key, skip)
+        assert want_t["silent_cycles"] > 0, want_t
+        vv = fidelity.vice_pitch_voices(_vice_of(sd, n, calls=m), None,
+                                        keyed_by=[sd, *blank],
+                                        calls_per_frame=m)
+        got, got_t = _depth_tally(vv, n * m, key, skip)
+        assert (got, got_t) == (want, want_t), (hex(key), got_t)
+
+
+def test_vice_depth_row_reports_the_gate_and_no_run_out_count():
+    """Through `vice_pitch_compare`: the gate's counts are the siddump
+    row's, and `depth_env_zero_cycles` is null (not a measured 0) on both
+    --vice sides, where the run-out model does not run."""
+    n, cases = _gate_cases()
+    blank = [fidelity.Voice(), fidelity.Voice()]
+    sd, key = cases[0]
+    want = fidelity.depth_compare([sd, *blank], [sd, *blank], n, {key})
+    s = _vice_of(sd, n)
+    got = fidelity.vice_pitch_compare(s, s, {key}, reduce="last",
+                                      orig_keyed_by=[sd, *blank],
+                                      our_keyed_by=[sd, *blank])
+    for k in ("depth_ratio", "depth_cycles", "depth_silent_cycles",
+              "depth_silent_frames"):
+        assert got[k] == want[k], k
+    assert got["depth_env_zero_cycles"] == {"orig": None, "ours": None}
+
+
 # --- the `scored against a subtune of ours` line ------------------------------
 #
 # This line asserted the BENIGN cause outright -- "because our numbering shifts
@@ -3780,6 +3963,111 @@ def test_melody_declares_the_mid_glide_naming_blind_spot():
     assert "one play call" in d.of, (
         "the consequence -- a grid shift renaming an unchanged note -- is no "
         "longer stated, and the share alone does not imply it")
+
+
+# Three voices, one per side of the Arcade_Classics finding, in siddump's own
+# verbatim format. Voice 0 is the ORIGINAL: it writes the new note (E-4) on
+# its gate-rise frame. Voice 1 is OURS with the gate a frame ahead of the
+# frequency: frame 6 re-gates on the previous note's C-4 and the E-4 arrives
+# as a tie on frame 7. Voice 2 is voice 1 with the previous note's END swung
+# down across a naming boundary (the expanding vibrato's wider swing): same
+# gate frames, same tie on frame 7, and a different attack name.
+_GATE_LEADS_FREQUENCY = """Load address: $5000 Init address: $5FB2 Play address: $5012
+Calling initroutine with subtune 0
+Calling playroutine for 8 frames, starting from frame 0
+Middle C frequency is $1168
+
+| Frame | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | Freq Note/Abs WF ADSR Pul | FCut RC Typ V |
++-------+---------------------------+---------------------------+---------------------------+---------------+
+|     0 | 1168  C-4 B0  41 0DFB 180 | 1168  C-4 B0  41 0DFB 180 | 1168  C-4 B0  41 0DFB 180 | 0000 00 Off F |
+|     4 | ....  ... ..  40 .... ... | ....  ... ..  40 .... ... | ....  ... ..  40 .... ... | .... .. ... . |
+|     5 | ....  ... ..  .. .... ... | ....  ... ..  .. .... ... | 1070 (B-3 AF) .. .... ... | .... .. ... . |
+|     6 | 15ED  E-4 B4  41 .... ... | 1168  C-4 B0  41 .... ... | 1070  B-3 AF  41 .... ... | .... .. ... . |
+|     7 | ....  ... ..  .. .... ... | 15ED (E-4 B4) .. .... ... | 15ED (E-4 B4) .. .... ... | .... .. ... . |
+"""
+
+
+def test_melody_names_an_attack_on_its_gate_rise_frame_so_a_lagging_frequency_is_named_after_the_previous_note():
+    """The PREMISE of the melody Dimension's gate-frame declaration, pinned
+    at the parser: the name comes from the frequency on the frame siddump
+    prints the bare note -- the gate-rise frame -- and never from the note
+    that arrives a frame later.
+
+    This guards the declaration's truth, not a converter mechanism: if the
+    naming ever moves off the gate frame, the Dimension's text describes a
+    column that no longer exists and this is the case that says so.
+    Measured instance (v0.5.497, -t 180, historical): Arcade_Classics voice 0
+    names 178 of 212 of our attacks after the previous note, the original 0
+    of 213; the expanding vibrato renamed 53 of them with gate frames and
+    every name five frames later unchanged.
+    """
+    orig, ours, swung = fidelity.parse_dump(_GATE_LEADS_FREQUENCY)
+    # The original's new note is on its gate frame.
+    assert orig.attacks == ["C-4", "E-4"]
+    # Ours re-gates on the PREVIOUS note; the new one is a tie a frame later.
+    assert ours.attacks == ["C-4", "C-4"], (
+        "the lagging side's attack is no longer named on its gate-rise frame "
+        "-- the melody Dimension's gate-frame declaration is now false")
+    assert ours.tie_frames == [7]
+    # The previous note's swung ending renames the attack; nothing else moved.
+    assert swung.attacks == ["C-4", "B-3"]
+    assert swung.attack_frames == ours.attack_frames == orig.attack_frames == [0, 6]
+    assert 7 in swung.tie_frames
+    base = fidelity.compare([orig, fidelity.Voice(), fidelity.Voice()],
+                            [ours, fidelity.Voice(), fidelity.Voice()])
+    new = fidelity.compare([orig, fidelity.Voice(), fidelity.Voice()],
+                           [swung, fidelity.Voice(), fidelity.Voice()])
+    assert new["melody"] < base["melody"]
+
+
+def test_melody_forgives_a_one_note_naming_lag_and_not_a_renamed_ending():
+    """The SCORING half of the same declaration: a sequence named one note
+    late is a shift, which the collapsed difflib ratio forgives (Arcade_
+    Classics voice 0 read 98.3% on a lagged sequence), while the same lag with
+    some previous-note endings swung across a naming boundary is charged --
+    for notes that were never struck differently."""
+    tune = ["C-4", "E-4", "G-4", "C-5", "B-4", "A-4",
+            "G-4", "E-4", "D-4", "F-4", "A-4", "D-5"] * 4
+    lagged = [tune[0]] + tune[:-1]
+    swung = list(lagged)
+    for i in range(3, len(swung), 4):
+        # One semitone down: the previous note's widened swing at its end.
+        name, octave = swung[i][:2], swung[i][2]
+        swung[i] = {"C-": "B-", "D-": "C#", "E-": "D#", "F-": "E-", "G-": "F#",
+                    "A-": "G#", "B-": "A#"}[name] + (
+                        str(int(octave) - 1) if name == "C-" else octave)
+    at = lambda s: [fidelity.Voice(attacks=s), fidelity.Voice(), fidelity.Voice()]
+    lag = fidelity.compare(at(tune), at(lagged))["melody"]
+    ren = fidelity.compare(at(tune), at(swung))["melody"]
+    assert lag > 0.98, lag
+    assert ren < lag - 0.15, (lag, ren)
+
+
+def test_melody_declares_the_gate_frame_naming_lag_blindness():
+    """The Dimension entry is what the report prints under 'What this run
+    compared', so the declaration is asserted in the melody ENTRY and in the
+    melody ROW of that section -- the slices -- never in the whole file,
+    where a copy in a comment would keep a whole-file check green after the
+    entry lost it.
+
+    This pins registry-versus-report agreement for a DECLARED blindness; it
+    guards no mechanism. The premise it rests on is pinned by
+    test_melody_names_an_attack_on_its_gate_rise_frame_so_a_lagging_
+    frequency_is_named_after_the_previous_note.
+    """
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "melody")
+    of = " ".join(d.of.split())
+    for phrase in ("named on its GATE-RISE frame",
+                   "a sequence lagged by one note",
+                   "forgives as a shift",
+                   "how the PREVIOUS note ENDS",
+                   "Arcade_Classics reads 99.1% -> 91.8%",
+                   "naming at a fixed later frame is not the cure"):
+        assert phrase in of, f"melody Dimension no longer says {phrase!r}"
+    text = fidelity.report([_row("A.sid", "measured", 1.0, 50, 50)], _Args())
+    section = text[text.index("## What this run compared"):]
+    row = next(l for l in section.splitlines() if l.startswith("| **melody** |"))
+    assert "named on its GATE-RISE frame" in " ".join(row.split())
 
 
 def test_the_sound_dimensions_read_rendered_audio_not_a_register():
@@ -4823,22 +5111,27 @@ def test_a_sub_frame_vibrato_is_visible_per_call_and_not_per_frame():
 def test_vice_depth_is_keyed_from_siddump_not_the_dumps_adsr():
     """The dump's ADSR field is sign-extended too ($0BF0 prints fff0), so an
     instrument whose sustain/release has bit 7 set could never join
-    `vibrato_records`. `keyed_by` hands the key over from siddump."""
+    `vibrato_records`. `keyed_by` hands the key over from siddump.
+
+    Release 8, not 0 ($0BF8 prints fff8): `_vice_samples` drops the gate
+    after eight lines, and since the `--vice` voices carry $D404 and ADSR
+    per call a gate-off note with release 0 is (correctly) silent to
+    `depth`'s envelope gate -- the fixture was a note nobody could hear."""
     seg = _osc(30, 400)
-    samples = _vice_samples([seg, [], []], calls_per_frame=1, adsr=0xFFF0,
+    samples = _vice_samples([seg, [], []], calls_per_frame=1, adsr=0xFFF8,
                             note_frames=64)
     n = len(samples) // 312
     sd = fidelity.Voice(freq_events=[(0, 0x1000)],
-                        adsr_events=[(0, 0x0BF0)],
+                        adsr_events=[(0, 0x0BF8)],
                         attack_frames=[f for f in range(0, n, 64)])
     keyed = [sd, fidelity.Voice(), fidelity.Voice()]
-    got = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF0},
+    got = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF8},
                                       orig_keyed_by=keyed, our_keyed_by=keyed)
     assert got.get("depth_instruments") == 1, got
     assert got["depth_ratio"] == pytest.approx(1.0)
-    unkeyed = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF0})
+    unkeyed = fidelity.vice_pitch_compare(samples, samples, keys={0x0BF8})
     # Without `orig_keyed_by`/`our_keyed_by`, both sides key their voices from
-    # the sign-extended dump ADSR (`$FFF0`, not `$0BF0`), so neither side's
+    # the sign-extended dump ADSR (`$FFF8`, not `$0BF8`), so neither side's
     # `oscillation_depths` ever sees the requested key and both are empty.
     assert unkeyed.get("depth_refusal") == "neither-oscillates"
 
@@ -5169,3 +5462,39 @@ def test_a_pinned_row_is_scored_at_its_counterpart(tmp_path, name, pin):
     control = _pinned_row(tmp_path, name, None)
     assert "ours_subtune" not in control and "subtune_pinned" not in control
     assert control["melody"] < 0.3, control["melody"]
+
+
+def _vibrato_voices(first_bend: int) -> list:
+    """One voice, two 16-frame notes on one instrument; the pitch holds at
+    $1000 until `first_bend` frames after each attack, then oscillates."""
+    freq, wf = [], []
+    for a in (0, 16):
+        wf += [(a, 0x41), (a + 1, 0x41)]
+        freq.append((a, 0x1000))
+        for k in range(first_bend, 16):
+            freq.append((a + k, 0x1000 + (40 if (k - first_bend) % 2 else -40)))
+    v = fidelity.Voice(attack_frames=[0, 16], wf_events=wf,
+                       adsr_events=[(0, 0x0A09)], freq_events=freq)
+    return [v, fidelity.Voice(), fidelity.Voice()]
+
+
+def test_onset_declares_and_is_blind_to_vibrato_onset():
+    """`onset` read 1.000 -> 1.000 on all 54 files a change reached that moved
+    the modal first-bend offset by up to 7 frames (Food_Feud v0 2 -> 9,
+    C:/t/classic-vibrato-gate/EVIDENCE.txt, v0.5.495). Two halves, pinned
+    together so neither can drift from the other: the column really cannot
+    see when a note starts to bend -- inside its four frames or after them --
+    and its registry entry, the one place a report reader learns that, says so.
+    """
+    orig = _vibrato_voices(9)
+    for k in (2, 3, 9, 12):
+        got = fidelity.onset_agreement(orig, _vibrato_voices(k), 32)
+        assert got["onset_instruments"] == 1
+        assert got["onset_agreement"] == 1.0, k
+        assert got["onset_frame_agreement"] == 1.0, k
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "onset_agreement")
+    assert d.column == "onset" and d.reads == ("$D404",)
+    of = " ".join(d.of.split())
+    assert "blind to vibrato onset" in of
+    assert "first-bend offset" in of and "is not read at all" in of
+    assert "7 frames read 1.000 -> 1.000" in of

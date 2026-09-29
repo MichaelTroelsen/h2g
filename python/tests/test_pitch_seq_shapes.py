@@ -134,32 +134,87 @@ def test_the_two_new_files_decode_to_real_arpeggios():
 
 @needs_corpus
 def test_only_the_two_intended_files_gain_the_block():
-    """The corpus difference is exactly {Food_Feud, Mega_Apocalypse}.
+    """The corpus difference is exactly {Food_Feud, Mega_Apocalypse} -- and
+    the static form, a separate fallback, adds exactly Kings_of_the_Beach_intro.
 
     Pinned as a set rather than a count: a later widening that finds one more
     file and loses one would keep the count and change the answer.
     """
-    found = {p.stem for p in sorted(CORPUS.glob("*.sid"))
-             if D._find_pitch_seq(load_sid(str(p))) is not None}
+    seqs = {p.stem: D._find_pitch_seq(load_sid(str(p)))
+            for p in sorted(CORPUS.glob("*.sid"))}
+    found = {k for k, s in seqs.items() if s is not None}
     assert "Food_Feud" in found and "Mega_Apocalypse" in found
-    assert len(found) == 36
+    assert {k for k in found if seqs[k].static} == {"Kings_of_the_Beach_intro"}
+    assert len(found) == 37
+
+
+@needs_corpus
+def test_the_static_shape_needs_its_gate():
+    """Without `AND #$10 / BEQ` in front, the static block's tail -- `LDY abs /
+    CLC / LDA abs,X / ADC abs,Y / ASL / TAY / LDA abs,Y` -- is also the tail of
+    every pair-form block (After_8 $13F2, Zoolook $43A1, ...). With the gate it
+    is one file. The fallback order would keep a pair-form file on its own
+    reading either way; the gate is what makes the shape mean bit $10."""
+    hits = {p.stem for p in sorted(CORPUS.glob("*.sid"))
+            if D.search_file(load_sid(str(p)).data,
+                             D.PITCH_SEQ_STATIC_SHAPE) >= 1}
+    assert hits == {"Kings_of_the_Beach_intro"}
+
+
+@needs_corpus
+def test_kings_of_the_beach_intro_is_read_as_the_static_form():
+    """$1011: `AND #$10 / BEQ / LDY $126E / CLC / LDA $122B,X / ADC $126B,Y /
+    ASL / TAY / LDA $1152,Y` -- no index array, no pair copy. The table is the
+    ADC's operand ($126B: 00 0C 18), and its length and direction come from
+    the phase's update at $107F, `DEC $126E / BPL / LDA #$02 / STA $126E`:
+    three steps, counting down."""
+    sid = load_sid(str(CORPUS / "Kings_of_the_Beach_intro.sid"))
+    assert sid.data[sid.to_offset(0x107F):sid.to_offset(0x107F) + 10] == \
+        bytes.fromhex("CE 6E 12 10 05 A9 02 8D 6E 12")
+    seq = D._find_pitch_seq(sid)
+    assert seq is not None and seq.static and seq.descending
+    assert (seq.index, seq.pairs) == (-1, -1)
+    assert _addr(sid, seq.base) == 0x126B
+    assert sid.data[seq.base:seq.base + 3] == b"\x00\x0c\x18"
+    assert seq.steps == 3 and seq.frames_per_step == 1
+
+
+def test_the_static_form_declines_without_the_phase_update():
+    """A static table has no pair to bound it: without the `DEC` reload
+    nothing says how long it is, or which way it plays, so it is declined."""
+    block = bytes.fromhex("29 10 F0 1B AC 6E 12 18 BD 2B 12 79 6B 12 0A A8 "
+                          "B9 52 11")
+    reload = bytes.fromhex("CE 6E 12 10 05 A9 02 8D 6E 12")
+    load = 0x1000
+
+    def sid_of(image):
+        return SidFile(path="fake.sid", data=bytes(image), name="n",
+                       author="a", released="r", load_addr=load, subtunes=1)
+
+    image = bytearray(0x400)
+    at = sid_of(image).to_offset          # addresses as the player reads them
+    image[at(0x1011):at(0x1011) + len(block)] = block
+    image[at(0x126B):at(0x126B) + 3] = b"\x00\x0c\x18"
+    assert D._find_pitch_seq(sid_of(image)) is None
+    image[at(0x107F):at(0x107F) + len(reload)] = reload
+    seq = D._find_pitch_seq(sid_of(image))
+    assert seq is not None and seq.static and seq.descending
+    assert (seq.base, seq.steps) == (at(0x126B), 3)
 
 
 @needs_corpus
 def test_the_blocks_that_are_deliberately_not_matched():
-    """Three files have an `AND #$10 / BEQ` block that this cannot represent.
+    """Two files have an `AND #$10 / BEQ` block that this cannot represent.
 
-    - Kings_of_the_Beach_intro $1011 loads the phase and adds the base, but has
-      **no index array and no pair copy**: `$126B` holds a static `00 0C 18` and
-      nothing in the file writes `$126C`/`$126D`. `PitchSeq` addresses its steps
-      as `pairs + 2 * index`, so saying "the same three steps for every record"
-      needs a writer change as well as a shape.
     - ACE_II $E3F7 and Ricochet $9421 copy **one** pair byte and never load the
       phase, so their `ADC base,Y` runs with `Y = 2 * index` -- a constant
       transpose per record. Neither is in `VIBRATO.md`'s `pitchseq` rows.
+
+    Kings_of_the_Beach_intro $1011 was the third -- a static table with no
+    index -- and is now read as the static form; see
+    `test_kings_of_the_beach_intro_is_read_as_the_static_form`.
     """
     for name, at, note in (
-            ("Kings_of_the_Beach_intro", 0x1011, "static table, no index"),
             ("ACE_II", 0xE3F7, "no phase load"),
             ("Ricochet", 0x9421, "no phase load")):
         sid = load_sid(str(CORPUS / f"{name}.sid"))
@@ -201,28 +256,28 @@ def _rotations(steps):
     return [enc[k:] + enc[:k] for k in range(len(enc))]
 
 
-def _static(base, steps):
-    """The interim static form `_pitch_seq_notes` reads: `pairs < 0` says the
-    table is global at `base`; `steps` is its length, negative where the
-    phase counter counts down."""
-    return D.PitchSeq(index=-1, pairs=-1, base=base, steps=steps)
+def _static(base, steps, descending=False):
+    """The static form `_pitch_seq_notes` reads: `static` says the table is
+    global at `base`, `steps` long; `descending` that the phase counter
+    counts down."""
+    return D.PitchSeq(index=-1, pairs=-1, base=base, steps=steps,
+                      static=True, descending=descending)
 
 
+@needs_corpus
 def test_the_static_form_reads_kings_of_the_beach_intros_table_in_play_order():
-    """Its bit-$10 handler ($100E) adds a GLOBAL table ($126B: 00 0C 18) to
+    """Its bit-$10 handler ($1011) adds a GLOBAL table ($126B: 00 0C 18) to
     the note under a phase counter that counts DOWN ($107F: DEC / BPL / LDA
     #2), so the player's order is 24, 12, 0 -- siddump reads 559 frames of
-    -12 and 292 of +24 on voice 1 in 60 s and never the rising cycle. Nothing
-    in detect.py emits this form yet; this pins what the writer does with it.
+    -12 and 292 of +24 on voice 1 in 60 s and never the rising cycle
+    (re-read at v0.5.497: 559 / 292, +12 on 15). Detection fills the form
+    now; this pins what the writer does with what detection hands it.
     """
-    if not CORPUS.is_dir():
-        return
     sid = load_sid(str(CORPUS / "Kings_of_the_Beach_intro.sid"))
     sid, det = _detect_tables(sid, lambda *a, **k: None)
-    assert det.pitch_seq is None, "detection does not read the static form yet"
     base = sid.to_offset(0x126B)
     assert sid.data[base:base + 3] == b"\x00\x0c\x18"
-    det.pitch_seq = _static(base, -3)
+    assert det.pitch_seq == _static(base, 3, descending=True)
     notes = _pitch_seq_notes(sid, det, 4)            # record 4 carries bit $10
     assert notes in _rotations((24, 12, 0)), notes
     assert notes not in _rotations((0, 12, 24)), "direction is the mechanism"
@@ -244,13 +299,12 @@ def _fake(table, effect=0x10):
     return sid, det, TABLE
 
 
-def test_the_static_forms_sign_is_the_phase_counters_direction():
+def test_the_static_forms_direction_is_the_phase_counters():
     sid, det, table = _fake((0, 12, 24))
     det.pitch_seq = _static(table, 3)
     assert _pitch_seq_notes(sid, det, 0) in _rotations((0, 12, 24))
-    det.pitch_seq = _static(table, -3)
+    det.pitch_seq = _static(table, 3, descending=True)
     assert _pitch_seq_notes(sid, det, 0) in _rotations((24, 12, 0))
-
 
 def test_a_static_table_with_no_zero_step_still_opens_on_the_played_note():
     """(24, 12, 0) has no modal step. `most_common` broke the tie by insertion
@@ -901,3 +955,221 @@ def test_after_8s_arpeggio_plays_zero_b_a_in_the_original():
                 f += 1
     assert seen[(9, 5)] >= 50, seen
     assert seen[(5, 9)] == 0, seen
+
+
+# --- the per-note split on bit $10's clock (goatwriter.pitch_seq_splits) ----
+#
+# The majority residue is right on about a third of Food_Feud's `$34` notes,
+# because three 8/3-frame rows are one cycle and the attacks land on 0, 3
+# and 6 in near-equal thirds. The split gives each `$34` record a copy per
+# minority residue -- the fixed arp's per-note machinery on this clock -- and
+# renames every note to the copy its own row's residue selects. These pin it
+# on the finished `.sng`, read back through the independent parser.
+
+def _food_feud_split_song():
+    """(sid, det, song): Food_Feud converted on its preset + pitch_seq, the
+    detection build_sng was handed, and the .sng read back by songview."""
+    import json
+    import songview
+    import h2g.convert as cv
+    presets = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    opts = dict(fidelity._preset_opts(presets, "Food_Feud.sid"))
+    opts["pitch_seq"] = True
+    got = {}
+    real = cv.build_sng
+
+    def spy(sid, det, *a, **k):
+        got.update(sid=sid, det=det)
+        return real(sid, det, *a, **k)
+
+    cv.build_sng = spy
+    try:
+        sng = cv.convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None,
+                         **opts)
+    finally:
+        cv.build_sng = real
+    return got["sid"], got["det"], songview.parse_sng(sng)
+
+
+def _wave_program(table, start, calls):
+    """The right column a wavetable program writes on each of `calls`
+    calls from 1-based row `start`: a `$FF` row jumps (to its right side)
+    in the same call, every other row is one call. Food_Feud's `$34`
+    blocks spell every call out, so no delay row is modelled -- one is
+    refused rather than misread."""
+    out, p = [], start
+    while len(out) < calls:
+        left, right = table[p - 1]
+        if left == 0xFF:
+            assert right, "a wave program stopped inside a held note"
+            p = right
+            continue
+        assert not 0x01 <= left <= 0x0F, f"delay row {p}"
+        out.append(right)
+        p += 1
+    return out
+
+
+def _residue_program(sid, det, rec, residue, calls, multiplier=3):
+    """What the original sounds, as right-column bytes, on each call of a
+    note of record `rec` attacking on `residue`: the pattern's note on
+    frame 0 (the fetch skips the effect), the phase's step after."""
+    notes = G.pitch_seq_frame_notes(sid, det, rec, residue)
+    return [0 if c // multiplier == 0 else notes[(c // multiplier) % len(notes)]
+            for c in range(calls)]
+
+
+@needs_corpus
+def test_food_feud_split_copies_each_34_record_per_minority_residue():
+    """GT 3 (votes 88/80/78 on 0/3/6, its own 0) and GT 4 (183/187/189, its
+    own 6) each get the other two residues -- and only they: every other
+    instrument is a candidate, but its block does not depend on the phase,
+    so `_arp_variant_blocks` makes it no copy. Four copies, $F-$12, each the
+    source's 25-byte record with only the wave pointer changed."""
+    sid, det, tracks, patterns = _food_feud_walk()
+    phases = G.pitch_seq_phases(sid, det, tracks, patterns)
+    splits, clock, residue_of = G.pitch_seq_splits(sid, det, tracks,
+                                                   patterns, phases)
+    assert sorted(splits[3]) == [3, 6] and sorted(splits[4]) == [0, 3]
+    assert clock[3] == len(FOOD_FEUD_CYCLE)
+    _, _, song = _food_feud_split_song()
+    assert len(song.instruments) == 18                   # 14 + 4 copies
+    fields = ("ad", "sr", "pulse_ptr", "filt_ptr", "vib_ptr", "vib_delay",
+              "gatetimer", "firstwave")
+    sources = []
+    for copy in song.instruments[14:]:
+        src = [ins for ins in song.instruments[2:4]
+               if all(getattr(ins, f) == getattr(copy, f) for f in fields)]
+        assert src and copy.wave_ptr != src[0].wave_ptr, copy.number
+        sources.append(src[0].number)
+    assert sorted(sources) == [3, 3, 4, 4]
+
+
+@needs_corpus
+def test_food_feud_split_copy_costs_its_attack_rows_and_one_jump():
+    """The budget: a copy's loop is the record's own cycle rotated by its
+    residue, so it jumps into that loop (`_share_loop_tail(rotate=True)`)
+    -- nine attack-side rows and the jump, where a spelled-out block is 34.
+    141 -> 181 of the wavetable's 255 rows; four copies of 34 would not
+    fit at all."""
+    _, _, song = _food_feud_split_song()
+    table = song.tables["WTBL"]
+    assert len(table) == 141 + 4 * 10
+    for copy in song.instruments[14:]:
+        rows = table[copy.wave_ptr - 1:copy.wave_ptr - 1 + 10]
+        assert [l for l, _ in rows].index(0xFF) == 9, copy.number
+        target = rows[9][1]
+        assert not copy.wave_ptr <= target < copy.wave_ptr + 10
+
+
+@needs_corpus
+def test_food_feud_every_34_note_plays_its_own_residue():
+    """The claim itself, per NOTE: walk the finished orderlists, name each
+    note's residue off the row clock (`pitch_seq_fetch_calls`), and run the
+    wavetable program of the instrument the note names -- three full
+    cycles of it, past every jump -- against what the original sounds for
+    that residue. Every non-tie note of the two `$34` families matches; the
+    majority alone matched about a third (78.3% of in-note frames at 247 s,
+    99.98% with the split -- C:/t/pitch-seq-row-split)."""
+    sid, det, song = _food_feud_split_song()
+    table = song.tables["WTBL"]
+    family = {}                     # GT number -> source record
+    for ins in song.instruments:
+        rec = (2 if ins.number == 3 else 3 if ins.number == 4 else None)
+        if rec is None and ins.number > 14:
+            rec = 2 if ins.pulse_ptr == song.instruments[2].pulse_ptr else 3
+        if rec is not None:
+            family[ins.number] = rec
+    period = len(FOOD_FEUD_CYCLE)
+    calls = 3 * period * 3
+    checked = wrong = 0
+    by_residue = {}
+    for track in song.tracks:
+        rows = list(G._note_rows(track, song.patterns, commands=True))
+        clock = G.pitch_seq_fetch_calls(sid, det, 0, rows[-1][0] + 1)
+        for row, gt, command in rows:
+            if gt not in family or command == G.CMD_TONEPORTA:
+                continue
+            residue = clock[row] % period
+            got = _wave_program(table, song.instruments[gt - 1].wave_ptr,
+                                calls)
+            want = _residue_program(sid, det, family[gt], residue, calls)
+            checked += 1
+            wrong += got != want
+            by_residue.setdefault(residue, set()).add(gt)
+    assert checked > 500 and wrong == 0, (checked, wrong)
+    # each residue is played by a different instrument of each family
+    assert sorted(by_residue) == [0, 3, 6]
+    assert all(len(v) == 2 for v in by_residue.values()), by_residue
+
+
+def test_a_rotated_loop_is_shared_only_when_asked():
+    """`_share_loop_tail(rotate=True)` jumps `k` rows into a closed loop
+    that is the block's own rotated by `k`; without `rotate` -- the fixed
+    arp split's call, whose bytes must not move -- only an identical loop
+    serves, exactly as before."""
+    loop = [(0x11, 0), (0x11, 0), (0x11, 124), (0x11, 124)]
+    entries = [(0x41, 0)] + loop + [(0xFF, 2)]           # loop rows 2-5
+    rotated = loop[1:] + loop[:1]
+    block = ([0x41] + [l for l, _ in rotated] + [0xFF],
+             [0] + [r for _, r in rotated] + [11])       # laid at row 10
+    assert G._share_loop_tail(block, 10, entries) == block
+    left, right = G._share_loop_tail(block, 10, entries, rotate=True)
+    assert left == [0x41, 0xFF] and right == [0, 3]
+    # and the jump plays the rotation: the program from row 10 of the joint
+    # table is the block's own
+    joint = entries + [(0, 0)] * (9 - len(entries)) + list(zip(left, right))
+    alone = entries + [(0, 0)] * (9 - len(entries)) + list(zip(*block))
+    assert _wave_program(joint, 10, 13) == _wave_program(alone, 10, 13)
+
+
+def test_the_lap_walk_on_a_row_clock_returns_it_to_its_first_residue():
+    """A loop of two rows on a clock of three residues a cycle of rows
+    meets the clock on another residue every lap, so it is walked three
+    laps -- `period` bounds the search, and a clock the loop never returns
+    to is walked once."""
+    two = [0x30, 1, 0, 0, 0x30, 1, 0, 0, 0xFF, 0, 0, 0]
+    walk = G._arp_lap_walk([0, 0xFF, 0], [two], None, 8,
+                           residue=lambda row: row % 3)
+    assert [lap for _, lap, _, _ in walk] == [0, 1, 2]
+    walk = G._arp_lap_walk([0, 0xFF, 0], [two], None, 8,
+                           residue=lambda row: row % 2)
+    assert [lap for _, lap, _, _ in walk] == [0]
+    walk = G._arp_lap_walk([0, 0xFF, 0], [two], None, 8,
+                           residue=lambda row: row // 2)
+    assert [lap for _, lap, _, _ in walk] == [0]
+
+
+@needs_corpus
+def test_the_split_is_a_population_filter_on_the_divider():
+    """`PITCH_SEQ_SPLIT_MIN_FRAMES_PER_STEP` keeps it to Food_Feud, the one
+    file whose walk is checked note by note. Trans-Atlantic and Nineteen,
+    both `--pitch-seq` in their presets, have a readable clock, majority
+    phases and minority residues -- and no split."""
+    import json
+    import h2g.convert as cv
+    presets = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    for name in ("Trans-Atlantic_Balloon_Challenge", "Nineteen"):
+        opts = dict(fidelity._preset_opts(presets, f"{name}.sid"))
+        assert opts.get("pitch_seq"), name
+        got = {}
+        real = cv.build_sng
+
+        def spy(sid, det, tracks, patterns, *a, **k):
+            got.update(sid=sid, det=det, tracks=tracks, patterns=patterns)
+            return real(sid, det, tracks, patterns, *a, **k)
+
+        cv.build_sng = spy
+        logs = []
+        try:
+            cv.convert(CORPUS / f"{name}.sid", log=lambda *a, **k:
+                       logs.append(" ".join(map(str, a))), **opts)
+        finally:
+            cv.build_sng = real
+        sid, det = got["sid"], got["det"]
+        assert det.pitch_seq.frames_per_step == 1
+        phases = G.pitch_seq_phases(sid, det, got["tracks"], got["patterns"])
+        assert phases, name
+        assert G.pitch_seq_splits(sid, det, got["tracks"], got["patterns"],
+                                  phases) == ({}, None, None)
+        assert not any("pitch-seq split" in line for line in logs), name

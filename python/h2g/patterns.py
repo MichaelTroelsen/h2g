@@ -1185,6 +1185,28 @@ def _build_raw_pattern(data: bytes, addr: int,
             # player dialect: see tests/test_row_budget.py, and do not gate
             # the tie on the files it happens to show up in.
             cmd1, cmd2 = 3, 0x00
+        # **A tied note that owns a slide keeps both, on different rows.** The
+        # slide operand takes the command column (`cmd1` 1/2 above), so the
+        # `cmd1 == 0` test refused the tie and the note was struck: the packed
+        # player hard-restarts it (2 calls gate-off) and attacks where the
+        # original only changed frequency. Game_Killer voice 0, orderlist
+        # position 31: `29 37` (bit 5, wait 9, G-4) then `99 8F 37` (bit 7,
+        # slide, G-4) -- the original holds the gate across both, ours
+        # re-attacked at frame 5468 (986 attacks against 985). A row has one
+        # command column, so row 0 carries the tie and the hold rows carry the
+        # slide, which is where `cmd1` already goes once row 0 is written; the
+        # slide starts one row late, which the tie outweighs. 399 rows in 35
+        # corpus files at v0.5.497 under the presets.
+        #
+        # A `wait` of 0 has no hold row to move the slide to, so it keeps the
+        # slide and stays untied (12 rows); a `CMD_SETSR` owner (2 rows) is not
+        # a slide and is not this rule, nor is a past-table KEYOFF (a rest has
+        # no gate to hold). `pending_tie` already implies `tie`. See
+        # C:/t/classic-slide-tie.
+        row0_cmd = None
+        if (pending_tie and cmd1 in (1, 2) and wait > 0
+                and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
+            row0_cmd = (CMD_TONEPORTA, 0x00)
         # ...and so does an event whose `wait` field is **zero**, for a
         # different reason in the same routine. The players sequence a note's
         # end as
@@ -1262,7 +1284,7 @@ def _build_raw_pattern(data: bytes, addr: int,
         if (free_rows is not None and free_note
                 and GT_FIRSTNOTE <= g_note <= GT_LASTNOTE):
             free_rows.append(len(events) // 4)
-        events += [g_note, g_instrument, cmd1, cmd2]
+        events += [g_note, g_instrument, *(row0_cmd or (cmd1, cmd2))]
         if cmd1 in ONE_SHOT_COMMANDS:
             cmd1 = 0
         for h in range(wait):
@@ -1349,6 +1371,42 @@ DIGI_SLIDE = 0x82
 DIGI_VIBRATO = 0x83
 DIGI_REST = 0x60
 DIGI_MAX_NOTE = 0x5C        # same ceiling the classic decoder clamps to
+# Bit 5 of a `$C0-$FF` duration byte is a TIE: the note it times does not
+# close its gate, and the next note lands on the open gate without an attack.
+# `wait = b & 0x1F` used to drop it. Read out of Rikky's player (the same
+# routine as Off the Cuff's, a few bytes lower):
+#
+#     1109  9D 4C 16  STA $164C,X      ; the WHOLE duration byte, sticky
+#     110E  9D 49 16  STA $1649,X      ;   ...and its low five bits, the wait
+#
+#     109D  DE 46 16  DEC $1646,X      ; the event counter, loaded with the wait
+#     10A0  30 06     BMI fetch        ; underflow -> next event
+#     10A2  4C F6 11  JMP $11F6        ; otherwise the HOLD path:
+#     11F9  BD 4C 16  LDA $164C,X
+#     11FC  9D 4F 16  STA $164F,X      ; copied for the next note start
+#     11FF  29 20     AND #$20
+#     1201  D0 0A     BNE $120D        ; bit 5 set -> the gate-off is skipped
+#     1203  BD 46 16  LDA $1646,X / BNE ; not the last frame -> skipped
+#     1208  A9 FE     LDA #$FE / STA $165B,X   ; the gate mask -> gate OFF
+#
+# and on the next note start:
+#
+#     118B  BD 4F 16  LDA $164F,X / AND #$20 / STA $1687
+#     11A4  AD 87 16  LDA $1687
+#     11A7  D0 3B     BNE $11E4        ; set -> skip $11A9-$11E1: the pulse,
+#                                      ;   ADSR and table resets
+#
+# `$10FA` resets the mask to `$FF` at every fetch and `$148B` ANDs it into
+# `$D404`, so a gate that was never closed produces no edge: a frequency
+# change and no attack. That is the classic engine's status bit 5 in all but
+# address, and `CMD_TONEPORTA 00` is its spelling there. A rest is not held
+# open: `$117F DEC $165B,X` closes the gate whatever the byte says.
+#
+# The hold-path and note-start shapes are in all nine digi files. Rikky's
+# voice 0 is where it was found: 62 of its ties land at the end of an `$82`
+# slide, because Hubbard writes the slide's own note with an `$E1`-`$E7`
+# duration -- the bit is general, the slide is only where it is densest.
+DIGI_TIE = 0x20
 
 
 def _digi_command(pending: tuple, steps: Optional[List[int]]) -> tuple:
@@ -1369,6 +1427,8 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
                             slides: bool = False,
                             steps: Optional[List[int]] = None,
                             instr_base: int = 2,
+                            tie: bool = False,
+                            exits_tied: Optional[List[bool]] = None,
                             ) -> Optional[List[int]]:
     """Flat event stream for one digi-engine pattern, or None if out of range.
 
@@ -1377,6 +1437,12 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
     it is attached to the next row this decoder emits -- which is where the
     player starts it, since a command byte is read between one note's rows and
     the next's. Off by default like the classic decoder's slide reading.
+
+    With `tie`, a note following a note whose duration byte carries DIGI_TIE
+    lands with `CMD_TONEPORTA 00` instead of an attack -- see DIGI_TIE.
+    `exits_tied`, when given a list, receives one bool: whether the pattern
+    ends on such a note, which `_apply_boundary_ties` reads exactly as it
+    reads `_build_raw_pattern`'s.
 
     Effect $83 is parsed for its length and not translated; see DIGI_VIBRATO.
     Notes, instruments and timing are complete either way, and dropping an
@@ -1388,7 +1454,12 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
     events: List[int] = []
     instrument = 0
     wait = 0
+    # The whole sticky duration byte ($164C,X), not just its wait: its bit 5
+    # is DIGI_TIE. 0 until the pattern writes one, so an unknown carried-in
+    # byte never ties.
+    duration = 0
     pending: Optional[tuple] = None
+    pending_tie = False
 
     while True:
         if addr <= 1 or addr >= len(data):
@@ -1399,6 +1470,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
             break
         if b >= DIGI_DURATION:
+            duration = b
             wait = b & 0x1F
             addr += 1
             continue
@@ -1431,6 +1503,7 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             return None
 
         cmd = _digi_command(pending, steps) if pending is not None else None
+        row0_cmd = cmd
         if b == DIGI_REST:
             # The player's rest closes the gate: $1184 does DEC $165D,X, taking
             # the mask just set to $FF at $10FF down to $FE -- the same value
@@ -1447,8 +1520,18 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             # identity on it. The clamp is a range limit for `$5D-$7F` only.
             note = max(0, min(b, DIGI_MAX_NOTE) + note_base) + 0x60
             events += [note, instrument, 0x00, 0x00]
-        if cmd is not None:
-            events[-2], events[-1] = cmd
+            # The previous note's duration byte carried DIGI_TIE, so its gate
+            # is still open and this note lands without an attack. Spelled as
+            # the classic decoder spells it (`row0_cmd` in
+            # `_build_raw_pattern`): `CMD_TONEPORTA 00` on the note's own row,
+            # and a slide this note owns moves to its hold rows -- which
+            # already carry it, below. With no hold row to move it to, the
+            # slide keeps the row and the note stays struck, as there.
+            if pending_tie and (cmd is None or wait > 0):
+                row0_cmd = (CMD_TONEPORTA, 0x00)
+        if row0_cmd is not None:
+            events[-2], events[-1] = row0_cmd
+        pending_tie = tie and b != DIGI_REST and bool(duration & DIGI_TIE)
         for _ in range(wait):
             events += [GT_NO_NOTE, 0x00, 0x00, 0x00]
             if cmd is not None:
@@ -1472,6 +1555,11 @@ def _build_raw_pattern_digi(data: bytes, addr: int,
             events += [GT_END_PATTERN, 0x00, 0x00, 0x00]
             break
 
+    if exits_tied is not None:
+        # `$81` is an orderlist step, not an event: nothing between the two
+        # patterns runs the hold path, so a gate the last note left open is
+        # still open at the next pattern's first note.
+        exits_tied.append(pending_tie)
     return events
 
 
@@ -2122,7 +2210,8 @@ def decode_entry(sid: SidFile, det: Detection, i: int,
     if det.pattern_dialect == "digi":
         return _build_raw_pattern_digi(data, addr, det.note_base,
                                        slides=slides, steps=steps,
-                                       instr_base=instr_base)
+                                       instr_base=instr_base, tie=tie,
+                                       exits_tied=exits_tied)
     if det.pattern_dialect == "ilv":
         return _build_raw_pattern_ilv(data, addr, note_base=det.note_base,
                                       instr_base=instr_base,
@@ -4305,7 +4394,8 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                          calls_per_frame: int = 1,
                          ticks_per_row: Optional[List[int]] = None,
                          voice_seeds: Optional[list] = None,
-                         preroll: Optional[int] = None):
+                         preroll: Optional[int] = None,
+                         preroll_records: Optional[list] = None):
     """Walk every subtune in play order and plan the phase of every note.
 
     Returns (phases, writes) or None where the plan cannot be trusted:
@@ -4403,6 +4493,22 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
     (C:/t/triangle-voice-seeds/fixwalk_first.txt): Game_Killer 393/570 ->
     570/570, 5_Title_Tunes voice 2 96/192 -> 192/192.
 
+    **`preroll_records` is WHICH record each voice sweeps through those
+    ticks**: one instrument byte per voice (a `sims` key), the image's
+    current-record cell (convert.py `_triangle_start`,
+    detect._find_pulse_tri_record_cell). The player sweeps `record,Y` with
+    Y from that cell on every tick before the voice's first fetch, so the
+    preroll lands on the IMAGE's record, not on the first note's (Game_Killer
+    voice 2 sweeps record 5 on tick 0, then fetches record 10). Where it is
+    given with `voice_seeds` and `preroll`, the preroll runs per GROUP on
+    shared record clones -- voices 2, 1, 0 each tick, the player's `LDX #2 /
+    DEX` order, since two voices may name one record and the width is per
+    record -- and each voice's walk starts from those records and from its
+    own direction and counter as the preroll left them; a voice whose image
+    record does not sweep leaves every record and its seeds as they were.
+    None (or either of the other two None) keeps the old preroll on the
+    voice's first NOTE's record.
+
     **What the packed file does with this plan (Game_Killer, measured
     against HEAD 924e4bd, figures HISTORICAL).** The table, the budget and
     the -S9 table step do NOT lose it. `build_pulse_phase_table`'s entry
@@ -4479,6 +4585,25 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             continue
 
         tempo = max(1, tempos[g])
+        # THE IMAGE PREROLL -- see `preroll_records`: before any voice's
+        # first fetch, each voice sweeps the record its image cell names, on
+        # the group's shared records (voices 2, 1, 0 a tick), with its own
+        # direction and counter. `start` is what every voice's clones are
+        # taken from, `start_state` what its first sim is handed.
+        image_preroll = (preroll_records is not None and not per_voice
+                         and voice_seeds is not None and preroll is not None)
+        start, start_state = sims, voice_seeds
+        if image_preroll:
+            start = {num: sim.clone() for num, sim in sims.items()}
+            start_state = list(voice_seeds)
+            for _ in range(preroll):
+                for pv in (2, 1, 0):
+                    psim = start.get(preroll_records[pv])
+                    if psim is None:
+                        continue
+                    psim.direction, psim._dcnt = start_state[pv]
+                    psim.advance(1)
+                    start_state[pv] = (psim.direction, psim._dcnt)
         for v in range(3):
             ti = 3 * g + v
             expanded, _ = _expand_repeats(tracks[ti])
@@ -4493,7 +4618,7 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             songlen = next((k for k, b in enumerate(track)
                             if b == GT_ORDER_RESTART), len(track))
             restart = track[songlen + 1] if songlen + 1 < len(track) else 0
-            voice_sims = {num: sim.clone() for num, sim in sims.items()
+            voice_sims = {num: sim.clone() for num, sim in start.items()
                           if per_voice or owner.get(num) == v}
             if not voice_sims:
                 continue
@@ -4511,7 +4636,10 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
             # compensated for the wrong direction and counter. A record that
             # is NOT the voice's opening instrument is frozen until its
             # first note and needs none. A wrong value here costs a fixed
-            # orbit offset, never the band or the travel.
+            # orbit offset, never the band or the travel. **This block is
+            # the fallback**: where the image names each voice's record
+            # (`image_preroll`) the preroll ran above, on THAT record, and
+            # the first note's record here is frozen until its fetch.
             first_instr = 0
             live_scan = 0
             for b in track:
@@ -4539,12 +4667,12 @@ def collect_pulse_phases(patterns: List[List[int]], tracks: List[List[int]],
                 if not tri_voice or hold[0] is sim:
                     return
                 if hold[0] is None:
-                    sim.direction, sim._dcnt = voice_seeds[v]
+                    sim.direction, sim._dcnt = start_state[v]
                 else:
                     sim.direction, sim._dcnt = hold[0].direction, hold[0]._dcnt
                 hold[0] = sim
 
-            if first_instr in voice_sims:
+            if first_instr in voice_sims and not image_preroll:
                 handover(voice_sims[first_instr])
                 voice_sims[first_instr].advance(
                     PULSE_PHASE_PREROLL if preroll is None else preroll)

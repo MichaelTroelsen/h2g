@@ -34,6 +34,8 @@ tests below pin that.
 """
 import pathlib
 import sys
+import threading
+from unittest import mock
 
 import pytest
 
@@ -380,9 +382,83 @@ def test_octave_split_frames_reads_the_low_byte_even_when_corrupt():
     assert V.octave_split_frames(clean) == V.octave_split_frames(corrupt)
 
 
+# --- vicetrace-fixed-dump-path: per-call dump path, not a shared fixed one --
+
+def test_run_default_dump_path_is_unique_per_call():
+    """Two calls with no explicit `out` must not both target the old fixed
+    `C:/t/vice_dump.txt` -- each gets its own path, so concurrent callers
+    never share a dump file."""
+    seen = []
+
+    def fake_run(cmd, **kwargs):
+        seen.append(pathlib.Path(cmd[cmd.index("-soundarg") + 1]))
+        return mock.Mock()
+
+    with mock.patch.object(V.subprocess, "run", side_effect=fake_run):
+        V.run(pathlib.Path("dummy1.sid"), 0.01)
+        V.run(pathlib.Path("dummy2.sid"), 0.01)
+
+    assert len(seen) == 2
+    assert seen[0] != seen[1]
+    assert all(p != pathlib.Path(r"C:\t\vice_dump.txt") for p in seen)
+
+
+def test_concurrent_calls_do_not_collide_on_the_dump_path():
+    """Two `run()` calls from two threads, each faking `vsid` by writing its
+    own distinct block to whatever `-soundarg` path it was given, must each
+    read back its own content -- proof the two never wrote the same file."""
+    blocks = {
+        "a": BLOCK,
+        "b": BLOCK.replace("1168", "2222"),
+    }
+    results = {}
+    paths_used = []
+    lock = threading.Lock()
+
+    def fake_run(cmd, **kwargs):
+        out_path = pathlib.Path(cmd[cmd.index("-soundarg") + 1])
+        sid_path = pathlib.Path(cmd[-1])
+        key = sid_path.stem
+        with lock:
+            paths_used.append(out_path)
+        out_path.write_text(blocks[key], encoding="utf-8")
+        return mock.Mock()
+
+    def worker(key):
+        results[key] = V.run(pathlib.Path(f"{key}.sid"), 0.01)
+
+    # Patch once around both threads: two overlapping per-thread patches of
+    # the same global restore each other's mock and leak it into later tests.
+    threads = [threading.Thread(target=worker, args=(k,)) for k in blocks]
+    with mock.patch.object(V.subprocess, "run", side_effect=fake_run):
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    assert paths_used[0] != paths_used[1]
+    assert results["a"][0].voices[0].freq == 0x1168
+    assert results["b"][0].voices[0].freq == 0x2222
+
+
 def test_octave_split_frames_drops_a_trailing_partial_frame():
     lows = ([0x40] * (V.PAL_LINES_PER_FRAME // 2)
             + [0x80] * (V.PAL_LINES_PER_FRAME - V.PAL_LINES_PER_FRAME // 2))
     samples = _voice_samples(lows + lows[:10])   # ten extra rasterlines
     total, _ = V.octave_split_frames(samples)
     assert total == 1
+
+
+def test_the_envelope_gate_is_immune_to_the_dump_adsr_sign_extension():
+    """`depth`'s envelope gate reads the dump's ADSR raw under `--vice`
+    (`fidelity.Voice.env_adsr_events`), unrepaired. That is sound only if
+    `fidelity.envelope_silent` gives the same verdict on the printed word
+    as on the true one, for every true word and both gate states -- pinned
+    exhaustively, together with the predicate VICE's own bug applies."""
+    import fidelity
+    for true in range(0x10000):
+        printed = (0xFF00 | (true & 0xFF)) if true & 0x80 else true
+        assert V.freq_is_corrupt(printed) == bool(true & 0x80)
+        for ctrl in (None, 0x40, 0x41):
+            assert fidelity.envelope_silent(printed, ctrl) == \
+                fidelity.envelope_silent(true, ctrl), (hex(true), ctrl)

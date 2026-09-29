@@ -61,6 +61,8 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -102,8 +104,14 @@ def run(sid: Path, seconds: float, subtune: int = 0, exe: str = VSID,
 
     `subtune` is 0-based here and 1-based to vsid, as everywhere else in this
     project the two conventions meet.
+
+    When `out` is not given, the dump is written to a per-call temporary path
+    (unique per invocation via `uuid4`) rather than a fixed shared path, so
+    concurrent calls -- e.g. from two test threads or two suites running at
+    once -- never collide on the same file.
     """
-    out = Path(out or r"C:\t\vice_dump.txt")
+    out = Path(out) if out is not None else (
+        Path(tempfile.gettempdir()) / f"vice_dump_{uuid.uuid4().hex}.txt")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.unlink(missing_ok=True)
     cycles = int(seconds * PAL_CYCLES_PER_FRAME * 50)

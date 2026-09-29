@@ -269,6 +269,21 @@ class Detection:
     # are not, and their bytes in the image are the tune's opening state.
     pulse_tri_dir: int = -1
     pulse_tri_cnt: int = -1
+    # The file offset of the per-voice CURRENT-RECORD array the sweep's Y is
+    # taken from -- see _find_pulse_tri_record_cell(). -1 where not read. Its
+    # image bytes are the record each voice sweeps before its first fetch.
+    pulse_tri_rec: int = -1
+    # The rate byte's STEP mask, read from the routine's `AND #$E0` / `AND
+    # #$F0` operand; the delay is the complement (`AND #$1F` / `AND #$0F`).
+    # $E0 in the absolute-address dialect (`PULSE_TRI_SHAPE`), $F0 in the
+    # zero-page one (`PULSE_TRI_ZP_SHAPES`, Samantha Fox and Spellbound).
+    pulse_tri_step_mask: int = 0xE0
+    # True where the triangle is the zero-page dialect, whose accumulator,
+    # direction and counter are per VOICE and reseeded at every note fetch
+    # (width from record +0/+1, direction ascending, counter 0) -- see
+    # _find_pulse_tri_zp(). A Goattracker pulse table restarting with the
+    # note is then the whole mechanism, and there is no phase to walk.
+    pulse_tri_reseeds: bool = False
     # Effect byte bit $80, in the eight-flag format only -- and it is not one
     # block. The 12 corpus files that test it split three ways; see
     # _find_effect_bit80(). "sfx" (9 files) is the *game's* sound effect, keyed
@@ -1769,7 +1784,10 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
     det.pitch_seq = _find_pitch_seq(sid)
     if det.pitch_seq is not None:
         log(f"Effect bit $10..........: {det.pitch_seq.steps}-step pitch "
-            "sequence on a global phase counter")
+            "sequence on a global phase counter"
+            + (", one static table for every record"
+               + (", played descending" if det.pitch_seq.descending else "")
+               if det.pitch_seq.static else ""))
 
     det.effect_bit40 = _find_effect_bit40(sid)
     if det.effect_bit40:
@@ -1789,7 +1807,7 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
         log("Voice start.............: silence parked in the stored waveform "
             "until the first instrument")
 
-    det.gate_hold = find_gate_hold(sid)
+    det.gate_hold = find_gate_hold(sid, det.code_spans)
     if det.gate_hold:
         log("Zero-wait event.........: skips the note-end gate-off "
             "(ties into the next note)")
@@ -1852,10 +1870,23 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
          det.pulse_tri_gated) = _find_pulse_tri(sid, det)
         if det.pulse_tri_hi >= 0:
             det.pulse_tri_dir, det.pulse_tri_cnt = _find_pulse_tri_cells(sid)
+            det.pulse_tri_rec = _find_pulse_tri_record_cell(sid, det)
+        else:
+            # FALLBACK, consulted only where the absolute-address spelling
+            # matched nothing: the zero-page per-voice dialect. Its cells are
+            # reseeded at every note fetch, so dir/cnt/rec stay unread (-1).
+            zp = _find_pulse_tri_zp(sid, det)
+            if zp is not None:
+                (det.pulse_tri_lo, det.pulse_tri_hi, det.pulse_tri_gated,
+                 det.pulse_tri_step_mask) = zp
+                det.pulse_tri_reseeds = True
         if det.pulse_tri_hi >= 0:
+            m = det.pulse_tri_step_mask
             log(f"Pulse-width triangle....: turns at ${det.pulse_tri_lo:X}00 "
                 f"and ${det.pulse_tri_hi:X}00, rate at record +6 "
-                f"(step & $E0, delay & $1F)"
+                f"(step & ${m:02X}, delay & ${0xFF ^ m:02X})"
+                + (", per-voice zero-page accumulator reseeded at each note"
+                   if det.pulse_tri_reseeds else "")
                 + ("" if det.pulse_tri_gated
                    else " -- every record, no bit $08 test"))
 
@@ -3047,9 +3078,10 @@ class PitchSeq:
     - Kings_of_the_Beach_intro `$1011` has the phase load and the base add but
       **no per-instrument pair copy at all** -- `$126B` holds a static
       `00 0C 18`, nothing in the file writes `$126C`/`$126D`, and there is no
-      index array. `PitchSeq` cannot say "the same three steps for every
-      record" (`goatwriter._pitch_seq_notes` reads `pairs + 2 * index`), so
-      matching it here would need a writer change too.
+      index array. It is not one of the four spellings; it is the STATIC
+      form, `PITCH_SEQ_STATIC_SHAPE`, a fallback read only where all four
+      matched nothing, and it reaches `PitchSeq` with `static=True` (see
+      `_find_static_pitch_seq`).
     - ACE_II `$E3F7` and Ricochet `$9421` copy **one** pair byte and never
       load the phase, so their `ADC base,Y` runs with `Y = 2 * index` -- a
       constant transpose per record, not an oscillation. Neither appears in
@@ -3071,6 +3103,17 @@ class PitchSeq:
     # once every FOUR frames, not every frame; read as the reload plus one,
     # 1 where there is no divider (the other 35 corpus files with the block).
     frames_per_step: int = 1
+    # **The static form** (Kings_of_the_Beach_intro): one global table at
+    # `base`, `steps` long, the same for every record carrying the bit; there
+    # is no index array and no pair table, so `index` and `pairs` are -1 and
+    # nothing may read them. `_find_static_pitch_seq`.
+    static: bool = False
+    # The static form's phase counter counts DOWN (`DEC phase / BPL / LDA #n /
+    # STA phase`), so its play order is the table read backwards. Read from the
+    # counter's update, never assumed; set only on the static form -- the pair
+    # form's direction is read at write time by
+    # `goatwriter._pitch_seq_phase_step`, and this stays False there.
+    descending: bool = False
 
 
 # Everything up to and including the `CLC` is the same in every file that has
@@ -3163,6 +3206,74 @@ def _pitch_seq_divider(data: bytes, reload_at: int) -> int:
     return 1
 
 
+def _pitch_seq_reload(data: bytes, phase: int) -> Optional[int]:
+    """Offset of the first `DEC phase / BPL / LDA #n / STA phase`, or None.
+
+    The phase cell's update, and the only place its direction and its cycle
+    length are written down: a `DEC` with a reload to `n` steps it n, n-1 ..
+    0, n, i.e. DOWN through `n + 1` steps.
+    """
+    lo, hi = phase & 0xFF, (phase >> 8) & 0xFF
+    for i in range(len(data) - 9):
+        if (data[i] == 0xCE and data[i + 1] == lo and data[i + 2] == hi
+                and data[i + 3] == 0x10 and data[i + 5] == 0xA9
+                and data[i + 7] == 0x8D and data[i + 8] == lo):
+            return i
+    return None
+
+
+# **The static form**, a fallback consulted only where every
+# `PITCH_SEQ_SHAPES` spelling matched nothing. Kings_of_the_Beach_intro's
+# bit-$10 handler at $1011:
+#
+#     1011  AND #$10 / BEQ out
+#     1015  LDY $126E            ; the global phase
+#     1018  CLC
+#     1019  LDA $122B,X          ; the played note
+#     101C  ADC $126B,Y          ; + table[phase] -- $126B: 00 0C 18
+#     101F  ASL / TAY
+#     1021  LDA $1152,Y          ; and out through the note table
+#
+# No index array, no pair copy: one table for every record carrying the bit,
+# and nothing in the file writes it. The gate is part of the shape because
+# without it `LDY / CLC / LDA abs,X / ADC abs,Y / ASL / TAY / LDA abs,Y` is
+# any transposed note-table lookup; the table is the ADC's operand, which is
+# the instruction that names it (CLAUDE.md, "anchor a signature on the
+# instruction that names the address you want").
+PITCH_SEQ_STATIC_SHAPE = "29 10 F0 ?? AC ?? ?? 18 BD ?? ?? 79 ?? ?? 0A A8 B9 ?? ??"
+PITCH_SEQ_STATIC_AT_PHASE = 5
+PITCH_SEQ_STATIC_AT_BASE = 12
+
+
+def _find_static_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
+    """The static global form, or None -- see `PITCH_SEQ_STATIC_SHAPE`.
+
+    The table's length and direction are both read off the phase cell's
+    update (Kings_of_the_Beach_intro $107F: `DEC $126E / BPL / LDA #$02 /
+    STA $126E`, three steps, down). Where that update is not found the
+    form is declined rather than assumed: a static table has no pair to
+    bound it, so without the reload nothing says how many bytes it is.
+    """
+    data = sid.data
+    at = search_file(data, PITCH_SEQ_STATIC_SHAPE)
+    if at < 1:
+        return None
+
+    def operand(k: int) -> int:
+        return data[at + k] | (data[at + k + 1] << 8)
+
+    i = _pitch_seq_reload(data, operand(PITCH_SEQ_STATIC_AT_PHASE))
+    if i is None:
+        return None
+    base = sid.to_offset(operand(PITCH_SEQ_STATIC_AT_BASE))
+    steps = data[i + 6] + 1
+    if base < 0 or steps < 2 or base + steps > len(data):
+        return None
+    return PitchSeq(index=-1, pairs=-1, base=base, steps=steps,
+                    frames_per_step=max(1, _pitch_seq_divider(data, i)),
+                    static=True, descending=True)
+
+
 def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
     """The bit-$10 arpeggio's three tables, or None."""
     data = sid.data
@@ -3171,7 +3282,7 @@ def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
         if at >= 1:
             break
     else:
-        return None
+        return _find_static_pitch_seq(sid)
 
     def operand(k: int) -> int:
         return data[at + k] | (data[at + k + 1] << 8)
@@ -3182,14 +3293,10 @@ def _find_pitch_seq(sid: SidFile) -> Optional[PitchSeq]:
     # the constant only stands in where the reload is not found.
     steps = PITCH_SEQ_STEPS
     frames_per_step = 1
-    lo, hi = phase & 0xFF, (phase >> 8) & 0xFF
-    for i in range(len(data) - 9):
-        if (data[i] == 0xCE and data[i + 1] == lo and data[i + 2] == hi
-                and data[i + 3] == 0x10 and data[i + 5] == 0xA9
-                and data[i + 7] == 0x8D and data[i + 8] == lo):
-            steps = data[i + 6] + 1
-            frames_per_step = _pitch_seq_divider(data, i)
-            break
+    i = _pitch_seq_reload(data, phase)
+    if i is not None:
+        steps = data[i + 6] + 1
+        frames_per_step = _pitch_seq_divider(data, i)
     seq = PitchSeq(index=sid.to_offset(operand(PITCH_SEQ_AT_INDEX)),
                    pairs=sid.to_offset(operand(PITCH_SEQ_AT_PAIRS)),
                    base=sid.to_offset(operand(at_base)),
@@ -3206,9 +3313,28 @@ ENVELOPE_CUT_SHAPES = (
 )
 
 
+# Fallback, consulted only where ENVELOPE_CUT_SHAPES matched nothing: the same
+# gate-clear-then-zero with a per-voice counter test between them --
+# Commodore 64 Music Examples at $1229-$123B:
+#   AND #$FE / STA $D404,Y / LDA cnt,X / BNE skip / LDA #0 / STA $D405,Y /
+#   STA $D406,Y
+# In that file the test is vacuous: $1220's `LDA cnt,X / LSR / CMP cnt,X /
+# BNE` reaches the gate-clear only when cnt is 0, so the BNE never branches
+# and every gate-off zeroes AD/SR (the trace agrees: 0000 at each one). A
+# near-miss search of the primary shape cannot find this -- the inserted
+# LDA/BNE moves the zero five bytes. Hits that one Hubbard_Rob file.
+ENVELOPE_CUT_GUARDED_SHAPES = (
+    "29 FE 99 04 D4 BD ?? ?? D0 ?? A9 00 99 05 D4 99 06 D4",
+)
+
+
 def find_envelope_cut(sid: SidFile) -> bool:
-    """Whether this player zeroes AD and SR when a note ends (33 files)."""
-    return any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES)
+    """Whether this player zeroes AD and SR when a note ends (34 Hubbard_Rob
+    files at v0.5.497: 33 on ENVELOPE_CUT_SHAPES, 1 on the guarded fallback)."""
+    if any(search_file(sid.data, sh) >= 1 for sh in ENVELOPE_CUT_SHAPES):
+        return True
+    return any(search_file(sid.data, sh) >= 1
+               for sh in ENVELOPE_CUT_GUARDED_SHAPES)
 
 
 # `LDA stored,X / AND gatemask,X / STA $D404,Y` -- the write of a voice's
@@ -3330,6 +3456,7 @@ def find_pre_instrument_silence(sid: SidFile) -> bool:
 # the one this shape exists for.
 GATE_HOLD_SHAPE = "BD ?? ?? 29 20 D0 ?? BD ?? ?? D0 ??"
 GATE_HOLD_COUNTER = 8       # offset of the second LDA's operand low byte
+GATE_HOLD_BRANCH = 10       # offset of the counter test's BNE
 # `DEC counter,X / BMI fetch-next` -- the sequencer whose underflow is what
 # makes a zero-`wait` event skip the guard above. Anchored on the *same* cell.
 GATE_HOLD_DEC = "DE {lo} {hi} 30"
@@ -3337,6 +3464,18 @@ GATE_HOLD_DEC = "DE {lo} {hi} 30"
 # Saboteur_II's two are 20 and 12 bytes before it; Human_Race's is 12.
 GATE_HOLD_CLOCK_WINDOW = 40
 GATE_HOLD_BRANCHES = (0x10, 0x30, 0x50, 0x70, 0x90, 0xB0, 0xD0, 0xF0)
+# Fallback, consulted only where GATE_HOLD_SHAPE matched nothing anywhere in
+# the file: the same two guards with the counter test spelled `LDA counter,X /
+# LSR A / CMP counter,X / BNE skip` -- Commodore_64_Music_Examples at $1219
+# (player 1 of its five). `cnt >> 1 == cnt` only for 0, so the BNE skips
+# exactly where the stock `LDA / BNE` does, but only when both LDA operands
+# name the same cell; the test demands that. The inserted LSR/CMP moves the
+# second BNE four bytes, so a near-miss search of the stock shape cannot find
+# it. Searched only inside the converted player's range (see
+# `_gate_hold_window`).
+GATE_HOLD_LSR_SHAPE = "BD ?? ?? 29 20 D0 ?? BD ?? ?? 4A DD ?? ?? D0 ??"
+GATE_HOLD_LSR_CMP = 12      # offset of the CMP's operand low byte
+GATE_HOLD_LSR_BRANCH = 14   # offset of the second BNE
 
 
 def _rel_target(data: bytes, at: int) -> int:
@@ -3345,7 +3484,7 @@ def _rel_target(data: bytes, at: int) -> int:
     return at + 2 + (op - 256 if op > 127 else op)
 
 
-def find_gate_hold(sid: SidFile) -> bool:
+def find_gate_hold(sid: SidFile, code_spans=()) -> bool:
     """Whether a zero-`wait` event in this player ties into the next note.
 
     The players end a note like this (Human_Race; Saboteur_II is the same
@@ -3409,36 +3548,105 @@ def find_gate_hold(sid: SidFile) -> bool:
     the shape only means what it says when both guards bypass the same code.
     And the bypass scan is anchored on the located `DEC` and bounded to the
     40 bytes in front of it rather than run over the file.
+
+    The LSR/CMP spelling (GATE_HOLD_LSR_SHAPE) is a fallback read only when
+    the stock shape matches nothing in the file, anchored to the converted
+    player's range, and it must pass every check above plus one more: the
+    `CMP` must name the cell the `LDA` in front of it loaded.
     """
     data = sid.data
     at = 0
+    seen = False
     while True:
         i = search_file(data[at:], GATE_HOLD_SHAPE)
         if i <= -1:
-            return False
+            break
         i += at
         at = i + 1
-        # Both guards must skip to the same place.
-        if _rel_target(data, i + 5) != _rel_target(data, i + 10):
+        seen = True
+        verdict = _gate_hold_verdict(sid, i, GATE_HOLD_BRANCH,
+                                     _whole_file_search(data))
+        if verdict is not None:
+            return verdict
+    if seen:
+        return False
+    # Fallback: the LSR/CMP spelling, only in the converted player's range.
+    window = _gate_hold_window(sid, code_spans)
+    if window is None:
+        return False
+    lo, hi = window
+    search = _windowed_search(data, lo, hi)
+    at = lo
+    while True:
+        i = _windowed_search(data, at, hi)(GATE_HOLD_LSR_SHAPE)
+        if i <= -1:
+            return False
+        at = i + 1
+        c = GATE_HOLD_COUNTER
+        k = GATE_HOLD_LSR_CMP
+        if data[i + c:i + c + 2] != data[i + k:i + k + 2]:
             continue
-        lo, hi = data[i + GATE_HOLD_COUNTER], data[i + GATE_HOLD_COUNTER + 1]
-        dec = GATE_HOLD_DEC.format(lo=f"{lo:02X}", hi=f"{hi:02X}")
-        d = search_file(data, dec)
-        if d <= -1:
-            continue
-        # `DEC counter,X / BMI fetch` -- the hold path is the instruction
-        # after the BMI, and it is a JMP in every player carrying the shape.
-        jmp = d + 5
-        if jmp + 2 >= len(data) or data[jmp] != 0x4C:
-            continue
-        hold = sid.to_offset(_addr16(data, jmp + 1, jmp + 2))
-        # Does the row clock's bypass reach the gate-off test? If it does, a
-        # zero-`wait` event is gated off on the next call and does not tie.
-        lo_w = max(0, d - GATE_HOLD_CLOCK_WINDOW)
-        bypass = any(data[p] in GATE_HOLD_BRANCHES
-                     and _rel_target(data, p) in (jmp, hold)
-                     for p in range(lo_w, d))
-        return not bypass
+        verdict = _gate_hold_verdict(sid, i, GATE_HOLD_LSR_BRANCH, search)
+        if verdict is not None:
+            return verdict
+
+
+def _whole_file_search(data: bytes) -> Callable[[str], int]:
+    """`search_file` over the whole file, as `_gate_hold_verdict` takes it."""
+    return lambda pattern: search_file(data, pattern)
+
+
+def _gate_hold_window(sid: SidFile, code_spans) -> Optional[Tuple[int, int]]:
+    """The file-offset range of the player `detect()` converts.
+
+    The whole file for a single-player file. For a multi-player file (a
+    `find_player_dispatch` hit), the range of the player whose code the main
+    signature chains matched (`code_spans`), which is the one converted; None
+    when no span names a player, so the fallback is not read at all.
+    """
+    disp = find_player_dispatch(sid)
+    plays = sorted({a for _, a in disp.plays}) if disp is not None else []
+    if len(plays) < 2:
+        return 0, len(sid.data)
+    if not code_spans:
+        return None
+    bounds = [sid.to_offset(a) for a in plays] + [len(sid.data)]
+    first = code_spans[0][0]
+    for k in range(len(plays)):
+        if bounds[k] <= first < bounds[k + 1]:
+            return bounds[k], bounds[k + 1]
+    return None
+
+
+def _gate_hold_verdict(sid: SidFile, i: int, branch2: int,
+                       search: Callable[[str], int]) -> Optional[bool]:
+    """The DEC/JMP/bypass checks on one gate-hold shape hit at `i`.
+
+    None when the hit is not the routine (try the next); else the verdict.
+    `branch2` is the offset of the counter test's BNE within the shape.
+    """
+    data = sid.data
+    # Both guards must skip to the same place.
+    if _rel_target(data, i + 5) != _rel_target(data, i + branch2):
+        return None
+    lo, hi = data[i + GATE_HOLD_COUNTER], data[i + GATE_HOLD_COUNTER + 1]
+    dec = GATE_HOLD_DEC.format(lo=f"{lo:02X}", hi=f"{hi:02X}")
+    d = search(dec)
+    if d <= -1:
+        return None
+    # `DEC counter,X / BMI fetch` -- the hold path is the instruction
+    # after the BMI, and it is a JMP in every player carrying the shape.
+    jmp = d + 5
+    if jmp + 2 >= len(data) or data[jmp] != 0x4C:
+        return None
+    hold = sid.to_offset(_addr16(data, jmp + 1, jmp + 2))
+    # Does the row clock's bypass reach the gate-off test? If it does, a
+    # zero-`wait` event is gated off on the next call and does not tie.
+    lo_w = max(0, d - GATE_HOLD_CLOCK_WINDOW)
+    bypass = any(data[p] in GATE_HOLD_BRANCHES
+                 and _rel_target(data, p) in (jmp, hold)
+                 for p in range(lo_w, d))
+    return not bypass
 
 
 # `LDA duration,X / AND #$1F / CMP #imm / BCC out` -- the per-note length gate
@@ -4335,6 +4543,172 @@ def _find_pulse_tri_cells(sid: SidFile) -> tuple[int, int]:
     if not (0 <= co and co + 3 <= len(d) and 0 <= do and do + 3 <= len(d)):
         return -1, -1
     return do, co
+
+
+# The voice loop's record select, which the triangle block's Y comes from:
+# `LDA cur,X / ASL / ASL / ASL / TAY / STY idx` (Game_Killer $099D, $0C66 /
+# $0C7E; One_Man_and_his_Droid $1199, $14F8 / $150F; Rasputin $C1C7, $C51E /
+# $C53C), `cur` the per-VOICE current-record array, X the voice. The operand
+# of the STY is spliced in from the triangle entry's own `LDY idx`.
+_TRI_REC_SELECT = rb"\xBD(..)\x0A\x0A\x0A\xA8\x8C"
+
+
+def _find_pulse_tri_record_cell(sid: SidFile, det: Detection) -> int:
+    """File offset of the per-voice current-record array, or -1.
+
+    The triangle block is entered at `LDA rate / BEQ / LDY idx` (`_TRI_ENTRY`
+    above the match) and sweeps `record,Y` with Y = `idx`, a scalar the voice
+    loop fills on its non-fetch path from the voice's current-record cell.
+    Read by chaining the two operands: the entry's `LDY idx` names `idx`, and
+    every `LDA cur,X / ASL x3 / TAY / STY idx` in the file naming it must
+    agree on one `cur`, with the record stride the three shifts imply (8).
+    Anything else -- no `LDY abs` at the entry, no select, two different
+    `cur`, another stride -- reads nothing.
+
+    **The image's bytes are each voice's record until its first fetch**, so
+    they are what the sweep steps on the ticks before it (Game_Killer
+    `$0C66` = 06 09 05: voice 2 sweeps record 5 on tick 0, then fetches
+    record 10 on tick 1). Measured under py65
+    (C:/t/triangle-preroll-image/probe_reccells.py): one select in each of
+    the 24 corpus files carrying the triangle, stride 8 in all; no write to
+    the array from init or any play call before the first fetch in 20 of
+    them; Ninja's init writes voice 0's byte with the value it already holds
+    (and Ninja has no first-fetch reading); Chimera, Last_V8 and
+    Last_V8_C128_version run away under py65 and are unmeasured.
+    """
+    off = search_file(sid.data, PULSE_TRI_SHAPE)
+    if off < _TRI_ENTRY or det.instr_stride != 8:
+        return -1
+    d = sid.data
+    if d[off - 3] != 0xAC:                      # LDY abs
+        return -1
+    idx = bytes(d[off - 2:off])
+    cells = {m.group(1) for m in
+             re.finditer(_TRI_REC_SELECT + re.escape(idx), bytes(d), re.S)}
+    if len(cells) != 1:
+        return -1
+    lo, hi = next(iter(cells))
+    co = sid.to_offset(lo | hi << 8)
+    if not (0 <= co and co + 3 <= len(d)):
+        return -1
+    return co
+
+
+# The same triangle in its ZERO-PAGE dialect (Samantha_Fox_Strip_Poker $7231,
+# Spellbound $E275). Every cell is per VOICE and in zero page -- the width
+# accumulator too, where the absolute dialect keeps it in the record:
+#
+#     7231  A5 BD     LDA rate       ; Spellbound: AD D0 E4 LDA $E4D0
+#     7233  F0 4A     BEQ done
+#     7235  AC F6 73  LDY voiceoff   ; the SID register offset, not a record
+#     7238  29 0F     AND #$0F       ; low NIBBLE: frames between steps
+#     723A  D6 C3     DEC cnt,X
+#     723C  10 41     BPL done
+#     723E  95 C3     STA cnt,X
+#     7240  A5 BD     LDA rate
+#     7242  29 F0     AND #$F0       ; high NIBBLE: the step
+#     7244  85 E7     STA step
+#     7246  B5 C6     LDA dir,X
+#     7248  D0 16     BNE descend
+#     724A  A5 E7     LDA step
+#     724C  18        CLC
+#     724D  75 DC     ADC lo,X       ; the per-voice accumulator...
+#     724F  48        PHA
+#     7250  B5 E0     LDA hi,X
+#     7252  69 00 29 0F 48
+#     7257  C9 0E     CMP #$0E
+#     ...             descend: SEC / LDA lo,X / SBC step / ... CMP #$08 /
+#                     BNE / DEC dir,X, then PLA / STA hi,X / STA $D403,Y /
+#                     PLA / STA lo,X / STA $D402,Y
+#
+# and the note fetch reseeds all four cells from the record (Samantha Fox
+# $7110-$7136, Spellbound $E13C-$E162):
+#
+#     BD 07 74  LDA instr+0,X / STA $D402,Y / PHA
+#     BD 08 74  LDA instr+1,X / STA $D403,Y / PHA
+#     ...       (AD, SR) / LDX voice
+#     A9 00 95 C6 95 C3   dir,X = cnt,X = 0
+#     68 95 E0 68 95 DC   hi,X, lo,X = the record's width
+#
+# The two spellings differ only in the rate's addressing mode (`A5 zp` /
+# `AD abs`), which moves every operand after it by one byte.
+_TRI_ZP_HEAD = "29 0F D6 ?? 10 ?? 95 ?? "
+_TRI_ZP_TAIL = (
+    "29 F0 85 ?? B5 ?? D0 ?? A5 ?? 18 75 ?? 48 B5 ?? 69 00 29 0F 48 C9 ?? "
+    "D0 ?? F6 ?? 4C ?? ?? 38 B5 ?? E5 ?? 48 B5 ?? E9 00 29 0F 48 C9 ?? "
+    "D0 ?? D6 ?? 68 95 ?? 99 03 D4 68 95 ?? 99 02 D4")
+PULSE_TRI_ZP_SHAPES = (
+    _TRI_ZP_HEAD + "A5 ?? " + _TRI_ZP_TAIL,      # Samantha Fox: rate in zp
+    _TRI_ZP_HEAD + "AD ?? ?? " + _TRI_ZP_TAIL,   # Spellbound: rate absolute
+)
+# The note fetch's reseed of the four per-voice cells, anchored on the
+# instrument table by its first two operands.
+PULSE_TRI_ZP_RESEED = (
+    "BD ?? ?? 99 02 D4 48 BD ?? ?? 99 03 D4 48 BD ?? ?? 99 05 D4 "
+    "BD ?? ?? 99 06 D4 A6 ?? A9 00 95 ?? 95 ?? 68 95 ?? 68 95 ??")
+
+
+def _find_pulse_tri_zp(sid: SidFile,
+                       det: Detection) -> tuple[int, int, bool, int] | None:
+    """(low nibble, high nibble, gated on bit $08, step mask) for the
+    zero-page triangle, or None.
+
+    A FALLBACK: detect() consults it only where `PULSE_TRI_SHAPE` matched
+    nothing. Every operand is read, and required to agree: the counter the
+    DEC names is the one the reload stores, the direction the LDA tests is
+    the one INC and DEC turn, the step stored is the step added and
+    subtracted, the accumulator read is the one written, and both rate loads
+    name one rate. The block itself never names the instrument table -- its
+    accumulator is zero page -- so the anchor is the note fetch that
+    reseeds it (`PULSE_TRI_ZP_RESEED`): its `LDA instr+0,X` must be this
+    detection's `instr_start` (Samantha Fox `LDA $7407,X`, Spellbound
+    `LDA $E548,X`), its second load `instr+1`, and the four cells it zeroes
+    and fills must be exactly the block's direction, counter, high and low.
+    The masks are the block's own `AND` operands, the delay's the
+    complement of the step's, never assumed.
+    """
+    d = sid.data
+    for zp_rate, shape in zip((True, False), PULSE_TRI_ZP_SHAPES):
+        off = search_file(d, shape)
+        if off < 0:
+            continue
+        rl = 2 if zp_rate else 3                 # the rate load's length
+        t = off + 8 + rl                         # the `AND #$F0`
+        cnt, dirs, step = d[off + 3], d[t + 5], d[t + 3]
+        lo_c, hi_c = d[t + 12], d[t + 15]
+        if not (d[off + 7] == cnt and d[t + 26] == dirs == d[t + 48]
+                and d[t + 9] == step == d[t + 34]
+                and d[t + 32] == lo_c == d[t + 57]
+                and d[t + 37] == hi_c == d[t + 51]):
+            return None
+        step_mask, delay_mask = d[t + 1], d[off + 1]
+        if step_mask ^ delay_mask != 0xFF:
+            return None
+        # The entry: `LDA rate / BEQ done / LDY abs` straight above the head,
+        # naming the same rate as the reload.
+        entry = off - 3 - 2 - rl
+        rate = bytes(d[off + 9:off + 8 + rl])
+        if not (entry >= 0 and d[off - 3] == 0xAC and d[off - 5] == 0xF0
+                and d[entry] == (0xA5 if zp_rate else 0xAD)
+                and bytes(d[entry + 1:entry + rl]) == rate):
+            return None
+        at = search_file(d, PULSE_TRI_ZP_RESEED)
+        if at < 0:
+            return None
+        base = d[at + 1] | d[at + 2] << 8
+        if (sid.to_offset(base) != det.instr_start
+                or (d[at + 8] | d[at + 9] << 8) != base + 1
+                or (d[at + 31], d[at + 33], d[at + 36], d[at + 39])
+                != (dirs, cnt, hi_c, lo_c)):
+            return None
+        lo, hi = d[t + 44] & 0x0F, d[t + 22] & 0x0F
+        if hi <= lo:
+            return None
+        gated = any(d[k] == 0x29 and d[k + 1] == 0x08 and d[k + 2] == 0xF0
+                    and k + 4 + d[k + 3] == entry
+                    for k in range(max(0, entry - 64), entry))
+        return lo, hi, gated, step_mask
+    return None
 
 
 # A per-instrument BYTE-CODE WAVE PROGRAM, and the most widespread instrument

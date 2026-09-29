@@ -102,6 +102,12 @@ class _FakeSid:
         record = bytes([0x00, 0x00, wave, 0x00, 0x00, 0x00, 0x00, effect_byte])
         self.data = bytes(8) + record
 
+    relocation = None  # as SidFile's default: no block moved at init
+
+    def to_address(self, off):
+        # Loaded at $0000; the nibble-arp reader asks, finds no block, declines.
+        return off
+
 
 def _entries(effect_byte, *, effects=False, rise=False, arp=False, drum=False,
              speed_table=None, wave=0x41, multiplier=1):

@@ -487,6 +487,84 @@ def test_a_qualifying_note_on_an_unnamed_instrument_is_not_guessed():
     assert [short[i + 3] for i in range(0, len(short), 4)] == [0, 0]
 
 
+def test_a_pattern_with_no_instrument_column_vibrates_what_the_orderlist_carried_in():
+    """Before its first instrument column a pattern plays what the channel
+    held on entry. Pattern 0 names instrument 2; pattern 1 names none and is
+    entered only after pattern 0, so its long note is instrument 2's and
+    takes record 0's speed-table index 7. Without `tracks` the walk is
+    pattern-local and the same note stays unknown -- the Commodore_64_Music_
+    Examples shape, 0 vibrated of 32 qualifying."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+
+    def pats():
+        return [_pattern(_note(instr=2)), _pattern(_note(), _hold(), _hold())]
+    carried = pats()
+    lines: list = []
+    _vibrato_command_pass(det, carried, {0: (7, 8)}, lead=1, log=lines.append,
+                          tracks=[[0, 1, 0xFF, 0]])
+    assert [carried[1][i + 2] for i in range(0, 12, 4)] == [4, 4, 4]
+    assert [carried[1][i + 3] for i in range(0, 12, 4)] == [7, 7, 7]
+    assert "1 note(s) vibrated" in lines[0], lines
+    local = pats()
+    _vibrato_command_pass(det, local, {0: (7, 8)}, lead=1)
+    assert [local[1][i + 2] for i in range(0, 12, 4)] == [0, 0, 0]
+
+
+def test_a_pattern_entered_on_two_instruments_is_not_guessed():
+    """Two orderlist entries into pattern 2 carry instruments 2 and 3; the
+    pattern cannot be both, so its long note stays unknown -- and a short
+    one is still damped, which needs no index."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pats = [_pattern(_note(instr=2)), _pattern(_note(instr=3)),
+            _pattern(_note(), _hold(), _hold(), _note(), _hold())]
+    lines: list = []
+    _vibrato_command_pass(det, pats, {0: (7, 8), 1: (9, 8)}, lead=1,
+                          log=lines.append, tracks=[[0, 2, 1, 2, 0xFF, 0]])
+    assert [pats[2][i + 2] for i in range(0, 20, 4)] == [0, 0, 0, 4, 4]
+    assert [pats[2][i + 3] for i in range(0, 20, 4)] == [0, 0, 0, 0, 0]
+    assert "1 on an unnamed instrument" in lines[0], lines
+
+
+def test_a_long_note_on_an_instrument_without_vibrato_is_not_called_unnamed():
+    """Instrument 3 is named and has no vibrato record: nothing is written,
+    and the log says so rather than blaming the instrument's name."""
+    from h2g.detect import Detection
+    from h2g.goatwriter import _vibrato_command_pass
+    det = Detection(triangle_vibrato=5, triangle_gate=2)
+    pat = _pattern(_note(instr=3), _hold(), _hold(), _note(instr=2), _hold())
+    lines: list = []
+    _vibrato_command_pass(det, [pat], {0: (7, 8)}, lead=1, log=lines.append)
+    assert [pat[i + 2] for i in range(0, 20, 4)] == [0, 0, 0, 4, 4]
+    assert "unnamed" not in lines[0], lines
+    assert "1 long on an instrument with no vibrato" in lines[0], lines
+
+
+@needs_corpus
+def test_commodore_64_music_examples_vibrates_across_its_orderlist():
+    """Its patterns name an instrument late or never, so a pattern-local walk
+    vibrated 0 notes of the file (41 unknown under these options) although
+    the original vibrates on its long notes. Carried across the orderlist:
+    28 vibrated, 6 still unknown (entries disagreeing, or a pattern no
+    orderlist reaches). A count, not a sound: the uncommanded notes already
+    oscillated through the kept instrument pointer, and the packed trace is
+    identical (see _vibrato_command_pass)."""
+    if not CORPUS.is_dir():
+        return
+    from h2g.convert import convert
+    lines: list = []
+    convert(str(CORPUS / "Commodore_64_Music_Examples.sid"),
+            log=lines.append, fmt=FORMAT_GTS5, vibrato=True, effects=True,
+            compact_instruments=True, slides=True, vibrato_command=True)
+    said = [l for l in lines if "Vibrato command" in l]
+    assert said, lines[-5:]
+    assert "28 note(s) vibrated" in said[0], said[0]
+    assert "6 on an unnamed instrument" in said[0], said[0]
+
+
 def test_keyoff_and_keyon_end_a_block_rather_than_extending_it():
     """gplay.c:921-925 handles $BE/$BF before the `<= LASTNOTE` test, so
     neither is a note and neither continues one."""
@@ -559,7 +637,11 @@ def test_the_command_pass_reaches_commando_and_leaves_the_fixture_alone():
             vibrato_command=True)
     said = [l for l in lines if "Vibrato command" in l]
     assert said, lines[-5:]
-    assert "50 note(s) vibrated" in said[0], said[0]
+    # 50 under the pattern-local walk; 78 once each pattern starts on the
+    # instrument the orderlists carry into it. The extra 28 already
+    # oscillated through the kept instrument pointer -- the count moved,
+    # not the sound (see _vibrato_command_pass).
+    assert "78 note(s) vibrated" in said[0], said[0]
     # The fixture is GTS2, where _vibrato_layout returns nothing at all, so
     # the whole mechanism is unreachable from it -- check the bytes, not len().
     got = convert(str(root / "Commando.sid"), log=lambda m: None)

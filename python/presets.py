@@ -456,6 +456,29 @@ EXCLUDED_FROM_ALWAYS = {
     # `--arpeggio` changes NO byte on any other file: 0 of 89 move with it off
     # and exactly 5 with it on, corpus byte-hashed at v0.5.457.
     "arpeggio",
+    # Effect bit $02's DERIVED alternate-noise dialect (`det.
+    # wave_alternate_noise`), `alt = (wave & $07) | $80`. Per song because its
+    # two files trade in different currencies -- Chicken_Song pays `wave` for
+    # noise frames, Hollywood_or_Bust pays melody -- and default off because
+    # that second trade is the one this repo refuses. Byte-hashed with it
+    # FORCED ON over the corpus under the refresh-496 presets: exactly 2 of 89
+    # converting files move (Chicken_Song, Hollywood_or_Bust), which is the
+    # whole detected population; 0 move with it at its default.
+    #
+    # **NOT IN FIDELITY_TOGGLES, BECAUSE THE SEARCH REFUSES IT ON BOTH FILES**
+    # -- measured through `tune_by_fidelity` itself with FIDELITY_TOGGLES
+    # patched to `("wave_alternate",)` on top of each song's shipped
+    # `no_test_restart`, -t 180, on the v0.5.497 drain tree. Hollywood_or_Bust
+    # fails `keeps_notes` (melody 60.6 -> 49.1%). Chicken_Song keeps every
+    # note but no acceptance term fires: its reference already sounds audible
+    # noise (2556 frames against the original's 4188), so `finds_noise` is
+    # false, and `onset_frame_agreement` falls 0.808 -> 0.769, past the 0.02
+    # margin, which `gave_back` vetoes. So a toggle would spend the walk on
+    # 87 files proving nothing and then say no on the 2 it reaches. Adopting
+    # it on Chicken_Song is a hand-recorded, per-song decision -- a listening
+    # one, since what it buys (1224 more noise frames) is exactly what the
+    # columns score least.
+    "wave_alternate",
 }
 
 

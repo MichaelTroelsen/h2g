@@ -22,6 +22,12 @@ DRUM, ARP = 0x01, 0x04
 class _Sid:
     """Enough of a SidFile for the record reads `_wavetable_entries` makes."""
 
+    relocation = None  # as SidFile's default: no block moved at init
+
+    def to_address(self, off):
+        # Loaded at $0000; the nibble-arp reader asks, finds no block, declines.
+        return off
+
     def __init__(self, effect: int, wave: int = 0x41, start_song: int = 1):
         # one 8-byte record at offset 8: +2 waveform, +3/+4 ADSR, +7 effect
         self.data = bytes(8) + bytes([0x00, 0x00, wave, 0x0A, 0x0A,

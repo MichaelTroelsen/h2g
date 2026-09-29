@@ -367,8 +367,10 @@ def test_frame_notes_of_the_wrong_length_fall_back_to_the_rotation():
 
 def test_build_sng_hands_each_34_record_its_majority_residue(monkeypatch):
     """Preset + pitch_seq on Food_Feud: records 2 and 3 (GT 3 and 4) are
-    phased at residues 0 and 6 (`pitch_seq_phases`), nothing else is asked,
-    and with pitch_seq off nothing is asked at all."""
+    laid out phased at residues 0 and 6 (`pitch_seq_phases`) -- the first
+    two asks -- and then asked again only at the residues the per-note
+    split builds copies for (`pitch_seq_splits`: the other two of 0, 3
+    and 6); with pitch_seq off nothing is asked at all."""
     if not CORPUS.is_dir():
         return
     import json
@@ -387,7 +389,8 @@ def test_build_sng_hands_each_34_record_its_majority_residue(monkeypatch):
     monkeypatch.setattr(G, "pitch_seq_frame_notes", spy)
     convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None,
             **{**opts, "pitch_seq": True})
-    assert sorted(asked) == [(2, 0), (3, 6)]
+    assert asked[:2] == [(2, 0), (3, 6)]
+    assert set(asked) == {(rec, r) for rec in (2, 3) for r in (0, 3, 6)}
     asked.clear()
     convert(CORPUS / "Food_Feud.sid", log=lambda *a, **k: None,
             **{**opts, "pitch_seq": False})

@@ -194,8 +194,9 @@ def _triangle_calls_per_tick(tempos, ticks, multiplier: int):
     return None if best == multiplier else best
 
 
-def _triangle_start(sid, det, log=None) -> tuple:
-    """(voice_seeds, preroll) for the triangle walk: the player's opening state.
+def _triangle_start(sid, det, log=None, lead: int = 1) -> tuple:
+    """(voice_seeds, preroll, preroll_records) for the triangle walk: the
+    player's opening state.
 
     `voice_seeds` is each voice's (direction, delay counter) as the image
     holds them (goatwriter.pulse_tri_voice_seeds -- the sweep keeps both per
@@ -205,17 +206,30 @@ def _triangle_start(sid, det, log=None) -> tuple:
     underflows, every voice fetching on it). Either is None where the player
     does not yield it, and the walk then keeps its old default for that half:
     each record's (+1, 0) start, `patterns.PULSE_PHASE_PREROLL`.
+
+    `preroll_records` is the record each voice sweeps through those ticks:
+    the image's per-voice current-record cell (detect.
+    _find_pulse_tri_record_cell -- the voice loop's `LDA cur,X` that fills
+    the sweep's Y; init does not write it), as the instrument byte the sims
+    are keyed on, record + 1 + `lead` (goatwriter.pulse_phase_sims' own
+    numbering). None where the cell was not read, and the walk then prerolls
+    the voice's first note's record as before.
     """
     seeds = pulse_tri_voice_seeds(sid, det)
     preroll = fixed_arp_first_fetch(sid, det)
+    records = None
+    if det.pulse_tri_rec >= 0:
+        records = [sid.data[det.pulse_tri_rec + v] + 1 + lead for v in range(3)]
     if log:
         log("Pulse phase.............: triangle start "
             + ("per voice " + " ".join(f"({'+' if d > 0 else '-'},{c})"
                                       for d, c in seeds) if seeds
                else "per record (cells unread)")
             + (f", {preroll} tick(s) before the first fetch"
-               if preroll is not None else ", preroll unread"))
-    return seeds, preroll
+               if preroll is not None else ", preroll unread")
+            + (" on instruments " + " ".join(f"{r:02X}" for r in records)
+               if records is not None else ", preroll records unread"))
+    return seeds, preroll, records
 
 
 def convert(sid_path: str, log: Logger = print,
@@ -262,7 +276,8 @@ def convert(sid_path: str, log: Logger = print,
             engine: int = 0,
             tempo: int | str | None = None,
             real_firstwave_instruments: tuple = (),
-            pulse_phase: bool = False) -> bytes:
+            pulse_phase: bool = False,
+            wave_alternate: bool = False) -> bytes:
     """Convert a .sid to .sng bytes.
 
     max_rows is the pattern-slicing length. It defaults to 94 (what the
@@ -382,6 +397,15 @@ def convert(sid_path: str, log: Logger = print,
     regression. Naming only the instrument that needs it avoids that: empty
     by default and byte-inert everywhere it names nothing. See
     goatwriter._write_instruments.
+
+    wave_alternate emits effect bit $02's DERIVED alternate-noise dialect
+    (`det.wave_alternate_noise`: Chicken Song, Hollywood or Bust), whose
+    alternate is `(wave & $07) | $80` rather than a table read. Per song and
+    off by default, because the two files it reaches trade differently --
+    Chicken Song pays `wave` for its noise, Hollywood or Bust pays melody.
+    Inert on every other file, including the tabled dialect, which is
+    emitted regardless. See the figures beside `det.wave_alternate_noise` in
+    goatwriter._wavetable_entries.
     """
     sid = load_sid(sid_path)
     log("------------------------------------------------------SID INFO---")
@@ -819,15 +843,16 @@ def convert(sid_path: str, log: Logger = print,
             # VOICE from the image, and the ticks before the first fetch
             # from the speed gate -- see _triangle_start. The bounds engine
             # (per voice, reseeding) takes neither.
-            tri_seeds, tri_preroll = (
-                _triangle_start(sid, det, log) if det.pulse_tri_hi >= 0
-                and not bounds_sims else (None, None))
+            tri_seeds, tri_preroll, tri_records = (
+                _triangle_start(sid, det, log, lead) if det.pulse_tri_hi >= 0
+                and not bounds_sims else (None, None, None))
             tri_ticks = _triangle_ticks_per_row(
                 sid, det, len(tracks) // 3, subtunes_before, log)
             plan = collect_pulse_phases(
                 new_patterns, tracks, group_tempos, sims, log,
                 free_rows=free_rows,
                 voice_seeds=tri_seeds, preroll=tri_preroll,
+                preroll_records=tri_records,
                 # THE TRIANGLE ENGINE'S CLOCK: a row is the player's inner
                 # reload + 1 ENGINE ticks, whatever our calls or its frames
                 # -- see _triangle_ticks_per_row. The walk reads it only for
@@ -904,4 +929,5 @@ def convert(sid_path: str, log: Logger = print,
                      compact_instruments=compact_instruments,
                      real_firstwave_instruments=real_firstwave_instruments,
                      arps=ilv_arps,
-                     pulse_plan=pulse_plan)
+                     pulse_plan=pulse_plan,
+                     wave_alternate=wave_alternate)

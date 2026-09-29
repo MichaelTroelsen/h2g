@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.498 — 2026-09-29
+
+- the 2026-09-28 /runqueue drain
+
 ## 0.5.497 — 2026-09-28
 
 - the v0.5.495/496 doc pass, the pinned-subtune renderer probe, and snapshot-safe git tests

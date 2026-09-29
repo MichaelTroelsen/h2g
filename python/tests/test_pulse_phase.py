@@ -106,7 +106,8 @@ def test_the_gate_is_lifted_and_the_budget_stands_in_its_place():
     assert gw.count(call) == 1, "the budget is not called from build_sng"
     # Last of the command-column writers: the vibrato pass is what takes
     # Rasputin's four patterns across the line, so the budget must follow it.
-    vib = gw.index("vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log)")
+    # (the call's prefix: its argument list has grown a `tracks=` keyword)
+    vib = gw.index("vib_ptrs = _vibrato_command_pass(det, patterns, vib_ptrs, lead, log")
     arps = gw.index("patterns = _resolve_arp_pointers(patterns, arp_starts, log)")
     assert vib < arps < gw.index(call)
     assert gw.index(call) < gw.index("_write_instruments(out, sid, det, instr_used, pulse_starts,")
@@ -232,14 +233,18 @@ def _trace_original(name: str, seconds: int):
 
 
 def _walk_capture(name: str, force: int | None = None,
-                  keep_start: bool = False, per_record: bool = False) -> dict:
+                  keep_start: bool = False, per_record: bool = False,
+                  first_note_preroll: bool = False) -> dict:
     """What the walk was handed and what it planned: {seen, ticks, plan,
     tempos, sims}. `force` puts a triangle walk back on the CALL clock it
     shipped on before the engine-tick fix -- `calls_per_frame=force` AND
     `ticks_per_row=None`, since the walk prefers the ticks where given --
     and back on each record's own (+1, 0) start with the fitted preroll
     (`voice_seeds=None`, `preroll=None`, task triangle-direction-per-voice-
-    from-the-image), so `force=1` is the pre-fix walk exactly."""
+    from-the-image), so `force=1` is the pre-fix walk exactly.
+    `first_note_preroll` drops only `preroll_records`, so the preroll lands
+    on each voice's first note's record as it did before task
+    triangle-preroll-on-the-image-record."""
     import fidelity
     from h2g import convert as C
     corpus, doc = _corpus_and_presets()
@@ -253,6 +258,9 @@ def _walk_capture(name: str, force: int | None = None,
         got["ticks"].append(kw.get("ticks_per_row"))
         got["seeds"] = kw.get("voice_seeds")
         got["preroll"] = kw.get("preroll")
+        got["records"] = kw.get("preroll_records")
+        if first_note_preroll:
+            kw["preroll_records"] = None
         if force is not None:
             kw["calls_per_frame"] = force
             kw["ticks_per_row"] = None
@@ -483,7 +491,9 @@ def test_the_engine_population_and_its_multispeed_share():
             det = detect(load_sid(str(path)), lambda *a, **k: None)
         except Exception:                              # noqa: BLE001
             continue
-        if det.pulse_tri_hi < 0:
+        # The zero-page dialect (Samantha Fox, Spellbound) reseeds at every
+        # note and never reaches the walk: pulse_phase_sims returns {} on it.
+        if det.pulse_tri_hi < 0 or det.pulse_tri_reseeds:
             continue
         engine += 1
         if entry.get("multiplier", 1) > 1:
@@ -604,7 +614,7 @@ def _forced_pulse_phase_logs(name: str) -> list[str]:
     return [l for l in logs if "PULSE" in l.upper() and "PHASE" in l.upper()]
 
 
-def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
+def test_build_pulse_phase_table_ships_the_whole_phase_set_on_last_v8():
     """`build_pulse_phase_table` used to return None outright once one
     instrument's phase set overflowed `GT_MAX_TABLELEN`, and convert.py's
     caller reverted the WHOLE expansion -- Last_V8 shipped with no
@@ -639,17 +649,161 @@ def test_build_pulse_phase_table_degrades_instead_of_refusing_last_v8():
     lastv8_entries.py). Measured at 26111a5 + that change; its rate half does not
     reach this file (`_triangle_calls_per_tick` is None: 4 calls / 2 ticks
     is the multiplier).
+
+    **And 0 and 0 since task one-records-phase-set-costs-130-rows-and-could-
+    share-its-ramps**: the one-block layout still overflows (instrument 7
+    asks 130 rows, 9 asks 70, and they fall static), so the table is laid
+    out a second time as shared chains (`goatwriter._phase_table_pass`,
+    `compact`), which keeps all 4 phase-tracked records sweeping in 250
+    rows where the first layout kept 2 in 254. The assertion this test
+    exists for still stands -- a table ships -- and now it is the whole one.
     """
     lines = _forced_pulse_phase_logs("Last_V8.sid")
-    full = [l for l in lines if "PULSE TABLE FULL UNDER --pulse-phase --" in l]
-    assert len(full) == 1, lines
-    assert "12 INSTRUMENT(S) LOSE THEIR PHASE ENTRIES" in full[0], full[0]
-    assert "10 SET NO WIDTH AT ALL" in full[0], full[0]
-    assert any("FALLING BACK TO A STATIC WIDTH" in l for l in lines), lines
+    assert not any("PULSE TABLE FULL UNDER --pulse-phase" in l
+                   for l in lines), lines
+    assert not any("FALLING BACK TO A STATIC WIDTH" in l for l in lines), lines
+    assert any("shared chains keep 4 of 4 swept record(s) where one block "
+               "each kept 2" in l for l in lines), lines
     assert any(l.startswith("Pulse phase.............: CMD_SETPULSEPTR")
                for l in lines), (
-        "a partial table must still ship phase commands for the "
-        "instruments that kept one -- got:\n" + "\n".join(lines))
+        "the table must still ship phase commands -- got:\n" + "\n".join(lines))
+
+
+# The four VBI carriers whose one-block phase table overflowed, and the
+# records it left static (instrument bytes, as the log names them) -- the
+# pulse-phase overflow section of docs/LESSONS.md, re-measured on this tree
+# before the shared chains: 130 and 70 rows (Last_V8 7 and 9), 112 (Master_
+# of_Magic 14), 70 (Phantoms 17).
+OVERFLOWED = {"Last_V8.sid": {7, 9}, "Last_V8_C128_version.sid": {7, 9},
+              "Master_of_Magic.sid": {14},
+              "Phantoms_of_the_Asteroid.sid": {17}}
+
+
+def _forced_table_capture(name: str) -> dict:
+    """`name` under its preset with `pulse_phase` forced: the arguments
+    `build_pulse_phase_table` was called with, what it returned, the
+    `compact` flag of every `_phase_table_pass` it ran, and the legalised
+    .sng -- one in-process conversion."""
+    import fidelity as F
+    from h2g import convert as C
+    from h2g import goatwriter as G
+    corpus, doc = _corpus_and_presets()
+    if not (corpus / name).exists():
+        import pytest
+        pytest.skip(f"{name} not in the corpus here")
+    kwargs = F._preset_opts(doc, name)
+    kwargs["pulse_phase"] = True
+    got: dict = {"passes": []}
+    real_t, real_p = C.build_pulse_phase_table, G._phase_table_pass
+
+    def spy_t(*a, **kw):
+        got["args"], got["kwargs"] = a, kw
+        got["table"] = real_t(*a, **kw)
+        return got["table"]
+
+    def spy_p(*a, **kw):
+        got["passes"].append(a[-1])
+        return real_p(*a, **kw)
+    C.build_pulse_phase_table, G._phase_table_pass = spy_t, spy_p
+    try:
+        raw = C.convert(str(corpus / name), log=lambda m: None, **kwargs)
+    finally:
+        C.build_pulse_phase_table, G._phase_table_pass = real_t, real_p
+    got["sng"], _ = F.legalise_restarts(raw)
+    got["multiplier"] = F._preset_multiplier(doc, name)
+    return got
+
+
+def _one_block_reference(got: dict) -> dict:
+    """The one-block layout of the same call with no table limit: every
+    record's own block, none degraded -- the widths the shared chains must
+    reproduce."""
+    from h2g import goatwriter as G
+    a, kw = got["args"], got["kwargs"]
+    sid, det, instr_used, pulse, multiplier, phases, log, lead = a[:8]
+    real = G.GT_MAX_TABLELEN
+    G.GT_MAX_TABLELEN = 1 << 16
+    try:
+        return G._phase_table_pass(sid, det, instr_used, pulse, multiplier,
+                                   phases, lead, kw.get("calls_per_tick"),
+                                   False)
+    finally:
+        G.GT_MAX_TABLELEN = real
+
+
+def test_the_shared_chains_keep_the_four_overflowed_records_swept():
+    """THE FOUR RECORDS SWEEP. Last_V8's instruments 7 and 9 (both files),
+    Master_of_Magic's 14 and Phantoms' 17 used to fall to a static width
+    under `pulse_phase` because their one block would not fit
+    `GT_MAX_TABLELEN`. The shared-chain layout keeps every phase-tracked
+    record's whole phase set -- the index holds every (record, width,
+    direction) the one-block layout would, so no phase is merged away or
+    capped -- inside 255 rows, and the file still packs (the output file,
+    never the exit code)."""
+    import shutil
+    import tempfile
+    import fidelity as F
+    for name, records in OVERFLOWED.items():
+        got = _forced_table_capture(name)
+        assert got["passes"] == [False, True], (name, got["passes"])
+        entries, starts, index = got["table"]
+        assert len(entries) <= 255, (name, len(entries))
+        kept = {k[0] for k in index}
+        assert records <= kept, (name, sorted(records - kept))
+        ref = _one_block_reference(got)
+        assert ref["dropped"] == 0 and set(ref["index"]) == set(index), name
+        if name == "Phantoms_of_the_Asteroid.sid":
+            # 16 and 17 sweep alike (speed $20, $880..$E00): 17 joins 16's
+            # entries rather than laying out its own 70 rows.
+            assert all(index[(17, w, d)] == index[(16, w, d)]
+                       for (n, w, d) in index if n == 17
+                       and (16, w, d) in index), "17 no longer shares 16's"
+        wd = Path(tempfile.mkdtemp(prefix="phase_chain_pack_"))
+        try:
+            packed = F.pack_sid(got["sng"], wd, F.GT2RELOC, got["multiplier"])
+            assert packed is not None and Path(packed).exists(), (
+                f"{name} did not pack")
+        finally:
+            shutil.rmtree(wd, ignore_errors=True)
+
+
+def test_the_shared_chains_play_the_one_block_widths_from_every_entry():
+    """THE SECOND LAYOUT IS THE SAME SWEEP. From every phase entry and every
+    record's start pointer, the shared-chain table and the unlimited
+    one-block table give the same width on each of 2000 calls, walked with
+    player.s's own `mt_pulseexec` stepping (`_gt_pulse_walk`) -- so the
+    chains (an entry falling through into the next SET, which is one more
+    step of the speed), the folded loop (a ramp arriving at a bound jumps to
+    the row after that bound's SET) and the shared records' entries are
+    encodings, not approximations. Every jump lands on a row that is not
+    itself a jump (the player would read a jump target's `$FF` as a SET),
+    or on 0, a static pair's stop."""
+    for name in ("Last_V8.sid", "Master_of_Magic.sid",
+                 "Phantoms_of_the_Asteroid.sid"):
+        got = _forced_table_capture(name)
+        entries, starts, index = got["table"]
+        ref = _one_block_reference(got)
+        for left, right in entries[2:]:
+            if left == 0xFF and right:
+                assert 1 <= right <= len(entries), (name, right)
+                assert entries[right - 1][0] != 0xFF, (name, right)
+        for key, at in sorted(index.items()):
+            want = _gt_pulse_walk(ref["entries"], ref["index"][key], 2000)
+            assert _gt_pulse_walk(entries, at, 2000) == want, (name, key)
+        for k, (mine, theirs) in enumerate(zip(starts, ref["starts"])):
+            assert mine and theirs, (name, k)
+            assert (_gt_pulse_walk(entries, mine, 2000)
+                    == _gt_pulse_walk(ref["entries"], theirs, 2000)), (name, k)
+
+
+def test_a_table_that_fits_never_reaches_the_shared_chains():
+    """The second layout is a rescue: a file whose one-block table fits runs
+    one pass, so its bytes are that layout's. Gerry_the_Germ is the
+    least-headroom file that still fits (see the trip-wire above) and ships
+    `pulse_phase`."""
+    got = _forced_table_capture("Gerry_the_Germ.sid")
+    assert got["table"] is not None
+    assert got["passes"] == [False], got["passes"]
 
 
 def test_gerry_the_germ_has_the_least_headroom_that_has_not_yet_overflowed():
@@ -722,6 +876,9 @@ def _gt_pulse_walk(entries, ptr: int, calls: int) -> list[int]:
     when the time runs out; a left $FF after the current row is a jump."""
     time, w, out = 0, 0, []
     for _ in range(calls):
+        if ptr == 0:                 # `beq mt_pulseskip`: stopped, width held
+            out.append(w)
+            continue
         left, right = entries[ptr - 1]
         if time == 0 and left >= 0x80:
             w = ((left & 0x0F) << 8) | right
@@ -1018,6 +1175,10 @@ def test_triangle_ticks_per_row_is_per_group_and_falls_back_to_subtune_0():
 _FETCH_READING = {
     "Game_Killer.sid": (0x089D, 0x0C66),
     "5_Title_Tunes.sid": (0x0C7A, 0x1040),
+    # `DEC dur,X / BMI fetch` targets and the current-record arrays
+    # (C:/t/triangle-preroll-image/find_fetch.py, probe_reccells.txt)
+    "Gremlins.sid": (0x1086, 0x16D6),
+    "Gerry_the_Germ.sid": (0xE086, 0xE4FE),
 }
 
 
@@ -1121,6 +1282,59 @@ def test_convert_hands_the_walk_the_images_voice_state():
             name, got["seeds"], got["preroll"])
 
 
+def test_convert_hands_the_walk_the_images_preroll_records():
+    """convert.py `_triangle_start`: each voice's current-record byte in the
+    image (tests/test_detection_soundness.py `_TRI_RECORD_CELL`) as the
+    instrument byte the sims are keyed on, record + 1 + lead (0 under these
+    presets). Game_Killer 06 09 05, 5_Title_Tunes 00 01 02, Rasputin
+    00 06 02, One_Man_and_his_Droid 00 00 02; the bounds engine gets none."""
+    want = {
+        "Game_Killer.sid": [7, 10, 6],
+        "5_Title_Tunes.sid": [1, 2, 3],
+        "Rasputin.sid": [1, 7, 3],
+        "One_Man_and_his_Droid.sid": [1, 1, 3],
+        "Saboteur_II.sid": None,
+    }
+    for name, records in want.items():
+        got = _walk_capture(name)
+        assert got["records"] == records, (name, got["records"])
+
+
+def test_the_triangle_preroll_on_the_image_record_plans_the_emulated_fetches():
+    """THE FILES THE IMAGE PREROLL MOVES, against the py65-emulated
+    originals' fetch widths (the files the corpus byte-hash names: shipped
+    Gerry_the_Germ; forced also Gremlins, Crazy_Comets and
+    Last_V8_C128_version -- the last runs away under py65, and Crazy_Comets'
+    voice 2 opens on notes under its image record 17 that name no
+    instrument, which the walk does not plan at all).
+    * Gremlins voice 2: image records $15 $15 $03, two ticks before the
+      first fetch, and none of the three sweeps ($15 is effect bit $08,
+      the accumulate engine; $03 has rate 0) -- so the preroll moves
+      nothing and voice 2's first record, record 2 (GT 3), is frozen until
+      its fetch. The first 29 sweeping fetches are planned exactly;
+      prerolling the first note's record two ticks instead plans none of
+      them. (The 30th misses for a reason this task did not chase: $DA0
+      emulated, $D20 planned.)
+    * Gerry_the_Germ voice 1: image record 4 (effect bit $08), first note
+      record 5 (GT 6). The one planned note opens on $880 as the original
+      fetches it, where the first-note preroll swept record 5 one tick to
+      $900. Its voice 0 image record $11 does sweep, one tick."""
+    for name, frames, voice, exact in (("Gremlins.sid", 800, 2, 29),
+                                       ("Gerry_the_Germ.sid", 60, 1, 1)):
+        shipped = _walk_capture(name)
+        before = _walk_capture(name, first_note_preroll=True)
+        recs = set(shipped["sims"])
+        orig = [(n, w) for v, n, w in _emulated_fetches(name, frames)
+                if v == voice and n in recs]
+        plan = _voice_plan(shipped["plan"], voice)
+        old = _voice_plan(before["plan"], voice)
+        assert len(orig) >= exact and len(plan) >= exact, (name, len(orig), len(plan))
+        pairs = list(zip(orig, plan))[:exact]
+        assert all(a == b for a, b in pairs), (name, [
+            (a, b) for a, b in pairs if a != b][:3])
+        assert not any(a == b for a, b in zip(orig[:exact], old)), name
+
+
 def test_the_triangle_direction_and_counter_carry_per_voice_across_records():
     """Two sweeping records on one voice share ONE direction and ONE delay
     counter, the first seeded from `voice_seeds`, and the second record's
@@ -1158,6 +1372,75 @@ def test_the_triangle_direction_and_counter_carry_per_voice_across_records():
     assert walk(voice_seeds=seeds) == walk(voice_seeds=seeds,
                                            preroll=PULSE_PHASE_PREROLL)
     assert walk(voice_seeds=seeds, preroll=3) != walk(voice_seeds=seeds, preroll=0)
+
+
+def test_the_triangle_preroll_sweeps_the_image_record_not_the_first_notes():
+    """THE PREROLL LANDS ON THE RECORD THE IMAGE NAMES (task triangle-
+    preroll-on-the-image-record). Before its first fetch a voice sweeps
+    `record,Y` with Y from its current-record cell, which init does not
+    write (Game_Killer voice 2 sweeps record 5 on tick 0, then fetches
+    record 10). Record 2 ($900) and record 3 ($D00), step $40, delay 1;
+    voice 0 plays record 3 on rows 0 and 1, voice 1 record 2 on row 0, 2
+    ticks a row.
+    * The old walk prerolls each voice's first NOTE's record: 2 ticks put
+      record 3 at $D80 and record 2 at $980.
+    * With voice 0's image on record 2 the same 2 ticks land on record 2
+      ($980, which voice 1 then opens on) and record 3 is frozen until its
+      fetch ($D00, then $D40). A record no sim sweeps moves nothing.
+    * Two voices naming one record both sweep it: 1 tick is $940 from one
+      voice and $980 from two -- the width is per record.
+    * The direction is the voice's: voice 0 seeded descending turns on
+      record 2 ($8C0, nibble 8) and opens record 3 ASCENDING, where the old
+      walk swept record 3 itself down to $CC0.
+    * Without a preroll or voice seeds the image records are not consulted
+      (the fallback, `PULSE_PHASE_PREROLL` on the first note's record)."""
+    sys.path.insert(0, str(PYTHON_ROOT))
+    from h2g.goatwriter import PulsePhaseSim
+    from h2g.patterns import GT_NO_NOTE, collect_pulse_phases
+
+    def pat(rows):
+        out: list = []
+        for note, instr in rows:
+            out += [GT_NO_NOTE if note is None else note, instr, 0, 0]
+        return out + [0xFF, 0, 0, 0]
+    v0 = pat([(0x70, 3), (0x72, 3), (None, 0), (None, 0)])
+    v1 = pat([(0x70, 2), (None, 0), (None, 0), (None, 0)])
+    rest = pat([(None, 0)] * 4)
+
+    def walk(**kw):
+        tracks = [[0, 0xFF, 0x00], [1, 0xFF, 0x00], [2, 0xFF, 0x00]]
+        sims = {2: PulsePhaseSim(0x900, 0x40, 1, 8, 0xE),
+                3: PulsePhaseSim(0xD00, 0x40, 1, 8, 0xE)}
+        got = collect_pulse_phases([list(v0), list(v1), list(rest)], tracks,
+                                   [4], sims, ticks_per_row=[2], **kw)
+        assert got is not None
+        return got[1]
+
+    def opens(w):
+        return {ti: {r: ph for r, (_, ph) in rows.items()} for ti, _, rows in w}
+    up = [(+1, 0)] * 3
+    assert opens(walk(voice_seeds=up, preroll=2)) == {
+        0: {0: (0xD80, +1), 1: (0xDC0, +1)}, 1: {0: (0x980, +1)}}
+    assert opens(walk(voice_seeds=up, preroll=2,
+                      preroll_records=[2, None, None])) == {
+        0: {0: (0xD00, +1), 1: (0xD40, +1)}, 1: {0: (0x980, +1)}}
+    assert opens(walk(voice_seeds=up, preroll=2,
+                      preroll_records=[0x55] * 3)) == {
+        0: {0: (0xD00, +1), 1: (0xD40, +1)}, 1: {0: (0x900, +1)}}
+    assert opens(walk(voice_seeds=up, preroll=1,
+                      preroll_records=[None, 2, None]))[1] == {0: (0x940, +1)}
+    assert opens(walk(voice_seeds=up, preroll=1,
+                      preroll_records=[2, 2, None]))[1] == {0: (0x980, +1)}
+    down = [(-1, 0), (+1, 0), (+1, 0)]
+    assert opens(walk(voice_seeds=down, preroll=1))[0] == {
+        0: (0xCC0, -1), 1: (0xC80, -1)}
+    assert opens(walk(voice_seeds=down, preroll=1,
+                      preroll_records=[2, None, None])) == {
+        0: {0: (0xD00, +1), 1: (0xD40, +1)}, 1: {0: (0x8C0, +1)}}
+    assert (walk(voice_seeds=down, preroll_records=[2, None, None])
+            == walk(voice_seeds=down))
+    assert (walk(preroll=1, preroll_records=[2, None, None])
+            == walk(preroll=1))
 
 
 def test_the_counter_cell_reads_as_the_players_dec_bpl():

@@ -99,6 +99,60 @@ def test_bit5_tie_still_fires_with_gate_hold_off():
         == CMD_TONEPORTA
 
 
+# A bit-5 note, then a note that owns a slide: operand $8F is bit 7 (a slide,
+# not an instrument) with bit 0 set, CMD_PORTADOWN at (0x0F // 4) = 3. This is
+# Game_Killer voice 0's `29 37` / `99 8F 37`, the row that re-attacked.
+CMD_PORTADOWN = 2
+
+
+def _tied_slide(wait):
+    return [_status(3, get_next=True, no_adsr=True), 0x05, 0x20,
+            _status(wait, get_next=True), 0x8F, 0x24, END]
+
+
+def _second_event(rows):
+    idx = [i for i, r in enumerate(rows) if r[0] not in (GT_NO_NOTE, END)]
+    assert len(idx) == 2, f"expected 2 note rows, got {rows}"
+    return rows[idx[1]], rows[idx[1] + 1:-1]
+
+
+def test_tied_note_owning_a_slide_ties_and_keeps_the_slide():
+    """Row 0 is the tie; every hold row carries the slide."""
+    row0, holds = _second_event(_rows(_tied_slide(3), tie=True))
+    assert row0[2:] == [CMD_TONEPORTA, 0x00], row0
+    assert len(holds) == 3
+    assert all(h[2:] == [CMD_PORTADOWN, 3] for h in holds), holds
+
+
+def test_slide_note_does_not_tie_without_tie():
+    row0, holds = _second_event(_rows(_tied_slide(3), tie=False))
+    assert row0[2:] == [CMD_PORTADOWN, 3], row0
+    assert all(h[2:] == [CMD_PORTADOWN, 3] for h in holds), holds
+
+
+def test_slide_note_after_untied_note_keeps_its_slide_on_row_0():
+    p = [_status(3, get_next=True), 0x05, 0x20,
+         _status(3, get_next=True), 0x8F, 0x24, END]
+    row0, _ = _second_event(_rows(p, tie=True))
+    assert row0[2:] == [CMD_PORTADOWN, 3], row0
+
+
+def test_zero_wait_slide_note_keeps_its_slide_and_stays_untied():
+    """No hold row to move the slide to, so the slide keeps row 0."""
+    row0, holds = _second_event(_rows(_tied_slide(0), tie=True))
+    assert row0[2:] == [CMD_PORTADOWN, 3], row0
+    assert holds == []
+
+
+def test_past_table_rest_owning_a_slide_is_not_tied():
+    """A KEYOFF closes the gate; a tie into it is not the original."""
+    p = _tied_slide(3)
+    p[5] = 0x60                         # the slide event's note byte
+    row0, _ = _second_event(_rows(p, tie=True, rest_notes=frozenset({0x60})))
+    assert row0[0] == 0xBE, row0        # GT_KEYOFF
+    assert row0[2:] == [CMD_PORTADOWN, 3], row0
+
+
 # --- detection ------------------------------------------------------------
 #
 # A minimal player carrying both halves of the routine. Laid out so the
@@ -161,3 +215,61 @@ def test_bypass_into_the_test_is_not():
 
 def test_commando_is_a_gate_hold_player():
     assert find_gate_hold(load_sid(str(REPO_ROOT / "Commando.sid"))) is True
+
+
+# --- the LSR/CMP spelling (Commodore_64_Music_Examples $1219) --------------
+#
+# `LDA status,X / AND #$20 / BNE out / LDA cnt,X / LSR A / CMP cnt,X / BNE
+# out`: the same counter-is-zero test, read by a fallback only where the
+# stock shape matches nothing. Same layout as `_player`, test widened by 4.
+def _lsr_player(*, cmp_cell=COUNTER, bypass_into_test=False,
+                stock_elsewhere=False) -> SidFile:
+    from h2g.sidfile import HLEN
+    base = HLEN - 1
+    data = bytearray(base + 0x200)
+
+    def put(off, *bs):
+        data[base + off:base + off + len(bs)] = bytes(bs)
+
+    def rel(frm, to):
+        d = to - (frm + 2)
+        assert -128 <= d <= 127, (frm, to)
+        return d & 0xFF
+
+    out = TEST + 16
+    put(TEST, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, rel(TEST + 5, out),
+        0xBD, COUNTER & 0xFF, COUNTER >> 8, 0x4A,
+        0xDD, cmp_cell & 0xFF, cmp_cell >> 8, 0xD0, rel(TEST + 14, out))
+    put(out, 0xBD, 0x10, 0x13, 0x29, 0xFE, 0x99, 0x04, 0xD4)
+    put(DEC, 0xDE, COUNTER & 0xFF, COUNTER >> 8, 0x30, 0x08,
+        0x4C, (LOAD + TEST) & 0xFF, (LOAD + TEST) >> 8)
+    target = DEC + 5 if bypass_into_test else CLOCK + 8
+    put(CLOCK, 0xAD, 0x20, 0x13, 0xCD, 0x21, 0x13,
+        0xD0, rel(CLOCK + 6, target))
+    if not bypass_into_test:
+        put(CLOCK + 8, 0x4C, (LOAD + out) & 0xFF, (LOAD + out) >> 8)
+    if stock_elsewhere:
+        # A stock-shape hit whose two BNEs disagree: it fails its own checks,
+        # but its presence alone must keep the fallback unread.
+        put(0x140, 0xBD, 0x00, 0x13, 0x29, 0x20, 0xD0, 0x10,
+            0xBD, 0x00, 0x14, 0xD0, 0x20)
+    return SidFile(path="synthetic", data=bytes(data), name="", author="",
+                   released="", load_addr=LOAD, subtunes=1)
+
+
+def test_lsr_cmp_spelling_is_a_gate_hold_player():
+    assert find_gate_hold(_lsr_player()) is True
+
+
+def test_lsr_cmp_needs_both_loads_to_name_the_same_cell():
+    """`LDA a / LSR / CMP b` is no counter-is-zero test when a != b."""
+    assert find_gate_hold(_lsr_player(cmp_cell=COUNTER + 1)) is False
+
+
+def test_lsr_cmp_still_runs_the_bypass_check():
+    assert find_gate_hold(_lsr_player(bypass_into_test=True)) is False
+
+
+def test_lsr_cmp_is_a_fallback_only():
+    """Any stock-shape hit, even a failing one, decides alone."""
+    assert find_gate_hold(_lsr_player(stock_elsewhere=True)) is False

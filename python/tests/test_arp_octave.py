@@ -47,8 +47,11 @@ $C539 / STA / JMP`, where `$C539` is the track's own `$FE nn` tempo -- so the
 counter is not the frame number, no phase can be walked, and those two take
 the reset residue 0. Rasputin's duty follows that tempo: three and three at
 the opening's reload 2, two and two at the 5..120 the rest of the tune
-runs (232 of 293 octave onsets in a 240 s trace); it gets the mask's own
-two-and-two. The tests below pin the readers, the shape against a
+runs (232 of 293 octave onsets in a 240 s trace). The record keeps the
+mask's own two-and-two, and a note on a row whose CMD_SETTEMPO makes the
+step longer names a copy built at the row's tempo over its passing calls
+(the tempo split, tested at the end of this file). The tests below pin the
+readers, the shape against a
 transcription of the player's wavetable loop at -S1 and -S2, and the duty
 against a siddump of four originals.
 
@@ -1226,7 +1229,7 @@ from h2g.goatwriter import (_arp_lap_walk, _share_loop_tail,  # noqa: E402
                             ARP_SPLIT_RATIO, GT_FIRST_NOTE, GT_LAST_NOTE,
                             CMD_TONEPORTA)
 
-SPLIT_FILES = {"Chimera", "Game_Killer", "Human_Race", "Hunter_Patrol",
+SPLIT_FILES = {"Chimera", "Game_Killer", "Human_Race", "Hunter_Patrol", "Rasputin",
                "One_Man_and_his_Droid", "Zoids"}
 
 
@@ -1415,7 +1418,8 @@ def test_game_killer_names_one_copy_per_residue():
 @needs_corpus
 def test_the_split_fires_on_exactly_the_split_files():
     """The census the corpus byte-hash was checked against: of the fixed
-    arp files, exactly these six log a split under their presets."""
+    arp files, exactly these seven log a split under their presets --
+    Rasputin by the tempo split alone."""
     if not (PYTHON_ROOT.parent / "presets.json").exists():
         pytest.skip("presets.json not present")
     import json
@@ -1473,3 +1477,488 @@ def test_chimera_copies_are_their_source_but_the_wave_pointer():
     assert set(four) == {2, 6}, four
     assert all(len(v) == 1 for v in four.values()), four
     assert four[2] != four[6], four
+
+
+# --- The tempo split: a gated duty follows the row's tempo -----------------
+#
+# Rasputin's counter steps once a PASSING call of a gate whose reload is the
+# track's `$FE nn` tempo, so its `$02` duty half is one row at every tempo:
+# three frames and three at the opening's reload 2, where the record's one
+# wavetable sounded two and two. Measured before the split (per-onset
+# profile, 30 s of subtune 0, C:/t/rasputin-tempo-duty/profile_base.txt):
+# the original `bbbuuubbbuuubbbuu` on 12 of 17 octave onsets and 3:3 on the
+# rest, ours `bbuubbuubbuubbuub` on 15 of 17 and 2:2 on the rest; after it
+# (profile_edit.txt) ours `bbbuuubbbuuubbbuu` on 13 of 17 and 3:3 on 15, the
+# other two the `$FE 03` rows' 2.5-frame half. `--vice -t 30`: vib 3.61x ->
+# 3.09x, tie 1.18x -> 1.07x, every sequence column unchanged.
+
+from fractions import Fraction                               # noqa: E402
+
+from h2g.goatwriter import (_duty_tempo_calls,               # noqa: E402
+                            _track_tempo_events, CMD_SETTEMPO)
+
+
+def _halves(left, right, first, calls, skip=12):
+    """Run lengths, in calls, of the octave state past the first `skip`
+    calls -- the partial runs at either end dropped."""
+    notes = [n for _, _, n in wave_timeline(left, right, first=first,
+                                            calls=calls)][skip:]
+    runs, n = [], 1
+    for a, b in zip(notes, notes[1:]):
+        if a == b:
+            n += 1
+        else:
+            runs.append(n)
+            n = 1
+    return runs[1:]
+
+
+@pytest.mark.parametrize("phase", range(4))
+def test_a_whole_fractional_step_is_the_integer_shape(phase):
+    """`Fraction(3)` calls a step is the -S3 shape byte for byte."""
+    a = fixed_arp_duty_entries(0x41, 0x41, 0x02, BEQ, phase, 0x0C, 3,
+                               start=6, budget=255)
+    b = fixed_arp_duty_entries(0x41, 0x41, 0x02, BEQ, phase, 0x0C,
+                               Fraction(3), start=6, budget=255)
+    assert a is not None and a == b
+
+
+@pytest.mark.parametrize("phase", range(4))
+@pytest.mark.parametrize("tempo", [4, 5, 6])
+def test_the_duty_half_is_the_row_at_every_tempo(phase, tempo):
+    """Rasputin's rows are 2 passing calls, so a step is `tempo / 2` of our
+    calls and the `$02` half -- two steps -- is exactly `tempo` calls,
+    including the `$FE 03`/`$FE 05` rows' 5, which is 2.5 a step."""
+    left, right = fixed_arp_duty_entries(0x41, 0x41, 0x02, BEQ, phase, 0x0C,
+                                         Fraction(tempo, 2), start=6,
+                                         budget=255)
+    assert left[-1] == 0xFF
+    runs = _halves(left, right, 6, 120)
+    assert runs and set(runs) == {tempo}, runs
+
+
+def test_a_step_whose_period_is_not_whole_calls_is_declined():
+    """A loop of one period must end on a call: 4 steps of 7/3 is 28/3."""
+    assert fixed_arp_duty_entries(0x41, 0x41, 0x02, BEQ, 0, 0x0C,
+                                  Fraction(7, 3), start=6, budget=255) is None
+
+
+def _pat(*rows):
+    out = []
+    for note, cmd, arg in rows:
+        out += [note, 0, cmd, arg]
+    return out + [0xFF, 0, 0, 0]
+
+
+def test_the_tempo_timeline_follows_the_orderlist_loop():
+    """Rows are counted through repeats (`$D0+n`) and round the loop from
+    the restart position, as far as the horizon asks."""
+    pats = [_pat((0x60, 0, 0), (0x60, 0, 0)),
+            _pat((0x60, CMD_SETTEMPO, 6), (0x60, 0, 0)),
+            _pat((0x60, CMD_SETTEMPO, 0x84))]
+    track = [0x01, 0xD1, 0x00, 0x02, 0xFF, 0x01]
+    got = _track_tempo_events(track, pats, 14)
+    # 0: pattern 1 (2 rows), 2-5: pattern 0 twice, 6: pattern 2, then the
+    # loop restarts at position 1 (the repeat) -> 7-10, 11: pattern 2 ...
+    assert got == [(0, 6), (6, 0x84), (11, 0x84)], got
+    assert _track_tempo_events([0x00, 0xFF, 0x00], [[0xFF, 0, 0, 0]],
+                               10) == []           # a loop of no rows ends
+
+
+@needs_corpus
+def test_only_a_gated_counter_follows_the_tempo():
+    """Rasputin's gated counter reads a step per tempo; Zoids' ungated one
+    names none whatever its patterns say."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    from h2g.goatwriter import _fixed_arp_clock
+    sid, det = _det(CORPUS / "Rasputin.sid")
+    _, tracks, patterns = _converted("Rasputin")
+    clock = _fixed_arp_clock(sid, det, tracks)
+    calls = _duty_tempo_calls(sid, det, tracks, patterns, clock, Fraction(2))
+    assert calls is not None
+    assert calls(0, 0) == Fraction(3)          # `$FE 02`: 6 calls a row
+    assert calls(1, 0) == Fraction(3)          # a voice with no tempo of its own
+    sid, det = _det(CORPUS / "Zoids.sid")
+    _, tracks, patterns = _converted("Zoids")
+    clock = _fixed_arp_clock(sid, det, tracks)
+    assert not fixed_arp_counter_gated(sid, det)
+    assert _duty_tempo_calls(sid, det, tracks, patterns, clock, 2) is None
+
+
+def _instrument_halves(song, number, calls=160):
+    """`_halves` of instrument `number`'s program, read out of the whole
+    wavetable (a copy's loop may jump into an earlier copy's)."""
+    wt = [tuple(e) for e in song.tables["WTBL"]]
+    ptr = next(i for i in song.instruments if i.number == number).wave_ptr
+    n = len(wt)
+    rot = wt[ptr - 1:] + wt[:ptr - 1]          # entry `ptr` first
+
+    def moved(i):
+        return i if i >= ptr else i + n
+    left = [l for l, _ in rot]
+    right = [moved(r) if l == 0xFF else r for l, r in rot]
+    return _halves(left, right, ptr, calls)
+
+
+@needs_corpus
+def test_rasputin_s_opening_duty_is_three_and_three():
+    """Every note of the opening's first pattern names a copy whose octave
+    half is 6 calls -- three frames at -S2 -- while its source record keeps
+    the 4-call half the `$FE 78` rows play."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import json
+    import re
+    import songview
+    import h2g.convert as C
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    lines = []
+    sng = C.convert(str(CORPUS / "Rasputin.sid"), log=lines.append,
+                    **fidelity._preset_opts(doc, "Rasputin.sid"))
+    s = songview.parse_sng(sng)
+    split = [m for m in lines if "Per-note arp split" in m]
+    assert len(split) == 1, lines
+    pairs = {int(c, 16): int(src, 16) for c, src in
+             re.findall(r"\$([0-9A-F]+) \(of \$([0-9A-F]+)\)", split[0])}
+    first = s.patterns[s.tracks[0][0]]
+    named = {first[r + 1] for r in range(0, len(first) - 3, 4)
+             if first[r] != 0xFF and first[r + 1]}
+    duty = {i for i in named if i in pairs}
+    assert duty, (named, pairs)
+    for copy in duty:
+        assert set(_instrument_halves(s, copy)) == {6}, copy
+        assert set(_instrument_halves(s, pairs[copy])) == {4}, pairs[copy]
+
+
+# ---------------------------------------------------------------------------
+# The nibble dialect's period is PER RECORD (goatwriter's block above
+# `NIBBLE_ARP_SELFMOD`). The bit-$04 block that subtracts the record's high
+# nibble writes a mask into its own `AND` operand from the nibble -- `$02`
+# (or `$04`) for the octave nibble `$0C`, `$01` for every other -- and then
+# divides the same `INC`'d play-entry counter the fixed dialect does, behind
+# the same outer gate. Measured on the originals (60 s, every subtune,
+# interior halves in frames, C:/t/nibble-arp-period/prof_base.txt): Warhawk
+# 2.29 on its octave records and 1.14 on the rest (2 x 8/7, 8/7),
+# International_Karate 2.19 and 1.09 (2 x 11/10, 11/10), Formula_1_Simulator
+# 4.04 on its octave -- an octave UP, its block swaps the SBC for an ADC --
+# and 1.22 on the rest. Until then every nibble record alternated one step a
+# half at `m` calls a step: 1.00 on every record of all three.
+# ---------------------------------------------------------------------------
+from h2g.goatwriter import (nibble_arp_block, nibble_arp_record,  # noqa: E402
+                            outer_gate_skip)
+
+# name -> (masks (octave, other), ADC (octave, other), zero-page counter)
+NIBBLE_ARP = {
+    "Warhawk": ((0x02, 0x01), (False, False), False),
+    "International_Karate": ((0x02, 0x01), (False, False), False),
+    "Thrust": ((0x02, 0x01), (False, False), False),
+    "Bump_Set_Spike": ((0x02, 0x01), (False, False), False),
+    "Kentilla": ((0x02, 0x01), (False, False), False),
+    "Las_Vegas_Video_Poker": ((0x02, 0x01), (False, False), False),
+    "Spellbound": ((0x02, 0x01), (False, False), True),
+    "Samantha_Fox_Strip_Poker": ((0x02, 0x01), (False, False), True),
+    "Proteus": ((0x04, 0x01), (False, False), False),
+    "Hollywood_or_Bust": ((0x04, 0x01), (False, False), False),
+    "Chicken_Song": ((0x04, 0x01), (False, False), False),
+    "Formula_1_Simulator": ((0x04, 0x01), (True, False), False),
+    "Mozart": ((0x01, 0x01), (False, False), False),
+}
+
+
+@needs_corpus
+def test_the_nibble_block_reads_a_mask_per_record():
+    """Every corpus file of the dialect, and no fixed-dialect file."""
+    for name, (masks, up, zp) in NIBBLE_ARP.items():
+        sid, det = _det(CORPUS / f"{name}.sid")
+        blk = nibble_arp_block(sid, det)
+        assert blk is not None, name
+        assert (blk.masks, blk.up, blk.zp, blk.branch) == (masks, up, zp,
+                                                           BNE), name
+        octave = nibble_arp_record(blk, 0x0C)
+        other = nibble_arp_record(blk, 0x05)
+        assert octave[0] == masks[0] and other[0] == masks[1], name
+        assert octave[2] == (0x0C if up[0] else 0x74), name
+        assert other[2] == 0x7B, name                  # five semitones down
+        assert nibble_arp_record(blk, 0) is None       # zero subtracts zero
+    for name in FIXED_ARP:
+        path = COMMANDO if name == "Commando" else CORPUS / f"{name}.sid"
+        sid, det = _det(path)
+        assert nibble_arp_block(sid, det) is None, name
+
+
+def test_a_duty_loop_may_span_laps_where_one_period_is_not_whole_calls():
+    """Thrust's step is 10/3 calls at -S3: one period of `$01` is 20/3
+    calls and is declined, three are 20 and loop."""
+    step = Fraction(10, 3)
+    assert fixed_arp_duty_entries(0x41, 0x41, 0x01, BNE, 0, 0x74, step,
+                                  start=6, budget=255) is None
+    got = fixed_arp_duty_entries(0x41, 0x41, 0x01, BNE, 0, 0x74, step,
+                                 start=6, budget=255, max_laps=3)
+    assert got is not None
+    left, right = got
+    calls = 200
+    notes = [n for _, _, n in wave_timeline(left, right, first=6,
+                                            calls=calls)]
+    for t in range(calls):
+        j = max(k for k in range(t + 2) if int(k * step) <= t)
+        want = 0x74 if j and fixed_arp_up(0x01, BNE, j) else 0x00
+        assert (notes[t] or 0x00) == want, t
+
+
+def _nibble_step(doc, name, sid):
+    m = doc["songs"][name + ".sid"].get("multiplier", 1)
+    r = outer_gate_skip(sid)
+    return Fraction(m * (r + 1), r) if r else Fraction(m)
+
+
+@needs_corpus
+@pytest.mark.parametrize("name", ["Warhawk", "International_Karate",
+                                  "Formula_1_Simulator", "Thrust", "Proteus"])
+def test_the_nibble_records_reach_the_sng_at_their_own_period(name):
+    """Each arpeggio record's program, read back by songview: its alternate
+    note is its block's (Formula_1_Simulator's octave UP), and its interior
+    halves average its mask's steps at the exact `m (R + 1) / R` calls a
+    step, each within one call of it."""
+    if not (PYTHON_ROOT.parent / "presets.json").exists():
+        pytest.skip("presets.json not present")
+    import json
+    import songview
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    sid, det = _det(CORPUS / f"{name}.sid")
+    step = _nibble_step(doc, name, sid)
+    opts = fidelity._preset_opts(doc, f"{name}.sid")
+    lead = 0 if opts.get("compact_instruments") else 1
+    sng, _, _ = _converted(name)
+    s = songview.parse_sng(sng)
+    checked = {}
+    for ins in s.instruments:
+        i = ins.number - lead - 1
+        base = det.instr_start + i * det.instr_stride
+        if i < 0 or base + 8 > len(sid.data) or not sid.data[base + 7] & 4:
+            continue
+        nibble = sid.data[base + 7] >> 4
+        if not nibble:
+            continue
+        # From the table above, not the reader under test.
+        masks, up, _ = NIBBLE_ARP[name]
+        k = 0 if nibble == 0x0C else 1
+        mask = masks[k]
+        rel = (nibble if up[k] else 0x80 - nibble) & 0xFF
+        assert rel in {r for _, r in _wavetable_of(sng, ins.number)}, \
+            ins.number
+        half = step * fixed_arp_period(mask) / 2
+        runs = _instrument_halves(s, ins.number, calls=int(half * 24))
+        assert runs, ins.number
+        assert abs(Fraction(sum(runs), len(runs)) - half) <= Fraction(1, 2), \
+            (ins.number, runs, half)
+        assert all(abs(r - half) < 1 for r in runs), (ins.number, runs, half)
+        checked[mask] = checked.get(mask, 0) + 1
+    assert len(checked) == 2, checked             # both periods reached
+
+
+def _nibble_halves(trace, n):
+    """{semitones: interior half lengths in frames} over every onset."""
+    import math
+    out = {}
+    for v in trace:
+        t = _timeline(v, n)
+        at = v.attack_frames
+        for k, f in enumerate(at):
+            end = at[k + 1] if k + 1 < len(at) else n
+            seg = t[f:min(end, f + 25)]
+            if len(seg) < 4 or not seg[0]:
+                continue
+            others = [x for x in seg[1:] if x and x != seg[0]]
+            if not others:
+                continue
+            lo = max(set(others), key=others.count)
+            st = 12 * math.log2(seg[0] / lo)
+            if abs(st - round(st)) > 0.2 or not 0 < abs(round(st)) <= 15:
+                continue
+            shape = ["H" if x == seg[0] else "a" if x == lo else "."
+                     for x in seg]
+            if "." in shape[:6]:
+                continue
+            runs, j = [], 0
+            while j < len(shape):
+                e = j
+                while e < len(shape) and shape[e] == shape[j]:
+                    e += 1
+                runs.append((shape[j], e - j))
+                j = e
+            out.setdefault(round(st), []).extend(
+                r for c, r in runs[1:-1] if c != ".")
+    return out
+
+
+@needs_corpus
+@needs_siddump
+@pytest.mark.parametrize("name,octave", [("Warhawk", 12),
+                                         ("International_Karate", 12),
+                                         ("Formula_1_Simulator", None)])
+def test_the_nibble_period_is_re_measured_against_the_original(name, octave):
+    """The originals' interior halves, subtune 0, 60 s: the octave records
+    at the octave mask's steps and every other interval at the `$01`
+    mask's, a step `(R + 1) / R` frames -- within 0.1 frame of the mean.
+
+    Formula_1_Simulator's octave records are checked on the conversion
+    only (`..._reach_the_sng_...`): its notes are ten frames long and its
+    `$04` mask's first half after the attack is cut short by the attack
+    frame itself, so no whole octave half is ever interior (4.04 frames,
+    `HaaaaHHHHH` on 200 of 205 onsets, which the conversion reproduces
+    exactly -- C:/t/nibble-arp-period/prof_edit3.txt)."""
+    sid, det = _det(CORPUS / f"{name}.sid")
+    blk = nibble_arp_block(sid, det)
+    r = outer_gate_skip(sid)
+    step = (r + 1) / r
+    seconds = 60
+    trace = fidelity.run_siddump(CORPUS / f"{name}.sid", seconds, 0,
+                                 fidelity.SIDDUMP)
+    halves = _nibble_halves(trace, seconds * 50 + 2)
+    assert octave is None or octave in halves, sorted(halves)
+    for semis, runs in halves.items():
+        if len(runs) < 20 or (octave is None and abs(semis) == 12):
+            continue
+        mask = blk.masks[0] if semis == octave else blk.masks[1]
+        want = step * fixed_arp_period(mask) / 2
+        assert abs(sum(runs) / len(runs) - want) < 0.1, (semis, want,
+                                                          runs[:20])
+
+
+# ---------------------------------------------------------------------------
+# Formula_1_Simulator's reversal_ratio doubled at v0.5.489 (0.74 -> 2.10 in
+# build/fidelity.json, subtune 0, -t 180) when `ticked_arp_entries` took over
+# the ticked records above -S1. The cause, from the per-offset octave profile
+# of subtune 0 (C:/t/f1-ticked-reversal/prof_F1_sub0.txt): the ticked shape
+# held each half for `m` calls -- ONE frame at -S2 -- and put the attack note
+# on the octave, `UUUbUbUbUb` on 625 of 719 onsets, where the original holds
+# its `$04` mask's two steps of 2.5 frames and starts on the base note,
+# `bUUUUbbbbb` on 516 of 611. It was never the ticked shape's own period:
+# the nibble dialect's period was not read at all. Since the per-record mask
+# (`nibble_arp_record`, the self-modified AND) every nibble record takes
+# `fixed_arp_duty_entries` BEFORE the ticked shape is consulted, and the
+# conversion reads `bUUUUbbbbb` at every offset 0-9 and reversal_ratio 1.02
+# (4279 / 4193) with Last_V8 (5214 / 6144) and Monty_on_the_Run
+# (5669 / 6084) unmoved. The two tests below pin both halves of that.
+# ---------------------------------------------------------------------------
+NIBBLE_TICK_FILES = ("Formula_1_Simulator", "Warhawk", "International_Karate",
+                     "Thrust", "Proteus", "Spellbound", "Bump_Set_Spike")
+
+
+@needs_corpus
+def test_no_nibble_record_reaches_the_ticked_shape(monkeypatch):
+    """Every record whose nibble the dialect reads is routed away from
+    `ticked_arp_entries`, whose `m`-call half is the period no nibble record
+    plays; and Formula_1_Simulator's records all take the per-record duty
+    shape. Before the nibble route existed these seven files sent 55
+    records through the ticked shape, six of them Formula_1_Simulator's
+    (C:/t/f1-ticked-reversal/census_prenibble.txt); none since
+    (census_cur.txt)."""
+    import json
+    import h2g.goatwriter as G
+    from h2g.convert import convert
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    state, seen = {}, {}
+    real_we, real_rec = G._wavetable_entries, G.nibble_arp_record
+    real_tick, real_duty = G.ticked_arp_entries, G.fixed_arp_duty_entries
+
+    def we(*a, **k):
+        state.clear()
+        try:
+            return real_we(*a, **k)
+        finally:
+            if state.get("nib") is not None:
+                key = ("ticked" if "ticked" in state else
+                       "duty" if state.get("duty") else "other")
+                seen[cur][key] = seen[cur].get(key, 0) + 1
+            state.clear()
+
+    def rec(*a, **k):
+        state["nib"] = real_rec(*a, **k)
+        return state["nib"]
+
+    def tick(*a, **k):
+        state["ticked"] = True
+        return real_tick(*a, **k)
+
+    def duty(*a, **k):
+        r = real_duty(*a, **k)
+        if state.get("nib") is not None:
+            state["duty"] = state.get("duty") or r is not None
+        return r
+
+    monkeypatch.setattr(G, "_wavetable_entries", we)
+    monkeypatch.setattr(G, "nibble_arp_record", rec)
+    monkeypatch.setattr(G, "ticked_arp_entries", tick)
+    monkeypatch.setattr(G, "fixed_arp_duty_entries", duty)
+    for cur in NIBBLE_TICK_FILES:
+        seen[cur] = {}
+        convert(str(CORPUS / f"{cur}.sid"), log=lambda m: None,
+                **fidelity._preset_opts(doc, f"{cur}.sid"))
+    assert all(v for v in seen.values()), seen      # the spy saw records
+    assert not any(v.get("ticked") for v in seen.values()), seen
+    f1 = seen["Formula_1_Simulator"]
+    assert f1.get("duty") and set(f1) == {"duty"}, f1
+
+
+def _octave_up_fraction(trace, n, offsets=13):
+    """(octave onsets, fraction of them an octave up at each offset from the
+    attack) -- the per-offset profile of
+    C:/t/ticked-fixed-arp-at-s2-is-a-/profile_ab.py."""
+    rows = []
+    for v in trace:
+        t = _timeline(v, n)
+        at = v.attack_frames
+        for k, f in enumerate(at):
+            end = at[k + 1] if k + 1 < len(at) else n
+            seg = t[f:min(end, f + offsets)]
+            if not seg or not seg[0]:
+                continue
+            lo = min(x for x in seg if x)
+            if not any(x and abs(x / lo - 2) < 0.02 for x in seg):
+                continue
+            rows.append([bool(x and abs(x / lo - 2) < 0.02) for x in seg])
+    frac = []
+    for k in range(offsets):
+        have = [r[k] for r in rows if len(r) > k]
+        frac.append(sum(have) / len(have) if have else None)
+    return len(rows), frac
+
+
+@needs_corpus
+@needs_siddump
+def test_formula_1_s_octave_hold_is_re_measured_through_the_packer(tmp_path):
+    """Formula_1_Simulator's conversion, packed at its multiplier and traced
+    at it, against the original: subtune 0, 60 s. The octave onsets match in
+    number, the up-fraction matches at every offset 0-9 (the original's
+    `bUUUUbbbbb`; offset 10 onwards is the few notes longer than ten frames),
+    and the pitch reversal rate -- the `vib` column that read 2.10x -- is
+    within 20% in log space. Measured 205 / 205 onsets and 1.08x (730 / 673)
+    here; the pre-nibble converter read 267 onsets, `UUUbUbUbUb` and 3.20x
+    over the same 60 s (C:/t/f1-ticked-reversal/probe_cur.txt, probe_pre.txt)."""
+    import json
+    import math
+    from h2g.convert import convert
+    if not pathlib.Path(fidelity.GT2RELOC).exists():
+        pytest.skip("no gt2reloc on this machine")
+    doc = json.loads((PYTHON_ROOT.parent / "presets.json").read_text())
+    path = CORPUS / "Formula_1_Simulator.sid"
+    opts = fidelity._preset_opts(doc, path.name)
+    mult = doc["songs"][path.name]["multiplier"]
+    cal, _ = fidelity.table_calibration(path, opts)
+    sng, _ = fidelity.legalise_restarts(
+        convert(str(path), log=lambda m: None, **opts))
+    packed = fidelity.pack_sid(sng, tmp_path, fidelity.GT2RELOC, mult)
+    assert packed is not None
+    seconds = 60
+    n = seconds * 50 + 2
+    a = fidelity.run_siddump(path, seconds, 0, fidelity.SIDDUMP, cal)
+    b = fidelity.run_siddump(packed, seconds, 0, fidelity.SIDDUMP, calls=mult)
+    na, fa = _octave_up_fraction(a, n)
+    nb, fb = _octave_up_fraction(b, n)
+    assert na >= 150 and abs(nb - na) <= 0.05 * na, (na, nb)
+    assert fa[:10] == [0, 1, 1, 1, 1, 0, 0, 0, 0, 0], fa      # the original
+    assert all(abs(x - y) <= 0.05 for x, y in zip(fa[:10], fb[:10])), (fa, fb)
+    ratio = fidelity.pitch_motion_compare(a, b, n)["reversal_ratio"]
+    assert ratio and abs(math.log(ratio)) < math.log(1.2), ratio

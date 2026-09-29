@@ -520,3 +520,15 @@ def test_every_per_song_decision_in_the_artefact_survives_a_regeneration():
         "these per-song decisions would be deleted by the next presets.py "
         f"run: { {k: v[:3] for k, v in unprotected.items()} } -- add each key "
         "to presets.EXCLUDED_FROM_ALWAYS (which feeds CARRIED_PER_SONG)")
+
+
+def test_wave_alternate_is_a_per_song_decision_that_reaches_convert():
+    """Default off everywhere; a song entry switches it on for that song only.
+    It is in EXCLUDED_FROM_ALWAYS rather than the `always` block because its
+    two files trade differently (goatwriter, beside `det.wave_alternate_noise`)."""
+    assert inspect.signature(convert).parameters["wave_alternate"].default is False
+    assert "wave_alternate" in EXCLUDED_FROM_ALWAYS
+    doc = {"always": {}, "songs": {"Chicken_Song.sid": {"wave_alternate": True},
+                                   "Commando.sid": {}}}
+    assert _preset_opts(doc, "Chicken_Song.sid")["wave_alternate"] is True
+    assert _preset_opts(doc, "Commando.sid")["wave_alternate"] is False

@@ -400,7 +400,9 @@ def test_the_triangle_voice_cells_census():
             det = detect(sid, lambda *a, **k: None)
         except Exception:
             continue
-        if det.pulse_tri_hi < 0:
+        # The zero-page dialect (Samantha Fox, Spellbound) reseeds both
+        # cells at every note fetch, so neither is read there.
+        if det.pulse_tri_hi < 0 or det.pulse_tri_reseeds:
             assert (det.pulse_tri_dir, det.pulse_tri_cnt) == (-1, -1), p.name
             continue
         d = sid.data
@@ -440,3 +442,208 @@ def test_the_triangle_cells_need_both_operand_pairs_to_agree():
         bad = bytearray(body)
         bad[k] ^= 0x01
         assert cells(bytes(bad)) == (-1, -1), k
+
+
+# --- the triangle sweep's per-voice CURRENT-RECORD cell (task triangle-
+# preroll-on-the-image-record). `_find_pulse_tri_record_cell` chains the
+# triangle entry's `LDY idx` to the voice loop's `LDA cur,X / ASL x3 / TAY /
+# STY idx`; the image's three bytes are the record each voice sweeps on the
+# ticks before its first fetch. Pinned per file with those bytes, because the
+# walk's preroll lands on them. The three addresses read off the disassembly
+# independently (C:/t/triangle-sim-model/dis_*_full.txt: One_Man $1199 LDA
+# $14F8,X, Rasputin $C1C7 LDA $C51E,X, Game_Killer $099D LDA $0C66,X) are
+# the second reader; the py65 write watch is
+# C:/t/triangle-preroll-image/probe_reccells.txt.
+_TRI_RECORD_CELL = {   # name: (current-record array address, its 3 bytes)
+    "5_Title_Tunes.sid": (0x1040, "000102"),
+    "Action_Biker.sid": (0xC3D2, "070802"),
+    "Battle_of_Britain.sid": (0x83FC, "090a02"),
+    "Chimera.sid": (0xC63D, "040e02"),
+    "Commando.sid": (0x54FE, "000902"),
+    "Confuzion.sid": (0x0BD3, "000302"),
+    "Crazy_Comets.sid": (0x54E5, "011310"),
+    "Devils_Galop.sid": (0x176A, "000002"),
+    "Game_Killer.sid": (0x0C66, "060905"),
+    "Geoff_Capes_Strongman_Challenge.sid": (0x14FE, "100f03"),
+    "Gerry_the_Germ.sid": (0xE4FE, "110402"),
+    "Gremlins.sid": (0x16D6, "151503"),
+    "Human_Race.sid": (0x0DB9, "000002"),
+    "Hunter_Patrol.sid": (0xA403, "04040a"),
+    "Last_V8.sid": (0x8511, "060103"),
+    "Last_V8_C128_version.sid": (0x8511, "040408"),
+    "Master_of_Magic.sid": (0xC405, "070e03"),
+    "Monty_on_the_Run.sid": (0x84D6, "100210"),
+    "Ninja.sid": (0xCC31, "00090b"),
+    "One_Man_and_his_Droid.sid": (0x14F8, "000002"),
+    "Phantoms_of_the_Asteroid.sid": (0xE436, "000002"),
+    "Rasputin.sid": (0xC51E, "000602"),
+    "Thing_on_a_Spring.sid": (0xC47F, "0e0506"),
+    "Zoids.sid": (0x1459, "0c0302"),
+}
+assert len(_TRI_RECORD_CELL) == 24 and set(_TRI_RECORD_CELL) == set(_TRI_CELLS)
+
+
+@corpus.needs_corpus
+def test_the_triangle_record_cell_census():
+    from corpus import CORPUS
+    from h2g.detect import detect
+    from h2g.sidfile import load_sid
+    assert (_TRI_RECORD_CELL["One_Man_and_his_Droid.sid"][0],
+            _TRI_RECORD_CELL["Rasputin.sid"][0],
+            _TRI_RECORD_CELL["Game_Killer.sid"][0]) == (0x14F8, 0xC51E, 0x0C66)
+    found = {}
+    for p in sorted(CORPUS.glob("*.sid")):
+        try:
+            sid = load_sid(str(p))
+            det = detect(sid, lambda *a, **k: None)
+        except Exception:
+            continue
+        if det.pulse_tri_hi < 0 or det.pulse_tri_reseeds:
+            assert det.pulse_tri_rec == -1, p.name
+            continue
+        d = sid.data
+        found[p.name] = (sid.to_address(det.pulse_tri_rec),
+                         bytes(d[det.pulse_tri_rec:det.pulse_tri_rec + 3]).hex())
+    assert found == _TRI_RECORD_CELL, {
+        k: (found.get(k), _TRI_RECORD_CELL.get(k))
+        for k in set(found) | set(_TRI_RECORD_CELL)
+        if found.get(k) != _TRI_RECORD_CELL.get(k)}
+
+
+def test_the_triangle_record_cell_is_the_select_the_entry_names():
+    """The cell is read only through the entry's own `LDY idx`: a select
+    storing to another scalar, a select with two shifts, a stride other than
+    8, a second select naming a different array, or no `LDY abs` at the
+    entry, each reads nothing."""
+    from h2g.detect import (PULSE_TRI_SHAPE, _TRI_ENTRY, Detection,
+                            _find_pulse_tri_record_cell)
+    from h2g.sidfile import HLEN, SidFile
+    shape = bytes(0 if t == "??" else int(t, 16) for t in PULSE_TRI_SHAPE.split())
+    # the select at $10E0: LDA $1000,X / ASL x3 / TAY / STY $10F0; the
+    # entry at $1100: LDA $10F1 / BEQ / LDY $10F0, then the shape
+    select = bytes.fromhex("BD0010" "0A0A0A" "A8" "8CF010")
+    entry = bytes.fromhex("ADF110" "F000" "ACF010")
+    assert len(entry) == _TRI_ENTRY
+
+    def cell(sel: bytes, ent: bytes = entry, stride: int = 8):
+        body = bytearray(0x100)
+        body[0xE0:0xE0 + len(sel)] = sel
+        data = bytes(HLEN - 1) + bytes(body) + ent + shape + bytes(16)
+        sid = SidFile.__new__(SidFile)
+        sid.data, sid.load_addr, sid.relocation = data, 0x1000, None
+        det = Detection()
+        det.instr_stride = stride
+        return _find_pulse_tri_record_cell(sid, det)
+    # `cur` = $1000, the load address: file offset HLEN - 1
+    assert cell(select) == HLEN - 1, cell(select)
+    assert cell(select, stride=4) == -1
+    assert cell(bytes.fromhex("BD0010" "0A0A0A" "A8" "8CF110")) == -1
+    assert cell(bytes.fromhex("BD0010" "0A0A" "A8" "8CF010")) == -1
+    assert cell(select + bytes.fromhex("BD0310" "0A0A0A" "A8" "8CF010")) == -1
+    assert cell(select + select) == HLEN - 1
+    assert cell(select, ent=bytes.fromhex("ADF110" "F000" "EAEAEA")) == -1
+
+
+# --- the note-end cut with a counter test inside it --------------------------
+#
+# Commodore 64 Music Examples zeroes AD/SR at every gate-off, but spells it
+# `AND #$FE / STA $D404,Y / LDA cnt,X / BNE / LDA #0 / STA $D405,Y /
+# STA $D406,Y` ($1229-$123B): the LDA/BNE between the gate-clear and the zero
+# puts it out of reach of ENVELOPE_CUT_SHAPES, so `cut_release` (on in the
+# always block) was inert for it. Reading it as a cut moved its tail column
+# 0.2308 -> 1.0 at the traced pair (orig 1 / ours 0) and the Hubbard_Rob
+# byte-hash moved exactly that file (v0.5.497, C:/t/envelope-cut-c64me).
+
+_GUARDED_CUT = bytes.fromhex("29FE9904D4BD1214D008A9009905D49906D4")
+
+
+class _Data:
+    def __init__(self, data):
+        self.data = data
+
+
+def test_the_counter_guarded_cut_is_read_as_a_cut():
+    from h2g.detect import (ENVELOPE_CUT_GUARDED_SHAPES, ENVELOPE_CUT_SHAPES,
+                            find_envelope_cut)
+    from h2g.search import search_file
+    blob = b"\x00" + _GUARDED_CUT
+    assert all(search_file(blob, s) < 1 for s in ENVELOPE_CUT_SHAPES), (
+        "the primary shapes must not already see it -- or this is not a "
+        "fallback")
+    assert any(search_file(blob, s) >= 1 for s in ENVELOPE_CUT_GUARDED_SHAPES)
+    assert find_envelope_cut(_Data(blob))
+
+
+def test_the_counter_guarded_cut_still_needs_the_gate_clear():
+    """Without `AND #$FE / STA $D404,Y` in front the zero is an init
+    routine clearing the chip, which the primary shape also refuses."""
+    from h2g.detect import find_envelope_cut
+    body = bytearray(_GUARDED_CUT)
+    body[1] = 0xFF                               # AND #$FF: gate not cleared
+    assert not find_envelope_cut(_Data(b"\x00" + bytes(body)))
+    body = bytearray(_GUARDED_CUT)
+    body[8] = 0xF0                               # BEQ: a different test
+    assert not find_envelope_cut(_Data(b"\x00" + bytes(body)))
+
+
+@corpus.needs_corpus
+def test_the_counter_guarded_cut_is_one_file_and_a_fallback():
+    from corpus import CORPUS
+    from h2g.detect import (ENVELOPE_CUT_GUARDED_SHAPES, ENVELOPE_CUT_SHAPES,
+                            detect)
+    from h2g.search import search_file
+    from h2g.sidfile import load_sid
+    hits, both = set(), set()
+    for p in sorted(CORPUS.glob("*.sid")):
+        data = load_sid(str(p)).data
+        if any(search_file(data, s) >= 1 for s in ENVELOPE_CUT_GUARDED_SHAPES):
+            hits.add(p.name)
+            if any(search_file(data, s) >= 1 for s in ENVELOPE_CUT_SHAPES):
+                both.add(p.name)
+    assert hits == {"Commodore_64_Music_Examples.sid"}, sorted(hits)
+    assert not both, sorted(both)
+    det = detect(load_sid(str(CORPUS / "Commodore_64_Music_Examples.sid")),
+                 lambda *a, **k: None)
+    assert det.envelope_cut
+
+
+# --- the gate hold's LSR/CMP spelling ------------------------------------
+#
+# Commodore 64 Music Examples tests its note-end counter with `LDA cnt,X /
+# LSR A / CMP cnt,X / BNE` ($1220), which GATE_HOLD_SHAPE cannot see, so its
+# zero-wait notes re-attacked. Reading the fallback moved voice 2's ties at
+# the traced pair (orig 1 / ours 0) 0 -> 72 of 72 and melody 96 -> 100%
+# (C:/t/gate-hold-lsr-cmp, v0.5.497 working tree).
+
+@corpus.needs_corpus
+def test_the_lsr_cmp_gate_hold_is_one_file_and_a_fallback():
+    from corpus import CORPUS
+    from h2g.detect import GATE_HOLD_LSR_SHAPE, GATE_HOLD_SHAPE, detect
+    from h2g.search import search_file
+    from h2g.sidfile import load_sid
+    hits, both = set(), set()
+    for p in sorted(CORPUS.glob("*.sid")):
+        data = load_sid(str(p)).data
+        if search_file(data, GATE_HOLD_LSR_SHAPE) >= 1:
+            hits.add(p.name)
+            if search_file(data, GATE_HOLD_SHAPE) >= 1:
+                both.add(p.name)
+    assert hits == {"Commodore_64_Music_Examples.sid"}, sorted(hits)
+    assert not both, sorted(both)
+    det = detect(load_sid(str(CORPUS / "Commodore_64_Music_Examples.sid")),
+                 lambda *a, **k: None)
+    assert det.gate_hold
+
+
+@corpus.needs_corpus
+def test_the_lsr_cmp_gate_hold_is_read_only_in_the_converted_player():
+    """Five players in one image: the fallback reads the range of the one
+    the signature chains matched, and nothing without a span to anchor it."""
+    from corpus import CORPUS
+    from h2g.detect import find_gate_hold
+    from h2g.sidfile import load_sid
+    sid = load_sid(str(CORPUS / "Commodore_64_Music_Examples.sid"))
+    assert find_gate_hold(sid, [(sid.to_offset(0x11DE), 12)]) is True
+    assert find_gate_hold(sid) is False                  # no span, no read
+    assert find_gate_hold(sid, [(sid.to_offset(0x0903), 1)]) is False
+    assert find_gate_hold(sid, [(sid.to_offset(0x1D8B), 1)]) is False

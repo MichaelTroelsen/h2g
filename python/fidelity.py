@@ -237,6 +237,17 @@ class Voice:
     wf_events: list[tuple[int, int]] = field(default_factory=list)
     adsr_events: list[tuple[int, int]] = field(default_factory=list)
     pulse_events: list[tuple[int, int]] = field(default_factory=list)
+    # The `--vice` voices only (`vice_pitch_voices`): $D405/$D406 and $D404 as
+    # the chip held them at the end of every sample (call or frame), for the
+    # envelope gate `oscillation_depths` applies. Separate from
+    # `adsr_events`/`wf_events` because there `adsr_events` carries only the
+    # instrument KEY at each attack (siddump's, not the dump's
+    # sign-extended ADSR), and a `wf_events` would switch on
+    # `envelope_run_out`, whose rates the dump's corrupt ADSR high byte
+    # would falsify. Empty on a siddump voice, which reads the gate off
+    # `adsr_events`/`wf_events` directly.
+    env_adsr_events: list[tuple[int, int]] = field(default_factory=list)
+    env_ctrl_events: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def collapsed(self) -> list[str]:
@@ -2105,6 +2116,22 @@ def triangle_gate_records(sid, det) -> set[int] | None:
     return reaching
 
 
+def _turning_points(seg: list[int]) -> list[int]:
+    """Indices of `seg`'s extremes, as `vibrato_swings` reads them: cycle
+    `i` spans `turns[i]..turns[i + 2]`."""
+    turns: list[int] = []
+    last = 0
+    for k in range(len(seg) - 1):
+        d = seg[k + 1] - seg[k]
+        if not d:
+            continue
+        s = 1 if d > 0 else -1
+        if last and s != last:
+            turns.append(k)          # seg[k] is the extreme itself
+        last = s
+    return turns
+
+
 def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
     """`(peak-to-peak swing, centre frequency)` for each full cycle in `seg`.
 
@@ -2132,16 +2159,7 @@ def vibrato_swings(seg: list[int]) -> list[tuple[float, float]]:
     same direction of travel resumed, and treating a flat frame as a reversal
     would halve every swing on a slow oscillator.
     """
-    turns: list[int] = []
-    last = 0
-    for k in range(len(seg) - 1):
-        d = seg[k + 1] - seg[k]
-        if not d:
-            continue
-        s = 1 if d > 0 else -1
-        if last and s != last:
-            turns.append(k)          # seg[k] is the extreme itself
-        last = s
+    turns = _turning_points(seg)
     out = []
     for i in range(len(turns) - 2):
         p, q, r = (seg[turns[i]], seg[turns[i + 1]], seg[turns[i + 2]])
@@ -2157,14 +2175,25 @@ def envelope_silent(adsr: int, ctrl: int | None) -> bool:
     the rest record of the silencing players, BMX_Kidz's among them, writes
     exactly this and keeps sweeping the frequency), a gate that is off with
     a release nibble of 0, and a gate that is on with attack, decay and
-    sustain all 0. `ctrl` is $D404, or None when the trace carries no
-    waveform events (the `--vice` voices, which key on ADSR alone), and then
-    only the both-zero rule can fire.
+    sustain all 0. `ctrl` is $D404, or None when the voice carries no
+    control events at all, and then only the both-zero rule can fire. The
+    `--vice` voices carry both off the dump (`Voice.env_adsr_events`,
+    `env_ctrl_events`), so the gate applies on both paths.
+
+    **Immune to the VICE dump's ADSR sign extension** (`vicetrace`'s ROOT
+    CAUSE): a corrupt word is `$FFxx` with the true low byte and its bit 7
+    set, i.e. sustain >= 8, which no rule here calls silent -- and neither
+    does any rule on the true word, whose sustain is the same nibble. The
+    one rule reading only the low byte (gate off, release 0) reads the true
+    byte either way. `tests/test_vicetrace.py` pins this exhaustively.
 
     **Blind to an envelope that reaches zero at its own rate**: a long
     release left running past its end, or a decay to a sustain of 0, still
     reads as sounding here, because telling when it gets there needs an
-    envelope model and not a register read.
+    envelope model and not a register read. `envelope_run_out` is that
+    model; it COUNTS the cycles this gate lets through on a run-out envelope
+    (`depth_env_zero_cycles`) and deliberately does not drop them -- see the
+    `depth` Dimension for the measured size and why.
     """
     if adsr == 0:
         return True
@@ -2173,6 +2202,86 @@ def envelope_silent(adsr: int, ctrl: int | None) -> bool:
     if ctrl & 1:
         return adsr & 0xFFF0 == 0
     return adsr & 0x000F == 0
+
+
+# The SID envelope generator, from reSID (vice-3.9/src/resid/envelope.cc:72-89
+# rate_counter_period, :129 sustain_level; envelope.h:390-412 the exponential
+# counter). reSID stores period - 1; these are cycles per step.
+ENV_RATE_CYCLES = (9, 32, 63, 95, 149, 220, 267, 313, 392, 977, 1954, 3126,
+                   3907, 11720, 19532, 31251)
+# (region's lower bound, exponential period) for a decay/release step taken
+# from a level above the bound: the counter slows as the level falls.
+ENV_EXP_PERIODS = ((0x5D, 1), (0x36, 2), (0x1A, 4), (0x0E, 8), (0x06, 16),
+                   (0x00, 30))
+PAL_FRAME_CYCLES = 63 * 312
+
+
+def envelope_run_out(v: "Voice", nframes: int) -> list[bool] | None:
+    """Per frame: whether the modelled envelope is at zero for the whole frame.
+
+    The frames `envelope_silent` cannot see: a release left to run out, a
+    decay to a sustain of 0. Stepped one PAL frame at a time on the sampled
+    registers -- a gate rising edge between samples, or a siddump attack
+    frame, starts an attack; a falling edge starts the release -- with
+    reSID's rate and exponential periods. A frame counts only when its
+    START level is already 0 and it is not attacking, so the frame an
+    envelope reaches zero inside is still sounding.
+
+    Approximations, all small against a frame: no ADSR delay bug, no
+    rate-counter reset at a state change, and a gate toggled and restored
+    inside one frame is invisible unless siddump printed an attack there.
+    None when the voice carries no `wf_events` -- which includes the
+    `--vice` voices ON PURPOSE: their $D404 is in `env_ctrl_events`, and the
+    model stays siddump-only there because the dump's ADSR high byte (the
+    attack and decay rates) is sign-extension corrupt whenever sustain/
+    release is $80 or more, and a call-indexed voice would need the frame's
+    cycle budget split by the multiplier. `depth_env_zero_cycles` reports
+    None for a side no voice of which was modelled, not 0.
+    """
+    if not v.wf_events:
+        return None
+    ctrl = register_timeline(v.wf_events, nframes)
+    adsr = register_timeline(v.adsr_events, nframes)
+    attacks = set(v.attack_frames)
+    level, state, acc, prev_gate = 0, "R", 0, 0
+    out = [False] * nframes
+    for f in range(nframes):
+        gate = ctrl[f] & 1
+        if gate and (not prev_gate or f in attacks):
+            state = "A"
+        elif not gate and prev_gate:
+            state = "R"
+        prev_gate = gate
+        out[f] = level == 0 and state != "A"
+        w = adsr[f]
+        budget = PAL_FRAME_CYCLES
+        while True:
+            if state == "A":
+                per = ENV_RATE_CYCLES[(w >> 12) & 15]
+                n, need = (acc + budget) // per, 255 - level
+                if n >= need:
+                    budget -= need * per - acc
+                    acc, level, state = 0, 255, "D"
+                    continue
+                level += n
+                acc += budget - n * per
+                break
+            target = ((w >> 4) & 15) * 0x11 if state == "D" else 0
+            if level <= target:
+                break
+            bound, ep = next((b, p) for b, p in ENV_EXP_PERIODS if level > b)
+            per = ENV_RATE_CYCLES[(w >> 8) & 15 if state == "D"
+                                  else w & 15] * ep
+            bound = max(bound, target)
+            n, need = (acc + budget) // per, level - bound
+            if n >= need:
+                budget -= need * per - acc
+                acc, level = 0, bound
+                continue
+            level -= n
+            acc += budget - n * per
+            break
+    return out
 
 
 def oscillation_depths(voices: list[Voice], nframes: int,
@@ -2222,16 +2331,36 @@ def oscillation_depths(voices: list[Voice], nframes: int,
     silent stretch too short to hold a cycle of its own still ends the
     audible run in front of it, and the cycle it cuts is dropped with it --
     Delta and Kentilla move with 0 silent cycles on either side.
+
+    `tally` also receives `env_zero_cycles`: cycles that WERE read, whose
+    whole span `envelope_run_out` places on an envelope already run out at
+    its own rate -- the blindness `envelope_silent` states, counted and
+    deliberately not dropped (measured size in the `depth` Dimension) -- and
+    `env_modelled`, whether any voice had the model at all, so a side with
+    none (the `--vice` voices) is not reported as a measured 0.
+
+    The gate reads `Voice.env_adsr_events`/`env_ctrl_events` where a voice
+    carries them (the `--vice` voices, one sample per call or frame off the
+    dump) and `adsr_events`/`wf_events` otherwise; the instrument key is
+    `adsr_events` on both.
     """
     before, after = _skip_span(skip_radius)
     masked = {instrument_key(k) for k in keys} if keys is not None else None
     pooled: dict = {}
-    counted = silent_cycles = silent_frames = 0
+    counted = silent_cycles = silent_frames = env_zero = 0
+    modelled = False
     for v in voices:
         fq = register_timeline(v.freq_events, nframes)
         adsr = register_timeline(v.adsr_events, nframes)
-        ctrl = (register_timeline(v.wf_events, nframes) if v.wf_events
-                else None)
+        # The gate's registers: the per-sample ones a --vice voice carries,
+        # else siddump's own (`Voice.env_adsr_events`). `adsr` stays the
+        # instrument KEY either way.
+        env = (register_timeline(v.env_adsr_events, nframes)
+               if v.env_adsr_events else adsr)
+        ctrl_ev = v.env_ctrl_events or v.wf_events
+        ctrl = register_timeline(ctrl_ev, nframes) if ctrl_ev else None
+        run_out = envelope_run_out(v, nframes) if tally is not None else None
+        modelled |= run_out is not None
         skip = set()
         for a in v.attack_frames:
             skip |= set(range(a - before, a + after + 1))
@@ -2244,31 +2373,39 @@ def oscillation_depths(voices: list[Voice], nframes: int,
             nxt = atk[j + 1] if j + 1 < len(atk) else nframes
             # Maximal runs of one audibility, in frame order; the attack
             # skip still removes frames without ending a run, as before.
-            runs: list[tuple[bool, list[int]]] = []
+            runs: list[tuple[bool, list[int], list[int]]] = []
             for f in range(a, min(nxt, nframes)):
                 if f in skip:
                     continue
-                quiet = envelope_silent(adsr[f],
+                quiet = envelope_silent(env[f],
                                         ctrl[f] if ctrl is not None else None)
                 silent_frames += quiet
                 if not runs or runs[-1][0] != quiet:
-                    runs.append((quiet, []))
+                    runs.append((quiet, [], []))
                 runs[-1][1].append(fq[f])
-            for quiet, seg in runs:
+                runs[-1][2].append(f)
+            for quiet, seg, frames in runs:
                 swings = vibrato_swings(seg)
                 if quiet:
                     silent_cycles += len(swings)
                     continue
-                for swing, centre in swings:
+                turns = _turning_points(seg) if run_out is not None else ()
+                for i, (swing, centre) in enumerate(swings):
                     if centre > 0:
                         counted += 1
                         pooled.setdefault(key, []).append(swing / centre)
+                        if turns and all(
+                                run_out[frames[k]]
+                                for k in range(turns[i], turns[i + 2] + 1)):
+                            env_zero += 1
     if tally is not None:
         tally["cycles"] = tally.get("cycles", 0) + counted
         tally["silent_cycles"] = (tally.get("silent_cycles", 0)
                                   + silent_cycles)
         tally["silent_frames"] = (tally.get("silent_frames", 0)
                                   + silent_frames)
+        tally["env_zero_cycles"] = tally.get("env_zero_cycles", 0) + env_zero
+        tally["env_modelled"] = tally.get("env_modelled", False) or modelled
     return {k: m for k, vals in pooled.items()
             if (m := _median(vals)) is not None}
 
@@ -2398,7 +2535,14 @@ def _depth_compare_sided(orig, ours, n_orig, n_ours, keys,
               "depth_silent_cycles": {"orig": ta["silent_cycles"],
                                       "ours": tb["silent_cycles"]},
               "depth_silent_frames": {"orig": ta["silent_frames"],
-                                      "ours": tb["silent_frames"]}}
+                                      "ours": tb["silent_frames"]},
+              # Read cycles the envelope model places on a run-out
+              # envelope: the blindness counted, not gated. None for a
+              # side with no modelled voice (the --vice voices), never a
+              # 0 the model did not measure.
+              "depth_env_zero_cycles": {
+                  "orig": ta["env_zero_cycles"] if ta["env_modelled"] else None,
+                  "ours": tb["env_zero_cycles"] if tb["env_modelled"] else None}}
     pairs = [(o, u) for o, u in paired_keys(a, b) if a[o] > 0]
     if not pairs:
         # Every no-shared-key row measured at v0.5.491 has an EMPTY
@@ -4675,6 +4819,15 @@ def vice_pitch_voices(samples: list, reduce: str | None = None,
     synthetic test and for nothing else: a key with sustain/release `>= $80`
     then never joins `vibrato_records`.
 
+    **The envelope gate's registers are the dump's, per sample.** `depth`
+    drops cycles on an envelope already zero (`envelope_silent`), and a
+    voice keyed at its attacks alone would make that gate inert here. So
+    each voice also carries `env_adsr_events` and `env_ctrl_events`: $D405/
+    $D406 and $D404 standing on each call's (or, with `reduce="last"`, each
+    frame's) last rasterline. They are never keys; `adsr_events` stays
+    `key_at`'s. `wf_events` is left empty on purpose, which keeps the
+    run-out model (`envelope_run_out`) siddump-only.
+
     `reduce="last"` keeps one sample a frame -- the frame's closing value,
     which IS siddump's sampling rule -- and indexes by frame, so the callers'
     default `skip_radius=1` applies. It exists so the finer trace can be run
@@ -4723,6 +4876,23 @@ def _vice_pitch_voices(samples: list, reduce: str | None = None,
                 return sd_adsr[a] if a < len(sd_adsr) else 0
             return sd_adsr[min(f, len(sd_adsr) - 1)]
 
+        def env_events(ends: list[int]) -> None:
+            # $D405/$D406 and $D404 standing on each sample's last line, as
+            # change events: the envelope gate's registers. The dump's ADSR
+            # is used raw -- `envelope_silent` is immune to its sign
+            # extension -- and CTRL is an 8-bit field the dump never
+            # corrupts. Never used as a key: that stays `key_at`'s.
+            prev_a = prev_c = None
+            for k, line in enumerate(ends):
+                vl = samples[line].voices[vi] if vi < len(
+                    samples[line].voices) else vicetrace.VoiceLine()
+                if vl.adsr != prev_a:
+                    v.env_adsr_events.append((k, vl.adsr))
+                    prev_a = vl.adsr
+                if vl.ctrl != prev_c:
+                    v.env_ctrl_events.append((k, vl.ctrl))
+                    prev_c = vl.ctrl
+
         if reduce == "last":
             prev_f = None
             for f in range(nframes):
@@ -4730,6 +4900,7 @@ def _vice_pitch_voices(samples: list, reduce: str | None = None,
                 if fq != prev_f:
                     v.freq_events.append((f, fq))
                     prev_f = fq
+            env_events([f * lines + lines - 1 for f in range(nframes)])
             seen = set()
             for i in edges:
                 f = vicetrace.frame_of(i)
@@ -4765,6 +4936,13 @@ def _vice_pitch_voices(samples: list, reduce: str | None = None,
                 if value != prev:
                     v.freq_events.append((call_of(w), value))
                     prev = value
+            # Call k's last line: the largest line `call_of` maps to k (call
+            # 0 also takes the lines before the first boundary), clamped to
+            # the trace -- the value the call left standing, as `freq_events`.
+            ncalls = nframes * max(1, calls_per_frame)
+            env_events([min(total - 1,
+                            math.ceil(phase + (k + 1) * period) - 1)
+                        for k in range(ncalls)] if total else [])
             seen = set()
             for i in edges:
                 f = vicetrace.frame_of(i)
@@ -5032,6 +5210,33 @@ DIMENSIONS = (
     # pairing reads 3, an earlier v0.5.427 run read 7, grouping by note name
     # (the table above) reads 8 -- a handful, depending on how the two attack
     # sequences are aligned, not a fixed number.
+    #
+    # **AND WHERE OUR GATE LEADS OUR FREQUENCY, IT NAMES OUR ATTACK AFTER THE
+    # PREVIOUS NOTE.** The attack's name is the frequency on the gate-rise
+    # frame. Arcade_Classics.sid voice 0 (v0.5.497 working tree, -t 180,
+    # presets, HISTORICAL): the original writes the new note on its gate frame
+    # (212 of 213 attacks carry their own note there, 0 the previous one); ours
+    # raises the gate with the previous note still in $D400/$D401 and writes
+    # the new one a frame later as a tie (178 of 212 carry the previous note).
+    # The column then scores a sequence lagged by one note, and difflib
+    # forgives a lag as a shift -- voice 0 reads 98.3%. So anything that
+    # changes how the PREVIOUS note ENDS renames our attacks without changing
+    # a note struck: the expanding-vibrato pass widens that ending toward the
+    # original's own swing and reads melody 99.1% -> 91.8%, pitch 92% -> 68%
+    # (voice 0 98.3% -> 63.2%, 53 of 212 attacks renamed), with the gate frames
+    # identical and every name five frames after the attack identical between
+    # the arms on all three voices. This REFUTES the wording that landed with
+    # the pass ("both sides carry the previous note's swinging pitch") and
+    # CONFIRMS its conclusion. Two things that look like cures are not:
+    # naming at a fixed later frame reads the same arms 64.7% at +1 and 56.6%
+    # at +3 (voices 1 and 2 step their pitch through an attack program in
+    # those frames) -- the deliberate no-settled-frame rule above stands; and
+    # `naming_split` (`--naming-census`) pairs only 15 of the 53 renames by
+    # positional difflib and reads a naming share of 18%, where the frame axis
+    # -- exact here, the arms' attack frames being identical -- reads all of
+    # it. Frames and probes: task
+    # `arcade-classics-melody-drop-under-the-expanding-vibrato-is-a-naming-
+    # artefact-claim`; H2G-CONVERSION-METHOD.md 7.ffffff.
     Dimension("melody", "melody", _PITCH_REGS, "fraction",
               "the attack-note sequence with consecutive repeats collapsed "
               "-- blind to a re-struck note, which reads as a longer "
@@ -5040,6 +5245,16 @@ DIMENSIONS = (
               "moved by one play call can rename a note that did not change "
               "-- and by the same note-naming-boundary effect, a pitch that "
               "moved CLOSER to the original can be scored as a worse match; "
+              "and an attack is named on its GATE-RISE frame, so where our "
+              "player raises the gate a frame before it writes the new note "
+              "the column scores a sequence lagged by one note, which it "
+              "forgives as a shift, and a change to how the PREVIOUS note "
+              "ENDS renames those attacks without changing a note struck: "
+              "Arcade_Classics reads 99.1% -> 91.8% under the expanding "
+              "vibrato with its gate frames and every name five frames later "
+              "identical (v0.5.497, -t 180, historical) -- read a melody move "
+              "beside the attack frames before calling it a note change; "
+              "naming at a fixed later frame is not the cure; "
               "see the comment above"),
     Dimension("sequence", "seq", _PITCH_REGS, "fraction",
               "the same sequence uncollapsed"),
@@ -5288,9 +5503,24 @@ DIMENSIONS = (
               "in the JSON count what the gate dropped per side. **Still "
               "blind to an envelope "
               "that reaches zero at its own rate** (a long release run out, "
-              "a decay to sustain 0): those cycles are read as sounding. "
-              "Under `--vice` the voices carry no $D404 and ADSR only at "
-              "the attack, so the gate is inert there. "
+              "a decay to sustain 0): those cycles are read as sounding, "
+              "and `depth_env_zero_cycles` counts them per side with a "
+              "reSID envelope model (`envelope_run_out`) without dropping "
+              "them. Measured at v0.5.497 (HEAD 4839a48, -t 180, presets "
+              "with the traced_subtune pins, the 81 rows with a vibrato "
+              "population): "
+              "3763 of 94350 read cycles in the original (4.0%) and 2661 of "
+              "80423 in ours (3.3%), on 39 files; gating them would move "
+              "the ratio on 16 files, at most 0.073 in log space "
+              "(Arcade_Classics 0.464 -> 0.499), no refusal and one "
+              "pairing (Mozart, 9 -> 8 instruments) -- too small against "
+              "the column's spread to trade a register read for a model. "
+              "Under `--vice` the gate applies too: each voice carries "
+              "$D404 and $D405/$D406 as the dump held them at the end of "
+              "every call (`Voice.env_adsr_events`/`env_ctrl_events`), and "
+              "`envelope_silent` is immune to the dump's ADSR sign "
+              "extension; the run-out model is siddump-only, so "
+              "`depth_env_zero_cycles` is null on a `--vice` side. "
               "It has one no-population refusal, one gated refusal and four "
               "sided pairing refusals, printed as two marks: **`-` means no "
               "record in the original carries a vibrato byte** (nothing to "
@@ -5512,8 +5742,27 @@ DIMENSIONS = (
     # independent by design, so a run that is right but a frame early scores
     # perfect. Both read $D404 and neither could see that two emitters opened
     # on the effect where the player opens on the record's own waveform.
+    #
+    # BLIND TO VIBRATO ONSET, and by construction: it reads $D404's waveform
+    # class over the ONSET_FRAMES (4) frames from each attack and nothing
+    # else, so *when* a note's pitch starts to move -- the vibrato delay, the
+    # first-bend offset -- is invisible to it at any offset, inside the four
+    # frames or after them. Measured at v0.5.495 (task
+    # classic-vibrato-players-gate-..., C:/t/classic-vibrato-gate/EVIDENCE.txt,
+    # firstbend.py at -t 180 under presets): the vibdelay emitter moved the
+    # modal first-bend offset Food_Feud v0 2 -> 9 frames (original 9),
+    # Powerplay v0 5 -> 4 (4), Rikky v2 5 -> 6 (6), BMX_Kidz v2 6 -> 4 (2),
+    # and `onset` read 1.000 -> 1.000 on all 54 files the change reached.
+    # `vib` and `depth` see the rate and the swing, not where the swing starts
+    # either. No column scores the first-bend offset; firstbend.py is the
+    # probe to promote if one is ever needed.
+    # `test_onset_declares_and_is_blind_to_vibrato_onset` pins both halves.
     Dimension("onset_agreement", "onset", ("$D404",), "fraction",
-              "instruments whose notes open on the original's waveforms"),
+              "instruments whose notes open on the original's waveforms -- "
+              "the waveform class of the first 4 frames only, so **blind to "
+              "vibrato onset**: when a note's pitch starts to bend (the "
+              "vibrato delay, the first-bend offset) is not read at all, and "
+              "a change moving it by 7 frames read 1.000 -> 1.000"),
     # What happens after the gate closes. `adsr` compares the pair while the
     # note plays and agrees; both sides also gate off on the same frame, so
     # $D404 says nothing either. See `release_tails`.
