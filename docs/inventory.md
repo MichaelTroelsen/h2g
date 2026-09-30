@@ -42,6 +42,9 @@ changes, which for a 1987 SID player and a 2001 tracker is close to never.
 | [GOATTRACKER-REFERENCE.md](GOATTRACKER-REFERENCE.md) | The `.sng` format and player semantics, read out of GoatTracker 2.77's own `readme.txt` rather than inferred. |
 | [GOATTRACKER.md](GOATTRACKER.md) | Findings from actually using GoatTracker 2.77 — behaviour the readme does not state. |
 | [GOATTRACKER-FORKS.md](GOATTRACKER-FORKS.md) | Which GoatTracker build a `.sng` is opened in, and why it matters (the GTS2 importer overruns on this converter's portamento commands). |
+| [OPTIONS.md](OPTIONS.md) | Every converter option: what it changes and the measurement behind it. Moved out of `README.md` at v0.5.492. |
+| [MEASURING.md](MEASURING.md) | The survey, `fidelity.py`, the censuses, A/B runs, listening and the song view. Moved out of `README.md` at v0.5.492. |
+| [RULES.md](RULES.md) | Full text of the rules `CLAUDE.md` lists as one-line headlines. Moved out of `CLAUDE.md` at v0.5.492. |
 | [SIDM2-HUBBARD-KNOWLEDGE.md](SIDM2-HUBBARD-KNOWLEDGE.md) | What the sibling SIDM2 project learned about the same players. |
 
 ## Investigations — a question, answered

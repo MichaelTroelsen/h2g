@@ -3308,7 +3308,7 @@ def regrid_tempos(patterns: List[List[int]], tracks: List[List[int]],
 
     So the incompatibility is DOCUMENTED rather than guarded, and the
     discriminator is the collapsed-surplus DIRECTION below, which needs a
-    trace. README.md § `--regrid` carries the whole account, including why no
+    trace. docs/OPTIONS.md § `--regrid` carries the whole account, including why no
     trace-free proxy exists.
     """
     groups = len(tracks) // 3

@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.493 — 2026-09-30
+
+- docs: move README's option and measuring sections to docs/OPTIONS.md and docs/MEASURING.md, CLAUDE.md's full rule text to docs/RULES.md
+
 ## 0.5.492 — 2026-09-19
 
 - pitch-seq step divider, four-sided depth refusal, fixed sidplayfp power-on delay, Devils Galop approved build recovered
