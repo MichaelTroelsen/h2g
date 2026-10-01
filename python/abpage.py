@@ -43,6 +43,8 @@ import wave
 from datetime import datetime
 from pathlib import Path
 
+import hold
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 LISTEN = ROOT / "build" / "listen"
@@ -1066,6 +1068,10 @@ button.swatch[aria-pressed="false"] { text-decoration:line-through; }
   padding:26px 16px; text-align:center; color:var(--muted); font-size:.9rem;
   border:1px dashed var(--line); border-radius:10px; background:var(--sunk);
 }
+.onhold { font-family:var(--mono); font-size:11px; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); border:1px solid var(--line);
+  border-radius:6px; padding:1px 6px; margin-left:6px; white-space:nowrap; }
+.card.held { opacity:.8; }
 @media (prefers-reduced-motion:reduce) { * { transition:none !important; } }
 @media (max-width:520px) { .sources { grid-template-columns:1fr; } }
 """
@@ -2892,17 +2898,30 @@ def index(names: list[str], rows: dict, version: str,
         return ('<span class="flag" title="%s">%s</span>%s'
                 % (full, md(tag), extra))
 
-    body = ""
-    for n in names:
+    # Tunes the user put ON HOLD (hold.py) get their own card below the staged
+    # ones: still reachable, but never read as awaiting a verdict.
+    active = [n for n in names if not hold.held(n)]
+    parked = [n for n in names if hold.held(n)]
+
+    def rows_html(group):
+        body = ""
+        for n in group:
+            body += row_html(n)
+        return body
+
+    def row_html(n):
         r = rows.get(n, {})
         full = (survey.get(n) or {}).get("SIDId", "")
-        body += ("<tr><td><a href=\"%s.html\">%s</a></td>"
+        reason = hold.held(n)
+        badge = ('<span class="onhold" title="%s">on hold</span>' % _attr(reason)
+                 if reason else "")
+        return ("<tr><td><a href=\"%s.html\">%s</a>%s</td>"
                  "<td class=\"sidid\" title=\"%s\">%s</td>"
                  "<td class=\"appr\">%s</td>"
                  "<td class=\"aud\">%s</td>"
                  "<td class=\"test\">%s</td>"
                  "<td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>"
-                 % (n, n.replace("_", " "),
+                 % (n, n.replace("_", " "), badge,
                     # Escaped the way this file already escapes (see md()),
                     # rather than importing `html` into a module that binds
                     # `html` as a local name in two other functions.
@@ -2912,12 +2931,30 @@ def index(names: list[str], rows: dict, version: str,
                     r.get("melody", "&mdash;"),
                     r.get("gate", "&mdash;"), r.get("wave", "&mdash;"),
                     r.get("hold", "&mdash;")))
+
+    head = ("<thead><tr><th>tune</th><th>SIDId</th><th>human</th><th>audio</th>"
+            "<th>test</th><th>melody</th><th>gate</th><th>wave</th><th>hold</th></tr></thead>")
+    held_card = ""
+    if parked:
+        held_card = ("""<div class="card held">
+  <h2>On hold: DIGI (%d)</h2>
+  <p>Put on hold by the user on 2026-09-30: the Rob Hubbard digi players --
+  most drive a fourth, sampled voice that Goattracker cannot carry (each
+  badge's tooltip says which reason holds that tune). No work, staging or
+  listening verdict is wanted on them until the hold is lifted in
+  <code>python/hold.py</code>.</p>
+  <div class="scroll"><table>
+    %s
+    <tbody>%s</tbody>
+  </table></div>
+</div>""" % (len(parked), head, rows_html(parked)))
+    body = rows_html(active)
     return """<meta charset="utf-8">
 <title>H2G Listening Pass</title>
 <style>%(css)s</style>
 <div class="wrap">
 <header>
-  <div class="eyebrow">H2G &middot; %(version)s &middot; %(count)d tune(s)</div>
+  <div class="eyebrow">H2G &middot; %(version)s &middot; %(count)d tune(s)%(held_count)s</div>
   <h1>Listening pass<small>Each page plays the original and the conversion together and swaps which one you hear, so a switch never loses your place.</small></h1>
 </header>
 <div class="card">
@@ -2927,6 +2964,7 @@ def index(names: list[str], rows: dict, version: str,
     <tbody>%(body)s</tbody>
   </table></div>
 </div>
+%(held_card)s
 <footer>
   <div>Columns are from <code>FIDELITY.md</code> at %(version)s. They compare what is played, never how it sounds &mdash; which is what these pages are for.</div>
   <div><b>human</b> is the only column here that is not a measurement: it is read from <code>approved.json</code>, which a person writes by hand and no tool may rewrite. <code>stale</code> means someone approved an earlier version and the conversion has changed since &mdash; the verdict does not cover what the page now plays.</div>
@@ -2950,7 +2988,9 @@ def index(names: list[str], rows: dict, version: str,
   <div><code>gate</code> is the newest of them and the least validated: it was built at v0.5.270 because no other column could see the register it reads, and no listener has confirmed it corresponds to anything audible.</div>
 </footer>
 </div>
-""" % dict(css=CSS, version=version, count=len(names), body=body)
+""" % dict(css=CSS, version=version, count=len(names), body=body,
+           held_card=held_card,
+           held_count=(" (%d on hold)" % len(parked)) if parked else "")
 
 
 def prune_stale_pages(names: list[str]) -> list[Path]:

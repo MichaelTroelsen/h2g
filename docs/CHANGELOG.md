@@ -4,6 +4,10 @@ Versioning: the single source of truth is `__version__` in
 `python/h2g/__init__.py`. Bump the patch on every commit with
 `python python/bump_version.py "short description"`.
 
+## 0.5.494 — 2026-10-01
+
+- the DIGI hold, a classic vibrato gate read from the player, the render key carries the power-on delay, a clock check for the known-bad pairs, and nine smaller drain fixes
+
 ## 0.5.493 — 2026-09-30
 
 - docs: move README's option and measuring sections to docs/OPTIONS.md and docs/MEASURING.md, CLAUDE.md's full rule text to docs/RULES.md

@@ -43,6 +43,22 @@ VSID = os.environ.get(
 PAL_CYCLES_PER_FRAME = 19656
 PAL_LINES_PER_FRAME = 312
 
+
+def sign_extended(value: int) -> bool:
+    """True when a dumped 16-bit field's high byte is the dump's `$FF`, not data.
+
+    VICE 3.9's `dump` device prints every 16-bit field as `(hi << 8) |
+    (signed char) lo`: measured on Commando.sid (10 s, 156000 samples x 3
+    voices), `$FF` is the high byte of EVERY sample whose low byte has bit 7 set
+    (260872 of 260872) and of none other. So `.freq`, `.pulse` and `.adsr` are
+    only trustworthy when this is False; when True the real high byte is
+    destroyed and only the low byte is data. `.ctrl` and the filter fields are
+    8-bit and unaffected. `fidelity.vice_freq_repair` reconstructs a frequency
+    stream against siddump; nothing reconstructs pulse or adsr.
+    """
+    return (value >> 8) == 0xFF and bool(value & 0x80)
+
+
 _HEX = r"([0-9a-f]{2,4})"
 FREQ = re.compile(rf"^FREQ:\s+{_HEX}\s+{_HEX}\s+{_HEX}")
 PULSE = re.compile(rf"^PULSE:\s+{_HEX}\s+{_HEX}\s+{_HEX}")
@@ -253,3 +269,76 @@ def agreement(a: FrameCell, b: FrameCell, mode: str = "overlap") -> float:
     if not na or not nb:
         return 0.0
     return sum(min(a.hist[v] / na, b.hist.get(v, 0) / nb) for v in a.hist)
+
+
+# --- Octave trill inside one frame ------------------------------------------
+#
+# A `-S2` fixed-pitch arpeggio emitted as a per-call two-entry wavetable loop
+# toggles the voice's frequency between a note and its octave on every play
+# call, i.e. every half frame: a 100 Hz trill the once-per-frame siddump reads
+# as a steady tone. Only a per-rasterline trace sees it, and only as a frame
+# whose 312 lines hold exactly two frequency values an octave apart, split
+# close to half and half.
+
+OCTAVE_MINORITY_LINES = 120   # of 312: the -S2 call boundary sits at ~156
+OCTAVE_MIN_FREQ = 0x100       # below this an "octave" is 3 against 4, not a note
+
+
+def _octave_partner(a: int, b: int) -> bool:
+    """True when one dumped freq is (about) twice the other.
+
+    `sign_extended` values have a destroyed high byte, so one is rebuilt from
+    its partner's where the partner is whole (the tolerance is a flat 3 because a
+    wrong high byte leaves only the low byte to test, which passes ~2.7% of
+    random pairs; a real octave is off by 1); two sign-extended values are refused outright -- a low-byte
+    match admitted `$FFFD`/`$FFFC`, a ~1-unit wobble, as an octave. Both are
+    blindnesses of the dump, not of the octave test.
+    """
+    ea, eb = sign_extended(a), sign_extended(b)
+    if ea and eb:
+        return False
+    if any(x < OCTAVE_MIN_FREQ for x in (a, b) if not sign_extended(x)):
+        return False
+    if ea or eb:
+        ext, whole = (a, b) if ea else (b, a)
+        lo = ext & 0xFF
+        for want in (2 * whole, whole // 2):
+            real = ((want >> 8) << 8) | lo
+            if abs(real - want) <= 3:
+                return True
+        return False
+    lo_v, hi_v = sorted((a, b))
+    return lo_v > 0 and abs(hi_v - 2 * lo_v) <= 2 + (hi_v >> 10)
+
+
+def octave_split_frames(samples: list, voices: int = 3,
+                        minority: int = OCTAVE_MINORITY_LINES) -> list[int]:
+    """Per voice: frames that hold a note and its octave in two halves.
+
+    All of: exactly two freq values (silent lines are not values) an octave
+    apart and at least `OCTAVE_MIN_FREQ`; the rarer on >= `minority` of the 312
+    lines; and **two or more value changes** counted from the previous frame's
+    last line. The last one is what separates a trill from an ordinary
+    once-a-frame toggle: a player writing `b U b U` a frame apart, at a write
+    line of 133, reads 133/179 lines in every frame -- the same hist -- but
+    changes value once a frame, where a per-call loop at `-S2` changes twice
+    (a b | a b), whatever the frame's phase against the loop.
+    """
+    counts = [0] * voices
+    n = PAL_LINES_PER_FRAME
+    for v in range(voices):
+        prev = 0
+        for start in range(0, len(samples) - n + 1, n):
+            seq = [s.voices[v].freq if v < len(s.voices) else 0
+                   for s in samples[start:start + n]]
+            h = Counter(f for f in seq if f)
+            if len(h) == 2:
+                (fa, na), (fb, nb) = h.items()
+                chain = ([prev] if prev else []) + [f for f in seq if f]
+                changes = sum(1 for x, y in zip(chain, chain[1:]) if x != y)
+                if (min(na, nb) >= minority and changes >= 2
+                        and _octave_partner(fa, fb)):
+                    counts[v] += 1
+            last = [f for f in seq if f]
+            prev = last[-1] if last else 0
+    return counts

@@ -404,7 +404,8 @@ def test_the_fixed_attack_pitch_is_held_for_the_whole_attack():
     plain = _two_stage_entries(0x41, 0x81, 4, 1)
     assert plain[1][0] == 0x00, "frame 0 keeps the played note"
 
-    fixed = _two_stage_entries(0x41, 0x81, 4, 1, attack_note=0xB4)
+    fixed = _two_stage_entries(0x41, 0x81, 4, 1, attack_note=0xB4,
+                               budget=6)
     left, right = fixed
     assert right[0] == 0xB4, "the attack opens on the fixed pitch"
     # Every call of the attack, not merely its first. `frames=4` at
@@ -429,7 +430,8 @@ def test_the_fixed_attack_pitch_is_held_for_the_whole_attack():
     # The change is to the pitch, NOT to the block's length -- an emitter that
     # grew the block would spend a budget `_wavetable_layout` reserves.
     assert len(left) == len(_two_stage_entries(0x41, 0x81, 4, 1,
-                                               attack_note=0x00)[0])
+                                               attack_note=0x00,
+                                               budget=6)[0])
 
 
 def test_the_held_pitch_scales_with_the_multiplier_like_the_attack_does():
@@ -439,7 +441,8 @@ def test_the_held_pitch_scales_with_the_multiplier_like_the_attack_does():
     """
     from h2g.goatwriter import _two_stage_entries
     for mult in (1, 2, 3):
-        left, right = _two_stage_entries(0x41, 0x81, 2, mult, attack_note=0xB4)
+        left, right = _two_stage_entries(0x41, 0x81, 2, mult, attack_note=0xB4,
+                                          budget=64)
         atk = [i for i, w in enumerate(left) if w == 0x81]
         assert len(atk) == 2 * mult, (mult, len(atk))
         assert [right[i] for i in atk] == [0xB4] * (2 * mult), mult

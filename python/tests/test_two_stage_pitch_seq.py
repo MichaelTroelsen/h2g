@@ -238,3 +238,30 @@ def test_the_divider_lengthens_the_step_and_not_the_attack():
         sid, det = _det("Food_Feud")
         assert det.pitch_seq.frames_per_step == 4
         assert _block("Food_Feud", 2, 3) == four
+
+
+def test_the_budget_refusal_names_the_record_that_lost_its_arpeggio():
+    """Food_Feud record 2 (`$34`, divider 4) lengthens the block to 34 entries
+    at -S3; a record budget under that refuses it, and the fallback must say
+    which record lost its arpeggio rather than dropping it silently."""
+    if not CORPUS.is_dir():
+        return
+    sid, det = _det("Food_Feud")
+    base = det.instr_start + 2 * det.instr_stride
+    assert sid.data[base + 7] == 0x34
+    assert det.pitch_seq.frames_per_step == 4
+    lines = []
+    kw = dict(two_stage=True, pitch_seq=True)
+
+    def run(budget, log):
+        return G._wavetable_entries(sid, det, 2, True, G.FORMAT_GTS5,
+                                    [(0, 0)] * 16, 3, start=1, budget=budget,
+                                    log=log, **kw)
+
+    run(200, lines.append)
+    assert lines == []                       # fits: nothing to report
+    tight = run(20, lines.append)
+    assert len(lines) == 1
+    assert "record 2" in lines[0] and "$34" in lines[0]
+    assert "LOSES its arpeggio" in lines[0]
+    assert len(tight[0]) <= 20               # the fallback still fits

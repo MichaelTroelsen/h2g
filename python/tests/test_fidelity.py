@@ -363,6 +363,8 @@ def test_the_wave_dimension_declares_the_tail_rule():
     the report's own 'What this run compared' carries it."""
     d = [d for d in fidelity.DIMENSIONS if d.key == "wave"][0]
     assert "release has run out" in d.of and "wave_tail_frames" in d.of
+    assert "ccd06ad" in d.of and "either side of 0.5.481" in d.of
+    assert "not comparable" in d.of and "byte-identical" in d.of
 
 
 def test_wave_is_none_when_no_frames_are_counted():
@@ -1295,6 +1297,111 @@ def test_the_report_names_an_edge_declined_file_and_not_a_noiseless_one():
     assert "records the cut runs and frames per side" in d.of
 
 
+# --- the third cause: noise under a CLOSED gate ------------------------------
+#
+# Kentilla, Proteus and Warhawk (v0.5.493, HEAD 57c086e, -t 180, presets)
+# sound EVERY original noise frame gate-off: the drum writes `$41` on the
+# attack, `$80` for 1-3 frames, then `$40` -- 430 / 1647 / 1468 noise frames,
+# none of them `$81` -- and ours plays the same burst `$81`. The gate-AND
+# pairs no instrument and there is no edge run on either side, so before the
+# gate-off keys the `-` named neither of the two causes it could have. Rows
+# computed from a HEAD archive: Kentilla 194 runs / 426 of 430 frames (the 4
+# left out sit before the voice is ever seen gated), Proteus 1441 / 1647,
+# Warhawk 1285 / 1468; ours 0 / 0 on all three. Frames and rows in
+# C:/t/nrun-gate-off-noise/.
+
+
+def test_a_drum_burst_under_a_closed_gate_is_recorded_and_not_scored():
+    """Proteus's drum in miniature: `$41` attack, `$80` for one frame, `$40`.
+    Ours plays the burst gated. The column still declines (not scored, by
+    decision) and the gate-off keys say why."""
+    adsr = [(0, 0x0FDA)]                      # a real Proteus/Warhawk key
+    orig = _run_side([(1, 0x41), (2, 0x80), (3, 0x40)], adsr)
+    ours = _run_side([(1, 0x41), (2, 0x81), (3, 0x40)], adsr)
+    assert fidelity.noise_runs(orig, 12) == {}          # the gate-AND sees none
+    got = fidelity.noise_run_agreement(orig, ours, 12)
+    assert got["noise_run_instruments"] == 0 and got["noise_run_agreement"] is None
+    assert got["noise_run_ours_only"] == 1
+    assert got["noise_run_orig_edge_runs"] == 0         # not the window's cause
+    assert got["noise_run_orig_gate_off_runs"] == 1
+    assert got["noise_run_orig_gate_off_frames"] == 1
+    assert got["noise_run_ours_gate_off_runs"] == 0     # a gated run is not one
+    assert got["noise_run_ours_gate_off_frames"] == 0
+    # ...even inside an earlier note's release window: a second, GATED burst
+    # two frames after a gate drop is the gate-AND's run, not this one's.
+    ours2 = _run_side([(1, 0x41), (2, 0x40), (3, 0x41), (4, 0x81), (5, 0x40)],
+                      adsr)
+    assert fidelity.noise_gate_off_runs(ours2, 12) == {"runs": 0, "frames": 0}
+    assert fidelity.noise_runs(ours2, 12) == {0x0FDA: Counter({1: 1})}
+
+
+def test_gate_off_noise_counts_only_while_the_release_still_sounds():
+    # Release nibble 0 is 6 ms: audible on the gate-drop frame alone, so a
+    # SELECT latched on noise three frames later is silence, not noise.
+    latched = _run_side([(1, 0x41), (2, 0x40), (5, 0x80), (8, 0x40)],
+                        [(0, 0x0F00)])
+    assert fidelity.noise_gate_off_runs(latched, 12) == {"runs": 0, "frames": 0}
+    # Release nibble 1 is 24 ms = 2 frames: a 6-frame `$80` stretch starting
+    # on the gate drop is one run, of which only the 2 audible frames count.
+    clipped = _run_side([(1, 0x41), (2, 0x80), (8, 0x40)], [(0, 0x0F01)])
+    assert fidelity.noise_gate_off_runs(clipped, 12) == {"runs": 1, "frames": 2}
+    # The nibble is the RELEASE (low) nibble of SR: $0F10 has sustain 1,
+    # release 0, so the same stretch is audible for one frame only.
+    sustain = _run_side([(1, 0x41), (2, 0x80), (8, 0x40)], [(0, 0x0F10)])
+    assert fidelity.noise_gate_off_runs(sustain, 12) == {"runs": 1, "frames": 1}
+    # A voice never seen gated says nothing about being audible.
+    never = _run_side([(1, 0x80), (3, 0x40)], [(0, 0x0FDA)])
+    assert fidelity.noise_gate_off_runs(never, 12) == {"runs": 0, "frames": 0}
+
+
+def test_the_report_names_a_gate_off_declined_file_in_its_own_sentence():
+    burst = _row("Burst.sid", "measured", 1.0, 50, 50)
+    burst.update(wave=0.9, wave_frames=100, orig_noise_frames=90,
+                 our_noise_frames=80, noise_run_instruments=0,
+                 noise_run_orig_only=0, noise_run_ours_only=3,
+                 noise_run_orig_edge_runs=0, noise_run_orig_edge_frames=0,
+                 noise_run_ours_edge_runs=0, noise_run_ours_edge_frames=0,
+                 noise_run_orig_gate_off_runs=40,
+                 noise_run_orig_gate_off_frames=88,
+                 noise_run_ours_gate_off_runs=0,
+                 noise_run_ours_gate_off_frames=0)
+    # Both causes at once: "ONLY in runs the window cut" would be false.
+    both = _row("Both.sid", "measured", 1.0, 50, 50)
+    both.update(wave=0.9, wave_frames=100, orig_noise_frames=60,
+                our_noise_frames=60, noise_run_instruments=0,
+                noise_run_orig_only=0, noise_run_ours_only=1,
+                noise_run_orig_edge_runs=1, noise_run_orig_edge_frames=30,
+                noise_run_ours_edge_runs=0, noise_run_ours_edge_frames=0,
+                noise_run_orig_gate_off_runs=5,
+                noise_run_orig_gate_off_frames=30,
+                noise_run_ours_gate_off_runs=0,
+                noise_run_ours_gate_off_frames=0)
+    cut = _row("Cut.sid", "measured", 1.0, 50, 50)
+    cut.update(wave=0.9, wave_frames=100, orig_noise_frames=90,
+               our_noise_frames=80, noise_run_instruments=0,
+               noise_run_orig_only=0, noise_run_ours_only=2,
+               noise_run_orig_edge_runs=1, noise_run_orig_edge_frames=90,
+               noise_run_ours_edge_runs=1, noise_run_ours_edge_frames=4,
+               noise_run_orig_gate_off_runs=0,
+               noise_run_orig_gate_off_frames=0)
+    text = fidelity.report([burst, both, cut], _Args())
+    lines = [l for l in text.splitlines() if "`nrun` declined" in l]
+    gate = next(l for l in lines if "CLOSED gate" in l)
+    edge = next(l for l in lines if "window cut" in l)
+    assert "**2** file(s)" in gate
+    assert "Burst.sid (original 40 gate-off run(s), 88 of 90 noise frames, " \
+           "0 edge run(s); ours 3 gated instrument(s), 0 gate-off run(s))" in gate
+    assert "Both.sid (original 5 gate-off run(s), 30 of 60 noise frames, " \
+           "1 edge run(s);" in gate
+    assert "Cut.sid" not in gate
+    assert "**1** file(s)" in edge and "Cut.sid" in edge
+    assert "Both.sid" not in edge and "Burst.sid" not in edge
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "noise_run_agreement")
+    assert "Blind to noise sounded under a CLOSED gate" in d.of
+    assert "Kentilla, Proteus and Warhawk" in d.of
+    assert "noise_run_*_gate_off_runs" in d.of
+
+
 # --- how the three reach the report ----------------------------------------
 
 
@@ -1530,7 +1637,8 @@ def _row(name, status, melody=None, orig=0, ours=0):
                  # WITHOUT --sound legitimately omits them, which is what
                  # test_a_row_without_sound_prints_a_dash_and_says_why pins.
                  aud=melody, loud=melody, loud_ratio=1.0,
-                 sound_frames=100, sound_lag_ms=0.0)
+                 sound_frames=100, sound_lag_ms=0.0,
+                 orig_octave_split_frames=0, our_octave_split_frames=0)
     return r
 
 
@@ -3252,6 +3360,25 @@ def test_the_sound_dimensions_read_rendered_audio_not_a_register():
     assert fidelity.registers_unread(keys) == []
 
 
+def test_both_sound_dimensions_declare_they_are_blind_to_a_clock():
+    """A per-frame timbre/level agreement cannot see a wrong tempo, and the
+    registry is the one place a report reader is told so. Anchored on the
+    phrase that states the blindness AND on the columns it sends the reader
+    to -- `len`/`drift` -- so neither half can go without the test noticing.
+    Decided by the user (`three-of-four-known-bad-pairs-are-clock-defects-
+    aud-cannot-see`); the calibration's clock pairs moved to those columns."""
+    for key in ("aud", "loud"):
+        of = " ".join(next(d for d in fidelity.DIMENSIONS if d.key == key).of.split())
+        assert "BLIND TO A CLOCK" in of, key
+        assert "`len`" in of and "`drift`" in of, key
+    # ...and aud names where its own calibration now validates each kind.
+    aud = " ".join(next(d for d in fidelity.DIMENSIONS if d.key == "aud").of.split())
+    assert "KNOWN_BAD" in aud and "CLOCK_KNOWN_BAD" in aud
+    # The same sentence reaches the generated report's column prose.
+    text = fidelity.report([_row("A.sid", "measured", 1.0)], _Args())
+    assert "**blind to a clock**" in " ".join(text.split())
+
+
 def test_a_row_without_sound_prints_a_dash_and_says_why():
     """`--sound` is on demand. A row measured without it, or one whose render
     failed, reports the column absent rather than 0 -- an absent dimension
@@ -3478,12 +3605,12 @@ def test_every_dimension_value_key_reaches_the_row():
 def test_a_count_column_reads_its_SOURCE_key_not_the_one_it_is_named_for():
     """`source` exists because the count columns report OUR side only.
 
-    Four dimensions declare a `key` that is not where their value lives, and
+    Five dimensions declare a `key` that is not where their value lives, and
     reading `d.key` instead of `d.source or d.key` makes them look absent from
     `--json` when they are present under another name. That misreading has
     already reached this repo's notes once, as "fidelity.json omits ..." for
     columns the artefact carries; `Dimension.value` is the accessor, and this
-    pins that the two are genuinely different for these four.
+    pins that the two are genuinely different for these five.
     """
     aliased = {d.column: (d.key, d.source)
                for d in fidelity.DIMENSIONS if d.source}
@@ -3492,6 +3619,7 @@ def test_a_count_column_reads_its_SOURCE_key_not_the_one_it_is_named_for():
         "noise": ("noise", "our_noise_frames"),
         "pul": ("pulse", "our_pulse_changes"),
         "filt": ("filtered", "our_filtered_frames"),
+        "osplit": ("octave_split", "our_octave_split_frames"),
     }, aliased
     full = _row("A.sid", "measured", 0.5)
     for column, (key, source) in aliased.items():
@@ -4487,3 +4615,27 @@ def test_the_cli_offers_no_window_floor():
                           cwd=REPO_ROOT / "python", capture_output=True,
                           text=True)
     assert "--no-window-floor" in proc.stdout
+
+
+def test_osplit_declares_the_frequency_registers_and_needs_vice():
+    d = next(x for x in fidelity.DIMENSIONS if x.key == "octave_split")
+    assert d.column == "osplit" and d.reads == ("$D400/$D401",)
+    assert d.source == "our_octave_split_frames"
+    assert "--vice" in d.of and "octave" in d.of
+    row = _row("A.sid", "measured", 1.0)
+    assert fidelity._fmt_osplit(row) == "0/0"
+    row["our_octave_split_frames"], row["orig_octave_split_frames"] = 75, 0
+    assert fidelity._fmt_osplit(row) == "75/0 !"
+    del row["our_octave_split_frames"], row["orig_octave_split_frames"]
+    assert fidelity._fmt_osplit(row) == "-"
+    assert "octave_split" not in fidelity.dimensions_present(row)
+
+
+def test_vice_octave_split_sums_both_voices_of_each_side():
+    import vicetrace as VT
+    def side(a, b, n):
+        return [VT.Sample(voices=[VT.VoiceLine(freq=a if i % 312 < n else b)] * 3)
+                for i in range(624)]
+    got = fidelity.vice_octave_split(side(0x1168, 0x22D0, 156),
+                                     side(0x1168, 0x1168, 156))
+    assert got == {"orig_octave_split_frames": 3, "our_octave_split_frames": 0}

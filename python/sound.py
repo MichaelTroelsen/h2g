@@ -118,8 +118,9 @@ N_FFT = 2048
 # only bounds it from below. Since `listen.SIDPLAYFP_POWER_ON_DELAY` landed
 # (after v0.5.491) `render_sidplayfp` passes `--delay=<it>` and a fresh pair
 # reads 0.0000;
-# a render cached in build/audio BEFORE that is still a random-delay render
-# under a still-valid content key, until it is re-rendered.
+# and since `content_key` folds that delay into the cache key, a render
+# cached in build/audio BEFORE the flag is a cache miss (re-rendered), not a
+# random-delay render served under a still-valid key.
 HOP = 128
 N_MELS = 64
 F_MIN, F_MAX = 20.0, 8000.0
@@ -443,9 +444,27 @@ def compare_wavs(a: Path, b: Path, prior_s: float | None = None,
     return got
 
 
-def content_key(path: Path) -> str:
-    """sha1[:12] of a file's bytes -- the cache key for a render of it."""
-    return hashlib.sha1(Path(path).read_bytes()).hexdigest()[:12]
+def content_key(path: Path, delay: int | None = None) -> str:
+    """sha1[:12] of a file's bytes AND the renderer's power-on delay -- the
+    cache key for a render of it.
+
+    The delay is folded in because it is part of what the WAV is a render
+    OF: until `listen.SIDPLAYFP_POWER_ON_DELAY` existed sidplayfp drew a
+    random start state per render, so a WAV keyed on the bytes alone could
+    be a pre-flag render under a key a post-flag reader would hit. With the
+    delay in the key (default: the constant `listen.render_sidplayfp`
+    passes), every pre-flag render is a cache miss and is re-rendered, and a
+    future change of the constant misses again rather than serving renders
+    made under the old one. Still content-keyed, never version- or
+    path-keyed -- the rule `approved.json` keys its verdicts by
+    (`sng_sha256`, the bytes); an approval names the .sng, not a render, so
+    no approval reads this key.
+    """
+    if delay is None:
+        delay = listen.SIDPLAYFP_POWER_ON_DELAY
+    h = hashlib.sha1(Path(path).read_bytes())
+    h.update(b"\0sidplayfp-delay=%d" % delay)
+    return h.hexdigest()[:12]
 
 
 import sys as _sys
@@ -508,10 +527,10 @@ def render_repeat(sid: Path, seconds: int, subtune: int, tag: str,
     was the floor under every score taken against a cached render.
     `listen.render_sidplayfp` now passes `--delay=<SIDPLAYFP_POWER_ON_DELAY>`
     (0.0186 -> 0.0000 on Devils_Galop, the pair's samples at most 6 LSB of
-    dither apart); this function is still what MEASURES that, and the
-    content key does not see the flag, so a repeat render beside a cached
-    render made before it still reads the old floor until the cached one is
-    re-rendered.
+    dither apart); this function is still what MEASURES that. The content
+    key carries the delay (`content_key`), so a cached render made before
+    the flag is no longer found under the current key and cannot set the
+    floor a repeat render is compared against.
 
     Each call renders again to `<tag>.<key>.s<sub>.t<seconds>.r<k>.wav`,
     numbered after the renders of these bytes already on disk, drops the

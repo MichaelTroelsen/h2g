@@ -85,6 +85,27 @@ Two `sidfile.py` rescues (`find_relocation`, `find_init_writes`) and two
 **only when the primary path found nothing**. That ordering is the rule: a rescue
 may save a file that reads nothing and must never disturb one that reads correctly.
 
+## On hold: the DIGI files
+
+**The twelve DIGI files are on hold** (user, 2026-09-30) -- exactly the corpus
+files SIDId tags `(Rob_Hubbard_Digi)`, which `tests/test_hold.py` re-derives:
+eight whose player drives a fourth, sampled voice (`track_voices > 3`, survey's
+"digi channel dropped"; `hold.FOURTH_VOICE`) and four without one
+(Arcade_Classics, Skate_or_Die_intro, Ricochet, BMX_Kidz; `hold.NAMED`).
+**Pygmies_Revenge is NOT held**: it drives a fourth voice but SIDId tags it
+plain Rob_Hubbard, and the user put it back on the main list
+(`hold.RELEASED`). The list is `python/hold.py`'s `ON_HOLD`. Until the user
+lifts it:
+
+- Start no task whose subject is a held file: no converter work aimed at one,
+  no preset search for it, no staging, and no listening verdict asked. A
+  `/whattask` task whose work is confined to held files is `requires-user` with
+  `blocked_on` naming this hold; a corpus-wide task still runs, and held files
+  are converted and measured with everything else.
+- The listening index (`build/listen/index.html`, `abpage.py`) lists them in
+  their own *On hold: DIGI* card, not among the tunes awaiting a verdict.
+- Adding or lifting a hold is one edit to `hold.py` plus this section.
+
 ## Every commit
 
 1. **Bump the version — on every commit, not just releases.**

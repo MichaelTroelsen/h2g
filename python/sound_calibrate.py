@@ -10,7 +10,7 @@ under a shift nobody can hear) and the CLOSENESS FLOOR (how far apart two
 renders a listener called the same can read) -- are measured here, never
 typed. The doc this writes is a regenerated artefact, not prose.
 
-Five checks:
+Six checks:
   1 identity      -- a render against itself is 1.0 / 1.0 / ratio 1.0
   2 shift         -- three delays of one side (48 rasterlines = 3 ms, one
                      frame = 20 ms, and HALF A HOP = 64 samples) and a
@@ -21,15 +21,22 @@ Five checks:
   3 inaudible     -- ACE_II at v0.5.368 against v0.5.369: approved.json's own
                      note calls that change inaudible, so the agreement
                      between those two renders bounds the closeness floor
-  4 known-bad     -- builds history shows were wrong (Las Vegas silence and
-                     Samantha Fox at 3x, both pre-v0.5.401 -- see the
-                     correction below, the plan's own text says pre-402 and
-                     that is not where the fix actually landed; Human Race
-                     on the wrong clock pre-v0.5.330) must score below
-                     their fixed builds by more than the noise floor
+  4 known-bad     -- STRUCTURAL fixes (`KNOWN_BAD`: the wrong music, the
+                     wrong pulse, a pattern past the format's limit -- same
+                     -S on both sides) must score below their fixed builds
+                     by more than the noise floor
   5 approved rank -- the approved tunes should sit in the corpus's upper
                      half on `aud`; if one does not, the doc says which of
                      (metric, approval) to check and picks neither
+  6 known-bad clock -- CLOCK fixes (`CLOCK_KNOWN_BAD`: Las Vegas and
+                     Samantha Fox pre-v0.5.401 -- see the correction below,
+                     the plan's own text says pre-402 and that is not where
+                     the fix actually landed; Human Race, Rasputin and
+                     Spellbound on the wrong clock pre-v0.5.330) must read
+                     closer to the original on `len` or `drift` than their
+                     bad builds. NOT on `aud`/`loud`: a per-frame timbre and
+                     level agreement is blind to a clock (see the note above
+                     `CLOCK_KNOWN_BAD`)
 
 CHECKS 2, 3 AND 4 SCORE THE FIRST `CHECK_WINDOW_S` SECONDS OF THE ALIGNED
 RENDER, not the whole of it -- see the constant's own comment. The render
@@ -223,10 +230,16 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 #   Las_Vegas and Samantha_Fox 0.5.400 -> 0.5.401 move multiplier 1->4 and
 #   2->5; their good builds render loud_ratio 0.074 and 0.063 because the
 #   music ends around 30 s of a 60 s window while the original plays on. The
-#   metric is right and the PAIR is unusable. They stay in the table and are
-#   reported rather than deleted -- the user's decision, recorded in
+#   metric is right and the PAIR is unusable. They were kept and reported
+#   rather than deleted -- the user's decision, recorded in
 #   .claude/tasks/decisions.jsonl under
-#   `the-two-incomparable-known-bad-pairs-need-retiring-or-replacing`.
+#   `the-two-incomparable-known-bad-pairs-need-retiring-or-replacing` -- and
+#   are now kept in `CLOCK_KNOWN_BAD` below, which is the check that can
+#   read them. RETRACTED IN PART: "their good builds render loud_ratio 0.074
+#   and 0.063 because the music ends around 30 s" is true of the builds
+#   `convert_at` makes and FALSE of the build v0.5.401 ships -- see the note
+#   above `CLOCK_KNOWN_BAD`: the CLI `convert_at` shells out to drops
+#   `skip_gate`.
 #
 #   INERT -- the commit does not reach the file at all, so both sides render
 #   byte-identically (W_A_R_Preview on 0.5.399 -> 0.5.400, worse_by 0.0000 on
@@ -275,12 +288,115 @@ INAUDIBLE_PAIRS = [("ACE_II.sid", "0.5.368", "0.5.369")]
 # floor); Auf_Wiedersehen_Monty 0.5.393 -> 0.5.394 does not build on the bad
 # side (`convert_at` returns None for 0.5.393).
 # ===========================================================================
-KNOWN_BAD = [("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
-             ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401"),
-             ("Human_Race.sid", "0.5.329", "0.5.330"),
-             ("W_A_R.sid", "0.5.399", "0.5.400"),
-             ("Rasputin.sid", "0.5.329", "0.5.330"),
-             ("Spellbound.sid", "0.5.329", "0.5.330")]
+# THE CLOCK PAIRS LEFT THIS TABLE, AND TWO STRUCTURAL ONES JOINED IT.
+#
+# `aud` and `loud` are PER-FRAME agreements of timbre and level. A build on
+# the wrong clock plays the same instruments at the same loudness at the
+# wrong TIMES, so frame against frame it reads close to the original for as
+# long as the notes overlap -- a per-frame timbre/level agreement is blind to
+# a clock by construction, at any window. Human_Race, Las_Vegas and
+# Samantha_Fox are clock fixes (the multiplier 1 -> 4 on two of them, "a
+# subtune's tempo no longer reaches another subtune's clock" on the third),
+# and the user decided (.claude/tasks/decisions.jsonl,
+# `three-of-four-known-bad-pairs-are-clock-defects-aud-cannot-see`) that they
+# move to a check reading the columns that CAN see a clock -- `len` and
+# `drift`, check 6 -- and that this table gains structural pairs instead.
+#
+# Rasputin and Spellbound moved with them, on the same rule applied to the
+# same commit: they are two more files of Human_Race's 3b091c0, their rows
+# here read "inside the floor" (worse_by aud +0.0043 / +0.0028, loud
+# +0.0055 / +0.0011 against 0.0077 in build/sound_calibration.json at
+# v0.5.493, which is what held check 4 at FAIL there), and `drift` sees both
+# (below). A clock pair left here is a pair the check is built not to see.
+#
+# THE THREE STRUCTURAL PAIRS, scored exactly as check 4 scores (`convert_at`,
+# 60 s prefix of the 180 s render) at v0.5.493 against its noise floor of
+# 0.0077. HISTORICAL; probe C:/t/three-of-four-known-bad-pair/candidates.py,
+# output cand1.jsonl / cand2.jsonl beside it:
+#
+#     W_A_R          0.5.399 -> 0.5.400  aud +0.1670 loud +0.0891   -S4 both
+#     Action_Biker   0.5.371 -> 0.5.372  aud +0.1195 loud +0.0987   -S1 both
+#     5_Title_Tunes  0.5.389 -> 0.5.391  aud +0.0148 loud +0.0054   -S1 both
+#
+# Action_Biker's fix (f63caa1) is the subtune table read six bytes early --
+# the bad build plays a DIFFERENT PIECE OF MUSIC on the traced subtune
+# (melody 0.056 -> 1.000). Its `drift` also moves (unfitted -> 0.0), but
+# because notes of two different tunes cannot be onset-matched, not because
+# a rate changed: `len` reads +120.46 on both sides. 5_Title_Tunes' fix
+# (576391e, whose parent IS v0.5.389 -- there is no v0.5.390 commit) is the
+# free-running pulse phase: timbre only, `drift` 0.0 and melody 0.9994 on
+# both sides. Its margin is two floors, not twenty; rebuilt through the
+# tree's own `convert(**presets)` (the path FIDELITY.md measures, see the
+# note above `CLOCK_KNOWN_BAD`) it reads aud +0.0170, so it is not an
+# artefact of the CLI build.
+#
+# TESTED AND NOT ADDED, so nobody re-renders them:
+#   Auf_Wiedersehen_Monty 0.5.394 -> 0.5.395 (b0294dd, the drums four octaves
+#     down): comparable, same -S, clock unmoved -- and UNSEEN, aud +0.00002
+#     loud -0.0006. Not settled whether the traced subtune's 60 s prefix
+#     carries those drums or `aud` cannot hear a noise pitch; recorded, not
+#     added, because a row this check cannot yet explain is not a witness.
+#   5_Title_Tunes 0.5.381 -> 0.5.382 (hard-restart frames): aud -0.0049,
+#     loud +0.0002, unseen.
+#   Monty_on_the_Run 0.5.389 -> 0.5.391: INERT (identical .sng).
+#   Mega_Apocalypse 0.5.458 -> 0.5.459: INCOMPARABLE (loud_ratio 2.253 on
+#     both sides) and unmoved to 1e-6.
+# ===========================================================================
+KNOWN_BAD = [("W_A_R.sid", "0.5.399", "0.5.400"),
+             ("Action_Biker.sid", "0.5.371", "0.5.372"),
+             ("5_Title_Tunes.sid", "0.5.389", "0.5.391")]
+
+# ===========================================================================
+# CHECK 6: THE CLOCK PAIRS, READ ON `len` AND `drift`.
+#
+# Built through each tree's OWN `convert(**fidelity._preset_opts(...))` --
+# `convert_as_measured` -- NOT through `convert_at`'s CLI, because the CLI
+# drops options and one of them is the clock. `h2g/cli.py` sets
+# `args.skip_gate` (and `args.regrid`) from `--presets` and then never passes
+# either to `convert()`, so its output is not what fidelity.py measures:
+# Las_Vegas at HEAD through the CLI is 12444 bytes (sha1 33f5d2506b96)
+# against 12446 (183215e34435) through `convert(**_preset_opts)`. Measured at
+# v0.5.493, 180 s with the length probe, both paths, every version the tree's
+# own -S (HISTORICAL; probes clock_probe.py and api_build.py in
+# C:/t/three-of-four-known-bad-pair):
+#
+#                      bad -> good          CLI good build        convert() good build
+#     Human_Race       0.5.329 -> 0.5.330   drift -250 -> 0.0     drift -250 -> 0.0
+#     Las_Vegas        0.5.400 -> 0.5.401   len -83.90 drift -800 len -20.86 -> +0.10, drift -200 -> 0.0
+#     Samantha_Fox     0.5.400 -> 0.5.401   len -72.38 drift -800 len -17.98 -> +0.10, drift -200 -> 0.0
+#     Rasputin         0.5.329 -> 0.5.330   drift -263 -> -11.9   drift -263 -> -11.9
+#     Spellbound       0.5.329 -> 0.5.330   drift unfitted -> -90.9 (both paths)
+#
+# So the v0.5.401 fix is real and exact on the path that ships -- Las_Vegas
+# ends 0.10 s after the original, where the CLI build of the SAME TREE ends
+# 84 s early at four times the speed. That CLI build is the one check 4
+# rendered and called INCOMPARABLE. `convert_at` is
+# left on the CLI deliberately: `approvals.recover_approved_sng` rebuilds
+# what a LISTENER heard, and `play.ps1` / `convert.ps1` are that CLI.
+#
+# Spellbound's bad side does not fit (the sides wander, mad 189 frames) and
+# neither side ends, so no clock column reads both sides of it: it is kept
+# and reported as EXCLUDED, the Las_Vegas keep-and-report decision's shape.
+# Its good side's -90.9 is also not a right clock -- HEAD reads 0.0 at -S5 --
+# so this pair's "fix" is the first of two.
+# ===========================================================================
+CLOCK_KNOWN_BAD = [("Human_Race.sid", "0.5.329", "0.5.330"),
+                   ("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
+                   ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401"),
+                   ("Rasputin.sid", "0.5.329", "0.5.330"),
+                   ("Spellbound.sid", "0.5.329", "0.5.330")]
+
+# A clock column has to move by more than this before a pair counts as seen
+# on it -- and by more than this the WRONG way before it counts against.
+# `len` uses the listener's own rule (fidelity.LENGTH_TOLERANCE, 5 s): a fix
+# that moves the ending by less than the rule allows is not a length fix.
+# `drift` is deterministic -- siddump traces the same bytes identically, so
+# its noise is zero -- and 5 frames per 1000 (a tenth of a second a minute)
+# sits under the smallest real clock error the corpus shows, the outer
+# gate's skipped call at 1/(skip+1) (Ricochet -7.81 in `fidelity.drift`'s
+# docstring; Auf_Wiedersehen_Monty -7.81 on both its v0.5.394 and v0.5.395
+# builds in the candidates probe), and forty times under the pairs above.
+CLOCK_DRIFT_MARGIN = 5.0
 
 
 # ---- pure reductions ------------------------------------------------------
@@ -463,6 +579,49 @@ def comparable(bad: dict, good: dict) -> str | None:
     return None
 
 
+def clock_verdict(bad: dict, good: dict) -> dict:
+    """Check 6's verdict on one clock pair, from two `clock_reading`s.
+
+    Each column's GAIN is how much closer to the original the good build
+    reads than the bad one, in its own unit: `|len|` in seconds, `|drift|` in
+    frames per 1000. Seen when one gain clears its margin and neither column
+    says the good build is worse by more than its margin -- a "fix" that ends
+    84 s early to stop drifting is not a clock fix, and that is exactly the
+    CLI build of Las_Vegas (see the note above `CLOCK_KNOWN_BAD`).
+
+    EXCLUDED, not unseen, when no column reads BOTH sides: `len` needs the
+    original to end and both sides to be placed, `drift` needs both fits. A
+    `-` on one side is a finding about the pair, and scoring it would report
+    a pair problem as a clock-column blind spot -- `comparable`'s rule, for
+    the same reason.
+    """
+    def gain(key):
+        b, g = bad.get(key), good.get(key)
+        return None if b is None or g is None else abs(b) - abs(g)
+
+    out = {"len_gain": gain("length_delta"), "drift_gain": gain("drift_per_1000")}
+    margins = {"len_gain": F.LENGTH_TOLERANCE, "drift_gain": CLOCK_DRIFT_MARGIN}
+    read = {k: v for k, v in out.items() if v is not None}
+    if not read:
+        why = []
+        for label, got in (("bad", bad), ("good", good)):
+            if got.get("drift_unfitted"):
+                why.append(f"{label} drift unfitted")
+            elif got.get("drift_per_1000") is None:
+                why.append(f"{label} drift not fitted")
+            if got.get("length_delta") is None:
+                why.append(f"{label} len not placed")
+        out["incomparable"] = ("no clock column reads both sides ("
+                               + ", ".join(why) + ")")
+        out["seen"] = False
+        return out
+    out["incomparable"] = None
+    against = [k for k, v in read.items() if v < -margins[k]]
+    out["contradicted"] = against or None
+    out["seen"] = not against and any(v > margins[k] for k, v in read.items())
+    return out
+
+
 def rank_in_corpus(rows: list[dict], names: list[str]) -> dict[str, tuple[int, int]]:
     scored = sorted(((r["aud"], r["file"][:-4]) for r in rows
                      if r.get("aud") is not None), reverse=True)
@@ -546,14 +705,118 @@ def convert_at(version: str, sid: Path, workdir: Path, gt2reloc: str,
     return None if packed is None else Converted(sng=out, sid=packed)
 
 
+class Measured(NamedTuple):
+    """A build as fidelity.py measures it, and the -S it was packed at."""
+    sng: Path
+    sid: Path
+    multiplier: int
+
+
+# Run inside a historical tree's `python/`: that tree's own convert() under
+# that tree's own preset loader, which is what its FIDELITY.md measured.
+_BUILD_AS_MEASURED = """
+import json, os, sys
+sys.path.insert(0, '.')
+import fidelity as F
+from h2g.convert import convert
+sid, out = sys.argv[1], sys.argv[2]
+doc = json.loads(open('../presets.json', encoding='utf-8').read())
+opts = F._preset_opts(doc, os.path.basename(sid))
+open(out, 'wb').write(convert(sid, log=lambda m: None, **opts))
+"""
+
+
+def convert_as_measured(version: str, sid: Path, workdir: Path,
+                        gt2reloc: str) -> Measured | None:
+    """`convert_at`, but through the tree's `convert(**_preset_opts)` rather
+    than its CLI -- the path whose `len`/`drift` check 6 reads.
+
+    The CLI drops `skip_gate` (see the note above `CLOCK_KNOWN_BAD`), and on
+    a multispeed file that IS the clock: Las_Vegas's v0.5.401 build reads
+    `len` -83.90 through the CLI and +0.10 through this. Packed into its own
+    directory so it never overwrites the `convert_at` pack of the same tree.
+    """
+    sha = resolve_version_sha(version)
+    if not sha:
+        return None
+    tree = workdir / sha
+    if not tree.exists():
+        tree.mkdir(parents=True)
+        blob = subprocess.run(["git", "archive", sha], cwd=ROOT,
+                              capture_output=True, check=True).stdout
+        tarfile.open(fileobj=io.BytesIO(blob)).extractall(tree)
+    out = workdir / f"{sid.stem}.{sha}.m.sng"
+    r = subprocess.run([sys.executable, "-c", _BUILD_AS_MEASURED, str(sid), str(out)],
+                       cwd=tree / "python", capture_output=True, text=True)
+    if r.returncode or not out.exists():
+        return None
+    try:
+        doc = json.loads((tree / "presets.json").read_text(encoding="utf-8"))
+        mult = F._preset_multiplier(doc, sid.name)
+    except (OSError, json.JSONDecodeError):
+        return None
+    blob, _ = F.legalise_restarts(out.read_bytes())
+    pack_dir = workdir / f"{sha}m"
+    pack_dir.mkdir(parents=True, exist_ok=True)
+    packed = F.pack_sid(blob, pack_dir, gt2reloc, mult)
+    return None if packed is None else Measured(sng=out, sid=packed, multiplier=mult)
+
+
+def clock_reading(orig: Path, ours: Path, multiplier: int, sub: int,
+                  seconds: int, cal: int, exe: str = F.SIDDUMP,
+                  trace=F.run_siddump) -> dict:
+    """`len` and `drift` for one build, by `fidelity._measure`'s own rule.
+
+    The length rule exactly as `_measure` applies it: where the original ends
+    inside `seconds` both sides are compared over `seconds` and the window
+    shortens to the ending; where it does not, the original is probed over
+    `LENGTH_PROBE_FACTOR` times the window and, if it ends there, ours is
+    traced that long too and the window widens to the ending
+    (`window_floor`). `drift` is then fitted over the resulting window. Ours
+    is traced at `calls=multiplier` -- `pack_sid`'s rule for every trace of
+    a file it packed. `trace` is injectable for the tests; nothing else is.
+    """
+    a = trace(orig, seconds, sub, exe, cal)
+    out: dict = {}
+    ended = F.original_ended(a, seconds)
+    if ended is not None and ended < seconds:
+        out.update(F.length_compare(
+            a, trace(ours, seconds, sub, exe, calls=multiplier), seconds))
+        seconds = ended
+        a = trace(orig, seconds, sub, exe, cal)
+    elif ended is None and any(v.attack_frames for v in a):
+        long_s = seconds * F.LENGTH_PROBE_FACTOR
+        a_long = trace(orig, long_s, sub, exe, cal)
+        if F.original_ended(a_long, long_s) is None:
+            out["length_never_ends"] = True
+        else:
+            out.update(F.length_compare(
+                a_long, trace(ours, long_s, sub, exe, calls=multiplier), long_s))
+            widened = F.window_floor(a_long, long_s, seconds)
+            if widened is not None:
+                seconds = widened
+                a = trace(orig, seconds, sub, exe, cal)
+    b = trace(ours, seconds, sub, exe, calls=multiplier)
+    dr = F.drift(a, b)
+    out["window_seconds"] = seconds
+    out["drift_per_1000"] = dr.get("per_1000")
+    if dr.get("unfitted"):
+        out["drift_unfitted"] = dr["unfitted"]
+    return out
+
+
 # ---- driver ---------------------------------------------------------------
 def known_bad_passed(bad: list[dict]) -> bool:
-    """Does the KNOWN_BAD suite validate the metric?
+    """Does a known-bad suite validate its columns? Applied to check 4's
+    rows (`KNOWN_BAD`, on `aud`/`loud`) and to check 6's (`CLOCK_KNOWN_BAD`,
+    on `len`/`drift`) alike: both carry `incomparable` and `seen`.
 
     An EXCLUDED pair is REPORTED, NOT COUNTED -- decided by the user and
-    recorded in `.claude/tasks/decisions.jsonl`. The pair stays in KNOWN_BAD,
-    stays rendered, and keeps its reason in the table; what it no longer does is
-    hold the whole suite at FAIL.
+    recorded in `.claude/tasks/decisions.jsonl`. The pair stays in its table,
+    stays measured, and keeps its reason in the doc; what it no longer does is
+    hold the whole suite at FAIL. (Las_Vegas and Samantha_Fox, the pairs that
+    decision was about, have since moved to CLOCK_KNOWN_BAD, where they are
+    read on the columns a clock moves.)
 
     This used to be `all(b["seen"] for b in bad)`, with a comment arguing the
     opposite: "An EXCLUDED pair is not a passing pair ... It reads FAIL until
@@ -588,6 +851,8 @@ def main(argv=None) -> int:
                    help="a --sound run of the corpus, for check 5")
     p.add_argument("--presets", default=str(ROOT / "presets.json"))
     p.add_argument("--gt2reloc", default=F.GT2RELOC)
+    p.add_argument("--siddump", default=F.SIDDUMP,
+                   help="for check 6's len/drift traces")
     p.add_argument("--workdir", default=None)
     args = p.parse_args(argv)
 
@@ -721,10 +986,35 @@ def main(argv=None) -> int:
     checks["approved_rank"] = {n: {"rank": r, "of": t, "upper_half": r <= t / 2}
                                for n, (r, t) in ranks.items()}
 
+    # 6: known-bad CLOCKS, on `len` and `drift` -- never on `aud`/`loud`,
+    # which a clock cannot move (see the note above CLOCK_KNOWN_BAD). Built
+    # as fidelity.py builds, because the CLI `convert_at` uses drops the
+    # option that is the clock on a multispeed file.
+    clocks = []
+    for name, v_bad, v_good in CLOCK_KNOWN_BAD:
+        sid = sid_dir / name
+        sub = F.resolve_subtune(sid, "auto")
+        cal, _ = F.table_calibration(sid, F._preset_opts(doc, name))
+        mb = convert_as_measured(v_bad, sid, workdir, args.gt2reloc)
+        mg = convert_as_measured(v_good, sid, workdir, args.gt2reloc)
+        if not (mb and mg):
+            clocks.append({"file": name, "versions": [v_bad, v_good],
+                           "error": "could not build both versions"})
+            continue
+        rb = clock_reading(sid, mb.sid, mb.multiplier, sub, args.seconds, cal,
+                           args.siddump)
+        rg = clock_reading(sid, mg.sid, mg.multiplier, sub, args.seconds, cal,
+                           args.siddump)
+        clocks.append({"file": name, "versions": [v_bad, v_good],
+                       "multiplier": [mb.multiplier, mg.multiplier],
+                       "bad": rb, "good": rg, **clock_verdict(rb, rg)})
+    checks["known_bad_clock"] = clocks
+
     passed = (all(abs(1 - v["aud"]) < 1e-6 for v in idents.values())
               and checks["shift"]["noise_floor"] < 0.01
               and closeness is not None
-              and known_bad_passed(bad))
+              and known_bad_passed(bad)
+              and known_bad_passed(clocks))
     sh = checks["shift"]
     out = {"version": __version__, "head": F.git_label(ROOT), "seconds": args.seconds,
            "check_window_s": CHECK_WINDOW_S,
@@ -879,6 +1169,43 @@ def render_doc(out: dict) -> str:
     for n, v in c["approved_rank"].items():
         lines.append(f"| {n} | {v['rank']} | {v['of']} | "
                      f"{'yes' if v['upper_half'] else 'no -- check the metric on this file with --sound and the approval note; this doc picks neither'} |")
+    clocks = c.get("known_bad_clock")
+    if clocks is not None:
+        lines += ["", "## 6. Known-bad clocks", "",
+                  "A per-frame timbre/level agreement is **blind to a clock**: a "
+                  "build at the wrong tempo or multiplier plays the same sounds at "
+                  "the wrong times, so `aud` and `loud` are never asked about these "
+                  "pairs. They are read on `len` (seconds ours ends past the "
+                  "original's ending, +-5 s is the rule) and `drift` (frames per "
+                  "1000), built through each tree's own `convert(**presets)` -- the "
+                  "path FIDELITY.md measures -- because the CLI drops `skip_gate`. "
+                  f"Seen when one column moves closer by more than its margin (len "
+                  f"{F.LENGTH_TOLERANCE:g} s, drift {CLOCK_DRIFT_MARGIN:g}/1000) and "
+                  "neither moves away by more.", "",
+                  "| file | bad -> good | -S | len bad | len good | drift bad | "
+                  "drift good | seen? |",
+                  "|---|---|---|---:|---:|---:|---:|---|"]
+        for b in clocks:
+            if "error" in b:
+                lines.append(f"| {b['file']} | - | - | - | - | - | - | {b['error']} |")
+                continue
+            bd, gd = b.get("bad") or {}, b.get("good") or {}
+            if b.get("incomparable"):
+                verdict = f"EXCLUDED -- {b['incomparable']}"
+            elif b.get("seen"):
+                verdict = "yes"
+            elif b.get("contradicted"):
+                verdict = ("NO -- the good build reads FURTHER from the original on "
+                           + ", ".join(f"`{k.split('_')[0]}`" for k in b["contradicted"]))
+            else:
+                verdict = "NO -- neither clock column moved past its margin"
+            mult = b.get("multiplier") or ["?", "?"]
+            lines.append(f"| {b['file']} | {' -> '.join(b['versions'])} | "
+                         f"{mult[0]} -> {mult[1]} | "
+                         f"{_fmt(bd.get('length_delta'), '+.2f')} | "
+                         f"{_fmt(gd.get('length_delta'), '+.2f')} | "
+                         f"{_fmt(bd.get('drift_per_1000'), '+.1f')} | "
+                         f"{_fmt(gd.get('drift_per_1000'), '+.1f')} | {verdict} |")
     return "\n".join(lines) + "\n"
 
 

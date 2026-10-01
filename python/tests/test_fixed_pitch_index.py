@@ -263,7 +263,7 @@ def test_a_long_fixed_pitch_attack_folds_into_the_budget():
     spelled = _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
                                  budget=64)
     folded = _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
-                                budget=5, fold_note=True)
+                                budget=5)
     assert len(spelled[0]) == 13           # the frame-0 lead, ten calls, tail
     assert len(folded[0]) <= 5
     for left, right in (spelled, folded):
@@ -273,7 +273,7 @@ def test_a_long_fixed_pitch_attack_folds_into_the_budget():
             left, right)
     # Wherever the budget allows it, the spelled-out form is unchanged.
     assert _two_stage_entries(0x41, 0x81, 10, 1, attack_note=note,
-                              budget=13, fold_note=True) == spelled
+                              budget=13) == spelled
 
 
 def test_the_fixture_has_no_such_handler():

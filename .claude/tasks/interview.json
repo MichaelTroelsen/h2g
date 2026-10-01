@@ -1,141 +1,236 @@
 {
  "generated_from": {
-  "head": "c490b72",
-  "plan_head": "a4bf43d"
+  "head": "57c086e",
+  "plan_head": "57c086e"
  },
  "blockers": [
   {
-   "id": "regrid-is-not-in-fidelity-toggles-so-the-search-never-walks-it",
-   "kind": "decision",
-   "title_at_research": "regrid is not in FIDELITY_TOGGLES so the search never walks it",
-   "blocked_on_at_research": "A decision on whether --regrid should enter FIDELITY_TOGGLES. It cannot be selected by fidelity_better, so all 14 adoptions are hand-recorded.",
-   "current_behaviour": "ALREADY DECIDED IN CODE. presets.py's `regrid` entry in FIXED carries a full recorded decision at v0.5.411: regrid stays OUT of FIDELITY_TOGGLES. The reason is NOT a measurement gap -- `fidelity.drift` takes the same two traces play() already holds and drift_per_1000 IS a registered Dimension. It is that fidelity_better's `keeps_notes` requires cand[2] >= ref[2] on OUR attack count and gates every acceptance term, so all four eligible files are refused before any term is consulted: Arcade_Classics 375->372 (original 372, exact), Sigma_Seven 417->414 (exact), Wiz 446->437 (exact), Rikky 201->196 (original 197). Each is a strict improvement the guard reads as a loss. The recorded decision: 'the exclusion list should NOT keep growing, and the term to add is not drift but the original's attack count in keeps_notes'.",
+   "id": "any-commando-pitch-fix-requires-recutting-the-byte-exact-fixture",
+   "kind": "authorisation",
+   "title_at_research": "Any Commando pitch fix requires recutting the byte-exact fixture",
+   "blocked_on_at_research": "Authorisation to recut Commando.sng, the project's only byte-exact fidelity anchor. RESTATED at 24b9f1d with the bound attached (C:/t/the-commando-fixture-decisio/restated-question.md; census at C:/t/trace-what-lies-past-the-tab/census_retake.json): of 16 corpus files emitting a byte past their own frequency table (102 events), only the $68 stored-waveform-array read touches the fixture -- 10 files / 58 emitted events, Commando 25 of them (Gerry 10, Proteus 6, Warhawk 6, Gremlins 4, Geoff 3, Crazy_Comets/Devils_Galop/Monty/Phantoms 1 each), and its pitch is per-file runtime state (B-5 where voice 1 holds a $41 pulse; C-4 on Crazy_Comets, D#4 on Phantoms, silence on Devils_Galop), so any fix derives the pitch from what voices 0/1 hold at that row. The other three mechanisms (Sanxion's $60 rest, the $60 voice-offset constant on Proteus/Warhawk/Thing, the $63 ramp, Mega_Apocalypse's >= $80 wrap) emit nothing Commando emits and need NO fixture decision -- they are open [subagent] tasks. THE QUESTION: authorise recutting Commando.sng for the $68 fix (the byte-exactness tests then compare against OUR output, not the 2005 tool's; the historical count of those tests is 32 at 5a2fa2d and is not re-derived), OR gate the $68 fix to the nine non-fixture files and leave Commando as is, OR defer until `stage-the-commando-note-104-pair-for-a-listen-before-the-fixture-decision` has material -- the listen is the only thing that says whether B-5 is what Commando's $68 rows should sound like. `stored-waveform-pitch-is-per-file-not-b-5` (opened at 24b9f1d) is folded into this question rather than listed separately.",
+   "current_behaviour": "Commando.sng is the only byte-exact anchor (tests/test_commando.py). Of 16 files emitting a byte past their frequency table, only the $68 stored-waveform read touches the fixture: 10 files / 58 events, Commando 25. Its pitch is per-file runtime state (B-5 / C-4 / D#4 / silence), so any fix derives it from voices 0/1. The note-104 listen that would say what Commando should sound like has not been staged.",
    "sources": [
-    "python/presets.py:190-244",
-    "CLAUDE.md:1386"
+    "C:/t/the-commando-fixture-decisio/restated-question.md",
+    "python/tests/test_commando.py"
+   ],
+   "options": [
+    {
+     "label": "Gate the fix to the 9 other files",
+     "consequence": "fix lands now where nothing is anchored; Commando keeps the 2005 tool's bytes and its $68 rows stay as they are"
+    },
+    {
+     "label": "Defer until the note-104 listen",
+     "consequence": "nothing lands on any of the 10 files until a listen is staged and heard"
+    },
+    {
+     "label": "Authorise the recut",
+     "consequence": "the fixture compares against OUR output from then on; the byte-exact link to h2g.v1.2.exe is gone"
+    }
+   ],
+   "recommendation": "Gate the fix to the 9 other files",
+   "why": "It ships the fix where there is no anchor to lose and keeps the recut decision open for when the listen exists.",
+   "question": "The $68 stored-waveform pitch fix would change Commando.sng, the only byte-exact fixture. What should happen to the fixture?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "pandora-regresses-under-the-two-sided-attack-guard",
+   "kind": "decision",
+   "title_at_research": "Pandora regresses under the two-sided attack guard",
+   "blocked_on_at_research": "A decision on Pandora's regression under the two-sided attack guard.",
+   "current_behaviour": "The two-sided keeps_notes guard landed (ed7f7bc) but its search result was not adopted. Adopting it gives four gains (Off_the_Cuff +35.5pp gate, Spellbound +3.3 melody/+16 pitch, two more) and costs Pandora under one point on three columns. The decided 180 s corpus search (decisions.jsonl) WILL pick these settings up, Pandora included. The lever for protecting Pandora is `gave_back`, not the guard.",
+   "sources": [
+    "runs.jsonl#keeps-notes-attack-guard-should-be-two-sided-against-the-original",
+    "presets.json Pandora.sid",
+    "python/presets.py gave_back"
+   ],
+   "options": [
+    {
+     "label": "Accept Pandora's regression",
+     "consequence": "the 180 s search adopts the four gains as measured; Pandora loses <1pp on three columns"
+    },
+    {
+     "label": "Protect Pandora",
+     "consequence": "pin Pandora's current entry through the search; the four gains still land"
+    }
+   ],
+   "recommendation": "Accept Pandora's regression",
+   "why": "Four gains, one of them 35 points of gate, against under a point on three columns of one file.",
+   "question": "When the 180 s preset search runs, it will adopt four gains and cost Pandora under one point on three columns. Accept that?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "reject-phantoms-and-rest-instrument-are-live-on-zero-files",
+   "kind": "decision",
+   "title_at_research": "Two always flags move no bytes on any of the 89 files, singly or paired: dead code paths, or keep them?",
+   "blocked_on_at_research": "reject_phantoms and rest_instrument read live on 0 of 89 files under every toggle tested (single at 50a6178, paired with fold_transpose/vibrato_command at eae8d8d; presets.LIVE_ON records it). Decide whether they are dead code paths worth a deliberate ablation/removal (an option removed is a signature/emitter path removed, with its tests) or policy flags kept for a population the corpus does not contain -- and whether to wait for the full pairwise census first.",
+   "current_behaviour": "reject_phantoms and rest_instrument move no file's bytes on 0 of 89 files, singly and paired with fold_transpose/vibrato_command (eae8d8d). The full pairwise census against the other 14 always-on flags is queued as extend-the-multi-flag-census-to-all-fourteen-remaining-always-flags [main, low].",
+   "sources": [
+    "runs.jsonl#multi-flag-interaction-census-for-the-near-inert-always-flags",
+    "python/presets.py LIVE_ON"
+   ],
+   "options": [
+    {
+     "label": "Remove if the full census stays at 0",
+     "consequence": "run the queued census first; if still inert, remove both options with their emitter paths and tests"
+    },
+    {
+     "label": "Keep as policy flags",
+     "consequence": "keep both for a population the corpus lacks; stop re-measuring them"
+    },
+    {
+     "label": "Remove now",
+     "consequence": "skip the census; removal is a signature/emitter change on a partial search"
+    }
+   ],
+   "recommendation": "Remove if the full census stays at 0",
+   "why": "The census is already queued and cheap; removing on a partial search risks the one pairing nobody tested.",
+   "question": "reject_phantoms and rest_instrument change nothing on any corpus file. Keep them, or remove them?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "orphaned-processes-survive-their-sessions",
+   "kind": "decision",
+   "title_at_research": "Orphaned processes survive their sessions",
+   "blocked_on_at_research": "A decision on how to reap processes that outlive the session that started them.",
+   "current_behaviour": "Measured now: no h2g harness process is running. The leftovers are 12 tdz-c64-knowledge MCP server processes started by sessions on 20, 22, 29 and 30 Sep (server.py instances, one on port 8765, a streamlit admin GUI) plus two `pip list --outdated` from 28 Sep. That is machine-wide session hygiene, not this repo.",
+   "sources": [
+    "Get-CimInstance Win32_Process python.exe at 57c086e"
+   ],
+   "options": [
+    {
+     "label": "Move it to claude-setup",
+     "consequence": "cancel it here; reaping belongs in the plugin/hooks that start sessions"
+    },
+    {
+     "label": "Reap in h2g's harness",
+     "consequence": "h2g tools kill their own children on exit; does nothing for the MCP servers actually leaking"
+    },
+    {
+     "label": "Leave it",
+     "consequence": "accept the leak"
+    }
+   ],
+   "recommendation": "Move it to claude-setup",
+   "why": "Every leaking process today belongs to another project's MCP server, so a fix inside h2g would reap nothing.",
+   "question": "The leaking processes are all tdz-c64-knowledge MCP servers and stale pip runs, none from h2g. Where should this task live?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "three-of-four-known-bad-pairs-are-clock-defects-aud-cannot-see",
+   "kind": "decision",
+   "title_at_research": "Human_Race, Las_Vegas and Samantha_Fox are clock defects a per-frame timbre agreement is blind to: move them to a clock check or retire them",
+   "blocked_on_at_research": "Whether Human_Race, Las_Vegas and Samantha_Fox move to a clock-validated check (len/drift columns) or retire from KNOWN_BAD -- decisions.jsonl already keeps the two incomparable pairs and reports them; this asks about the third and about adding at least one more STRUCTURAL pair (same -S both sides, commit reaches the file) so check 4 does not rest on W_A_R alone. The sound Dimension text in fidelity.py should say a per-frame timbre/level agreement is blind to a clock either way.",
+   "current_behaviour": "Check 4 of the sound calibration rests on W_A_R alone. Human_Race, Las_Vegas and Samantha_Fox are clock (multiplier) defects that a per-frame timbre/level comparison cannot see; decisions.jsonl already keeps Las_Vegas/Samantha and reports them. Open: what happens to Human_Race, and adding at least one STRUCTURAL pair (same -S both sides).",
+   "sources": [
+    "runs.jsonl#check-4-now-rests-on-one-file-and-its-margin-is-shrinking-with-the-window",
+    "python/sound_calibrate.py KNOWN_BAD"
+   ],
+   "options": [
+    {
+     "label": "Clock check + one structural pair",
+     "consequence": "move the three to a len/drift-validated check and add a same -S pair so check 4 has two witnesses"
+    },
+    {
+     "label": "Retire the three + one structural pair",
+     "consequence": "drop them from KNOWN_BAD; the len/drift columns are not asked to witness anything"
+    },
+    {
+     "label": "Clock check only",
+     "consequence": "keeps W_A_R as check 4's sole witness"
+    }
+   ],
+   "recommendation": "Clock check + one structural pair",
+   "why": "The three are real defects; moving them to the column that can see a clock keeps them as evidence, and a second structural pair stops check 4 hinging on one file.",
+   "question": "Human_Race, Las_Vegas and Samantha_Fox are clock defects the sound check cannot see. What should the calibration do with them?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "knucklebusters-gt28-is-a-fully-vacant-instrument-occupying-a-slot",
+   "kind": "decision",
+   "title_at_research": "source record 27 carries rec+0=$00, rec+1=$00 (pulse width $000), an EMPTY wavetable block, and is named 0 times in any pattern",
+   "blocked_on_at_research": "user: a listening verdict, or a decision about what the tune should sound like -- source record 27 carries rec+0=$00, rec+1=$00 (pulse width $000), an EMPTY wavetable block, and is named 0 times in any pattern -- it occupies one of 29 instrument slots and one of the 51 representabl",
+   "current_behaviour": "Knucklebusters source record 27 (GT28) has pulse width $000, an empty wavetable block and is named in no pattern. A record named in no pattern is never played, so dropping it cannot change what is heard; it frees an instrument slot plus wavetable and pulse budget. The pointer-0 vs set-$000 default only matters for a record that plays, so it is moot for GT28.",
+   "sources": [
+    "runs.jsonl#pulse-table-exhaustion-eleven-instruments-set-no-width",
+    "python/h2g/goatwriter.py _pulse_layout"
+   ],
+   "options": [
+    {
+     "label": "Drop unreferenced instruments",
+     "consequence": "don't emit records no pattern names; frees budget, renumbers later instruments"
+    },
+    {
+     "label": "Keep emitting them",
+     "consequence": "instrument numbering stays aligned with the source records"
+    }
+   ],
+   "recommendation": "Drop unreferenced instruments",
+   "why": "A record no pattern plays cannot be heard, and the slot and table budget are what the pulse-exhaustion files are short of.",
+   "question": "Instruments no pattern ever names (e.g. Knucklebusters GT28) take slots and table budget. Stop emitting them?",
+   "unblocked_by_research": false
+  },
+  {
+   "id": "ninety-two-unreachable-stash-commits-sit-in-the-object-store-unread",
+   "kind": "decision",
+   "title_at_research": "Unreachable stash commits sit in the object store and nobody has read them",
+   "blocked_on_at_research": "Whether to recover anything. MEASURED TODAY (2026-09-07, at 665939c): `git fsck --unreachable` reports 117 unreachable commits, 96 of them stash-shaped (`WIP on ...` / `index on ...` / `On ...`), up from the 92 measured at e28179a -- so this is still growing rather than waiting. `git stash list` is empty. CLAUDE.md's stash rule records that the last diagnosis taken from inside one worktree was wrong in BOTH directions, so the choice -- read them all, sample them, or accept the loss and let gc take them -- is not one to take unilaterally. `.claude/hooks/stash_guard.py` stops it recurring; it does not read what is there.",
+   "current_behaviour": "Measured at 57c086e: `git fsck --unreachable --no-reflogs` lists 7 commits; only 2 are stash-shaped (6dc8817 'index on master', 2d60335 'On master: local CLAUDE.md task-observer addition'). The other ~94 have been pruned by gc -- the choice the task asks for was made by gc. 2d60335 holds 3 lines adding '## Task observation / Activate the task-observer skill...' to CLAUDE.md, which now lives in ~/.claude/CLAUDE.md.",
+   "sources": [
+    "git fsck --unreachable --no-reflogs at 57c086e",
+    "git show 2d60335"
    ],
    "options": [],
    "recommendation": null,
-   "why": "The question this task asks is answered in the file it concerns, at v0.5.411, with the alternative named. Nothing to decide and nothing to run.",
+   "why": "Nothing is left to choose: gc pruned the ~94, and the 2 survivors hold content already preserved in the global CLAUDE.md. What remains is the verify's recording arm.",
    "question": null,
    "unblocked_by_research": true
   },
   {
-   "id": "the-two-incomparable-known-bad-pairs-need-retiring-or-replacing-and-that-is-a-coverage-decision",
+   "id": "twenty-four-worktrees-hold-uncommitted-work-from-past-sessions",
    "kind": "decision",
-   "title_at_research": "Las_Vegas and Samantha_Fox can never be `seen`, and removing them is a coverage call",
-   "blocked_on_at_research": "Las_Vegas and Samantha_Fox are EXCLUDED from the sound calibration because their v0.5.401 fix is a MULTIPLIER change: the good build repacks at a different -S, its music ends inside the window, and loud_ratio lands at 0.074x and 0.063x. While they remain, `all(seen)` cannot hold however many good pairs are added, so the doc reads FAIL forever. Deleting them makes it green today and was deliberately NOT done at 7bcd3fe, because that is gaming an all() rather than measuring anything. The question is yours: RETIRE the two (dropping coverage from four pairs to two, both of which are now measured -- Human_Race on `loud`, W_A_R on both), or KEEP them and change the criterion so an excluded pair is reported rather than counted? A third option is to keep hunting comparable pairs, which the structural-vs-multiplier rule now makes cheap to shortlist.",
-   "current_behaviour": "Las_Vegas and Samantha_Fox are excluded from the sound calibration because their v0.5.401 fix is a MULTIPLIER change; loud_ratio lands at 0.074x and 0.063x. While they remain, all(seen) can never hold, so the doc reads FAIL forever. Two good pairs are measured (Human_Race on loud, W_A_R on both). This gates three tasks.",
+   "title_at_research": "Twenty-six worktrees remain, and the keep/prune decision is still the human's",
+   "blocked_on_at_research": "STILL BLOCKED, but the premise is corrected: `git worktree list` returns 45 lines -- the main checkout plus **44 worktrees**, not the 24 the title and blocked_on claim. The count has nearly doubled since it was written, so this is growing rather than waiting. A per-worktree decision over 44 is no longer a single sitting's question; it wants a triage pass that groups them (which hold a diff at all, which are branches already merged) BEFORE a human is asked anything. Sharpened rather than asked.",
+   "current_behaviour": "Measured at 57c086e: `git worktree list` returns 1 line (the main checkout) and .git/worktrees is empty. The 44 worktrees no longer exist.",
    "sources": [
-    "build/approvals.json",
-    "CLAUDE.md v0.5.401 section"
+    "git worktree list at 57c086e",
+    ".git/worktrees"
    ],
-   "options": [
-    {
-     "label": "Keep + report",
-     "consequence": "criterion changes so an excluded pair is REPORTED not counted; coverage stays at four, nothing is hidden"
-    },
-    {
-     "label": "Retire the two",
-     "consequence": "green today, coverage drops four pairs -> two; deliberately refused at 7bcd3fe as gaming an all()"
-    },
-    {
-     "label": "Hunt more pairs",
-     "consequence": "the structural-vs-multiplier rule makes shortlisting cheap, but the doc stays FAIL until one lands"
-    }
+   "options": [],
+   "recommendation": null,
+   "why": "ALREADY SATISFIED: there is no worktree left to hold uncommitted work, so there is nothing to decide or run.",
+   "question": null,
+   "unblocked_by_research": true
+  },
+  {
+   "id": "tempo-alignment-rounding-decision",
+   "kind": "decision",
+   "title_at_research": "Decide whether CMD_SETTEMPO should be rounded to a whole multiple of the multiplier (kills the slot artefact, costs average-rate accuracy)",
+   "blocked_on_at_research": "Whether to accept a tempo-alignment change that rounds effective_frames to the nearest whole frame before multiplying by the multiplier -- eliminating the slot-swallowing frame shift on most multispeed files at the cost of average-rate accuracy. Needs a --pace/drift comparison on Food_Feud, Rasputin and Knucklebusters from a scratch prototype and a listening call, not just a byte-hash.",
+   "current_behaviour": "The fork's own verify says the evidence to put in front of the human is --pace MEDIAN and drift on Food_Feud, Rasputin and Knucklebusters from a scratch prototype of the rounding, plus a listen. No run record has produced that prototype measurement.",
+   "sources": [
+    "runs.jsonl#multiplier-does-not-explain-slot",
+    "python/h2g/goatwriter.py tempo_command_value"
    ],
-   "recommendation": "Keep + report",
-   "why": "Deleting the two is gaming an all(); the exclusion is a real measured property, and reporting it keeps the information while letting the doc go green on what is actually comparable.",
-   "question": "Las_Vegas and Samantha_Fox can never be `seen` -- their fix is a multiplier change, so the good build is structurally incomparable. How should the calibration handle them?",
+   "options": [],
+   "recommendation": null,
+   "why": "Asking adopt/refuse now would be asking without the evidence the task says the answer rests on; the prototype measurement is agent work and comes first.",
+   "question": null,
    "unblocked_by_research": false
   },
   {
-   "id": "a-corpus-fidelity-refresh-is-owed-and-would-move-six-old-songs-hard-restart-settings",
+   "id": "delta-mix-and-chicken-song-play-differently-on-their-second-pass",
    "kind": "decision",
-   "title_at_research": "A searched but unadopted preset refresh moves six songs on the hard-restart axis",
-   "blocked_on_at_research": "A full --fidelity search was run and diffed but NOT adopted; the candidate is at C:/t/hr1_candidate.json. Against the shipped presets with the carry applied it moves SIX previously-searched songs on the hard-restart axis (Knucklebusters, Mr_Meaner, Off_the_Cuff, Pandora, Shockway_Rider, Spellbound) and gives the six interleaved files their first-ever toggles. TWO THINGS HAVE CHANGED UNDER IT since it was measured and they may invalidate it: the search window moved 60 s -> 180 s at 1e66af3 (which changed 25 fields across 17 of 89 songs in the one experiment that compared them), and the corpus is 89 songs now. Do you want it re-run at 180 s before any adoption, adopted as measured, or dropped?",
-   "current_behaviour": "A full --fidelity search was run at 60 s and diffed but NOT adopted; candidate still on disk at C:/t/hr1_candidate.json (24388 bytes, Sep 2). It moves six songs on the hard-restart axis and gives the six interleaved files their first toggles. The window moved 60 -> 180 s at 1e66af3, and the one experiment comparing them found the two searches CHOOSE DIFFERENTLY on 25 fields across 17 of 89 songs.",
+   "title_at_research": "Delta_Mix's $FF handler re-transposes voice 2 by -4 and swaps voice 0's first pattern on every restart; Chicken Song creeps each voice per restart",
+   "blocked_on_at_research": "Whether either second pass is wanted: Delta_Mix's could be unrolled as two passes (voice 2 at -4, voice 0's first pattern swapped) and Chicken Song's is cumulative (+1/+2/+3 per restart, then instrument-byte patches) and cannot be. The converter loops pass one on both today. A listen of the originals past their first restart is the material; stage it with listen.py first.",
+   "current_behaviour": "The material for the decision -- the originals past their first restart -- is not staged; listen.py staging is agent work.",
    "sources": [
-    "C:/t/hr1_candidate.json",
-    "CLAUDE.md v0.5.459 window section",
-    "presets.json"
+    "runs.jsonl#the-version-0-note-addend-has-three-spellings-and-only-one-is-a-region-transpose"
    ],
-   "options": [
-    {
-     "label": "Re-run at 180 s",
-     "consequence": "~53 min sharded / 75 min serial (timed v0.5.459); the only arm whose decisions match the window every artefact now uses"
-    },
-    {
-     "label": "Adopt as measured",
-     "consequence": "free, but imports 60 s decisions known to differ on a fifth of the corpus"
-    },
-    {
-     "label": "Drop it",
-     "consequence": "six songs keep hand-set hard-restart values and the interleaved six get no toggles at all"
-    }
-   ],
-   "recommendation": "Re-run at 180 s",
-   "why": "The repo's own measurement says a 60 s search chooses differently on 17 of 89 songs, so adopting the candidate would import decisions the current window would not make.",
-   "question": "The unadopted preset candidate was searched at 60 s; the window is 180 s now and the two searches are measured to disagree on 17 of 89 songs. What should happen to it?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "the-whattask-generator-lives-outside-the-repo-so-no-plan-touches-can-ever-grant-it",
-   "kind": "decision",
-   "title_at_research": "A whole class of task cannot be completed by any runner in this repo",
-   "blocked_on_at_research": "Several open tasks fix the /whattask GENERATOR, which lives at `~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/commands/whattask.md` -- OUTSIDE this repo. No `touches` a plan for this repo can grant will ever reach it, so `/runtask` can only ever record `partial` on them, however many times they are attempted (one already has). This is the same shape as tasks whose fix is a `whattask.json` rewrite, one level further out. HOW DO YOU WANT THESE HANDLED? Options: (a) work the plugin repo directly in a separate session and keep these out of this plan; (b) let this plan grant absolute plugin paths, accepting that they are outside the repo the locks protect; (c) mark them explicitly unrunnable so a runner skips them rather than burning a cycle. At least three current tasks are affected: the touches-exists check, the `creates:` mode, and the test-file rule.",
-   "current_behaviour": "At least three open tasks fix the /whattask GENERATOR, which lives in the plugin at ~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/. NEW FACT FOUND HERE: that directory is a CACHE and is NOT a git repository (`git status` there returns 'fatal: not a git repository'), so an edit made in place is both outside the locks AND liable to be overwritten by a plugin update. /runtask can only ever record `partial` on these; one already has, twice.",
-   "sources": [
-    "~/.claude/plugins/cache/mit-claude-setup/mit-setup/1.9.5/ (not a git repo)",
-    ".claude/tasks/runs.jsonl#whattask-should-check-a-touches-path-exists"
-   ],
-   "options": [
-    {
-     "label": "Separate session on the plugin source",
-     "consequence": "keeps these out of this plan; the only option that edits a real repo rather than a cache"
-    },
-    {
-     "label": "Grant absolute plugin paths here",
-     "consequence": "writes outside the locks that make concurrent runs safe, into a cache a plugin update overwrites"
-    },
-    {
-     "label": "Mark them unrunnable",
-     "consequence": "a runner skips them instead of burning a cycle, but nothing ever gets fixed"
-    }
-   ],
-   "recommendation": "Separate session on the plugin source",
-   "why": "The cache is not a git repo, so option (b) would edit a directory a plugin update replaces -- the work would silently vanish, which is worse than not doing it.",
-   "question": "Three open tasks fix the /whattask generator, which lives in a plugin CACHE outside this repo -- and that cache is not a git repo, so edits there are unversioned and overwritable. How should this class be handled?",
-   "unblocked_by_research": false
-  },
-  {
-   "id": "powerplay-regrid-refusal-rests-on-a-naming-artefact-and-should-be-re-decided",
-   "kind": "decision",
-   "title_at_research": "Powerplay's regrid refusal rests on a naming artefact",
-   "blocked_on_at_research": "BOTH AXES ARE NOW MEASURED, at 7bcd3fe, and the question is a clean yes/no. Powerplay refuses --regrid in presets.json. The refusal rests on melody falling 0.9930 -> 0.9643 under regrid (2.88pp). SEQUENCE AXIS (difflib, what fidelity.naming_split ships): repairing NAMES alone recovers 2.71pp of that 2.88pp -- a naming share of 94% on just 7 renames, and all 7 are -1 semitone (A#4/A-4 x3, D-5/C#5 x2, G-5/F#5 x2). So on this reading almost the whole 'loss' is siddump naming the same note differently, not different music. THE OBVIOUS OBJECTION WAS TESTED AND FAILS: difflib chooses the pairing, so the count is alignment-dependent (its own docstring says so). Re-measured on the FRAME axis -- substituting only where both arms strike on the SAME frame -- it makes 36 renames spanning -12..+13 semitones and leaves melody at 0.9531, BELOW the unrepaired 0.9643, for a share of -39%. That is a worse alignment, not a truer one: it pairs notes that merely coincide in time, which after a regrid are different notes. So the 94% stands on measurement rather than on the absence of an alternative. WHAT REGRID BUYS, and it is the other half of the trade: --regrid exists to remove integrated drift, which NO FIDELITY.MD COLUMN CAN SEE -- a tune playing the right music 0.78% fast forever scores perfectly. Adopting it means accepting a melody number that is 2.88pp lower on paper for a timing gain the report cannot show you. THE QUESTION: adopt --regrid for Powerplay on the strength of the 94% naming share, or keep the refusal? A listen would settle it independently and none has been taken.",
-   "current_behaviour": "presets.json currently has Powerplay_Hockey_USA_vs_USSR regrid: False (14 songs adopt it). The refusal rests on melody 0.9930 -> 0.9643 (2.88pp) measured at 7bcd3fe. Repairing NAMES alone recovers 2.71pp -- a 94% naming share on 7 renames, all -1 semitone; the frame-axis alternative was tested and is WORSE (0.9531), so the 94% stands on measurement. THE DIRECTLY ANALOGOUS CASE REVERSED: One_on_One was refused for the same reason with a recorded -37.0pp collapse, and at 180 s its melody IMPROVES 0.9903 -> 0.9952; it was adopted at v0.5.459.",
-   "sources": [
-    "presets.json",
-    "CLAUDE.md v0.5.459 regrid re-grade",
-    "fidelity.naming_split"
-   ],
-   "options": [
-    {
-     "label": "Re-measure at 180 s first",
-     "consequence": "one file, one A/B; the analogous refusal reversed sign on exactly this move"
-    },
-    {
-     "label": "Adopt now on the 94% share",
-     "consequence": "accepts a 2.88pp lower melody on paper for a drift gain no column can show"
-    },
-    {
-     "label": "Keep the refusal",
-     "consequence": "Powerplay keeps its cumulative drift, which no FIDELITY.md column can see"
-    }
-   ],
-   "recommendation": "Re-measure at 180 s first",
-   "why": "One_on_One was refused on the same evidence shape and REVERSED when the window moved to 180 s, so Powerplay's 2.88pp may not survive the move either -- and it is one file's A/B to find out.",
-   "question": "Powerplay refuses --regrid on a 2.88pp melody drop that is 94% a naming artefact. The analogous case (One_on_One) reversed when the window moved 60 -> 180 s. What now?",
+   "options": [],
+   "recommendation": null,
+   "why": "Same shape as the six interleaved files: stage first, then ask.",
+   "question": null,
    "unblocked_by_research": false
   }
  ]

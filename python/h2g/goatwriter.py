@@ -626,7 +626,7 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
     # read 7837 ties against the original's 5139 with the option forced, and
     # 3907 once the divider is honoured. The two factors are one quantity,
     # calls per step, so they multiply here and nowhere else.
-    hold = max(1, multiplier)
+    hold = max(1, multiplier) * max(1, det.pitch_seq.frames_per_step)
     if hold > 1:
         # **The attack frame's last write is entry 0 once a step is a frame
         # long, so the step that leaves the note alone has to move there.**
@@ -647,11 +647,32 @@ def _pitch_seq_entries(sid: SidFile, det: Detection, i: int,
         # **99.8%** scaled-and-rotated, which is its score with the option off,
         # at 1039 reversals against 772. See H2G-CONVERSION-METHOD.md 7.ttt.
         notes = notes[1:] + notes[:1]
-    # The rotation above is keyed on the MULTIPLIER alone, not on the calls a
-    # step holds: it asks whether entry 0 lands on frame 0, and a four-frame
-    # step at -S1 still starts on frame 1 (`hold == 1` above). The divider
-    # only lengthens each step, so it multiplies in after that question.
-    hold *= max(1, det.pitch_seq.frames_per_step)
+        #
+        # **Keyed on CALLS PER STEP, not on the multiplier alone** (task
+        # pitch-seq-divider-s1-rotation, on a v0.5.493 tree). The
+        # multiplier-only key asked "does entry 0 land on frame 0?", and at
+        # -S1 it does not -- but that
+        # was the wrong question. Traced per call in VICE on a synthetic
+        # record (sequence (0, 12, 24), `frames_per_step=4`, one C-4 every 96
+        # calls, packed by gt2reloc): at -S1 the note's first call writes
+        # only the `$09` firstwave and leaves the frequency stale, entry 0
+        # lands on call 1 as the comment above says -- and call 1 is the
+        # frame siddump names the attack from, because `$09` is below `$10`
+        # (siddump.c:436). Multiplier-only emitted `24x4, 0x4, 12x4` at -S1
+        # and siddump named every attack C-6; keyed on calls per step it
+        # emits `0x4, 12x4, 24x4` and names them C-4, which is what the same
+        # record reads at -S3 (`0x12, 12x12, 24x12`, attacks C-4) -- the
+        # per-frame content then matches -S3's one frame later.
+        # `C:/t/pitch-seq-divider-s1-rotation/synth/report.txt` and
+        # `siddump_S1_A.txt` / `siddump_S1_B.txt` beside it. At
+        # `frames_per_step == 1` and -S1 the key is unchanged (`hold == 1`),
+        # so only a divider at -S1 moves, and no corpus file has one (Food_
+        # Feud packs at -S3). NOT settled by that trace, and CONTRADICTED by
+        # it: "the attack keeps the pattern's own pitch whatever entry 0 says"
+        # above does not hold for what siddump reads. The same synthetic
+        # record at -S1 with no divider emits `24, 0, 12` and siddump names
+        # every attack C-6 (`siddump_S1_fps1.txt`), so the `hold == 1` case
+        # rests on its own measurement, not on this one, and is a follow-up.
     left = [wave] * (len(notes) * hold)
     right = [n for n in notes for _ in range(hold)]
     return left, right
@@ -1086,8 +1107,7 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
                        multiplier: int = 1,
                        attack_note: Optional[int] = None,
                        budget: int = WAVE_ENTRIES_PER_INSTR,
-                       written: bool = False,
-                       fold_note: bool = False) -> tuple:
+                       written: bool = False) -> tuple:
     """Wavetable entries for the two-stage waveform, or None if it says nothing.
 
     The dialect `detect._find_two_stage` reads, in 44 corpus files: effect bit
@@ -1192,17 +1212,13 @@ def _two_stage_entries(wave: int, attack: int, frames: int,
         # final call re-asserts the same byte. What the fold gives up is the
         # robustness above, not the pitch.
         #
-        # Behind `fold_note` rather than unconditional because
-        # `tests/test_effect_bit80.py` pins the spelled-out form at this
-        # function's DEFAULT budget of five for a four-call attack -- six
-        # entries, i.e. the overrun itself, recorded as the expected shape
-        # before anything measured it against the reservation.
-        # `_wavetable_entries` -- the caller whose budget is the layout's --
-        # passes True, and `tests/test_instrument_bound.py` holds the
-        # guarantee across both. Making the fold the default and moving
-        # that test to an explicit budget (as `test_call_rate` already
-        # does) is the cleaner shape; it was not this change's file.
-        if not fold_note or 1 + extra + 2 <= budget or extra <= 1:
+        # The fold is the default, not an option: it was behind a `fold_note`
+        # kwarg only because `tests/test_effect_bit80.py` pinned the
+        # spelled-out form at the DEFAULT budget of five for a four-call
+        # attack -- six entries, the overrun itself. Those tests now pass an
+        # explicit budget, as `test_call_rate` does, and
+        # `tests/test_instrument_bound.py` holds the guarantee across both.
+        if 1 + extra + 2 <= budget or extra <= 1:
             left += [attack] * extra
             right += [attack_note] * extra
         else:
@@ -3592,8 +3608,171 @@ def _classic_vibrato_entry(byte: int, multiplier: int,
     return (SPEED_NOTE_RELATIVE | cmp_value, rshift)
 
 
+# Goattracker's wavetable left-column ranges (gcommon.h:56-61).
+GT_WAVE_LAST_DELAY = 0x0F
+GT_WAVE_FIRST_CMD = 0xF0
+GT_WAVE_LAST_CMD = 0xFE
+GT_WAVE_JUMP = 0xFF
+GT_WAVE_NO_NOTE = 0x80
+
+
+def _effect_calls(entries: Optional[List[tuple]], ptr: int, calls: int,
+                  row_calls: int = 0) -> int:
+    """How many of a note's calls 1..`calls - 1` run continuous effects.
+
+    That is the count `vibdelay` is spent against, and two things withhold a
+    call from it (player.s `mt_wavedone`, gplay.c TICKNEFFECTS):
+
+    * **tick 0.** `REALTIMEOPTIMIZATION` is on in every pack (gt2reloc.c:55)
+      and skips continuous effects whenever the channel counter is 0 -- the
+      first call of every row, `row_calls` apart from the note's own call 0.
+      The `row_calls >= 3` convention of `_classic_vibrato_entry` applies:
+      below that the value is funktempo, not a row, and nothing is withheld.
+    * **a wavetable step that writes a frequency.** A step whose right column
+      is not $80 (editor encoding; greloc inverts the high bit) takes the
+      `mt_wavefreq` / `goto PULSEEXEC` path, and so does a wavetable command
+      ($F0-$FE); only a delay tick, a no-note step or a finished program
+      falls through to the effects. The note's own call 0 runs no wavetable
+      at all (`mt_newnoteinit` ends in `jmp mt_loadregs`), so step 1 is on
+      call 1. Pandora's `41/00 41/00 41/00 FF/00` withholds calls 1-3.
+
+    `entries` is the finished wavetable and `ptr` the record's 1-based
+    pointer into it; None or 0 is "no program", which withholds nothing.
+    """
+    return len(_effect_call_list(entries, ptr, calls, row_calls))
+
+
+def _effect_call_list(entries: Optional[List[tuple]], ptr: int, calls: int,
+                      row_calls: int = 0) -> List[int]:
+    """The calls among 1..`calls - 1` that run continuous effects, in order
+    -- `_effect_calls`' list, for a caller that needs to know WHERE they are.
+    """
+    out: List[int] = []
+    wavetime = 0
+    for c in range(1, calls):
+        effects = True
+        if entries and 0 < ptr <= len(entries):
+            wave, note = entries[ptr - 1]
+            if wave <= GT_WAVE_LAST_DELAY and wavetime != wave:
+                wavetime += 1                   # a delay tick: effects run
+            else:
+                wavetime = 0
+                ptr += 1
+                if ptr <= len(entries) and entries[ptr - 1][0] == GT_WAVE_JUMP:
+                    ptr = entries[ptr - 1][1]
+                if (GT_WAVE_FIRST_CMD <= wave <= GT_WAVE_LAST_CMD
+                        or note != GT_WAVE_NO_NOTE):
+                    effects = False
+        if row_calls >= 3 and c % row_calls == 0:
+            effects = False
+        if effects:
+            out.append(c)
+    return out
+
+
+def _classic_gate_delay(det: Detection, multiplier: int, row_calls: int = 0,
+                        entries: Optional[List[tuple]] = None,
+                        ptr: int = 0, attack_call: int = 1) -> Optional[int]:
+    """`vibdelay` the classic loop's own gate asks for, or None.
+
+    detect._find_vibrato_gate reads the compare in front of the store. Its
+    operand is a count of the PLAYER's frames and `vibdelay` counts our
+    calls, so the target is `gate x multiplier` calls after the note:
+
+    * "counter" (dialect A): frames since the note fetch; the store is
+      skipped while the age is below the operand, so the oscillator is
+      silent for exactly that many frames and runs from frame `gate` -- a
+      delay, which is what `vibdelay` is. It is spent one per effect call
+      (`_effect_calls`) and greloc stores it less one (greloc.c:780), so the
+      oscillator first runs on effect call number `vibdelay`: the delay is
+      the effect calls before the target, plus one. Without the wavetable
+      this is the tick-0 count alone, an upper bound; `build_sng` refines it
+      per record once the wavetable is laid out (`_classic_gate_refine`).
+
+      **The target is counted from the call the attack is SEEN on**, which
+      is what the original's gate is counted from (its fetch frame). With
+      the default test-bit firstwave that is call 1, not the init call:
+      Pandora's trace shows `0DD1/09` on the init frame and the note's own
+      `/41` a frame later, where siddump names the attack. So the target is
+      call `gate x multiplier + attack_call`, `attack_call` 1 for
+      FIRSTWAVE_TESTBIT and 0 for a record writing its real waveform
+      (`--no-test-restart`, `real_firstwave_instruments`). Measured
+      (C:/t/classic-vibrato-gate/fb, first move after the attack): Food_Feud
+      536 notes at frame 9 against the original's 398 at 9 and 99 at 10;
+      ACE_II 374 at 4, 58 at 5 against 317 and 93; Star_Paws 308 at 15
+      against 13 at 15. Counting from the init call instead put a third of
+      Food_Feud's notes a frame early (176 at 8).
+    * "duration" (dialect B): the note's stored length; a note shorter than
+      the operand never vibrates, and one that qualifies vibrates from its
+      first frames. That is a THRESHOLD, not a delay, and it returns None
+      here: a delay of the operand's length was tried (the triangle engine's
+      approximation) and moved the wrong notes -- Sanxion (gate 3, -S1)
+      `vib` 0.887 -> 0.872, away from 1, its 53 late-onset notes pushed from
+      frame 4 to frame 6 where the original has 2 notes starting at 6, and
+      Tarzan (gate 3) flat (C:/t/classic-vibrato-gate/fb, 2026-09-30).
+      The reading stays on Detection for the per-note form
+      (`_vibrato_command_pass`'s shape) that can say "only notes this long".
+
+    None -- keep the frame-1 floor -- where nothing was read: no compare
+    (Sigma_Seven, whose load is dead), or an operand detect leaves UNREAD
+    (0, 240, 254: Ricochet, Skate_or_Die_intro, Thundercats). Those are not a
+    gate of 0 and not a default, and must not become either until the
+    players are disassembled past the compare.
+    """
+    vg = det.vibrato_gate
+    if vg is None or vg.gate is None or vg.form != "counter":
+        return None
+    target = vg.gate * multiplier + attack_call
+    # **Nearest effect call, not the next one.** vibdelay can only start the
+    # oscillator ON an effect call, and a program that holds the frequency
+    # over the target (a wavetable step, a tick 0) leaves no call there. The
+    # next one can be two frames late: Pygmies_Revenge's `21/00 02/80 41/00`
+    # at -S1 withholds calls 4 (tick 0) and 5 (the `41/00`), so "first effect
+    # call at or after 4" is call 6, where call 3 is one early. Ties go late,
+    # so the oscillator never starts further before the original's than
+    # after it.
+    calls = _effect_call_list(entries, ptr, target + 0x100, row_calls)
+    before = [c for c in calls if c < target]
+    after = next((c for c in calls if c >= target), None)
+    delay = len(before) + 1
+    if before and (after is None or target - before[-1] < after - target):
+        delay = len(before)
+    return min(0xFF, max(1, delay))
+
+
+def _classic_gate_refine(det: Detection, vib_ptrs: dict,
+                         entries: List[tuple], wave_starts: List[int],
+                         multiplier: int, row_calls: int,
+                         instr_row_calls: Optional[dict] = None,
+                         lead: int = 1, no_test_restart: bool = False,
+                         real_firstwave_instruments: tuple = ()) -> dict:
+    """`vib_ptrs` with each record's counter-gate delay taken against its own
+    wavetable program -- the half `_vibrato_layout` cannot know, because the
+    wavetable is laid out after it. Unchanged where no counter gate was read.
+
+    No frame-1 floor here: the target is frame `gate`, which is past frame 0
+    by construction for every operand read (3..19), so the floor's reason --
+    keep the oscillator off the attack frame -- is already met, and applying
+    it on top would postpone a record whose program withholds the calls.
+    """
+    mult = max(1, multiplier)
+    if _classic_gate_delay(det, mult) is None or not vib_ptrs:
+        return vib_ptrs
+    out = {}
+    for i, (idx, delay) in vib_ptrs.items():
+        ptr = (wave_starts[i + lead]
+               if wave_starts is not None and i + lead < len(wave_starts) else 0)
+        own = (instr_row_calls or {}).get(i + lead, row_calls)
+        # Same test as `_write_instruments`' firstwave byte.
+        real = no_test_restart or (i + lead + 1) in real_firstwave_instruments
+        got = _classic_gate_delay(det, mult, own, entries, ptr,
+                                  attack_call=0 if real else 1)
+        out[i] = (idx, delay if got is None else max(1, got))
+    return out
+
+
 def _vibrato_delay(det: Detection, multiplier: int,
-                   commanded: bool = False) -> int:
+                   commanded: bool = False, row_calls: int = 0) -> int:
     """Goattracker `vibdelay` for this player's vibrato, in play calls.
 
     `vibdelay` is a countdown, not a flag: gplay.c:769-776 is a fallthrough
@@ -3601,8 +3780,12 @@ def _vibrato_delay(det: Detection, multiplier: int,
     per call, so the oscillator first runs on the `vibdelay`-th call after the
     note. 1 means "from the first call" and 0 means "never".
 
-    The classic and LFO-table players gate nothing, so they keep
-    `VIBRATO_DELAY`. **The global-triangle player does gate, but not with a
+    The LFO-table player gates nothing, so it keeps `VIBRATO_DELAY`. **The
+    classic players do gate** -- this sentence said they did not until the
+    gate was read (detect._find_vibrato_gate): 54 of the 55 corpus files the
+    classic split resolves in carry a compare after the centring subtraction,
+    in two forms, and `_classic_gate_delay` says which one a delay can
+    express. **The global-triangle player does gate, but not with a
     delay** -- and the difference is worth stating precisely, because a delay
     is what it looks like:
 
@@ -3701,7 +3884,9 @@ def _vibrato_delay(det: Detection, multiplier: int,
         # documented as starting ON the note
         # (tests/test_table_vibrato.py::test_the_entry_is_note_relative_and_starts_on_the_note).
         if det.vibrato_offset is not None:
-            return max(VIBRATO_DELAY, multiplier + 1)
+            floor = max(VIBRATO_DELAY, multiplier + 1)
+            gate = _classic_gate_delay(det, multiplier, row_calls)
+            return floor if gate is None else min(0xFF, max(floor, gate))
         return VIBRATO_DELAY
     if commanded:
         # **The commands express the gate; the delay must not express it
@@ -3917,7 +4102,8 @@ def _vibrato_layout(sid: SidFile, det: Detection, instr_used: int,
         engine = "global triangle"
     else:
         return {}
-    delay = _vibrato_delay(det, mult, commanded=vibrato_command)
+    delay = _vibrato_delay(det, mult, commanded=vibrato_command,
+                           row_calls=row_calls)
     data = sid.data
     duty_mask = (fixed_arp_mask(sid, det)
                  if effects and det.arp_fixed_up and det.effect_arp else None)
@@ -5264,7 +5450,8 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                        voice: Optional[int] = None,
                        gate_skip: Optional[int] = None,
                        arp_phase: Optional[int] = None,
-                       arp_mask: Optional[tuple] = None) -> tuple:
+                       arp_mask: Optional[tuple] = None,
+                       log=None) -> tuple:
     """The five (left, right) wavetable entries for instrument `i`.
 
     With `effects` false this reproduces the VB6 original exactly, fabricating
@@ -5416,6 +5603,11 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                         frames_per_step=det.pitch_seq.frames_per_step)
                     if both is not None:
                         return both
+                    if log:
+                        log(f"Two-stage + pitch-seq.: record {i} "
+                            f"(effect ${arp_style:02X}) does not fit its "
+                            f"{budget}-entry budget; it keeps the attack "
+                            f"waveform and LOSES its arpeggio")
             # Effect bit $40's fixed attack pitch, and the gate on it is bit
             # $80 rather than the bit itself.
             #
@@ -5470,8 +5662,7 @@ def _wavetable_entries(sid: SidFile, det: Detection, i: int, effects: bool,
                                          None if arp_style & EFFECT_SFX_DRUM_MASK
                                          else _fixed_attack_note(sid, det, i)),
                                      budget=budget,
-                                     written=no_test_restart,
-                                     fold_note=True)
+                                     written=no_test_restart)
             if two is not None:
                 return two
 
@@ -6425,7 +6616,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                       gate_skip: Optional[int] = None,
                       real_firstwave_instruments: tuple = (),
                       arps: Optional[List[tuple]] = None,
-                      arp_phases: Optional[dict] = None) -> tuple:
+                      arp_phases: Optional[dict] = None,
+                      log=None) -> tuple:
     """(entries, starts, arp_starts) for the whole wavetable, laid out in order.
 
     Every instrument used to own exactly `WAVE_ENTRIES_PER_INSTR` entries at
@@ -6496,7 +6688,8 @@ def _wavetable_layout(sid: SidFile, det: Detection, instr_used: int,
                                          gate_skip=gate_skip,
                                          arp_phase=(None if arp_phases is None
                                                     else arp_phases.get(gt_number)),
-                                         arp_mask=arp_mask)
+                                         arp_mask=arp_mask,
+                                         log=log)
         starts.append(start)
         entries += list(zip(left, right))
 
@@ -8416,12 +8609,16 @@ def build_sng(sid: SidFile, det: Detection, tracks: List[List[int]],
         voice_two_stage,
         instr_voices, gate_skip,
         real_firstwave_instruments, arps,
-        arp_phases=arp_phases)
+        arp_phases=arp_phases, log=log)
     patterns = _resolve_arp_pointers(patterns, arp_starts, log)
     if pulse_plan is not None:
         # Last, after every pass that writes a command column: the packed
         # size is a property of the finished rows and nothing else.
         patterns = budget_pulse_phase_commands(patterns, CMD_SETPULSEPTR, log)
+    vib_ptrs = _classic_gate_refine(det, vib_ptrs, wave_entries, wave_starts,
+                                    multiplier, row_calls, instr_row_calls,
+                                    lead, no_test_restart,
+                                    real_firstwave_instruments)
     _write_instruments(out, sid, det, instr_used, pulse_starts,
                        sustain_exact, no_hard_restart, filter_ptrs, vib_ptrs,
                        cut_release=cut_release,

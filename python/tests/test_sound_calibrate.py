@@ -10,7 +10,8 @@ reduction function (`shift_movement`, `shift_movements`,
 `shift_movements_each`, `half_hop_s`, `rerender_movements`, `floors`,
 `lost_to_floor`, `noise_floor`, `closeness_floor`, `worse_by`,
 `worse_by_loud`, `comparable`, `known_bad_passed`, `rank_in_corpus`,
-`resolve_version_sha`) against fixed numbers, `score_pair` and
+`resolve_version_sha`, `clock_verdict`, and `clock_reading` on a faked
+trace) against fixed numbers, `score_pair` and
 `CHECK_WINDOW_S` -- the prefix checks 2-4 are scored over -- against a
 synthetic pair whose defect has a known share of each window, AND
 `render_doc` -- the function that turns a calibration result into
@@ -485,6 +486,156 @@ def test_a_comparable_pair_that_is_not_seen_still_FAILS():
 
 
 # --------------------------------------------------------------------------
+# Two known-bad checks: STRUCTURAL fixes on `aud`/`loud` (check 4), CLOCK
+# fixes on `len`/`drift` (check 6). A per-frame timbre/level agreement is
+# blind to a clock, so a clock pair left in check 4 is a pair the check is
+# built not to see -- decided by the user
+# (`three-of-four-known-bad-pairs-are-clock-defects-aud-cannot-see`).
+# --------------------------------------------------------------------------
+_STRUCTURAL = {("W_A_R.sid", "0.5.399", "0.5.400"),
+               ("Action_Biker.sid", "0.5.371", "0.5.372"),
+               ("5_Title_Tunes.sid", "0.5.389", "0.5.391")}
+_CLOCK_DECIDED = {("Human_Race.sid", "0.5.329", "0.5.330"),
+                  ("Las_Vegas_Video_Poker.sid", "0.5.400", "0.5.401"),
+                  ("Samantha_Fox_Strip_Poker.sid", "0.5.400", "0.5.401")}
+
+
+def test_the_sound_known_bad_check_carries_at_least_two_structural_pairs():
+    """Check 4 must not rest on W_A_R alone, and must carry no clock pair.
+
+    Each structural pair was scored exactly as check 4 scores it at v0.5.493
+    (HISTORICAL, see the note above `KNOWN_BAD`): W_A_R aud +0.1670, Action_
+    Biker +0.1195, 5_Title_Tunes +0.0148, all against a 0.0077 floor, all
+    the same -S on both sides. SABOTAGE TARGET: delete any one of their
+    lines from `KNOWN_BAD` and this fails naming it."""
+    got = set(C.KNOWN_BAD)
+    missing = sorted(_STRUCTURAL - got)
+    assert not missing, f"structural pairs missing from KNOWN_BAD: {missing}"
+    assert len(got & _STRUCTURAL) >= 2
+    clock_names = {n for n, _, _ in C.CLOCK_KNOWN_BAD}
+    assert not {n for n, _, _ in C.KNOWN_BAD} & clock_names, (
+        "a clock pair is back in the sound check, which cannot see a clock")
+
+
+def test_the_three_clock_pairs_sit_in_the_clock_check():
+    """The user's decision, pinned as the exact version pairs. SABOTAGE
+    TARGET: delete any of the three lines from `CLOCK_KNOWN_BAD` and this
+    fails naming it. Rasputin and Spellbound (same 3b091c0) moved with them
+    and are pinned too, so neither drifts back into check 4 unnoticed."""
+    got = set(C.CLOCK_KNOWN_BAD)
+    missing = sorted(_CLOCK_DECIDED - got)
+    assert not missing, f"clock pairs missing from CLOCK_KNOWN_BAD: {missing}"
+    assert {("Rasputin.sid", "0.5.329", "0.5.330"),
+            ("Spellbound.sid", "0.5.329", "0.5.330")} <= got
+
+
+def test_main_reads_the_clock_pairs_on_len_and_drift_and_counts_them():
+    """Wiring guard: check 6 builds through `convert_as_measured` (the CLI
+    `convert_at` uses drops `skip_gate`), reads through `clock_reading`, and
+    its verdict reaches `passed` -- a check whose result nothing reads is the
+    shape this repo keeps shipping. It must not score a clock pair on
+    `aud`/`loud`: no `score_pair` inside the loop over CLOCK_KNOWN_BAD."""
+    text = pathlib.Path(C.__file__).read_text(encoding="utf-8")
+    main = next(n for n in ast.walk(ast.parse(text))
+                if isinstance(n, ast.FunctionDef) and n.name == "main")
+    loop = next(n for n in ast.walk(main) if isinstance(n, ast.For)
+                and isinstance(n.iter, ast.Name) and n.iter.id == "CLOCK_KNOWN_BAD")
+
+    def called(node):
+        return {(c.func.attr if isinstance(c.func, ast.Attribute)
+                 else getattr(c.func, "id", None))
+                for c in ast.walk(node) if isinstance(c, ast.Call)}
+    inside = called(loop)
+    assert {"convert_as_measured", "clock_reading", "clock_verdict"} <= inside
+    assert "convert_at" not in inside and "score_pair" not in inside
+    passed = next(n for n in ast.walk(main) if isinstance(n, ast.Assign)
+                  and any(isinstance(t, ast.Name) and t.id == "passed" for t in n.targets))
+    assert "clocks" in ast.unparse(passed.value), "check 6 does not reach the verdict"
+
+
+# Measured at v0.5.493, 180 s with the length probe (HISTORICAL; the note
+# above CLOCK_KNOWN_BAD has the table). The CLI good build is what `convert_at`
+# makes of the same v0.5.401 tree.
+_LV_CLOCK_BAD = {"length_delta": -20.86, "drift_per_1000": -200.0}
+_LV_CLOCK_GOOD = {"length_delta": 0.1, "drift_per_1000": 0.0}
+_LV_CLOCK_CLI_GOOD = {"length_delta": -83.9, "drift_per_1000": -800.0}
+_HR_CLOCK_BAD = {"length_delta": None, "drift_per_1000": -250.0}
+_HR_CLOCK_GOOD = {"length_delta": None, "drift_per_1000": 0.0}
+_SB_CLOCK_BAD = {"length_delta": None, "drift_per_1000": None,
+                 "drift_unfitted": "offsets scatter 189 frame(s)"}
+_SB_CLOCK_GOOD = {"length_delta": None, "drift_per_1000": -90.9}
+
+
+def test_a_clock_fix_is_seen_on_len_and_drift():
+    got = C.clock_verdict(_LV_CLOCK_BAD, _LV_CLOCK_GOOD)
+    assert got["incomparable"] is None and got["seen"] is True
+    assert got["len_gain"] == pytest.approx(20.76)
+    assert got["drift_gain"] == pytest.approx(200.0)
+    # One column is enough: Human_Race's original never ends.
+    hr = C.clock_verdict(_HR_CLOCK_BAD, _HR_CLOCK_GOOD)
+    assert hr["len_gain"] is None and hr["seen"] is True
+
+
+def test_a_good_build_further_from_the_original_is_contradicted_not_seen():
+    """Las_Vegas's CLI build of the fixed tree ends 84 s early at 4x speed.
+    Scored as a fix it would read "seen" on nothing and FAIL silently; the
+    verdict has to say the good side is further away, and on which column."""
+    got = C.clock_verdict(_LV_CLOCK_BAD, _LV_CLOCK_CLI_GOOD)
+    assert got["seen"] is False
+    assert set(got["contradicted"]) == {"len_gain", "drift_gain"}
+    # A gain on one column does not excuse a loss past the margin on the other.
+    mixed = C.clock_verdict({"length_delta": -20.0, "drift_per_1000": 0.0},
+                            {"length_delta": 0.0, "drift_per_1000": -50.0})
+    assert mixed["seen"] is False and mixed["contradicted"] == ["drift_gain"]
+
+
+def test_a_pair_no_clock_column_reads_on_both_sides_is_excluded():
+    got = C.clock_verdict(_SB_CLOCK_BAD, _SB_CLOCK_GOOD)
+    assert got["seen"] is False
+    assert got["incomparable"] and "bad drift unfitted" in got["incomparable"]
+    # ...and excluded is REPORTED, NOT COUNTED, by the same rule as check 4.
+    assert C.known_bad_passed([{**got}, {"incomparable": None, "seen": True}]) is True
+
+
+def test_a_move_inside_the_margins_is_not_seen():
+    got = C.clock_verdict({"length_delta": 3.0, "drift_per_1000": -4.0},
+                          {"length_delta": 0.0, "drift_per_1000": 0.0})
+    assert got["seen"] is False and not got["contradicted"]
+
+
+def _clock_trace(period: int, end_s: float):
+    """A fake `run_siddump`: three voices, one note every `period` frames
+    until `end_s`, each note named uniquely so difflib pairs note k with k."""
+    def voices(seconds):
+        frames = [f for f in range(0, int(min(end_s, seconds) * 50), period)]
+        names = [f"N{i}" for i in range(len(frames))]
+        return [C.F.Voice(attacks=list(names), attack_frames=list(frames))
+                for _ in range(3)]
+    return voices
+
+
+def test_clock_reading_applies_the_length_rule_and_fits_the_drift():
+    """The original stops at 100 s inside a 180 s window; ours plays the same
+    notes 20% fast, so it stops at 80 s and gains 200 frames per 1000 -- the
+    shape of Las_Vegas's -S1 build. `_measure`'s rule: the length compare is
+    taken over the full window, then the window shortens to the ending."""
+    orig, ours = _clock_trace(10, 100), _clock_trace(8, 100 * 0.8)
+    calls = []
+
+    def trace(sid, seconds, sub, exe, cal=0, calls_=None, **kw):
+        calls.append((sid, seconds, kw.get("calls")))
+        return (orig if sid == "o" else ours)(seconds)
+    got = C.clock_reading("o", "u", 4, 0, 180, 0, "x", trace=trace)
+    assert got["length_delta"] == pytest.approx(-20.0, abs=0.3)
+    assert got["drift_per_1000"] == pytest.approx(-200.0, abs=1.0)
+    assert got["window_seconds"] == 101           # last attack 99.8 s, +2 s
+    # Every trace of OURS is at the packed -S -- pack_sid's rule.
+    assert all(c == 4 for s, _, c in calls if s == "u")
+    assert any(s == "u" and sec == 180 for s, sec, _ in calls), (
+        "the length rule must be measured BEFORE the window shrinks")
+
+
+# --------------------------------------------------------------------------
 # `render_doc` -- the function that writes the VERDICT.
 #
 # Everything above pins a reduction. This pins the DOCUMENT, and it is the
@@ -726,6 +877,32 @@ def test_a_result_without_a_check_window_still_renders():
     doc = C.render_doc(out)
     assert "CHECK_WINDOW_S" not in doc
     assert "| 0.9700 | 0.9600 | - | - |" in doc
+
+
+def test_check_6_says_it_is_the_clock_check_and_prints_every_verdict():
+    rows = [{"file": "Las_Vegas_Video_Poker.sid", "versions": ["0.5.400", "0.5.401"],
+             "multiplier": [1, 4], "bad": _LV_CLOCK_BAD, "good": _LV_CLOCK_GOOD,
+             **C.clock_verdict(_LV_CLOCK_BAD, _LV_CLOCK_GOOD)},
+            {"file": "LV_cli", "versions": ["a", "b"], "multiplier": [1, 4],
+             "bad": _LV_CLOCK_BAD, "good": _LV_CLOCK_CLI_GOOD,
+             **C.clock_verdict(_LV_CLOCK_BAD, _LV_CLOCK_CLI_GOOD)},
+            {"file": "Spellbound.sid", "versions": ["0.5.329", "0.5.330"],
+             "multiplier": [2, 2], "bad": _SB_CLOCK_BAD, "good": _SB_CLOCK_GOOD,
+             **C.clock_verdict(_SB_CLOCK_BAD, _SB_CLOCK_GOOD)},
+            {"file": "Broken.sid", "versions": ["a", "b"],
+             "error": "could not build both versions"}]
+    out = _out()
+    out["checks"]["known_bad_clock"] = rows
+    doc = C.render_doc(out)
+    sec = doc[doc.index("## 6. Known-bad clocks"):]
+    assert "**blind to a clock**" in sec
+    assert ("| Las_Vegas_Video_Poker.sid | 0.5.400 -> 0.5.401 | 1 -> 4 | -20.86 | "
+            "+0.10 | -200.0 | +0.0 | yes |") in sec
+    assert "FURTHER from the original on `len`, `drift`" in sec
+    assert "EXCLUDED -- no clock column reads both sides" in sec
+    assert "could not build both versions" in sec
+    # An old result without check 6 still renders, without the section.
+    assert "## 6." not in C.render_doc(_out())
 
 
 def test_the_document_has_all_five_sections_and_ends_with_a_newline():

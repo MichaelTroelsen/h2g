@@ -94,6 +94,11 @@ class Detection:
     # is found), or None where the player has no such routine. See
     # _find_vibrato().
     vibrato_offset: Optional[int] = None
+    # What the classic loop gates that vibrato on -- a per-note frame counter
+    # (a delay) or the note's stored duration (a threshold), read from the
+    # player's own compare. None where vibrato_offset is None or no gate was
+    # found. See _find_vibrato_gate().
+    vibrato_gate: "VibratoGate | None" = None
     # The OTHER vibrato: an LFO table walked one entry per frame, which is the
     # command-table engine's form and shares no byte format with the above.
     # Mutually exclusive with vibrato_offset -- see _find_table_vibrato().
@@ -1736,10 +1741,17 @@ def detect(sid: SidFile, log: Logger, engine: int = 0) -> Detection:
                if det.slide_high_first else
                "operand is the low half (bit 0 direction)"))
 
-    det.vibrato_offset = _find_vibrato(sid, det)
+    vib_site = _find_vibrato_site(sid, det)
+    det.vibrato_offset = None if vib_site is None else vib_site[0]
     if det.vibrato_offset is not None:
         log(f"Instrument vibrato......: record +{det.vibrato_offset} "
             "(bound $78>>3, depth shift $07, note-relative)")
+        det.vibrato_gate = _find_vibrato_gate(sid, vib_site[1])
+        vg = det.vibrato_gate
+        if vg is not None:
+            log(f"Vibrato gate............: {vg.form} ${vg.cell:04X},X "
+                + (f"< {vg.gate} -> still" if vg.gate is not None else
+                   f"CMP #${vg.operand:02X}, operand not read"))
     else:
         det.table_vibrato = _find_table_vibrato(sid, det)
         if det.table_vibrato is not None:
@@ -2527,6 +2539,18 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
     that read nothing and cannot disturb one whose first match already
     resolved.
     """
+    site = _find_vibrato_site(sid, det)
+    return None if site is None else site[0]
+
+
+def _find_vibrato_site(sid: SidFile,
+                       det: Detection) -> Optional[Tuple[int, int]]:
+    """`(record offset, file offset of the split)` for `_find_vibrato`.
+
+    The second half is the VIBRATO_SHAPES match whose `LDA record+n,Y`
+    resolved -- the copy of the player the chains settled on, which is the
+    one `_find_vibrato_gate` must read (Powerplay Hockey's two copies).
+    """
     data = sid.data
     matches = [at for shape in VIBRATO_SHAPES
                for at in _shape_matches(data, shape)]
@@ -2540,7 +2564,117 @@ def _find_vibrato(sid: SidFile, det: Detection) -> Optional[int]:
                 off = sid.to_offset(
                     data[k + 1] | data[k + 2] << 8) - det.instr_start
                 if 0 <= off < det.instr_stride:
-                    return off
+                    return off, at
+    return None
+
+
+# --- The classic vibrato's gate --------------------------------------------
+#
+# The classic apply loop does not vibrate every frame of every note. Between
+# the centring subtraction (`- (bound >> 1) * step`) and the walk that adds
+# `ctr * step` back, every classic player carrying the split above tests one
+# per-voice cell and skips the store when it is below an immediate. Two
+# spellings, and they are two different mechanisms:
+#
+#   A, the COUNTER: Food_Feud $9247
+#       9244  4C 34 92  JMP $9234         ; the subtraction loop's back edge
+#       9247  BD 57 95  LDA $9557,X       ; note age in frames
+#       924A  C9 09     CMP #$09
+#       924C  90 20     BCC $926E         ; age < 9 -> no store this frame
+#   `$9557,X` is zeroed by the note fetch (`$90CD STA $9557,X`, beside the
+#   pattern-pointer reload every note goes through) and INC'd once per frame
+#   after the register write (`$93F2 INC $9557,X`). So the gate is a DELAY:
+#   the oscillator is silent for the note's first n frames and runs from
+#   frame n on -- which is exactly what Goattracker's `vibdelay` is. It is the
+#   SAME cell the expanding family adds to its step (goatwriter's
+#   EXPANDING_VIBRATO_SHAPES; BMX_Kidz `$B388` both times), so one reading
+#   covers the gate on the static files and the age on the expanding ones.
+#
+#   B, the DURATION: Sanxion $B257
+#       B254  4C 44 B2  JMP $B244
+#       B257  BD 1C B5  LDA $B51C,X       ; the note's raw pattern status byte
+#       B25A  29 1F     AND #$1F          ; ...its duration field
+#       B25C  C9 03     CMP #$03
+#       B25E  90 20     BCC $B280         ; duration < 3 -> never vibrates
+#   the triangle engine's gate (TRIANGLE_GATE_SHAPE) in the classic loop: a
+#   per-note length threshold fixed before the note sounds, not a counter.
+#
+# Census, 2026-09-30, over the 55 corpus files `_find_vibrato` resolves
+# (C:/t/classic-vibrato-gate/census.txt): every one but Sigma_Seven carries
+# one of the four spellings below (absolute or zero-page cell), immediately
+# after the subtraction loop's `JMP` -- 26 counter, 25 duration, 3 unread.
+# On all five expanding files the counter-form cell IS the counter
+# goatwriter._expanding_vibrato_counter reads (tests/test_vibrato.py).
+#
+# **UNREAD, not defaulted**: three operands are compares whose meaning has not
+# been disassembled past the compare itself, and they read as no gate at all
+# (`vibrato_gate` None, form "unread") rather than being folded into a number:
+#   0   Ricochet            `CMP #$00 / BCC` can never branch -- a no-op
+#                           gate, or a cell some other code rewrites.
+#   240 Skate_or_Die_intro  the counter would have to reach 240 frames.
+#   254 Thundercats         likewise 254.
+# Sigma_Seven is the fourth: `$8254 LDA $849B,X` (its counter, INC'd at
+# $835F) is followed by `LDY $8004,X` with no compare in between, so the load
+# is dead and nothing gates -- read as no match, the old behaviour, until the
+# player is traced to confirm the oscillator really runs from frame 0.
+#
+# Each shape is (form, pattern, cell operand at, cell is zero page, CMP
+# operand at).
+VIBRATO_GATE_SHAPES = (
+    ("counter", "4C ?? ?? BD ?? ?? C9 ?? 90", 4, False, 7),
+    ("counter", "4C ?? ?? B5 ?? C9 ?? 90", 4, True, 6),
+    ("duration", "4C ?? ?? BD ?? ?? 29 1F C9 ?? 90", 4, False, 9),
+    ("duration", "4C ?? ?? B5 ?? 29 1F C9 ?? 90", 4, True, 8),
+)
+# How far past the split the gate may sit. The census spans +115..+137 bytes
+# (the subtraction loop in between is the same routine in every copy); the
+# bound keeps the scan off the player's unrelated compares further on.
+VIBRATO_GATE_WINDOW = 160
+# Operands read as UNREAD (see above) -- never a gate of their own value.
+VIBRATO_GATE_UNREAD = frozenset({0x00, 0xF0, 0xFE})
+
+
+@dataclass
+class VibratoGate:
+    """The classic vibrato's gate, once located -- `_find_vibrato_gate`.
+
+    `form` is "counter" (dialect A: frames since the note fetch, a delay) or
+    "duration" (dialect B: the note's stored length, a threshold); "unread"
+    where the compare was found but its operand is one of
+    VIBRATO_GATE_UNREAD, and then `gate` is None. `operand` is the raw CMP
+    immediate in every case, `cell` the C64 address compared.
+    """
+    form: str
+    gate: Optional[int]
+    operand: int
+    cell: int
+
+
+def _find_vibrato_gate(sid: SidFile, at: int) -> Optional[VibratoGate]:
+    """The classic vibrato's gate after the split at file offset `at`.
+
+    None where no spelling sits inside VIBRATO_GATE_WINDOW (Sigma_Seven), and
+    None for a counter-form compare on a cell the player never increments --
+    a counter that does not count is not this mechanism. The earliest
+    position wins, as the first compare after the subtraction loop.
+    """
+    data = sid.data
+    for k in range(at, min(len(data), at + VIBRATO_GATE_WINDOW)):
+        for form, shape, cell_at, zp, imm_at in VIBRATO_GATE_SHAPES:
+            if not match_at(data, k, shape):
+                continue
+            if zp:
+                cell = data[k + cell_at]
+                inc = "F6 %02X" % cell
+            else:
+                cell = data[k + cell_at] | (data[k + cell_at + 1] << 8)
+                inc = "FE %02X %02X" % (cell & 0xFF, cell >> 8)
+            if form == "counter" and search_file(data, inc) < 1:
+                return None
+            operand = data[k + imm_at]
+            if operand in VIBRATO_GATE_UNREAD:
+                return VibratoGate("unread", None, operand, cell)
+            return VibratoGate(form, operand, operand, cell)
     return None
 
 

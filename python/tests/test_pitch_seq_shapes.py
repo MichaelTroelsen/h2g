@@ -343,8 +343,9 @@ def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
     Held one frame it arpeggiated four times too fast -- voice 2 read 7837
     ties against the original's 5139 with `pitch_seq` forced, 3907 with the
     divider honoured (C:/t/pitch-seq-divider/ab_food_feud.txt, v0.5.491).
-    The rotation putting the zero step first is keyed on the multiplier
-    alone, exactly as before: at -S1 entry 0 still lands on frame 1.
+    The rotation putting the zero step first is keyed on calls per step, so
+    it applies at -S1 too once the divider makes a step four calls long --
+    see `test_a_divided_step_at_s1_opens_on_the_zero_step` for why.
     """
     from h2g import goatwriter as G
     sid, det = _detect_tables(load_sid(str(CORPUS / "Food_Feud.sid")),
@@ -352,6 +353,53 @@ def test_the_standalone_emitter_holds_each_step_frames_per_step_frames():
     wave = sid.data[det.instr_start + 2 * det.instr_stride + 2]
     assert wave == 0x11
     left, right = G._pitch_seq_entries(sid, det, 2, wave, 1)
-    assert left == [0x11] * 8 and right == [124] * 4 + [0] * 4
+    assert left == [0x11] * 8 and right == [0] * 4 + [124] * 4
     left, right = G._pitch_seq_entries(sid, det, 2, wave, 3)
     assert left == [0x11] * 24 and right == [0] * 12 + [124] * 12
+
+
+def _pair_record(pair, frames_per_step):
+    """A synthetic pair-form bit-$10 record: base byte 0, then `pair`."""
+    STRIDE, INSTR, IDX, PAIRS, BASE = 8, 0x40, 0x100, 0x110, 0x120
+    data = bytearray(0x200)
+    data[INSTR + 2] = 0x11
+    data[INSTR + 7] = 0x10
+    data[IDX] = 0
+    data[PAIRS:PAIRS + 2] = bytes(pair)
+    data[BASE] = 0
+    sid = SidFile(path="fake.sid", data=bytes(data), name="n", author="a",
+                  released="r", load_addr=0x1000, subtunes=1)
+    det = Detection(instr_start=INSTR, instr_used=1, instr_stride=STRIDE,
+                    track_lo=1, track_hi=2, pattern_lo=3, pattern_hi=4,
+                    pattern_used=0, read_track_version=0)
+    det.pitch_seq = D.PitchSeq(index=IDX, pairs=PAIRS, base=BASE, steps=3,
+                               frames_per_step=frames_per_step)
+    return sid, det
+
+
+def test_a_divided_step_at_s1_opens_on_the_zero_step():
+    """The rotation is keyed on CALLS PER STEP, not on the multiplier alone.
+
+    No corpus file has a divider at -S1 (Food_Feud packs at -S3), so this is
+    the synthetic record the decision was traced on: sequence (0, 12, 24),
+    `frames_per_step=4`, one C-4 every 96 calls, packed by gt2reloc and traced
+    per call in VICE (C:/t/pitch-seq-divider-s1-rotation/synth/report.txt).
+    At -S1 the note's first call writes only the `$09` firstwave; entry 0
+    lands on call 1, and that is the frame siddump names the attack from
+    (siddump.c:436, `$09` is below `$10`). Keyed on the multiplier alone the
+    table opened `24 x4` and siddump named every attack C-6; keyed on calls
+    per step it opens `0 x4` and names them C-4, as the same record does at
+    -S3. With no divider at -S1 a step is one call and nothing changes.
+    """
+    from h2g import goatwriter as G
+    rel = [_arp_relative(1, s) for s in (0, 12, 24)]
+    sid, det = _pair_record((12, 24), 4)
+    left, right = G._pitch_seq_entries(sid, det, 0, 0x11, 1)
+    assert left == [0x11] * 12
+    assert right == [rel[0]] * 4 + [rel[1]] * 4 + [rel[2]] * 4, right
+    # -S3: the rotation it always had, twelve calls a step
+    left, right = G._pitch_seq_entries(sid, det, 0, 0x11, 3)
+    assert right == [rel[0]] * 12 + [rel[1]] * 12 + [rel[2]] * 12, right
+    # -S1 without a divider: one call a step, `_pitch_seq_notes`' order as is
+    sid, det = _pair_record((12, 24), 1)
+    assert G._pitch_seq_entries(sid, det, 0, 0x11, 1)[1] ==         [rel[2], rel[0], rel[1]]

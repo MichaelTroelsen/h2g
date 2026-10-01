@@ -181,3 +181,97 @@ def test_the_counting_dimensions_take_the_majority_not_the_edge():
 def test_a_global_register_reduces_the_same_way():
     frames = V.frame_cells_global(_samples([(0x40, 312)]), lambda s: s.cutoff)
     assert len(frames) == 1 and frames[0].hist == {0: 312}
+
+
+# --- the dump's sign extension (task vicetrace-freq-hi-byte-reads-ff) --------
+# VICE 3.9 prints a 16-bit field as (hi << 8) | (signed char) lo, so a low byte
+# with bit 7 set arrives with an $FF high byte whatever the register held.
+
+FF_BLOCK = BLOCK.replace("FREQ:   1168 2000 0000", "FREQ:   ff2b ff57 ff03")
+
+
+def test_sign_extended_flags_ff_hi_with_lo_bit7():
+    assert V.sign_extended(0xFFD0) and V.sign_extended(0xFF80)
+
+
+def test_sign_extended_is_false_for_honest_values():
+    assert not V.sign_extended(0x0DD0)   # real hi, lo >= $80
+    assert not V.sign_extended(0xFF2B)   # lo < $80 cannot be sign extension
+    assert not V.sign_extended(0x1168)
+
+
+def test_parse_keeps_the_dumped_value_and_sign_extended_marks_it_untrustworthy():
+    v = V.parse(BLOCK.replace("1168", "ffd0"))[0].voices[0]
+    assert v.freq == 0xFFD0 and V.sign_extended(v.freq)
+
+
+def test_ff_hi_with_low_lo_is_not_called_sign_extension():
+    v = V.parse(FF_BLOCK)[0].voices
+    assert [x.freq for x in v] == [0xFF2B, 0xFF57, 0xFF03]
+    assert not any(V.sign_extended(x.freq) for x in v)
+
+
+def _frames(per_frame_freqs):
+    """One Sample per rasterline; `per_frame_freqs` is a list of frames, each
+    a list of 312 voice-0 freq values."""
+    out = []
+    for frame in per_frame_freqs:
+        for f in frame:
+            out.append(V.Sample(voices=[V.VoiceLine(freq=f), V.VoiceLine(),
+                                        V.VoiceLine()]))
+    return out
+
+
+def _split(a, b, na):
+    return [a] * na + [b] * (312 - na)
+
+
+def test_a_half_and_half_octave_frame_is_counted_on_its_voice():
+    # the first frame has no predecessor to count a boundary change against
+    frames = _frames([_split(0x1168, 0x22D0, 156)] * 4)
+    assert V.octave_split_frames(frames) == [3, 0, 0]
+
+
+def test_a_once_a_frame_toggle_at_mid_frame_is_not_a_trill():
+    """The original's own player: one write a frame at line 133, hist 133/179
+    in every frame -- the false positive that put 537 on Last_V8's original."""
+    a, b = 0x1168, 0x22D0
+    toggle = [_split(a, b, 133), _split(b, a, 133)] * 4
+    assert V.octave_split_frames(_frames(toggle)) == [0, 0, 0]
+
+
+def test_a_steady_frame_and_a_note_change_are_not_octave_splits():
+    steady = _split(0x1168, 0x1168, 156)
+    # a note change late in the frame: a minor share below the threshold
+    change = _split(0x1168, 0x22D0, 311 - 200)
+    assert V.octave_split_frames(_frames([steady, change])) == [0, 0, 0]
+
+
+def test_a_non_octave_pair_is_not_counted():
+    fifth = _split(0x1168, 0x1A2C, 156)   # 3:2
+    assert V.octave_split_frames(_frames([fifth])) == [0, 0, 0]
+
+
+def test_the_minority_threshold_is_120_lines():
+    assert V.octave_split_frames(_frames([_split(0x1168, 0x22D0, 120)] * 2)) == [1, 0, 0]
+    assert V.octave_split_frames(_frames([_split(0x1168, 0x22D0, 119)] * 2)) == [0, 0, 0]
+
+
+def test_three_values_in_one_frame_are_not_a_two_value_frame():
+    fr = [0x1168] * 100 + [0x22D0] * 100 + [0x1234] * 112
+    assert V.octave_split_frames(_frames([fr])) == [0, 0, 0]
+
+
+def test_a_sign_extended_member_is_rebuilt_from_its_whole_partner():
+    # 0x22D0 is whole; its half 0x1168 dumps as 0x1168 (lo < $80) but 0x0DD0/2..
+    # use 0x1BA0 (lo >= $80) whose octave 0x3740 is whole: 0xFFA0 is the dump.
+    assert V._octave_partner(0xFFA0, 0x3740)
+    assert not V._octave_partner(0xFFA0, 0x3A40)
+    # two damaged values are refused, and a tiny pair is not a note
+    assert not V._octave_partner(0xFFFD, 0xFFFC)
+    assert not V._octave_partner(0x0003, 0x0006)
+
+
+def test_silent_lines_are_not_a_value():
+    fr = [0] * 100 + _split(0x1168, 0x22D0, 106)[:212]
+    assert V.octave_split_frames(_frames([fr])) == [0, 0, 0]

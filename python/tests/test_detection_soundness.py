@@ -345,3 +345,74 @@ def test_fixed_pitch_index_census_matches_pinned_population():
 #   test_fixed_pitch_index_census_matches_pinned_population (every AGREE
 #   file's offset stops equalling wave_program) AND tests/
 #   test_fixed_pitch_index.py's Food Feud pin ($95EB -> 63 -> D#5).
+
+
+# --- The classic vibrato's gate: a pinned population -----------------------
+#
+# detect._find_vibrato_gate reads the compare in front of the classic loop's
+# store. A reading is only sound where the split itself resolved, a counter
+# is only a counter where the player increments it, and an UNREAD operand is
+# never a number. The census (2026-09-30) is pinned so a widened or narrowed
+# shape names the files it moved rather than passing quietly.
+_GATE_COUNTER = {
+    "ACE_II.sid", "After_8.sid", "Arcade_Classics.sid",
+    "Auf_Wiedersehen_Monty.sid", "BMX_Kidz.sid", "Bangkok_Knights.sid",
+    "Food_Feud.sid", "IK_plus.sid", "I_Ball.sid",
+    "Kings_of_the_Beach_intro.sid", "Mega_Apocalypse.sid", "Mr_Meaner.sid",
+    "Nemesis_the_Warlock.sid", "Nineteen.sid", "Off_the_Cuff.sid",
+    "One_on_One_Jordan_vs_Bird.sid", "Pandora.sid",
+    "Powerplay_Hockey_USA_vs_USSR.sid", "Pygmies_Revenge.sid", "Rikky.sid",
+    "Rock_Tells_the_Tale.sid", "Saboteur_II.sid", "Shockway_Rider.sid",
+    "Star_Paws.sid", "Trans-Atlantic_Balloon_Challenge.sid", "Wiz.sid",
+}
+_GATE_DURATION = {
+    "Bump_Set_Spike.sid", "Chain_Reaction.sid", "Deep_Strike.sid",
+    "Delta.sid", "Delta_Mix-E-Load_loader.sid", "Dragons_Lair_Part_II.sid",
+    "Flash_Gordon.sid", "Formula_1_Simulator.sid",
+    "International_Karate.sid", "Kentilla.sid", "Knucklebusters.sid",
+    "Las_Vegas_Video_Poker.sid", "Lightforce.sid", "Mozart.sid",
+    "Proteus.sid", "Samantha_Fox_Strip_Poker.sid", "Sanxion.sid",
+    "Spellbound.sid", "Tarzan.sid", "Thanatos.sid", "Thrust.sid",
+    "W_A_R.sid", "W_A_R_Preview.sid", "Warhawk.sid", "Zoolook.sid",
+}
+_GATE_UNREAD = {"Ricochet.sid": 0x00, "Skate_or_Die_intro.sid": 0xF0,
+                "Thundercats.sid": 0xFE}
+_GATE_ABSENT = {"Sigma_Seven.sid"}
+
+
+@corpus.needs_corpus
+def test_classic_vibrato_gate_census_matches_pinned_population():
+    from corpus import CORPUS
+    from h2g.detect import detect
+    from h2g.search import search_file
+    from h2g.sidfile import load_sid
+
+    got: dict = {"counter": set(), "duration": set(), "unread": set(),
+                 "absent": set()}
+    for p in sorted(CORPUS.glob("*.sid")):
+        sid = load_sid(str(p))
+        try:
+            det = detect(sid, lambda *a, **k: None)
+        except Exception:
+            continue
+        vg = det.vibrato_gate
+        if det.vibrato_offset is None:
+            assert vg is None, f"{p.name}: a gate without the classic split"
+            continue
+        if vg is None:
+            got["absent"].add(p.name)
+            continue
+        got[vg.form].add(p.name)
+        if vg.form == "unread":
+            assert vg.gate is None, f"{p.name}: UNREAD operand read as {vg.gate}"
+            assert vg.operand == _GATE_UNREAD.get(p.name), p.name
+        else:
+            assert vg.gate == vg.operand and vg.gate not in (0, 0xF0, 0xFE), p.name
+        if vg.form == "counter":
+            inc = ("F6 %02X" % vg.cell if vg.cell < 0x100 else
+                   "FE %02X %02X" % (vg.cell & 0xFF, vg.cell >> 8))
+            assert search_file(sid.data, inc) >= 1, f"{p.name}: never counts"
+    assert got["counter"] == _GATE_COUNTER, got["counter"] ^ _GATE_COUNTER
+    assert got["duration"] == _GATE_DURATION, got["duration"] ^ _GATE_DURATION
+    assert got["unread"] == set(_GATE_UNREAD), got["unread"]
+    assert got["absent"] == _GATE_ABSENT, got["absent"]

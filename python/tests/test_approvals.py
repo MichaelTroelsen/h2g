@@ -348,6 +348,26 @@ def test_an_absent_approved_build_is_not_a_calibration_failure():
     assert got["cause"] == "approved-build-absent"
 
 
+def test_an_unrecoverable_approved_build_says_so_not_merely_absent(tmp_path):
+    """A failed `--recover` must not read as a missing file.
+
+    MEASURED at 59fbe1b: ACE_II's approved 0.5.369 build reproduces from no
+    tree 0.5.369-0.5.375, yet the record said "approved .sng not on disk --
+    re-stage it with listen.py", advice that cannot help. The cause stays
+    `approved-build-absent` (abpage keys its text on the cause); the reason
+    names the version and says only a fresh listen renews it.
+    """
+    doc = {"always": {}, "songs": {}}
+    args = ("NoSuchTune_approvals_test", tmp_path / "NoSuchTune_approvals_test.sid",
+            "0" * 64, doc, 60, None, "gt2reloc", "siddump", tmp_path)
+    gone, _ = AP.assess(*args, current_sng=b"x", unrecoverable_from="0.5.369")
+    assert gone["cause"] == "approved-build-absent"
+    assert "unrecoverable" in gone["failed"][0] and "0.5.369" in gone["failed"][0]
+    assert "re-stage" not in gone["failed"][0]
+    absent, _ = AP.assess(*args, current_sng=b"x")
+    assert absent["failed"] == ["approved .sng not on disk -- re-stage it with listen.py"]
+
+
 def test_a_refused_pack_is_not_a_calibration_failure_either():
     got = AP.inherit({}, {}, {}, {}, None, cause="pack-refused")
     assert got["status"] == "uncalibrated"

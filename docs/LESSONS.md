@@ -2751,3 +2751,26 @@ f6d4b737 at 0.5.367-368 and 1bf4e06f at 0.5.366 -- never the approved
 presets did not carry, and `approved.json`'s `version` is provenance only,
 as its own comment says. The only route is a fresh listening approval at the
 current sha.
+
+## The unread stash commits: accepted loss (2026-09-30, at 57c086e)
+
+The stash rule above was earned by 100+ dangling stash-shaped commits left by
+concurrent `git stash` in a fan-out; `git fsck --unreachable` counted 92 at
+e28179a and 96 of 117 unreachable commits at 665939c (2026-09-07), none read.
+Re-measured at 57c086e with `git fsck --unreachable --no-reflogs`: 7
+unreachable commits, of which only **2 are stash-shaped** -- gc pruned the
+other ~94 before anyone opened them, so the recover-or-accept choice was made
+by gc, not by a person. Recorded as ACCEPTED LOSS (decision in
+`.claude/tasks/decisions.jsonl`, 2026-09-30):
+
+- `6dc8817` `index on master: 9ec3133 runqueue cycle 3 recorded...` -- an
+  empty index snapshot (`git show --stat` lists no file), nothing to lose.
+- `2d60335` `On master: local CLAUDE.md task-observer addition` -- three
+  lines adding `## Task observation / Activate the task-observer skill at the
+  start of every task-oriented session.` to CLAUDE.md; that instruction lives
+  on in `~/.claude/CLAUDE.md`, so nothing is lost.
+
+The other five unreachable commits (`0b105b7`, `361f059`, `e3adfaa`,
+`ed91dd2`, `96bb685`, all 2026-08-17 `v0.5.309`-`v0.5.311: LISTENING.md
+states the renderer...`) are version commits rewritten before they landed,
+not stash-shaped, and outside this entry. No branch was created.

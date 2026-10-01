@@ -829,3 +829,152 @@ def test_bmx_kidzs_conversion_carries_the_staircase():
     rows = sum(1 for pat in song.patterns
                for i in range(0, len(pat), 4) if pat[i + 2] == CMD_VIBRATO)
     assert rows >= 60, rows
+
+
+# --- the classic vibrato's gate: a per-note counter, or a stored duration ---
+#
+# detect._find_vibrato_gate. Dialect A compares a frame counter the note fetch
+# zeroes (a DELAY, which vibdelay can say); dialect B the note's stored
+# duration (a threshold, which it cannot). Operands 0, 240, 254 are UNREAD.
+
+GT_NO_NOTE = 0x80
+
+
+def _gate_blob(body: str, tail: str = "") -> bytes:
+    """A split (VIBRATO_SHAPE) followed by `body` hex, then `tail` hex."""
+    from h2g.detect import VIBRATO_SHAPE
+    split = VIBRATO_SHAPE.replace("??", "00")
+    hexes = f"00 {split} EA EA {body} EA EA {tail}".split()
+    return bytes(int(h, 16) for h in hexes)
+
+
+class _Sid:
+    def __init__(self, data: bytes):
+        self.data = data
+
+
+def _read_gate(body: str, tail: str = ""):
+    from h2g.detect import _find_vibrato_gate
+    return _find_vibrato_gate(_Sid(_gate_blob(body, tail)), 1)
+
+
+def test_dialect_b_needs_its_duration_mask():
+    """Sanxion $B257's spelling: LDA status,X / AND #$1F / CMP #3 / BCC."""
+    g = _read_gate("4C 44 B2 BD 1C B5 29 1F C9 03 90 20")
+    assert g is not None and (g.form, g.gate, g.cell) == ("duration", 3, 0xB51C)
+    z = _read_gate("4C 44 B2 B5 A9 29 1F C9 02 90 20")      # zero-page cell
+    assert z is not None and (z.form, z.gate, z.cell) == ("duration", 2, 0xA9)
+
+
+def test_dialect_a_is_a_counter_the_player_increments():
+    """Food_Feud $9247's spelling, and only where `INC cell,X` exists."""
+    g = _read_gate("4C 34 92 BD 57 95 C9 09 90 20", tail="FE 57 95")
+    assert g is not None and (g.form, g.gate, g.cell) == ("counter", 9, 0x9557)
+    z = _read_gate("4C 9B 4C B5 BC C9 13 90 1D", tail="F6 BC")
+    assert z is not None and (z.form, z.gate, z.cell) == ("counter", 19, 0xBC)
+    assert _read_gate("4C 34 92 BD 57 95 C9 09 90 20") is None
+
+
+def test_unread_operands_are_not_a_gate_of_their_value():
+    for operand in (0x00, 0xF0, 0xFE):
+        g = _read_gate(f"4C 34 92 BD 57 95 C9 {operand:02X} 90 20",
+                       tail="FE 57 95")
+        assert g is not None and g.form == "unread" and g.operand == operand
+        assert g.gate is None, f"UNREAD operand {operand} became a gate"
+
+
+def test_the_counter_gate_delays_by_the_operand_in_our_calls():
+    """vibdelay reaches frame `gate` in OUR calls: gate x multiplier after the
+    call the attack is seen on, less what tick 0 withholds (no wavetable)."""
+    from h2g.detect import VibratoGate
+    from h2g.goatwriter import _vibrato_delay
+    det = Detection(vibrato_offset=5,
+                    vibrato_gate=VibratoGate("counter", 9, 9, 0x9557))
+    assert _vibrato_delay(det, 1) == 10
+    assert _vibrato_delay(det, 2) == 19
+    assert _vibrato_delay(det, 3) == 28
+    # Six calls a row: calls 6, 12, 18, 24 are tick 0 and run no effects,
+    # so call 28 is effect call 24.
+    assert _vibrato_delay(det, 3, row_calls=6) == 24
+    # Never below the frame-1 floor the classic engine already had.
+    low = Detection(vibrato_offset=5,
+                    vibrato_gate=VibratoGate("counter", 1, 1, 0x9557))
+    assert _vibrato_delay(low, 3) == 4
+
+
+def test_a_wavetable_step_that_writes_a_frequency_withholds_the_call():
+    """player.s `mt_wavefreq`: a step whose right column is not $80 skips the
+    continuous effects that call, and a delay tick does not."""
+    from h2g.goatwriter import _effect_call_list, _effect_calls
+    pandora = [(0x41, 0x00), (0x41, 0x00), (0x41, 0x00), (0xFF, 0x00)]
+    assert _effect_calls(pandora, 1, 5, 4) == 0          # 1-3 wave, 4 tick 0
+    assert _effect_call_list(pandora, 1, 8, 4) == [5, 6, 7]
+    held = [(0x21, 0x00), (0x02, GT_NO_NOTE), (0x41, 0x00), (0xFF, 0x00)]
+    assert _effect_call_list(held, 1, 8, 4) == [2, 3, 6, 7]
+    assert _effect_calls(None, 0, 9, 4) == 6              # 4 and 8 tick 0
+
+
+def test_the_gate_takes_the_nearest_effect_call_ties_late():
+    from h2g.detect import VibratoGate
+    from h2g.goatwriter import _classic_gate_delay
+    det = Detection(vibrato_offset=5,
+                    vibrato_gate=VibratoGate("counter", 4, 4, 0x1694))
+    held = [(0x21, 0x00), (0x02, GT_NO_NOTE), (0x41, 0x00), (0xFF, 0x00)]
+    # Target call 4 (real firstwave): effect calls 2, 3 | 6 -- 3 is nearer.
+    assert _classic_gate_delay(det, 1, 4, held, 1, attack_call=0) == 2
+    # Target call 5 (test-bit firstwave): 3 and 6 -- 6 is nearer.
+    assert _classic_gate_delay(det, 1, 4, held, 1, attack_call=1) == 3
+
+
+def test_duration_and_unread_gates_keep_the_frame_one_floor():
+    from h2g.detect import VibratoGate
+    from h2g.goatwriter import _vibrato_delay
+    for vg in (VibratoGate("duration", 3, 3, 0xB51C),
+               VibratoGate("unread", None, 0, 0x981F),
+               VibratoGate("unread", None, 0xF0, 0x4B40), None):
+        det = Detection(vibrato_offset=5, vibrato_gate=vg)
+        for m in (1, 2, 3):
+            assert _vibrato_delay(det, m, row_calls=6) == m + 1, (vg, m)
+
+
+# name -> (form, gate, operand, cell); every classic file the census names.
+CLASSIC_GATES = {
+    "Food_Feud.sid": ("counter", 9, 9, 0x9557),
+    "Star_Paws.sid": ("counter", 15, 15, 0xB8AD),
+    "Saboteur_II.sid": ("counter", 4, 4, 0xF5A5),
+    "Mega_Apocalypse.sid": ("counter", 19, 19, 0xBC),
+    "BMX_Kidz.sid": ("counter", 12, 12, 0xB388),
+    "Powerplay_Hockey_USA_vs_USSR.sid": ("counter", 4, 4, 0x49A5),
+    "Sanxion.sid": ("duration", 3, 3, 0xB51C),
+    "Mozart.sid": ("duration", 2, 2, 0x0C0D),
+    "Warhawk.sid": ("duration", 1, 1, 0x1579),
+    "Spellbound.sid": ("duration", 1, 1, 0xC7),
+    "Ricochet.sid": ("unread", None, 0x00, 0x981F),
+    "Skate_or_Die_intro.sid": ("unread", None, 0xF0, 0x4B40),
+    "Thundercats.sid": ("unread", None, 0xFE, 0xF5AB),
+}
+
+
+@needs_corpus
+def test_the_classic_gate_is_read_in_both_dialects_from_the_corpus():
+    from h2g.detect import detect
+    for name, want in CLASSIC_GATES.items():
+        det = detect(load_sid(str(CORPUS / name)), lambda *a, **k: None)
+        vg = det.vibrato_gate
+        assert vg is not None, name
+        assert (vg.form, vg.gate, vg.operand, vg.cell) == want, (name, vg)
+    sigma = detect(load_sid(str(CORPUS / "Sigma_Seven.sid")),
+                   lambda *a, **k: None)
+    assert sigma.vibrato_offset is not None and sigma.vibrato_gate is None
+
+
+@needs_corpus
+def test_one_counter_gates_the_static_files_and_grows_the_expanding_ones():
+    """The expanding family's age counter IS the gate's counter-form cell."""
+    from h2g.detect import detect
+    from h2g.goatwriter import _expanding_vibrato_counter
+    for name in sorted(EXPANDING_FILES):
+        sid = load_sid(str(CORPUS / name))
+        det = detect(sid, lambda *a, **k: None)
+        assert det.vibrato_gate is not None, name
+        assert det.vibrato_gate.cell == _expanding_vibrato_counter(sid, det), name

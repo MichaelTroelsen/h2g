@@ -230,6 +230,22 @@ def test_render_cached_re_renders_when_the_bytes_change(tmp_path):
     assert a != b and len(r.calls) == 2
 
 
+def test_content_key_carries_the_power_on_delay(tmp_path):
+    """SABOTAGE TARGET: drop the delay from `content_key`'s hash and the two
+    delays give one key -- a render made under a random/other delay (every
+    render cached before `listen.SIDPLAYFP_POWER_ON_DELAY`) would be served
+    as a hit under the current one."""
+    sid = tmp_path / "Tune.sid"
+    sid.write_bytes(b"PSID-bytes-1")
+    d = sound.listen.SIDPLAYFP_POWER_ON_DELAY
+    assert sound.content_key(sid, d) != sound.content_key(sid, d + 1)
+    assert sound.content_key(sid) == sound.content_key(sid, d)
+    # and the key is not the bare-bytes sha a pre-flag render was named by
+    import hashlib
+    bare = hashlib.sha1(sid.read_bytes()).hexdigest()[:12]
+    assert sound.content_key(sid) != bare
+
+
 def test_render_cached_returns_none_when_the_renderer_fails(tmp_path):
     sid = tmp_path / "Tune.sid"
     sid.write_bytes(b"x")

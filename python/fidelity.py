@@ -2470,6 +2470,56 @@ def noise_edge_runs(voices: list[Voice], nframes: int) -> dict:
     return {"runs": runs, "frames": frames}
 
 
+def noise_gate_off_runs(voices: list[Voice], nframes: int) -> dict:
+    """Audible noise `noise_runs` cannot see at all: selected under a CLOSED
+    gate while the release is still sounding.
+
+    The gate-AND (v0.5.483) is right for Confuzion's latched SELECT, but it
+    makes a third cause of `nrun` `-` that the edge counters cannot name: an
+    original whose drum writes its noise burst with the gate already
+    dropped. Measured at v0.5.493 (HEAD 57c086e), `-t 180`, presets: on
+    Kentilla, Proteus and Warhawk every original noise frame is gate-off
+    (430 / 1647 / 1468 frames, `$80` and never `$81`), and every one of those
+    runs but three on Kentilla begins exactly ONE frame after the gate opened
+    -- `$41` attack, `$80` for 1-3 frames, `$40` -- i.e. the drum's burst on
+    an envelope that has just attacked, sounding through its release, not a
+    silent latched tail. Ours plays the same bursts gated (`$81`) and has no
+    gate-off noise at all, so the gate-AND pairs no instrument and the
+    column declines with 0 edge runs on both sides. Frames and probes:
+    `C:/t/nrun-gate-off-noise/`.
+
+    A run counts only while the voice is still audible: it must start within
+    `_release_frames` of the release nibble latched on the frame the gate
+    dropped, and only those frames are counted -- a SELECT left latched on a
+    released voice (Confuzion's shape after its last note) is silence, not
+    noise. A voice never seen gated contributes nothing, since nothing says
+    it was ever sounding.
+
+    Returns `{"runs": n, "frames": f}`, both 0 for a side with no such noise.
+    Recorded, not scored: see `noise_run_agreement`.
+    """
+    runs = frames = 0
+    for v in voices:
+        wf = register_timeline(v.wf_events, nframes)
+        adsr = register_timeline(v.adsr_events, nframes)
+        audible_until = -1                    # last frame the release sounds
+        f = 0
+        while f < nframes:
+            w = wf[f]
+            if f and not w & WF_GATE and wf[f - 1] & WF_GATE:
+                audible_until = f + _release_frames(adsr[f] & 0x0F) - 1
+            if not (w & WF_NOISE and not w & WF_GATE):
+                f += 1
+                continue
+            start = f
+            while f < nframes and wf[f] & WF_NOISE and not wf[f] & WF_GATE:
+                f += 1
+            if start <= audible_until:
+                runs += 1
+                frames += min(f, audible_until + 1) - start
+    return {"runs": runs, "frames": frames}
+
+
 def release_tails(voices: list[Voice], nframes: int) -> dict:
     """The release nibble in force after each note ends, keyed by instrument.
 
@@ -3538,12 +3588,24 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     is for. This answers the narrower question the count cannot: given that we
     sound it, do we sound it for as long?
 
-    **A `-` here has two causes and the row names which.** `noise_runs` drops
+    **A `-` here has three causes and the row names which.** `noise_runs` drops
     a run touching the window edge, so a side whose ONLY noise is runs the
     window cut contributes no instrument and the column declines. The
     `noise_run_*_edge_runs` / `_edge_frames` keys record what was dropped per
     side; `noise_run_instruments` 0 beside `noise_run_orig_edge_runs` > 0 is
     "the window could not measure it", not "no noise" (see `noise_edge_runs`).
+    The third is noise the gate-AND never reads: audible noise under a
+    CLOSED gate, recorded per side as `noise_run_*_gate_off_runs` /
+    `_gate_off_frames` (see `noise_gate_off_runs`). Kentilla, Proteus and
+    Warhawk sound ALL their original noise that way -- a drum burst written
+    `$80` one frame after the `$41` attack -- and ours sounds it gated, so
+    `noise_run_orig_gate_off_runs` > 0 beside 0 instruments and 0 edge runs
+    is "the column cannot see this original's noise". It is a documented
+    blindness, NOT scored, by decision at v0.5.493: pairing the original's
+    gate-off runs against ours' gated ones by ADSR does pair and agree on
+    those three files (4/4, 12/12, 11/11 keys, modal lengths equal), but
+    admitting a gate-off class into this column changes its population on
+    every file that mixes the two, which is a corpus A/B, not a key.
 
     **Blind to a loss the MODAL comparison cannot move.** This asks only
     whether the single most common run length agrees, the same reduction
@@ -3614,6 +3676,9 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
     # 0 instruments with edge runs on the original side is a file whose noise
     # the window could not measure, not a file without noise.
     ea, eb = noise_edge_runs(orig, nframes), noise_edge_runs(ours, nframes)
+    # ...and what the gate-AND could not see at all: audible noise under a
+    # closed gate (the third cause, see `noise_gate_off_runs`).
+    ga, gb = noise_gate_off_runs(orig, nframes), noise_gate_off_runs(ours, nframes)
     return {
         "noise_run_instruments": len(shared),
         "noise_run_matched": matched,
@@ -3624,6 +3689,10 @@ def noise_run_agreement(orig: list[Voice], ours: list[Voice],
         "noise_run_orig_edge_frames": ea["frames"],
         "noise_run_ours_edge_runs": eb["runs"],
         "noise_run_ours_edge_frames": eb["frames"],
+        "noise_run_orig_gate_off_runs": ga["runs"],
+        "noise_run_orig_gate_off_frames": ga["frames"],
+        "noise_run_ours_gate_off_runs": gb["runs"],
+        "noise_run_ours_gate_off_frames": gb["frames"],
     }
 
 
@@ -4007,6 +4076,15 @@ def vice_register_compare(orig_samples: list, our_samples: list,
     out["vice_frames"] = nframes
     out["vice_reduce"] = mode
     return out
+
+
+def vice_octave_split(orig_samples: list, our_samples: list) -> dict:
+    """`osplit`: frames where a voice holds a note and its octave inside one
+    frame (`vicetrace.octave_split_frames`), each side, summed over voices."""
+    return {"orig_octave_split_frames":
+            sum(vicetrace.octave_split_frames(orig_samples)),
+            "our_octave_split_frames":
+            sum(vicetrace.octave_split_frames(our_samples))}
 
 
 def vice_skip_span(calls_per_frame: int) -> tuple[int, int]:
@@ -4698,11 +4776,19 @@ DIMENSIONS = (
               "per-frame agreement of the waveform-select nibble; a waveform "
               "we hold latched under a closed gate after its release has run "
               "out, where the original selects none, is not charged "
-              "(`wave_tail_frames`)"),
+              "(`wave_tail_frames`). That tail exclusion arrived in "
+              "ccd06ad (v0.5.481; `_release_frames`, `SID_RELEASE_MS`), so "
+              "`wave` figures either side of 0.5.481 are not comparable: "
+              "the 0.5.475 -> 0.5.481 A/B moved it 1-9 pp on 14 "
+              "byte-identical files (ACE_II, Arcade_Classics, "
+              "Auf_Wiedersehen_Monty, BMX_Kidz, Bangkok_Knights, IK_plus, "
+              "I_Ball, Las_Vegas_Video_Poker, Shockway_Rider, Thundercats, "
+              "Skate_or_Die_intro, Mega_Apocalypse, Pandora, Star_Paws) "
+              "with no converter change"),
     Dimension("noise", "noise", ("$D404",), "count",
               "frames whose waveform included noise", source="our_noise_frames"),
     Dimension("adsr", "adsr", ("$D405/$D406",), "fraction",
-              "per-frame agreement of the envelope pair"),
+              "per-frame agreement of the envelope pair (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte, so read with that blindness)"),
     # $D404's bit 0, which `wave` excludes by construction and nothing else
     # read. That exclusion is right for a timbre column and it made a whole
     # class of change unscoreable: --rest-keyoff moves 19 files' bytes and one
@@ -4914,6 +5000,15 @@ DIMENSIONS = (
               "nrun 1.0 -- v0.5.482, HEAD 760f401, -t 180. Declines (`-`) "
               "a file whose only noise is runs the window cut, and records "
               "the cut runs and frames per side so the `-` says why. "
+              "**Blind to noise sounded under a CLOSED gate**, and declines "
+              "(`-`) a file whose original sounds its noise only that way: "
+              "Kentilla, Proteus and Warhawk write each drum burst `$80` one "
+              "frame after the `$41` attack (430 / 1647 / 1468 original "
+              "noise frames, none gated) while ours plays it `$81`, so 0 "
+              "instruments pair with 0 edge runs -- the row records the "
+              "audible gate-off runs and frames per side "
+              "(`noise_run_*_gate_off_runs` / `_frames`) so that `-` says "
+              "why too; not scored -- v0.5.493, HEAD 57c086e, -t 180. "
               "**Separately: gate-AND'd, two consecutive noise notes do "
               "NOT concatenate into one run** -- the gate drops between "
               "untied notes even when both select noise, so a run's length "
@@ -4982,7 +5077,7 @@ DIMENSIONS = (
     Dimension("release_tail_agreement", "tail", ("$D405/$D406",), "fraction",
               "instruments whose notes end with the original's release"),
     Dimension("pulse", "pul", ("$D402/$D403",), "count",
-              "frames on which the duty cycle moved",
+              "frames on which the duty cycle moved (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte)",
               source="our_pulse_changes"),
     # `pspan` is to `pul` what `cut` is to `filt`, and for the identical
     # reason. A count says whether the duty cycle moves at all; it cannot say
@@ -4992,7 +5087,7 @@ DIMENSIONS = (
     # and `pul` went from 3/236 to 338/236 on 5_Title_Tunes for a sweep that
     # covers slightly *less* of the band than the original's.
     Dimension("pulse_span", "pspan", ("$D402/$D403",), "ratio",
-              "how wide a band the duty cycle covers, over the original's"),
+              "how wide a band the duty cycle covers, over the original's (under `--vice` the dump sign-extends a low byte >= $80 into an $FF high byte)"),
     # `pphase` is to `pspan` what `pspan` is to `pul`, one question further
     # out: a count says whether the duty cycle moves, a span says how far it
     # gets, and NEITHER says where in the band a note opens. The player's
@@ -5067,21 +5162,44 @@ DIMENSIONS = (
     # in docs/SOUND-CALIBRATION.md governs how much they can be trusted --
     # and at v0.5.453 it reports `pass: false`, so read the blind spot in the
     # `aud` description below as a live warning rather than boilerplate.
+    # Needs `--vice`: a once-per-frame trace cannot see a toggle inside a frame.
+    Dimension("octave_split", "osplit", ("$D400/$D401",), "count",
+              "frames where a voice holds exactly two frequencies an octave "
+              "apart, the rarer on >= 120 of the frame's 312 rasterlines -- "
+              "the 100 Hz trill a per-call two-entry wavetable loop makes at "
+              "`-S2` and siddump reads as one steady tone. Only under "
+              "`--vice` (`-` otherwise); ours/original, `!` where the "
+              "original never does it. Needs a value change in the frame "
+              "beside the octave split, so the original's own once-a-frame "
+              "toggle is not counted. **BLIND**: the dump sign-extends a "
+              "low byte >= $80, so a pair whose members are BOTH so damaged "
+              "is refused, one damaged member is rebuilt from its partner "
+              "(low byte within 3), and a trill across more than two values "
+              "or a non-octave interval is not counted", source="our_octave_split_frames"),
     Dimension("aud", "aud", (AUDIO,), "fraction",
               "per-frame agreement of the rendered sound's log-mel spectrum, "
               "level removed -- timbre, filter, envelope shape. Absent unless "
               "the run was taken with --sound; both-silent frames carry no "
               "weight; it rises when events are removed, so read it beside "
-              "the attack counts. **A CORRECT FIX CAN READ WORSE HERE**: "
-              "sound_calibrate.py's known-bad check scores all three "
-              "documented fixes under its own noise floor and TWO of them in "
-              "the wrong direction, because a per-frame agreement falls when "
-              "a fix unmasks a defect the old behaviour hid (CLAUDE.md's "
+              "the attack counts. **BLIND TO A CLOCK**: a per-frame "
+              "timbre/level agreement does not see a wrong tempo -- the "
+              "3b091c0 tempo fix moved `drift` by ~250/1000 on Human_Race "
+              "and Rasputin and this column by -0.005 and +0.004, under its "
+              "0.0077 floor (v0.5.493, 60 s prefix) -- so "
+              "read `len` and `drift` for a clock, never this; "
+              "sound_calibrate.py validates this "
+              "column on STRUCTURAL fixes only (KNOWN_BAD) and its clock "
+              "fixes on `len`/`drift` (CLOCK_KNOWN_BAD). **A CORRECT FIX CAN "
+              "READ WORSE HERE**, because a per-frame agreement falls when a "
+              "fix unmasks a defect the old behaviour hid (CLAUDE.md's "
               "Human_Race case, where the right clock cost melody 65 -> 56%)"),
     Dimension("loud", "loud", (AUDIO,), "fraction",
               "per-frame agreement of the rendered loudness envelope -- the "
               "first column that reads the master-volume nibble; `loud_ratio` "
-              "in --json is our overall level over the original's"),
+              "in --json is our overall level over the original's. **BLIND "
+              "TO A CLOCK**, as `aud` is: a level envelope at the wrong tempo "
+              "is still the right level frame for frame; read `len` and "
+              "`drift` for that"),
 )
 
 
@@ -5963,6 +6081,7 @@ def _measure(sid: Path, workdir: Path, opts: dict, args,
                                out=workdir / "vice_ours.txt")
             if vo and vu:
                 row.update(vice_register_compare(vo, vu, args.vice_reduce))
+                row.update(vice_octave_split(vo, vu))
                 # `vib` and `depth` from the same two traces, at rasterline
                 # resolution -- the reading this mode exists for. Through
                 # v0.5.485 they were not computed here at all and the row
@@ -6210,6 +6329,13 @@ def _fmt_length(r: dict) -> str:
     lead = ">" if r.get("length_bounded") else ""
     bad = " !" if abs(d) > LENGTH_TOLERANCE else ""
     return f"{lead}{d:+.1f}s{bad}"
+
+
+def _fmt_osplit(row: dict) -> str:
+    """`osplit`: `-` unless the run was taken with `--vice`, else `ours/orig`."""
+    if "our_octave_split_frames" not in row:
+        return "-"
+    return _one_sided(row, "octave_split_frames")
 
 
 def _fmt_sweep(row: dict) -> str:
@@ -6537,6 +6663,13 @@ def report(rows: list[dict], args) -> str:
         "oscillates on both sides -- a side emitting *no* oscillation drops "
         "out of this column entirely, so read it beside **vib**, which is "
         "where a missing oscillation shows up.",
+        "* **osplit** -- `ours/original` frames where a voice holds exactly "
+        "two frequencies an octave apart inside one frame, the rarer on at "
+        "least 120 of its 312 rasterlines: the 100 Hz trill a per-call "
+        "two-entry wavetable loop makes at `-S2`, which siddump reads as a "
+        "steady tone. `-` without `--vice`; `!` where the original never "
+        "does it. Blind to a trill over more than two values and to a pair "
+        "of two sign-extended values, which is refused.",
         "* **aud** -- per-frame agreement of the rendered sound's log-mel "
         "spectrum with the level removed: timbre, filter movement, envelope "
         "shape -- what no register column can see. Both sides are rendered "
@@ -6553,14 +6686,18 @@ def report(rows: list[dict], args) -> str:
         "by 0.034, while the three documented fixes it was tested against "
         "move it by 0.012, -0.019 and -0.005. Two of those are the WRONG "
         "SIGN, because a per-frame agreement falls when a fix unmasks a "
-        "defect the old behaviour hid. Treat it as a coarse guard against "
+        "defect the old behaviour hid. It is also **blind to a clock** -- a "
+        "wrong tempo or multiplier plays the same sounds at the wrong times "
+        "-- so read **len** and **drift** for that, never this column; the "
+        "calibration validates its clock pairs on those two. Treat it as a "
+        "coarse guard against "
         "gross breakage until that is resolved, never as a verdict.",
         "* **loud** -- per-frame agreement of the rendered loudness envelope; "
         "the only column that reads the master-volume nibble. `--json` also "
         "carries `loud_ratio`, our overall level over the original's.",
         "",
-        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | aud | loud | status |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
+        "| File | orig | ours | retrig | melody | seq | pitch | slides | bend | tie | vib | depth | drift | wave | onset | noise | nrun | hold | gate | tail | adsr | pul | pspan | pphase | filt | cut | len | cov | osplit | aud | loud | status |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|",
     ]
     # Derived from the header rather than hardcoded. It WAS hardcoded, at 21
     # against a header that wanted 23, so every `not converted` row had been
@@ -6599,7 +6736,7 @@ def report(rows: list[dict], args) -> str:
             f"{'-' if r.get('pulse_span') is None else f'{r["pulse_span"]:.2f}x'} | "
             f"{'-' if r.get('pulse_phase') is None else f'{r["pulse_phase"]:.2f}x'} | "
             f"{_one_sided(r, 'filtered_frames')} | {_fmt_sweep(r)} | "
-            f"{_fmt_length(r)} | {_fmt_coverage(r)} | "
+            f"{_fmt_length(r)} | {_fmt_coverage(r)} | {_fmt_osplit(r)} | "
             f"{_fmt_pct(r.get('aud'))} | {_fmt_pct(r.get('loud'))} | "
             f"{status} |")
 
@@ -6634,11 +6771,15 @@ def report(rows: list[dict], args) -> str:
             # as for one without noise, and the table cannot tell them apart.
             # Name the first kind: an original whose every noise run touched
             # the window edge contributed no instrument to the comparison.
+            # A file whose original also sounds gate-off noise belongs to the
+            # third cause's sentence below, where its edge runs are printed
+            # too -- "ONLY in runs the window cut" would be false for it.
             edge_declined = [
                 r for r in waved
                 if not r.get("noise_run_instruments")
                 and r.get("noise_run_orig_edge_runs")
-                and not r.get("noise_run_orig_only")]
+                and not r.get("noise_run_orig_only")
+                and not r.get("noise_run_orig_gate_off_runs")]
             if edge_declined:
                 out.append(
                     f"  - `nrun` declined **{len(edge_declined)}** file(s) "
@@ -6653,6 +6794,32 @@ def report(rows: list[dict], args) -> str:
                         f"{r['noise_run_ours_edge_runs']} edge run(s), "
                         f"{r['noise_run_ours_edge_frames']} frame(s))"
                         for r in sorted(edge_declined,
+                                        key=lambda r: r["file"].lower())))
+            # The third cause: the gate-AND reads no run at all because the
+            # original sounds its noise with the gate closed (see
+            # `noise_gate_off_runs`) -- a blindness, not an absence.
+            gate_off_declined = [
+                r for r in waved
+                if not r.get("noise_run_instruments")
+                and r.get("noise_run_orig_gate_off_runs")
+                and not r.get("noise_run_orig_only")]
+            if gate_off_declined:
+                out.append(
+                    f"  - `nrun` declined **{len(gate_off_declined)}** file(s) "
+                    "whose original sounds its noise under a CLOSED gate, "
+                    "which the column does not read -- a blindness, not an "
+                    "absence: "
+                    + "; ".join(
+                        f"{r['file']} (original "
+                        f"{r['noise_run_orig_gate_off_runs']} gate-off run(s), "
+                        f"{r['noise_run_orig_gate_off_frames']} of "
+                        f"{r.get('orig_noise_frames', 0)} noise frames, "
+                        f"{r.get('noise_run_orig_edge_runs', 0)} edge run(s); "
+                        f"ours {r.get('noise_run_ours_only', 0)} gated "
+                        f"instrument(s), "
+                        f"{r.get('noise_run_ours_gate_off_runs', 0)} gate-off "
+                        f"run(s))"
+                        for r in sorted(gate_off_declined,
                                         key=lambda r: r["file"].lower())))
         gated = [r for r in measured if r.get("gate") is not None]
         if gated:

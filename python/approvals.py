@@ -255,9 +255,16 @@ def pack_into(blob: bytes, workdir: Path, tag: str, gt2reloc: str,
 def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
            cal: dict | None, gt2reloc: str, siddump: str, workdir: Path,
            current_sng: bytes | None = None,
-           approved_sng: Path | None = None) -> tuple[dict, str]:
+           approved_sng: Path | None = None,
+           unrecoverable_from: str | None = None) -> tuple[dict, str]:
     """(verdict, current sha). `approved_sng` is the .sng the listener heard;
-    `listen.py` keeps it as build/listen/<stem>.h2g.sng when its sha matches."""
+    `listen.py` keeps it as build/listen/<stem>.h2g.sng when its sha matches.
+
+    `unrecoverable_from` names the version `--recover` tried and failed to
+    rebuild the approved build from. It changes only the reason text, not the
+    cause: "not on disk" invites a re-stage that cannot help when no tree
+    reproduces the approved bytes (ACE_II at v0.5.491: every tree
+    0.5.369-0.5.375 converts to 2297af87, never the approved 7bc6dfad)."""
     name = f"{stem}.sid"
     opts = F._preset_opts(doc, name)
     mult = F._preset_multiplier(doc, name)
@@ -272,7 +279,11 @@ def assess(stem: str, sid: Path, approved_sha: str, doc: dict, seconds: int,
         return inherit({}, {}, {}, {}, cal, same_sha=True), cur_sha
     if approved_sng is None:
         v = inherit({}, {}, {}, {}, None, cause="approved-build-absent")
-        v["failed"] = ["approved .sng not on disk -- re-stage it with listen.py"]
+        v["failed"] = ([f"approved build is unrecoverable -- no tree at {unrecoverable_from} "
+                        "reproduces its sha (version is provenance only); only a fresh "
+                        "listening approval of the current build can renew it"]
+                       if unrecoverable_from else
+                       ["approved .sng not on disk -- re-stage it with listen.py"])
         return v, cur_sha
     sub = F.resolve_subtune(sid, "auto")
     orig_trace = F.run_siddump(sid, seconds, sub, siddump)
@@ -370,6 +381,7 @@ def main(argv=None) -> int:
         if not sid.exists():
             continue
         approved_sng = None
+        unrecoverable_from = None
         if args.recover:
             kept = ROOT / "build" / "listen" / f"{stem}.h2g.sng"
             have = (kept.exists()
@@ -384,11 +396,13 @@ def main(argv=None) -> int:
                     approved_sng = kept
                     print(f"  {stem:32} recovered from {a['version']}", file=sys.stderr)
                 else:
+                    unrecoverable_from = a["version"]
                     print(f"  {stem:32} NOT recoverable at {a['version']} "
                           f"-- version is provenance only", file=sys.stderr)
         verdict, cur_sha = assess(stem, sid, a["sng_sha256"], doc, args.seconds, cal,
                                   args.gt2reloc, args.siddump, Path(workdir),
-                                  approved_sng=approved_sng)
+                                  approved_sng=approved_sng,
+                                  unrecoverable_from=unrecoverable_from)
         tunes[stem] = record(stem, a["sng_sha256"], cur_sha, verdict,
                              previous.get(stem), __version__)
         print(f"  {stem:32} {tunes[stem]['status']}"

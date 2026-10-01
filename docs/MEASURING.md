@@ -870,6 +870,11 @@ python abpage.py --embed W_A_R      # one self-contained page, WAVs inlined
 python abpage.py --instrmap <sid_dir>   # ...and refresh the instrument map first
 ```
 
+Tunes on hold (`python/hold.py`, since v0.5.493 the twelve DIGI files) keep
+their pages, but the index lists them in a separate *On hold* card below the
+staged tunes, each badged, and the header counts them apart, so they are
+never read as awaiting a verdict. See CLAUDE.md § On hold.
+
 `--instrmap` regenerates `build/instrmap.json` for the **staged** tunes before
 building, and each page then carries an *Instrument map* card at the bottom
 (see [`instrmap.py`](#the-instrument-map--instrmappy)). Scoped to what is
